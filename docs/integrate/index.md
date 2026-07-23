@@ -13,7 +13,7 @@ protocol-specific pages.
 
 - [Resource server (.NET)](./resource-server) — the most common
   Cocoar scenario: protect an ASP.NET Core API with Modgud-issued
-  tokens via the `Modgud.Client.AspNetCore` NuGet package.
+  tokens via the `Modgud.AspNetCore.ResourceServer` NuGet package.
 - [SaaS app walkthrough](./saas-walkthrough) — full
   user-facing-app integration: client registration, login redirect,
   resource_access claims, role-based gating.

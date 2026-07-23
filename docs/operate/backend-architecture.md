@@ -14,7 +14,7 @@ src/dotnet/
 ├── Modgud.Application/      ← DTOs, service interfaces
 ├── Modgud.Infrastructure/   ← OpenIddict stores, tenancy, realm cache, Wolverine handlers
 ├── Modgud.Permissions.Abstractions/ ← Shared permission evaluator (realm:admin / <resource>:admin bypass tiers)
-├── Modgud.Client.AspNetCore/ ← Published NuGet package: ASP.NET Core integration for resource servers
+├── Modgud.AspNetCore.ResourceServer/ ← Published NuGet package: JWT and introspection integration for resource servers
 ├── Modgud.Provisioning.TestKit/ ← Published NuGet package: throwaway realms for integration tests
 ├── Modgud.Api/              ← Minimal API endpoints, middleware, setup, SignalR hub
 ├── Modgud.Api.Tests/        ← Integration tests (Testcontainers + PostgreSQL)

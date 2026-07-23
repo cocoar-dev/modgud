@@ -1,14 +1,14 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
-using Modgud.Client.AspNetCore;
-using Modgud.Client.AspNetCore.Dpop;
+using Modgud.AspNetCore.ResourceServer;
+using Modgud.AspNetCore.ResourceServer.Dpop;
 using Modgud.Tests.Unit.OAuth.Dpop;
 
-namespace Modgud.Tests.Unit.Client.AspNetCore;
+namespace Modgud.Tests.Unit.ResourceServer;
 
 /// <summary>
-/// Resource-server side of DPoP in the client library: surfacing <c>cnf.jkt</c>
+/// Resource-server side of DPoP in the published package: surfacing <c>cnf.jkt</c>
 /// from an introspection response and validating a request's proof against the
 /// bound key + the presented token (RFC 9449 §7.2).
 /// </summary>

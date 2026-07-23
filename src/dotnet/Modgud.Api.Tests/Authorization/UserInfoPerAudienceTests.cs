@@ -15,7 +15,7 @@ using Modgud.Domain.OAuth.Common;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Permissions.Abstractions;
-using Modgud.Client.AspNetCore;
+using Modgud.AspNetCore.ResourceServer;
 using Marten;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -657,7 +657,7 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
     {
         // #132 step 1 — pin whether /connect/introspect echoes the per-audience
         // resource_access block, and to which callers. This decides the
-        // reference-token client-lib design: if a resource server can introspect
+        // reference-token resource-server design: if a resource server can introspect
         // and read the permission block in one call, the lib needs no separate
         // /connect/userinfo round-trip. Nothing in-repo pinned this before (the
         // #132 issue explicitly flags the gap).
@@ -1067,16 +1067,63 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
             boundTo: groupBoundTo.ToList());
     }
 
-    // ── #139: end-to-end reference-token resource server (client library) ───────
+    // ── Resource-server package end-to-end ──────────────────────────────────────
+
+    [Fact]
+    public async Task Jwt_ResourceServer_Gates_On_Embedded_Permission()
+    {
+        var app = await CreateAppAsync("rs-jwtapp", "RS JWT App",
+            permissions: [("policy", "read"), ("policy", "admin")]);
+        const string audience = "https://rs-jwt.example.com";
+        await CreateOAuthApiAsync(audience, app.Id);
+        const string scopeName = "rs-jwt-api";
+        await CreateScopeAsync(scopeName, [audience], app.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-jwtrs-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/test-callback";
+        await CreateOAuthClientAsync(
+            clientId, clientSecret, redirectUri, [app.Id],
+            ["openid", "roles", "permissions", scopeName], AccessTokenType.Jwt);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Jwt", lastname: "RS", acronym: "jr",
+            email: "jr@test.com", password: "TestPass1234");
+        await GrantAsync(user.Id, roleAppSlug: "rs-jwtapp", resourceType: "policy",
+            actions: ["read"], groupBoundTo: ["rs-jwtapp"]);
+
+        var jwt = await DriveAuthCodeFlowAsync(
+            username: "jr", password: "TestPass1234",
+            clientId: clientId, clientSecret: clientSecret,
+            redirectUri: redirectUri,
+            scope: $"openid roles permissions {scopeName}",
+            resources: [audience]);
+        Assert.Contains('.', jwt);
+
+        using var rsHost = await BuildJwtResourceServerAsync(audience);
+        var rs = rsHost.GetTestClient();
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await SendWithTokenAsync(rs, "/policy/read", jwt)).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await SendWithTokenAsync(rs, "/policy/admin", jwt)).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            (await rs.GetAsync(
+                "/policy/read",
+                TestContext.Current.CancellationToken)).StatusCode);
+    }
 
     [Fact]
     public async Task ReferenceToken_ResourceServer_Gates_On_Introspected_Permission()
     {
         // #139 — the runnable reference-token sample's path, proven end-to-end
-        // through the client library: an opaque access token is validated by
-        // `AddModgudReferenceTokenClient` via /connect/introspect, the per-audience
+        // through the resource-server package: an opaque access token is validated by
+        // `AddModgudResourceServer` via /connect/introspect, the per-audience
         // resource_access block is projected onto the principal, and a
-        // `RequiresModgudPermission` gate does exact-match. The IdP side (which
+        // `RequireModgudPermission` policy does exact-match. The IdP side (which
         // callers get resource_access) is pinned separately by
         // Introspection_Carries_ResourceAccess_Only_For_Audience_Or_Presenter_Client;
         // this pins the resource-server half.
@@ -1115,11 +1162,6 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
             username: "rr", password: "TestPass1234", clientId: clientId, clientSecret: clientSecret,
             redirectUri: redirectUri, scope: $"openid roles permissions {scopeName}", resources: [audience]);
 
-        // Point the library's introspection HttpClient at the in-memory IdP (its
-        // Authority is http://localhost, so the introspection Host resolves to the
-        // same realm the fixtures were created in).
-        ModgudTokenIntrospection.SharedClient = Factory.CreateClient();
-
         using var rsHost = await BuildReferenceTokenResourceServerAsync(audience, introspectionSecret);
         var rs = rsHost.GetTestClient();
 
@@ -1139,6 +1181,84 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
 
         // No credentials → 401.
         Assert.Equal(HttpStatusCode.Unauthorized, (await rs.GetAsync("/policy/read", TestContext.Current.CancellationToken)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Both_Mode_Accepts_Jwt_And_Reference_Token_On_The_Same_Endpoint()
+    {
+        var app = await CreateAppAsync("rs-bothapp", "RS Both App",
+            permissions: [("policy", "read")]);
+        const string audience = "https://rs-both.example.com";
+        await CreateOAuthApiAsync(audience, app.Id);
+        const string scopeName = "rs-both-api";
+        await CreateScopeAsync(scopeName, [audience], app.Id);
+
+        var jwtSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var jwtClientId = "test-both-jwt-" + Guid.NewGuid().ToString("N");
+        const string jwtRedirectUri = "http://localhost/both-jwt-callback";
+        await CreateOAuthClientAsync(
+            jwtClientId, jwtSecret, jwtRedirectUri, [app.Id],
+            ["openid", "permissions", scopeName], AccessTokenType.Jwt);
+
+        var referenceSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var referenceClientId = "test-both-reference-" + Guid.NewGuid().ToString("N");
+        const string referenceRedirectUri = "http://localhost/both-reference-callback";
+        await CreateOAuthClientAsync(
+            referenceClientId, referenceSecret, referenceRedirectUri, [app.Id],
+            ["openid", "permissions", scopeName], AccessTokenType.Reference);
+
+        var introspectionSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        await CreateOAuthClientAsync(
+            audience,
+            introspectionSecret,
+            "http://localhost/both-rs-callback",
+            [app.Id],
+            ["openid"]);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Both",
+            lastname: "RS",
+            acronym: "brs",
+            email: "brs@test.com",
+            password: "TestPass1234");
+        await GrantAsync(
+            user.Id,
+            roleAppSlug: "rs-bothapp",
+            resourceType: "policy",
+            actions: ["read"],
+            groupBoundTo: ["rs-bothapp"]);
+
+        var jwt = await DriveAuthCodeFlowAsync(
+            username: "brs",
+            password: "TestPass1234",
+            clientId: jwtClientId,
+            clientSecret: jwtSecret,
+            redirectUri: jwtRedirectUri,
+            scope: $"openid permissions {scopeName}",
+            resources: [audience]);
+        var referenceToken = await DriveAuthCodeFlowAsync(
+            username: "brs",
+            password: "TestPass1234",
+            clientId: referenceClientId,
+            clientSecret: referenceSecret,
+            redirectUri: referenceRedirectUri,
+            scope: $"openid permissions {scopeName}",
+            resources: [audience]);
+
+        Assert.Contains('.', jwt);
+        Assert.DoesNotContain('.', referenceToken);
+
+        using var rsHost = await BuildBothTokenResourceServerAsync(
+            audience,
+            introspectionSecret);
+        var rs = rsHost.GetTestClient();
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await SendWithTokenAsync(rs, "/policy/read", jwt)).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await SendWithTokenAsync(rs, "/policy/read", referenceToken)).StatusCode);
     }
 
     [Fact]
@@ -1207,14 +1327,7 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         return await client.SendAsync(req, TestContext.Current.CancellationToken);
     }
 
-    /// <summary>
-    /// Boots a minimal in-memory resource-server host over the published client
-    /// library exactly as the reference-token sample (Modgud.TestApps.ResourceApi
-    /// with TESTAPPS:TOKENMODE=reference) does — <c>AddModgudReferenceTokenClient</c>
-    /// plus <c>RequiresModgudPermission</c> gates — so the opaque-token path is
-    /// exercised end-to-end against the in-memory IdP.
-    /// </summary>
-    private static async Task<IHost> BuildReferenceTokenResourceServerAsync(string audience, string introspectionSecret)
+    private async Task<IHost> BuildJwtResourceServerAsync(string audience)
     {
         var host = new HostBuilder()
             .ConfigureWebHost(web => web
@@ -1222,14 +1335,64 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
                 .ConfigureServices(services =>
                 {
                     services.AddRouting();
-                    services
-                        .AddAuthentication(ModgudReferenceTokenDefaults.AuthenticationScheme)
-                        .AddModgudReferenceTokenClient(o =>
+                    services.AddModgudResourceServer(options =>
+                    {
+                        options.Authority = "http://localhost";
+                        options.Audience = audience;
+                        options.RequireHttpsMetadata = false;
+                        options.ConfigureJwtBearer = jwt =>
                         {
-                            o.Authority = "http://localhost"; // introspection Host = the test realm
-                            o.Audience = audience;            // == the introspection client_id
-                            o.IntrospectionClientSecret = introspectionSecret;
-                        });
+                            jwt.MapInboundClaims = false;
+                            jwt.BackchannelHttpHandler = Factory.Server.CreateHandler();
+                        };
+                    });
+                    services.AddAuthorization();
+                })
+                .Configure(builder =>
+                {
+                    builder.UseRouting();
+                    builder.UseAuthentication();
+                    builder.UseAuthorization();
+                    builder.UseEndpoints(endpoints =>
+                    {
+                        endpoints.MapGet("/policy/read", () => Results.Ok())
+                            .RequireModgudPermission("policy:read");
+
+                        endpoints.MapGet("/policy/admin", () => Results.Ok())
+                            .RequireModgudPermission("policy:admin");
+                    });
+                }))
+            .Build();
+
+        await host.StartAsync();
+        return host;
+    }
+
+    /// <summary>
+    /// Boots a minimal in-memory resource-server host over the published package
+    /// exactly as the reference-token sample (Modgud.TestApps.ResourceApi
+    /// with TESTAPPS:TOKENMODE=reference) does — <c>AddModgudResourceServer</c>
+    /// plus <c>RequireModgudPermission</c> gates — so the opaque-token path is
+    /// exercised end-to-end against the in-memory IdP.
+    /// </summary>
+    private async Task<IHost> BuildReferenceTokenResourceServerAsync(string audience, string introspectionSecret)
+    {
+        var host = new HostBuilder()
+            .ConfigureWebHost(web => web
+                .UseTestServer()
+                .ConfigureServices(services =>
+                {
+                    services.AddRouting();
+                    services.AddModgudResourceServer(options =>
+                    {
+                        options.Authority = "http://localhost"; // test realm host
+                        options.Audience = audience;
+                        options.TokenMode = ModgudTokenMode.OnlyReferenceToken;
+                        options.IntrospectionClientSecret = introspectionSecret;
+                        options.RequireHttpsMetadata = false;
+                    });
+                    services.AddHttpClient(ModgudHttpClientNames.Introspection)
+                        .ConfigurePrimaryHttpMessageHandler(() => Factory.Server.CreateHandler());
                     services.AddAuthorization();
                 })
                 .Configure(builder =>
@@ -1241,15 +1404,59 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
                     {
                         endpoints.MapGet("/me", (ClaimsPrincipal user) => Results.Ok(new
                         {
-                            permissions = user.FindAll(ModgudClaimsTransformation.PermissionClaimType)
+                            permissions = user.FindAll(ModgudClaimTypes.Permission)
                                 .Select(c => c.Value).ToArray(),
                         })).RequireAuthorization();
 
                         endpoints.MapGet("/policy/read", () => Results.Ok())
-                            .RequireAuthorization().RequiresModgudPermission("policy:read");
+                            .RequireModgudPermission("policy:read");
 
                         endpoints.MapGet("/policy/admin", () => Results.Ok())
-                            .RequireAuthorization().RequiresModgudPermission("policy:admin");
+                            .RequireModgudPermission("policy:admin");
+                    });
+                }))
+            .Build();
+
+        await host.StartAsync();
+        return host;
+    }
+
+    private async Task<IHost> BuildBothTokenResourceServerAsync(
+        string audience,
+        string introspectionSecret)
+    {
+        var host = new HostBuilder()
+            .ConfigureWebHost(web => web
+                .UseTestServer()
+                .ConfigureServices(services =>
+                {
+                    services.AddRouting();
+                    services.AddModgudResourceServer(options =>
+                    {
+                        options.Authority = "http://localhost";
+                        options.Audience = audience;
+                        options.TokenMode = ModgudTokenMode.Both;
+                        options.IntrospectionClientSecret = introspectionSecret;
+                        options.RequireHttpsMetadata = false;
+                        options.ConfigureJwtBearer = jwt =>
+                        {
+                            jwt.MapInboundClaims = false;
+                            jwt.BackchannelHttpHandler = Factory.Server.CreateHandler();
+                        };
+                    });
+                    services.AddHttpClient(ModgudHttpClientNames.Introspection)
+                        .ConfigurePrimaryHttpMessageHandler(() => Factory.Server.CreateHandler());
+                    services.AddAuthorization();
+                })
+                .Configure(builder =>
+                {
+                    builder.UseRouting();
+                    builder.UseAuthentication();
+                    builder.UseAuthorization();
+                    builder.UseEndpoints(endpoints =>
+                    {
+                        endpoints.MapGet("/policy/read", () => Results.Ok())
+                            .RequireModgudPermission("policy:read");
                     });
                 }))
             .Build();

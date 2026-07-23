@@ -17,9 +17,10 @@
 
   <ItemGroup>
     <!-- Pure evaluator + permission-string primitives. Kept in a separate
-         assembly so external RS libs (Modgud.Client.AspNetCore and
-         downstream service consumers) can reuse the same logic without
-         pulling Marten/Wolverine/JsEval transitively. -->
+         assembly so downstream consumers that evaluate raw grants can reuse
+         the logic without pulling Marten/Wolverine/JsEval transitively. The
+         resource-server package receives pre-expanded concrete permissions
+         and deliberately does not reference this assembly. -->
     <ProjectReference Include="..\Modgud.Permissions.Abstractions\Modgud.Permissions.Abstractions.csproj" />
   </ItemGroup>
 

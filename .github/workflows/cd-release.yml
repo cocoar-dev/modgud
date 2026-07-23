@@ -40,7 +40,7 @@ name: CD - Release
 # Sibling workflows for staging / prerelease / editorial doc paths:
 #   - cd-publish-staging-image.yml    — pushes `:beta` / `:<slug>` moving
 #                                       Docker tags (auto on develop push + manual)
-#   - cd-publish-nuget-prerelease.yml — prerelease NuGet for client-lib
+#   - cd-publish-nuget-prerelease.yml — prerelease resource-server NuGet
 #                                       (manual workflow_dispatch)
 #   - cd-deploy-docs.yml              — editorial doc deploy to Shelf
 #                                       between releases (manual)
@@ -146,7 +146,7 @@ jobs:
         working-directory: ./src/dotnet
 
   pack-nuget:
-    name: Pack NuGet (Client.AspNetCore)
+    name: Pack NuGet (ResourceServer)
     needs: validate-version
     runs-on: ubuntu-latest
     permissions:
@@ -165,12 +165,12 @@ jobs:
         uses: ./.github/actions/setup-dotnet
 
       - name: Restore
-        run: dotnet restore Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj
+        run: dotnet restore Modgud.AspNetCore.ResourceServer/Modgud.AspNetCore.ResourceServer.csproj
         working-directory: ./src/dotnet
 
       - name: Build (stable)
         run: |
-          dotnet build Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj \
+          dotnet build Modgud.AspNetCore.ResourceServer/Modgud.AspNetCore.ResourceServer.csproj \
             -c Release --no-restore \
             -p:Version=${{ needs.validate-version.outputs.version }} \
             -p:ContinuousIntegrationBuild=true
@@ -178,7 +178,7 @@ jobs:
 
       - name: Pack (incl. symbols)
         run: |
-          dotnet pack Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj \
+          dotnet pack Modgud.AspNetCore.ResourceServer/Modgud.AspNetCore.ResourceServer.csproj \
             -c Release --no-build \
             -p:Version=${{ needs.validate-version.outputs.version }} \
             -p:ContinuousIntegrationBuild=true \
@@ -442,9 +442,9 @@ jobs:
       - name: Summary
         run: |
           {
-            echo "### NuGet — Modgud.Client.AspNetCore ${{ needs.validate-version.outputs.version }}"
+            echo "### NuGet — Modgud.AspNetCore.ResourceServer ${{ needs.validate-version.outputs.version }}"
             echo ""
-            echo "**URL:** https://www.nuget.org/packages/Modgud.Client.AspNetCore/${{ needs.validate-version.outputs.version }}"
+            echo "**URL:** https://www.nuget.org/packages/Modgud.AspNetCore.ResourceServer/${{ needs.validate-version.outputs.version }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   publish-docker:

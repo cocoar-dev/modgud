@@ -211,7 +211,7 @@ Authorization: DPoP <access-token>
 DPoP: <proof-jwt-with-ath>
 ```
 
-The [.NET client library](../integrate/resource-server) enforces the binding on both token formats: a bound token presented as a plain `Bearer`, or with a proof whose key doesn't match `cnf.jkt`, is rejected.
+The [.NET resource-server library](../integrate/resource-server) enforces the binding on both token formats: a bound token presented as a plain `Bearer`, or with a proof whose key doesn't match `cnf.jkt`, is rejected.
 
 ### 3. Refresh tokens are bound too
 

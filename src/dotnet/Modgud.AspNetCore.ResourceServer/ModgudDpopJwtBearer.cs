@@ -3,9 +3,9 @@ using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
-using Modgud.Client.AspNetCore.Dpop;
+using Modgud.AspNetCore.ResourceServer.Dpop;
 
-namespace Modgud.Client.AspNetCore;
+namespace Modgud.AspNetCore.ResourceServer;
 
 /// <summary>
 /// Resource-server DPoP enforcement for the <b>JWT-bearer</b> validation path
@@ -13,7 +13,7 @@ namespace Modgud.Client.AspNetCore;
 /// <see cref="ModgudIntrospectionHandler"/>.
 ///
 /// <para>Two hooks into the JwtBearer pipeline, wired by
-/// <see cref="ModgudJwtBearerPostConfigure"/>:</para>
+/// <c>AddModgudResourceServer</c> in a JWT-capable mode:</para>
 /// <list type="number">
 ///   <item><b>OnMessageReceived</b> (<see cref="ExtractDpopSchemeToken"/>) — a
 ///   DPoP-bound token is presented under the <c>DPoP</c> auth scheme, not
@@ -150,8 +150,8 @@ internal static class ModgudDpopJwtBearer
     /// <summary>
     /// OnTokenValidated hook: runs <see cref="EvaluateBinding"/> and, on any
     /// rejection, fails the authentication (→ 401) with an RFC-flavoured reason.
-    /// A pass leaves the context untouched so downstream handlers (UserInfo
-    /// enrichment) continue.
+    /// A pass leaves the context untouched so scheme-local claims projection
+    /// can continue.
     /// </summary>
     public static void EnforceBinding(TokenValidatedContext context)
     {

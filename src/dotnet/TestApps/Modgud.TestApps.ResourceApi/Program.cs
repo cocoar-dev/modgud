@@ -1,7 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using Modgud.Client.AspNetCore;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Modgud.AspNetCore.ResourceServer;
 using Microsoft.AspNetCore.Authorization;
 
 // Disable the default JWT short→long claim translation so we see "sub", "name",
@@ -20,23 +19,16 @@ JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
 //                        roles/permissions)
 //   GET /scoped        — token-scope based gate ("demo.read")
 //   GET /admin         — token-scope based gate ("demo.admin")
-//   GET /policy/read   — RequiresModgudPermission("demo:read")
+//   GET /policy/read   — RequireModgudPermission("demo:read")
 //                        — exact-match against pre-expanded permissions
-//   POST /policy/write — RequiresModgudPermission("demo:write")
+//   POST /policy/write — RequireModgudPermission("demo:write")
 //
 // What the path proves: the IdP issues a JWT with aud=<this-rs>, and the
-// Modgud client library (Modgud.Client.AspNetCore) makes sure the
-// principal ends up with a resource_access claim — preferring the token's
-// own embedded claim (federation v1.1 bakes resource_access into every
-// access token at issuance) and falling back to fetching
-// /connect/userinfo on JwtBearer's OnTokenValidated event only when the
-// token carries none. There's no GetClaimsFromUserInfoEndpoint on
-// JwtBearerOptions for the fallback path — that property only exists on
-// AddOpenIdConnect. Either source emits resource_access[<aud>] =
+// Modgud.AspNetCore.ResourceServer validates the token and projects its
+// embedded resource_access[<aud>] =
 // { permissions, roles } with bypass tiers (realm:admin, <r>:admin)
-// already pre-expanded to concrete strings, and the lib's
-// claims-transformation flattens that block onto the principal.
-// RequiresModgudPermission then does straight membership match — no HTTP,
+// already pre-expanded to concrete strings directly onto the identity.
+// RequireModgudPermission then does straight membership match — no HTTP,
 // no cache, no evaluator on the RS side.
 
 var builder = WebApplication.CreateBuilder(args);
@@ -49,49 +41,49 @@ var audience = builder.Configuration["TESTAPPS:AUDIENCE"] ?? "demo-api";
 
 // TESTAPPS:TOKENMODE selects how this sample validates access tokens:
 //   "jwt"        (default) — self-contained JWT validated locally against the
-//                realm's JWKS (AddJwtBearer + AddModgudClient).
+//                realm's JWKS.
 //   "reference"  — Modgud's DEFAULT opaque token, validated per-request via
-//                /connect/introspect (AddModgudReferenceTokenClient). The RS
+//                /connect/introspect. The RS
 //                introspects with a confidential client whose client_id equals
 //                its audience; supply its secret via TESTAPPS:INTROSPECTIONSECRET.
-// Everything downstream — the resource_access projection, RequiresModgudPermission,
+//   "both"       — accepts both formats under one public Modgud scheme and
+//                dispatches by token shape.
+// Everything downstream — the resource_access projection, RequireModgudPermission,
 // role gates — is identical either way; only the registration differs.
-var tokenMode = (builder.Configuration["TESTAPPS:TOKENMODE"] ?? "jwt").Trim().ToLowerInvariant();
-
-if (tokenMode == "reference")
+var configuredTokenMode =
+    (builder.Configuration["TESTAPPS:TOKENMODE"] ?? "jwt").Trim().ToLowerInvariant();
+var tokenMode = configuredTokenMode switch
 {
-    builder.Services
-        .AddAuthentication(ModgudReferenceTokenDefaults.AuthenticationScheme)
-        .AddModgudReferenceTokenClient(o =>
-        {
-            o.Authority = authority;
-            o.Audience  = audience;   // == the introspection client_id (an OAuthApi name)
-            o.IntrospectionClientSecret = builder.Configuration["TESTAPPS:INTROSPECTIONSECRET"];
-        });
-}
-else
-{
-    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddJwtBearer(options =>
-        {
-            options.Authority = authority;
-            options.Audience = audience;
-            options.RequireHttpsMetadata = false; // dev only
-            options.MapInboundClaims = false;
-            options.TokenValidationParameters.NameClaimType = "name";
-            options.TokenValidationParameters.RoleClaimType = ClaimTypes.Role;
-        });
+    "jwt" => ModgudTokenMode.OnlyJwt,
+    "reference" => ModgudTokenMode.OnlyReferenceToken,
+    "both" => ModgudTokenMode.Both,
+    _ => throw new InvalidOperationException(
+        "TESTAPPS:TOKENMODE must be 'jwt', 'reference', or 'both'."),
+};
 
-    // Lib hooks JwtBearer.OnTokenValidated to fetch /connect/userinfo and
-    // merge resource_access onto the principal, then a ClaimsTransformation
-    // flattens the matching audience block to ClaimTypes.Role / "permission"
-    // / "group" claims. Plus the RequiresModgudPermission endpoint filter.
-    builder.Services.AddModgudClient(o =>
+builder.Services.AddModgudResourceServer(options =>
+{
+    options.Authority = authority;
+    options.Audience = audience;
+    options.TokenMode = tokenMode;
+    options.RequireHttpsMetadata = false; // dev only
+
+    if (tokenMode is ModgudTokenMode.OnlyReferenceToken or ModgudTokenMode.Both)
     {
-        o.Authority = authority;
-        o.Audience  = audience;  // must match JwtBearerOptions.Audience above
-    });
-}
+        options.IntrospectionClientSecret =
+            builder.Configuration["TESTAPPS:INTROSPECTIONSECRET"];
+    }
+
+    if (tokenMode is ModgudTokenMode.OnlyJwt or ModgudTokenMode.Both)
+    {
+        options.ConfigureJwtBearer = jwt =>
+        {
+            jwt.MapInboundClaims = false;
+            jwt.TokenValidationParameters.NameClaimType = "name";
+            jwt.TokenValidationParameters.RoleClaimType = ClaimTypes.Role;
+        };
+    }
+});
 
 builder.Services.AddAuthorization(options =>
 {
@@ -123,13 +115,13 @@ app.MapGet("/me", (ClaimsPrincipal user) => Results.Ok(new
     scopes = user.FindAll("scope").Select(c => c.Value)
                   .Concat(user.FindAll("scp").Select(c => c.Value))
                   .ToArray(),
-    // Roles + permissions come from the lib's claims-transformation, which
-    // reads resource_access[<audience>] off the principal. They will be empty
+    // Roles + permissions come from the authentication scheme's audience-local
+    // projection of resource_access[<audience>]. They will be empty
     // if the IdP hasn't emitted a block for this audience (e.g. because the
     // user has no grants in the linked App). Groups are never emitted by the
     // IdP (hub boundary, federation v1) — there is no "groups" key to read.
     roles = user.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
-    permissions = user.FindAll(ModgudClaimsTransformation.PermissionClaimType)
+    permissions = user.FindAll(ModgudClaimTypes.Permission)
                        .Select(c => c.Value).ToArray(),
     claims = user.Claims.Select(c => new { c.Type, c.Value }).ToArray()
 })).RequireAuthorization();
@@ -145,15 +137,13 @@ app.MapGet("/admin", () => Results.Ok(new { message = "You called the admin endp
    .RequireAuthorization("demo.admin");
 
 // Permission-gated endpoints — the post-Step-7-fix path. These exercise:
-// incoming bearer → JwtBearer fetches UserInfo → resource_access block
-// projected onto principal → filter does exact-match.
+// incoming token → scheme-local resource_access projection → ASP.NET
+// authorization policy does exact-match.
 app.MapGet("/policy/read", () => Results.Ok(new { message = "You called demo:read." }))
-   .RequireAuthorization()
-   .RequiresModgudPermission("demo:read");
+   .RequireModgudPermission("demo:read");
 
 app.MapPost("/policy/write", () => Results.Ok(new { message = "You called demo:write." }))
-   .RequireAuthorization()
-   .RequiresModgudPermission("demo:write");
+   .RequireModgudPermission("demo:write");
 
 app.Run();
 

@@ -194,45 +194,31 @@ A complete, runnable version of everything below ships in the repo at `src/dotne
 ### Packages
 
 ```bash
-dotnet add package Modgud.Client.AspNetCore
-dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
+dotnet add package Modgud.AspNetCore.ResourceServer
 ```
 
 ### `Program.cs`
 
 ```csharp
 using System.Security.Claims;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Modgud.Client.AspNetCore;
+using Modgud.AspNetCore.ResourceServer;
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        // Authority is the realm's HOST ROOT — realms resolve by Host
-        // header, so the issuer has NO realm path. Never append "/system"
-        // or any "/<realm>" segment: a path-suffixed Authority makes the
-        // discovery fetch 404 and fails issuer validation.
-        options.Authority = "https://auth.example.com";
-        options.Audience  = "acme";   // matches the OAuthApi name / aud claim
-    });
+builder.Services.AddModgudResourceServer(options =>
+{
+    // Authority is the realm's HOST ROOT — realms resolve by Host
+    // header, so the issuer has NO realm path. Never append "/system"
+    // or any "/<realm>" segment: a path-suffixed Authority makes the
+    // discovery fetch 404 and fails issuer validation.
+    options.Authority = "https://auth.example.com";
+    options.Audience  = "acme";   // matches the OAuthApi name / aud claim
+    // TokenMode defaults to OnlyJwt.
+});
 
-// AddModgudClient (hooks JwtBearerEvents.OnTokenValidated) makes sure the
-// principal ends up with resource_access["acme"] — preferring the claim
-// already embedded in the JWT (the normal case for a JWT-typed client
-// like this one) and calling /connect/userinfo only as a fallback for
-// tokens that carry none — then registers the ClaimsTransformation that
-// flattens the block onto the principal:
+// The scheme projects the JWT's embedded audience block directly:
 //   - resource_access["acme"].roles       → ClaimTypes.Role
 //   - resource_access["acme"].permissions → "permission" claims
 // The IdP pre-expands bypass tiers (realm:admin, <resource>:admin) before
 // emission, so the RS only ever does exact-match — no evaluator on this side.
-// Do NOT set GetClaimsFromUserInfoEndpoint on AddJwtBearer; AddModgudClient
-// owns claim-sourcing (token first, UserInfo fallback).
-builder.Services.AddModgudClient(o =>
-{
-    o.Authority = "https://auth.example.com";
-    o.Audience  = "acme";   // must equal JwtBearerOptions.Audience above
-});
 
 builder.Services.AddAuthorization();
 ```
@@ -250,23 +236,23 @@ transformation surfaces `resource_access["acme"].roles` as
 
 ### Granular permission check
 
-Gate endpoints with `.RequiresModgudPermission(...)` — the filter reads
-the flattened `permission` claims and does a straight exact-match:
+Gate endpoints with `.RequireModgudPermission(...)` — the authorization
+policy reads the flattened `permission` claims and does a straight
+exact-match:
 
 ```csharp
 app.MapPost("/todos", () => Results.Ok())
-   .RequireAuthorization()
-   .RequiresModgudPermission("todo:write");
+   .RequireModgudPermission("todo:write");
 ```
 
 If you need to read permissions imperatively, they live under
-`ModgudClaimsTransformation.PermissionClaimType`:
+`ModgudClaimTypes.Permission`:
 
 ```csharp
 app.MapGet("/whoami", (ClaimsPrincipal user) => Results.Ok(new
 {
     permissions = user
-        .FindAll(ModgudClaimsTransformation.PermissionClaimType)
+        .FindAll(ModgudClaimTypes.Permission)
         .Select(c => c.Value),
 })).RequireAuthorization();
 ```
@@ -286,11 +272,10 @@ common pitfalls) live in
 7. The resulting access token already carries `sub`, `email`, `name`,
    and `resource_access.acme.roles = ["Acme Editor"]` plus
    `resource_access.acme.permissions = ["todo:read", "todo:write"]` —
-   `AddModgudClient` reads that straight off the validated JWT
-   (`/connect/userinfo` would show the same block, but the library only
-   calls it as a fallback for tokens that don't carry the claim)
+   `AddModgudResourceServer` reads that straight off the validated JWT
+   without a UserInfo round-trip
 8. `[Authorize(Roles = "Acme Editor")]` lets you in, and
-   `.RequiresModgudPermission("todo:write")` passes — the resource
+   `.RequireModgudPermission("todo:write")` passes — the resource
    server validated the JWT against the realm's JWKS (because the client's
    Access Token Type is JWT) and matched the flattened `permission` claims
 
@@ -338,7 +323,7 @@ Made it through? **Done. First SaaS app integrated.**
   request.
 - **`scope=permissions` not requested.** Without it, the
   `permissions` array in the `resource_access` block is omitted — your
-  `RequiresModgudPermission(…)` check sees nothing. Same for `roles`
+  `RequireModgudPermission(…)` check sees nothing. Same for `roles`
   and the role list. Add the scope to the client's allowed-scopes list
   and to every authorization request.
 - **Access Token Type left as Reference.** `AddJwtBearer` can only

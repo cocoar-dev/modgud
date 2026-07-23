@@ -348,7 +348,7 @@ public class DpopIssuanceTests : IntegrationTestBase
     [Fact]
     public async Task Introspection_of_a_dpop_bound_reference_token_echoes_cnf_jkt()
     {
-        // The resource-server client library reads cnf.jkt out of the
+        // The resource-server package reads cnf.jkt out of the
         // introspection response to enforce the DPoP binding on opaque reference
         // tokens — this pins that the AS actually surfaces it.
         var (clientId, secret, redirectUri) = await NewClientAsync("dpop-ref", AccessTokenType.Reference);

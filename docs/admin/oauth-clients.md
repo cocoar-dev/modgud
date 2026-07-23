@@ -82,7 +82,7 @@ New clients default to **JWT**. Two options:
 | **JWT** (default) | Self-contained signed token — the claims are inside the token | The resource server validates it locally against the realm's signing key (JWKS); no callback to Modgud |
 | **Reference** | Opaque random string — carries no claims | The resource server must call `/connect/introspect` on every request to resolve it |
 
-A resource server built with ASP.NET Core's `AddJwtBearer` expects a **JWT** — that's the right pick for the common case. Use **Reference** only when you specifically want every token resolvable/revocable at the introspection endpoint and you've wired the RS to call it. The [.NET client library](../integrate/resource-server) supports both — `AddModgudClient` for JWT, `AddModgudReferenceTokenClient` for reference tokens.
+A resource server built with ASP.NET Core's JWT bearer handler expects a **JWT** — that's the right pick for the common case. Use **Reference** only when you specifically want every token resolvable/revocable at the introspection endpoint and you've wired the RS to call it. The [.NET resource-server library](../integrate/resource-server) uses one `AddModgudResourceServer` method; its `TokenMode` accepts JWTs, reference tokens, or both.
 
 ### Require Pushed Authorization Requests
 

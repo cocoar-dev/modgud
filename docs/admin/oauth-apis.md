@@ -134,8 +134,9 @@ Client whose **Client ID equals its own audience** (this API's name —
 the RFC 8707 `resource=` value already carried in the token's `aud`),
 and authenticates the introspection call with that client's own
 credentials (sent as form-body parameters, so a URL-shaped audience id
-works). The [.NET client library](/integrate/resource-server#reference-token-mode-opaque-tokens)
-does this for you via `AddModgudReferenceTokenClient`.
+works). The [.NET resource-server library](/integrate/resource-server#reference-token-mode)
+does this through `AddModgudResourceServer` with
+`TokenMode = ModgudTokenMode.OnlyReferenceToken`.
 
 ## Editing
 

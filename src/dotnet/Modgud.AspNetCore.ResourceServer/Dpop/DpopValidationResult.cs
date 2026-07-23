@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────
 // DUPLICATED, KEEP IN SYNC. Verbatim copy (namespace aside) of
 // Modgud.Infrastructure/OpenIddict/Dpop/<same file>. The resource-server side
-// needs the identical DPoP crypto, but this client library is a published NuGet
+// needs the identical DPoP crypto, but this resource-server library is a published NuGet
 // kept deliberately dependency-light, so the code is duplicated rather than
 // shared. Any change to the server-side original MUST be mirrored here.
 // ─────────────────────────────────────────────────────────────────────────
 
-namespace Modgud.Client.AspNetCore.Dpop;
+namespace Modgud.AspNetCore.ResourceServer.Dpop;
 
 /// <summary>
 /// Why a DPoP proof was rejected (RFC 9449 §4.3 / §5). <see cref="None"/> means

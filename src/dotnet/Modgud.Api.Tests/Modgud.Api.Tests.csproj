@@ -37,9 +37,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Modgud.Api\Modgud.Api.csproj" />
     <ProjectReference Include="..\Modgud.Provisioning.TestKit\Modgud.Provisioning.TestKit.csproj" />
-    <!-- The resource-server client library, exercised end-to-end (reference-token
+    <!-- The resource-server package, exercised end-to-end (reference-token
          introspection path) by UserInfoPerAudienceTests. -->
-    <ProjectReference Include="..\Modgud.Client.AspNetCore\Modgud.Client.AspNetCore.csproj" />
+    <ProjectReference Include="..\Modgud.AspNetCore.ResourceServer\Modgud.AspNetCore.ResourceServer.csproj" />
   </ItemGroup>
 
   <ItemGroup>

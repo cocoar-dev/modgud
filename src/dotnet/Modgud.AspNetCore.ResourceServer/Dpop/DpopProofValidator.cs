@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 // DUPLICATED, KEEP IN SYNC. Verbatim copy (namespace aside) of
 // Modgud.Infrastructure/OpenIddict/Dpop/<same file>. The resource-server side
-// needs the identical DPoP crypto, but this client library is a published NuGet
+// needs the identical DPoP crypto, but this resource-server library is a published NuGet
 // kept deliberately dependency-light, so the code is duplicated rather than
 // shared. Any change to the server-side original MUST be mirrored here.
 // ─────────────────────────────────────────────────────────────────────────
@@ -11,7 +11,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
-namespace Modgud.Client.AspNetCore.Dpop;
+namespace Modgud.AspNetCore.ResourceServer.Dpop;
 
 /// <summary>
 /// Validates a DPoP proof JWT (RFC 9449 §4.3): a compact JWS sent in the
@@ -30,7 +30,7 @@ namespace Modgud.Client.AspNetCore.Dpop;
 /// <c>jti</c> replay detection is left to the caller (it needs a per-realm store
 /// and a TTL policy that live outside this crypto core). Keeping it side-effect
 /// free is what lets the identical file be duplicated into the dependency-light
-/// <c>Modgud.Client.AspNetCore</c> NuGet for the resource-server side.
+/// <c>Modgud.AspNetCore.ResourceServer</c> NuGet for the resource-server side.
 /// </para>
 ///
 /// <para>

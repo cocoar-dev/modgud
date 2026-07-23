@@ -65,11 +65,13 @@ dotnet test
 | OAuthAdminMapping (extracted) | `Application/OAuthAdminMappingTests.cs` | 70+ | `BuildClientPermissions`, grant-type round-trip, `BuildClient*` defaults + property survival, `MapClient`/`MapScope`, `MapApiState` (id-stringification, defensive list copies), `MergeClientSettings`/`MergeClientProperties` partial-PATCH semantics (omit-preserve / value-overwrite / list-replace / no-mutation), BCrypt hash+verify round-trip and malformed-hash safety |
 | OAuth `*StateProjection` (3) + LoginProvider | `Infrastructure/Persistence/Marten/Projections/OAuth/*Tests.cs` + `LoginProviders/...Tests.cs` | 54 | Create + every Apply + replay (incl. AccessTokenType case-sensitive parse bug pinning, AppIds n:m projection, AppId set/null/created-default for Scope + Api) |
 
-### ClaimsTransformation library
+### Resource-server library
 
 | Area | File(s) | Tests | What's pinned |
 |---|---|---:|---|
-| `ModgudClaimsTransformation` | `Client/AspNetCore/ModgudClaimsTransformationTests.cs` | 12 | per-app role flattening from `resource_access[<app>].roles` to `ClaimTypes.Role`, cross-app isolation, malformed JSON tolerance, idempotence, anonymous short-circuit, `AppSlug` configuration validation |
+| Scheme-local claims projection | `ResourceServer/ModgudClaimsProjectorTests.cs`, `ResourceServerRegistrationTests.cs` | — | audience isolation, role/permission projection, malformed JSON tolerance, idempotence, simultaneous JWT + introspection registration, startup validation, and absence of global claims transformation |
+| Permission metadata | `ResourceServer/ModgudPermissionExtensionsTests.cs` | — | exact permission policy on endpoints and route groups |
+| Reference-token introspection | `ResourceServer/IntrospectionHandlerTests.cs` | — | active/audience checks, claim construction, malformed response rejection, and scheme-local projection |
 
 ### ExternalAuth (OIDC IdP federation)
 

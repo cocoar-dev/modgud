@@ -1,9 +1,9 @@
 # Permissions & gating
 
 Modgud uses **granular per-resource gating**: every endpoint and every
-sidebar item checks a single permission string, and the same evaluator
-runs IdP-side (Authorization slice) and resource-server-side
-(Modgud.Client.AspNetCore).
+sidebar item checks a single permission string. The IdP evaluates and
+pre-expands grants; resource servers perform exact claim checks through
+`Modgud.AspNetCore.ResourceServer`.
 
 ## Permission format
 
@@ -151,10 +151,10 @@ What's in the block:
   (`roles`, `permissions`) — request `scope=permissions` to see the
   permissions block; without it you get just the roles list.
 
-The `Modgud.Client.AspNetCore` helper lib's `IClaimsTransformation`
-flattens the matching audience block onto the principal so standard
-ASP.NET Core `[Authorize(Roles="…")]` and `RequiresPermission(…)` work
-out of the box.
+The `Modgud.AspNetCore.ResourceServer` authentication handlers project
+the matching audience block onto the principal so standard ASP.NET Core
+`[Authorize(Roles="…")]` and `RequireModgudPermission(…)` work out of
+the box.
 
 ## Backend gating: `RequiresPermission`
 
