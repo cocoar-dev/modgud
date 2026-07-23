@@ -18,9 +18,10 @@ public record OAuthApiPropertiesChanged(Guid ApiId, IReadOnlyDictionary<string, 
 
 /// <summary>
 /// Sets the App this resource-server belongs to. <c>null</c> = unassigned
-/// (the RS exists but <c>/connect/userinfo</c> won't emit a per-Audience
-/// <c>resource_access</c> block for it). Realm-admin endpoints validate
-/// that the AppId resolves to a non-deleted <c>App</c> at append time.
+/// (the RS exists but the token boundary won't emit a per-Audience
+/// <c>resource_access</c> block for it in JWT, UserInfo or introspection).
+/// Realm-admin endpoints validate that the AppId resolves to a non-deleted
+/// <c>App</c> at append time.
 /// </summary>
 public record OAuthApiAppIdChanged(Guid ApiId, Guid? AppId);
 

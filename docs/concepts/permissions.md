@@ -13,9 +13,9 @@ The app context is **implicit from the caller**:
 
 - For in-process gates inside Modgud, the gate's audience is the
   Modgud app itself.
-- For resource-server gates, the audience is the RS's own App slug
-  (resolved from the access token's `aud` claim by the time
-  the request reaches the gate).
+- For resource-server gates, the token audience resolves an OAuth API;
+  that API's `AppId` selects the permission catalog. The OAuth API
+  Audience and App slug are separate identifiers and need not match.
 
 This is enforced at write-time: catalog entries are validated against
 the regex `^[a-z0-9-]+:[a-z0-9-]+$` — exactly two lowercase segments,
@@ -73,8 +73,10 @@ in between). Per-area owners typically get per-resource `<resource>:admin`
 + `oauth-api:admin`, but not `user:admin`).
 
 The canonical evaluator implementation lives in
-`Modgud.Permissions.Abstractions/PermissionEvaluator.cs` — pure, no
-I/O, reused on both ends of the wire.
+`Modgud.Permissions.Abstractions/PermissionEvaluator.cs` and is used
+inside Modgud. At the token boundary Modgud pre-expands bypasses; the
+resource-server package performs exact checks against the projected
+concrete claims and does not run the evaluator.
 
 ## Resources
 
@@ -114,10 +116,17 @@ a migration.
 
 ## How resource servers receive permissions
 
-Resource servers read permissions from a standard OIDC UserInfo call.
-For each audience (`aud`) the access token names, Modgud emits a
-**`resource_access`** block on `/connect/userinfo`, shaped like
-Keycloak's nested format:
+For each token audience (`aud`) that resolves to a registered OAuth API
+linked to an App, Modgud can build a **`resource_access[<audience>]`**
+block shaped like Keycloak's nested format. `roles` must be granted to
+emit its role array; `permissions` must be granted to emit its
+permission array. If neither scope is present, or no audience resolves
+to an OAuth API with an App, the whole claim is absent.
+
+For JWT access tokens the claim is carried on the wire. For reference
+tokens it remains in the server-side payload and is exposed only through
+authorized introspection. `/connect/userinfo` returns the same block for
+an eligible bearer token:
 
 ```json
 {
@@ -138,8 +147,9 @@ Keycloak's nested format:
 What's in the block:
 
 - **Bypass-pre-expansion** — `realm:admin` is expanded server-side into
-  every concrete catalog string of every reachable App; a `<r>:admin`
-  bypass is expanded into every `<r>:*` string in the App's catalog.
+  every concrete catalog string in the audience's linked App; a
+  `<r>:admin` bypass is expanded into every `<r>:*` string in that
+  App's catalog.
   Consumers do straight exact-match — no PermissionEvaluator port
   required client-side.
 - **Per-RS-subset narrowing** — each audience block is narrowed to
@@ -149,7 +159,8 @@ What's in the block:
   sibling's block.
 - **Roles vs Permissions** are gated by separate scopes
   (`roles`, `permissions`) — request `scope=permissions` to see the
-  permissions block; without it you get just the roles list.
+  permissions array and `scope=roles` to see the role array. Requesting
+  only one never implicitly adds the other.
 
 The `Modgud.AspNetCore.ResourceServer` authentication handlers project
 the matching audience block onto the principal so standard ASP.NET Core

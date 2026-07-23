@@ -143,7 +143,7 @@ Register a client in the admin SPA: **OAuth & Federation → OAuth Clients → C
 2. Add a redirect URI — e.g. the test redirect on [oidcdebugger.com](https://oidcdebugger.com).
 3. Copy the discovery URL from step 4 and the client ID into oidcdebugger.
 
-Click **Send Request** in oidcdebugger → log in as `admin` → consent → you'll see an access token. If you chose JWT, decode it at [jwt.io](https://jwt.io) — `sub`, `email`, `aud`, plus a `resource_access` block once you request the `roles` scope.
+Click **Send Request** in oidcdebugger → log in as `admin` → consent → you'll see an access token. If you chose JWT, decode it at [jwt.io](https://jwt.io) — `sub`, `email` and `aud`; once the token targets a registered OAuth API, requesting `roles` and/or `permissions` adds the corresponding arrays under `resource_access[<audience>]`.
 
 ## 6. Bind your first SaaS app
 

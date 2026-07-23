@@ -1135,7 +1135,7 @@ public static class AuthorizationEndpoints
         // declared as its gating surface. Anything outside that subset is
         // not "this RS's business" and is excluded from the block. This
         // prevents permission strings from one microservice leaking into a
-        // sibling's UserInfo block when both belong to the same App but
+        // sibling's audience block when both belong to the same App but
         // declare disjoint subsets.
         //
         // Audience entries that don't resolve to a registered OAuthApi

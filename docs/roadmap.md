@@ -36,9 +36,10 @@ in a changelog that ages between releases.
 - Groups with manual or script-based ("Auto-Membership") membership,
   nested groups with cycle detection, per-group app activation via
   `BoundTo`
-- Per-Audience `resource_access` emission on `/connect/userinfo` with
-  bypass pre-expansion and per-RS subset narrowing — drop-in for
-  Keycloak-shaped client libraries; native via the
+- Per-Audience `resource_access` emission in JWT access tokens,
+  UserInfo and authorized introspection responses when the matching
+  audience and claim scopes are present, with bypass pre-expansion
+  and per-RS subset narrowing; native via the
   `Modgud.AspNetCore.ResourceServer` NuGet package
 
 **OAuth 2.0 / OpenID Connect (OpenIddict 7)**

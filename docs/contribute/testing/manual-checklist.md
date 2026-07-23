@@ -110,7 +110,7 @@ See [Invite codes](../../admin/invite-codes) for the full flow.
 
 - [ ] List endpoint returns a paginated shape even without pagination params **(automated)**
 - [ ] Create a resource server, link it to an app
-- [ ] Moving a resource server to a different app switches which `resource_access` block tokens for it carry
+- [ ] Moving a resource server to a different app keeps the `resource_access` key equal to the API Audience but switches the App catalog from which its roles and narrowed permissions are resolved
 
 ## 14. Login providers (external IdP)
 
@@ -159,8 +159,8 @@ These need a separate demo SPA/backend acting as the client.
 
 ## 19. Token claims
 
-- [ ] UserInfo carries `resource_access` keyed by app slug, with `roles` (not group names) per app
-- [ ] No `resource_access` entry for an app the user isn't bound to
+- [ ] JWT/UserInfo/introspection carry `resource_access` keyed by exact OAuth API Audience, with `roles` (not group names) from the API's linked App
+- [ ] No `resource_access` entry without a matching registered audience and at least one of the `roles` / `permissions` scopes
 - [ ] No top-level `groups` claim (Modgud is an identity hub, not a groups-passthrough — see [Concepts → Authorization (RBAC)](../../concepts/groups-and-authorization))
 
 ## 20. Permission gating & bypass tiers

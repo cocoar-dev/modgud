@@ -41,8 +41,9 @@ Permission strings inside an App's catalog are **two segments**:
 The App context is implicit from the catalog container — the string
 itself never carries an app slug. When the resolver sweeps a user's
 effective permissions for a given app, it works against that App's
-catalog; when UserInfo emits a per-Audience block, the audience
-determines which app's catalog applies.
+catalog; when a token-bound `resource_access` block is built, the
+OAuth API identified by the audience determines which App catalog
+applies.
 
 | Example | Meaning |
 | --- | --- |
@@ -64,7 +65,7 @@ There is **no app-wide bypass tier** (`<app>:admin`). Bypass is either
 realm-wide or resource-wide; nothing in between. `realm:admin` is
 intentionally narrow — only the System Admin default role carries it.
 
-For the full evaluator + emission story (per-Audience UserInfo,
+For the full evaluator + emission story (per-Audience token claims,
 bypass-pre-expansion, per-RS subset narrowing) see the canonical
 [Permissions reference](./permissions).
 

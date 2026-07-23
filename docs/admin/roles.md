@@ -171,5 +171,9 @@ Many small roles, each tied to a clear resource, compose freely into groups. A "
 :::
 
 ::: tip Per-app roles
-Roles for Acme-Tasks link to the Acme-Tasks Application, not `modgud`. They show up in the right permission lists, and `[Authorize(Roles = "...")]` in the Acme-Tasks backend finds them via the `resource_access["acme-tasks"]` claim in the token.
+Roles for Acme-Tasks link to the Acme-Tasks Application, not `modgud`.
+If its backend is registered with Audience `acme-tasks-api`, then
+`[Authorize(Roles = "...")]` finds them through
+`resource_access["acme-tasks-api"].roles` when the token targets that
+API and the `roles` scope was granted.
 :::

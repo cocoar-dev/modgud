@@ -22,11 +22,12 @@ emission, full 2FA spectrum, GDPR self-service.
   bypass tiers, no more. Application roles bind to one App; a pure
   `realm:admin` role is the explicit realm-local exception. Groups
   carry a `BoundTo` activation list.
-- **Keycloak-style `resource_access` on UserInfo** — per-audience
-  blocks with bypass pre-expansion and per-RS subset narrowing. A
-  drop-in `IClaimsTransformation` library flattens the right block
-  into `ClaimTypes.Role` so `[Authorize(Roles = "...")]` works
-  without per-endpoint plumbing.
+- **Keycloak-shaped `resource_access` authorization claims** — when a
+  token targets a registered OAuth API and requests `roles` and/or
+  `permissions`, Modgud emits a block keyed by that API's exact
+  audience, with bypass pre-expansion and per-RS subset narrowing.
+  `Modgud.AspNetCore.ResourceServer` projects only its configured
+  audience block into native role and permission claims.
 - **Full 2FA spectrum + WebAuthn** — TOTP, Email-OTP, FIDO2/Passkey,
   Magic Link, recovery codes. 2FA enforcement middleware with grace
   period and per-user override.

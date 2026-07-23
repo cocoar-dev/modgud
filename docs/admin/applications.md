@@ -110,7 +110,8 @@ the app's slug and link it to the app. Its `PermissionIds` declare
 which subset of the catalog this resource server gates on (full
 catalog is the typical default; tighten for microservices that only
 need a slice). This is the identity Modgud uses to compute the
-per-Audience `resource_access` block in UserInfo.
+audience-keyed `resource_access` block at the token boundary. The key
+is the OAuth API Audience, not this App's slug.
 
 ## Extending or changing the catalog
 

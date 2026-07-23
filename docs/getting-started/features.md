@@ -42,7 +42,7 @@ A point-by-point list of what Modgud delivers out of the box.
 - Apps also carry their own soft configuration facet — origin, branding, and login posture — while still sharing the realm's user pool and a single `sub` per user
 
 ### Permission distribution to resource servers
-- **Own `resource_access` claim** (shaped like Keycloak's nested format for familiarity) emitted in `/connect/userinfo`, keyed by app slug, per-Audience
+- **Own `resource_access` claim** (shaped like Keycloak's nested format for familiarity), keyed by the exact registered OAuth API Audience when that audience and the `roles` and/or `permissions` scope are present
 - **Bypass-pre-expanded + per-RS narrowed** — consumers do straight exact-match without porting the evaluator
 - **`Modgud.AspNetCore.ResourceServer`** supports local JWT validation and reference-token introspection; each authentication scheme projects its own audience block into native role and permission claims
 
@@ -147,7 +147,7 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 - JWT validation is local; reference-token validation uses RFC 7662 introspection for immediate revocation
 
 ### UserInfo as the permission delivery channel
-- `/connect/userinfo` emits `resource_access` keyed by app slug, per Audience
+- JWT access tokens, UserInfo and authorized introspection responses can expose the same audience-keyed `resource_access` claim
 - Bypass-pre-expanded server-side + narrowed to each RS's declared `OAuthApi.PermissionIds` subset
 - Delivered via standard JWT claims, UserInfo, and token-introspection responses — any OIDC-aware consumer can parse it. `Modgud.AspNetCore.ResourceServer` adds audience selection and scheme-local claims projection for ASP.NET Core; it's not a custom protocol
 
