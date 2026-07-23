@@ -84,9 +84,9 @@ public class SamlMetadataRefreshService(
 
         if (refreshed > 0 || failed > 0)
         {
-            securityAudit.RecordPlatform(new PlatformAuditRecord
+            securityAudit.RecordPlatformTelemetry(new PlatformAuditRecord
             {
-                EventType = AuditEvents.SamlMetadataRefreshed,
+                EventType = AuditEvents.SamlMetadataRefreshCompleted,
                 OutcomeCode = failed == 0 ? AuditOutcomes.Succeeded : AuditOutcomes.Completed,
                 ReasonCode = failed == 0 ? null : "partial-failure",
                 OperationCode = "refresh-due-providers",

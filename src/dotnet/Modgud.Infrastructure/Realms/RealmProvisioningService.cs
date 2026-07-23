@@ -219,6 +219,14 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         csBuilder.Database = tenantDbName;
         var tenantCs = csBuilder.ConnectionString;
 
+        await _securityAudit.RecordPlatformRequiredAsync(new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RealmProvisioned,
+            TargetRealmSlug = dto.Slug,
+            OutcomeCode = AuditOutcomes.Initiated,
+            OperationCode = "provision-realm",
+        }, ct);
+
         // Raw SQL: create the PostgreSQL database (DDL — cannot use Marten/parameters)
         var bootstrapBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value) { Database = "postgres" };
         await using (var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString))
@@ -242,13 +250,6 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
 #pragma warning restore CA2100
                 await createDbCmd.ExecuteNonQueryAsync(ct);
                 _logger.LogInformation("Created database {DbName} for realm {Slug}", tenantDbName, dto.Slug);
-                _securityAudit.RecordPlatform(new PlatformAuditRecord
-                {
-                    EventType = AuditEvents.RealmProvisioned,
-                    TargetRealmSlug = dto.Slug,
-                    OutcomeCode = AuditOutcomes.Succeeded,
-                    OperationCode = "create-database",
-                });
             }
         }
 
@@ -277,6 +278,13 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         };
 
         session.Store(realm);
+        _securityAudit.StorePlatformRequired(session, new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RealmProvisioned,
+            TargetRealmSlug = dto.Slug,
+            OutcomeCode = AuditOutcomes.Completed,
+            OperationCode = "provision-realm",
+        });
         await session.SaveChangesAsync(ct);
 
         // Per-realm OAuth seeding — standard OIDC scopes land in the new tenant DB.
@@ -483,6 +491,16 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         var mainDbName = csBuilder.Database!;
         var tenantDbName = $"{mainDbName}_{slug}";
 
+        await _securityAudit.RecordPlatformRequiredAsync(new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RealmProvisioned,
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Initiated,
+            OperationCode = "hard-delete",
+            ReasonCode = "operator-request",
+        }, ct);
+
         // 1. Hand the tenant back to Marten. RemoveTenantAsync evicts it from the
         //    tenancy's in-memory cache, disposes its Npgsql data source (gracefully
         //    closing the pool before the drop) and deletes the registry row in
@@ -518,16 +536,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         // 3. Remove the global Realm record and invalidate the cache so middleware
         //    stops resolving the now-dropped realm.
         session.Delete(realm);
-        await session.SaveChangesAsync(ct);
-        _realmCache.Invalidate();
-        await ReconcileJobSchedulesAsync(ct);
-
-        _logger.LogWarning(
-            "Hard-deleted realm {Slug}: dropped tenant database {DbName} and removed the global Realm record. " +
-            "Irreversible — event streams, signing keys and the OpenIddict token store are gone.",
-            slug, tenantDbName);
-
-        _securityAudit.RecordPlatform(new PlatformAuditRecord
+        _securityAudit.StorePlatformRequired(session, new PlatformAuditRecord
         {
             EventType = AuditEvents.RealmProvisioned,
             Severity = AuditSeverity.Warning,
@@ -536,6 +545,14 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             OperationCode = "hard-delete",
             ReasonCode = "operator-request",
         });
+        await session.SaveChangesAsync(ct);
+        _realmCache.Invalidate();
+        await ReconcileJobSchedulesAsync(ct);
+
+        _logger.LogWarning(
+            "Hard-deleted realm {Slug}: dropped tenant database {DbName} and removed the global Realm record. " +
+            "Irreversible — event streams, signing keys and the OpenIddict token store are gone.",
+            slug, tenantDbName);
 
         return true;
     }
@@ -563,6 +580,15 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         }
 
         session.Delete(realm);
+        _securityAudit.StorePlatformRequired(session, new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RealmProvisioned,
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Completed,
+            OperationCode = "rollback-provisioning",
+            ReasonCode = "bootstrap-invite-failed",
+        });
         await session.SaveChangesAsync(ct);
 
         _realmCache.Invalidate();
@@ -572,15 +598,6 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             "Rolled back partially-provisioned realm {Slug} after a post-create bootstrap failure. " +
             "The tenant database is left in place for idempotent reuse on retry.",
             slug);
-        _securityAudit.RecordPlatform(new PlatformAuditRecord
-        {
-            EventType = AuditEvents.RealmProvisioned,
-            Severity = AuditSeverity.Warning,
-            TargetRealmSlug = slug,
-            OutcomeCode = AuditOutcomes.Completed,
-            OperationCode = "rollback-provisioning",
-            ReasonCode = "bootstrap-invite-failed",
-        });
     }
 
     public async Task EnsureSystemRealmExistsAsync(CancellationToken ct = default)
@@ -710,6 +727,15 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         target.UpdatedAt = DateTimeOffset.UtcNow;
         session.Store(target);
 
+        _securityAudit.StorePlatformRequired(session, new PlatformAuditRecord
+        {
+            EventType = AuditEvents.ControlPlaneTransferred,
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = targetSlug,
+            OutcomeCode = AuditOutcomes.Completed,
+            OperationCode = "transfer",
+            Count = otherHolders.Count,
+        });
         await session.SaveChangesAsync(ct);
 
         // The flag move is committed. Invalidate the cache NOW (load-bearing —
@@ -743,16 +769,6 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         _logger.LogWarning(
             "Control plane transferred to realm {Slug} (cleared {Count} previous holder(s))",
             targetSlug, otherHolders.Count);
-        _securityAudit.RecordPlatform(new PlatformAuditRecord
-        {
-            EventType = AuditEvents.ControlPlaneTransferred,
-            Severity = AuditSeverity.Warning,
-            TargetRealmSlug = targetSlug,
-            OutcomeCode = AuditOutcomes.Completed,
-            OperationCode = "transfer",
-            Count = otherHolders.Count,
-        });
-
         return target;
     }
 
@@ -814,6 +830,14 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             }
         }
 
+        await _securityAudit.RecordPlatformRequiredAsync(new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RealmAdopted,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Initiated,
+            OperationCode = "adopt-database",
+        }, ct);
+
         // Register in Marten's tenant registry + apply schema idempotently
         // (existing data is preserved; this only adds missing tables/indexes).
         var tenancy = (Marten.Storage.MasterTableTenancy)_tenantedStore.Options.Tenancy;
@@ -834,6 +858,13 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             CreatedAt = DateTimeOffset.UtcNow,
         };
         session.Store(realm);
+        _securityAudit.StorePlatformRequired(session, new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RealmAdopted,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Completed,
+            OperationCode = "adopt-database",
+        });
         await session.SaveChangesAsync(ct);
 
         // Idempotent catalog seeding — won't clobber existing rows in the
@@ -850,13 +881,6 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         _realmCache.Invalidate();
         await ReconcileJobSchedulesAsync(ct);
         _logger.LogInformation("Adopted existing database {DbName} as realm {Slug}", tenantDbName, slug);
-        _securityAudit.RecordPlatform(new PlatformAuditRecord
-        {
-            EventType = AuditEvents.RealmAdopted,
-            TargetRealmSlug = slug,
-            OutcomeCode = AuditOutcomes.Succeeded,
-            OperationCode = "adopt-database",
-        });
         return realm;
     }
 

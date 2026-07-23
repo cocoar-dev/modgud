@@ -107,7 +107,7 @@ public static class AccountEndpoints
                 // by latency. Burn an equivalent hash verify before the 401.
                 PasswordTimingSafety.EqualizeFailure(userManager.PasswordHasher, request.Password);
 
-                securityAudit.Record(new SecurityAuditRecord
+                securityAudit.RecordAbuse(new SecurityAuditRecord
                 {
                     EventType = AuditEvents.LoginFailedUnknownUser,
                     Severity = AuditSeverity.Warning,
@@ -138,7 +138,7 @@ public static class AccountEndpoints
                 if (realmSettings?.SelfRegistration?.RequireEmailVerification == true && !user.EmailConfirmed)
                 {
                     await signInManager.SignOutAsync();
-                    securityAudit.Record(new SecurityAuditRecord
+                    securityAudit.RecordAbuse(new SecurityAuditRecord
                     {
                         EventType = AuditEvents.LoginFailed,
                         Severity = AuditSeverity.Warning,

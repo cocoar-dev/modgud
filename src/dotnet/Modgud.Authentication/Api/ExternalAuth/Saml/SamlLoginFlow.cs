@@ -57,9 +57,9 @@ public class SamlLoginFlow(
     {
         if (provider.IdpMetadata is null)
         {
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordTelemetry(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
+                EventType = AuditEvents.ExternalLoginConfigurationError,
                 Severity = AuditSeverity.Warning,
                 LoginProviderId = provider.LoginProviderId,
                 AuthenticationMethod = "saml",
@@ -72,9 +72,9 @@ public class SamlLoginFlow(
         if (string.IsNullOrEmpty(provider.IdpMetadata.SsoRedirectUrl)
             && string.IsNullOrEmpty(provider.IdpMetadata.SsoPostUrl))
         {
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordTelemetry(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
+                EventType = AuditEvents.ExternalLoginConfigurationError,
                 Severity = AuditSeverity.Warning,
                 LoginProviderId = provider.LoginProviderId,
                 AuthenticationMethod = "saml",
@@ -150,9 +150,9 @@ public class SamlLoginFlow(
             logger.LogWarning(ex,
                 "SAML context build failed for provider {Id}",
                 provider.LoginProviderId);
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordTelemetry(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
+                EventType = AuditEvents.ExternalLoginConfigurationError,
                 Severity = AuditSeverity.Warning,
                 LoginProviderId = provider.LoginProviderId,
                 IpAddress = ip,
@@ -179,32 +179,32 @@ public class SamlLoginFlow(
             logger.LogWarning(ex,
                 "SAML response read/validate failed for provider {Id}",
                 provider.LoginProviderId);
-            securityAudit.Record(new SecurityAuditRecord
+            await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
+                EventType = AuditEvents.ExternalLoginProtocolRejected,
                 Severity = AuditSeverity.Warning,
                 LoginProviderId = provider.LoginProviderId,
                 IpAddress = ip,
                 AuthenticationMethod = "saml",
                 OutcomeCode = AuditOutcomes.Rejected,
                 ReasonCode = "response-validation-failed",
-            });
+            }, ct);
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
             return Results.Redirect("/login?error=saml-invalid");
         }
 
         if (saml2Response.Status != Saml2StatusCodes.Success)
         {
-            securityAudit.Record(new SecurityAuditRecord
+            await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
+                EventType = AuditEvents.ExternalLoginProtocolRejected,
                 Severity = AuditSeverity.Warning,
                 LoginProviderId = provider.LoginProviderId,
                 IpAddress = ip,
                 AuthenticationMethod = "saml",
                 OutcomeCode = AuditOutcomes.Rejected,
                 ReasonCode = $"saml-status:{saml2Response.Status}",
-            });
+            }, ct);
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
             return Results.Redirect($"/login?error=saml-{Uri.EscapeDataString(saml2Response.Status.ToString() ?? "status")}");
         }
@@ -218,7 +218,7 @@ public class SamlLoginFlow(
         var sigError = CheckRequiredSignatures(saml2Response.XmlDocument, provider.FlavorData);
         if (sigError is not null)
         {
-            securityAudit.Record(new SecurityAuditRecord
+            await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
             {
                 EventType = AuditEvents.SamlSignatureRejected,
                 Severity = AuditSeverity.Warning,
@@ -227,7 +227,7 @@ public class SamlLoginFlow(
                 AuthenticationMethod = "saml",
                 OutcomeCode = AuditOutcomes.Blocked,
                 ReasonCode = sigError,
-            });
+            }, ct);
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
             return Results.Redirect($"/login?error=saml-{Uri.EscapeDataString(sigError)}");
         }
@@ -261,16 +261,16 @@ public class SamlLoginFlow(
                 "SAML response rejected ({Reason}) for provider {Id} — InResponseTo={InResponseTo}",
                 reason, provider.LoginProviderId, saml2Response.InResponseToAsString);
 
-            securityAudit.Record(new SecurityAuditRecord
+            await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
+                EventType = AuditEvents.ExternalLoginProtocolRejected,
                 Severity = AuditSeverity.Warning,
                 LoginProviderId = provider.LoginProviderId,
                 IpAddress = ip,
                 AuthenticationMethod = "saml",
                 OutcomeCode = AuditOutcomes.Rejected,
                 ReasonCode = $"request-correlation:{reason}",
-            });
+            }, ct);
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
             return Results.Redirect($"/login?error=saml-{reason}");
         }

@@ -228,9 +228,9 @@ public class DynamicSamlSchemeManager(
         {
             var oldCount = existing.IdpMetadata?.SigningCertificatesBase64.Count ?? 0;
             var newCount = fresh.SigningCertificatesBase64.Count;
-            securityAudit.Record(new SecurityAuditRecord
+            await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
             {
-                EventType = AuditEvents.SamlMetadataRefreshed,
+                EventType = AuditEvents.SamlSigningCertificatesChanged,
                 RealmSlug = existing.RealmSlug,
                 ActorKind = AuditActorKind.System,
                 LoginProviderId = loginProviderId,
@@ -238,7 +238,7 @@ public class DynamicSamlSchemeManager(
                 OperationCode = "signing-certificates-changed",
                 Count = newCount,
                 RelatedCount = oldCount,
-            });
+            }, ct);
         }
 
         return true;

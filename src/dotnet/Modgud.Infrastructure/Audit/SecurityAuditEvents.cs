@@ -43,6 +43,8 @@ public sealed class RealmSecurityAuditEvent
     public int? ReusedCount { get; init; }
     public int? RetentionDays { get; init; }
     public DateTimeOffset? EffectiveAt { get; init; }
+    public DateTimeOffset? FirstObservedAt { get; init; }
+    public DateTimeOffset? LastObservedAt { get; init; }
 }
 
 /// <summary>

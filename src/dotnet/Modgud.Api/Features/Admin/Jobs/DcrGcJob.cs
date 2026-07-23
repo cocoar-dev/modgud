@@ -90,7 +90,7 @@ public class DcrGcJob(
             tenantSession.Events.Append(state.Id, aggregate.Delete());
             swept++;
 
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordTelemetry(new SecurityAuditRecord
             {
                 EventType = AuditEvents.DcrClientGarbageCollected,
                 RealmSlug = tenantId,

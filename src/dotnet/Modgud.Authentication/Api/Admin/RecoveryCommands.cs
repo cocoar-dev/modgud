@@ -124,7 +124,7 @@ internal sealed class Reset2FaCommand : IRecoveryCommand
 
         await session.SaveChangesAsync();
 
-        securityAudit.Record(new SecurityAuditRecord
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Severity = AuditSeverity.Warning,
@@ -199,7 +199,7 @@ internal sealed class SetEmailCommand : IRecoveryCommand
 
         await session.SaveChangesAsync();
 
-        securityAudit.Record(new SecurityAuditRecord
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Severity = AuditSeverity.Warning,
@@ -270,7 +270,7 @@ internal sealed class MagicLinkCommand : IRecoveryCommand
         var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, ctx.Env);
         var url = $"{appUrl}/magic-login?userId={user.Id}&token={Uri.EscapeDataString(token)}";
 
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Severity = AuditSeverity.Warning,
@@ -311,7 +311,7 @@ internal sealed class RebuildProjectionsCommand : IRecoveryCommand
 
         ctx.WriteLine("Rebuilding Marten projections...");
         var securityAudit = ctx.Services.GetRequiredService<ISecurityAuditLog>();
-        securityAudit.Record(new SecurityAuditRecord
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Severity = AuditSeverity.Warning,
@@ -334,7 +334,7 @@ internal sealed class RebuildProjectionsCommand : IRecoveryCommand
         await daemon.RebuildProjectionAsync<PermissionRoleProjection>(timeout, CancellationToken.None);
         ctx.WriteLine("  OK PermissionRoleProjection (mt_doc_permissionrole)");
 
-        securityAudit.Record(new SecurityAuditRecord
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Severity = AuditSeverity.Warning,
@@ -385,7 +385,7 @@ internal sealed class BootstrapAdminCommand : IRecoveryCommand
         var securityAudit = ctx.Services.GetRequiredService<ISecurityAuditLog>();
         if (result.IsError)
         {
-            securityAudit.Record(new SecurityAuditRecord
+            await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
             {
                 EventType = AuditEvents.RecoveryCliInvoked,
                 Severity = AuditSeverity.Warning,
@@ -400,7 +400,7 @@ internal sealed class BootstrapAdminCommand : IRecoveryCommand
         }
 
         var admin = result.Value;
-        securityAudit.Record(new SecurityAuditRecord
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Severity = AuditSeverity.Warning,
@@ -438,7 +438,7 @@ internal sealed class BootstrapAdminCommand : IRecoveryCommand
             issuedBy: null, // CLI invocation — no authenticated CP-admin
             realm);
 
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Severity = AuditSeverity.Warning,
@@ -537,7 +537,7 @@ internal sealed class MigrateCcCredentialsCommand : IRecoveryCommand
 
         await session.SaveChangesAsync();
 
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Severity = AuditSeverity.Warning,
@@ -638,7 +638,7 @@ internal sealed class RealmAddDomainCommand : IRecoveryCommand
 
         ctx.WriteLine($"✓ Added '{domain}' to realm '{slug}'. Now: [{string.Join(", ", realm.Domains)}]");
         ctx.PrintRestartHint();
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatform(new PlatformAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatformRequiredAsync(new PlatformAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Severity = AuditSeverity.Warning,
@@ -694,7 +694,7 @@ internal sealed class RealmRemoveDomainCommand : IRecoveryCommand
 
         ctx.WriteLine($"✓ Removed '{domain}' from realm '{slug}'. Now: [{string.Join(", ", remaining)}]");
         ctx.PrintRestartHint();
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatform(new PlatformAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatformRequiredAsync(new PlatformAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Severity = AuditSeverity.Warning,
@@ -755,7 +755,7 @@ internal sealed class RealmSetPrimaryDomainCommand : IRecoveryCommand
         ctx.WriteLine("  affected users must re-register their passkeys (other login");
         ctx.WriteLine("  methods are unaffected).");
         ctx.PrintRestartHint();
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatform(new PlatformAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatformRequiredAsync(new PlatformAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Severity = AuditSeverity.Warning,
@@ -810,7 +810,7 @@ internal sealed class ControlPlaneCommand : IRecoveryCommand
                 if (result.IsError)
                     return ctx.Fail($"{result.FirstError.Code}: {result.FirstError.Description}");
 
-                ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatform(new PlatformAuditRecord
+                await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatformRequiredAsync(new PlatformAuditRecord
                 {
                     EventType = AuditEvents.RecoveryCliInvoked,
                     Severity = AuditSeverity.Warning,
@@ -856,7 +856,7 @@ internal sealed class AdoptTenantCommand : IRecoveryCommand
         if (result.IsError)
             return ctx.Fail($"{result.FirstError.Code}: {result.FirstError.Description}");
 
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatform(new PlatformAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatformRequiredAsync(new PlatformAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Severity = AuditSeverity.Warning,
@@ -886,7 +886,7 @@ internal sealed class RotateSigningKeyCommand : IRecoveryCommand
         var creds = await keyStore.RotateAsync(ctx.RealmSlug);
         var kid = creds.Key.KeyId;
 
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
             Severity = AuditSeverity.Warning,

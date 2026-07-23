@@ -188,7 +188,7 @@ public static class MagicLinkEndpoints
 
             if (challenge is null || challenge.IsExpired || challenge.IsConsumed)
             {
-                securityAudit.Record(new SecurityAuditRecord
+                securityAudit.RecordAbuse(new SecurityAuditRecord
                 {
                     EventType = AuditEvents.MagicLinkInvalid,
                     Severity = AuditSeverity.Warning,
@@ -213,7 +213,7 @@ public static class MagicLinkEndpoints
             var user = await userManager.FindByIdAsync(request.UserId.ToString());
             if (user is null || user.IsDeleted || !user.IsActive)
             {
-                securityAudit.Record(new SecurityAuditRecord
+                securityAudit.RecordAbuse(new SecurityAuditRecord
                 {
                     EventType = AuditEvents.LoginFailedUnknownUser,
                     Severity = AuditSeverity.Warning,

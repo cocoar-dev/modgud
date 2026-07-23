@@ -212,9 +212,7 @@ public class SamlSpCertificateService
         }
 
         _session.Store(doc);
-        await _session.SaveChangesAsync(ct);
-
-        _securityAudit.Record(new SecurityAuditRecord
+        _securityAudit.StoreRequired(_session, new SecurityAuditRecord
         {
             EventType = AuditEvents.SamlCertRotated,
             RealmSlug = realmSlug,
@@ -223,6 +221,7 @@ public class SamlSpCertificateService
             KeyId = doc.ActiveCertThumbprint,
             EffectiveAt = doc.ActiveCertNotAfter,
         });
+        await _session.SaveChangesAsync(ct);
 
         return newCert;
     }
@@ -284,9 +283,7 @@ public class SamlSpCertificateService
         };
 
         _session.Store(doc);
-        await _session.SaveChangesAsync(ct);
-
-        _securityAudit.Record(new SecurityAuditRecord
+        _securityAudit.StoreRequired(_session, new SecurityAuditRecord
         {
             EventType = AuditEvents.SamlCertRotated,
             RealmSlug = realmSlug,
@@ -295,6 +292,7 @@ public class SamlSpCertificateService
             KeyId = doc.ActiveCertThumbprint,
             EffectiveAt = doc.ActiveCertNotAfter,
         });
+        await _session.SaveChangesAsync(ct);
 
         return doc;
     }

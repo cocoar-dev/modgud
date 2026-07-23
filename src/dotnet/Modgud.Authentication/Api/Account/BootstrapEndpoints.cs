@@ -50,7 +50,7 @@ public static class BootstrapEndpoints
             var result = await inviteService.ConsumeAsync(request.Token, request.Password);
             if (result.IsError)
             {
-                securityAudit.Record(new SecurityAuditRecord
+                securityAudit.RecordAbuse(new SecurityAuditRecord
                 {
                     EventType = AuditEvents.BootstrapInviteRejected,
                     Severity = AuditSeverity.Warning,

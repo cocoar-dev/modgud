@@ -15,16 +15,23 @@ using Modgud.Infrastructure.Realms;
 namespace Modgud.Infrastructure.Audit;
 
 /// <summary>
-/// Best-effort in-process buffer for realm-owned security events and PII-free
-/// platform events. The background writer routes each envelope to its owning
-/// physical store. F7 (durable delivery) remains a separate decision.
+/// Classified streamless audit sink. Required and incident records are written
+/// synchronously before the caller can report success/rejection. Abuse records
+/// use a bounded aggregating buffer, and reconstructable telemetry uses the same
+/// buffer with an explicit best-effort contract.
 /// </summary>
-public sealed class SecurityAuditLog(IHttpContextAccessor httpContextAccessor) : ISecurityAuditLog
+public sealed class SecurityAuditLog(
+    IHttpContextAccessor httpContextAccessor,
+    IServiceScopeFactory scopeFactory) : ISecurityAuditLog
 {
     private readonly Channel<SecurityAuditEnvelope> _channel =
         Channel.CreateBounded<SecurityAuditEnvelope>(new BoundedChannelOptions(50_000)
         {
-            FullMode = BoundedChannelFullMode.DropWrite,
+            // We intentionally use TryWrite below. Wait mode makes TryWrite
+            // return false when full, allowing us to count the shed raw
+            // occurrence precisely; DropWrite reports acceptance even when it
+            // discards the item.
+            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
         });
 
@@ -33,39 +40,64 @@ public sealed class SecurityAuditLog(IHttpContextAccessor httpContextAccessor) :
     internal ChannelReader<SecurityAuditEnvelope> Reader => _channel.Reader;
     internal long ReadAndResetDropped() => Interlocked.Exchange(ref _dropped, 0);
 
-    public void Record(SecurityAuditRecord record)
-    {
-        try
-        {
-            var http = record.CaptureRequestContext
-                ? httpContextAccessor.HttpContext
-                : null;
-            var subject = record.ActorSubjectId ??
-                (record.ActorKind is null or AuditActorKind.User ? TryGetSubject(http) : null);
-            var ip = record.IpAddress ?? http?.Connection.RemoteIpAddress?.ToString();
-            var requestUserAgent = http?.Request.Headers.UserAgent.ToString();
-            var userAgent = record.UserAgent ??
-                (string.IsNullOrWhiteSpace(requestUserAgent) ? null : requestUserAgent);
-            var correlationId = record.CorrelationId ?? CurrentCorrelationId(http);
-            var actorKind = record.ActorKind
-                ?? (subject is not null
-                    ? AuditActorKind.User
-                    : record.UnknownIdentifier is not null
-                        ? AuditActorKind.AnonymousIdentifier
-                        : record.OAuthClientId is not null
-                            ? AuditActorKind.OAuthClient
-                            : AuditActorKind.System);
+    public ValueTask RecordRequiredAsync(
+        SecurityAuditRecord record,
+        CancellationToken ct = default)
+        => PersistRealmNowAsync(record, AuditDurabilityClass.Required, ct);
 
-            Enqueue(SecurityAuditEnvelope.ForRealm(
-                record.RealmSlug ?? TenantContext.Current,
+    public void StoreRequired(
+        IDocumentSession session,
+        SecurityAuditRecord record)
+    {
+        EnsureClass(record.EventType, AuditDurabilityClass.Required);
+        var envelope = CaptureRealmEnvelope(record, AuditDurabilityClass.Required);
+        SecurityAuditPersistence.StoreRequired(session, envelope);
+    }
+
+    public ValueTask RecordIncidentAsync(
+        SecurityAuditRecord record,
+        CancellationToken ct = default)
+        => PersistRealmNowAsync(record, AuditDurabilityClass.Incident, ct);
+
+    public void RecordAbuse(SecurityAuditRecord record)
+        => EnqueueRealm(record, AuditDurabilityClass.Abuse);
+
+    public void RecordTelemetry(SecurityAuditRecord record)
+        => EnqueueRealm(record, AuditDurabilityClass.Telemetry);
+
+    public ValueTask RecordPlatformRequiredAsync(
+        PlatformAuditRecord record,
+        CancellationToken ct = default)
+        => PersistPlatformNowAsync(record, AuditDurabilityClass.Required, ct);
+
+    public void StorePlatformRequired(
+        IDocumentSession session,
+        PlatformAuditRecord record)
+    {
+        EnsureClass(record.EventType, AuditDurabilityClass.Required);
+        SecurityAuditPersistence.StorePlatformRequired(
+            session,
+            SecurityAuditEnvelope.ForPlatform(
                 record with
                 {
-                    ActorSubjectId = subject,
-                    IpAddress = ip,
-                    UserAgent = userAgent,
-                    CorrelationId = correlationId,
-                    ActorKind = actorKind,
-                }));
+                    CorrelationId = record.CorrelationId
+                        ?? CurrentCorrelationId(httpContextAccessor.HttpContext),
+                },
+                AuditDurabilityClass.Required));
+    }
+
+    public void RecordPlatformTelemetry(PlatformAuditRecord record)
+    {
+        EnsureClass(record.EventType, AuditDurabilityClass.Telemetry);
+        try
+        {
+            Enqueue(SecurityAuditEnvelope.ForPlatform(
+                record with
+                {
+                    CorrelationId = record.CorrelationId
+                        ?? CurrentCorrelationId(httpContextAccessor.HttpContext),
+                },
+                AuditDurabilityClass.Telemetry));
         }
         catch
         {
@@ -73,19 +105,90 @@ public sealed class SecurityAuditLog(IHttpContextAccessor httpContextAccessor) :
         }
     }
 
-    public void RecordPlatform(PlatformAuditRecord record)
+    private async ValueTask PersistRealmNowAsync(
+        SecurityAuditRecord record,
+        AuditDurabilityClass expected,
+        CancellationToken ct)
     {
+        EnsureClass(record.EventType, expected);
+        var envelope = CaptureRealmEnvelope(record, expected);
+        using var scope = scopeFactory.CreateScope();
+        await SecurityAuditPersistence.PersistAsync(
+            [envelope],
+            scope.ServiceProvider.GetRequiredService<IDocumentStore>(),
+            scope.ServiceProvider.GetRequiredService<IGlobalStore>(),
+            ct);
+    }
+
+    private async ValueTask PersistPlatformNowAsync(
+        PlatformAuditRecord record,
+        AuditDurabilityClass expected,
+        CancellationToken ct)
+    {
+        EnsureClass(record.EventType, expected);
+        var envelope = SecurityAuditEnvelope.ForPlatform(
+            record with
+            {
+                CorrelationId = record.CorrelationId
+                    ?? CurrentCorrelationId(httpContextAccessor.HttpContext),
+            },
+            expected);
+        using var scope = scopeFactory.CreateScope();
+        await SecurityAuditPersistence.PersistAsync(
+            [envelope],
+            scope.ServiceProvider.GetRequiredService<IDocumentStore>(),
+            scope.ServiceProvider.GetRequiredService<IGlobalStore>(),
+            ct);
+    }
+
+    private void EnqueueRealm(
+        SecurityAuditRecord record,
+        AuditDurabilityClass expected)
+    {
+        EnsureClass(record.EventType, expected);
         try
         {
-            Enqueue(SecurityAuditEnvelope.ForPlatform(record with
-            {
-                CorrelationId = record.CorrelationId ?? CurrentCorrelationId(httpContextAccessor.HttpContext),
-            }));
+            Enqueue(CaptureRealmEnvelope(record, expected));
         }
         catch
         {
             Interlocked.Increment(ref _dropped);
         }
+    }
+
+    private SecurityAuditEnvelope CaptureRealmEnvelope(
+        SecurityAuditRecord record,
+        AuditDurabilityClass durabilityClass)
+    {
+        var http = record.CaptureRequestContext
+            ? httpContextAccessor.HttpContext
+            : null;
+        var subject = record.ActorSubjectId ??
+            (record.ActorKind is null or AuditActorKind.User ? TryGetSubject(http) : null);
+        var ip = record.IpAddress ?? http?.Connection.RemoteIpAddress?.ToString();
+        var requestUserAgent = http?.Request.Headers.UserAgent.ToString();
+        var userAgent = record.UserAgent ??
+            (string.IsNullOrWhiteSpace(requestUserAgent) ? null : requestUserAgent);
+        var actorKind = record.ActorKind
+            ?? (subject is not null
+                ? AuditActorKind.User
+                : record.UnknownIdentifier is not null
+                    ? AuditActorKind.AnonymousIdentifier
+                    : record.OAuthClientId is not null
+                        ? AuditActorKind.OAuthClient
+                        : AuditActorKind.System);
+
+        return SecurityAuditEnvelope.ForRealm(
+            record.RealmSlug ?? TenantContext.Current,
+            record with
+            {
+                ActorSubjectId = subject,
+                IpAddress = ip,
+                UserAgent = userAgent,
+                CorrelationId = record.CorrelationId ?? CurrentCorrelationId(http),
+                ActorKind = actorKind,
+            },
+            durabilityClass);
     }
 
     private void Enqueue(SecurityAuditEnvelope envelope)
@@ -108,7 +211,26 @@ public sealed class SecurityAuditLog(IHttpContextAccessor httpContextAccessor) :
             batch.Add(entry);
 
         if (batch.Count > 0)
-            await SecurityAuditPersistence.PersistAsync(batch, realmStore, globalStore, ct);
+        {
+            var consolidated = SecurityAuditBatching.ConsolidateAbuse(batch);
+            await SecurityAuditPersistence.PersistAsync(
+                consolidated,
+                realmStore,
+                globalStore,
+                ct);
+        }
+    }
+
+    private static void EnsureClass(
+        string eventType,
+        AuditDurabilityClass expected)
+    {
+        var actual = AuditDurability.Classify(eventType);
+        if (actual != expected)
+        {
+            throw new InvalidOperationException(
+                $"Audit event '{eventType}' is classified as {actual}, not {expected}.");
+        }
     }
 
     private static Guid? TryGetSubject(HttpContext? http)
@@ -125,15 +247,98 @@ public sealed class SecurityAuditLog(IHttpContextAccessor httpContextAccessor) :
 
 internal sealed record SecurityAuditEnvelope
 {
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public DateTimeOffset CapturedAt { get; init; } = DateTimeOffset.UtcNow;
+    public required AuditDurabilityClass DurabilityClass { get; init; }
     public required string? RealmSlug { get; init; }
     public SecurityAuditRecord? RealmRecord { get; init; }
     public PlatformAuditRecord? PlatformRecord { get; init; }
 
-    public static SecurityAuditEnvelope ForRealm(string realmSlug, SecurityAuditRecord record)
-        => new() { RealmSlug = realmSlug, RealmRecord = record };
+    public static SecurityAuditEnvelope ForRealm(
+        string realmSlug,
+        SecurityAuditRecord record,
+        AuditDurabilityClass durabilityClass)
+        => new()
+        {
+            RealmSlug = realmSlug,
+            RealmRecord = record,
+            DurabilityClass = durabilityClass,
+        };
 
-    public static SecurityAuditEnvelope ForPlatform(PlatformAuditRecord record)
-        => new() { RealmSlug = null, PlatformRecord = record };
+    public static SecurityAuditEnvelope ForPlatform(
+        PlatformAuditRecord record,
+        AuditDurabilityClass durabilityClass)
+        => new()
+        {
+            RealmSlug = null,
+            PlatformRecord = record,
+            DurabilityClass = durabilityClass,
+        };
+}
+
+internal static class SecurityAuditBatching
+{
+    public static IReadOnlyCollection<SecurityAuditEnvelope> ConsolidateAbuse(
+        IReadOnlyCollection<SecurityAuditEnvelope> batch)
+    {
+        var result = batch
+            .Where(x => x.DurabilityClass != AuditDurabilityClass.Abuse)
+            .ToList();
+
+        foreach (var group in batch
+                     .Where(x => x.DurabilityClass == AuditDurabilityClass.Abuse)
+                     .GroupBy(AbuseKey.From))
+        {
+            var first = group.First();
+            var record = first.RealmRecord!;
+            result.Add(SecurityAuditEnvelope.ForRealm(
+                first.RealmSlug!,
+                record with
+                {
+                    Count = group.Sum(x => x.RealmRecord!.Count ?? 1),
+                    FirstObservedAt = group.Min(x => x.CapturedAt),
+                    LastObservedAt = group.Max(x => x.CapturedAt),
+                },
+                AuditDurabilityClass.Abuse));
+        }
+
+        return result;
+    }
+
+    private sealed record AbuseKey(
+        string RealmSlug,
+        string EventType,
+        string? ReasonCode,
+        string? OperationCode,
+        AuditActorKind? ActorKind,
+        Guid? ActorSubjectId,
+        Guid? TargetSubjectId,
+        string? UnknownIdentifier,
+        string? IpAddress,
+        string? OAuthClientId,
+        Guid? ApplicationId,
+        Guid? LoginProviderId,
+        string? AuthenticationMethod)
+    {
+        public static AbuseKey From(SecurityAuditEnvelope envelope)
+        {
+            var record = envelope.RealmRecord!;
+            return new(
+                envelope.RealmSlug!,
+                record.EventType,
+                record.ReasonCode,
+                record.OperationCode,
+                record.ActorKind,
+                record.ActorSubjectId,
+                record.TargetSubjectId,
+                record.UnknownIdentifier,
+                record.IpAddress,
+                record.OAuthClientId,
+                record.ApplicationId,
+                record.LoginProviderId,
+                record.AuthenticationMethod);
+        }
+    }
 }
 
 internal static class SecurityAuditPersistence
@@ -151,9 +356,11 @@ internal static class SecurityAuditPersistence
                      .Where(x => x.RealmRecord is not null)
                      .GroupBy(x => x.RealmSlug!, StringComparer.OrdinalIgnoreCase))
         {
-            var key = await GetOrCreateFingerprintKeyAsync(realmStore, realmGroup.Key, ct);
+            var key = realmGroup.Any(x => x.RealmRecord!.UnknownIdentifier is not null)
+                ? await GetOrCreateFingerprintKeyAsync(realmStore, realmGroup.Key, ct)
+                : null;
             var events = realmGroup
-                .Select(x => ToRealmEvent(x.RealmRecord!, key))
+                .Select(x => ToRealmEvent(x, key))
                 .ToArray();
 
             await using var session = realmStore.LightweightSession(realmGroup.Key);
@@ -163,7 +370,7 @@ internal static class SecurityAuditPersistence
 
         var platformEvents = batch
             .Where(x => x.PlatformRecord is not null)
-            .Select(x => ToPlatformEvent(x.PlatformRecord!))
+            .Select(ToPlatformEvent)
             .ToArray();
 
         if (platformEvents.Length > 0)
@@ -174,10 +381,47 @@ internal static class SecurityAuditPersistence
         }
     }
 
-    private static RealmSecurityAuditEvent ToRealmEvent(SecurityAuditRecord record, byte[] key)
-        => new()
+    public static void StoreRequired(
+        IDocumentSession session,
+        SecurityAuditEnvelope envelope)
+    {
+        var record = envelope.RealmRecord
+            ?? throw new ArgumentException("A realm audit envelope is required.", nameof(envelope));
+        if (record.UnknownIdentifier is not null)
         {
-            Timestamp = DateTimeOffset.UtcNow,
+            throw new InvalidOperationException(
+                "Required events with an unknown identifier must use RecordRequiredAsync " +
+                "so the identifier can be fingerprinted with the realm-owned key.");
+        }
+
+        if (!string.Equals(session.TenantId, envelope.RealmSlug, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Audit realm '{envelope.RealmSlug}' does not match the Marten session tenant '{session.TenantId}'.");
+        }
+
+        session.Store(ToRealmEvent(envelope, key: null));
+    }
+
+    public static void StorePlatformRequired(
+        IDocumentSession session,
+        SecurityAuditEnvelope envelope)
+    {
+        if (envelope.PlatformRecord is null)
+            throw new ArgumentException("A platform audit envelope is required.", nameof(envelope));
+
+        session.Store(ToPlatformEvent(envelope));
+    }
+
+    private static RealmSecurityAuditEvent ToRealmEvent(
+        SecurityAuditEnvelope envelope,
+        byte[]? key)
+    {
+        var record = envelope.RealmRecord!;
+        return new()
+        {
+            Id = envelope.Id,
+            Timestamp = envelope.CapturedAt,
             Category = AuditEvents.CategoryOf(record.EventType),
             EventType = record.EventType,
             Severity = record.Severity,
@@ -186,7 +430,10 @@ internal static class SecurityAuditPersistence
             TargetSubjectId = record.TargetSubjectId,
             UnknownIdentifierFingerprint = record.UnknownIdentifier is null
                 ? null
-                : Fingerprint(record.UnknownIdentifier, key),
+                : Fingerprint(
+                    record.UnknownIdentifier,
+                    key ?? throw new InvalidOperationException(
+                        "An audit fingerprint key is required for an unknown identifier.")),
             IpAddress = record.IpAddress,
             UserAgent = record.UserAgent,
             OAuthClientId = record.OAuthClientId,
@@ -210,12 +457,18 @@ internal static class SecurityAuditPersistence
             ReusedCount = record.ReusedCount,
             RetentionDays = record.RetentionDays,
             EffectiveAt = record.EffectiveAt,
+            FirstObservedAt = record.FirstObservedAt,
+            LastObservedAt = record.LastObservedAt,
         };
+    }
 
-    private static PlatformAuditEvent ToPlatformEvent(PlatformAuditRecord record)
-        => new()
+    private static PlatformAuditEvent ToPlatformEvent(SecurityAuditEnvelope envelope)
+    {
+        var record = envelope.PlatformRecord!;
+        return new()
         {
-            Timestamp = DateTimeOffset.UtcNow,
+            Id = envelope.Id,
+            Timestamp = envelope.CapturedAt,
             Category = AuditEvents.CategoryOf(record.EventType),
             EventType = record.EventType,
             Severity = record.Severity,
@@ -231,6 +484,7 @@ internal static class SecurityAuditPersistence
             RetentionDays = record.RetentionDays,
             EffectiveAt = record.EffectiveAt,
         };
+    }
 
     private static string Fingerprint(string identifier, byte[] key)
     {
@@ -291,7 +545,7 @@ public sealed class SecurityAuditWriter(
     SecurityAuditLog log,
     ILogger<SecurityAuditWriter> logger) : BackgroundService
 {
-    private const int MaxBatch = 256;
+    private const int MaxBatch = 4_096;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -305,6 +559,61 @@ public sealed class SecurityAuditWriter(
             if (batch.Count == 0)
                 continue;
 
+            // Give attacker-amplified signals a short coalescing window. This
+            // turns a credential-stuffing burst into a handful of count rows
+            // instead of one database write per request.
+            await Task.Delay(TimeSpan.FromMilliseconds(250), stoppingToken);
+            while (batch.Count < MaxBatch && reader.TryRead(out var entry))
+                batch.Add(entry);
+
+            var consolidated = SecurityAuditBatching.ConsolidateAbuse(batch);
+            var abuse = consolidated
+                .Where(x => x.DurabilityClass == AuditDurabilityClass.Abuse)
+                .ToArray();
+            var telemetry = consolidated
+                .Where(x => x.DurabilityClass == AuditDurabilityClass.Telemetry)
+                .ToArray();
+
+            if (abuse.Length > 0)
+                await PersistAbuseWithRetryAsync(abuse, stoppingToken);
+
+            if (telemetry.Length > 0)
+            {
+                try
+                {
+                    using var scope = services.CreateScope();
+                    await SecurityAuditPersistence.PersistAsync(
+                        telemetry,
+                        scope.ServiceProvider.GetRequiredService<IDocumentStore>(),
+                        scope.ServiceProvider.GetRequiredService<IGlobalStore>(),
+                        stoppingToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogError(
+                        ex,
+                        "Failed to persist {Count} best-effort audit telemetry record(s)",
+                        telemetry.Length);
+                }
+            }
+
+            var dropped = log.ReadAndResetDropped();
+            if (dropped > 0)
+            {
+                logger.LogWarning(
+                    "Security audit buffer shed {Dropped} abuse/telemetry occurrence(s) — channel full",
+                    dropped);
+            }
+        }
+    }
+
+    private async Task PersistAbuseWithRetryAsync(
+        IReadOnlyCollection<SecurityAuditEnvelope> batch,
+        CancellationToken ct)
+    {
+        var delay = TimeSpan.FromMilliseconds(250);
+        while (!ct.IsCancellationRequested)
+        {
             try
             {
                 using var scope = services.CreateScope();
@@ -312,16 +621,19 @@ public sealed class SecurityAuditWriter(
                     batch,
                     scope.ServiceProvider.GetRequiredService<IDocumentStore>(),
                     scope.ServiceProvider.GetRequiredService<IGlobalStore>(),
-                    stoppingToken);
+                    ct);
+                return;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.LogError(ex, "Failed to persist {Count} security audit entries", batch.Count);
+                logger.LogError(
+                    ex,
+                    "Failed to persist {Count} aggregated abuse signal(s); retrying in {Delay}",
+                    batch.Count,
+                    delay);
+                await Task.Delay(delay, ct);
+                delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 30));
             }
-
-            var dropped = log.ReadAndResetDropped();
-            if (dropped > 0)
-                logger.LogWarning("Security audit store shed {Dropped} record(s) — channel full", dropped);
         }
     }
 }

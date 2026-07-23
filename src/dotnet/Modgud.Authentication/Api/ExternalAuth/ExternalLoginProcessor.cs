@@ -61,9 +61,9 @@ public class ExternalLoginProcessor(
         if (config.Type != LoginProviderType.Oidc && config.Type != LoginProviderType.Saml)
         {
             var err = LoginProviderErrors.TypeNotSupported(config.Type);
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordTelemetry(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
+                EventType = AuditEvents.ExternalLoginConfigurationError,
                 Severity = AuditSeverity.Warning,
                 LoginProviderId = loginProviderId,
                 AuthenticationMethod = "external",
@@ -82,15 +82,15 @@ public class ExternalLoginProcessor(
 
         if (string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(subject))
         {
-            securityAudit.Record(new SecurityAuditRecord
+            await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
+                EventType = AuditEvents.ExternalLoginProtocolRejected,
                 Severity = AuditSeverity.Warning,
                 LoginProviderId = loginProviderId,
                 AuthenticationMethod = config.Type.ToString().ToLowerInvariant(),
                 OutcomeCode = AuditOutcomes.Rejected,
                 ReasonCode = "missing-issuer-or-subject",
-            });
+            }, ct);
             return ExternalLoginResult.Failed("Idp.InvalidToken", "The identity provider did not return a subject.");
         }
 
@@ -147,7 +147,7 @@ public class ExternalLoginProcessor(
                 // live one is not.)
                 if (authenticatedUserId is { } authId && authId != link.UserId)
                 {
-                    securityAudit.Record(new SecurityAuditRecord
+                    await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
                     {
                         EventType = AuditEvents.IdentityHijackBlocked,
                         Severity = AuditSeverity.Warning,
@@ -157,7 +157,7 @@ public class ExternalLoginProcessor(
                         AuthenticationMethod = config.Type.ToString().ToLowerInvariant(),
                         OutcomeCode = AuditOutcomes.Blocked,
                         ReasonCode = "subject-linked-to-different-user",
-                    });
+                    }, ct);
                     return ExternalLoginResult.Failed("Idp.LinkedToOtherUser",
                         "This identity is already linked to another Modgud account.");
                 }
@@ -210,9 +210,9 @@ public class ExternalLoginProcessor(
         var email = scriptResult.Email.Presence == FieldPresence.Value ? scriptResult.Email.Value : null;
         if (!IsEmailAllowed(config, email))
         {
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordAbuse(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
+                EventType = AuditEvents.ExternalLoginPolicyRejected,
                 Severity = AuditSeverity.Warning,
                 ActorKind = AuditActorKind.AnonymousIdentifier,
                 UnknownIdentifier = email,
@@ -245,7 +245,7 @@ public class ExternalLoginProcessor(
                 // specifically-configured IdP, which is the trust anchor.)
                 if (!IsEmailLinkTrustworthy(config, rawClaims, email))
                 {
-                    securityAudit.Record(new SecurityAuditRecord
+                    await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
                     {
                         EventType = AuditEvents.IdentityHijackBlocked,
                         Severity = AuditSeverity.Warning,
@@ -254,7 +254,7 @@ public class ExternalLoginProcessor(
                         AuthenticationMethod = config.Type.ToString().ToLowerInvariant(),
                         OutcomeCode = AuditOutcomes.Blocked,
                         ReasonCode = "email-not-verified-by-provider",
-                    });
+                    }, ct);
                     return ExternalLoginResult.Failed("Idp.EmailNotVerified",
                         "The identity provider did not verify this email address, so it cannot be auto-linked to an existing account.");
                 }
@@ -282,9 +282,9 @@ public class ExternalLoginProcessor(
         // 4. JIT user creation
         if (!config.AutoCreateUsers)
         {
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordAbuse(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
+                EventType = AuditEvents.ExternalLoginPolicyRejected,
                 Severity = AuditSeverity.Warning,
                 ActorKind = AuditActorKind.AnonymousIdentifier,
                 UnknownIdentifier = email,
@@ -309,7 +309,7 @@ public class ExternalLoginProcessor(
             .FirstOrDefaultAsync(ct);
         if (emailOwnerId != Guid.Empty)
         {
-            securityAudit.Record(new SecurityAuditRecord
+            await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
             {
                 EventType = AuditEvents.JitEmailConflict,
                 Severity = AuditSeverity.Warning,
@@ -318,7 +318,7 @@ public class ExternalLoginProcessor(
                 AuthenticationMethod = config.Type.ToString().ToLowerInvariant(),
                 OutcomeCode = AuditOutcomes.Rejected,
                 ReasonCode = "email-owned-by-existing-user",
-            });
+            }, ct);
             return ExternalLoginResult.Failed("Idp.EmailConflict",
                 "A Modgud account with this email already exists. Please contact your administrator.");
         }
@@ -368,7 +368,7 @@ public class ExternalLoginProcessor(
                         .FirstOrDefaultAsync(ct);
                     if (clashingUserId != Guid.Empty)
                     {
-                        securityAudit.Record(new SecurityAuditRecord
+                        await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
                         {
                             EventType = AuditEvents.JitEmailConflict,
                             Severity = AuditSeverity.Warning,
@@ -376,7 +376,7 @@ public class ExternalLoginProcessor(
                             TargetSubjectId = clashingUserId,
                             OutcomeCode = AuditOutcomes.Rejected,
                             ReasonCode = "user-update-email-conflict",
-                        });
+                        }, ct);
                         return new ApplyUpdatesError(
                             "Idp.EmailConflict",
                             "The identity provider reports an email that is already used by another Modgud account.");
@@ -454,9 +454,9 @@ public class ExternalLoginProcessor(
         // IsActive=true, so the JIT path passes this gate unaffected.
         if (user.IsDeleted || !user.IsActive)
         {
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordAbuse(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
+                EventType = AuditEvents.ExternalLoginPolicyRejected,
                 Severity = AuditSeverity.Warning,
                 TargetSubjectId = user.Id,
                 LoginProviderId = loginProviderId,
@@ -522,7 +522,7 @@ public class ExternalLoginProcessor(
             // lives in the Authorization layer, which cannot reach the audit store,
             // so it surfaces the count and we record the security event here.
             if (derived.DroppedRealmAdminCount > 0)
-                securityAudit.Record(new SecurityAuditRecord
+                await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
                 {
                     EventType = AuditEvents.PrivilegeEscalationBlocked,
                     Severity = AuditSeverity.Warning,
@@ -532,7 +532,7 @@ public class ExternalLoginProcessor(
                     OutcomeCode = AuditOutcomes.Blocked,
                     ReasonCode = "realm-admin-group-derived-externally",
                     Count = derived.DroppedRealmAdminCount,
-                });
+                }, ct);
         }
 
         return new ExternalLoginResult(

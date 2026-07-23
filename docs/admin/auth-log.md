@@ -71,6 +71,18 @@ deployment-wide from the Control Plane. It has no clear action.
 | `GET` | `/api/admin/auth-log?category=...&eventType=...&limit=...` | `auth-log:read` |
 | `GET` | `/api/admin/platform-audit?category=...&eventType=...&limit=...` | `control-plane:platform-audit:read` + Control-Plane realm |
 
-Both streamless feeds are currently best-effort. The event-sourced Audit tab
-has different durability semantics. Do not describe either streamless feed as
-a cryptographic or tamper-proof audit chain.
+## Delivery guarantees
+
+Every streamless event type has one fixed durability class. A call site cannot
+choose a weaker path; attempting to record an event through the wrong class
+fails immediately.
+
+| Class | Used for | Guarantee |
+|---|---|---|
+| **Required** | Privileged or irreversible changes, trust-material changes and refresh-token reuse teardown | Stored in the same Marten transaction as the realm/global state change where both share a database. Cross-database DDL operations write a durable `initiated` record before the external step and a `completed` record with the Global Store mutation. Other callers wait for persistence before reporting success. |
+| **Incident** | Individual takeover, tamper, signature and protocol-correlation failures | The rejecting request waits for the individual event to persist. A storage failure is not silently downgraded. |
+| **Abuse** | Attacker-amplifiable login, magic-link, policy, DCR and rate-limit signals | Raw occurrences enter a bounded in-memory buffer and may be shed under pressure. Accepted bursts are coalesced by structured identity into rows carrying `Count`, `FirstObservedAt` and `LastObservedAt`; persistence retries while the process remains alive. This is deliberately bounded, not a lossless request journal. |
+| **Telemetry** | Reconstructable cleanup and refresh summaries | Explicitly best-effort. A failed write is logged and does not make the operation fail. |
+
+The event-sourced Audit tab has its own transactional semantics. None of these
+surfaces is a cryptographic or tamper-proof audit chain.

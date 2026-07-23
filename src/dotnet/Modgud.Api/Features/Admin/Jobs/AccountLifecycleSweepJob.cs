@@ -51,7 +51,7 @@ public class AccountLifecycleSweepJob(
 
         if (reminded + erased + purged + inviteCodesPruned > 0)
         {
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordTelemetry(new SecurityAuditRecord
             {
                 EventType = AuditEvents.AccountLifecycleSwept,
                 RealmSlug = realmSlug,

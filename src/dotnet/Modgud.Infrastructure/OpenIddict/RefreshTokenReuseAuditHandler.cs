@@ -126,7 +126,7 @@ public sealed class RefreshTokenReuseAuditHandler
             "Refresh token reuse detected for user {UserId}, client {ClientId}, authorization {AuthorizationId} — {FamilySize} token(s) about to be revoked",
             subject, clientId, authorizationId, familySize);
 
-        _securityAudit.Record(new SecurityAuditRecord
+        await _securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RefreshTokenReuseDetected,
             Severity = AuditSeverity.Warning,
@@ -137,7 +137,7 @@ public sealed class RefreshTokenReuseAuditHandler
             OutcomeCode = AuditOutcomes.Blocked,
             OperationCode = "revoke-token-family",
             Count = familySize,
-        });
+        }, context.CancellationToken);
 
         // Keep higher-level session models in sync with OpenIddict's imminent
         // token-family teardown. Observer failures must never interrupt the

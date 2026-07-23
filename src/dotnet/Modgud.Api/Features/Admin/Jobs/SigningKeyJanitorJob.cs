@@ -44,7 +44,7 @@ public class SigningKeyJanitorJob(
 
         if (purged > 0)
         {
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordTelemetry(new SecurityAuditRecord
             {
                 EventType = AuditEvents.SigningKeyPurged,
                 RealmSlug = realmSlug,

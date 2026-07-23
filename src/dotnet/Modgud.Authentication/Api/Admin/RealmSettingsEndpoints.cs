@@ -44,22 +44,9 @@ public static class RealmSettingsEndpoints
         group.MapPatch("", async (
             UpdateRealmSettingsDto dto,
             IRealmSettingsService svc,
-            ISecurityAuditLog securityAudit,
             CancellationToken ct) =>
         {
             var result = await svc.PatchAsync(dto, ct);
-            if (!result.IsError && dto.Audit?.SecurityRetentionDays is { } retentionDays)
-            {
-                securityAudit.Record(new SecurityAuditRecord
-                {
-                    EventType = AuditEvents.SecurityRetentionChanged,
-                    Severity = AuditSeverity.Warning,
-                    OutcomeCode = AuditOutcomes.Succeeded,
-                    OperationCode = "change-retention",
-                    RetentionDays = retentionDays,
-                });
-            }
-
             return result.Match(
                 ok => Results.Ok(ok),
                 errors => Results.Problem(
@@ -79,21 +66,11 @@ public static class RealmSettingsEndpoints
         // realm-settings:write permission as the rest of this surface.
         group.MapPost("rotate-signing-key", async (
             IRealmKeyStore keyStore,
-            ISecurityAuditLog securityAudit,
             CancellationToken ct) =>
         {
             var slug = TenantContext.Current;
             var creds = await keyStore.RotateAsync(slug, ct);
             var kid = creds.Key.KeyId;
-
-            securityAudit.Record(new SecurityAuditRecord
-            {
-                EventType = AuditEvents.SigningKeyRotated,
-                Severity = AuditSeverity.Warning,
-                OutcomeCode = AuditOutcomes.Succeeded,
-                OperationCode = "rotate",
-                KeyId = kid,
-            });
 
             return Results.Ok(new RotateSigningKeyResponseDto(kid));
         })

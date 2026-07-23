@@ -126,6 +126,8 @@ public sealed record RealmSecurityLogDto(
     int? RelatedCount,
     int? RetentionDays,
     DateTimeOffset? EffectiveAt,
+    DateTimeOffset? FirstObservedAt,
+    DateTimeOffset? LastObservedAt,
     string Message)
 {
     internal static RealmSecurityLogDto From(
@@ -157,6 +159,8 @@ public sealed record RealmSecurityLogDto(
             row.RelatedCount,
             row.RetentionDays,
             row.EffectiveAt,
+            row.FirstObservedAt,
+            row.LastObservedAt,
             AuditEventRenderer.Render(row));
 
     private static string RenderActor(
@@ -237,6 +241,8 @@ internal static class AuditEventRenderer
         Add(details, "invite-codes-pruned", row.InviteCodesPrunedCount);
         Add(details, "reused", row.ReusedCount);
         Add(details, "effective-at", row.EffectiveAt);
+        Add(details, "first-observed-at", row.FirstObservedAt);
+        Add(details, "last-observed-at", row.LastObservedAt);
         return Compose(row.EventType, row.OutcomeCode, details);
     }
 
@@ -262,9 +268,12 @@ internal static class AuditEventRenderer
     {
         var occurrence = eventType switch
         {
+            AuditEvents.LoginFailed => "Login",
             AuditEvents.LoginFailedUnknownUser => "Login for an unknown identifier",
             AuditEvents.MagicLinkInvalid => "Invalid or expired magic link",
-            AuditEvents.ExternalLoginRejected => "External login",
+            AuditEvents.ExternalLoginProtocolRejected => "External login protocol",
+            AuditEvents.ExternalLoginPolicyRejected => "External login policy",
+            AuditEvents.ExternalLoginConfigurationError => "External login configuration",
             AuditEvents.SamlSignatureRejected => "SAML signature validation",
             AuditEvents.IdentityHijackBlocked => "External identity takeover attempt",
             AuditEvents.JitEmailConflict => "JIT email conflict",
@@ -277,7 +286,8 @@ internal static class AuditEventRenderer
             AuditEvents.SigningKeyRotated => "Signing key rotation",
             AuditEvents.SigningKeyPurged => "Signing-key cleanup",
             AuditEvents.SamlCertRotated => "SAML certificate rotation",
-            AuditEvents.SamlMetadataRefreshed => "SAML metadata refresh",
+            AuditEvents.SamlMetadataRefreshCompleted => "SAML metadata refresh",
+            AuditEvents.SamlSigningCertificatesChanged => "SAML signing certificates",
             AuditEvents.RecoveryCliInvoked => "Recovery CLI operation",
             AuditEvents.RealmProvisioned => "Realm provisioning",
             AuditEvents.RealmAdopted => "Realm adoption",

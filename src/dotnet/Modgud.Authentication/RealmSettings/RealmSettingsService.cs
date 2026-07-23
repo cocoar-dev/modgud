@@ -4,6 +4,7 @@ using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Authentication.SelfRegistration.Captcha;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Audit;
 using ErrorOr;
 using Marten;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
@@ -26,7 +27,8 @@ public interface IRealmSettingsService
 
 public sealed class RealmSettingsService(
     IDocumentSession session,
-    CaptchaSecretStore captchaStore) : IRealmSettingsService
+    CaptchaSecretStore captchaStore,
+    ISecurityAuditLog? securityAudit = null) : IRealmSettingsService
 {
     public async Task<RealmSettingsDoc> LoadAsync(CancellationToken ct = default)
     {
@@ -52,6 +54,8 @@ public sealed class RealmSettingsService(
             Id = RealmSettingsDoc.SingletonId,
             CreatedAt = DateTimeOffset.UtcNow,
         };
+        var previousSecurityRetentionDays =
+            doc.Audit?.SecurityRetentionDays ?? AuditSettings.Defaults.SecurityRetentionDays;
 
         if (dto.SelfRegistration is not null)
         {
@@ -131,6 +135,24 @@ public sealed class RealmSettingsService(
         if (!isCreate) doc.UpdatedAt = DateTimeOffset.UtcNow;
 
         session.Store(doc);
+        if (doc.Audit?.SecurityRetentionDays is { } retentionDays
+            && retentionDays != previousSecurityRetentionDays)
+        {
+            if (securityAudit is null)
+            {
+                throw new InvalidOperationException(
+                    "Changing security retention requires an audit-capable RealmSettingsService.");
+            }
+
+            securityAudit.StoreRequired(session, new SecurityAuditRecord
+            {
+                EventType = AuditEvents.SecurityRetentionChanged,
+                Severity = AuditSeverity.Warning,
+                OutcomeCode = AuditOutcomes.Succeeded,
+                OperationCode = "change-retention",
+                RetentionDays = retentionDays,
+            });
+        }
         await session.SaveChangesAsync(ct);
 
         return ToDto(doc);
