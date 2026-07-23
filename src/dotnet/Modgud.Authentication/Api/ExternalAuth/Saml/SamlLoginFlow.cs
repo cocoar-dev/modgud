@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity.LoginProviders.Saml;
-using Modgud.Authentication.Sessions;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Observability;
 
@@ -33,9 +32,7 @@ public class SamlLoginFlow(
     SamlContextBuilder contextBuilder,
     SamlSpCertificateService spCertService,
     ExternalLoginProcessor processor,
-    SignInManager<ApplicationUser> signInManager,
     ISamlAuthnRequestStore authnRequestStore,
-    ISessionService sessionService,
     ISecurityAuditLog securityAudit,
     ILogger<SamlLoginFlow> logger)
 {
@@ -309,10 +306,6 @@ public class SamlLoginFlow(
             new AuthenticationProperties { IsPersistent = true });
 
         ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Success);
-
-        var signedInIdClaim = result.Principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (Guid.TryParse(signedInIdClaim, out var signedInUserId))
-            await SessionTracker.RecordLoginAsync(sessionService, http, signedInUserId, ct);
 
         var returnUrl = ExtractRelayStateReturnUrl(binding);
         return Results.Redirect(string.IsNullOrWhiteSpace(returnUrl) ? "/" : returnUrl);

@@ -4,6 +4,7 @@ using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authentication.Sessions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authentication;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -24,12 +25,23 @@ public static class SessionEndpoints
         group.MapGet("", [Authorize] async (
             HttpContext context,
             ISessionService svc,
+            IClientSessionService clientSessions,
             CancellationToken ct) =>
         {
             var userId = context.GetUserId();
             if (userId is null) return Results.Unauthorized();
 
-            var result = await svc.GetSessionsAsync(userId.Value, currentSessionId: null, ct);
+            var currentSessionId = Guid.TryParse(
+                context.User.FindFirst(SessionClaimTypes.BrowserSessionId)?.Value,
+                out var parsedSessionId)
+                ? parsedSessionId
+                : (Guid?)null;
+            var result = await svc.GetSessionsAsync(userId.Value, currentSessionId, ct);
+            if (!result.IsError)
+            {
+                var clients = await clientSessions.GetSessionsAsync(userId.Value, ct);
+                result = result.Value with { ClientSessions = clients.ToList() };
+            }
             return result.ToResult();
         })
         .WithName("Auth_Sessions_List");
@@ -50,10 +62,41 @@ public static class SessionEndpoints
             var userId = context.GetUserId();
             if (userId is null) return Results.Unauthorized();
 
+            var current = context.User.FindFirst(SessionClaimTypes.BrowserSessionId)?.Value;
+            if (Guid.TryParse(current, out var currentSessionId) && currentSessionId == id)
+                return Results.Conflict(new { Error = "Use normal logout to end the current browser session." });
+
             var result = await svc.RevokeSessionAsync(userId.Value, id, ct);
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
         .WithName("Auth_Sessions_Revoke");
+
+        group.MapDelete("client/{id:guid}", [Authorize] async (
+            Guid id,
+            HttpContext context,
+            IClientSessionService clientSessions,
+            CancellationToken ct) =>
+        {
+            var userId = context.GetUserId();
+            if (userId is null) return Results.Unauthorized();
+            var result = await clientSessions.RevokeAsync(userId.Value, id, ct);
+            return result.IsError ? result.ToResult() : Results.NoContent();
+        })
+        .WithName("Auth_ClientSessions_Revoke");
+
+        group.MapDelete("others", [Authorize] async (
+            HttpContext context,
+            ISessionService svc,
+            CancellationToken ct) =>
+        {
+            var userId = context.GetUserId();
+            var raw = context.User.FindFirst(SessionClaimTypes.BrowserSessionId)?.Value;
+            if (userId is null || !Guid.TryParse(raw, out var currentSessionId))
+                return Results.Unauthorized();
+            var result = await svc.RevokeAllSessionsAsync(userId.Value, currentSessionId, ct);
+            return result.IsError ? result.ToResult() : Results.NoContent();
+        })
+        .WithName("Auth_Sessions_RevokeOthers");
 
         // DELETE /api/auth/sessions — revoke all my sessions (logout everywhere).
         // Audit remediation #1: RevokeAllSessionsAsync alone only deleted tracking
@@ -64,27 +107,14 @@ public static class SessionEndpoints
         // THIS request so the acting device stays signed in; all others die.
         group.MapDelete("", [Authorize] async (
             HttpContext context,
-            UserManager<ApplicationUser> userManager,
-            SignInManager<ApplicationUser> signInManager,
             IUserAccessRevoker accessRevoker,
-            ISessionService sessionService,
             CancellationToken ct) =>
         {
             var userId = context.GetUserId();
             if (userId is null) return Results.Unauthorized();
 
             await accessRevoker.RevokeAllAccessAsync(userId.Value, AccessRevocationReason.ForceSignOut, ct);
-            var user = await userManager.FindByIdAsync(userId.Value.ToString());
-            if (user is not null)
-            {
-                await signInManager.RefreshSignInAsync(user);
-                // RevokeAllAccessAsync deleted EVERY session row, including the acting
-                // device's. RefreshSignInAsync keeps this device signed in but doesn't
-                // re-track it — so without this the user's own "active sessions" list
-                // would read empty until their next fresh login. Re-record the acting
-                // session so the live device reappears.
-                await SessionTracker.RecordLoginAsync(sessionService, context, userId.Value, ct);
-            }
+            await context.SignOutAsync(IdentityConstants.ApplicationScheme);
             return Results.NoContent();
         })
         .WithName("Auth_Sessions_RevokeAll");

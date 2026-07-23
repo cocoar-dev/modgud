@@ -14,6 +14,7 @@ using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Application.Services;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.RealmSettings;
+using Modgud.Authentication.Sessions;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Domain.OAuth.Apis;
@@ -44,7 +45,9 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
     public async Task Otp_Grant_MintsTokens_ShortLifetime_NoCookie()
     {
         await EnableNativeGrantsAsync();
-        await SeedNativeClientAsync("native-otp-app");
+        await SeedNativeClientAsync(
+            "native-otp-app",
+            clientSessionAbsoluteLifetime: 3650 * 24 * 60 * 60);
 
         var code = await RequestNativeOtpCodeAsync();
 
@@ -66,6 +69,7 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
         Assert.False(string.IsNullOrEmpty(accessToken));
         Assert.True(json.RootElement.TryGetProperty("refresh_token", out var rt) && !string.IsNullOrEmpty(rt.GetString()),
             "expected a (reference) refresh_token because offline_access was requested");
+        var refreshToken = rt.GetString()!;
 
         // ADR-0010 — native access tokens are short-lived JWTs.
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
@@ -78,6 +82,34 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
         // Cookieless guarantee — the token endpoint must not set an auth cookie.
         Assert.False(response.Headers.Contains("Set-Cookie"),
             "the native grant must mint tokens without setting any cookie");
+
+        // The native login is represented independently from this browser's
+        // cookie session and can be revoked without touching other devices.
+        var sessionList = await Client.GetFromJsonAsync<SessionListDto>(
+            "/api/auth/sessions", JsonOptions, TestContext.Current.CancellationToken);
+        var nativeSession = Assert.Single(
+            sessionList!.ClientSessions, x => x.ClientId == "native-otp-app");
+        Assert.InRange(
+            nativeSession.AbsoluteExpiresAt - nativeSession.CreatedAt,
+            TimeSpan.FromDays(3649),
+            TimeSpan.FromDays(3651));
+
+        var revoke = await Client.DeleteAsync(
+            $"/api/auth/sessions/client/{nativeSession.Id}",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, revoke.StatusCode);
+
+        var rejectedRefresh = await PostTokenAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["client_id"] = "native-otp-app",
+            ["client_secret"] = "native-otp-app-secret",
+            ["refresh_token"] = refreshToken,
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, rejectedRefresh.StatusCode);
+        Assert.Contains(
+            "invalid_grant",
+            await rejectedRefresh.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -539,10 +571,18 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
 
     // ── Seeding ────────────────────────────────────────────────────────────
 
-    private Task SeedNativeClientAsync(string clientId) =>
-        SeedClientAsync(clientId, [CocoarGrantTypes.Otp, CocoarGrantTypes.Magic, "refresh_token"]);
+    private Task SeedNativeClientAsync(
+        string clientId,
+        int? clientSessionAbsoluteLifetime = null) =>
+        SeedClientAsync(
+            clientId,
+            [CocoarGrantTypes.Otp, CocoarGrantTypes.Magic, "refresh_token"],
+            clientSessionAbsoluteLifetime);
 
-    private async Task SeedClientAsync(string clientId, List<string> grantTypes)
+    private async Task SeedClientAsync(
+        string clientId,
+        List<string> grantTypes,
+        int? clientSessionAbsoluteLifetime = null)
     {
         var app = await CreateAppAsync($"{clientId}-catalog", clientId);
 
@@ -562,6 +602,7 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
             RequireConsent = false,
             AccessTokenType = AccessTokenType.Jwt,
             AppIds = [new ShortGuid(app.Id).ToString()],
+            ClientSessionAbsoluteLifetime = clientSessionAbsoluteLifetime,
         };
         var result = await oauthAdmin.CreateClientAsync(dto, TestContext.Current.CancellationToken);
         if (result.IsError)

@@ -75,7 +75,6 @@ public static class AccountEndpoints
             IAuthSettings appSettings,
             IDocumentSession docSession,
             IQuerySession session,
-            ISessionService sessionService,
             ISecurityAuditLog securityAudit,
             HttpContext context) =>
         {
@@ -161,15 +160,12 @@ public static class AccountEndpoints
                 Log.Information("Login successful. UserId={UserId} IP={IP}", user.Id, ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Success);
 
-                // Track per-user device session (best-effort).
-                await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
-
                 // Audit marker on the user's stream (Phase 1): the "when + by what
-                // method" of a successful login. No IP on the event — IP/device live
-                // in the Sessions feature (RecordLoginAsync above). Erasable with the
-                // user. Best-effort: PasswordSignInAsync has already issued the auth
-                // cookie, so a failed marker write must NOT turn a successful login
-                // into a 500 — log and continue (mirrors SessionTracker's contract).
+                // method" of a successful login. No IP on the event — the authoritative
+                // browser session created by the cookie event owns IP/device metadata.
+                // Erasable with the user. Best-effort: PasswordSignInAsync has already
+                // issued the auth cookie, so a failed marker write must NOT turn a
+                // successful login into a 500 — log and continue.
                 try
                 {
                     docSession.Events.Append(user.Id, new Modgud.Authentication.Events.UserLoggedInEvent(
@@ -350,7 +346,6 @@ public static class AccountEndpoints
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             IUserAccessRevoker accessRevoker,
-            ISessionService sessionService,
             IAuthSettings appSettings) =>
         {
             if (appSettings.AuthenticationMinimumLevel >= 2)
@@ -374,15 +369,14 @@ public static class AccountEndpoints
             // session — not merely rely on the <=5-min security-stamp window. Kill
             // everything, then refresh the CURRENT session (reload the user first so
             // it carries the freshly-rotated stamp) so the password-changer stays
-            // signed in here, and re-record its device row so the session list stays
-            // accurate.
+            // signed in here. BrowserSessionCookieEvents creates the replacement
+            // authoritative row as part of the refreshed cookie.
             await accessRevoker.RevokeAllAccessAsync(
                 user.Id, AccessRevocationReason.ForceSignOut, context.RequestAborted);
             var refreshed = await userManager.FindByIdAsync(user.Id.ToString());
             if (refreshed is not null)
             {
                 await signInManager.RefreshSignInAsync(refreshed);
-                await SessionTracker.RecordLoginAsync(sessionService, context, refreshed.Id);
             }
 
             Log.Information("Password changed; other sessions revoked. UserId={UserId} IP={IP}", user.Id, ip);

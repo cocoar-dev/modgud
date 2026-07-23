@@ -25,7 +25,7 @@ const props = defineProps<{
 
 const groupStore = useGroupStore()
 const appConfig = useAppConfigStore()
-const activeTab = ref<'origin' | 'registration' | 'grants' | 'oauth' | 'pages'>('origin')
+const activeTab = ref<'origin' | 'registration' | 'sessions' | 'grants' | 'oauth' | 'pages'>('origin')
 
 const groupOptions = ref<{ value: string; label: string }[]>([])
 
@@ -52,6 +52,7 @@ const f = reactive({
     firstname: '' as '' | 'Off' | 'Optional' | 'Required',
     lastname: '' as '' | 'Off' | 'Optional' | 'Required',
   },
+  clientSessions: { override: false, idle: '', absolute: '' },
   nativeGrants: { override: false, enabled: false, access: '', refresh: '' },
   dcr: {
     override: false, enabled: false, access: '', refresh: '',
@@ -95,6 +96,7 @@ function resetForm() {
   f.selfReg.termsOfServiceUrl = ''; f.selfReg.privacyPolicyUrl = ''
   f.registrationFields.override = false; f.registrationFields.username = ''
   f.registrationFields.firstname = ''; f.registrationFields.lastname = ''
+  f.clientSessions.override = false; f.clientSessions.idle = ''; f.clientSessions.absolute = ''
   f.nativeGrants.override = false; f.nativeGrants.enabled = false; f.nativeGrants.access = ''; f.nativeGrants.refresh = ''
   f.dcr.override = false; f.dcr.enabled = false; f.dcr.access = ''; f.dcr.refresh = ''
   f.dcr.reservedNames = []; f.dcr.perIp = ''; f.dcr.perRealm = ''
@@ -138,6 +140,11 @@ function populate(s?: ApplicationSettingsDto | null) {
     f.nativeGrants.enabled = s.NativeGrants.Enabled ?? false
     f.nativeGrants.access = numStr(s.NativeGrants.AccessTokenLifetimeMinutes)
     f.nativeGrants.refresh = numStr(s.NativeGrants.RefreshTokenLifetimeDays)
+  }
+  if (s.ClientSessions) {
+    f.clientSessions.override = true
+    f.clientSessions.idle = numStr(s.ClientSessions.IdleLifetimeDays)
+    f.clientSessions.absolute = numStr(s.ClientSessions.AbsoluteLifetimeDays)
   }
   if (s.Dcr) {
     f.dcr.override = true
@@ -190,6 +197,9 @@ function build(): ApplicationSettingsDto {
       : null,
     NativeGrants: f.nativeGrants.override
       ? { Enabled: f.nativeGrants.enabled, AccessTokenLifetimeMinutes: parseNum(f.nativeGrants.access), RefreshTokenLifetimeDays: parseNum(f.nativeGrants.refresh) }
+      : null,
+    ClientSessions: f.clientSessions.override
+      ? { IdleLifetimeDays: parseNum(f.clientSessions.idle), AbsoluteLifetimeDays: parseNum(f.clientSessions.absolute) }
       : null,
     Dcr: f.dcr.override
       ? {
@@ -288,6 +298,7 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
     <CoarTabGroup v-model="activeTab" class="tab-bar">
       <CoarTab id="origin">{{ t('admin.appSettings.tabs.origin', {}, 'Origin & Branding') }}</CoarTab>
       <CoarTab id="registration">{{ t('admin.appSettings.tabs.registration', {}, 'Registrierung') }}</CoarTab>
+      <CoarTab id="sessions">{{ t('admin.appSettings.tabs.sessions', {}, 'Sessions') }}</CoarTab>
       <CoarTab id="grants">{{ t('admin.appSettings.tabs.grants', {}, 'Native Grants') }}</CoarTab>
       <CoarTab id="oauth">{{ t('admin.appSettings.tabs.oauth', {}, 'OAuth (DCR/CIMD)') }}</CoarTab>
       <CoarTab v-if="appConfig.config.Features.PageBuilder" id="pages">
@@ -369,6 +380,26 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         <CoarFormField :label="t('admin.regFields.lastname', {}, 'Nachname')">
           <CoarSelect v-model="f.registrationFields.lastname" :options="requirementOptions" />
         </CoarFormField>
+      </template>
+    </div>
+
+    <!-- Native app / OAuth client sessions -->
+    <div v-show="activeTab === 'sessions'" class="tab-content">
+      <CoarNote variant="info">
+        {{ t('admin.appSettings.sessions.hint', {}, 'Override the realm default for refresh-token-backed sessions in this app. Individual OAuth clients can override this again. Access-token lifetime is configured separately and remains short.') }}
+      </CoarNote>
+      <CoarCheckbox
+        v-model="f.clientSessions.override"
+        :label="t('admin.appSettings.sessions.override', {}, 'Custom client-session policy')" />
+      <template v-if="f.clientSessions.override">
+        <div class="grid grid-cols-2 gap-3">
+          <CoarFormField :label="t('admin.appSettings.sessions.idle', {}, 'Idle lifetime (days, 1–3650)')">
+            <CoarTextInput v-model="f.clientSessions.idle" clearable placeholder="30" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.appSettings.sessions.absolute', {}, 'Absolute lifetime (days, 1–3650)')">
+            <CoarTextInput v-model="f.clientSessions.absolute" clearable placeholder="365" />
+          </CoarFormField>
+        </div>
       </template>
     </div>
 

@@ -1100,6 +1100,48 @@ public class OAuthAdminMappingTests
 
             Assert.True(OAuthAdminMapping.DictEquals(current, merged));
         }
+
+        [Fact]
+        public void Client_session_lifetimes_can_be_set_and_cleared_independently()
+        {
+            var current = new Dictionary<string, string>
+            {
+                [OAuthApplicationSettingKeys.ClientSessionIdleLifetime] = "2592000",
+                [OAuthApplicationSettingKeys.ClientSessionAbsoluteLifetime] = "31536000",
+            };
+
+            var merged = OAuthAdminMapping.MergeClientSettings(current, new UpdateOAuthClientDto
+            {
+                ClearClientSessionIdleLifetime = true,
+                ClientSessionAbsoluteLifetime = 315360000,
+            });
+
+            Assert.False(merged.ContainsKey(OAuthApplicationSettingKeys.ClientSessionIdleLifetime));
+            Assert.Equal("315360000", merged[OAuthApplicationSettingKeys.ClientSessionAbsoluteLifetime]);
+            Assert.Equal("2592000", current[OAuthApplicationSettingKeys.ClientSessionIdleLifetime]);
+        }
+    }
+
+    public class ValidateClientSessionLifetimes
+    {
+        [Fact]
+        public void Accepts_ten_year_absolute_lifetime()
+        {
+            Assert.Null(OAuthAdminMapping.ValidateClientSessionLifetimes(
+                30 * 24 * 60 * 60,
+                3650 * 24 * 60 * 60));
+        }
+
+        [Fact]
+        public void Rejects_absolute_lifetime_shorter_than_idle_lifetime()
+        {
+            var error = OAuthAdminMapping.ValidateClientSessionLifetimes(
+                60 * 24 * 60 * 60,
+                30 * 24 * 60 * 60);
+
+            Assert.NotNull(error);
+            Assert.Equal("OAuthClient.InvalidClientSessionAbsoluteLifetime", error.Value.Code);
+        }
     }
 
     // ─────────────── Native token-lifetime wiring (issue #115) ─────────────────

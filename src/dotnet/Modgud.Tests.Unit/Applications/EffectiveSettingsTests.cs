@@ -23,6 +23,11 @@ public class EffectiveSettingsTests
             AccessTokenLifetime = TimeSpan.FromMinutes(15),
             RefreshTokenLifetime = TimeSpan.FromDays(14),
         },
+        ClientSessions = new ClientSessionPolicy
+        {
+            IdleLifetime = TimeSpan.FromDays(30),
+            AbsoluteLifetime = TimeSpan.FromDays(365),
+        },
         Branding = new BrandingSettings { ProductName = "RealmProduct", PrimaryColor = "#111111" },
         RegistrationFields = new RegistrationFieldsSettings
         {
@@ -48,6 +53,7 @@ public class EffectiveSettingsTests
             Assert.Equal(realm.Dcr, eff.Dcr);
             Assert.Equal(realm.Cimd, eff.Cimd);
             Assert.Equal(realm.NativeGrants, eff.NativeGrants);
+            Assert.Equal(realm.ClientSessions, eff.ClientSessions);
             Assert.Equal(realm.Branding, eff.Branding);
             Assert.Equal(realm.RegistrationFields, eff.RegistrationFields);
             Assert.Equal(realm.Deletion, eff.Deletion);
@@ -451,6 +457,40 @@ public class EffectiveSettingsTests
             Assert.True(app.PageSlots is null || !app.PageSlots.ContainsKey("login"));
             // Inherits the realm active variant.
             Assert.Equal("realm-login", EffectiveSettings.Merge(realm, app).Pages!["login"]);
+        }
+    }
+
+    public class ClientSessionMerge
+    {
+        [Fact]
+        public void App_values_override_individual_realm_fields()
+        {
+            var realm = Realm();
+            var app = new ApplicationSettings
+            {
+                ClientSessions = new ApplicationClientSessionOverrides
+                {
+                    AbsoluteLifetime = TimeSpan.FromDays(3650),
+                },
+            };
+
+            var effective = EffectiveSettings.Merge(realm, app);
+
+            Assert.Equal(TimeSpan.FromDays(30), effective.ClientSessions!.IdleLifetime);
+            Assert.Equal(TimeSpan.FromDays(3650), effective.ClientSessions.AbsoluteLifetime);
+        }
+
+        [Fact]
+        public void Empty_app_override_uses_domain_defaults_when_realm_is_unconfigured()
+        {
+            var effective = EffectiveSettings.Merge(
+                new RealmSettingsDoc(),
+                new ApplicationSettings
+                {
+                    ClientSessions = new ApplicationClientSessionOverrides(),
+                });
+
+            Assert.Equal(ClientSessionPolicy.Defaults, effective.ClientSessions);
         }
     }
 }

@@ -1,9 +1,6 @@
-using Marten;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Quartz;
-using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Audit;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Api.Features.Admin.Jobs;
@@ -19,17 +16,15 @@ namespace Modgud.Api.Features.Admin.Jobs;
 /// a <c>ValidUntil</c>), and this janitor removes the now-dead row from the
 /// tenant DB so retired private material doesn't accumulate.</para>
 ///
-/// <para>Per-realm and idempotent: a realm with no expired retired keys ends
-/// after a single indexed query. Mirrors <see cref="DcrGcJob"/>: realms live in
-/// the master DB; the control-plane realm uses the "system" tenant, tenant
-/// realms use their slug.</para>
+/// <para>Per-realm and idempotent: Quartz creates one instance per realm, and a
+/// realm with no expired retired keys ends after a single indexed query. Its
+/// schedule deliberately remains active for deactivated realms because their
+/// soft-deleted tenant databases still contain private key material.</para>
 /// </summary>
 [DisallowConcurrentExecution]
 public class SigningKeyJanitorJob(
-    IServiceScopeFactory scopeFactory,
     IRealmKeyStore keyStore,
-    ISecurityAuditLog securityAudit,
-    ILogger<SigningKeyJanitorJob> logger) : IJob
+    ISecurityAuditLog securityAudit) : IJob
 {
     public const string Key = "signing-key-janitor";
     public const string Name = "Signing Key Janitor";
@@ -44,55 +39,24 @@ public class SigningKeyJanitorJob(
     public async Task Execute(IJobExecutionContext context)
     {
         var ct = context.CancellationToken;
+        var realmSlug = TenantContext.Current;
+        var purged = await keyStore.PurgeExpiredRetiredKeysAsync(realmSlug, ct);
 
-        using var rootScope = scopeFactory.CreateScope();
-        var store = rootScope.ServiceProvider.GetRequiredService<IDocumentStore>();
-
-        // Realms live in the master DB. The control-plane realm uses the
-        // "system" tenant; tenant realms use their slug. NOTE: we deliberately
-        // do NOT filter on IsActive — a deactivated realm is a soft-delete that
-        // keeps its tenant DB, and its retired keys still hold private signing
-        // material that must not accumulate indefinitely.
-        await using var masterSession = store.LightweightSession("system");
-        var realms = await masterSession.Query<Realm>()
-            .ToListAsync(ct);
-
-        int realmsTouched = 0;
-        int totalPurged = 0;
-        foreach (var realm in realms)
+        if (purged > 0)
         {
-            if (ct.IsCancellationRequested) break;
-            if (string.IsNullOrWhiteSpace(realm.Slug)) continue;
-
-            try
+            securityAudit.Record(new SecurityAuditRecord
             {
-                var purged = await keyStore.PurgeExpiredRetiredKeysAsync(realm.Slug, ct);
-                if (purged > 0)
-                {
-                    realmsTouched++;
-                    totalPurged += purged;
-                    // Realm-iterating job: bind the explicit iterated slug.
-                    securityAudit.Record(new SecurityAuditRecord
-                    {
-                        EventType = AuditEvents.SigningKeyPurged,
-                        Realm = realm.Slug,
-                        Level = "Info",
-                        Status = "purged",
-                        Reason = $"purged {purged} expired retired key(s)",
-                        Message = $"signing-key janitor purged {purged} expired retired key(s)",
-                    });
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // One unreachable/broken tenant DB must not abort the whole sweep.
-                logger.LogWarning(ex,
-                    "Signing-key janitor failed for realm {Realm} — skipping", realm.Slug);
-            }
+                EventType = AuditEvents.SigningKeyPurged,
+                Realm = realmSlug,
+                Level = "Info",
+                Status = "purged",
+                Reason = $"purged {purged} expired retired key(s)",
+                Message = $"signing-key janitor purged {purged} expired retired key(s)",
+            });
         }
 
-        context.Result = totalPurged == 0
-            ? $"No expired signing keys ({realms.Count} realm(s) checked)"
-            : $"Purged {totalPurged} expired signing key(s) across {realmsTouched} realm(s)";
+        context.Result = purged == 0
+            ? "No expired signing keys"
+            : $"Purged {purged} expired signing key(s)";
     }
 }

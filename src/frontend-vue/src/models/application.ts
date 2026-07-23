@@ -99,6 +99,11 @@ export interface ApplicationGrantOverrideDto {
   RefreshTokenLifetimeDays?: number | null
 }
 
+export interface ApplicationClientSessionsDto {
+  IdleLifetimeDays?: number | null
+  AbsoluteLifetimeDays?: number | null
+}
+
 export interface ApplicationDcrOverrideDto extends ApplicationGrantOverrideDto {
   GcTtlDays?: number | null
   PerIpRateLimitPerHour?: number | null
@@ -120,6 +125,7 @@ export interface ApplicationSettingsDto {
   EmailBranding?: ApplicationEmailBrandingDto | null
   SelfRegistration?: ApplicationSelfRegistrationOverrideDto | null
   NativeGrants?: ApplicationGrantOverrideDto | null
+  ClientSessions?: ApplicationClientSessionsDto | null
   Dcr?: ApplicationDcrOverrideDto | null
   Cimd?: ApplicationGrantOverrideDto | null
   RegistrationFields?: ApplicationRegistrationFieldsOverrideDto | null

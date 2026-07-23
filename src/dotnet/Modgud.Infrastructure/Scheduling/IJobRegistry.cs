@@ -1,10 +1,10 @@
 namespace Modgud.Infrastructure.Scheduling;
 
 /// <summary>
-/// Startup-time catalogue of all known system jobs. Each registration ships
-/// with a default cron — admin can override via the Jobs page in the UI,
-/// stored as a <see cref="JobConfig"/> Marten document and applied on the
-/// next startup or via a live reschedule.
+/// Startup-time catalogue of all known compiled jobs. Each registration ships
+/// with an ownership scope and default cron. Realm overrides are tenant-owned;
+/// system overrides live in the global store and are controlled by the current
+/// Control Plane.
 /// </summary>
 public interface IJobRegistry
 {

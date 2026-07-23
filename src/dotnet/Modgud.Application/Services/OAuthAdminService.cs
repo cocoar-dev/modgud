@@ -165,6 +165,10 @@ public class OAuthAdminService
 
         // Settings (primitive lifetime + token-type values).
         var settings = BuildClientSettings(dto);
+        if (ValidateClientSessionLifetimes(
+                dto.ClientSessionIdleLifetime,
+                dto.ClientSessionAbsoluteLifetime) is { } clientSessionError)
+            return clientSessionError;
         if (dcrMetadata is null)
         {
             // Issue #115 — standard (non-DCR) clients: wire the admin's
@@ -341,6 +345,15 @@ public class OAuthAdminService
         // Settings — partial-PATCH merge; only emit the event when the merge
         // actually produced a different dictionary.
         var newSettings = MergeClientSettings(aggregate.Settings, dto);
+        if ((dto.ClearClientSessionIdleLifetime && dto.ClientSessionIdleLifetime.HasValue) ||
+            (dto.ClearClientSessionAbsoluteLifetime && dto.ClientSessionAbsoluteLifetime.HasValue))
+            return Error.Validation(
+                "OAuthClient.ConflictingClientSessionLifetimeUpdate",
+                "A client-session lifetime cannot be set and cleared in the same update.");
+        if (ValidateClientSessionLifetimes(
+                dto.ClientSessionIdleLifetime,
+                dto.ClientSessionAbsoluteLifetime) is { } clientSessionError)
+            return clientSessionError;
 
         // Issue #115 — same native tkn_lft:* wiring as CreateClientAsync, PATCH
         // semantics: a field omitted from the DTO leaves any existing

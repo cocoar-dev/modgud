@@ -78,12 +78,17 @@ public record ExportSecurityDto
 
 public record ExportSessionDto
 {
+    public required string Kind { get; init; }
+    public string? ClientId { get; init; }
+    public string? ClientDisplayName { get; init; }
     public string? IpAddress { get; init; }
     public string? Browser { get; init; }
     public string? OperatingSystem { get; init; }
     public string? DeviceType { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset LastActiveAt { get; init; }
+    public DateTimeOffset ExpiresAt { get; init; }
+    public DateTimeOffset AbsoluteExpiresAt { get; init; }
 }
 
 public record ExportLoginEventDto

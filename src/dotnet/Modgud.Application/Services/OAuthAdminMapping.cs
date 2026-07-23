@@ -168,6 +168,8 @@ internal static class OAuthAdminMapping
         if (dto.AccessTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.AccessTokenLifetime] = dto.AccessTokenLifetime.Value.ToString();
         if (dto.AuthorizationCodeLifetime.HasValue) settings[OAuthApplicationSettingKeys.AuthorizationCodeLifetime] = dto.AuthorizationCodeLifetime.Value.ToString();
         if (dto.SlidingRefreshTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime] = dto.SlidingRefreshTokenLifetime.Value.ToString();
+        if (dto.ClientSessionIdleLifetime.HasValue) settings[OAuthApplicationSettingKeys.ClientSessionIdleLifetime] = dto.ClientSessionIdleLifetime.Value.ToString();
+        if (dto.ClientSessionAbsoluteLifetime.HasValue) settings[OAuthApplicationSettingKeys.ClientSessionAbsoluteLifetime] = dto.ClientSessionAbsoluteLifetime.Value.ToString();
         if (dto.ClientClaimsPrefix is not null) settings[OAuthApplicationSettingKeys.ClientClaimsPrefix] = dto.ClientClaimsPrefix;
         // ADR-0009 — store the normalized (trimmed, lowercased) per-client RP ID; a
         // blank value leaves it realm-scoped (no key). Format is validated upstream.
@@ -304,6 +306,10 @@ internal static class OAuthAdminMapping
         if (dto.AccessTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.AccessTokenLifetime] = dto.AccessTokenLifetime.Value.ToString();
         if (dto.AuthorizationCodeLifetime.HasValue) settings[OAuthApplicationSettingKeys.AuthorizationCodeLifetime] = dto.AuthorizationCodeLifetime.Value.ToString();
         if (dto.SlidingRefreshTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime] = dto.SlidingRefreshTokenLifetime.Value.ToString();
+        if (dto.ClearClientSessionIdleLifetime) settings.Remove(OAuthApplicationSettingKeys.ClientSessionIdleLifetime);
+        if (dto.ClearClientSessionAbsoluteLifetime) settings.Remove(OAuthApplicationSettingKeys.ClientSessionAbsoluteLifetime);
+        if (dto.ClientSessionIdleLifetime.HasValue) settings[OAuthApplicationSettingKeys.ClientSessionIdleLifetime] = dto.ClientSessionIdleLifetime.Value.ToString();
+        if (dto.ClientSessionAbsoluteLifetime.HasValue) settings[OAuthApplicationSettingKeys.ClientSessionAbsoluteLifetime] = dto.ClientSessionAbsoluteLifetime.Value.ToString();
         if (dto.ClientClaimsPrefix is not null) settings[OAuthApplicationSettingKeys.ClientClaimsPrefix] = dto.ClientClaimsPrefix;
         // ADR-0009 PATCH: null = omit; empty/blank = clear back to realm-scoped;
         // non-blank = set (normalized). Format is validated upstream.
@@ -462,6 +468,26 @@ internal static class OAuthAdminMapping
     private static string ToLifetimeString(int seconds) =>
         TimeSpan.FromSeconds(seconds).ToString("c", CultureInfo.InvariantCulture);
 
+    internal static Error? ValidateClientSessionLifetimes(
+        int? idleLifetimeSeconds,
+        int? absoluteLifetimeSeconds)
+    {
+        const int min = 24 * 60 * 60;
+        const int max = 3650 * 24 * 60 * 60;
+
+        if (idleLifetimeSeconds is { } idle && (idle < min || idle > max))
+            return Error.Validation("OAuthClient.InvalidClientSessionIdleLifetime",
+                $"ClientSessionIdleLifetime must be between {min} and {max} seconds.");
+        if (absoluteLifetimeSeconds is { } absolute && (absolute < min || absolute > max))
+            return Error.Validation("OAuthClient.InvalidClientSessionAbsoluteLifetime",
+                $"ClientSessionAbsoluteLifetime must be between {min} and {max} seconds.");
+        if (idleLifetimeSeconds is { } i && absoluteLifetimeSeconds is { } a && a < i)
+            return Error.Validation("OAuthClient.InvalidClientSessionAbsoluteLifetime",
+                "ClientSessionAbsoluteLifetime must be at least ClientSessionIdleLifetime.");
+
+        return null;
+    }
+
     /// <summary>
     /// Merges an <see cref="UpdateOAuthClientDto"/> over the client's
     /// <c>Properties</c> dictionary. Each property field on the DTO is
@@ -538,6 +564,8 @@ internal static class OAuthAdminMapping
             AccessTokenLifetime = GetIntSetting(OAuthApplicationSettingKeys.AccessTokenLifetime),
             AuthorizationCodeLifetime = GetIntSetting(OAuthApplicationSettingKeys.AuthorizationCodeLifetime),
             SlidingRefreshTokenLifetime = GetIntSetting(OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime),
+            ClientSessionIdleLifetime = GetIntSetting(OAuthApplicationSettingKeys.ClientSessionIdleLifetime),
+            ClientSessionAbsoluteLifetime = GetIntSetting(OAuthApplicationSettingKeys.ClientSessionAbsoluteLifetime),
             AlwaysSendClientClaims = GetBoolProp(props, OAuthApplicationPropertyKeys.AlwaysSendClientClaims, false),
             UpdateAccessTokenClaimsOnRefresh = GetBoolProp(props, OAuthApplicationPropertyKeys.UpdateAccessTokenClaimsOnRefresh, false),
             ClientClaimsPrefix = prefix,

@@ -1,9 +1,5 @@
-using Marten;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Modgud.Authentication.Gdpr;
 using Modgud.Authentication.SelfRegistration;
-using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Quartz;
@@ -22,18 +18,15 @@ namespace Modgud.Api.Features.Admin.Jobs;
 ///   (only when the realm has AutoPurge enabled).</item>
 /// </list>
 ///
-/// <para>Mirrors <see cref="DcrGcJob"/>'s multi-tenant shape: it reads the
-/// realm list from the master DB, then runs the per-realm work inside each
-/// realm's <see cref="TenantContext"/> so the scoped <c>IGdprService</c> (and
-/// its Marten session + RealmSettings) resolve against the right tenant DB —
-/// there is no HttpContext in a scheduled job.</para>
+/// <para>Quartz creates one instance per realm. The scheduler enters that
+/// realm's <see cref="TenantContext"/> before resolving this job, so all
+/// constructor-injected services bind to exactly one tenant database.</para>
 /// </summary>
 [DisallowConcurrentExecution]
 public class AccountLifecycleSweepJob(
-    IServiceScopeFactory scopeFactory,
-    IDocumentStore store,
-    ISecurityAuditLog securityAudit,
-    ILogger<AccountLifecycleSweepJob> logger) : IJob
+    IGdprService gdpr,
+    IRegistrationInviteService inviteService,
+    ISecurityAuditLog securityAudit) : IJob
 {
     public const string Key = "account-lifecycle-sweep";
     public const string Name = "Account Lifecycle Sweep";
@@ -48,56 +41,28 @@ public class AccountLifecycleSweepJob(
     public async Task Execute(IJobExecutionContext context)
     {
         var ct = context.CancellationToken;
+        var realmSlug = TenantContext.Current;
 
-        await using var masterSession = store.LightweightSession(TenantConstants.SystemTenantId);
-        var realms = await masterSession.Query<Realm>()
-            .Where(r => r.IsActive)
-            .ToListAsync(ct);
+        var (reminded, erased) = await gdpr.RunSelfServiceSweepAsync(ct);
+        var purged = await gdpr.RunAdminRetentionPurgeAsync(ct);
 
-        int realmsTouched = 0, totalReminded = 0, totalErased = 0, totalPurged = 0, totalInviteCodesPruned = 0;
-        foreach (var realm in realms)
+        // ADR-0012 §8 — prune used/expired invite codes (hygiene only).
+        var inviteCodesPruned = await inviteService.PruneAsync(ct);
+
+        if (reminded + erased + purged + inviteCodesPruned > 0)
         {
-            if (ct.IsCancellationRequested) break;
-            try
+            securityAudit.Record(new SecurityAuditRecord
             {
-                using var scope = scopeFactory.CreateScope();
-                using (TenantContext.Enter(realm.Slug))
-                {
-                    // Resolve INSIDE the tenant context so the scoped GdprService's
-                    // Marten session binds to this realm's DB.
-                    var gdpr = scope.ServiceProvider.GetRequiredService<IGdprService>();
-                    var (reminded, erased) = await gdpr.RunSelfServiceSweepAsync(ct);
-                    var purged = await gdpr.RunAdminRetentionPurgeAsync(ct);
-
-                    // ADR-0012 §8 — prune used/expired invite codes (hygiene only).
-                    var inviteService = scope.ServiceProvider.GetRequiredService<IRegistrationInviteService>();
-                    var inviteCodesPruned = await inviteService.PruneAsync(ct);
-
-                    totalReminded += reminded;
-                    totalErased += erased;
-                    totalPurged += purged;
-                    totalInviteCodesPruned += inviteCodesPruned;
-                    if (reminded + erased + purged + inviteCodesPruned > 0)
-                        securityAudit.Record(new SecurityAuditRecord
-                        {
-                            EventType = AuditEvents.AccountLifecycleSwept,
-                            Level = "Info",
-                            Realm = realm.Slug,
-                            Status = "swept",
-                            Reason = $"reminded={reminded} selfErased={erased} autoPurged={purged} inviteCodesPruned={inviteCodesPruned}",
-                            Message = $"Account-lifecycle sweep — Realm={realm.Slug} Reminded={reminded} SelfErased={erased} AutoPurged={purged} InviteCodesPruned={inviteCodesPruned}",
-                        });
-                }
-                realmsTouched++;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex,
-                    "Account-lifecycle sweep failed for realm {Realm}", realm.Slug);
-            }
+                EventType = AuditEvents.AccountLifecycleSwept,
+                Level = "Info",
+                Realm = realmSlug,
+                Status = "swept",
+                Reason = $"reminded={reminded} selfErased={erased} autoPurged={purged} inviteCodesPruned={inviteCodesPruned}",
+                Message = $"Account-lifecycle sweep — Realm={realmSlug} Reminded={reminded} SelfErased={erased} AutoPurged={purged} InviteCodesPruned={inviteCodesPruned}",
+            });
         }
 
         context.Result =
-            $"{realmsTouched} realm(s): {totalReminded} reminded, {totalErased} self-erased, {totalPurged} auto-purged, {totalInviteCodesPruned} invite-codes pruned";
+            $"{reminded} reminded, {erased} self-erased, {purged} auto-purged, {inviteCodesPruned} invite-codes pruned";
     }
 }

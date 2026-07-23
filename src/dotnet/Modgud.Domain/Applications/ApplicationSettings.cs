@@ -58,6 +58,10 @@ public class ApplicationSettings
     /// inherit the realm native-grant settings.</summary>
     public ApplicationNativeGrantOverrides? NativeGrants { get; set; }
 
+    /// <summary>Per-Application defaults for native OAuth client/device
+    /// sessions. A concrete OAuth client may override these values.</summary>
+    public ApplicationClientSessionOverrides? ClientSessions { get; set; }
+
     /// <summary>Per-Application Dynamic Client Registration overrides, merged
     /// field-by-field over the realm <see cref="DcrSettings"/>. Null = inherit.</summary>
     public ApplicationDcrOverrides? Dcr { get; set; }
@@ -147,6 +151,14 @@ public record ApplicationNativeGrantOverrides
     public bool? Enabled { get; init; }
     public TimeSpan? AccessTokenLifetime { get; init; }
     public TimeSpan? RefreshTokenLifetime { get; init; }
+}
+
+/// <summary>Nullable-field mirror of <see cref="ClientSessionPolicy"/>. Null
+/// fields inherit the realm policy.</summary>
+public record ApplicationClientSessionOverrides
+{
+    public TimeSpan? IdleLifetime { get; init; }
+    public TimeSpan? AbsoluteLifetime { get; init; }
 }
 
 /// <summary>Nullable-field mirror of <see cref="DcrSettings"/>. A null field

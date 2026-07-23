@@ -127,7 +127,9 @@ To get machine-to-machine tokens, create a Service Account; it provisions the co
 
 ### Lifetimes
 
-The **Token Lifetimes** tab is edit-only (it appears once a client exists, not on the create form). Each field is **entered in seconds**; leaving it empty falls back to the IdP default. The defaults are:
+The **Lifetimes** tab is available during create and edit. Each field is
+**entered in seconds**. Empty token fields use the IdP default; empty
+client-session fields inherit from the linked Application and then the Realm.
 
 | Field | Default | In seconds |
 | --- | --- | --- |
@@ -135,8 +137,16 @@ The **Token Lifetimes** tab is edit-only (it appears once a client exists, not o
 | **Authorization Code Lifetime** | 5 min | `300` |
 | **Identity Token Lifetime** | OpenIddict default (no Modgud override) | — |
 | **Sliding Refresh Token Lifetime** | OpenIddict default (no Modgud override) | — |
+| **Client Session Idle Lifetime** | App/Realm policy | — |
+| **Client Session Absolute Lifetime** | App/Realm policy | — |
 
 Access-token, authorization-code and refresh-token defaults are set globally on the IdP (`AccessTokenLifetimeMinutes`, `AuthorizationCodeLifetimeMinutes`, `RefreshTokenLifetimeDays`). The identity-token and sliding-refresh fields have no Modgud-level default — leave them blank unless you have a specific reason to override OpenIddict's built-in value.
+
+Client-session lifetimes control how long refresh-token-backed user sessions
+may continue. Idle lifetime slides on successful refresh; absolute lifetime
+never slides. Both accept 1–3650 days (`86400`–`315360000` seconds), and the
+absolute value must not be shorter than idle. These do not lengthen access
+tokens.
 
 ## Editing / regenerating
 

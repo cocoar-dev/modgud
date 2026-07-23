@@ -36,6 +36,8 @@ export interface ScheduledJobDto {
   Name: string
   Description?: string | null
   Kind: 'System' | 'Script'
+  /** Ownership: independent per realm, or the single Control-Plane system job. */
+  Scope: 'Realm' | 'System'
   /** Effective cron — override if present, else registration default. */
   EffectiveCron: string
   DefaultCron: string

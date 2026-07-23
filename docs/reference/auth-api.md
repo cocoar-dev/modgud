@@ -128,9 +128,11 @@ These live under `/api/auth/...`, not `/api/account/...`.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/auth/sessions` | Active sessions |
-| `DELETE` | `/api/auth/sessions/{id}` | Revoke a session |
-| `DELETE` | `/api/auth/sessions` | Revoke all sessions except current ("logout everywhere") |
+| `GET` | `/api/auth/sessions` | Browser sessions plus native/OAuth client sessions |
+| `DELETE` | `/api/auth/sessions/{id}` | Revoke another browser session |
+| `DELETE` | `/api/auth/sessions/client/{id}` | Revoke one native/OAuth client session and its token family |
+| `DELETE` | `/api/auth/sessions/others` | Revoke every browser session except the current one |
+| `DELETE` | `/api/auth/sessions` | Sign out everywhere, including the current browser and all OAuth client sessions |
 
 ## GDPR / privacy
 

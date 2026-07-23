@@ -57,17 +57,20 @@ public sealed class RefreshTokenReuseAuditHandler
     private readonly IOpenIddictTokenManager _tokenManager;
     private readonly IOpenIddictApplicationManager _applicationManager;
     private readonly ISecurityAuditLog _securityAudit;
+    private readonly IEnumerable<IRefreshTokenReuseObserver> _observers;
     private readonly ILogger<RefreshTokenReuseAuditHandler> _logger;
 
     public RefreshTokenReuseAuditHandler(
         IOpenIddictTokenManager tokenManager,
         IOpenIddictApplicationManager applicationManager,
         ISecurityAuditLog securityAudit,
+        IEnumerable<IRefreshTokenReuseObserver> observers,
         ILogger<RefreshTokenReuseAuditHandler> logger)
     {
         _tokenManager = tokenManager;
         _applicationManager = applicationManager;
         _securityAudit = securityAudit;
+        _observers = observers;
         _logger = logger;
     }
 
@@ -132,5 +135,25 @@ public sealed class RefreshTokenReuseAuditHandler
             Reason = $"clientId={clientId ?? "(unknown)"} authorizationId={authorizationId ?? "(unknown)"} revokedTokens={familySize}",
             Message = $"Refresh token reuse detected for client '{clientId ?? "(unknown)"}' — revoking {familySize} token(s) and the parent authorization",
         });
+
+        // Keep higher-level session models in sync with OpenIddict's imminent
+        // token-family teardown. Observer failures must never interrupt the
+        // stock security response that runs immediately after this handler.
+        foreach (var observer in _observers)
+        {
+            try
+            {
+                await observer.OnReuseDetectedAsync(
+                    subject, clientId, authorizationId, context.CancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "refresh-token reuse observer {ObserverType} failed for authorization {AuthorizationId}",
+                    observer.GetType().Name,
+                    authorizationId);
+            }
+        }
     }
 }

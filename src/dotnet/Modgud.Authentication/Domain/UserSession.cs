@@ -11,9 +11,6 @@ public class UserSession
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
 
-    /// <summary>Optional correlation token (e.g. cookie/session id).</summary>
-    public string? SessionId { get; set; }
-
     public string? IpAddress { get; set; }
     public string? UserAgent { get; set; }
 
@@ -26,11 +23,11 @@ public class UserSession
 
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset LastActiveAt { get; set; }
+    public DateTimeOffset AbsoluteExpiresAt { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
 
     public static UserSession Create(
         Guid userId,
-        string? sessionId,
         string? ipAddress,
         string? userAgent,
         string? browser,
@@ -38,14 +35,14 @@ public class UserSession
         string? operatingSystem,
         string? osVersion,
         string? deviceType,
-        TimeSpan sessionDuration)
+        TimeSpan idleLifetime,
+        TimeSpan absoluteLifetime)
     {
         var now = DateTimeOffset.UtcNow;
         return new UserSession
         {
             Id = Guid.NewGuid(),
             UserId = userId,
-            SessionId = sessionId,
             IpAddress = ipAddress,
             UserAgent = userAgent,
             Browser = browser,
@@ -55,9 +52,19 @@ public class UserSession
             DeviceType = deviceType,
             CreatedAt = now,
             LastActiveAt = now,
-            ExpiresAt = now.Add(sessionDuration),
+            AbsoluteExpiresAt = now.Add(absoluteLifetime),
+            ExpiresAt = Min(now.Add(idleLifetime), now.Add(absoluteLifetime)),
         };
     }
 
-    public void Touch() => LastActiveAt = DateTimeOffset.UtcNow;
+    public bool IsActive(DateTimeOffset now) => ExpiresAt > now && AbsoluteExpiresAt > now;
+
+    public void Touch(DateTimeOffset now, TimeSpan idleLifetime)
+    {
+        LastActiveAt = now;
+        ExpiresAt = Min(now.Add(idleLifetime), AbsoluteExpiresAt);
+    }
+
+    private static DateTimeOffset Min(DateTimeOffset left, DateTimeOffset right) =>
+        left <= right ? left : right;
 }

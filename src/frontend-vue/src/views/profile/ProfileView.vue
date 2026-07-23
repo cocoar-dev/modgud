@@ -32,9 +32,10 @@ watch(language, () => ui.set((ctx) => {
 const activeSection = ref<'account' | 'security' | 'sessions' | 'privacy' | 'preferences'>('account')
 
 // ─── Sessions self-service ────────────────────────────────────────────────
-import type { SessionDto, SessionListDto } from '@/models/session'
+import type { ClientSessionDto, SessionDto, SessionListDto } from '@/models/session'
 const sessionsHttp = useHttpClient('/api/auth/sessions')
 const sessions = ref<SessionDto[]>([])
+const clientSessions = ref<ClientSessionDto[]>([])
 const sessionsLoading = ref(false)
 const sessionsError = ref('')
 const revokingSessionId = ref<string | null>(null)
@@ -47,6 +48,7 @@ async function loadSessions() {
   try {
     const res = await sessionsHttp.get<SessionListDto>()
     sessions.value = res.Sessions ?? []
+    clientSessions.value = res.ClientSessions ?? []
   } catch (e: any) {
     sessionsError.value = e?.message ?? String(e)
   } finally {
@@ -67,8 +69,21 @@ async function revokeSession(id: string) {
   }
 }
 
+async function revokeClientSession(id: string) {
+  if (!confirm(t('profile.sessions.confirmRevokeClient', {}, 'Really sign this app out?'))) return
+  revokingSessionId.value = id
+  try {
+    await sessionsHttp.addPath('client').addPath(id).delete()
+    clientSessions.value = clientSessions.value.filter((s) => s.Id !== id)
+  } catch (e: any) {
+    sessionsError.value = e?.message ?? String(e)
+  } finally {
+    revokingSessionId.value = null
+  }
+}
+
 async function revokeAllSessions() {
-  if (!confirm(t('profile.sessions.confirmRevokeAll', {}, 'Really sign out everywhere? You\'ll be signed in again.'))) return
+  if (!confirm(t('profile.sessions.confirmRevokeAll', {}, 'Really sign out everywhere? This browser and every connected app will have to sign in again.'))) return
   revokingAll.value = true
   try {
     await sessionsHttp.delete()
@@ -170,14 +185,14 @@ async function cancelDeletion() {
   }
 }
 
-function deviceIcon(s: SessionDto): string {
+function deviceIcon(s: SessionDto | ClientSessionDto): string {
   const dt = (s.DeviceType ?? '').toLowerCase()
   if (dt.includes('mobile') || dt.includes('phone')) return 'smartphone'
   if (dt.includes('tablet')) return 'tablet'
   return 'monitor'
 }
 
-function deviceLabel(s: SessionDto): string {
+function deviceLabel(s: SessionDto | ClientSessionDto): string {
   const browser = [s.Browser, s.BrowserVersion].filter(Boolean).join(' ')
   const os = [s.OperatingSystem, s.OsVersion].filter(Boolean).join(' ')
   return [browser, os].filter(Boolean).join(' · ') || (s.DeviceType ?? t('profile.sessions.unknownDevice', {}, 'Unknown Device'))
@@ -915,48 +930,92 @@ function onMfaSetupClose(enabled: boolean) {
                   </div>
                 </div>
                 <CoarButton variant="danger" :loading="revokingAll"
-                  :disabled="sessionsLoading || sessions.length === 0"
+                  :disabled="sessionsLoading || (sessions.length === 0 && clientSessions.length === 0)"
                   @click="revokeAllSessions">
                   {{ t('profile.sessions.revokeAll', {}, 'Sign out everywhere') }}
                 </CoarButton>
               </div>
 
-              <div v-if="sessionsLoading && sessions.length === 0" class="text-sm text-surface-400">
+              <div v-if="sessionsLoading && sessions.length === 0 && clientSessions.length === 0" class="text-sm text-surface-400">
                 {{ t('common.loading', {}, 'Loading...') }}
               </div>
               <div v-else-if="sessionsError" class="text-sm text-red-600">{{ sessionsError }}</div>
-              <div v-else-if="sessions.length === 0" class="text-sm text-surface-400">
+              <div v-else-if="sessions.length === 0 && clientSessions.length === 0" class="text-sm text-surface-400">
                 {{ t('profile.sessions.none', {}, 'No sessions.') }}
               </div>
-              <div v-else class="space-y-2">
-                <div v-for="s in sessions" :key="s.Id"
-                  class="flex items-center gap-3 rounded border border-surface-200 bg-surface-50 px-4 py-3"
-                  :class="{ 'session-current': s.IsCurrent }">
-                  <CoarIcon :name="deviceIcon(s)" size="m" class="text-surface-500" />
-                  <div class="flex-1 min-w-0">
-                    <div class="text-sm font-medium flex items-center gap-2">
-                      {{ deviceLabel(s) }}
-                      <span v-if="s.IsCurrent" class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-                        {{ t('profile.sessions.current', {}, 'Current Session') }}
-                      </span>
-                    </div>
-                    <div class="text-xs text-surface-500 truncate">
-                      <span v-if="s.IpAddress">IP: {{ s.IpAddress }} · </span>
-                      {{ t('profile.sessions.lastActive', {}, 'Last active:') }}
-                      {{ new Date(s.LastActiveAt).toLocaleString() }}
-                      · {{ t('profile.sessions.created', {}, 'Created:') }}
-                      {{ new Date(s.CreatedAt).toLocaleDateString() }}
+              <div v-else class="space-y-6">
+                <section>
+                  <h3 class="text-sm font-semibold mb-2">
+                    {{ t('profile.sessions.browserTitle', {}, 'Browser and SSO sessions') }}
+                  </h3>
+                  <p v-if="sessions.length === 0" class="text-sm text-surface-400">
+                    {{ t('profile.sessions.noBrowserSessions', {}, 'No browser sessions.') }}
+                  </p>
+                  <div v-else class="space-y-2">
+                    <div v-for="s in sessions" :key="s.Id"
+                      class="flex items-center gap-3 rounded border border-surface-200 bg-surface-50 px-4 py-3"
+                      :class="{ 'session-current': s.IsCurrent }">
+                      <CoarIcon :name="deviceIcon(s)" size="m" class="text-surface-500" />
+                      <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium flex items-center gap-2">
+                          {{ deviceLabel(s) }}
+                          <span v-if="s.IsCurrent" class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                            {{ t('profile.sessions.current', {}, 'Current Session') }}
+                          </span>
+                        </div>
+                        <div class="text-xs text-surface-500 truncate">
+                          <span v-if="s.IpAddress">IP: {{ s.IpAddress }} · </span>
+                          {{ t('profile.sessions.lastActive', {}, 'Last active:') }}
+                          {{ new Date(s.LastActiveAt).toLocaleString() }}
+                          · {{ t('profile.sessions.created', {}, 'Created:') }}
+                          {{ new Date(s.CreatedAt).toLocaleDateString() }}
+                        </div>
+                      </div>
+                      <button class="text-surface-400 hover:text-red-600 transition"
+                        :disabled="s.IsCurrent || revokingSessionId === s.Id"
+                        :title="s.IsCurrent
+                          ? t('profile.sessions.cantRevokeCurrent', {}, 'The current session can\'t be ended here — please log out instead.')
+                          : t('profile.sessions.revoke', {}, 'End Session')"
+                        @click="revokeSession(s.Id)">
+                        <CoarIcon name="log-out" size="s" />
+                      </button>
                     </div>
                   </div>
-                  <button class="text-surface-400 hover:text-red-600 transition"
-                    :disabled="s.IsCurrent || revokingSessionId === s.Id"
-                    :title="s.IsCurrent
-                      ? t('profile.sessions.cantRevokeCurrent', {}, 'The current session can\'t be ended here — please log out instead.')
-                      : t('profile.sessions.revoke', {}, 'End Session')"
-                    @click="revokeSession(s.Id)">
-                    <CoarIcon name="log-out" size="s" />
-                  </button>
-                </div>
+                </section>
+
+                <section>
+                  <h3 class="text-sm font-semibold mb-2">
+                    {{ t('profile.sessions.clientTitle', {}, 'Signed-in apps and devices') }}
+                  </h3>
+                  <p v-if="clientSessions.length === 0" class="text-sm text-surface-400">
+                    {{ t('profile.sessions.noClientSessions', {}, 'No native app sessions.') }}
+                  </p>
+                  <div v-else class="space-y-2">
+                    <div v-for="s in clientSessions" :key="s.Id"
+                      class="flex items-center gap-3 rounded border border-surface-200 bg-surface-50 px-4 py-3">
+                      <CoarIcon :name="deviceIcon(s)" size="m" class="text-surface-500" />
+                      <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium">
+                          {{ s.ClientDisplayName || s.ClientId }}
+                        </div>
+                        <div class="text-xs text-surface-500 truncate">
+                          {{ deviceLabel(s) }}
+                          <template v-if="s.IpAddress"> · IP: {{ s.IpAddress }}</template>
+                          · {{ t('profile.sessions.lastActive', {}, 'Last active:') }}
+                          {{ new Date(s.LastActiveAt).toLocaleString() }}
+                          · {{ t('profile.sessions.absoluteExpiry', {}, 'Must sign in by:') }}
+                          {{ new Date(s.AbsoluteExpiresAt).toLocaleDateString() }}
+                        </div>
+                      </div>
+                      <button class="text-surface-400 hover:text-red-600 transition"
+                        :disabled="revokingSessionId === s.Id"
+                        :title="t('profile.sessions.revokeClient', {}, 'Sign this app out')"
+                        @click="revokeClientSession(s.Id)">
+                        <CoarIcon name="log-out" size="s" />
+                      </button>
+                    </div>
+                  </div>
+                </section>
               </div>
             </div>
           </CoarCard>

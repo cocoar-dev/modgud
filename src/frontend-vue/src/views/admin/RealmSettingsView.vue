@@ -31,6 +31,10 @@ import type {
   UpdateCimdSettingsDto,
   NativeGrantSettingsDto,
   UpdateNativeGrantSettingsDto,
+  BrowserSessionPolicyDto,
+  UpdateBrowserSessionPolicyDto,
+  ClientSessionPolicyDto,
+  UpdateClientSessionPolicyDto,
   AuthRateLimitsDto,
   UpdateAuthRateLimitsDto,
   DeletionSettingsDto,
@@ -55,7 +59,7 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.hasSubNav = true
 }), { immediate: true })
 
-type TabId = 'self-registration' | 'registration-fields' | 'dcr' | 'cimd' | 'native-grants' | 'auth-rate-limits' | 'deletion' | 'signing-keys' | 'pages'
+type TabId = 'self-registration' | 'registration-fields' | 'sessions' | 'dcr' | 'cimd' | 'native-grants' | 'auth-rate-limits' | 'deletion' | 'signing-keys' | 'pages'
 const activeTab = ref<TabId>('self-registration')
 
 const canRotateSigningKey = computed(() => authStore.hasPermission('realm-settings:write'))
@@ -212,6 +216,20 @@ function nativeGrantsFromDto(d: NativeGrantSettingsDto): NativeGrantFormState {
   }
 }
 
+// ── Authoritative browser + native-client session policies ───────────
+const browserSessionsForm = ref<BrowserSessionPolicyDto>({
+  IdleLifetimeMinutes: 30 * 24 * 60,
+  AbsoluteLifetimeMinutes: 180 * 24 * 60,
+  AllowRememberMe: true,
+})
+const originalBrowserSessions = ref<BrowserSessionPolicyDto | null>(null)
+
+const clientSessionsForm = ref<ClientSessionPolicyDto>({
+  IdleLifetimeDays: 30,
+  AbsoluteLifetimeDays: 365,
+})
+const originalClientSessions = ref<ClientSessionPolicyDto | null>(null)
+
 // ── Auth rate-limit form state (per-IP ceilings, configurable per realm) ──
 type RateLimitPolicyKey =
   'NativeOtp' | 'MagicLink' | 'PasswordReset' | 'EmailOtp'
@@ -352,6 +370,10 @@ onMounted(async () => {
     cimdForm.value = cimdFromDto(dto.Cimd)
     originalNativeGrants.value = dto.NativeGrants
     nativeGrantsForm.value = nativeGrantsFromDto(dto.NativeGrants)
+    originalBrowserSessions.value = dto.BrowserSessions
+    browserSessionsForm.value = { ...dto.BrowserSessions }
+    originalClientSessions.value = dto.ClientSessions
+    clientSessionsForm.value = { ...dto.ClientSessions }
     originalAuthRateLimits.value = dto.AuthRateLimits
     authRateLimitsForm.value = authRateLimitsFromDto(dto.AuthRateLimits)
     originalDeletion.value = dto.Deletion
@@ -454,6 +476,36 @@ function buildNativeGrantsPatch(): UpdateNativeGrantSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+function buildBrowserSessionsPatch(): UpdateBrowserSessionPolicyDto | undefined {
+  const orig = originalBrowserSessions.value
+  if (!orig) return undefined
+  const cur = browserSessionsForm.value
+  const patch: UpdateBrowserSessionPolicyDto = {}
+
+  if (cur.IdleLifetimeMinutes !== orig.IdleLifetimeMinutes)
+    patch.IdleLifetimeMinutes = cur.IdleLifetimeMinutes
+  if (cur.AbsoluteLifetimeMinutes !== orig.AbsoluteLifetimeMinutes)
+    patch.AbsoluteLifetimeMinutes = cur.AbsoluteLifetimeMinutes
+  if (cur.AllowRememberMe !== orig.AllowRememberMe)
+    patch.AllowRememberMe = cur.AllowRememberMe
+
+  return Object.keys(patch).length === 0 ? undefined : patch
+}
+
+function buildClientSessionsPatch(): UpdateClientSessionPolicyDto | undefined {
+  const orig = originalClientSessions.value
+  if (!orig) return undefined
+  const cur = clientSessionsForm.value
+  const patch: UpdateClientSessionPolicyDto = {}
+
+  if (cur.IdleLifetimeDays !== orig.IdleLifetimeDays)
+    patch.IdleLifetimeDays = cur.IdleLifetimeDays
+  if (cur.AbsoluteLifetimeDays !== orig.AbsoluteLifetimeDays)
+    patch.AbsoluteLifetimeDays = cur.AbsoluteLifetimeDays
+
+  return Object.keys(patch).length === 0 ? undefined : patch
+}
+
 function buildAuthRateLimitsPatch(): UpdateAuthRateLimitsDto | undefined {
   const orig = originalAuthRateLimits.value
   if (!orig) return undefined
@@ -502,10 +554,12 @@ async function save() {
   const dcrPatch = buildDcrPatch()
   const cimdPatch = buildCimdPatch()
   const nativeGrantsPatch = buildNativeGrantsPatch()
+  const browserSessionsPatch = buildBrowserSessionsPatch()
+  const clientSessionsPatch = buildClientSessionsPatch()
   const authRateLimitsPatch = buildAuthRateLimitsPatch()
   const deletionPatch = buildDeletionPatch()
   const regFieldsPatch = buildRegFieldsPatch()
-  if (!selfRegPatch && !dcrPatch && !cimdPatch && !nativeGrantsPatch && !authRateLimitsPatch && !deletionPatch && !regFieldsPatch) {
+  if (!selfRegPatch && !dcrPatch && !cimdPatch && !nativeGrantsPatch && !browserSessionsPatch && !clientSessionsPatch && !authRateLimitsPatch && !deletionPatch && !regFieldsPatch) {
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1200)
     return
@@ -518,6 +572,8 @@ async function save() {
       Dcr?: UpdateDcrSettingsDto
       Cimd?: UpdateCimdSettingsDto
       NativeGrants?: UpdateNativeGrantSettingsDto
+      BrowserSessions?: UpdateBrowserSessionPolicyDto
+      ClientSessions?: UpdateClientSessionPolicyDto
       AuthRateLimits?: UpdateAuthRateLimitsDto
       Deletion?: UpdateDeletionSettingsDto
       RegistrationFields?: UpdateRegistrationFieldsSettingsDto
@@ -526,6 +582,8 @@ async function save() {
     if (dcrPatch) payload.Dcr = dcrPatch
     if (cimdPatch) payload.Cimd = cimdPatch
     if (nativeGrantsPatch) payload.NativeGrants = nativeGrantsPatch
+    if (browserSessionsPatch) payload.BrowserSessions = browserSessionsPatch
+    if (clientSessionsPatch) payload.ClientSessions = clientSessionsPatch
     if (authRateLimitsPatch) payload.AuthRateLimits = authRateLimitsPatch
     if (deletionPatch) payload.Deletion = deletionPatch
     if (regFieldsPatch) payload.RegistrationFields = regFieldsPatch
@@ -538,6 +596,10 @@ async function save() {
     cimdForm.value = cimdFromDto(updated.Cimd)
     originalNativeGrants.value = updated.NativeGrants
     nativeGrantsForm.value = nativeGrantsFromDto(updated.NativeGrants)
+    originalBrowserSessions.value = updated.BrowserSessions
+    browserSessionsForm.value = { ...updated.BrowserSessions }
+    originalClientSessions.value = updated.ClientSessions
+    clientSessionsForm.value = { ...updated.ClientSessions }
     originalAuthRateLimits.value = updated.AuthRateLimits
     authRateLimitsForm.value = authRateLimitsFromDto(updated.AuthRateLimits)
     originalDeletion.value = updated.Deletion
@@ -580,6 +642,9 @@ async function rotateSigningKey() {
       </CoarTab>
       <CoarTab id="registration-fields">
         {{ t('admin.realmSettings.tabs.registrationFields', {}, 'Pflichtfelder') }}
+      </CoarTab>
+      <CoarTab id="sessions">
+        {{ t('admin.realmSettings.tabs.sessions', {}, 'Sessions') }}
       </CoarTab>
       <CoarTab id="dcr">
         {{ t('admin.realmSettings.tabs.dcr', {}, 'Dynamic Client Registration') }}
@@ -736,6 +801,65 @@ async function rotateSigningKey() {
         </CoarNote>
 
         <div class="flex justify-end mt-2">
+          <CoarButton :loading="saving" @click="save">
+            {{ t('common.save', {}, 'Save') }}
+          </CoarButton>
+        </div>
+      </div>
+    </CoarCard>
+
+    <CoarCard v-else-if="activeTab === 'sessions'" class="p-4">
+      <div class="flex flex-col gap-6">
+        <section class="flex flex-col gap-3">
+          <div>
+            <h3 class="font-medium">
+              {{ t('admin.realmSettings.sessions.browser.title', {}, 'Browser and SSO sessions') }}
+            </h3>
+            <p class="text-xs text-gray-500 mt-1">
+              {{ t('admin.realmSettings.sessions.browser.hint', {}, 'These sessions back the signed application cookie. Idle lifetime slides while the browser is used; absolute lifetime never slides.') }}
+            </p>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <CoarFormField :label="t('admin.realmSettings.sessions.browser.idle', {}, 'Idle lifetime (minutes)')">
+              <CoarTextInput
+                :model-value="String(browserSessionsForm.IdleLifetimeMinutes)"
+                @update:model-value="(v) => (browserSessionsForm.IdleLifetimeMinutes = Math.max(5, parseInt(v) || 5))" />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.realmSettings.sessions.browser.absolute', {}, 'Absolute lifetime (minutes)')">
+              <CoarTextInput
+                :model-value="String(browserSessionsForm.AbsoluteLifetimeMinutes)"
+                @update:model-value="(v) => (browserSessionsForm.AbsoluteLifetimeMinutes = Math.max(5, parseInt(v) || 5))" />
+            </CoarFormField>
+          </div>
+          <CoarCheckbox
+            v-model="browserSessionsForm.AllowRememberMe"
+            :label="t('admin.realmSettings.sessions.browser.remember', {}, 'Allow persistent “remember me” cookies')" />
+        </section>
+
+        <section class="flex flex-col gap-3 border-t border-surface-200 pt-5">
+          <div>
+            <h3 class="font-medium">
+              {{ t('admin.realmSettings.sessions.client.title', {}, 'Native app and OAuth client sessions') }}
+            </h3>
+            <p class="text-xs text-gray-500 mt-1">
+              {{ t('admin.realmSettings.sessions.client.hint', {}, 'This is the realm default for refresh-token-backed sessions. Apps and individual OAuth clients may override it. Up to 3650 days (10 years) is supported; access tokens remain short-lived independently.') }}
+            </p>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <CoarFormField :label="t('admin.realmSettings.sessions.client.idle', {}, 'Idle lifetime (days)')">
+              <CoarTextInput
+                :model-value="String(clientSessionsForm.IdleLifetimeDays)"
+                @update:model-value="(v) => (clientSessionsForm.IdleLifetimeDays = Math.min(3650, Math.max(1, parseInt(v) || 1)))" />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.realmSettings.sessions.client.absolute', {}, 'Absolute lifetime (days)')">
+              <CoarTextInput
+                :model-value="String(clientSessionsForm.AbsoluteLifetimeDays)"
+                @update:model-value="(v) => (clientSessionsForm.AbsoluteLifetimeDays = Math.min(3650, Math.max(1, parseInt(v) || 1)))" />
+            </CoarFormField>
+          </div>
+        </section>
+
+        <div class="flex justify-end">
           <CoarButton :loading="saving" @click="save">
             {{ t('common.save', {}, 'Save') }}
           </CoarButton>

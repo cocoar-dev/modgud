@@ -96,6 +96,13 @@ public sealed class ApplicationSettingsService(
             doc.NativeGrants = r.Value;
         }
 
+        if (dto.ClientSessions is not null)
+        {
+            var r = MapClientSessions(dto.ClientSessions);
+            if (r.IsError) return r.FirstError;
+            doc.ClientSessions = r.Value;
+        }
+
         if (dto.Dcr is not null)
         {
             var r = MapDcr(dto.Dcr);
@@ -172,6 +179,9 @@ public sealed class ApplicationSettingsService(
 
         if (dto.NativeGrants is null) doc.NativeGrants = null;
         else { var r = MapNativeGrants(dto.NativeGrants); if (r.IsError) return r.FirstError; doc.NativeGrants = r.Value; }
+
+        if (dto.ClientSessions is null) doc.ClientSessions = null;
+        else { var r = MapClientSessions(dto.ClientSessions); if (r.IsError) return r.FirstError; doc.ClientSessions = r.Value; }
 
         if (dto.Dcr is null) doc.Dcr = null;
         else { var r = MapDcr(dto.Dcr); if (r.IsError) return r.FirstError; doc.Dcr = r.Value; }
@@ -308,6 +318,25 @@ public sealed class ApplicationSettingsService(
         };
     }
 
+    private static ErrorOr<ApplicationClientSessionOverrides> MapClientSessions(ApplicationClientSessionsDto dto)
+    {
+        if (dto.IdleLifetimeDays is { } idle && (idle < 1 || idle > 3650))
+            return Error.Validation("ClientSessions.InvalidIdleLifetime",
+                "IdleLifetimeDays must be between 1 and 3650.");
+        if (dto.AbsoluteLifetimeDays is { } absolute && (absolute < 1 || absolute > 3650))
+            return Error.Validation("ClientSessions.InvalidAbsoluteLifetime",
+                "AbsoluteLifetimeDays must be between 1 and 3650.");
+        if (dto.IdleLifetimeDays is { } i && dto.AbsoluteLifetimeDays is { } a && a < i)
+            return Error.Validation("ClientSessions.InvalidAbsoluteLifetime",
+                "AbsoluteLifetimeDays must be at least IdleLifetimeDays.");
+
+        return new ApplicationClientSessionOverrides
+        {
+            IdleLifetime = Days(dto.IdleLifetimeDays),
+            AbsoluteLifetime = Days(dto.AbsoluteLifetimeDays),
+        };
+    }
+
     private static ErrorOr<ApplicationDcrOverrides> MapDcr(ApplicationDcrDto d)
     {
         if (LifetimeError("Dcr", d.AccessTokenLifetimeMinutes, d.RefreshTokenLifetimeDays) is { } e) return e;
@@ -437,6 +466,11 @@ public sealed class ApplicationSettingsService(
                 Enabled = doc.NativeGrants.Enabled,
                 AccessTokenLifetimeMinutes = doc.NativeGrants.AccessTokenLifetime is { } na ? (int)na.TotalMinutes : null,
                 RefreshTokenLifetimeDays = doc.NativeGrants.RefreshTokenLifetime is { } nr ? (int)nr.TotalDays : null,
+            },
+            ClientSessions = doc.ClientSessions is null ? null : new ApplicationClientSessionsDto
+            {
+                IdleLifetimeDays = doc.ClientSessions.IdleLifetime is { } idle ? (int)idle.TotalDays : null,
+                AbsoluteLifetimeDays = doc.ClientSessions.AbsoluteLifetime is { } absolute ? (int)absolute.TotalDays : null,
             },
             Dcr = doc.Dcr is null ? null : new ApplicationDcrDto
             {

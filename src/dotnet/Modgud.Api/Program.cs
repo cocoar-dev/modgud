@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.AspNetCore.SignalR;
 using Serilog;
 using Serilog.Sinks.OpenTelemetry;
 using Serilog.Sinks.SystemConsole.Themes;
@@ -245,7 +246,13 @@ try
 
     });
 
-    builder.Services.AddSignalR()
+    builder.Services.AddSingleton<Modgud.Authentication.Sessions.IBrowserSessionConnectionRegistry,
+        Modgud.Authentication.Sessions.BrowserSessionConnectionRegistry>();
+    builder.Services.AddSingleton<Modgud.Api.Realtime.BrowserSessionHubFilter>();
+    builder.Services.AddSignalR(options =>
+        {
+            options.AddFilter<Modgud.Api.Realtime.BrowserSessionHubFilter>();
+        })
         .AddJsonProtocol(options =>
         {
             options.PayloadSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
@@ -341,6 +348,11 @@ try
                 if (!newIdentity.HasClaim(claim.Type, claim.Value))
                     newIdentity.AddClaim(new Claim(claim.Type, claim.Value));
 
+            foreach (var claim in current.FindAll(
+                         Modgud.Authentication.Sessions.SessionClaimTypes.BrowserSessionId))
+                if (!newIdentity.HasClaim(claim.Type, claim.Value))
+                    newIdentity.AddClaim(new Claim(claim.Type, claim.Value));
+
             return Task.CompletedTask;
         };
     });
@@ -348,6 +360,7 @@ try
     builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
         .AddCookie(IdentityConstants.ApplicationScheme, options =>
         {
+            options.EventsType = typeof(Modgud.Authentication.Sessions.BrowserSessionCookieEvents);
             options.Cookie.HttpOnly = true;
             // COOKIE-01: Lax (was Strict). Strict prevents the browser from sending
             // the cookie on top-level navigations from third-party origins — which
@@ -370,37 +383,9 @@ try
             options.CookieManager = new Modgud.Api.Cookies.TenantApexCookieManager();
             options.ExpireTimeSpan = TimeSpan.FromDays(30); // Max lifetime for persistent (RememberMe) cookies
             options.SlidingExpiration = true;
-            // SESSION-01 — re-validate the user's security stamp on every
-            // request (with a small per-request cache configured via
-            // SecurityStampValidatorOptions.ValidationInterval). When the
-            // stamp on disk no longer matches the cookie's stamp, the
-            // cookie is rejected and the user must re-authenticate.
-            options.Events.OnValidatePrincipal = SecurityStampValidator.ValidatePrincipalAsync;
-            options.Events.OnRedirectToLogin = ctx =>
-            {
-                // /api/* is the SPA's data plane — surface 401 so the
-                // SPA can decide where to navigate. Everything else
-                // (including /connect/authorize for inbound OAuth flows
-                // from third-party clients) needs a real 302 redirect
-                // so the browser actually lands on the login page.
-                if (ctx.Request.Path.StartsWithSegments("/api"))
-                {
-                    ctx.Response.StatusCode = 401;
-                    return Task.CompletedTask;
-                }
-                ctx.Response.Redirect(ctx.RedirectUri);
-                return Task.CompletedTask;
-            };
-            options.Events.OnRedirectToAccessDenied = ctx =>
-            {
-                if (ctx.Request.Path.StartsWithSegments("/api"))
-                {
-                    ctx.Response.StatusCode = 403;
-                    return Task.CompletedTask;
-                }
-                ctx.Response.Redirect(ctx.RedirectUri);
-                return Task.CompletedTask;
-            };
+            // BrowserSessionCookieEvents performs authoritative session
+            // validation, delegates security-stamp validation and preserves
+            // the API-specific 401/403 redirect behavior.
             // Login/access-denied paths — the SPA handles these client-side
             // (Vue Router routes for /login + /access-denied), but they need
             // to be valid URLs so the redirect emitted above resolves to the
@@ -743,6 +728,12 @@ try
         Modgud.Authentication.Sessions.DeviceInfoService>();
     builder.Services.AddScoped<Modgud.Authentication.Sessions.ISessionService,
         Modgud.Authentication.Sessions.SessionService>();
+    builder.Services.AddScoped<Modgud.Authentication.Sessions.BrowserSessionCookieEvents>();
+    builder.Services.AddScoped<Modgud.Authentication.Sessions.ClientSessionService>();
+    builder.Services.AddScoped<Modgud.Authentication.Sessions.IClientSessionService>(sp =>
+        sp.GetRequiredService<Modgud.Authentication.Sessions.ClientSessionService>());
+    builder.Services.AddScoped<Modgud.Infrastructure.OpenIddict.IRefreshTokenReuseObserver>(sp =>
+        sp.GetRequiredService<Modgud.Authentication.Sessions.ClientSessionService>());
     builder.Services.AddScoped<Modgud.Authentication.Gdpr.IGdprService,
         Modgud.Authentication.Gdpr.GdprService>();
 
@@ -960,37 +951,50 @@ try
         sp => sp.GetRequiredService<Modgud.Infrastructure.Audit.SecurityAuditLog>());
     builder.Services.AddHostedService<Modgud.Infrastructure.Audit.SecurityAuditWriter>();
 
-    // Quartz-based scheduling framework + the system jobs we host. The DCR
-    // garbage collector was a hand-rolled BackgroundService before Phase 1A;
-    // now it runs as a Quartz job so admins can see runs, override the cron,
-    // and trigger manually from /admin/jobs.
+    // Quartz-based scheduling framework. Realm jobs get one independent
+    // Quartz job + trigger per realm; deployment-wide jobs are registered once
+    // and are visible only from the current Control-Plane realm.
     builder.Services.AddScheduling();
-    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob>(
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob>(
         key: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.Description,
         getParameterSchema: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.GetParameterSchema);
-    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.DcrGcJob>(
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.DcrGcJob>(
         key: Modgud.Api.Features.Admin.Jobs.DcrGcJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.DcrGcJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.DcrGcJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.DcrGcJob.Description);
-    builder.Services.AddSystemJob<Modgud.Api.Features.Inbox.InboxRetentionJob>(
+    builder.Services.AddRealmJob<Modgud.Api.Features.Inbox.InboxRetentionJob>(
         key: Modgud.Api.Features.Inbox.InboxRetentionJob.Key,
         name: Modgud.Api.Features.Inbox.InboxRetentionJob.Name,
         defaultCron: Modgud.Api.Features.Inbox.InboxRetentionJob.DefaultCron,
         description: Modgud.Api.Features.Inbox.InboxRetentionJob.Description);
-    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob>(
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob>(
         key: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.Description);
-    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob>(
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.SessionPruneJob>(
+        key: Modgud.Api.Features.Admin.Jobs.SessionPruneJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.SessionPruneJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.SessionPruneJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.SessionPruneJob.Description);
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob>(
         key: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.DefaultCron,
-        description: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Description);
+        description: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Description,
+        // Soft-delete keeps the tenant DB and its private key material. This
+        // realm-owned hygiene therefore continues while the realm is inactive.
+        runWhenRealmInactive: true);
+    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.SystemJobRunHistoryRetentionJob>(
+        key: Modgud.Api.Features.Admin.Jobs.SystemJobRunHistoryRetentionJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.SystemJobRunHistoryRetentionJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.SystemJobRunHistoryRetentionJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.SystemJobRunHistoryRetentionJob.Description,
+        getParameterSchema: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.GetParameterSchema);
     builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob>(
         key: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Name,

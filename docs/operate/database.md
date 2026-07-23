@@ -220,7 +220,8 @@ Enums are stored as strings (readable in the DB inspector).
 | `mt_doc_realmsettings` | Realm-admin-owned config |
 | `mt_doc_applicationsettings` | Per-App config overrides |
 | `mt_doc_auth_audit_view` | Per-realm tenant audit feed (`AuthAuditView` projection — metadata only) |
-| `mt_doc_usersession` | Active sessions |
+| `mt_doc_usersession` | Authoritative browser/SSO sessions |
+| `mt_doc_clientsession` | Authoritative native/OAuth client sessions and refresh-token-family binding |
 
 In the master DB additionally:
 

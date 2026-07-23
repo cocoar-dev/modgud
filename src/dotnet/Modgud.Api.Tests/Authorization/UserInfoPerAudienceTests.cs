@@ -185,6 +185,12 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
             scope: $"openid offline_access roles permissions {alphaScopeName}",
             resources: [alphaAudience]);
         var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
+        await using (var beforeReuse = GetTenantedDocumentSession())
+        {
+            Assert.Single(await beforeReuse.Query<ClientSession>()
+                .Where(x => x.UserId == testUser.Id && x.ClientId == clientId)
+                .ToListAsync(TestContext.Current.CancellationToken));
+        }
 
         // redeem the refresh token → fresh reference access token
         var newAccessToken = await RedeemRefreshTokenAsync(
@@ -265,6 +271,13 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         Assert.False(replayResponse.IsSuccessStatusCode,
             $"Replayed refresh token should have been rejected: {replayBody}");
         Assert.Contains("invalid_grant", replayBody);
+
+        await using (var afterReuse = GetTenantedDocumentSession())
+        {
+            Assert.Empty(await afterReuse.Query<ClientSession>()
+                .Where(x => x.UserId == testUser.Id && x.ClientId == clientId)
+                .ToListAsync(TestContext.Current.CancellationToken));
+        }
 
         // The reuse rejection emits a best-effort security event on the async
         // writer — poll briefly for it to land in the system-tenant streamless store.

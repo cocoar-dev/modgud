@@ -6,18 +6,16 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 namespace Modgud.Api.HealthChecks;
 
 /// <summary>
-/// End-to-end Marten readiness probe: opens a session against the master
-/// tenant (<see cref="TenantConstants.SystemTenantId"/>) and runs a no-op
-/// query against the Realm document. If the Marten schema isn't applied,
-/// the master DB connection string is wrong, or the multi-tenant master
-/// table isn't readable, this fails — which is exactly what readiness
-/// should refuse traffic for.
+/// End-to-end Marten readiness probe: opens the global store and runs a no-op
+/// query against the Realm directory. If the Marten schema isn't applied or
+/// the master DB connection string is wrong, this fails — which is exactly
+/// what readiness should refuse traffic for.
 ///
 /// <para>Per-tenant DBs are deliberately NOT probed here — they're
 /// initialised on-demand and the count grows over time. Probing each
 /// would make readiness latency O(realms).</para>
 /// </summary>
-public sealed class MartenSchemaHealthCheck(IDocumentStore store) : IHealthCheck
+public sealed class MartenSchemaHealthCheck(IGlobalStore globalStore) : IHealthCheck
 {
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
@@ -25,7 +23,7 @@ public sealed class MartenSchemaHealthCheck(IDocumentStore store) : IHealthCheck
     {
         try
         {
-            await using var session = store.QuerySession(TenantConstants.SystemTenantId);
+            await using var session = globalStore.QuerySession();
             var _ = await session.Query<Realm>().AnyAsync(cancellationToken);
             return HealthCheckResult.Healthy("Marten master schema reachable.");
         }
