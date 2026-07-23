@@ -198,6 +198,9 @@ interface FormState {
   AccessTokenLifetime: number | null
   AuthorizationCodeLifetime: number | null
   SlidingRefreshTokenLifetime: number | null
+  /** Per-client native/OAuth session override in seconds. Null = App/Realm policy. */
+  ClientSessionIdleLifetime: number | null
+  ClientSessionAbsoluteLifetime: number | null
   /** ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys. Empty = realm-scoped. */
   WebAuthnRpId: string
   /** Selected App.Ids. Empty list = realm-wide. */
@@ -246,6 +249,8 @@ function emptyForm(): FormState {
     AccessTokenLifetime: null,
     AuthorizationCodeLifetime: null,
     SlidingRefreshTokenLifetime: null,
+    ClientSessionIdleLifetime: null,
+    ClientSessionAbsoluteLifetime: null,
     WebAuthnRpId: '',
     AppIds: [],
   }
@@ -280,6 +285,8 @@ function fromDto(dto: OAuthClientDto): FormState {
     AccessTokenLifetime: dto.AccessTokenLifetime ?? null,
     AuthorizationCodeLifetime: dto.AuthorizationCodeLifetime ?? null,
     SlidingRefreshTokenLifetime: dto.SlidingRefreshTokenLifetime ?? null,
+    ClientSessionIdleLifetime: dto.ClientSessionIdleLifetime ?? null,
+    ClientSessionAbsoluteLifetime: dto.ClientSessionAbsoluteLifetime ?? null,
     WebAuthnRpId: dto.WebAuthnRpId ?? '',
     AppIds: [...(dto.AppIds ?? [])],
   }
@@ -398,6 +405,12 @@ function buildCreateDto(): CreateOAuthClientDto {
     RequirePushedAuthorizationRequests: form.value.RequirePushedAuthorizationRequests,
     RequireDpop: form.value.RequireDpop,
     RequireDpopNonce: form.value.RequireDpopNonce,
+    IdentityTokenLifetime: form.value.IdentityTokenLifetime,
+    AccessTokenLifetime: form.value.AccessTokenLifetime,
+    AuthorizationCodeLifetime: form.value.AuthorizationCodeLifetime,
+    SlidingRefreshTokenLifetime: form.value.SlidingRefreshTokenLifetime,
+    ClientSessionIdleLifetime: form.value.ClientSessionIdleLifetime,
+    ClientSessionAbsoluteLifetime: form.value.ClientSessionAbsoluteLifetime,
     RedirectUris: [...form.value.RedirectUris],
     PostLogoutRedirectUris: [...form.value.PostLogoutRedirectUris],
     AllowedGrantTypes: [...form.value.AllowedGrantTypes],
@@ -434,6 +447,10 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     AccessTokenLifetime: form.value.AccessTokenLifetime,
     AuthorizationCodeLifetime: form.value.AuthorizationCodeLifetime,
     SlidingRefreshTokenLifetime: form.value.SlidingRefreshTokenLifetime,
+    ClientSessionIdleLifetime: form.value.ClientSessionIdleLifetime,
+    ClientSessionAbsoluteLifetime: form.value.ClientSessionAbsoluteLifetime,
+    ClearClientSessionIdleLifetime: form.value.ClientSessionIdleLifetime === null,
+    ClearClientSessionAbsoluteLifetime: form.value.ClientSessionAbsoluteLifetime === null,
     // ADR-0009 PATCH: send the trimmed value verbatim — "" clears back to
     // realm-scoped, a host sets the per-client RP ID.
     WebAuthnRpId: form.value.WebAuthnRpId.trim(),
@@ -567,7 +584,7 @@ async function copySecret() {
             <CoarTab id="scopes">{{ t('admin.oauthClients.tabs.scopes', {}, 'Scopes') }}</CoarTab>
             <CoarTab id="grants">{{ t('admin.oauthClients.tabs.grants', {}, 'Grants') }}</CoarTab>
             <CoarTab id="urls">{{ t('admin.oauthClients.tabs.urls', {}, 'URLs') }}</CoarTab>
-            <CoarTab v-if="!isCreate" id="lifetimes">{{ t('admin.oauthClients.tabs.lifetimes', {}, 'Token-Laufzeiten') }}</CoarTab>
+            <CoarTab id="lifetimes">{{ t('admin.oauthClients.tabs.lifetimes', {}, 'Lifetimes') }}</CoarTab>
             <CoarTab v-if="original?.IsDynamicallyRegistered" id="dcr">
               {{ t('admin.oauthClients.tabs.dcr', {}, 'Registration Info') }}
             </CoarTab>
@@ -677,7 +694,7 @@ async function copySecret() {
           <!-- Lifetimes -->
           <div v-show="activeTab === 'lifetimes'" class="tab-content">
             <p class="text-xs text-gray-500 mb-2">
-              {{ t('admin.oauthClients.lifetimesHint', {}, 'Values in seconds. Empty = the IdP\'s default.') }}
+              {{ t('admin.oauthClients.lifetimesHint', {}, 'Values in seconds. Empty token values use the IdP default; empty session values inherit from the linked App and then the Realm.') }}
             </p>
             <div class="lifetime-grid">
               <CoarFormField :label="t('admin.oauthClients.identityTokenLifetime', {}, 'Identity-Token')">
@@ -691,6 +708,17 @@ async function copySecret() {
               </CoarFormField>
               <CoarFormField :label="t('admin.oauthClients.slidingRefreshLifetime', {}, 'Sliding Refresh-Token')">
                 <CoarNumberInput v-model="form.SlidingRefreshTokenLifetime" clearable class="input-number" />
+              </CoarFormField>
+            </div>
+            <CoarNote variant="info">
+              {{ t('admin.oauthClients.clientSessionsHint', {}, 'Client sessions are authoritative for refresh-token use. Idle lifetime slides when the app refreshes; absolute lifetime never slides. Maximum: 315,360,000 seconds (3650 days / 10 years). Access tokens remain short-lived independently.') }}
+            </CoarNote>
+            <div class="lifetime-grid">
+              <CoarFormField :label="t('admin.oauthClients.clientSessionIdleLifetime', {}, 'Client session idle lifetime')">
+                <CoarNumberInput v-model="form.ClientSessionIdleLifetime" clearable class="input-number" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.oauthClients.clientSessionAbsoluteLifetime', {}, 'Client session absolute lifetime')">
+                <CoarNumberInput v-model="form.ClientSessionAbsoluteLifetime" clearable class="input-number" />
               </CoarFormField>
             </div>
           </div>

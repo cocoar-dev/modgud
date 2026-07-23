@@ -115,8 +115,19 @@ public static class MartenStoreOptionsExtensions
         // force-logout flow.
         options.Schema.For<UserSession>()
             .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
             .Index(x => x.UserId)
-            .Index(x => x.ExpiresAt);
+            .Index(x => x.ExpiresAt)
+            .Index(x => x.AbsoluteExpiresAt);
+
+        options.Schema.For<ClientSession>()
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Index(x => x.UserId)
+            .Index(x => x.ClientId)
+            .Index(x => x.AuthorizationId)
+            .Index(x => x.ExpiresAt)
+            .Index(x => x.AbsoluteExpiresAt);
 
         // WebAuthn/passkey credentials (raw crypto, not event-sourced). One per
         // enrolled authenticator; indexed by UserId for the per-user list/login

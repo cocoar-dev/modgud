@@ -7,12 +7,12 @@ using Modgud.Authorization.AspNetCore;
 namespace Modgud.Api.Features.Admin.Jobs;
 
 /// <summary>
-/// Admin surface for scheduled jobs. Per-tenant — JobConfig overrides + run
-/// history are stored in the calling tenant's Marten session. Realm-admin
-/// bypass (per Modgud's 3-tier permission model) lets any realm admin
-/// drive the scheduler; granular delegation works via
-/// <c>scheduled-job:read</c> + <c>scheduled-job:write</c> seeded in the
-/// modgud App catalog.
+/// Admin surface for scheduled jobs. Realm-job configuration and history are
+/// stored in the calling realm's Marten session and address only that realm's
+/// Quartz identities. Deployment-wide system jobs are additionally returned
+/// only for the current Control-Plane realm. Realm-admin bypass and granular
+/// <c>scheduled-job:read</c>/<c>scheduled-job:write</c> delegation apply within
+/// that visibility boundary.
 /// </summary>
 public static class JobsEndpoints
 {
@@ -36,7 +36,16 @@ public static class JobsEndpoints
             .RequiresPermission("scheduled-job:read");
 
         group.MapGet("{key}/history", async (string key, IJobsService jobs, int take, CancellationToken ct) =>
-            Results.Ok(await jobs.GetHistoryAsync(key, take == 0 ? 50 : take, ct)))
+        {
+            try
+            {
+                return Results.Ok(await jobs.GetHistoryAsync(key, take == 0 ? 50 : take, ct));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.NotFound(new { error = ex.Message });
+            }
+        })
             .WithName("V2_AdminJobs_GetHistory")
             .RequiresPermission("scheduled-job:read");
 

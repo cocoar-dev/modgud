@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Sessions;
 using BuildingBlocks.Helper;
 
 namespace Modgud.Api.Tests.Security;
@@ -15,12 +16,8 @@ namespace Modgud.Api.Tests.Security;
 /// (OAuth tokens + device-session rows + auth cookies), not just rotate the stamp
 /// or delete tracking rows.
 ///
-/// Note on what is asserted:
-///  - #1 "revoke all" does NOT rotate the stamp today (only deletes rows), so the
-///    OTHER device's cookie survives — asserted directly via a second cookie client.
-///  - #2/#3 password reset ALREADY rotates the Identity stamp (so cookies die), but
-///    leaves OAuth tokens AND device-session rows alive. We assert the device-session
-///    rows are revoked (proves RevokeAllAccessAsync ran), which is RED before the fix.
+/// "Sign out everywhere" includes the acting browser and every other browser or
+/// native client session. Password resets use the same access-revocation path.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
 public class SecurityAuditWave1Tests : IntegrationTestBase
@@ -31,7 +28,7 @@ public class SecurityAuditWave1Tests : IntegrationTestBase
 
     // #1 — self-service "log out everywhere" must invalidate other devices' cookies.
     [Fact]
-    public async Task RevokeAllSessions_InvalidatesOtherDeviceCookie_KeepsActingSession()
+    public async Task RevokeAllSessions_InvalidatesEveryDeviceIncludingTheCaller()
     {
         var ct = TestContext.Current.CancellationToken;
         var deviceA = await CreateAuthenticatedClientAsync("tu", Password);
@@ -39,21 +36,62 @@ public class SecurityAuditWave1Tests : IntegrationTestBase
 
         Assert.Equal(HttpStatusCode.OK, (await deviceB.GetAsync("/api/account/me", ct)).StatusCode);
 
+        var sessionsSeenByA = await deviceA.GetFromJsonAsync<SessionListDto>(
+            "/api/auth/sessions", JsonOptions, ct);
+        var sessionsSeenByB = await deviceB.GetFromJsonAsync<SessionListDto>(
+            "/api/auth/sessions", JsonOptions, ct);
+        var currentA = Assert.Single(sessionsSeenByA!.Sessions, x => x.IsCurrent);
+        var currentB = Assert.Single(sessionsSeenByB!.Sessions, x => x.IsCurrent);
+        Assert.NotEqual(currentA.Id, currentB.Id);
+
         var revoke = await deviceA.DeleteAsync("/api/auth/sessions", ct);
-        Assert.Equal(HttpStatusCode.NoContent, revoke.StatusCode);
+        Assert.True(
+            revoke.StatusCode == HttpStatusCode.NoContent,
+            $"Expected 204, got {(int)revoke.StatusCode}: {await revoke.Content.ReadAsStringAsync(ct)}");
 
         // Other device must now be rejected at the next SecurityStampValidator pass
         // (ValidationInterval=0 in the harness). RED today: revoke-all only deletes
         // tracking rows, never rotates the stamp, so device B keeps authenticating.
         Assert.Equal(HttpStatusCode.Unauthorized, (await deviceB.GetAsync("/api/account/me", ct)).StatusCode);
 
-        // Acting device survives (RefreshSignInAsync re-issues its cookie).
-        Assert.Equal(HttpStatusCode.OK, (await deviceA.GetAsync("/api/account/me", ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await deviceA.GetAsync("/api/account/me", ct)).StatusCode);
+        Assert.Equal(0, await SessionCountAsync(DefaultUser!.Id, ct));
+    }
 
-        // Re-audit regression guard: revoke-all deletes EVERY session row including
-        // the acting device's; the acting session must be re-recorded so the user's
-        // own "active sessions" list isn't left empty while they're still signed in.
-        Assert.True(await SessionCountAsync(DefaultUser!.Id, ct) >= 1);
+    [Fact]
+    public async Task TargetedRevoke_InvalidatesOnlyTheSelectedBrowserSession()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var deviceA = await CreateAuthenticatedClientAsync("tu", Password);
+        var deviceB = await CreateAuthenticatedClientAsync("tu", Password);
+        var sessionsSeenByB = await deviceB.GetFromJsonAsync<SessionListDto>(
+            "/api/auth/sessions", JsonOptions, ct);
+        var deviceBSession = Assert.Single(sessionsSeenByB!.Sessions, x => x.IsCurrent);
+
+        var revoke = await deviceA.DeleteAsync(
+            $"/api/auth/sessions/{deviceBSession.Id}", ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, revoke.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await deviceB.GetAsync("/api/account/me", ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await deviceA.GetAsync("/api/account/me", ct)).StatusCode);
+    }
+
+    [Fact]
+    public async Task NormalLogout_RemovesOnlyTheActingBrowserSession()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var deviceA = await CreateAuthenticatedClientAsync("tu", Password);
+        var deviceB = await CreateAuthenticatedClientAsync("tu", Password);
+        var list = await deviceA.GetFromJsonAsync<SessionListDto>(
+            "/api/auth/sessions", JsonOptions, ct);
+        var deviceASession = Assert.Single(list!.Sessions, x => x.IsCurrent);
+
+        var logout = await deviceA.PostAsync("/api/account/logout", null, ct);
+
+        Assert.Equal(HttpStatusCode.OK, logout.StatusCode);
+        await using var read = GetTenantedDocumentSession();
+        Assert.Null(await read.LoadAsync<UserSession>(Guid.Parse(deviceASession.Id), ct));
+        Assert.Equal(HttpStatusCode.OK, (await deviceB.GetAsync("/api/account/me", ct)).StatusCode);
     }
 
     // #2 — admin password reset must revoke the target user's live access.
@@ -70,7 +108,9 @@ public class SecurityAuditWave1Tests : IntegrationTestBase
         // Admin (default Client = realm admin) resets the target's password.
         var resp = await Client.PutAsJsonAsync(
             $"/api/user/{new ShortGuid(target.Id)}/password", new { Password = "NewPass4567!" }, ct);
-        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        Assert.True(
+            resp.StatusCode == HttpStatusCode.OK,
+            $"Expected 200, got {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync(ct)}");
 
         // RED today: admin reset rotates the stamp but never calls RevokeAllAccessAsync,
         // so the device-session rows survive (and so do OAuth tokens).
@@ -97,7 +137,9 @@ public class SecurityAuditWave1Tests : IntegrationTestBase
         var anon = Factory.CreateDefaultClient(new CookieContainerHandler());
         var resp = await anon.PostAsJsonAsync("/api/account/reset-password",
             new { UserId = DefaultUser!.Id.ToString(), Token = token, NewPassword = "NewPass4567!" }, ct);
-        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        Assert.True(
+            resp.StatusCode == HttpStatusCode.OK,
+            $"Expected 200, got {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync(ct)}");
 
         // RED today: reset-password rotates the stamp but never calls RevokeAllAccessAsync.
         Assert.Equal(0, await SessionCountAsync(DefaultUser!.Id, ct));

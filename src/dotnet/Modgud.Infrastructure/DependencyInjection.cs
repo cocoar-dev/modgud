@@ -87,6 +87,15 @@ public static class DependencyInjection
                 .Identity(x => x.Id)
                 .Index(x => x.Slug, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsActive')::boolean = true)"; });
 
+            // Deployment-wide scheduled jobs are controlled from whichever
+            // realm currently holds the Control-Plane role, but their config
+            // and history are platform data — never tenant/realm data.
+            opts.Schema.For<Modgud.Infrastructure.Scheduling.JobConfig>()
+                .Identity(x => x.Key);
+            opts.Schema.For<Modgud.Infrastructure.Scheduling.JobRunHistoryEntry>()
+                .Identity(x => x.Id)
+                .Index(x => new { x.JobKey, x.StartedAt });
+
             // RealmSigningKey lives in the per-tenant store (configured below),
             // not here. Defense-in-depth: a master-DB compromise must NOT leak
             // every realm's private signing key — the key for realm A only sits

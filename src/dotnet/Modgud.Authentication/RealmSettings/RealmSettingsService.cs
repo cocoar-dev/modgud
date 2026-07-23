@@ -79,6 +79,20 @@ public sealed class RealmSettingsService(
             doc.NativeGrants = native.Value;
         }
 
+        if (dto.BrowserSessions is not null)
+        {
+            var browserSessions = ApplyBrowserSessionPatch(doc.BrowserSessions, dto.BrowserSessions);
+            if (browserSessions.IsError) return browserSessions.FirstError;
+            doc.BrowserSessions = browserSessions.Value;
+        }
+
+        if (dto.ClientSessions is not null)
+        {
+            var clientSessions = ApplyClientSessionPatch(doc.ClientSessions, dto.ClientSessions);
+            if (clientSessions.IsError) return clientSessions.FirstError;
+            doc.ClientSessions = clientSessions.Value;
+        }
+
         if (dto.AuthRateLimits is not null)
         {
             var arl = ApplyAuthRateLimitsPatch(doc.AuthRateLimits, dto.AuthRateLimits);
@@ -153,6 +167,8 @@ public sealed class RealmSettingsService(
         Dcr = MapDcrToDto(doc.Dcr),
         Cimd = MapCimdToDto(doc.Cimd),
         NativeGrants = MapNativeGrantsToDto(doc.NativeGrants),
+        BrowserSessions = MapBrowserSessionsToDto(doc.BrowserSessions),
+        ClientSessions = MapClientSessionsToDto(doc.ClientSessions),
         AuthRateLimits = MapAuthRateLimitsToDto(doc.AuthRateLimits),
         Branding = MapBrandingToDto(doc.Branding),
         RegistrationFields = MapRegistrationFieldsToDto(doc.RegistrationFields),
@@ -507,6 +523,61 @@ public sealed class RealmSettingsService(
         return merged;
     }
 
+    private static ErrorOr<BrowserSessionPolicy> ApplyBrowserSessionPatch(
+        BrowserSessionPolicy? current,
+        UpdateBrowserSessionPolicyDto patch)
+    {
+        var policy = current ?? BrowserSessionPolicy.Defaults;
+        var merged = policy with
+        {
+            IdleLifetime = patch.IdleLifetimeMinutes is { } idle
+                ? TimeSpan.FromMinutes(idle)
+                : policy.IdleLifetime,
+            AbsoluteLifetime = patch.AbsoluteLifetimeMinutes is { } absolute
+                ? TimeSpan.FromMinutes(absolute)
+                : policy.AbsoluteLifetime,
+            AllowRememberMe = patch.AllowRememberMe ?? policy.AllowRememberMe,
+        };
+
+        if (merged.IdleLifetime < TimeSpan.FromMinutes(5) ||
+            merged.IdleLifetime > TimeSpan.FromDays(365))
+            return Error.Validation("BrowserSessions.InvalidIdleLifetime",
+                "IdleLifetimeMinutes must be between 5 minutes and 365 days.");
+        if (merged.AbsoluteLifetime < merged.IdleLifetime ||
+            merged.AbsoluteLifetime > TimeSpan.FromDays(3650))
+            return Error.Validation("BrowserSessions.InvalidAbsoluteLifetime",
+                "AbsoluteLifetimeMinutes must be at least the idle lifetime and no more than 3650 days.");
+
+        return merged;
+    }
+
+    private static ErrorOr<ClientSessionPolicy> ApplyClientSessionPatch(
+        ClientSessionPolicy? current,
+        UpdateClientSessionPolicyDto patch)
+    {
+        var policy = current ?? ClientSessionPolicy.Defaults;
+        var merged = policy with
+        {
+            IdleLifetime = patch.IdleLifetimeDays is { } idle
+                ? TimeSpan.FromDays(idle)
+                : policy.IdleLifetime,
+            AbsoluteLifetime = patch.AbsoluteLifetimeDays is { } absolute
+                ? TimeSpan.FromDays(absolute)
+                : policy.AbsoluteLifetime,
+        };
+
+        if (merged.IdleLifetime < TimeSpan.FromDays(1) ||
+            merged.IdleLifetime > TimeSpan.FromDays(3650))
+            return Error.Validation("ClientSessions.InvalidIdleLifetime",
+                "IdleLifetimeDays must be between 1 and 3650.");
+        if (merged.AbsoluteLifetime < merged.IdleLifetime ||
+            merged.AbsoluteLifetime > TimeSpan.FromDays(3650))
+            return Error.Validation("ClientSessions.InvalidAbsoluteLifetime",
+                "AbsoluteLifetimeDays must be at least the idle lifetime and no more than 3650.");
+
+        return merged;
+    }
+
     internal static NativeGrantSettingsDto MapNativeGrantsToDto(NativeGrantSettings? s)
     {
         // Source the never-configured display defaults from the domain record so
@@ -517,6 +588,27 @@ public sealed class RealmSettingsService(
             Enabled = s.Enabled,
             AccessTokenLifetimeMinutes = (int)s.AccessTokenLifetime.TotalMinutes,
             RefreshTokenLifetimeDays = (int)s.RefreshTokenLifetime.TotalDays,
+        };
+    }
+
+    internal static BrowserSessionPolicyDto MapBrowserSessionsToDto(BrowserSessionPolicy? policy)
+    {
+        policy ??= BrowserSessionPolicy.Defaults;
+        return new BrowserSessionPolicyDto
+        {
+            IdleLifetimeMinutes = checked((int)policy.IdleLifetime.TotalMinutes),
+            AbsoluteLifetimeMinutes = checked((int)policy.AbsoluteLifetime.TotalMinutes),
+            AllowRememberMe = policy.AllowRememberMe,
+        };
+    }
+
+    internal static ClientSessionPolicyDto MapClientSessionsToDto(ClientSessionPolicy? policy)
+    {
+        policy ??= ClientSessionPolicy.Defaults;
+        return new ClientSessionPolicyDto
+        {
+            IdleLifetimeDays = checked((int)policy.IdleLifetime.TotalDays),
+            AbsoluteLifetimeDays = checked((int)policy.AbsoluteLifetime.TotalDays),
         };
     }
 

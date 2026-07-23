@@ -59,6 +59,15 @@ public class RealmSettings
     /// additional, separate gate.</summary>
     public NativeGrantSettings? NativeGrants { get; set; }
 
+    /// <summary>Realm-wide policy for the shared Modgud browser/SSO session.
+    /// Null = <see cref="BrowserSessionPolicy.Defaults"/>.</summary>
+    public BrowserSessionPolicy? BrowserSessions { get; set; }
+
+    /// <summary>Realm fallback for native OAuth client/device sessions.
+    /// Applications and concrete OAuth clients may override it. Null =
+    /// <see cref="ClientSessionPolicy.Defaults"/>.</summary>
+    public ClientSessionPolicy? ClientSessions { get; set; }
+
     /// <summary>Per-realm overrides for the per-IP auth rate-limit ceilings
     /// (native-otp, magic-link, password-reset, email-otp, email-verification,
     /// passkey-begin, bootstrap). Null = never configured; every policy uses its

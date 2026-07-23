@@ -172,7 +172,6 @@ public static class MagicLinkEndpoints
             IDocumentSession session,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
-            ISessionService sessionService,
             ISecurityAuditLog securityAudit,
             HttpContext context) =>
         {
@@ -314,7 +313,6 @@ public static class MagicLinkEndpoints
             // Sign in — Magic Link is always persistent; user can request a new link anytime.
             await signInManager.SignInAsync(user, isPersistent: true);
 
-            await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
 
             Serilog.Log.Information("Magic link login successful. UserId={UserId} IP={IP}", user.Id, ip);
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.MagicLink, ModgudMeters.LoginOutcome.Success);

@@ -16,6 +16,8 @@ public record RealmSettingsDto
     public DcrSettingsDto Dcr { get; init; } = new();
     public CimdSettingsDto Cimd { get; init; } = new();
     public NativeGrantSettingsDto NativeGrants { get; init; } = new();
+    public BrowserSessionPolicyDto BrowserSessions { get; init; } = new();
+    public ClientSessionPolicyDto ClientSessions { get; init; } = new();
     public AuthRateLimitsDto AuthRateLimits { get; init; } = new();
     public BrandingSettingsDto Branding { get; init; } = new();
     public RegistrationFieldsSettingsDto RegistrationFields { get; init; } = new();
@@ -37,6 +39,8 @@ public record UpdateRealmSettingsDto
     public UpdateDcrSettingsDto? Dcr { get; init; }
     public UpdateCimdSettingsDto? Cimd { get; init; }
     public UpdateNativeGrantSettingsDto? NativeGrants { get; init; }
+    public UpdateBrowserSessionPolicyDto? BrowserSessions { get; init; }
+    public UpdateClientSessionPolicyDto? ClientSessions { get; init; }
     public UpdateAuthRateLimitsDto? AuthRateLimits { get; init; }
     public UpdateBrandingSettingsDto? Branding { get; init; }
     public UpdateRegistrationFieldsSettingsDto? RegistrationFields { get; init; }

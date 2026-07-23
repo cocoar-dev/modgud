@@ -1,25 +1,20 @@
 using System.Text.Json;
 using Marten;
-using Microsoft.Extensions.DependencyInjection;
 using Quartz;
 using Modgud.Application.Scheduling;
-using Modgud.Infrastructure.Persistence.Tenancy;
-using Modgud.Infrastructure.Realms;
 using Modgud.Infrastructure.Scheduling;
 
 namespace Modgud.Api.Features.Admin.Jobs;
 
 /// <summary>
-/// Trims the <see cref="JobRunHistoryEntry"/> document table for every active
-/// realm. Iterates tenants via <see cref="IRealmCache"/>; each tenant gets
-/// its own DI scope so the injected <see cref="IJobRunHistoryRetentionService"/>
-/// opens its Marten session against the right tenant DB. Two independent caps —
-/// both tunable in the admin UI without a code change.
+/// Trims the owning realm's <see cref="JobRunHistoryEntry"/> document table.
+/// Quartz creates one instance per realm, with two independent caps tunable
+/// from that realm's admin UI.
 /// </summary>
 [DisallowConcurrentExecution]
 public class JobRunHistoryRetentionJob(
-    IServiceScopeFactory scopeFactory,
-    IRealmCache realmCache) : IJob
+    IDocumentSession session,
+    IJobRunHistoryRetentionService retention) : IJob
 {
     public const string Key = "job-run-history-retention";
     public const string Name = "Job-Run-History Retention";
@@ -54,46 +49,20 @@ public class JobRunHistoryRetentionJob(
     public async Task Execute(IJobExecutionContext context)
     {
         var ct = context.CancellationToken;
-        var realms = await realmCache.GetAllActiveAsync();
-
-        int totalByAge = 0;
-        int totalByCount = 0;
-        int tenantsProcessed = 0;
-
-        foreach (var realm in realms)
-        {
-            try
-            {
-                using var scope = scopeFactory.CreateScope();
-                using var _ = TenantContext.Enter(realm.Slug);
-
-                var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-                var retention = scope.ServiceProvider.GetRequiredService<IJobRunHistoryRetentionService>();
-
-                var config = await BuildConfigAsync(session, ct);
-                var result = await retention.ExecuteAsync(config, ct);
-
-                totalByAge += result.DeletedByAge;
-                totalByCount += result.DeletedByCount;
-                tenantsProcessed++;
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                Serilog.Log.Error(ex,
-                    "job-run-history-retention failed for realm {Slug}",
-                    realm.Slug);
-            }
-        }
-
-        var total = totalByAge + totalByCount;
+        var config = await BuildConfigAsync(session, Key, ct);
+        var result = await retention.ExecuteAsync(config, ct);
+        var total = result.DeletedByAge + result.DeletedByCount;
         context.Result = total == 0
-            ? $"Nothing to delete ({tenantsProcessed} tenant(s) checked)"
-            : $"Deleted {total} entries across {tenantsProcessed} tenant(s) (age: {totalByAge}, count: {totalByCount})";
+            ? "Nothing to delete"
+            : $"Deleted {total} entries (age: {result.DeletedByAge}, count: {result.DeletedByCount})";
     }
 
-    private static async Task<JobRunHistoryRetentionConfig> BuildConfigAsync(IDocumentSession session, CancellationToken ct)
+    internal static async Task<JobRunHistoryRetentionConfig> BuildConfigAsync(
+        IQuerySession session,
+        string configKey,
+        CancellationToken ct)
     {
-        var cfg = await session.LoadAsync<JobConfig>(Key, ct);
+        var cfg = await session.LoadAsync<JobConfig>(configKey, ct);
         var raw = cfg?.Parameters ?? new Dictionary<string, object?>();
         return new JobRunHistoryRetentionConfig(
             MaxAgeDays: ReadInt(raw, MaxAgeDaysKey) ?? DefaultMaxAgeDays,

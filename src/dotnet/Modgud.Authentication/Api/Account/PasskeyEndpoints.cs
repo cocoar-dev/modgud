@@ -364,7 +364,6 @@ public static class PasskeyEndpoints
             IDocumentSession session,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
-            ISessionService sessionService,
             JsonElement body,
             CancellationToken ct) =>
         {
@@ -444,7 +443,6 @@ public static class PasskeyEndpoints
             // Passkey login is always persistent — user can re-authenticate anytime via biometrics
             await signInManager.SignInAsync(user, isPersistent: true);
 
-            await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
 
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
             Serilog.Log.Information("Passkey login successful. UserId={UserId} IP={IP}", user.Id, ip);

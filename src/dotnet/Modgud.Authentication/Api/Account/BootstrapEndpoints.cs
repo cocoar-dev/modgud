@@ -43,7 +43,6 @@ public static class BootstrapEndpoints
             IPendingAdminInviteService inviteService,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
-            ISessionService sessionService,
             ISecurityAuditLog securityAudit) =>
         {
             var ip = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -74,7 +73,6 @@ public static class BootstrapEndpoints
             if (user is not null)
             {
                 await signInManager.SignInAsync(user, isPersistent: false);
-                await SessionTracker.RecordLoginAsync(sessionService, http, user.Id);
             }
 
             Serilog.Log.Warning(

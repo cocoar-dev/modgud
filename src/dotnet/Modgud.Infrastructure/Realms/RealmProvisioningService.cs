@@ -5,6 +5,7 @@ using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Authorization;
 using Modgud.Infrastructure.OAuth;
 using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Infrastructure.Scheduling;
 using ErrorOr;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
@@ -103,6 +104,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
     private readonly IRealmCache _realmCache;
     private readonly IServiceProvider _serviceProvider;
     private readonly ISecurityAuditLog _securityAudit;
+    private readonly IReadOnlyList<IRealmJobScheduleObserver> _jobScheduleObservers;
     private readonly ILogger<RealmProvisioningService> _logger;
 
     public RealmProvisioningService(
@@ -112,6 +114,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         IRealmCache realmCache,
         IServiceProvider serviceProvider,
         ISecurityAuditLog securityAudit,
+        IEnumerable<IRealmJobScheduleObserver> jobScheduleObservers,
         ILogger<RealmProvisioningService> logger)
     {
         _globalStore = globalStore;
@@ -120,6 +123,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         _realmCache = realmCache;
         _serviceProvider = serviceProvider;
         _securityAudit = securityAudit;
+        _jobScheduleObservers = jobScheduleObservers.ToList();
         _logger = logger;
     }
 
@@ -305,6 +309,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             ct);
 
         _realmCache.Invalidate();
+        await ReconcileJobSchedulesAsync(ct);
         return realm;
     }
 
@@ -423,6 +428,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         await session.SaveChangesAsync(ct);
 
         _realmCache.Invalidate();
+        await ReconcileJobSchedulesAsync(ct);
         return realm;
     }
 
@@ -453,6 +459,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         await session.SaveChangesAsync(ct);
 
         _realmCache.Invalidate();
+        await ReconcileJobSchedulesAsync(ct);
         return true;
     }
 
@@ -515,6 +522,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         session.Delete(realm);
         await session.SaveChangesAsync(ct);
         _realmCache.Invalidate();
+        await ReconcileJobSchedulesAsync(ct);
 
         _logger.LogWarning(
             "Hard-deleted realm {Slug}: dropped tenant database {DbName} and removed the global Realm record. " +
@@ -560,6 +568,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         await session.SaveChangesAsync(ct);
 
         _realmCache.Invalidate();
+        await ReconcileJobSchedulesAsync(ct);
 
         _logger.LogWarning(
             "Rolled back partially-provisioned realm {Slug} after a post-create bootstrap failure. " +
@@ -731,6 +740,8 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
                 targetSlug);
         }
 
+        await ReconcileJobSchedulesAsync(ct);
+
         _logger.LogWarning(
             "Control plane transferred to realm {Slug} (cleared {Count} previous holder(s))",
             targetSlug, otherHolders.Count);
@@ -839,6 +850,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         await AppRealmSeeder.SeedAsync(_serviceProvider, slug, isControlPlane: false, _logger, ct);
 
         _realmCache.Invalidate();
+        await ReconcileJobSchedulesAsync(ct);
         _logger.LogInformation("Adopted existing database {DbName} as realm {Slug}", tenantDbName, slug);
         _securityAudit.Record(new SecurityAuditRecord
         {
@@ -850,5 +862,25 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             Message = $"Adopted existing database {tenantDbName} as realm {slug}",
         });
         return realm;
+    }
+
+    private async Task ReconcileJobSchedulesAsync(CancellationToken ct)
+    {
+        foreach (var observer in _jobScheduleObservers)
+        {
+            try
+            {
+                await observer.ReconcileAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                // Realm mutations are already committed at every call site.
+                // Scheduling is in-memory and self-heals on restart, so a
+                // reconcile failure must not turn a successful lifecycle
+                // operation into a misleading HTTP/CLI failure.
+                _logger.LogError(ex,
+                    "Realm lifecycle mutation committed, but Quartz schedules could not be reconciled");
+            }
+        }
     }
 }

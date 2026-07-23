@@ -32,6 +32,8 @@ export interface OAuthClientDto {
   AccessTokenLifetime?: number | null
   AuthorizationCodeLifetime?: number | null
   SlidingRefreshTokenLifetime?: number | null
+  ClientSessionIdleLifetime?: number | null
+  ClientSessionAbsoluteLifetime?: number | null
   AlwaysSendClientClaims: boolean
   UpdateAccessTokenClaimsOnRefresh: boolean
   ClientClaimsPrefix?: string | null
@@ -105,12 +107,18 @@ export interface CreateOAuthClientDto {
   RequireConsent?: boolean
   AllowedGrantTypes?: string[]
   AllowedCorsOrigins?: string[]
+  IdentityTokenLifetime?: number | null
+  AccessTokenLifetime?: number | null
+  AuthorizationCodeLifetime?: number | null
+  SlidingRefreshTokenLifetime?: number | null
   /** RFC 9126 — require this client to use Pushed Authorization Requests. Off by default. */
   RequirePushedAuthorizationRequests?: boolean
   /** RFC 9449 (#118) — require this client to present a DPoP proof at the token endpoint. Off by default. */
   RequireDpop?: boolean
   /** RFC 9449 §8-9 (#118) — require this client's DPoP proofs to carry a server-issued nonce. Off by default. */
   RequireDpopNonce?: boolean
+  ClientSessionIdleLifetime?: number | null
+  ClientSessionAbsoluteLifetime?: number | null
   /** ADR-0009 — admin-set per-client WebAuthn RP ID. Blank = realm-scoped. */
   WebAuthnRpId?: string | null
   /**
@@ -139,6 +147,10 @@ export interface UpdateOAuthClientDto {
   AccessTokenLifetime?: number | null
   AuthorizationCodeLifetime?: number | null
   SlidingRefreshTokenLifetime?: number | null
+  ClientSessionIdleLifetime?: number | null
+  ClientSessionAbsoluteLifetime?: number | null
+  ClearClientSessionIdleLifetime?: boolean
+  ClearClientSessionAbsoluteLifetime?: boolean
   Claims?: OAuthClientClaimDto[] | null
   Roles?: string[] | null
   /** RFC 9126 PAR-requirement patch: null/missing = no change, true/false sets it. */

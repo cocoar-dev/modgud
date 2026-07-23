@@ -159,7 +159,6 @@ public static class EmailOtpEndpoints
             HttpContext context,
             SignInManager<ApplicationUser> signInManager,
             IEmailOtpService emailOtpService,
-            ISessionService sessionService,
             CancellationToken ct) =>
         {
             // Empty body / missing field — reject at the boundary instead of letting the service NRE.
@@ -201,7 +200,6 @@ public static class EmailOtpEndpoints
             await context.SignOutAsync(IdentityConstants.TwoFactorUserIdScheme);
             await signInManager.SignInAsync(user, isPersistent: request.RememberMe);
 
-            await SessionTracker.RecordLoginAsync(sessionService, context, user.Id, ct);
 
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.EmailOtp, ModgudMeters.LoginOutcome.Success);
             return Results.Ok(new { Message = "Login successful" });

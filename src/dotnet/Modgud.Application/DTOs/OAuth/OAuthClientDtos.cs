@@ -28,7 +28,8 @@ public record OAuthClientDto
     public int? AccessTokenLifetime { get; init; }
     public int? AuthorizationCodeLifetime { get; init; }
     public int? SlidingRefreshTokenLifetime { get; init; }
-
+    public int? ClientSessionIdleLifetime { get; init; }
+    public int? ClientSessionAbsoluteLifetime { get; init; }
     public bool AlwaysSendClientClaims { get; init; }
     public bool UpdateAccessTokenClaimsOnRefresh { get; init; }
     public string? ClientClaimsPrefix { get; init; }
@@ -139,6 +140,8 @@ public record CreateOAuthClientDto
     public int? AccessTokenLifetime { get; init; }
     public int? AuthorizationCodeLifetime { get; init; }
     public int? SlidingRefreshTokenLifetime { get; init; }
+    public int? ClientSessionIdleLifetime { get; init; }
+    public int? ClientSessionAbsoluteLifetime { get; init; }
 
     public bool AlwaysSendClientClaims { get; init; }
     public bool UpdateAccessTokenClaimsOnRefresh { get; init; }
@@ -201,6 +204,10 @@ public record UpdateOAuthClientDto
     public int? AccessTokenLifetime { get; init; }
     public int? AuthorizationCodeLifetime { get; init; }
     public int? SlidingRefreshTokenLifetime { get; init; }
+    public int? ClientSessionIdleLifetime { get; init; }
+    public int? ClientSessionAbsoluteLifetime { get; init; }
+    public bool ClearClientSessionIdleLifetime { get; init; }
+    public bool ClearClientSessionAbsoluteLifetime { get; init; }
 
     public bool? AlwaysSendClientClaims { get; init; }
     public bool? UpdateAccessTokenClaimsOnRefresh { get; init; }

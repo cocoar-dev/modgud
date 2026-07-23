@@ -2,9 +2,10 @@ namespace Modgud.Application.Scheduling;
 
 /// <summary>
 /// Admin-facing facade combining the static job registry (compiled jobs),
-/// the persisted <c>JobConfig</c> overrides, the running Quartz scheduler,
-/// and the <c>JobRunHistoryEntry</c> ledger. Used by the admin endpoints
-/// at <c>/api/admin/jobs</c>; not consumed from the request path elsewhere.
+/// persisted <c>JobConfig</c> overrides, Quartz identities, and the
+/// <c>JobRunHistoryEntry</c> ledger. Realm state is tenant-owned. System state
+/// lives in the non-tenanted global store and is exposed only when the current
+/// realm is the Control Plane.
 /// </summary>
 public interface IJobsService
 {
@@ -34,6 +35,7 @@ public sealed record JobOverviewDto
     public required string Name { get; init; }
     public string? Description { get; init; }
     public required string Kind { get; init; }                 // "System" | "Script"
+    public required string Scope { get; init; }                // "Realm" | "System"
     public required string EffectiveCron { get; init; }        // override if present, else default
     public required string DefaultCron { get; init; }
     public bool HasOverride { get; init; }

@@ -23,10 +23,16 @@ public static class AdminSessionEndpoints
         group.MapGet("{id}/sessions", async (
             string id,
             ISessionService svc,
+            IClientSessionService clientSessions,
             CancellationToken ct) =>
         {
             var userId = ShortGuid.Decode(id);
             var result = await svc.GetSessionsAsync(userId, currentSessionId: null, ct);
+            if (!result.IsError)
+            {
+                var clients = await clientSessions.GetSessionsAsync(userId, ct);
+                result = result.Value with { ClientSessions = clients.ToList() };
+            }
             return result.ToResult();
         })
         .WithName("Admin_Sessions_List")

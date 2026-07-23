@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Modgud.Api.Tests.Infrastructure;
+using Modgud.Authentication.Sessions;
 
 namespace Modgud.Api.Tests.Security;
 
@@ -39,6 +40,24 @@ public class MfaTests : IntegrationTestBase
         Assert.NotEmpty(sharedKey!);
         Assert.Contains("otpauth://totp/", uri);
         Assert.Contains("Modgud", uri);
+    }
+
+    [Fact]
+    public async Task MfaSetup_RefreshSignIn_PreservesTheBrowserSessionId()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var before = await Client.GetFromJsonAsync<SessionListDto>(
+            "/api/auth/sessions", JsonOptions, ct);
+        var currentBefore = Assert.Single(before!.Sessions, x => x.IsCurrent);
+
+        var response = await Client.PostAsync("/api/account/mfa/setup", null, ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var after = await Client.GetFromJsonAsync<SessionListDto>(
+            "/api/auth/sessions", JsonOptions, ct);
+        var currentAfter = Assert.Single(after!.Sessions, x => x.IsCurrent);
+        Assert.Equal(currentBefore.Id, currentAfter.Id);
+        Assert.Equal(before.Sessions.Count, after.Sessions.Count);
     }
 
     [Fact]

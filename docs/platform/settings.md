@@ -66,15 +66,16 @@ Configured as `TwoFactorGracePeriodDays` in deployment config — not
 currently editable from the admin UI. The shipping default is 14
 days.
 
-## Sign-in cookie lifetime
+## Sign-in session lifetime
 
-The auth cookie's `ExpireTimeSpan` is 30 days with sliding expiration.
-"Remember me" controls whether the cookie is persistent at all —
-without it, the cookie is session-only and dies with the browser tab.
+Browser/SSO lifetimes are realm-owned and editable under
+Administration → **Realm Settings → Sessions**. The defaults are a
+30-day sliding idle window and a 180-day absolute limit. The same page
+controls whether persistent “remember me” cookies are allowed.
 
-These values currently come from deployment config (not the admin UI)
-— see [Authentication cookies](../integrate/cookies-and-sessions) for the full
-cookie inventory.
+Native/OAuth client sessions have a separate realm default and can be
+overridden per Application and per OAuth client. See
+[Authentication cookies and sessions](../integrate/cookies-and-sessions).
 
 ## SMTP
 

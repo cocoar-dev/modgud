@@ -2,6 +2,8 @@ using Marten;
 using Microsoft.Extensions.Logging;
 using Quartz;
 using Modgud.Application.Scheduling;
+using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Infrastructure.Scheduling;
 
@@ -12,105 +14,141 @@ namespace Modgud.Infrastructure.Scheduling;
 /// run history from Marten. The single non-trivial bit is the cron-reschedule
 /// path — we delete and recreate the trigger to keep semantics simple.
 /// </remarks>
-public class JobsService(
+internal sealed class JobsService(
     IJobRegistry registry,
     ISchedulerFactory schedulerFactory,
+    RealmJobScheduler jobScheduler,
+    IGlobalStore globalStore,
     IDocumentSession session,
     ILogger<JobsService> logger) : IJobsService
 {
     public async Task<IReadOnlyList<JobOverviewDto>> GetAllAsync(CancellationToken ct = default)
     {
-        var configs = await session.Query<JobConfig>().ToListAsync(ct);
-        var configByKey = configs.ToDictionary(c => c.Key, StringComparer.OrdinalIgnoreCase);
+        var realm = await GetCurrentRealmAsync(ct);
+        var registrations = VisibleRegistrations(realm.IsControlPlane).ToList();
+        var realmKeys = registrations
+            .Where(r => r.Scope == JobScope.Realm)
+            .Select(r => r.Key)
+            .ToArray();
+        var systemKeys = registrations
+            .Where(r => r.Scope == JobScope.System)
+            .Select(r => r.Key)
+            .ToArray();
 
-        // Latest run per key, in a single query.
-        var registrationKeys = registry.All.Select(r => r.Key).ToList();
-        var allHistory = registrationKeys.Count == 0
-            ? new List<JobRunHistoryEntry>()
-            : await session.Query<JobRunHistoryEntry>()
-                .Where(h => h.JobKey.IsOneOf(registrationKeys.ToArray()))
-                .OrderByDescending(h => h.StartedAt)
-                .ToListAsync(ct);
+        var (configs, allHistory) = await LoadStateAsync(session, realmKeys, ct);
+        if (systemKeys.Length > 0)
+        {
+            await using var systemSession = globalStore.QuerySession();
+            var (systemConfigs, systemHistory) = await LoadStateAsync(
+                systemSession, systemKeys, ct);
+            configs.AddRange(systemConfigs);
+            allHistory.AddRange(systemHistory);
+        }
+
+        var configByKey = configs.ToDictionary(c => c.Key, StringComparer.OrdinalIgnoreCase);
         var latestByKey = allHistory
             .GroupBy(h => h.JobKey)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(h => h.StartedAt).First(),
+                StringComparer.OrdinalIgnoreCase);
 
         var scheduler = await schedulerFactory.GetScheduler(ct);
-        var result = new List<JobOverviewDto>(registry.All.Count);
-        foreach (var reg in registry.All)
+        var result = new List<JobOverviewDto>(registrations.Count);
+        foreach (var reg in registrations)
         {
             configByKey.TryGetValue(reg.Key, out var cfg);
             latestByKey.TryGetValue(reg.Key, out var lastRun);
-            result.Add(await BuildOverviewAsync(reg, cfg, lastRun, scheduler, ct));
+            result.Add(await BuildOverviewAsync(reg, realm.Slug, cfg, lastRun, scheduler, ct));
         }
         return result;
     }
 
     public async Task<JobOverviewDto?> GetAsync(string key, CancellationToken ct = default)
     {
-        var reg = registry.All.FirstOrDefault(r => r.Key == key);
+        var realm = await GetCurrentRealmAsync(ct);
+        var reg = VisibleRegistrations(realm.IsControlPlane)
+            .FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase));
         if (reg is null) return null;
 
-        var cfg = await session.LoadAsync<JobConfig>(key, ct);
-        var lastRun = await session.Query<JobRunHistoryEntry>()
-            .Where(h => h.JobKey == key)
-            .OrderByDescending(h => h.StartedAt)
-            .FirstOrDefaultAsync(ct);
+        JobConfig? cfg;
+        JobRunHistoryEntry? lastRun;
+        if (reg.Scope == JobScope.System)
+        {
+            await using var systemSession = globalStore.QuerySession();
+            cfg = await systemSession.LoadAsync<JobConfig>(reg.Key, ct);
+            lastRun = await GetLastRunAsync(systemSession, reg.Key, ct);
+        }
+        else
+        {
+            cfg = await session.LoadAsync<JobConfig>(reg.Key, ct);
+            lastRun = await GetLastRunAsync(session, reg.Key, ct);
+        }
 
         var scheduler = await schedulerFactory.GetScheduler(ct);
-        return await BuildOverviewAsync(reg, cfg, lastRun, scheduler, ct);
+        return await BuildOverviewAsync(reg, realm.Slug, cfg, lastRun, scheduler, ct);
     }
 
     public async Task<IReadOnlyList<JobRunHistoryDto>> GetHistoryAsync(string key, int take = 50, CancellationToken ct = default)
     {
+        var realm = await GetCurrentRealmAsync(ct);
+        var reg = VisibleRegistrations(realm.IsControlPlane)
+            .FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"Unknown job key '{key}'");
+
         if (take < 1) take = 1;
         if (take > 500) take = 500;
 
-        var entries = await session.Query<JobRunHistoryEntry>()
-            .Where(h => h.JobKey == key)
-            .OrderByDescending(h => h.StartedAt)
-            .Take(take)
-            .ToListAsync(ct);
+        List<JobRunHistoryEntry> entries;
+        if (reg.Scope == JobScope.System)
+        {
+            await using var systemSession = globalStore.QuerySession();
+            entries = await GetHistoryAsync(systemSession, reg.Key, take, ct);
+        }
+        else
+        {
+            entries = await GetHistoryAsync(session, reg.Key, take, ct);
+        }
+
         return entries.Select(ToDto).ToList();
     }
 
     public async Task UpdateAsync(string key, JobUpdateDto update, CancellationToken ct = default)
     {
-        var reg = registry.All.FirstOrDefault(r => r.Key == key)
+        var realm = await GetCurrentRealmAsync(ct);
+        var reg = VisibleRegistrations(realm.IsControlPlane)
+            .FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException($"Unknown job key '{key}'");
 
-        var existing = await session.LoadAsync<JobConfig>(key, ct);
-        var nextParams = existing?.Parameters;
-        if (update.Parameters is not null)
+        JobConfig cfg;
+        if (reg.Scope == JobScope.System)
         {
-            // Drop unknown keys so a stale UI can't smuggle garbage into the doc.
-            var schemaKeys = reg.GetParameterSchema?.Invoke().Select(f => f.Key).ToHashSet(StringComparer.Ordinal)
-                ?? new HashSet<string>(StringComparer.Ordinal);
-            nextParams = update.Parameters
-                .Where(kv => schemaKeys.Contains(kv.Key))
-                .ToDictionary(kv => kv.Key, kv => kv.Value);
+            await using var systemSession = globalStore.LightweightSession();
+            var existing = await systemSession.LoadAsync<JobConfig>(reg.Key, ct);
+            cfg = BuildConfig(reg, update, existing);
+            systemSession.Store(cfg);
+            await systemSession.SaveChangesAsync(ct);
+        }
+        else
+        {
+            var existing = await session.LoadAsync<JobConfig>(reg.Key, ct);
+            cfg = BuildConfig(reg, update, existing);
+            session.Store(cfg);
+            await session.SaveChangesAsync(ct);
         }
 
-        var cfg = (existing ?? new JobConfig { Key = key, Kind = reg.Kind, CreatedAt = DateTime.UtcNow }) with
-        {
-            CronOverride = update.CronOverride,
-            Enabled = update.Enabled ?? existing?.Enabled ?? true,
-            Parameters = nextParams,
-            UpdatedAt = DateTime.UtcNow,
-        };
-        session.Store(cfg);
-        await session.SaveChangesAsync(ct);
-
-        await RescheduleAsync(reg, cfg, ct);
+        await jobScheduler.ApplyAsync(reg, realm.Slug, cfg, ct);
     }
 
     public async Task TriggerNowAsync(string key, Guid? triggeredByUserId = null, CancellationToken ct = default)
     {
-        var reg = registry.All.FirstOrDefault(r => r.Key == key)
+        var realm = await GetCurrentRealmAsync(ct);
+        var reg = VisibleRegistrations(realm.IsControlPlane)
+            .FirstOrDefault(r => string.Equals(r.Key, key, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException($"Unknown job key '{key}'");
 
         var scheduler = await schedulerFactory.GetScheduler(ct);
-        var jobKey = new JobKey(reg.Key);
+        var jobKey = RealmJobScheduler.GetJobKey(reg, realm.Slug);
         if (!await scheduler.CheckExists(jobKey, ct))
             throw new InvalidOperationException($"Job '{reg.Key}' is not registered with the scheduler");
 
@@ -122,59 +160,111 @@ public class JobsService(
         if (triggeredByUserId is Guid uid && uid != Guid.Empty)
             data[JobRunListener.TriggeredByUserIdKey] = uid;
         await scheduler.TriggerJob(jobKey, data, ct);
-        logger.LogInformation("[Jobs] Manual trigger for {Key} by user {UserId}",
-            reg.Key, triggeredByUserId?.ToString() ?? "(unknown)");
+        logger.LogInformation(
+            "[Jobs] Manual trigger for {Key} in realm {Realm} by user {UserId}",
+            reg.Key, realm.Slug, triggeredByUserId?.ToString() ?? "(unknown)");
     }
 
     // ── helpers ─────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Apply the (possibly new) <see cref="JobConfig"/> to Quartz: re-schedule
-    /// with the effective cron, or unschedule if disabled.
-    /// </summary>
-    public async Task RescheduleAsync(JobRegistration reg, JobConfig? cfg, CancellationToken ct = default)
+    private IEnumerable<JobRegistration> VisibleRegistrations(bool isControlPlane)
     {
-        var scheduler = await schedulerFactory.GetScheduler(ct);
-        var jobKey = new JobKey(reg.Key);
-        var triggerKey = new TriggerKey($"{reg.Key}-trigger");
+        return registry.All.Where(r =>
+            r.Scope == JobScope.Realm
+            || (r.Scope == JobScope.System && isControlPlane));
+    }
 
-        // Always make sure the job exists.
-        if (!await scheduler.CheckExists(jobKey, ct))
+    private async Task<Realm> GetCurrentRealmAsync(CancellationToken ct)
+    {
+        var slug = TenantContext.Current;
+        await using var globalSession = globalStore.QuerySession();
+        return await globalSession.Query<Realm>()
+            .FirstOrDefaultAsync(r => r.Slug == slug, ct)
+            ?? throw new InvalidOperationException($"Unknown current realm '{slug}'");
+    }
+
+    private static async Task<(List<JobConfig> Configs, List<JobRunHistoryEntry> History)> LoadStateAsync(
+        IQuerySession source,
+        string[] keys,
+        CancellationToken ct)
+    {
+        if (keys.Length == 0)
+            return ([], []);
+
+        var configs = await source.Query<JobConfig>()
+            .Where(c => c.Key.IsOneOf(keys))
+            .ToListAsync(ct);
+        var history = await source.Query<JobRunHistoryEntry>()
+            .Where(h => h.JobKey.IsOneOf(keys))
+            .ToListAsync(ct);
+        return (configs.ToList(), history.ToList());
+    }
+
+    private static Task<JobRunHistoryEntry?> GetLastRunAsync(
+        IQuerySession source,
+        string key,
+        CancellationToken ct) =>
+        source.Query<JobRunHistoryEntry>()
+            .Where(h => h.JobKey == key)
+            .OrderByDescending(h => h.StartedAt)
+            .FirstOrDefaultAsync(ct);
+
+    private static async Task<List<JobRunHistoryEntry>> GetHistoryAsync(
+        IQuerySession source,
+        string key,
+        int take,
+        CancellationToken ct)
+    {
+        var entries = await source.Query<JobRunHistoryEntry>()
+            .Where(h => h.JobKey == key)
+            .OrderByDescending(h => h.StartedAt)
+            .Take(take)
+            .ToListAsync(ct);
+        return entries.ToList();
+    }
+
+    private static JobConfig BuildConfig(
+        JobRegistration registration,
+        JobUpdateDto update,
+        JobConfig? existing)
+    {
+        var nextParams = existing?.Parameters;
+        if (update.Parameters is not null)
         {
-            var jobDetail = JobBuilder.Create(reg.JobType)
-                .WithIdentity(jobKey)
-                .WithDescription(reg.Description)
-                .StoreDurably()
-                .Build();
-            await scheduler.AddJob(jobDetail, replace: false, ct);
+            // Drop unknown keys so a stale UI can't smuggle garbage into the doc.
+            var schemaKeys = registration.GetParameterSchema?.Invoke()
+                .Select(f => f.Key)
+                .ToHashSet(StringComparer.Ordinal)
+                ?? new HashSet<string>(StringComparer.Ordinal);
+            nextParams = update.Parameters
+                .Where(kv => schemaKeys.Contains(kv.Key))
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
         }
 
-        await scheduler.UnscheduleJob(triggerKey, ct);
-
-        if (cfg is not null && !cfg.Enabled)
+        return (existing ?? new JobConfig
         {
-            logger.LogInformation("[Jobs] {Key} is disabled — no trigger scheduled", reg.Key);
-            return;
-        }
-
-        var cron = cfg?.CronOverride ?? reg.DefaultCron;
-        var trigger = TriggerBuilder.Create()
-            .WithIdentity(triggerKey)
-            .ForJob(jobKey)
-            .WithCronSchedule(cron)
-            .Build();
-        await scheduler.ScheduleJob(trigger, ct);
-        logger.LogInformation("[Jobs] Scheduled {Key} with cron '{Cron}'", reg.Key, cron);
+            Key = registration.Key,
+            Kind = registration.Kind,
+            CreatedAt = DateTime.UtcNow,
+        }) with
+        {
+            CronOverride = update.CronOverride,
+            Enabled = update.Enabled ?? existing?.Enabled ?? true,
+            Parameters = nextParams,
+            UpdatedAt = DateTime.UtcNow,
+        };
     }
 
     private static async Task<JobOverviewDto> BuildOverviewAsync(
         JobRegistration reg,
+        string realmSlug,
         JobConfig? cfg,
         JobRunHistoryEntry? lastRun,
         IScheduler scheduler,
         CancellationToken ct)
     {
-        var triggers = await scheduler.GetTriggersOfJob(new JobKey(reg.Key), ct);
+        var triggers = await scheduler.GetTriggersOfJob(
+            RealmJobScheduler.GetJobKey(reg, realmSlug), ct);
         DateTime? next = triggers
             .Select(t => t.GetNextFireTimeUtc()?.UtcDateTime)
             .Where(d => d.HasValue)
@@ -190,6 +280,7 @@ public class JobsService(
             Name = cfg?.DisplayName ?? reg.Name,
             Description = cfg?.Description ?? reg.Description,
             Kind = reg.Kind.ToString(),
+            Scope = reg.Scope.ToString(),
             EffectiveCron = cfg?.CronOverride ?? reg.DefaultCron,
             DefaultCron = reg.DefaultCron,
             HasOverride = !string.IsNullOrWhiteSpace(cfg?.CronOverride),

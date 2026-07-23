@@ -115,7 +115,6 @@ public static class ExternalAuthEndpoints
             async (HttpContext http,
                    [FromServices] ExternalLoginProcessor processor,
                    [FromServices] Microsoft.AspNetCore.Identity.SignInManager<Modgud.Authentication.Domain.ApplicationUser> signInManager,
-                   [FromServices] Modgud.Authentication.Sessions.ISessionService sessionService,
                    CancellationToken ct) =>
             {
                 var auth = await http.AuthenticateAsync(Microsoft.AspNetCore.Identity.IdentityConstants.ExternalScheme);
@@ -162,11 +161,6 @@ public static class ExternalAuthEndpoints
                 // Discard the short-lived External ticket now that we have
                 // the application cookie — defense against stale claim-replay.
                 await http.SignOutAsync(Microsoft.AspNetCore.Identity.IdentityConstants.ExternalScheme);
-
-                // Track per-user device session (best-effort).
-                var signedInIdClaim = result.Principal!.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-                if (Guid.TryParse(signedInIdClaim, out var signedInUserId))
-                    await Modgud.Authentication.Sessions.SessionTracker.RecordLoginAsync(sessionService, http, signedInUserId, ct);
 
                 var returnUrl = auth.Properties.Items.TryGetValue("returnUrl", out var ru) && !string.IsNullOrWhiteSpace(ru)
                     ? ru
