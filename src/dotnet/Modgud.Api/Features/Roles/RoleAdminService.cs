@@ -94,8 +94,9 @@ public sealed class RoleAdminService(IDocumentSession session)
     /// <summary>
     /// Validates a payload into a <see cref="PermissionRole"/> (Id minted here): AppId
     /// resolves to an existing App, every PermissionId resolves to that App's catalog,
-    /// PermissionIds require an App link, and a role must grant something (App link or
-    /// IsRealmAdmin).
+    /// and PermissionIds require an App link. Roles have exactly one scope: ordinary
+    /// roles are App-bound, while realm-admin roles are deliberately unscoped and may
+    /// carry neither an App link nor catalog permissions.
     /// </summary>
     public async Task<ErrorOr<PermissionRole>> BuildRoleAsync(RolePayload dto, CancellationToken ct = default)
     {
@@ -103,6 +104,14 @@ public sealed class RoleAdminService(IDocumentSession session)
             return Error.Validation("Role.NameRequired", "Name is required.");
 
         var permissionIdsInput = dto.PermissionIds ?? [];
+
+        if (dto.IsRealmAdmin
+            && (!string.IsNullOrWhiteSpace(dto.AppId) || permissionIdsInput.Count > 0))
+        {
+            return Error.Validation(
+                "Role.RealmAdminMustBeUnscoped",
+                "A realm-admin role cannot be linked to an App or carry App permissions.");
+        }
 
         Guid? appId = null;
         App? linkedApp = null;

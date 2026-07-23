@@ -24,8 +24,9 @@ interface NavItemDef {
   to: string
   /**
    * Resource permissions that grant visibility. Matches if the user holds
-   * any of these. `app:admin` is a global bypass and applied implicitly by
-   * `authStore.hasPermission`.
+   * any of these. `realm:admin` is the current-realm bypass and
+   * `<resource>:admin` is the resource-wide bypass; both are applied
+   * implicitly by `authStore.hasPermission`.
    */
   requirePermissions: string[]
   /**

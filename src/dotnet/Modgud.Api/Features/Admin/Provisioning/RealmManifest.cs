@@ -203,13 +203,13 @@ public sealed record RealmManifestRole
     [Description("Optional description.")]
     public string? Description { get; init; }
 
-    [Description("App slug whose catalog Permissions resolve into. Omit for a pure realm-admin role.")]
+    [Description("App slug whose catalog Permissions resolve into. Required for an App role; forbidden for a realm-admin role.")]
     public string? App { get; init; }
 
-    [Description("If true, this role confers realm:admin — the realm-wide bypass (full administration). A realm-admin role needs no App/Permissions. Provisioning is trusted, so this is allowed from the manifest.")]
+    [Description("If true, this role confers realm:admin across every App in this realm. App and Permissions must both be omitted.")]
     public bool IsRealmAdmin { get; init; }
 
-    [Description("Permissions from the linked app's catalog this role grants (requires App).")]
+    [Description("Permissions from the linked App's catalog this role grants. Requires App and is forbidden for a realm-admin role.")]
     public List<RealmManifestPermission> Permissions { get; init; } = [];
 
     public string ResolveKey() => Key ?? Name;

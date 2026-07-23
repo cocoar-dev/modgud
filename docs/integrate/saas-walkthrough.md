@@ -161,7 +161,8 @@ usually want more nuanced roles.
 | **App** | `acme` |
 | Permissions | `todo:read`, `todo:write` |
 
-Roles bind to one App via `AppId`; the `PermissionIds` reference
+Application roles bind to one App via `AppId`; a pure `realm:admin`
+role is the explicit realm-local exception. The `PermissionIds` reference
 specific catalog entries of that App. The same string `todo:read`
 in a different App's catalog is a different permission.
 

@@ -9,9 +9,9 @@ namespace Modgud.Api.Features.Roles;
 
 /// <summary>
 /// Create/Update payload for a <see cref="PermissionRole"/>. <see cref="AppId"/>
-/// is the (ShortGuid) FK into the role's App; null = the role is a pure
-/// realm-admin role and must therefore set <see cref="IsRealmAdmin"/> to
-/// true and leave <see cref="PermissionIds"/> empty. Each
+/// is the (ShortGuid) FK into an ordinary role's App. A realm-admin role
+/// must instead leave <see cref="AppId"/> null and
+/// <see cref="PermissionIds"/> empty. Each
 /// <see cref="PermissionIds"/> entry is an <c>AppPermission.Id</c>
 /// (ShortGuid) FK into <c>App.Permissions</c> of the linked App; the
 /// admin endpoint validates them at write-time.

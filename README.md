@@ -19,8 +19,9 @@ emission, full 2FA spectrum, GDPR self-service.
   database separation prevents query-level tenant mixing.
 - **Multi-app permission model** — Apps are first-class. Permissions
   are 2-segment (`<resource>:<action>`) inside an app's catalog. Two
-  bypass tiers, no more. Roles bind to one App, groups carry a
-  `BoundTo` activation list.
+  bypass tiers, no more. Application roles bind to one App; a pure
+  `realm:admin` role is the explicit realm-local exception. Groups
+  carry a `BoundTo` activation list.
 - **Keycloak-style `resource_access` on UserInfo** — per-audience
   blocks with bypass pre-expansion and per-RS subset narrowing. A
   drop-in `IClaimsTransformation` library flattens the right block
