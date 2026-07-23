@@ -80,7 +80,7 @@ public class SecurityAuditStoreTests : IntegrationTestBase
 
         using (Modgud.Infrastructure.Persistence.Tenancy.TenantContext.Enter("system"))
         {
-            audit.Record(new SecurityAuditRecord
+            audit.RecordAbuse(new SecurityAuditRecord
             {
                 EventType = AuditEvents.LoginFailedUnknownUser,
                 ActorKind = AuditActorKind.AnonymousIdentifier,
@@ -91,7 +91,7 @@ public class SecurityAuditStoreTests : IntegrationTestBase
         }
         using (Modgud.Infrastructure.Persistence.Tenancy.TenantContext.Enter(otherRealm))
         {
-            audit.Record(new SecurityAuditRecord
+            audit.RecordAbuse(new SecurityAuditRecord
             {
                 EventType = AuditEvents.LoginFailedUnknownUser,
                 ActorKind = AuditActorKind.AnonymousIdentifier,
@@ -130,6 +130,96 @@ public class SecurityAuditStoreTests : IntegrationTestBase
         Assert.NotEqual(
             systemRecorded.UnknownIdentifierFingerprint,
             acmeRecorded!.UnknownIdentifierFingerprint);
+    }
+
+    [Fact]
+    public async Task Required_event_uses_the_callers_business_transaction()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var committedMarker = $"atomic-audit-{Guid.NewGuid():N}";
+        var abandonedMarker = $"abandoned-audit-{Guid.NewGuid():N}";
+        var audit = Factory.Services.GetRequiredService<ISecurityAuditLog>();
+
+        using (Modgud.Infrastructure.Persistence.Tenancy.TenantContext.Enter("system"))
+        {
+            await using (var abandoned = GetTenantedDocumentSession("system"))
+            {
+                audit.StoreRequired(abandoned, new SecurityAuditRecord
+                {
+                    EventType = AuditEvents.SecurityRetentionChanged,
+                    OperationCode = abandonedMarker,
+                    RetentionDays = 14,
+                    OutcomeCode = AuditOutcomes.Succeeded,
+                });
+                // Deliberately no SaveChangesAsync: the business transaction
+                // is abandoned, therefore its audit row must be abandoned too.
+            }
+
+            await using (var committed = GetTenantedDocumentSession("system"))
+            {
+                audit.StoreRequired(committed, new SecurityAuditRecord
+                {
+                    EventType = AuditEvents.SecurityRetentionChanged,
+                    OperationCode = committedMarker,
+                    RetentionDays = 30,
+                    OutcomeCode = AuditOutcomes.Succeeded,
+                });
+                await committed.SaveChangesAsync(ct);
+            }
+        }
+
+        await using var read = GetTenantedDocumentSession("system");
+        Assert.Null(await read.Query<RealmSecurityAuditEvent>()
+            .FirstOrDefaultAsync(x => x.OperationCode == abandonedMarker, ct));
+        var committedRow = await read.Query<RealmSecurityAuditEvent>()
+            .FirstOrDefaultAsync(x => x.OperationCode == committedMarker, ct);
+        Assert.NotNull(committedRow);
+        Assert.Equal(30, committedRow!.RetentionDays);
+    }
+
+    [Fact]
+    public async Task Abuse_burst_is_persisted_as_bounded_count_aggregate()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var marker = $"abuse-aggregate-{Guid.NewGuid():N}";
+        var audit = Factory.Services.GetRequiredService<ISecurityAuditLog>();
+
+        using (Modgud.Infrastructure.Persistence.Tenancy.TenantContext.Enter("system"))
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                audit.RecordAbuse(new SecurityAuditRecord
+                {
+                    EventType = AuditEvents.LoginFailedUnknownUser,
+                    ActorKind = AuditActorKind.AnonymousIdentifier,
+                    UnknownIdentifier = "aggregate@example.test",
+                    IpAddress = "203.0.113.80",
+                    OutcomeCode = AuditOutcomes.Rejected,
+                    ReasonCode = marker,
+                });
+            }
+        }
+
+        IReadOnlyList<RealmSecurityAuditEvent> rows = [];
+        for (var attempt = 0; attempt < 25; attempt++)
+        {
+            await using var read = GetTenantedDocumentSession("system");
+            rows = await read.Query<RealmSecurityAuditEvent>()
+                .Where(x => x.ReasonCode == marker)
+                .ToListAsync(ct);
+            if (rows.Sum(x => x.Count ?? 1) >= 3)
+                break;
+            await Task.Delay(200, ct);
+        }
+
+        Assert.Equal(3, rows.Sum(x => x.Count ?? 1));
+        Assert.Contains(rows, x => x.Count == 3);
+        Assert.All(rows, x =>
+        {
+            Assert.NotNull(x.FirstObservedAt);
+            Assert.NotNull(x.LastObservedAt);
+            Assert.True(x.LastObservedAt >= x.FirstObservedAt);
+        });
     }
 
     [Fact]

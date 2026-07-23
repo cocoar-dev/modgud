@@ -1,3 +1,5 @@
+using Marten;
+
 namespace Modgud.Infrastructure.Audit;
 
 /// <summary>
@@ -41,6 +43,8 @@ public sealed record SecurityAuditRecord
     public int? ReusedCount { get; init; }
     public int? RetentionDays { get; init; }
     public DateTimeOffset? EffectiveAt { get; init; }
+    public DateTimeOffset? FirstObservedAt { get; init; }
+    public DateTimeOffset? LastObservedAt { get; init; }
 }
 
 /// <summary>
@@ -66,12 +70,43 @@ public sealed record PlatformAuditRecord
 }
 
 /// <summary>
-/// Best-effort, non-blocking security-event sink. Realm and platform records use
-/// separate methods and payload types so storage ownership and the PII boundary
-/// cannot be selected through a boolean flag.
+/// Classified streamless audit sink. Required changes and individual incidents
+/// wait for durable persistence. Abuse signals are bounded and aggregated.
+/// Reconstructable operations telemetry remains explicitly best-effort.
 /// </summary>
 public interface ISecurityAuditLog
 {
-    void Record(SecurityAuditRecord record);
-    void RecordPlatform(PlatformAuditRecord record);
+    ValueTask RecordRequiredAsync(
+        SecurityAuditRecord record,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Adds a required realm event to an existing Marten unit of work. The
+    /// caller's next <see cref="IDocumentSession.SaveChangesAsync"/> commits the
+    /// business state and audit row atomically.
+    /// </summary>
+    void StoreRequired(
+        IDocumentSession session,
+        SecurityAuditRecord record);
+
+    ValueTask RecordIncidentAsync(
+        SecurityAuditRecord record,
+        CancellationToken ct = default);
+
+    void RecordAbuse(SecurityAuditRecord record);
+    void RecordTelemetry(SecurityAuditRecord record);
+
+    ValueTask RecordPlatformRequiredAsync(
+        PlatformAuditRecord record,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Adds a required deployment-wide event to the caller's Global Store unit
+    /// of work so business state and audit row commit atomically.
+    /// </summary>
+    void StorePlatformRequired(
+        IDocumentSession session,
+        PlatformAuditRecord record);
+
+    void RecordPlatformTelemetry(PlatformAuditRecord record);
 }

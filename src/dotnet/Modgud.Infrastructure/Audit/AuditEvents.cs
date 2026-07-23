@@ -80,12 +80,23 @@ public static class AuditEvents
     /// Carries Ip.</summary>
     public const string MagicLinkInvalid = "security.magic_link_invalid";
 
-    /// <summary>An external/federation login was rejected before any user link —
-    /// domain allowlist, JIT disabled, inactive user, malformed token, or a
-    /// misconfigured provider. <c>Reason</c> disambiguates. Covers the SAML
-    /// protocol gates (no metadata, no SSO endpoint, context-build / response-read
-    /// failure, non-success status) as well as the OIDC/processor rejections.</summary>
-    public const string ExternalLoginRejected = "security.external_login_rejected";
+    /// <summary>An external/federation response was rejected because its protocol
+    /// shape, signature-independent validation or request correlation was invalid.
+    /// This is a durable security incident, not a policy decision.</summary>
+    public const string ExternalLoginProtocolRejected =
+        "security.external_login_protocol_rejected";
+
+    /// <summary>An otherwise valid external identity was rejected by realm policy:
+    /// domain allowlist, JIT disabled or inactive/deleted user. Individual attempts
+    /// are abuse telemetry and are durably aggregated.</summary>
+    public const string ExternalLoginPolicyRejected =
+        "security.external_login_policy_rejected";
+
+    /// <summary>An external login could not start because provider metadata,
+    /// endpoints or configuration were unavailable. Operational telemetry rather
+    /// than a security incident.</summary>
+    public const string ExternalLoginConfigurationError =
+        "ops.external_login_configuration_error";
 
     /// <summary>A SAML response failed the admin-required signature check
     /// (response/assertion unsigned). A distinct <b>tamper / signature-wrapping</b>
@@ -135,16 +146,22 @@ public static class AuditEvents
     /// <summary>A realm signing key was rotated by an admin (tenant-visible).</summary>
     public const string SigningKeyRotated = "ops.signing_key_rotated";
 
-    /// <summary>The signing-key janitor purged expired retired keys (platform-only).</summary>
+    /// <summary>The owning realm's signing-key janitor purged expired retired keys.</summary>
     public const string SigningKeyPurged = "ops.signing_key_purged";
 
     /// <summary>A realm's SAML SP certificate was rotated or first generated
     /// (tenant-visible — a realm-relevant trust change).</summary>
     public const string SamlCertRotated = "ops.saml_cert_rotated";
 
-    /// <summary>Background SAML metadata refresh tick / IdP signing-cert change
-    /// (platform-only).</summary>
-    public const string SamlMetadataRefreshed = "ops.saml_metadata_refreshed";
+    /// <summary>Background SAML metadata refresh summary. Operational telemetry;
+    /// no trust-material change is represented by this event.</summary>
+    public const string SamlMetadataRefreshCompleted =
+        "ops.saml_metadata_refresh_completed";
+
+    /// <summary>The trusted IdP signing-certificate set changed after a metadata
+    /// refresh. This trust-boundary change requires a durable audit record.</summary>
+    public const string SamlSigningCertificatesChanged =
+        "ops.saml_signing_certificates_changed";
 
     /// <summary>A recovery-CLI operation was invoked (filesystem-trust, control-plane
     /// only). <c>Reason</c> carries the specific operation + parameters.</summary>
@@ -166,11 +183,12 @@ public static class AuditEvents
     public const string ControlPlaneRealmOperation = "ops.control_plane_realm_operation";
 
     /// <summary>A per-realm account-lifecycle sweep ran (reminders / self-erase /
-    /// auto-purge counts). Platform-only operational summary.</summary>
+    /// auto-purge counts). Realm-owned operational summary.</summary>
     public const string AccountLifecycleSwept = "ops.account_lifecycle_swept";
 
     /// <summary>A bootstrap-admin invite was issued (tenant-visible realm-init).
-    /// Any email is masked at the call site.</summary>
+    /// The recipient remains in the short-lived invite document; the durable
+    /// audit row deliberately carries no recipient PII.</summary>
     public const string BootstrapInviteIssued = "ops.bootstrap_invite_issued";
 
     /// <summary>A DCR client was registered (tenant-visible).</summary>

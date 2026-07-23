@@ -22,12 +22,12 @@ Every realm job has its own Quartz job + trigger. Run history (`JobRunHistoryEnt
 
 ## Registered jobs
 
-Eight job definitions ship with Modgud today:
+Nine job definitions ship with Modgud today:
 
-- Six are **realm jobs**. Each active realm gets an independent Quartz job and trigger, so one customer can run at 18:00, another at 21:00, and another can disable its cron and run manually.
-- Two are **system jobs**: `system-job-run-history-retention` and `security-audit-prune`. Each exists exactly once because it operates on a deployment-wide store, and is visible/configurable only in the realm that currently holds the Control-Plane role.
+- Seven are **realm jobs**. Each active realm gets an independent Quartz job and trigger, so one customer can run at 18:00, another at 21:00, and another can disable its cron and run manually.
+- Two are **system jobs**: `system-job-run-history-retention` and `platform-audit-prune`. Each exists exactly once because it operates on a deployment-wide store, and is visible/configurable only in the realm that currently holds the Control-Plane role.
 
-The Control-Plane realm is still a realm, so it also owns its own copies of all five realm jobs.
+The Control-Plane realm is still a realm, so it also owns its own copies of all seven realm jobs.
 
 System-job configuration and history live in the non-tenanted global store,
 not in the Control-Plane realm's database. Transferring the Control-Plane role

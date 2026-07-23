@@ -8,6 +8,7 @@ using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Services;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Sessions;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Domain.OAuth.Apis;
@@ -548,6 +549,27 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         var identity = (ClaimsIdentity)principal.Identity!;
         foreach (var gid in sessionGroupIds)
             identity.AddClaim(new Claim(FederationClaimTypes.SessionGroup, gid.ToString()));
+
+        // Browser sessions are authoritative since F3. A hand-forged cookie
+        // therefore needs the same signed session-id claim and backing row as
+        // a real SignInManager login; otherwise OnValidatePrincipal correctly
+        // rejects it before the authorize endpoint.
+        using (TenantContext.Enter(TenantConstants.SystemTenantId))
+        {
+            var createdSession = await scope.ServiceProvider
+                .GetRequiredService<ISessionService>()
+                .CreateSessionAsync(
+                    user.Id,
+                    ipAddress: null,
+                    userAgent: "UserInfoPerAudienceTests",
+                    TestContext.Current.CancellationToken);
+            Assert.False(
+                createdSession.IsError,
+                createdSession.IsError ? createdSession.FirstError.Description : null);
+            identity.AddClaim(new Claim(
+                SessionClaimTypes.BrowserSessionId,
+                createdSession.Value.Id.ToString()));
+        }
 
         var cookieOptions = scope.ServiceProvider
             .GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()

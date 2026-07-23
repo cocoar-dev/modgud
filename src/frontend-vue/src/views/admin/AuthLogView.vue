@@ -33,6 +33,8 @@ interface SecurityLogEntry {
   OutcomeCode: string
   ReasonCode: string | null
   TargetRealmSlug: string | null
+  FirstObservedAt: string | null
+  LastObservedAt: string | null
   Message: string
 }
 

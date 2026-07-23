@@ -21,5 +21,8 @@ F2 (tenant isolation) and F4 (erasure) are resolved as one storage decision:
    retention expires. A realm hard-delete removes them with the database.
 7. Realm Security retention defaults to 7 days (1–365); Platform retention
    defaults to 365 days. Arbitrary clear/delete endpoints do not exist.
-8. Delivery durability remains a separate F7 decision; these streamless feeds
-   are still best-effort.
+8. F7 assigns every streamless event type one enforced delivery class:
+   Required (transactional or synchronously durable), Incident
+   (synchronously durable), Abuse (bounded raw input plus retrying count
+   aggregates), or Telemetry (explicitly best-effort). The complete operational
+   contract is documented in [Security and platform logs](../admin/auth-log.md#delivery-guarantees).

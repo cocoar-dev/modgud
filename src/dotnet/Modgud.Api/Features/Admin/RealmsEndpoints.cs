@@ -110,7 +110,7 @@ public static class RealmsEndpoints
                     realm.Slug);
 
                 await svc.RollbackProvisionedRealmAsync(realm.Slug, ct);
-                RecordControlPlaneRealmOperation(
+                await RecordControlPlaneRealmOperationAsync(
                     securityAudit,
                     http,
                     realm.Slug,
@@ -127,7 +127,7 @@ public static class RealmsEndpoints
                           + "See the server logs / the realm error feed for the underlying cause.");
             }
 
-            RecordControlPlaneRealmOperation(
+            await RecordControlPlaneRealmOperationAsync(
                 securityAudit,
                 http,
                 realm.Slug,
@@ -212,7 +212,7 @@ public static class RealmsEndpoints
                     ct);
             }
 
-            RecordControlPlaneRealmOperation(
+            await RecordControlPlaneRealmOperationAsync(
                 securityAudit,
                 http,
                 slug,
@@ -240,7 +240,7 @@ public static class RealmsEndpoints
             var result = await svc.UpdateRealmAsync(slug, dto, ct);
             if (!result.IsError)
             {
-                RecordControlPlaneRealmOperation(
+                await RecordControlPlaneRealmOperationAsync(
                     securityAudit,
                     http,
                     slug,
@@ -267,7 +267,7 @@ public static class RealmsEndpoints
                 : await svc.DeleteRealmAsync(slug, ct);
             if (!result.IsError)
             {
-                RecordControlPlaneRealmOperation(
+                await RecordControlPlaneRealmOperationAsync(
                     securityAudit,
                     http,
                     slug,
@@ -295,7 +295,7 @@ public static class RealmsEndpoints
             var result = await applier.ImportNewRealmAsync(manifest, ct);
             if (result.IsError) return ManifestError(result.Errors);
             ModgudMeters.RecordRealmProvisioned();
-            RecordControlPlaneRealmOperation(
+            await RecordControlPlaneRealmOperationAsync(
                 securityAudit,
                 http,
                 result.Value.Slug,
@@ -329,7 +329,7 @@ public static class RealmsEndpoints
             var result = await applier.UpdateRealmAsync(manifest, prune, ct);
             if (!result.IsError)
             {
-                RecordControlPlaneRealmOperation(
+                await RecordControlPlaneRealmOperationAsync(
                     securityAudit,
                     http,
                     slug,
@@ -406,7 +406,7 @@ public static class RealmsEndpoints
             var result = await svc.TransferControlPlaneAsync(slug, ct);
             if (!result.IsError)
             {
-                RecordControlPlaneRealmOperation(
+                await RecordControlPlaneRealmOperationAsync(
                     securityAudit,
                     http,
                     slug,
@@ -451,7 +451,7 @@ public static class RealmsEndpoints
         }
     }
 
-    private static void RecordControlPlaneRealmOperation(
+    private static async Task RecordControlPlaneRealmOperationAsync(
         ISecurityAuditLog securityAudit,
         HttpContext http,
         string targetRealmSlug,
@@ -463,7 +463,7 @@ public static class RealmsEndpoints
         var actorRealmSlug = TenantContext.Current;
         var correlationId = Activity.Current?.TraceId.ToString() ?? http.TraceIdentifier;
 
-        securityAudit.Record(new SecurityAuditRecord
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.ControlPlaneRealmOperation,
             RealmSlug = actorRealmSlug,
@@ -472,13 +472,13 @@ public static class RealmsEndpoints
             ReasonCode = reasonCode,
             OperationCode = operationCode,
             CorrelationId = correlationId,
-        });
+        }, http.RequestAborted);
 
         if (!writeTargetRealm ||
             string.Equals(actorRealmSlug, targetRealmSlug, StringComparison.OrdinalIgnoreCase))
             return;
 
-        securityAudit.Record(new SecurityAuditRecord
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.ControlPlaneRealmOperation,
             RealmSlug = targetRealmSlug,
@@ -488,7 +488,7 @@ public static class RealmsEndpoints
             ReasonCode = reasonCode,
             OperationCode = operationCode,
             CorrelationId = correlationId,
-        });
+        }, http.RequestAborted);
     }
 
     // Renders a RealmManifestApplier ErrorOr error with the code in the body — the manifest

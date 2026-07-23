@@ -78,7 +78,7 @@ public sealed class DcrLastUsedTrackerHandler
 
         if (isFirstUse)
         {
-            _securityAudit.Record(new SecurityAuditRecord
+            _securityAudit.RecordTelemetry(new SecurityAuditRecord
             {
                 EventType = AuditEvents.DcrClientFirstUsed,
                 ActorKind = AuditActorKind.OAuthClient,

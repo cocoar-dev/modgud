@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using Modgud.Domain.Realms;
 using Marten;
 using Microsoft.IdentityModel.Tokens;
+using Modgud.Infrastructure.Audit;
 
 namespace Modgud.Infrastructure.Realms;
 
@@ -66,6 +67,7 @@ public sealed class RealmKeyStore : IRealmKeyStore
 
     private readonly IDocumentStore _store;
     private readonly TimeProvider _clock;
+    private readonly ISecurityAuditLog _securityAudit;
 
     // Active signing credentials per realm, with the kid they were built from
     // and when they were loaded — so a stale entry can be re-validated against
@@ -102,10 +104,14 @@ public sealed class RealmKeyStore : IRealmKeyStore
 
     private sealed record VerificationSet(IReadOnlyList<SecurityKey> Keys, DateTimeOffset ValidUntil);
 
-    public RealmKeyStore(IDocumentStore store, TimeProvider clock)
+    public RealmKeyStore(
+        IDocumentStore store,
+        TimeProvider clock,
+        ISecurityAuditLog securityAudit)
     {
         _store = store;
         _clock = clock;
+        _securityAudit = securityAudit;
     }
 
     public async Task<SigningCredentials> GetActiveSigningCredentialsAsync(
@@ -257,6 +263,15 @@ public sealed class RealmKeyStore : IRealmKeyStore
             // Generate fresh key and persist.
             var fresh = CreateNewKeyDocument(realmSlug);
             session.Store(fresh);
+            _securityAudit.StoreRequired(session, new SecurityAuditRecord
+            {
+                EventType = AuditEvents.SigningKeyRotated,
+                RealmSlug = realmSlug,
+                Severity = AuditSeverity.Warning,
+                OutcomeCode = AuditOutcomes.Succeeded,
+                OperationCode = "rotate",
+                KeyId = fresh.KeyId,
+            });
             await session.SaveChangesAsync(ct);
 
             // Cache the fresh key as the active credentials DIRECTLY. Do NOT

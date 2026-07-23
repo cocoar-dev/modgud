@@ -133,6 +133,17 @@ public sealed class PendingAdminInviteService(
             IssuedBy = issuedBy,
         };
         session.Store(invite);
+        securityAudit.StoreRequired(session, new SecurityAuditRecord
+        {
+            EventType = AuditEvents.BootstrapInviteIssued,
+            CaptureRequestContext = false,
+            ActorKind = issuedBy is null
+                ? AuditActorKind.System
+                : AuditActorKind.ControlPlane,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "issue",
+            EffectiveAt = invite.ExpiresAt,
+        });
         await session.SaveChangesAsync(ct);
 
         var url = BuildMagicLinkUrl(realm, token);
@@ -167,16 +178,6 @@ public sealed class PendingAdminInviteService(
                 "Bootstrap-invite issued but email delivery failed. Realm={Realm} Email={MaskedEmail}. The plaintext URL is still on the issuer's side.",
                 realm.Slug, LogPiiMasking.MaskEmail(normalizedEmail));
         }
-
-        securityAudit.Record(new SecurityAuditRecord
-        {
-            EventType = AuditEvents.BootstrapInviteIssued,
-            ActorKind = AuditActorKind.AnonymousIdentifier,
-            UnknownIdentifier = normalizedEmail,
-            OutcomeCode = AuditOutcomes.Succeeded,
-            OperationCode = "issue",
-            EffectiveAt = invite.ExpiresAt,
-        });
 
         return new IssuedInvite(invite.Id, token, url, invite.ExpiresAt, normalizedEmail, normalizedUserName);
     }

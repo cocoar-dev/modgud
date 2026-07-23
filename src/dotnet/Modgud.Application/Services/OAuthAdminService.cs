@@ -80,6 +80,23 @@ public class OAuthAdminService
     /// </summary>
     public async Task<ErrorOr<OAuthClientCreatedDto>> CreateClientAsync(
         CreateOAuthClientDto dto, DcrMetadataInput? dcrMetadata, CancellationToken ct = default)
+        => await CreateClientAsync(
+            dto,
+            dcrMetadata,
+            enlistInTransaction: null,
+            ct);
+
+    /// <summary>
+    /// DCR-capable create path with an optional same-session enlistment hook.
+    /// The API layer uses this to add its infrastructure-owned required audit
+    /// document before this service commits, without introducing an
+    /// Application-to-Infrastructure dependency.
+    /// </summary>
+    public async Task<ErrorOr<OAuthClientCreatedDto>> CreateClientAsync(
+        CreateOAuthClientDto dto,
+        DcrMetadataInput? dcrMetadata,
+        Action<IDocumentSession>? enlistInTransaction,
+        CancellationToken ct = default)
     {
         if (dto.ClientType is not (OAuthClientTypes.Public or OAuthClientTypes.Confidential))
             return OAuthErrors.InvalidClientType(dto.ClientType);
@@ -257,6 +274,7 @@ public class OAuthAdminService
             _session.Store(sec);
         }
 
+        enlistInTransaction?.Invoke(_session);
         await _session.SaveChangesAsync(ct);
 
         // Reload projected state so the response reflects the persisted view.
