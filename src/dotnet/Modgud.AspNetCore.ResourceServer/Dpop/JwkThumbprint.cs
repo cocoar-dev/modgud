@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 // DUPLICATED, KEEP IN SYNC. Verbatim copy (namespace aside) of
 // Modgud.Infrastructure/OpenIddict/Dpop/<same file>. The resource-server side
-// needs the identical DPoP crypto, but this client library is a published NuGet
+// needs the identical DPoP crypto, but this resource-server library is a published NuGet
 // kept deliberately dependency-light, so the code is duplicated rather than
 // shared. Any change to the server-side original MUST be mirrored here.
 // ─────────────────────────────────────────────────────────────────────────
@@ -10,7 +10,7 @@ using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Modgud.Client.AspNetCore.Dpop;
+namespace Modgud.AspNetCore.ResourceServer.Dpop;
 
 /// <summary>
 /// RFC 7638 JWK thumbprint (SHA-256, base64url) for the two key types DPoP
@@ -38,7 +38,7 @@ namespace Modgud.Client.AspNetCore.Dpop;
 /// <para>
 /// Kept dependency-free (BCL only: <see cref="System.Buffers.Text.Base64Url"/> +
 /// <see cref="System.Security.Cryptography"/>) so the exact same file can be
-/// duplicated verbatim into the dependency-light <c>Modgud.Client.AspNetCore</c>
+/// duplicated verbatim into the dependency-light <c>Modgud.AspNetCore.ResourceServer</c>
 /// NuGet for resource-server-side validation. Any change here MUST be mirrored
 /// there — see the "keep in sync" note on the client copy.
 /// </para>

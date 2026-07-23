@@ -404,15 +404,15 @@ const operations = [
             <span>Program.cs</span>
             <small>ASP.NET Core</small>
           </div>
-          <pre aria-label="ASP.NET Core integration example"><code><span class="code-muted">// One audience. One projection.</span>
-builder.Services.<span class="code-function">AddModgudClient</span>(options =>
+          <pre aria-label="ASP.NET Core integration example"><code><span class="code-muted">// One method: OnlyJwt (default), OnlyReferenceToken, or Both.</span>
+builder.Services.<span class="code-function">AddModgudResourceServer</span>(options =>
 &#123;
     options.Authority = <span class="code-string">"https://id.acme.example"</span>;
     options.Audience = <span class="code-string">"orders-api"</span>;
 &#125;);
 
 app.MapPost(<span class="code-string">"/orders"</span>, CreateOrder)
-   .<span class="code-function">RequiresModgudPermission</span>(
+   .<span class="code-function">RequireModgudPermission</span>(
        <span class="code-string">"orders:write"</span>);</code></pre>
           <div class="code-result">
             <span><i></i> JWT or reference token</span>

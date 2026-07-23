@@ -13,7 +13,7 @@
     <Project Path="Modgud.Api/Modgud.Api.csproj" />
     <Project Path="Modgud.Api.Tests/Modgud.Api.Tests.csproj" />
     <Project Path="Modgud.Tests.Unit/Modgud.Tests.Unit.csproj" />
-    <Project Path="Modgud.Client.AspNetCore/Modgud.Client.AspNetCore.csproj" />
+    <Project Path="Modgud.AspNetCore.ResourceServer/Modgud.AspNetCore.ResourceServer.csproj" />
   </Folder>
   <Folder Name="/TestApps/">
     <Project Path="TestApps/Modgud.TestApps.ResourceApi/Modgud.TestApps.ResourceApi.csproj" />

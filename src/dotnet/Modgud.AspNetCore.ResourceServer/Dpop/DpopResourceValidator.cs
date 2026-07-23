@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Http;
 
-namespace Modgud.Client.AspNetCore.Dpop;
+namespace Modgud.AspNetCore.ResourceServer.Dpop;
 
 /// <summary>Outcome of validating a DPoP proof presented at a resource server.</summary>
 internal enum DpopResourceResult

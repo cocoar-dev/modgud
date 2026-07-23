@@ -3,13 +3,12 @@ using NetArchTest.Rules;
 namespace Modgud.Tests.Unit.Architecture;
 
 /// <summary>
-/// <c>Modgud.Permissions.Abstractions</c> is the one assembly external
-/// resource-server consumers (via <c>Modgud.Client.AspNetCore</c>) link
-/// against to evaluate permissions in-process. Its whole reason to exist is
-/// the absence of IdP-side baggage — Marten, Wolverine, JsEval, ASP.NET
-/// hosting, anything Modgud-internal. If any of those leak in, the
-/// abstraction stops being reusable and downstream services drag in the
-/// kitchen sink.
+/// <c>Modgud.Permissions.Abstractions</c> is the reusable assembly for
+/// consumers that evaluate raw grants in-process. Its whole reason to exist
+/// is the absence of IdP-side baggage — Marten, Wolverine, JsEval, ASP.NET
+/// hosting, anything Modgud-internal. The resource-server package deliberately
+/// does exact checks against IdP-pre-expanded claims and does not use this
+/// evaluator.
 /// </summary>
 public class PermissionsAbstractionsPurityTests
 {
@@ -80,7 +79,7 @@ public class PermissionsAbstractionsPurityTests
             result.IsSuccessful,
             TestResultFormatter.Format(result,
                 "Modgud.Permissions.Abstractions must not depend on ASP.NET Core — " +
-                "the ASP.NET-aware integration helpers live in Modgud.Client.AspNetCore."));
+                "the ASP.NET-aware integration helpers live in Modgud.AspNetCore.ResourceServer."));
     }
 
     [Fact]
@@ -95,7 +94,7 @@ public class PermissionsAbstractionsPurityTests
                 "Modgud.Authorization",
                 "Modgud.Infrastructure",
                 "Modgud.Api",
-                "Modgud.Client.AspNetCore")
+                "Modgud.AspNetCore.ResourceServer")
             .GetResult();
 
         Assert.True(

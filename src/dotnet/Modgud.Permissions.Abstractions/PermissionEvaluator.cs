@@ -1,11 +1,11 @@
 namespace Modgud.Permissions;
 
 /// <summary>
-/// Pure permission-check logic with no I/O dependencies — the same evaluator
-/// is used IdP-side (by <c>PermissionService</c> in the Authorization slice)
-/// and RS-side (by the <c>Modgud.Client.AspNetCore</c> helper lib).
-/// Lives in <c>Modgud.Permissions.Abstractions</c> so external resource
-/// servers can reuse it without pulling in Marten/Wolverine/JsEval.
+/// Pure permission-check logic with no I/O dependencies. It is used IdP-side
+/// by <c>PermissionService</c> in the Authorization slice and remains available
+/// to consumers that need to evaluate raw grants without pulling in
+/// Marten/Wolverine/JsEval. The resource-server package does not use it:
+/// distributed permissions are pre-expanded by the IdP and checked exactly.
 ///
 /// <para>Permission strings within an App are 2-segment
 /// <c>"&lt;resource&gt;:&lt;action&gt;"</c>. The App context is implicit from the

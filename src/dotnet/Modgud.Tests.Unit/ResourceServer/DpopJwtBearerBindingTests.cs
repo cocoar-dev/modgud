@@ -3,13 +3,13 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
-using Modgud.Client.AspNetCore;
+using Modgud.AspNetCore.ResourceServer;
 using Modgud.Tests.Unit.OAuth.Dpop;
 
-namespace Modgud.Tests.Unit.Client.AspNetCore;
+namespace Modgud.Tests.Unit.ResourceServer;
 
 /// <summary>
-/// JWT-bearer path of DPoP in the client library (#118): lifting a DPoP-scheme
+/// JWT-bearer path of DPoP in the resource-server package (#118): lifting a DPoP-scheme
 /// token into JwtBearer and enforcing the <c>cnf.jkt</c> binding on the validated
 /// principal (RFC 9449 §7.1) — the JWT twin of the introspection path covered by
 /// <see cref="DpopResourceValidationTests"/>.

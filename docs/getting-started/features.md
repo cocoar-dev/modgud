@@ -44,7 +44,7 @@ A point-by-point list of what Modgud delivers out of the box.
 ### Permission distribution to resource servers
 - **Own `resource_access` claim** (shaped like Keycloak's nested format for familiarity) emitted in `/connect/userinfo`, keyed by app slug, per-Audience
 - **Bypass-pre-expanded + per-RS narrowed** — consumers do straight exact-match without porting the evaluator
-- **`Modgud.Client.AspNetCore`** library ships an `IClaimsTransformation` that flattens `resource_access[<app>].roles` into `ClaimTypes.Role` so `[Authorize(Roles="...")]` works on resource servers without per-endpoint code
+- **`Modgud.AspNetCore.ResourceServer`** supports local JWT validation and reference-token introspection; each authentication scheme projects its own audience block into native role and permission claims
 
 ### ABAC
 
@@ -143,13 +143,13 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 ## Developer integration
 
 ### Resource server libraries
-- **`Modgud.Client.AspNetCore`** — drop-in `IClaimsTransformation` that flattens the per-Audience `resource_access` block onto the principal
-- Standard `JwtBearerHandler` for token validation; nothing custom required on the framework side
+- **`Modgud.AspNetCore.ResourceServer`** — explicit JWT and introspection handlers that validate tokens and project the configured audience block onto the principal
+- JWT validation is local; reference-token validation uses RFC 7662 introspection for immediate revocation
 
 ### UserInfo as the permission delivery channel
 - `/connect/userinfo` emits `resource_access` keyed by app slug, per Audience
 - Bypass-pre-expanded server-side + narrowed to each RS's declared `OAuthApi.PermissionIds` subset
-- Delivered via the standard OIDC UserInfo endpoint and standard JWT claims — any OIDC-aware consumer can parse it. `Modgud.Client.AspNetCore` adds the audience selection and claims projection for ASP.NET Core on top; it's not a custom protocol
+- Delivered via standard JWT claims, UserInfo, and token-introspection responses — any OIDC-aware consumer can parse it. `Modgud.AspNetCore.ResourceServer` adds audience selection and scheme-local claims projection for ASP.NET Core; it's not a custom protocol
 
 ## Standards
 

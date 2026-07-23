@@ -1,14 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <RootNamespace>Modgud.Client.AspNetCore</RootNamespace>
+    <RootNamespace>Modgud.AspNetCore.ResourceServer</RootNamespace>
     <Description>
       ASP.NET Core integration for Modgud resource servers. Validates
-      either JWT access tokens (AddModgudClient, on top of AddJwtBearer)
-      or Modgud's default opaque reference tokens via introspection
-      (AddModgudReferenceTokenClient), then surfaces the per-audience
+      JWT access tokens, opaque reference tokens via introspection, or both
+      through one AddModgudResourceServer registration, then surfaces the per-audience
       resource_access roles/permissions as flat claims so
-      [Authorize(Roles="...")] and .RequiresModgudPermission("...") work
+      [Authorize(Roles="...")] and .RequireModgudPermission("...") work
       natively. Bypass tiers are pre-expanded by the IdP, so the lib does
       pure exact-match — no evaluator logic.
     </Description>
@@ -19,7 +18,7 @@
        source-of-truth for versioning is the git tag, not a checked-in
        string. -->
   <PropertyGroup>
-    <PackageId>Modgud.Client.AspNetCore</PackageId>
+    <PackageId>Modgud.AspNetCore.ResourceServer</PackageId>
     <Authors>Cocoar</Authors>
     <Company>Cocoar</Company>
     <Copyright>Copyright © Cocoar</Copyright>
@@ -52,7 +51,7 @@
   <ItemGroup>
     <!-- JwtBearer is not in the AspNetCore.App shared framework — needs
          its own package. The lib hooks JwtBearer.Events.OnTokenValidated
-         to fetch UserInfo and merge resource_access onto the principal. -->
+         to project resource_access onto the validated principal. -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <!-- SourceLink — embeds git metadata so debuggers can step into
          this package's source on github.com. PrivateAssets=All keeps it
@@ -66,7 +65,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Modgud.Tests.Unit" />
     <!-- Modgud.Api.Tests boots a minimal resource-server host over this library
-         and points ModgudTokenIntrospection.SharedClient at the in-memory IdP. -->
+         and routes the named introspection HttpClient to the in-memory IdP. -->
     <InternalsVisibleTo Include="Modgud.Api.Tests" />
   </ItemGroup>
 

@@ -39,7 +39,7 @@ in a changelog that ages between releases.
 - Per-Audience `resource_access` emission on `/connect/userinfo` with
   bypass pre-expansion and per-RS subset narrowing — drop-in for
   Keycloak-shaped client libraries; native via the
-  `Modgud.Client.AspNetCore` NuGet package
+  `Modgud.AspNetCore.ResourceServer` NuGet package
 
 **OAuth 2.0 / OpenID Connect (OpenIddict 7)**
 

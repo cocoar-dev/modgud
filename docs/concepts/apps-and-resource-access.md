@@ -165,10 +165,10 @@ Each resource server reads its own block. The Billing-API sees
 magnified — they each have it side-by-side, but consume just their
 own.
 
-The `Modgud.Client.AspNetCore` helper lib's `IClaimsTransformation`
-takes the matching audience block and flattens its roles onto
-`ClaimTypes.Role`, so `[Authorize(Roles="Editor")]` works out of the
-box without per-endpoint plumbing.
+The `Modgud.AspNetCore.ResourceServer` authentication handlers take the
+matching audience block and project its roles onto `ClaimTypes.Role`, so
+`[Authorize(Roles="Editor")]` works out of the box without global claims
+state or per-endpoint plumbing.
 
 ### What gets emitted is opt-in by scope
 
