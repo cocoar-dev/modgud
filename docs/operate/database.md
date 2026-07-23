@@ -44,7 +44,8 @@ data — no event sourcing.
 | `PasskeyCeremony`, `PasskeyEnrollCeremony` | Single-use passkey login/enrollment ceremony state (native/bearer flow only — the cookie-based web flow keeps its ceremony state in ASP.NET Core session) | TTL ~5 min |
 | `OpenIddictAuthorizationDocument` | OAuth consent records | `ApplicationId`, `Subject` |
 | `OpenIddictTokenDocument` | Reference tokens, refresh tokens | `ApplicationId`, `Subject`, `ReferenceId` |
-| `SecurityAuditEntry` | Streamless security / ops events (unknown-actor logins, probes, rate-limit hits, recovery-CLI actions). Lives in the **system DB**, attributed to a realm via `Realm`; short hard-retention prune (no per-subject erase) | `Realm`, `Timestamp` |
+| `RealmSecurityAuditEvent` | Structured security/ops events owned by this realm. Explicit forensic fields; unknown identifiers are realm-HMACed; configurable 1–365 day hard retention | `Timestamp`, `EventType` |
+| `RealmAuditFingerprintKey` | Per-realm random HMAC key for unresolved identifiers | Singleton |
 | `UserDeletionState` | GDPR delete workflow state | `UserId` |
 | `UserChangeRequest` | Profile self-service pending changes | Per `(UserId, Type)` |
 | `Principal` (polymorphic) | Person + Group + ServiceAccount | `mt_doc_type` discriminator |
@@ -229,12 +230,13 @@ In the master DB additionally:
 |---|---|
 | `realms.mt_tenant_databases` | Marten tenant registry |
 | `global.mt_doc_realm` | Realm documents |
+| `global.mt_doc_platform_audit_event` | PII-free deployment-wide operations |
+| `global.mt_doc_job_config` | Deployment-wide job configuration |
+| `global.mt_doc_job_run_history_entry` | Deployment-wide job history |
 
-In the system DB (`<master-db>_system`) additionally:
-
-| Table | Contents |
-|---|---|
-| `mt_doc_security_audit_entry` | Cross-realm streamless security / ops audit (`SecurityAuditEntry` — short hard-retention prune) |
+Every realm DB, including `<master-db>_system`, contains its own
+`mt_doc_realm_security_audit_event`. No realm DB contains another realm's
+security events.
 
 ## Backing up realms
 
@@ -247,8 +249,7 @@ team already runs). What's specific to Modgud is *what* to back up:
   tenant registry (`realms.mt_tenant_databases`) and the global Realm
   store (`global.mt_doc_realm`);
 - **`<master-db>_system`** — the bootstrap system realm, including its
-  users and its share of the cross-realm security audit
-  (`mt_doc_security_audit_entry`);
+  users and its own security events;
 - **every `<master-db>_<slug>` DB** — one per realm.
 
 Because each realm is a physically separate database, backup and

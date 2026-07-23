@@ -191,11 +191,13 @@ public static class MagicLinkEndpoints
                 securityAudit.Record(new SecurityAuditRecord
                 {
                     EventType = AuditEvents.MagicLinkInvalid,
-                    Level = "Warning",
-                    Ip = ip,
-                    Status = "rejected",
-                    Reason = "invalid or expired token",
-                    Message = "Magic-link login failed — invalid or expired token",
+                    Severity = AuditSeverity.Warning,
+                    ActorKind = AuditActorKind.AnonymousIdentifier,
+                    TargetSubjectId = request.UserId,
+                    IpAddress = ip,
+                    AuthenticationMethod = ModgudMeters.LoginMethod.MagicLink,
+                    OutcomeCode = AuditOutcomes.Rejected,
+                    ReasonCode = "invalid-or-expired-token",
                 });
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.MagicLink, ModgudMeters.LoginOutcome.Failure);
                 if (challenge is not null) { session.Delete(challenge); await session.SaveChangesAsync(); }
@@ -214,11 +216,13 @@ public static class MagicLinkEndpoints
                 securityAudit.Record(new SecurityAuditRecord
                 {
                     EventType = AuditEvents.LoginFailedUnknownUser,
-                    Level = "Warning",
-                    Ip = ip,
-                    Status = "rejected",
-                    Reason = "user not found or inactive",
-                    Message = "Magic-link login failed — user not found or inactive",
+                    Severity = AuditSeverity.Warning,
+                    ActorKind = AuditActorKind.AnonymousIdentifier,
+                    TargetSubjectId = request.UserId,
+                    IpAddress = ip,
+                    AuthenticationMethod = ModgudMeters.LoginMethod.MagicLink,
+                    OutcomeCode = AuditOutcomes.Rejected,
+                    ReasonCode = "user-not-found-or-inactive",
                 });
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.MagicLink, ModgudMeters.LoginOutcome.Failure);
                 session.Delete(challenge);

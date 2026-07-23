@@ -231,11 +231,13 @@ public class DynamicSamlSchemeManager(
             securityAudit.Record(new SecurityAuditRecord
             {
                 EventType = AuditEvents.SamlMetadataRefreshed,
-                Realm = existing.RealmSlug,
-                Level = "Info",
-                Status = "cert_changed",
-                Reason = $"signing certs {oldCount}->{newCount}",
-                Message = $"SAML metadata refresh for provider {loginProviderId} changed signing certs ({oldCount} -> {newCount})",
+                RealmSlug = existing.RealmSlug,
+                ActorKind = AuditActorKind.System,
+                LoginProviderId = loginProviderId,
+                OutcomeCode = AuditOutcomes.Completed,
+                OperationCode = "signing-certificates-changed",
+                Count = newCount,
+                RelatedCount = oldCount,
             });
         }
 

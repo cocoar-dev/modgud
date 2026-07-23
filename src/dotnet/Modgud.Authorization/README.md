@@ -248,8 +248,8 @@ Treat that as inspiration, not a drop-in.
 - **User profile management** — display fields, change-requests, profile
   self-service. Lives in `Modgud.Api/Features/Account` + `Admin`.
 - **Auth log / audit** — the `AuthAuditView` projection (GDPR-audit) and the
-  `SecurityAuditEntry` streamless security store are Modgud-internal, not part
-  of the slice.
+  realm-owned `RealmSecurityAuditEvent` plus PII-free global
+  `PlatformAuditEvent` stores are Modgud-internal, not part of the slice.
 - **Frontend** — see Step 6 above.
 
 The split is intentional: this slice owns "**who has what permission, who's

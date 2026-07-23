@@ -54,11 +54,14 @@ public class AccountLifecycleSweepJob(
             securityAudit.Record(new SecurityAuditRecord
             {
                 EventType = AuditEvents.AccountLifecycleSwept,
-                Level = "Info",
-                Realm = realmSlug,
-                Status = "swept",
-                Reason = $"reminded={reminded} selfErased={erased} autoPurged={purged} inviteCodesPruned={inviteCodesPruned}",
-                Message = $"Account-lifecycle sweep — Realm={realmSlug} Reminded={reminded} SelfErased={erased} AutoPurged={purged} InviteCodesPruned={inviteCodesPruned}",
+                RealmSlug = realmSlug,
+                ActorKind = AuditActorKind.System,
+                OutcomeCode = AuditOutcomes.Completed,
+                OperationCode = "sweep",
+                RemindedCount = reminded,
+                SelfErasedCount = erased,
+                AutoPurgedCount = purged,
+                InviteCodesPrunedCount = inviteCodesPruned,
             });
         }
 

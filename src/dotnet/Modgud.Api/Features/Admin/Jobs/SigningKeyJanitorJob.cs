@@ -47,11 +47,11 @@ public class SigningKeyJanitorJob(
             securityAudit.Record(new SecurityAuditRecord
             {
                 EventType = AuditEvents.SigningKeyPurged,
-                Realm = realmSlug,
-                Level = "Info",
-                Status = "purged",
-                Reason = $"purged {purged} expired retired key(s)",
-                Message = $"signing-key janitor purged {purged} expired retired key(s)",
+                RealmSlug = realmSlug,
+                ActorKind = AuditActorKind.System,
+                OutcomeCode = AuditOutcomes.Pruned,
+                OperationCode = "purge-expired-retired-keys",
+                Count = purged,
             });
         }
 

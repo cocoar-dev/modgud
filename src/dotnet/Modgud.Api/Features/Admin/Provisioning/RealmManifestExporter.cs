@@ -270,6 +270,7 @@ public sealed class RealmManifestExporter(
         Audit = new UpdateAuditSettingsDto
         {
             VisibilityWindowDays = s.Audit.VisibilityWindowDays,
+            SecurityRetentionDays = s.Audit.SecurityRetentionDays,
         },
     };
 

@@ -1,120 +1,142 @@
+using System.Net;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Tests.Infrastructure;
+using Modgud.Application.DTOs.Realms;
 using Modgud.Authentication.Gdpr;
 using Modgud.Infrastructure.Audit;
+using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Api.Tests.Audit;
 
-/// <summary>
-/// The streamless security/ops store (logging/audit redesign Track A, §A.5):
-/// records about UNidentified actors + operational actions, in the system DB under
-/// Art. 6(1)(f) legitimate interest. Two load-bearing claims are tested here:
-/// (1) these records are NOT in the per-subject GDPR-erase path — they rely on the
-/// short retention window, not erasure (Open Decision #4 = time-expiry only); and
-/// (2) clearing the log is itself audited (audit-of-the-audit) with the operator's
-/// identity. The control-plane test admin sees + clears the full cross-realm log.
-/// </summary>
 [Collection(IntegrationTestCollection.Name)]
 public class SecurityAuditStoreTests : IntegrationTestBase
 {
     public SecurityAuditStoreTests(SharedPostgresFixture fixture) : base(fixture) { }
 
     [Fact]
-    public async Task Streamless_record_survives_user_permanent_erase()
+    public async Task Structured_forensic_record_survives_subject_erasure_until_retention()
     {
         var ct = TestContext.Current.CancellationToken;
-
-        // A registered user whose email also appears as the ATTEMPTED actor on a
-        // pre-registration failed-login row in the streamless store.
-        const string email = "boundary-victim@acme.com";
-        var user = await Factory.CreateTestUserWithIdentityAsync("Boundary", "Victim", "bv", email);
-
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            "Boundary", "Victim", "bv", "boundary-victim@acme.com");
         var rowId = Guid.NewGuid();
+
         await using (var write = GetTenantedDocumentSession("system"))
         {
-            write.Store(new SecurityAuditEntry
+            write.Store(new RealmSecurityAuditEvent
             {
                 Id = rowId,
                 Timestamp = DateTimeOffset.UtcNow,
-                Level = "Warning",
-                EventType = AuditEvents.LoginFailedUnknownUser,
-                Actor = email,
-                Ip = "203.0.113.50",
-                Realm = "system",
-                Message = $"Login failed for {email} — user not found or inactive",
+                Severity = AuditSeverity.Warning,
+                EventType = AuditEvents.LoginFailed,
+                Category = AuditEvents.CategoryOf(AuditEvents.LoginFailed),
+                ActorKind = AuditActorKind.User,
+                TargetSubjectId = user.Id,
+                IpAddress = "203.0.113.50",
+                OutcomeCode = AuditOutcomes.Rejected,
+                ReasonCode = "invalid-credentials",
             });
             await write.SaveChangesAsync(ct);
         }
 
-        // Permanent-erase the user. The streamless store has no user stream to attach
-        // to and is deliberately OUTSIDE the per-subject erase path.
         using (var scope = Factory.Services.CreateScope())
         {
             var gdpr = scope.ServiceProvider.GetRequiredService<IGdprService>();
-            var r = await gdpr.PermanentlyEraseAsync(user.Id, adminUserId: null, reason: "streamless-boundary-test", ct);
-            Assert.False(r.IsError, r.IsError ? r.FirstError.Description : null);
+            var result = await gdpr.PermanentlyEraseAsync(
+                user.Id, adminUserId: null, reason: "security-retention-test", ct);
+            Assert.False(result.IsError, result.IsError ? result.FirstError.Description : null);
         }
 
-        // The streamless record SURVIVES the erase (it expires only via retention).
-        await using (var read = GetTenantedDocumentSession("system"))
-        {
-            var survived = await read.LoadAsync<SecurityAuditEntry>(rowId, ct);
-            Assert.NotNull(survived);
-            Assert.Equal(email, survived!.Actor);
-        }
+        await using var read = GetTenantedDocumentSession("system");
+        var survived = await read.LoadAsync<RealmSecurityAuditEvent>(rowId, ct);
+        Assert.NotNull(survived);
+        Assert.Equal(user.Id, survived!.TargetSubjectId);
+        Assert.Equal("203.0.113.50", survived.IpAddress);
     }
 
     [Fact]
-    public async Task Clear_is_audited_with_the_operator_identity()
+    public async Task Unknown_identifier_is_persisted_only_as_realm_hmac()
     {
         var ct = TestContext.Current.CancellationToken;
-
-        // Something to clear.
-        await using (var write = GetTenantedDocumentSession("system"))
-        {
-            write.Store(new SecurityAuditEntry
+        const string rawIdentifier = "Unknown.Person@Example.test";
+        var marker = $"hmac-test-{Guid.NewGuid():N}";
+        var otherRealm = ($"hmac-{Guid.NewGuid():N}")[..13];
+        var provisioned = await Factory.Services
+            .GetRequiredService<IRealmProvisioningService>()
+            .CreateRealmAsync(new CreateRealmDto
             {
-                Id = Guid.NewGuid(),
-                Timestamp = DateTimeOffset.UtcNow,
-                Level = "Warning",
+                Slug = otherRealm,
+                DisplayName = "HMAC isolation",
+                Domains = [$"{otherRealm}.test"],
+                InitialAdmin = new InitialAdminDto
+                {
+                    UserName = "admin",
+                    Email = $"admin@{otherRealm}.test",
+                },
+            }, ct);
+        Assert.False(provisioned.IsError);
+        var audit = Factory.Services.GetRequiredService<ISecurityAuditLog>();
+
+        using (Modgud.Infrastructure.Persistence.Tenancy.TenantContext.Enter("system"))
+        {
+            audit.Record(new SecurityAuditRecord
+            {
                 EventType = AuditEvents.LoginFailedUnknownUser,
-                Actor = "to-be-cleared",
-                Realm = "system",
-                Message = "seed row for clear test",
+                ActorKind = AuditActorKind.AnonymousIdentifier,
+                UnknownIdentifier = rawIdentifier,
+                OutcomeCode = AuditOutcomes.Rejected,
+                ReasonCode = marker,
             });
-            await write.SaveChangesAsync(ct);
+        }
+        using (Modgud.Infrastructure.Persistence.Tenancy.TenantContext.Enter(otherRealm))
+        {
+            audit.Record(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.LoginFailedUnknownUser,
+                ActorKind = AuditActorKind.AnonymousIdentifier,
+                UnknownIdentifier = rawIdentifier,
+                OutcomeCode = AuditOutcomes.Rejected,
+                ReasonCode = marker,
+            });
         }
 
-        // Control-plane admin clears the full cross-realm log.
-        var resp = await Client.DeleteAsync("/api/admin/auth-log", ct);
-        resp.EnsureSuccessStatusCode();
+        RealmSecurityAuditEvent? systemRecorded = null;
+        RealmSecurityAuditEvent? acmeRecorded = null;
+        for (var attempt = 0; attempt < 25 &&
+             (systemRecorded is null || acmeRecorded is null); attempt++)
+        {
+            await using (var system = GetTenantedDocumentSession("system"))
+            {
+                systemRecorded = await system.Query<RealmSecurityAuditEvent>()
+                    .FirstOrDefaultAsync(x => x.ReasonCode == marker, ct);
+            }
+            await using (var acme = GetTenantedDocumentSession(otherRealm))
+            {
+                acmeRecorded = await acme.Query<RealmSecurityAuditEvent>()
+                    .FirstOrDefaultAsync(x => x.ReasonCode == marker, ct);
+            }
+            if (systemRecorded is null || acmeRecorded is null)
+                await Task.Delay(200, ct);
+        }
 
-        // The clear emits a typed audit.log_cleared record AFTER the wipe (the
-        // forensic trail of who cleared what). It rides the best-effort async writer,
-        // so poll briefly for it to land.
-        var cleared = await PollForAsync(
-            r => r.EventType == AuditEvents.AuditLogCleared, ct);
-
-        Assert.NotNull(cleared);
-        Assert.Equal("cleared", cleared!.Status);
-        Assert.False(string.IsNullOrEmpty(cleared.Actor));
-        Assert.NotEqual("(unknown)", cleared.Actor);
+        Assert.NotNull(systemRecorded);
+        Assert.NotNull(acmeRecorded);
+        Assert.Matches("^[0-9a-f]{64}$", systemRecorded!.UnknownIdentifierFingerprint);
+        Assert.DoesNotContain(
+            rawIdentifier,
+            systemRecorded.UnknownIdentifierFingerprint!,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.NotEqual(
+            systemRecorded.UnknownIdentifierFingerprint,
+            acmeRecorded!.UnknownIdentifierFingerprint);
     }
 
-    private async Task<SecurityAuditEntry?> PollForAsync(
-        Func<SecurityAuditEntry, bool> predicate, CancellationToken ct)
+    [Fact]
+    public async Task Security_log_has_no_clear_endpoint()
     {
-        for (var i = 0; i < 25; i++)
-        {
-            await using (var read = GetTenantedDocumentSession("system"))
-            {
-                var hit = (await read.Query<SecurityAuditEntry>().ToListAsync(ct))
-                    .FirstOrDefault(predicate);
-                if (hit is not null) return hit;
-            }
-            await Task.Delay(200, ct);
-        }
-        return null;
+        var response = await Client.DeleteAsync(
+            "/api/admin/auth-log", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
     }
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Claims;
 using ErrorOr;
 using Modgud.Api.Features.Admin.Provisioning;
@@ -9,6 +10,7 @@ using Modgud.Authorization.Apps;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Services;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Observability;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
@@ -58,6 +60,7 @@ public static class RealmsEndpoints
             IRealmProvisioningService svc,
             IServiceProvider sp,
             HttpContext http,
+            ISecurityAuditLog securityAudit,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -107,6 +110,14 @@ public static class RealmsEndpoints
                     realm.Slug);
 
                 await svc.RollbackProvisionedRealmAsync(realm.Slug, ct);
+                RecordControlPlaneRealmOperation(
+                    securityAudit,
+                    http,
+                    realm.Slug,
+                    "provision-realm",
+                    AuditOutcomes.Failed,
+                    "bootstrap-invite-failed",
+                    writeTargetRealm: false);
 
                 return Results.Problem(
                     statusCode: StatusCodes.Status500InternalServerError,
@@ -115,6 +126,12 @@ public static class RealmsEndpoints
                           + "The partially-provisioned realm has been rolled back — it is safe to retry. "
                           + "See the server logs / the realm error feed for the underlying cause.");
             }
+
+            RecordControlPlaneRealmOperation(
+                securityAudit,
+                http,
+                realm.Slug,
+                "provision-realm");
 
             return Results.Created(
                 $"{path}/admin/realms/{realm.Slug}",
@@ -144,6 +161,7 @@ public static class RealmsEndpoints
             IRealmProvisioningService svc,
             IServiceProvider sp,
             HttpContext http,
+            ISecurityAuditLog securityAudit,
             CancellationToken ct) =>
         {
             var realm = await svc.GetRealmBySlugAsync(slug, ct);
@@ -194,6 +212,12 @@ public static class RealmsEndpoints
                     ct);
             }
 
+            RecordControlPlaneRealmOperation(
+                securityAudit,
+                http,
+                slug,
+                "resend-bootstrap-invite");
+
             return Results.Ok(new InitialAdminInviteDto
             {
                 UserName = issued.UserName,
@@ -209,9 +233,19 @@ public static class RealmsEndpoints
             string slug,
             UpdateRealmDto dto,
             IRealmProvisioningService svc,
+            HttpContext http,
+            ISecurityAuditLog securityAudit,
             CancellationToken ct) =>
         {
             var result = await svc.UpdateRealmAsync(slug, dto, ct);
+            if (!result.IsError)
+            {
+                RecordControlPlaneRealmOperation(
+                    securityAudit,
+                    http,
+                    slug,
+                    "update-realm");
+            }
             return result.ToResult(realm => Results.Ok(MapToDto(realm)));
         })
         .WithName("Realms_Update")
@@ -220,11 +254,26 @@ public static class RealmsEndpoints
         // ?hard=true escalates from the reversible soft-delete to the prod-safe hard
         // delete that DROPs the tenant database (HardDeleteRealmAsync). Default false keeps
         // the existing soft-delete behaviour. Hard-delete is refused for the control plane.
-        group.MapDelete("{slug}", async (string slug, IRealmProvisioningService svc, CancellationToken ct, bool hard = false) =>
+        group.MapDelete("{slug}", async (
+            string slug,
+            IRealmProvisioningService svc,
+            HttpContext http,
+            ISecurityAuditLog securityAudit,
+            CancellationToken ct,
+            bool hard = false) =>
         {
             var result = hard
                 ? await svc.HardDeleteRealmAsync(slug, ct)
                 : await svc.DeleteRealmAsync(slug, ct);
+            if (!result.IsError)
+            {
+                RecordControlPlaneRealmOperation(
+                    securityAudit,
+                    http,
+                    slug,
+                    hard ? "hard-delete-realm" : "deactivate-realm",
+                    writeTargetRealm: !hard);
+            }
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
         .WithName("Realms_Delete")
@@ -237,11 +286,20 @@ public static class RealmsEndpoints
         // realm back (hard-delete). Returns the created slug + primary domain + the
         // plaintext secrets of any confidential clients (only available at create time).
         group.MapPost("import", async (
-            RealmManifest manifest, RealmManifestApplier applier, CancellationToken ct) =>
+            RealmManifest manifest,
+            RealmManifestApplier applier,
+            HttpContext http,
+            ISecurityAuditLog securityAudit,
+            CancellationToken ct) =>
         {
             var result = await applier.ImportNewRealmAsync(manifest, ct);
             if (result.IsError) return ManifestError(result.Errors);
             ModgudMeters.RecordRealmProvisioned();
+            RecordControlPlaneRealmOperation(
+                securityAudit,
+                http,
+                result.Value.Slug,
+                "import-realm");
             return Results.Created($"{path}/admin/realms/{result.Value.Slug}", result.Value);
         })
         .WithName("Realms_Import")
@@ -253,7 +311,13 @@ public static class RealmsEndpoints
         // ?prune=true makes it a full sync that also deletes the absent entities (k8s
         // apply --prune — infrastructure + every realm:admin path are protected, never pruned).
         group.MapPost("{slug}/apply", async (
-            string slug, RealmManifest manifest, RealmManifestApplier applier, CancellationToken ct, bool prune = false) =>
+            string slug,
+            RealmManifest manifest,
+            RealmManifestApplier applier,
+            HttpContext http,
+            ISecurityAuditLog securityAudit,
+            CancellationToken ct,
+            bool prune = false) =>
         {
             if (!string.Equals(slug, manifest.Realm.Slug, StringComparison.Ordinal))
                 return Results.BadRequest(new
@@ -263,6 +327,14 @@ public static class RealmsEndpoints
                 });
 
             var result = await applier.UpdateRealmAsync(manifest, prune, ct);
+            if (!result.IsError)
+            {
+                RecordControlPlaneRealmOperation(
+                    securityAudit,
+                    http,
+                    slug,
+                    prune ? "apply-manifest-prune" : "apply-manifest");
+            }
             return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("Realms_Apply")
@@ -308,6 +380,8 @@ public static class RealmsEndpoints
             string slug,
             IRealmProvisioningService svc,
             IServiceProvider sp,
+            HttpContext http,
+            ISecurityAuditLog securityAudit,
             CancellationToken ct) =>
         {
             var target = await svc.GetRealmBySlugAsync(slug, ct);
@@ -330,6 +404,14 @@ public static class RealmsEndpoints
             }
 
             var result = await svc.TransferControlPlaneAsync(slug, ct);
+            if (!result.IsError)
+            {
+                RecordControlPlaneRealmOperation(
+                    securityAudit,
+                    http,
+                    slug,
+                    "transfer-control-plane");
+            }
             return result.ToResult(realm => Results.Ok(MapToDto(realm)));
         })
         .WithName("Realms_TransferControlPlane")
@@ -367,6 +449,46 @@ public static class RealmsEndpoints
             }
             return false;
         }
+    }
+
+    private static void RecordControlPlaneRealmOperation(
+        ISecurityAuditLog securityAudit,
+        HttpContext http,
+        string targetRealmSlug,
+        string operationCode,
+        string outcomeCode = AuditOutcomes.Succeeded,
+        string? reasonCode = null,
+        bool writeTargetRealm = true)
+    {
+        var actorRealmSlug = TenantContext.Current;
+        var correlationId = Activity.Current?.TraceId.ToString() ?? http.TraceIdentifier;
+
+        securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.ControlPlaneRealmOperation,
+            RealmSlug = actorRealmSlug,
+            TargetRealmSlug = targetRealmSlug,
+            OutcomeCode = outcomeCode,
+            ReasonCode = reasonCode,
+            OperationCode = operationCode,
+            CorrelationId = correlationId,
+        });
+
+        if (!writeTargetRealm ||
+            string.Equals(actorRealmSlug, targetRealmSlug, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        securityAudit.Record(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.ControlPlaneRealmOperation,
+            RealmSlug = targetRealmSlug,
+            CaptureRequestContext = false,
+            ActorKind = AuditActorKind.ControlPlane,
+            OutcomeCode = outcomeCode,
+            ReasonCode = reasonCode,
+            OperationCode = operationCode,
+            CorrelationId = correlationId,
+        });
     }
 
     // Renders a RealmManifestApplier ErrorOr error with the code in the body — the manifest

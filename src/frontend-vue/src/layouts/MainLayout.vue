@@ -123,6 +123,7 @@ const ADMIN_RESOURCE_PERMISSIONS = [
     'login-provider:read',
     'realm:read',
     'auth-log:read',
+    'platform-audit:read',
     'session:read',
     'app:read',
 ] as const

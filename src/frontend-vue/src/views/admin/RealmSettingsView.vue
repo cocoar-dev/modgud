@@ -39,6 +39,8 @@ import type {
   UpdateAuthRateLimitsDto,
   DeletionSettingsDto,
   UpdateDeletionSettingsDto,
+  AuditSettingsDto,
+  UpdateAuditSettingsDto,
   RegistrationFieldsSettingsDto,
   UpdateRegistrationFieldsSettingsDto,
   FieldRequirement,
@@ -59,7 +61,7 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.hasSubNav = true
 }), { immediate: true })
 
-type TabId = 'self-registration' | 'registration-fields' | 'sessions' | 'dcr' | 'cimd' | 'native-grants' | 'auth-rate-limits' | 'deletion' | 'signing-keys' | 'pages'
+type TabId = 'self-registration' | 'registration-fields' | 'sessions' | 'dcr' | 'cimd' | 'native-grants' | 'auth-rate-limits' | 'audit' | 'deletion' | 'signing-keys' | 'pages'
 const activeTab = ref<TabId>('self-registration')
 
 const canRotateSigningKey = computed(() => authStore.hasPermission('realm-settings:write'))
@@ -293,6 +295,12 @@ function emptyDeletion(): DeletionFormState {
 const deletionForm = ref<DeletionFormState>(emptyDeletion())
 const originalDeletion = ref<DeletionSettingsDto | null>(null)
 
+const auditForm = ref<AuditSettingsDto>({
+  VisibilityWindowDays: 90,
+  SecurityRetentionDays: 7,
+})
+const originalAudit = ref<AuditSettingsDto | null>(null)
+
 function deletionFromDto(d: DeletionSettingsDto): DeletionFormState {
   return {
     GraceDays: d.GraceDays,
@@ -378,6 +386,8 @@ onMounted(async () => {
     authRateLimitsForm.value = authRateLimitsFromDto(dto.AuthRateLimits)
     originalDeletion.value = dto.Deletion
     deletionForm.value = deletionFromDto(dto.Deletion)
+    originalAudit.value = dto.Audit
+    auditForm.value = { ...dto.Audit }
     originalRegFields.value = dto.RegistrationFields
     regFieldsForm.value = regFieldsFromDto(dto.RegistrationFields)
   } catch (e: any) {
@@ -536,6 +546,17 @@ function buildDeletionPatch(): UpdateDeletionSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+function buildAuditPatch(): UpdateAuditSettingsDto | undefined {
+  const orig = originalAudit.value
+  if (!orig) return undefined
+  const patch: UpdateAuditSettingsDto = {}
+  if (auditForm.value.VisibilityWindowDays !== orig.VisibilityWindowDays)
+    patch.VisibilityWindowDays = auditForm.value.VisibilityWindowDays
+  if (auditForm.value.SecurityRetentionDays !== orig.SecurityRetentionDays)
+    patch.SecurityRetentionDays = auditForm.value.SecurityRetentionDays
+  return Object.keys(patch).length === 0 ? undefined : patch
+}
+
 function buildRegFieldsPatch(): UpdateRegistrationFieldsSettingsDto | undefined {
   const orig = originalRegFields.value
   if (!orig) return undefined
@@ -558,8 +579,9 @@ async function save() {
   const clientSessionsPatch = buildClientSessionsPatch()
   const authRateLimitsPatch = buildAuthRateLimitsPatch()
   const deletionPatch = buildDeletionPatch()
+  const auditPatch = buildAuditPatch()
   const regFieldsPatch = buildRegFieldsPatch()
-  if (!selfRegPatch && !dcrPatch && !cimdPatch && !nativeGrantsPatch && !browserSessionsPatch && !clientSessionsPatch && !authRateLimitsPatch && !deletionPatch && !regFieldsPatch) {
+  if (!selfRegPatch && !dcrPatch && !cimdPatch && !nativeGrantsPatch && !browserSessionsPatch && !clientSessionsPatch && !authRateLimitsPatch && !deletionPatch && !auditPatch && !regFieldsPatch) {
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1200)
     return
@@ -576,6 +598,7 @@ async function save() {
       ClientSessions?: UpdateClientSessionPolicyDto
       AuthRateLimits?: UpdateAuthRateLimitsDto
       Deletion?: UpdateDeletionSettingsDto
+      Audit?: UpdateAuditSettingsDto
       RegistrationFields?: UpdateRegistrationFieldsSettingsDto
     } = {}
     if (selfRegPatch) payload.SelfRegistration = selfRegPatch
@@ -586,6 +609,7 @@ async function save() {
     if (clientSessionsPatch) payload.ClientSessions = clientSessionsPatch
     if (authRateLimitsPatch) payload.AuthRateLimits = authRateLimitsPatch
     if (deletionPatch) payload.Deletion = deletionPatch
+    if (auditPatch) payload.Audit = auditPatch
     if (regFieldsPatch) payload.RegistrationFields = regFieldsPatch
     const updated = await settingsStore.patch(payload)
     originalSelfReg.value = updated.SelfRegistration
@@ -604,6 +628,8 @@ async function save() {
     authRateLimitsForm.value = authRateLimitsFromDto(updated.AuthRateLimits)
     originalDeletion.value = updated.Deletion
     deletionForm.value = deletionFromDto(updated.Deletion)
+    originalAudit.value = updated.Audit
+    auditForm.value = { ...updated.Audit }
     originalRegFields.value = updated.RegistrationFields
     regFieldsForm.value = regFieldsFromDto(updated.RegistrationFields)
     editingSecret.value = false
@@ -657,6 +683,9 @@ async function rotateSigningKey() {
       </CoarTab>
       <CoarTab id="auth-rate-limits">
         {{ t('admin.realmSettings.tabs.authRateLimits', {}, 'Rate Limits') }}
+      </CoarTab>
+      <CoarTab id="audit">
+        {{ t('admin.realmSettings.tabs.audit', {}, 'Logs') }}
       </CoarTab>
       <CoarTab id="deletion">
         {{ t('admin.realmSettings.tabs.deletion', {}, 'Account Deletion') }}
@@ -1037,6 +1066,30 @@ async function rotateSigningKey() {
             {{ t('common.save', {}, 'Save') }}
           </CoarButton>
         </div>
+      </div>
+    </CoarCard>
+
+    <CoarCard v-else-if="activeTab === 'audit'" class="p-4">
+      <div class="flex flex-col gap-4 max-w-2xl">
+        <CoarNote variant="info">
+          {{ t('admin.realmSettings.audit.hint', {}, 'Security events belong to this realm and are hard-deleted after the configured retention. The event-sourced audit history uses a separate visibility window.') }}
+        </CoarNote>
+        <CoarFormField :label="t('admin.realmSettings.audit.securityRetentionDays', {}, 'Security-event retention (days)')">
+          <CoarTextInput
+            :model-value="String(auditForm.SecurityRetentionDays)"
+            @update:model-value="(v) => (auditForm.SecurityRetentionDays = Math.min(365, Math.max(1, parseInt(v) || 7)))" />
+          <template #help>
+            {{ t('admin.realmSettings.audit.securityRetentionHelp', {}, 'Allowed range: 1–365 days. The security-audit-prune job deletes only expired events.') }}
+          </template>
+        </CoarFormField>
+        <CoarFormField :label="t('admin.realmSettings.audit.visibilityWindowDays', {}, 'Audit-history visibility (days)')">
+          <CoarTextInput
+            :model-value="String(auditForm.VisibilityWindowDays)"
+            @update:model-value="(v) => (auditForm.VisibilityWindowDays = Math.max(1, parseInt(v) || 90))" />
+          <template #help>
+            {{ t('admin.realmSettings.audit.visibilityHelp', {}, 'This hides older event-sourced audit rows; it does not delete their aggregate history.') }}
+          </template>
+        </CoarFormField>
       </div>
     </CoarCard>
 

@@ -941,11 +941,8 @@ try
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
     });
 
-    // Streamless security/ops audit store (logging/audit redesign Track A, Phase 3).
-    // Typed best-effort sink (bounded channel) + background writer to the system DB.
-    // Replaced the legacy "Auth:"-message-prefix Serilog sink (AuthLogSink +
-    // AuthLogPersistenceService, now deleted). The realm is captured from
-    // TenantContext.Current at emit; the retention prune is a Quartz job (below).
+    // Structured best-effort security-event sink. Realm events are routed to the
+    // owning physical realm DB; PII-free deployment events go to the Global Store.
     builder.Services.AddSingleton<Modgud.Infrastructure.Audit.SecurityAuditLog>();
     builder.Services.AddSingleton<Modgud.Infrastructure.Audit.ISecurityAuditLog>(
         sp => sp.GetRequiredService<Modgud.Infrastructure.Audit.SecurityAuditLog>());
@@ -995,11 +992,17 @@ try
         defaultCron: Modgud.Api.Features.Admin.Jobs.SystemJobRunHistoryRetentionJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.SystemJobRunHistoryRetentionJob.Description,
         getParameterSchema: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.GetParameterSchema);
-    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob>(
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob>(
         key: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Description);
+    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.PlatformAuditPruneJob>(
+        key: Modgud.Api.Features.Admin.Jobs.PlatformAuditPruneJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.PlatformAuditPruneJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.PlatformAuditPruneJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.PlatformAuditPruneJob.Description,
+        getParameterSchema: Modgud.Api.Features.Admin.Jobs.PlatformAuditPruneJob.GetParameterSchema);
 
     // Inbox — per-recipient notifications with SignalR live push. Both
     // services are scoped (tenant-aware IDocumentSession). The InboxHub
@@ -1491,7 +1494,7 @@ try
                     .Where(g => !g.IsDeleted).Take(1).ToListAsync();
                 await session.Query<Modgud.Authentication.Domain.LoginProviders.LoginProvider>()
                     .Where(p => !p.IsDeleted).Take(1).ToListAsync();
-                await session.Query<Modgud.Infrastructure.Audit.SecurityAuditEntry>()
+                await session.Query<Modgud.Infrastructure.Audit.RealmSecurityAuditEvent>()
                     .OrderByDescending(l => l.Timestamp).Take(1).ToListAsync();
                 await session.Query<Modgud.Authentication.Domain.UserChangeRequest>()
                     .Take(1).ToListAsync();
@@ -1551,12 +1554,12 @@ try
         var exitCode = await Modgud.Authentication.Api.Admin.RecoveryCli.RunAsync(
             app.Services, cliArgs[1..], conf, app.Environment);
 
-        // This path never starts the host, so the SecurityAuditWriter background
-        // drain never runs — flush the recovery CLI's enqueued security-audit
-        // records to the system DB synchronously before the process exits, or the
-        // break-glass forensic trail would be lost.
+        // This path never starts the hosted writer, so route the queued realm and
+        // platform records synchronously before the process exits.
         await app.Services.GetRequiredService<Modgud.Infrastructure.Audit.SecurityAuditLog>()
-            .FlushAsync(app.Services.GetRequiredService<Marten.IDocumentStore>());
+            .FlushAsync(
+                app.Services.GetRequiredService<Marten.IDocumentStore>(),
+                app.Services.GetRequiredService<Modgud.Infrastructure.Persistence.Tenancy.IGlobalStore>());
 
         if (fromEnv)
         {

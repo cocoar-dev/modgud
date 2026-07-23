@@ -1,4 +1,3 @@
-using Modgud.Authentication.Api.Admin;
 using Modgud.Authentication.AuthLog;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
@@ -8,20 +7,9 @@ using Serilog.Parsing;
 
 namespace Modgud.Tests.Unit.AuthLog;
 
-/// <summary>
-/// Two deterministic seams of the security/audit logging:
-/// (1) <see cref="RealmLogEnricher"/> stamps the ambient realm on Serilog events at
-/// emit time (kept after the "Auth:" sink was retired — it tags operational logs +
-/// the Phase-4 OTel export); and (2) the realm + tenant-visibility scoping the admin
-/// Security-log read applies (<see cref="AuthLogEndpoints.ScopeToCallerRealm"/> over
-/// the streamless <see cref="SecurityAuditEntry"/> store).
-/// </summary>
 public class AuthLogAttributionTests
 {
     private static readonly MessageTemplateParser Parser = new();
-
-    private static LogEvent AuthEvent(string template, params LogEventProperty[] props) =>
-        new(DateTimeOffset.UtcNow, LogEventLevel.Warning, exception: null, Parser.Parse(template), props);
 
     private sealed class TestPropertyFactory : ILogEventPropertyFactory
     {
@@ -29,74 +17,48 @@ public class AuthLogAttributionTests
             => new(name, new ScalarValue(value));
     }
 
-    // ── Enricher ────────────────────────────────────────────────────────
-
     [Fact]
     public void Enricher_StampsAmbientRealm()
     {
-        var evt = AuthEvent("Auth: signing key rotated");
+        var evt = new LogEvent(
+            DateTimeOffset.UtcNow,
+            LogEventLevel.Warning,
+            null,
+            Parser.Parse("security operation"),
+            []);
 
         using (TenantContext.Enter("acme"))
             new RealmLogEnricher().Enrich(evt, new TestPropertyFactory());
 
-        Assert.True(evt.Properties.TryGetValue("Realm", out var v));
-        Assert.Equal("acme", ((ScalarValue)v).Value);
+        Assert.Equal("acme", ((ScalarValue)evt.Properties["Realm"]).Value);
     }
 
     [Fact]
-    public void Enricher_NoAmbientTenant_FallsBackToSystem()
+    public void Realm_event_has_no_simulated_realm_or_free_text_fields()
     {
-        var evt = AuthEvent("Auth: something happened");
+        var names = typeof(RealmSecurityAuditEvent).GetProperties()
+            .Select(x => x.Name)
+            .ToHashSet(StringComparer.Ordinal);
 
-        // No TenantContext.Enter — Current falls back to the system tenant, so
-        // background / no-tenant events are attributed to "system" (not orphaned).
-        new RealmLogEnricher().Enrich(evt, new TestPropertyFactory());
-
-        Assert.True(evt.Properties.TryGetValue("Realm", out var v));
-        Assert.Equal("system", ((ScalarValue)v).Value);
-    }
-
-    // ── Read scoping (AuthLogEndpoints.ScopeToCallerRealm over the streamless store) ──
-
-    private static IQueryable<SecurityAuditEntry> Rows() => new[]
-    {
-        new SecurityAuditEntry { Message = "a", Realm = "system", PlatformOnly = false },
-        new SecurityAuditEntry { Message = "b", Realm = "acme", PlatformOnly = false },
-        new SecurityAuditEntry { Message = "c", Realm = "globex", PlatformOnly = false },
-        new SecurityAuditEntry { Message = "p", Realm = "acme", PlatformOnly = true },
-    }.AsQueryable();
-
-    [Fact]
-    public void Scope_ControlPlane_SeesEveryRealm_IncludingPlatformOnly()
-    {
-        var result = AuthLogEndpoints.ScopeToCallerRealm(Rows(), "system", callerIsControlPlane: true).ToList();
-        Assert.Equal(4, result.Count); // the control-plane realm sees the full cross-realm log, platform-only included
+        Assert.DoesNotContain("Realm", names);
+        Assert.DoesNotContain("Actor", names);
+        Assert.DoesNotContain("Reason", names);
+        Assert.DoesNotContain("Message", names);
     }
 
     [Fact]
-    public void Scope_TenantRealm_SeesOnlyOwnRealm_TenantVisibleOnly()
+    public void Platform_event_type_cannot_hold_forensic_pii()
     {
-        var result = AuthLogEndpoints.ScopeToCallerRealm(Rows(), "acme", callerIsControlPlane: false).ToList();
-        Assert.Single(result);
-        Assert.Equal("b", result[0].Message); // own realm, tenant-visible — NOT the platform-only "p" row
-    }
+        var names = typeof(PlatformAuditEvent).GetProperties()
+            .Select(x => x.Name)
+            .ToHashSet(StringComparer.Ordinal);
 
-    [Fact]
-    public void Scope_TenantRealm_NeverSeesPlatformOnly()
-    {
-        // A control-plane-only operational row in the caller's OWN realm must still
-        // be hidden from a tenant realm-admin.
-        var result = AuthLogEndpoints.ScopeToCallerRealm(Rows(), "acme", callerIsControlPlane: false).ToList();
-        Assert.DoesNotContain(result, r => r.PlatformOnly);
-    }
-
-    [Fact]
-    public void Scope_NonControlPlaneSystemRealm_SeesOnlyItsOwn()
-    {
-        // The leak guard: a realm named "system" that is NOT the control-plane
-        // holder (e.g. after a control-plane transfer) must NOT see other realms.
-        var result = AuthLogEndpoints.ScopeToCallerRealm(Rows(), "system", callerIsControlPlane: false).ToList();
-        Assert.Single(result);
-        Assert.Equal("system", result[0].Realm);
+        Assert.DoesNotContain("ActorSubjectId", names);
+        Assert.DoesNotContain("TargetSubjectId", names);
+        Assert.DoesNotContain("IpAddress", names);
+        Assert.DoesNotContain("UserAgent", names);
+        Assert.DoesNotContain("UnknownIdentifierFingerprint", names);
+        Assert.DoesNotContain("OAuthClientId", names);
+        Assert.DoesNotContain("SessionId", names);
     }
 }

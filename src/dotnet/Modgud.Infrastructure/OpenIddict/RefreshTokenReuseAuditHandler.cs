@@ -129,11 +129,14 @@ public sealed class RefreshTokenReuseAuditHandler
         _securityAudit.Record(new SecurityAuditRecord
         {
             EventType = AuditEvents.RefreshTokenReuseDetected,
-            Level = "Warning",
-            Actor = subject,
-            Status = "revoked",
-            Reason = $"clientId={clientId ?? "(unknown)"} authorizationId={authorizationId ?? "(unknown)"} revokedTokens={familySize}",
-            Message = $"Refresh token reuse detected for client '{clientId ?? "(unknown)"}' — revoking {familySize} token(s) and the parent authorization",
+            Severity = AuditSeverity.Warning,
+            ActorKind = AuditActorKind.User,
+            ActorSubjectId = Guid.TryParse(subject, out var subjectId) ? subjectId : null,
+            OAuthClientId = clientId,
+            AuthorizationId = authorizationId,
+            OutcomeCode = AuditOutcomes.Blocked,
+            OperationCode = "revoke-token-family",
+            Count = familySize,
         });
 
         // Keep higher-level session models in sync with OpenIddict's imminent

@@ -37,6 +37,7 @@ public class DynamicSamlSchemeManagerTests
     private sealed class NoOpSecurityAuditLog : ISecurityAuditLog
     {
         public void Record(SecurityAuditRecord record) { }
+        public void RecordPlatform(PlatformAuditRecord record) { }
     }
 
     /// <summary>

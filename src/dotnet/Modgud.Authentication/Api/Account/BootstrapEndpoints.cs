@@ -53,11 +53,11 @@ public static class BootstrapEndpoints
                 securityAudit.Record(new SecurityAuditRecord
                 {
                     EventType = AuditEvents.BootstrapInviteRejected,
-                    Level = "Warning",
-                    Ip = ip,
-                    Status = "rejected",
-                    Reason = "invalid or expired invite",
-                    Message = "Bootstrap invite consume rejected",
+                    Severity = AuditSeverity.Warning,
+                    ActorKind = AuditActorKind.AnonymousIdentifier,
+                    IpAddress = ip,
+                    OutcomeCode = AuditOutcomes.Rejected,
+                    ReasonCode = "invalid-or-expired-invite",
                 });
                 return Results.Problem(
                     statusCode: StatusCodes.Status400BadRequest,

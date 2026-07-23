@@ -96,6 +96,15 @@ public static class DependencyInjection
                 .Identity(x => x.Id)
                 .Index(x => new { x.JobKey, x.StartedAt });
 
+            // Deployment-wide operations are intentionally PII-free and live
+            // only in the non-tenanted Global Store. Realm security events are
+            // configured in each tenant store below.
+            opts.Schema.For<Modgud.Infrastructure.Audit.PlatformAuditEvent>()
+                .Identity(x => x.Id)
+                .Index(x => x.Timestamp)
+                .Index(x => x.EventType)
+                .Index(x => x.TargetRealmSlug);
+
             // RealmSigningKey lives in the per-tenant store (configured below),
             // not here. Defense-in-depth: a master-DB compromise must NOT leak
             // every realm's private signing key — the key for realm A only sits
@@ -182,10 +191,8 @@ public static class DependencyInjection
             opt.RegisterResource(app, "authorization-group", "read", "write");
             opt.RegisterResource(app, "permission-role", "read", "write");
 
-            // Sessions + audit. Two distinct read surfaces (logging/audit redesign):
-            //   auth-log:read  — the streamless security/ops store (failed logins on
-            //                    unknown actors, probes, rate-limits, operational
-            //                    actions). Cross-realm in the system DB.
+            // Sessions + audit. Two distinct realm-owned read surfaces:
+            //   auth-log:read  — structured security events in this realm DB.
             //   audit-log:read — the per-realm GDPR-audit (event-sourced account /
             //                    login history projected from the user streams).
             opt.RegisterResource(app, "session", "read", "write");
@@ -228,6 +235,7 @@ public static class DependencyInjection
             // into their tenant DB (see AppRealmSeeder).
             const string controlPlaneApp = AppSlugs.ControlPlane;
             opt.RegisterResource(controlPlaneApp, "realm", "read", "write");
+            opt.RegisterResource(controlPlaneApp, "platform-audit", "read");
         });
 
         // OAuth admin slice services — both consume the tenant-scoped IDocumentSession

@@ -1,33 +1,28 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Channels;
 using Marten;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Infrastructure.Audit;
 
 /// <summary>
-/// In-process implementation of <see cref="ISecurityAuditLog"/>: a bounded channel
-/// that <see cref="SecurityAuditWriter"/> drains to the system DB.
-///
-/// <para><b>Bounded + drop-on-full</b> (the legacy sink was an UNBOUNDED channel —
-/// a memory-growth risk under a credential-stuffing storm). When the writer can't
-/// keep up the oldest behaviour we want is to shed load, never to block the auth
-/// path or grow without limit. Dropped counts are exposed for the writer to log.</para>
-///
-/// <para>The realm is captured HERE, on the calling (request) thread where
-/// <c>TenantContext.Current</c> is set — the writer runs tenant-less in a
-/// background service, exactly as <c>RealmLogEnricher</c> captured it for the
-/// legacy sink. Category + control-plane visibility are derived from the event type
-/// so the row can't disagree with the taxonomy.</para>
+/// Best-effort in-process buffer for realm-owned security events and PII-free
+/// platform events. The background writer routes each envelope to its owning
+/// physical store. F7 (durable delivery) remains a separate decision.
 /// </summary>
-public sealed class SecurityAuditLog : ISecurityAuditLog
+public sealed class SecurityAuditLog(IHttpContextAccessor httpContextAccessor) : ISecurityAuditLog
 {
-    // Generous bound: a real burst is absorbed; a pathological flood sheds rather
-    // than OOMs. SingleReader because exactly one SecurityAuditWriter drains it.
-    private readonly Channel<SecurityAuditEntry> _channel =
-        Channel.CreateBounded<SecurityAuditEntry>(new BoundedChannelOptions(50_000)
+    private readonly Channel<SecurityAuditEnvelope> _channel =
+        Channel.CreateBounded<SecurityAuditEnvelope>(new BoundedChannelOptions(50_000)
         {
             FullMode = BoundedChannelFullMode.DropWrite,
             SingleReader = true,
@@ -35,64 +30,262 @@ public sealed class SecurityAuditLog : ISecurityAuditLog
 
     private long _dropped;
 
-    internal ChannelReader<SecurityAuditEntry> Reader => _channel.Reader;
-
-    /// <summary>Total records dropped because the channel was full (read-and-reset
-    /// by the writer so it can log bursts).</summary>
+    internal ChannelReader<SecurityAuditEnvelope> Reader => _channel.Reader;
     internal long ReadAndResetDropped() => Interlocked.Exchange(ref _dropped, 0);
 
     public void Record(SecurityAuditRecord record)
     {
-        var entry = new SecurityAuditEntry
+        try
         {
-            Timestamp = DateTimeOffset.UtcNow,
-            // Explicit override wins (realm-iterating background jobs), else the
-            // ambient realm — mirrors the legacy RealmLogEnricher dual-sourcing.
-            Realm = record.Realm ?? TenantContext.Current,
-            EventType = record.EventType,
-            Category = AuditEvents.CategoryOf(record.EventType),
-            PlatformOnly = AuditEvents.IsPlatformOnly(record.EventType),
-            Level = record.Level,
-            Actor = record.Actor,
-            Ip = record.Ip,
-            Status = record.Status,
-            Reason = record.Reason,
-            Message = record.Message,
-        };
+            var http = record.CaptureRequestContext
+                ? httpContextAccessor.HttpContext
+                : null;
+            var subject = record.ActorSubjectId ??
+                (record.ActorKind is null or AuditActorKind.User ? TryGetSubject(http) : null);
+            var ip = record.IpAddress ?? http?.Connection.RemoteIpAddress?.ToString();
+            var requestUserAgent = http?.Request.Headers.UserAgent.ToString();
+            var userAgent = record.UserAgent ??
+                (string.IsNullOrWhiteSpace(requestUserAgent) ? null : requestUserAgent);
+            var correlationId = record.CorrelationId ?? CurrentCorrelationId(http);
+            var actorKind = record.ActorKind
+                ?? (subject is not null
+                    ? AuditActorKind.User
+                    : record.UnknownIdentifier is not null
+                        ? AuditActorKind.AnonymousIdentifier
+                        : record.OAuthClientId is not null
+                            ? AuditActorKind.OAuthClient
+                            : AuditActorKind.System);
 
-        if (!_channel.Writer.TryWrite(entry))
+            Enqueue(SecurityAuditEnvelope.ForRealm(
+                record.RealmSlug ?? TenantContext.Current,
+                record with
+                {
+                    ActorSubjectId = subject,
+                    IpAddress = ip,
+                    UserAgent = userAgent,
+                    CorrelationId = correlationId,
+                    ActorKind = actorKind,
+                }));
+        }
+        catch
+        {
+            Interlocked.Increment(ref _dropped);
+        }
+    }
+
+    public void RecordPlatform(PlatformAuditRecord record)
+    {
+        try
+        {
+            Enqueue(SecurityAuditEnvelope.ForPlatform(record with
+            {
+                CorrelationId = record.CorrelationId ?? CurrentCorrelationId(httpContextAccessor.HttpContext),
+            }));
+        }
+        catch
+        {
+            Interlocked.Increment(ref _dropped);
+        }
+    }
+
+    private void Enqueue(SecurityAuditEnvelope envelope)
+    {
+        if (!_channel.Writer.TryWrite(envelope))
             Interlocked.Increment(ref _dropped);
     }
 
     /// <summary>
-    /// Synchronously drain everything currently queued to the system DB. For
-    /// SHORT-LIVED process paths that never start the host (so
-    /// <see cref="SecurityAuditWriter"/> never runs) — notably the recovery CLI and
-    /// STARTUP_COMMAND. Without this, records those paths enqueue would be lost on
-    /// exit, which is exactly the high-value break-glass forensic trail we must keep.
-    /// Safe to call when the channel is empty (no-op). NOT used on the normal web
-    /// path, where the background writer owns the drain.
+    /// Drains the buffer for short-lived recovery-CLI processes which never start
+    /// the hosted writer.
     /// </summary>
-    public async Task FlushAsync(IDocumentStore store, CancellationToken ct = default)
+    public async Task FlushAsync(
+        IDocumentStore realmStore,
+        IGlobalStore globalStore,
+        CancellationToken ct = default)
     {
-        var batch = new List<SecurityAuditEntry>();
+        var batch = new List<SecurityAuditEnvelope>();
         while (_channel.Reader.TryRead(out var entry))
             batch.Add(entry);
 
-        if (batch.Count == 0)
-            return;
+        if (batch.Count > 0)
+            await SecurityAuditPersistence.PersistAsync(batch, realmStore, globalStore, ct);
+    }
 
-        await using var session = store.LightweightSession(TenantConstants.SystemTenantId);
-        session.Store(batch.ToArray());
-        await session.SaveChangesAsync(ct);
+    private static Guid? TryGetSubject(HttpContext? http)
+    {
+        var value = http?.User.FindFirst("sub")?.Value
+            ?? http?.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        return Guid.TryParse(value, out var subject) ? subject : null;
+    }
+
+    private static string? CurrentCorrelationId(HttpContext? http)
+        => Activity.Current?.TraceId.ToString()
+            ?? http?.TraceIdentifier;
+}
+
+internal sealed record SecurityAuditEnvelope
+{
+    public required string? RealmSlug { get; init; }
+    public SecurityAuditRecord? RealmRecord { get; init; }
+    public PlatformAuditRecord? PlatformRecord { get; init; }
+
+    public static SecurityAuditEnvelope ForRealm(string realmSlug, SecurityAuditRecord record)
+        => new() { RealmSlug = realmSlug, RealmRecord = record };
+
+    public static SecurityAuditEnvelope ForPlatform(PlatformAuditRecord record)
+        => new() { RealmSlug = null, PlatformRecord = record };
+}
+
+internal static class SecurityAuditPersistence
+{
+    private static readonly ConcurrentDictionary<string, byte[]> FingerprintKeys =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    public static async Task PersistAsync(
+        IReadOnlyCollection<SecurityAuditEnvelope> batch,
+        IDocumentStore realmStore,
+        IGlobalStore globalStore,
+        CancellationToken ct)
+    {
+        foreach (var realmGroup in batch
+                     .Where(x => x.RealmRecord is not null)
+                     .GroupBy(x => x.RealmSlug!, StringComparer.OrdinalIgnoreCase))
+        {
+            var key = await GetOrCreateFingerprintKeyAsync(realmStore, realmGroup.Key, ct);
+            var events = realmGroup
+                .Select(x => ToRealmEvent(x.RealmRecord!, key))
+                .ToArray();
+
+            await using var session = realmStore.LightweightSession(realmGroup.Key);
+            session.Store(events);
+            await session.SaveChangesAsync(ct);
+        }
+
+        var platformEvents = batch
+            .Where(x => x.PlatformRecord is not null)
+            .Select(x => ToPlatformEvent(x.PlatformRecord!))
+            .ToArray();
+
+        if (platformEvents.Length > 0)
+        {
+            await using var session = globalStore.LightweightSession();
+            session.Store(platformEvents);
+            await session.SaveChangesAsync(ct);
+        }
+    }
+
+    private static RealmSecurityAuditEvent ToRealmEvent(SecurityAuditRecord record, byte[] key)
+        => new()
+        {
+            Timestamp = DateTimeOffset.UtcNow,
+            Category = AuditEvents.CategoryOf(record.EventType),
+            EventType = record.EventType,
+            Severity = record.Severity,
+            ActorKind = record.ActorKind ?? AuditActorKind.System,
+            ActorSubjectId = record.ActorSubjectId,
+            TargetSubjectId = record.TargetSubjectId,
+            UnknownIdentifierFingerprint = record.UnknownIdentifier is null
+                ? null
+                : Fingerprint(record.UnknownIdentifier, key),
+            IpAddress = record.IpAddress,
+            UserAgent = record.UserAgent,
+            OAuthClientId = record.OAuthClientId,
+            AuthorizationId = record.AuthorizationId,
+            ApplicationId = record.ApplicationId,
+            SessionId = record.SessionId,
+            LoginProviderId = record.LoginProviderId,
+            AuthenticationMethod = record.AuthenticationMethod,
+            CorrelationId = record.CorrelationId,
+            OutcomeCode = record.OutcomeCode,
+            ReasonCode = record.ReasonCode,
+            OperationCode = record.OperationCode,
+            TargetRealmSlug = record.TargetRealmSlug,
+            KeyId = record.KeyId,
+            Count = record.Count,
+            RelatedCount = record.RelatedCount,
+            RemindedCount = record.RemindedCount,
+            SelfErasedCount = record.SelfErasedCount,
+            AutoPurgedCount = record.AutoPurgedCount,
+            InviteCodesPrunedCount = record.InviteCodesPrunedCount,
+            ReusedCount = record.ReusedCount,
+            RetentionDays = record.RetentionDays,
+            EffectiveAt = record.EffectiveAt,
+        };
+
+    private static PlatformAuditEvent ToPlatformEvent(PlatformAuditRecord record)
+        => new()
+        {
+            Timestamp = DateTimeOffset.UtcNow,
+            Category = AuditEvents.CategoryOf(record.EventType),
+            EventType = record.EventType,
+            Severity = record.Severity,
+            OutcomeCode = record.OutcomeCode,
+            ReasonCode = record.ReasonCode,
+            OperationCode = record.OperationCode,
+            TargetRealmSlug = record.TargetRealmSlug,
+            Domain = record.Domain,
+            PreviousDomain = record.PreviousDomain,
+            CorrelationId = record.CorrelationId,
+            Count = record.Count,
+            RelatedCount = record.RelatedCount,
+            RetentionDays = record.RetentionDays,
+            EffectiveAt = record.EffectiveAt,
+        };
+
+    private static string Fingerprint(string identifier, byte[] key)
+    {
+        var normalized = identifier.Trim().Normalize(NormalizationForm.FormKC)
+            .ToLower(CultureInfo.InvariantCulture);
+        var digest = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(normalized));
+        return Convert.ToHexString(digest).ToLowerInvariant();
+    }
+
+    private static async Task<byte[]> GetOrCreateFingerprintKeyAsync(
+        IDocumentStore store,
+        string realmSlug,
+        CancellationToken ct)
+    {
+        if (FingerprintKeys.TryGetValue(realmSlug, out var cached))
+            return cached;
+
+        await using (var read = store.QuerySession(realmSlug))
+        {
+            var existing = await read.LoadAsync<RealmAuditFingerprintKey>(
+                RealmAuditFingerprintKey.SingletonId, ct);
+            if (existing is not null)
+                return FingerprintKeys.GetOrAdd(realmSlug, existing.Key);
+        }
+
+        var candidate = new RealmAuditFingerprintKey
+        {
+            Key = RandomNumberGenerator.GetBytes(32),
+        };
+
+        try
+        {
+            await using var write = store.LightweightSession(realmSlug);
+            write.Insert(candidate);
+            await write.SaveChangesAsync(ct);
+            return FingerprintKeys.GetOrAdd(realmSlug, candidate.Key);
+        }
+        catch (Exception createError) when (createError is not OperationCanceledException)
+        {
+            // Another node may have created the singleton between our read and
+            // insert. Use the winning key; if no row exists, preserve the real
+            // storage failure instead of silently changing fingerprints.
+            await using var retry = store.QuerySession(realmSlug);
+            var winner = await retry.LoadAsync<RealmAuditFingerprintKey>(
+                RealmAuditFingerprintKey.SingletonId, ct);
+            if (winner is not null)
+                return FingerprintKeys.GetOrAdd(realmSlug, winner.Key);
+
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo
+                .Capture(createError).Throw();
+            throw;
+        }
     }
 }
 
-/// <summary>
-/// Background service that drains <see cref="SecurityAuditLog"/> into the system DB
-/// in batches. Replaces the legacy <c>AuthLogPersistenceService</c> drain loop; the
-/// retention prune that lived there is now a separate Quartz job over this store.
-/// </summary>
 public sealed class SecurityAuditWriter(
     IServiceProvider services,
     SecurityAuditLog log,
@@ -105,7 +298,7 @@ public sealed class SecurityAuditWriter(
         var reader = log.Reader;
         while (await reader.WaitToReadAsync(stoppingToken))
         {
-            var batch = new List<SecurityAuditEntry>(MaxBatch);
+            var batch = new List<SecurityAuditEnvelope>(MaxBatch);
             while (batch.Count < MaxBatch && reader.TryRead(out var entry))
                 batch.Add(entry);
 
@@ -115,16 +308,11 @@ public sealed class SecurityAuditWriter(
             try
             {
                 using var scope = services.CreateScope();
-                // Runs out-of-band in a HostedService — no HttpContext to drive
-                // tenant resolution, so target the system tenant explicitly. The
-                // streamless store lives cross-realm in the system DB by design;
-                // each row already carries its own Realm captured at emit time.
-                await using var session = scope.ServiceProvider
-                    .GetRequiredService<IDocumentStore>()
-                    .LightweightSession(TenantConstants.SystemTenantId);
-
-                session.Store(batch.ToArray());
-                await session.SaveChangesAsync(stoppingToken);
+                await SecurityAuditPersistence.PersistAsync(
+                    batch,
+                    scope.ServiceProvider.GetRequiredService<IDocumentStore>(),
+                    scope.ServiceProvider.GetRequiredService<IGlobalStore>(),
+                    stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

@@ -162,12 +162,11 @@ public static class DcrRegistrationEndpoints
         securityAudit.Record(new SecurityAuditRecord
         {
             EventType = AuditEvents.DcrClientRegistered,
-            Level = "Info",
-            Actor = created.DisplayName,
-            Ip = sourceIp,
-            Status = "registered",
-            Reason = $"clientId {created.ClientId}",
-            Message = $"DCR client registered: {created.DisplayName ?? "(none)"} ({created.ClientId})",
+            ActorKind = AuditActorKind.OAuthClient,
+            OAuthClientId = created.ClientId,
+            IpAddress = sourceIp,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "register",
         });
         ModgudMeters.RecordDcrRegistration(ModgudMeters.DcrOutcome.Success);
 
@@ -225,11 +224,11 @@ public static class DcrRegistrationEndpoints
         securityAudit.Record(new SecurityAuditRecord
         {
             EventType = AuditEvents.DcrRegistrationRejected,
-            Level = "Warning",
-            Ip = ip,
-            Status = "rejected",
-            Reason = $"{reason} clientName={clientName ?? "(none)"}",
-            Message = $"DCR registration rejected: {reason}",
+            Severity = AuditSeverity.Warning,
+            ActorKind = AuditActorKind.OAuthClient,
+            IpAddress = ip,
+            OutcomeCode = AuditOutcomes.Rejected,
+            ReasonCode = reason.ToString(),
         });
     }
 
@@ -238,11 +237,12 @@ public static class DcrRegistrationEndpoints
         securityAudit.Record(new SecurityAuditRecord
         {
             EventType = AuditEvents.RateLimitTriggered,
-            Level = "Warning",
-            Ip = ip,
-            Status = "rate_limited",
-            Reason = reason.ToString(),
-            Message = $"DCR rate limit triggered: {reason}",
+            Severity = AuditSeverity.Warning,
+            ActorKind = AuditActorKind.AnonymousIdentifier,
+            IpAddress = ip,
+            OutcomeCode = AuditOutcomes.Blocked,
+            ReasonCode = reason.ToString(),
+            OperationCode = "dcr-rate-limit",
         });
     }
 }

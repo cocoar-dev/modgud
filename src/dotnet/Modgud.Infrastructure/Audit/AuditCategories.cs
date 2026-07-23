@@ -21,14 +21,14 @@ public static class AuditCategories
     public const string AdminRealm = "admin-realm";
     public const string DcrOAuth = "dcr-oauth";
 
-    // ── Streamless (Track A — the security/ops store, SecurityAuditEntry) ──
+    // ── Streamless realm/platform security events ──
     /// <summary>Tenant-relevant security threats with no aggregate stream:
     /// unknown-actor login attempts, probes, rate-limit hits, policy rejections,
     /// and the audit-of-the-audit records.</summary>
     public const string SecurityOps = "security-ops";
 
     /// <summary>Operational actions (key/cert rotation, recovery-CLI, realm
-    /// provisioning, sweeps). Some are tenant-visible, the cross-realm infra ones
-    /// are control-plane-only — see <see cref="AuditEvents.IsPlatformOnly"/>.</summary>
+    /// provisioning, sweeps). Storage scope is explicit at the call site through
+    /// either a realm or platform record type.</summary>
     public const string Operations = "operations";
 }

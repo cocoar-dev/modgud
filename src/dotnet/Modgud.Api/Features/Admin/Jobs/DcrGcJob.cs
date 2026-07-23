@@ -93,11 +93,12 @@ public class DcrGcJob(
             securityAudit.Record(new SecurityAuditRecord
             {
                 EventType = AuditEvents.DcrClientGarbageCollected,
-                Realm = tenantId,
-                Level = "Info",
-                Status = "collected",
-                Reason = $"clientId {state.ClientId}, ttl {dcr.GcTtlDays}d",
-                Message = $"DCR client garbage-collected: {state.ClientId}",
+                RealmSlug = tenantId,
+                ActorKind = AuditActorKind.System,
+                OAuthClientId = state.ClientId,
+                OutcomeCode = AuditOutcomes.Pruned,
+                OperationCode = "garbage-collect",
+                RetentionDays = dcr.GcTtlDays,
             });
         }
 

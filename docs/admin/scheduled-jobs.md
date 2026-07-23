@@ -102,14 +102,27 @@ this realm.
 
 ### `security-audit-prune` — Security Audit Prune
 
-Hard-deletes security/ops audit entries older than a fixed 7-day retention window.
+Hard-deletes this realm's structured Security events after its configured
+retention window.
 
-This is a deployment-wide **system job**: it appears only in the current Control-Plane realm and has only one Quartz trigger.
+This is a **realm job**: every realm has its own trigger, configuration and run
+history.
 
 - **Default cron:** `0 0 2 * * ?` (02:00 UTC daily)
-- **Parameters:** none — the 7-day retention is fixed and not configurable per realm.
-- **What it does:** deletes entries older than the retention window from the single cross-realm audit store in one indexed delete — there's no per-realm iteration for this job.
-- **On failure:** logged + inbox-notified.
+- **Parameters:** none on the job. Retention is configured under **Realm
+  settings → Logs** (default 7 days, range 1–365).
+- **What it does:** deletes only expired `RealmSecurityAuditEvent` documents
+  from the owning physical realm DB.
+- **On failure:** only that realm's run fails.
+
+### `platform-audit-prune` — Platform Audit Prune
+
+Hard-deletes PII-free deployment events from the Global Store. This is a
+deployment-wide **system job**, visible only in the Control Plane.
+
+- **Default cron:** `0 15 2 * * ?` (02:15 UTC daily)
+- **Parameter:** `retentionDays` (default 365, range 1–3650)
+- **What it does:** deletes expired `PlatformAuditEvent` documents only.
 
 ### `system-job-run-history-retention` — System Job-Run-History Retention
 
