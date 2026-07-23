@@ -13,7 +13,7 @@ Full endpoint source in
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/account/login` | Login with username + password |
-| `POST` | `/api/account/logout` | Logout (cookie removed, session invalidated) |
+| `POST` | `/api/account/logout` | Remove the cookie and invalidate the browser session. `{ "EndIdpSession": true }` additionally returns an upstream logout URL only for a live OIDC provider; SAML ends locally. |
 | `GET` | `/api/account/self-registration-info` | Anonymous — public self-registration config the SPA reads before mounting `/register` |
 | `POST` | `/api/account/register` | Self-registration (when enabled per realm) |
 | `POST` | `/api/account/register/verify-email` | Anonymous — consume the registration email-verification token |
@@ -98,20 +98,23 @@ For native/mobile clients that can't hold a session cookie. These mint a code, o
 | `GET` | `/connect/passkey` | Bearer-authenticated — list the signed-in token subject's own passkeys |
 | `DELETE` | `/connect/passkey/{id}` | Bearer-authenticated — revoke one of the token subject's own passkeys |
 
-## External login (OIDC)
+## External login (OIDC and SAML)
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/account/external-logins` | List of active LoginProviders (no secrets) |
+| `GET` | `/api/account/external-logins` | List active OIDC and SAML LoginProviders (no secrets); `Kind` selects the correct entry point |
 | `GET` | `/api/account/external-login/{loginProviderId}/start?returnUrl=/` | Start OIDC flow |
 | `GET` | `/api/account/external-login/finish` | OIDC callback from the external IdP |
-| `GET` | `/api/account/external-logout/{loginProviderId}` | Single-logout signal back to the external IdP |
+| `GET` | `/api/account/external-logout/{loginProviderId}` | OIDC RP-initiated logout; non-OIDC or unavailable providers fall back to `/logged-out` |
+| `GET` | `/saml/{slug}/sp-metadata` | SAML Service Provider metadata |
+| `GET` | `/saml/{slug}/login?returnUrl=/` | Start an SP-initiated SAML login |
+| `POST` | `/saml/{slug}/acs` | Receive the correlated SAML response via HTTP-POST |
 
-### Login flow
+### OIDC login flow
 
 ```
 1. Frontend: GET /api/account/external-logins → shows provider buttons
-2. User clicks "Login with Acme SSO"
+2. User clicks an OIDC provider
 3. Browser: GET /api/account/external-login/{loginProviderId}/start?returnUrl=/
 4. Backend: ASP.NET Challenge with the dynamically registered OIDC scheme
 5. Browser: 302 → external IdP
@@ -121,6 +124,22 @@ For native/mobile clients that can't hold a session cookie. These mint a code, o
    run UserUpdateScript, set login cookie)
 9. Backend: 302 → returnUrl
 ```
+
+### SAML login flow
+
+```
+1. Frontend: GET /api/account/external-logins → sees Kind = Saml + Slug
+2. Browser: GET /saml/{slug}/login?returnUrl=/
+3. Backend: signed AuthnRequest → IdP via HTTP-Redirect
+4. IdP: form POST → /saml/{slug}/acs
+5. Backend: validate signature, conditions, audience and one-time InResponseTo
+6. ExternalLoginProcessor runs and issues the Modgud application cookie
+7. Backend: 302 → sanitized returnUrl
+```
+
+Modgud is SAML **SP-only** and accepts only responses to AuthnRequests it
+started. IdP-initiated SSO, SAML Single Logout and Artifact Binding are not
+supported in v1. See [SAML federation](../admin/saml-federation).
 
 ## Sessions
 

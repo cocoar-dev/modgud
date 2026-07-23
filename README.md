@@ -31,8 +31,10 @@ emission, full 2FA spectrum, GDPR self-service.
 - **Full 2FA spectrum + WebAuthn** — TOTP, Email-OTP, FIDO2/Passkey,
   Magic Link, recovery codes. 2FA enforcement middleware with grace
   period and per-user override.
-- **OIDC federation** — Microsoft Entra ID, Google, any OIDC IdP.
-  JIT user provisioning + JavaScript claim-mapping (`UserUpdateScript`).
+- **OIDC and SAML 2.0 federation** — Microsoft Entra ID and
+  standards-compatible OIDC or SAML identity providers. Modgud consumes SAML
+  as an SP; it does not issue SAML assertions. JIT user provisioning +
+  JavaScript claim-mapping (`UserUpdateScript`).
 - **Dynamic Client Registration (RFC 7591)** with triple opt-in
   (realm master / per-API / per-scope), audience-target containment,
   full audit-event trail.

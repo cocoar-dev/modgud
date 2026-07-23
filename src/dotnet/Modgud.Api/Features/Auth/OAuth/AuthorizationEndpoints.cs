@@ -1378,7 +1378,8 @@ public static class AuthorizationEndpoints
                 title: "id_token_hint required",
                 detail: "The end-session endpoint requires an id_token_hint per " +
                         "OpenID Connect RP-Initiated Logout 1.0. Use /api/account/logout " +
-                        "for IdP-internal logout (cookie-only).");
+                        "for Modgud application-session logout (with optional upstream " +
+                        "OIDC logout; SAML sessions end locally).");
         }
 
         // OpenIddict already validates the hint's signature (against the realm's

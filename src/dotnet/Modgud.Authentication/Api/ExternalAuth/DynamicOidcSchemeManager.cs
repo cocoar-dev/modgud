@@ -29,9 +29,9 @@ namespace Modgud.Authentication.Api.ExternalAuth;
 /// by the auth-flow consumers. Phase 1 leaves a soft filter (we still receive
 /// them in <see cref="RegisterAsync"/> from event handlers, but the missing
 /// flavor key sends them down the early-return path with a benign warning).
-/// Phase 2 wires the explicit <c>Type == Oidc</c> guard in callers, plus a
-/// defense-in-depth check in <see cref="RegisterAsync"/> itself; Saml/Ldap/
-/// Kerberos types are also rejected here until their flavor surfaces land.
+/// Callers apply an explicit <c>Type == Oidc</c> guard and
+/// <see cref="RegisterAsync"/> repeats it as defense in depth. SAML providers
+/// use <c>DynamicSamlSchemeManager</c>; LDAP/Kerberos remain unsupported.
 /// </para>
 /// </summary>
 public class DynamicOidcSchemeManager(
@@ -64,9 +64,9 @@ public class DynamicOidcSchemeManager(
 
         // Type-discriminator gate. Only Oidc-typed providers run through the
         // OIDC scheme machinery. Internal is short-circuited (built-in form
-        // path); Saml/Ldap/Kerberos are not yet wired and skip silently with
-        // an info log so the bootstrap loop and event-handler chain don't
-        // raise warnings on every realm-startup.
+        // path). SAML uses its own manager; LDAP/Kerberos are unsupported.
+        // Skip every non-OIDC type quietly enough that bootstrap and event
+        // handling don't raise warnings on every realm startup.
         if (config.Type != LoginProviderType.Oidc)
         {
             logger.LogInformation(

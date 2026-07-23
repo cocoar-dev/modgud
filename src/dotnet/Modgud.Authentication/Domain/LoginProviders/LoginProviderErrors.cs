@@ -11,9 +11,10 @@ public static class LoginProviderErrors
 {
     /// <summary>
     /// Returned wherever the runtime or admin layer is asked to act on a
-    /// LoginProvider whose <see cref="LoginProviderType"/> is not yet wired
-    /// (Saml/Ldap/Kerberos today). Same code in admin and runtime paths so the
-    /// frontend sees a consistent shape.
+    /// LoginProvider whose <see cref="LoginProviderType"/> is unsupported by
+    /// the requested surface. For example, the OIDC start route rejects SAML
+    /// because SAML uses its own SP-initiated route; LDAP/Kerberos are not
+    /// implemented. Admin and runtime paths share the same stable error shape.
     /// </summary>
     public static Error TypeNotSupported(LoginProviderType type) => Error.Validation(
         code: "LoginProvider.TypeNotSupported",

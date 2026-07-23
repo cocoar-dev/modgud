@@ -24,8 +24,8 @@ protocol-specific pages.
   the discovery document, JWT vs reference tokens. Browser-only SPAs
   (Authorization Code + PKCE, no BFF) are supported — register the
   SPA's origin under the client's Allowed CORS Origins.
-- [Login providers (OIDC federation)](./login-providers) — federate
-  external IdPs (Entra ID, Google, Okta, any OIDC source) so users
+- [Login providers (OIDC and SAML federation)](./login-providers) — federate
+  Microsoft Entra ID and standards-compatible OIDC or SAML providers so users
   sign in with their existing accounts.
 - [Login flows](./login-flows) — the on-wire shape of every
   supported user-facing flow.

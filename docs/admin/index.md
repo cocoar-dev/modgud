@@ -32,7 +32,9 @@ Modgud is not just a login frontend — it's a full **OAuth 2.0 / OpenID Connect
 
 ### Federation & Realms
 
-- [Login Providers](./login-providers) — built-in Internal plus external OIDC (Google, Microsoft, Entra, any OIDC); step-by-step setup walkthroughs included
+- [Login Providers](./login-providers) — built-in Internal plus Microsoft
+  Entra ID and standards-compatible OIDC or SAML providers; setup
+  walkthroughs included
 - [Realms](./realms) — multi-tenant setup; each tenant gets its own database
 - [Declarative Realm Provisioning](./realm-provisioning) — create/update/tear down a whole realm from one JSON manifest (realm-as-code, per-test realms, agent automation); serves a fetchable schema
 - [Realm Settings](./realm-settings) — realm-admin-owned config (self-registration, DCR policy, branding)

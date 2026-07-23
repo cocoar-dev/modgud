@@ -116,6 +116,8 @@ See [Invite codes](../../admin/invite-codes) for the full flow.
 
 - [ ] The built-in Internal login provider is listed and active by default
 - [ ] Create an OIDC/Entra ID login provider; discovery / test connection succeeds
+- [ ] Create a SAML provider from IdP metadata; SP-initiated login succeeds
+- [ ] SAML logout ends the local Modgud session without invoking an OIDC or SAML SLO endpoint
 - [ ] External login JIT-provisions a user and signs them in
 - [ ] Disabling a login provider removes its login button
 - [ ] Account-linking from `/profile` adds a second login provider to an existing user

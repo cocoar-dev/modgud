@@ -27,10 +27,11 @@ namespace Modgud.Authentication.Api.ExternalAuth;
 /// </para>
 ///
 /// <para>
-/// Pre-filters on <c>Type == LoginProviderType.Oidc</c> so non-Oidc providers
-/// (Internal, plus the not-yet-wired Saml/Ldap/Kerberos) never enter the
-/// scheme-registration path. <see cref="DynamicOidcSchemeManager.RegisterAsync"/>
-/// double-checks defensively; the bootstrap pre-filter just keeps logs clean.
+/// Pre-filters on <c>Type == LoginProviderType.Oidc</c> so Internal, SAML,
+/// LDAP and Kerberos providers never enter the OIDC scheme-registration path.
+/// SAML has its own bootstrap and manager; LDAP/Kerberos remain unsupported.
+/// <see cref="DynamicOidcSchemeManager.RegisterAsync"/> double-checks
+/// defensively; this pre-filter keeps logs clean.
 /// </para>
 /// </summary>
 public class OidcSchemeBootstrap(

@@ -28,7 +28,7 @@ control-plane functions on top.
 | Users, Groups, Roles, Permissions | ✅ |
 | OAuth clients for your apps | ✅ |
 | OAuth scopes, resource APIs | ✅ |
-| Login providers (Internal, OIDC federation) | ✅ |
+| Login providers (Internal, OIDC and SAML federation) | ✅ |
 | Custom permissions, auto-membership scripts | ✅ |
 | Magic-link, 2FA, Passkeys, email-OTP | ✅ |
 | `/api/admin/realms` (cross-realm management) | ✅ control-plane only |

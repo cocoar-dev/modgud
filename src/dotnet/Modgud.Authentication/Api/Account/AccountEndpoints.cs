@@ -260,23 +260,49 @@ public static class AccountEndpoints
         group.MapPost("logout", [Authorize] async (
             HttpContext context,
             SignInManager<ApplicationUser> signInManager,
+            IQuerySession session,
             LogoutRequest? request) =>
         {
             // Capture the provider the session came from BEFORE signing out —
-            // we'll use it to build the IdP-side logout URL for the client.
-            var externalLoginProviderId = context.User.FindFirst("modgud.external.loginProviderId")?.Value;
+            // an upstream logout exists only for OIDC. SAML is SP-initiated
+            // login only in v1 and has no Single Logout endpoint.
+            var externalLoginProviderIdRaw =
+                context.User.FindFirst("modgud.external.loginProviderId")?.Value;
+            var endIdpSession = request?.EndIdpSession ?? true;
+            LoginProvider? externalLoginProvider = null;
+
+            if (endIdpSession
+                && Guid.TryParse(externalLoginProviderIdRaw, out var externalLoginProviderId))
+            {
+                try
+                {
+                    externalLoginProvider =
+                        await session.LoadAsync<LoginProvider>(externalLoginProviderId);
+                }
+                catch (Exception ex)
+                {
+                    // Upstream logout is optional. A provider lookup failure
+                    // must never prevent the authoritative local logout.
+                    Log.Warning(
+                        ex,
+                        "Could not resolve external login provider {LoginProviderId} during logout; continuing with local logout",
+                        externalLoginProviderId);
+                }
+            }
 
             await signInManager.SignOutAsync();
 
-            // Only hand back the RP-initiated logout URL if the caller wants
-            // to end the IdP session too. Default (no body) keeps the existing
-            // "end everything" behavior for backwards compatibility.
-            var endIdpSession = request?.EndIdpSession ?? true;
-            string? externalLogoutUrl = null;
-            if (endIdpSession && !string.IsNullOrWhiteSpace(externalLoginProviderId))
-            {
-                externalLogoutUrl = $"/api/account/external-logout/{externalLoginProviderId}";
-            }
+            // Disabled/deleted providers no longer have a registered OIDC
+            // scheme, so they intentionally degrade to local logout too.
+            var externalLogoutUrl =
+                externalLoginProvider is
+                {
+                    Type: LoginProviderType.Oidc,
+                    Enabled: true,
+                    IsDeleted: false,
+                }
+                    ? $"/api/account/external-logout/{externalLoginProvider.Id}"
+                    : null;
 
             return Results.Ok(new { Message = "Logout successful", ExternalLogoutUrl = externalLogoutUrl });
         })

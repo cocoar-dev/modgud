@@ -201,10 +201,34 @@ GET /api/account/external-login/finish
    → maps claims to a `{ firstname, lastname, email, acronym }` patch
 3. Email conflict (email belongs to a different user) → hard reject
    (`Idp.EmailConflict`)
-4. Login cookie set (persistent, 30 days)
+4. Login cookie set from the realm's browser-session policy
 
 Details on IdP setup and scripting: see
-[Login Providers (OIDC)](./login-providers).
+[Login Providers (OIDC and SAML)](./login-providers).
+
+## SAML external login
+
+```http
+GET /saml/{slug}/login?returnUrl=/
+```
+
+Modgud acts as the SAML Service Provider. It creates a signed AuthnRequest,
+stores a one-time correlation record and redirects the browser to the
+external IdP. The IdP returns the response through:
+
+```http
+POST /saml/{slug}/acs
+```
+
+The ACS validates the response signature, issuer, audience, time conditions
+and the one-time `InResponseTo` correlation before passing the claims to the
+same `ExternalLoginProcessor` used by OIDC. The processor then resolves or
+creates the local user and issues the Modgud application cookie.
+
+Only **SP-initiated** SAML login is supported. IdP-initiated responses are
+rejected; SAML Single Logout and Artifact Binding are not available in v1.
+See [SAML federation](/admin/saml-federation) for configuration and the
+complete support boundary.
 
 ## OAuth authorize flow (external apps)
 
@@ -226,3 +250,8 @@ the frontend the logout composable performs a `window.location`
 reload (not just a Vue Router navigation) so that the SignalR
 connection tears down cleanly. Otherwise an old subscription would
 hang on the previous user.
+
+For a live OIDC provider, the response can include
+`ExternalLogoutUrl`, which performs RP-initiated logout at the upstream
+OIDC provider when requested. SAML v1 has no Single Logout endpoint:
+SAML-originated sessions end locally and return no external logout URL.

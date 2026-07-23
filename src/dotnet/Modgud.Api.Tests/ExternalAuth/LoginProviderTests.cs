@@ -330,8 +330,8 @@ public class LoginProviderTests : IntegrationTestBase
     [InlineData(LoginProviderType.Kerberos)]
     public async Task Create_OtherUnsupportedTypes_ReturnSameErrorCode(LoginProviderType type)
     {
-        // Phase 2: TypeNotSupported is a single centralized error — Saml/Ldap/
-        // Kerberos all share the same code so the frontend can render one message.
+        // LDAP and Kerberos share the centralized unsupported-type error.
+        // SAML is a supported protocol with its own flavor registry.
         using var scope = Factory.Services.CreateScope();
         var bus = GetTenantedMessageBus(scope);
 

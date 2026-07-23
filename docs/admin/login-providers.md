@@ -188,7 +188,7 @@ toggle the **Auto-create unknown users** flag in the **Linking &
 Policies** tab. Unknown users get a 403 with a message explaining how to
 request access.
 
-### Linking OIDC to existing users
+### Linking external identities to existing users
 
 When a user is already signed in and visits **Profile → Linked accounts**,
 they can attach additional OIDC identities to their existing Modgud
@@ -197,6 +197,15 @@ user id) and survives email changes on either side.
 
 To deny self-service linking for a particular provider, untick **Allow
 linking** in the Linking & Policies tab.
+
+::: warning SAML self-service linking is limited in v1
+SAML assertions return through a cross-site POST to the ACS endpoint. The
+Modgud application cookie is `SameSite=Lax`, so it is not sent with that
+POST and Modgud cannot reliably bind the assertion to the already signed-in
+user who started the link flow. Use normal SAML sign-in with trusted-email
+linking or JIT resolution instead. See
+[SAML federation](./saml-federation#linking-a-saml-identity-to-an-existing-account).
+:::
 
 ### Multiple linked providers & profile precedence
 
@@ -214,7 +223,7 @@ The net effect: a user's display name / email stays stable no matter which linke
 
 ## Disabling without deleting
 
-For OIDC providers, toggle the **Enabled** flag in the detail dialog. The
+For OIDC and SAML providers, toggle the **Enabled** flag in the detail dialog. The
 button disappears from the login page; existing user-account links are
 preserved. Re-enabling brings the button back.
 

@@ -2,10 +2,9 @@
 // src/dotnet/Modgud.Application/DTOs/LoginProviders/LoginProviderDto.cs.
 // LoginProviderType is serialized as a string (JsonStringEnumConverter).
 //
-// Today only "Internal" (seeded, non-editable) and "Oidc" (admin-creatable) are
-// wired up; Saml/Ldap/Kerberos exist as enum values so the create endpoint can
-// reject them with a single TypeNotSupported error and the UI can flip the
-// "creatable" flag on once support lands.
+// Internal is seeded and non-editable. OIDC and SAML are admin-creatable and
+// have separate flavor/configuration surfaces. LDAP/Kerberos remain reserved
+// enum values and are rejected with TypeNotSupported.
 
 export type LoginProviderType = 'Internal' | 'Oidc' | 'Saml' | 'Ldap' | 'Kerberos'
 

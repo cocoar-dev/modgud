@@ -22,9 +22,13 @@ A point-by-point list of what Modgud delivers out of the box.
 ### External Identity Providers (SSO)
 - **Microsoft Entra ID** (Azure AD)
 - **Generic OIDC** (anything Discovery-compliant — Keycloak, Okta, Auth0, Cognito, etc.)
+- **SAML 2.0 Service Provider federation** (Microsoft Entra Enterprise Apps,
+  ADFS, Okta and standards-compatible SAML IdPs)
 - Per-IdP user-update scripts for claim → profile mapping
 - Just-in-time user provisioning (toggle-able)
 - Mixed-mode realms (Internal + External providers side by side)
+- SAML v1 is SP-initiated and SP-only; IdP-initiated SSO, SAML Single
+  Logout and Artifact Binding are not supported
 
 ### Magic-link sign-in
 - One-time token via email, no password required
