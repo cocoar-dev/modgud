@@ -7,6 +7,8 @@ import {
   CoarDualListbox,
   CoarButton,
   CoarSelect,
+  CoarTabGroup,
+  CoarTab,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
@@ -35,6 +37,11 @@ const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
 const error = ref<string | null>(null)
 
+// Same tabs in create and edit (Rule 5) — the Status tab is the only one that
+// appears on an existing credential. The panel size is a fixed frame, so
+// switching tabs never resizes the modal.
+const activeTab = ref<'basics' | 'scopes' | 'apps'>('basics')
+
 const scopeStore = useOAuthScopeStore()
 const applicationsStore = useApplicationsStore()
 const credentialsHttp = computed(() => useHttpClient(`/api/service-account/${props.saId}/credentials`))
@@ -56,10 +63,10 @@ const form = ref({
 })
 const originalForm = ref<typeof form.value | null>(null)
 
-const accessTokenTypeOptions: { value: AccessTokenType; label: string }[] = [
-  { value: 'Reference', label: 'Reference (opaque, sofort widerrufbar)' },
-  { value: 'Jwt', label: 'JWT (selbst-validierend, Revoke erst bei Ablauf)' },
-]
+const accessTokenTypeOptions = computed<{ value: AccessTokenType; label: string }[]>(() => [
+  { value: 'Reference', label: t('admin.serviceAccountCredentials.accessTokenTypeReference', {}, 'Reference (opaque, revocable instantly)') },
+  { value: 'Jwt', label: t('admin.serviceAccountCredentials.accessTokenTypeJwt', {}, 'JWT (self-validating, revoke only takes effect on expiry)') },
+])
 
 // Text-backed proxy for the optional numeric AccessTokenLifetime — empty
 // string maps back to null. CoarTextInput is text-only; the alternative
@@ -88,7 +95,9 @@ const scopeOptions = computed(() => {
       label: s.Name,
       subtitle: subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined,
       icon: 'tag',
-      group: isStandard ? 'Realm-wide (OIDC standard)' : `App: ${appLabel ?? '—'}`,
+      group: isStandard
+        ? t('admin.serviceAccountCredentials.scopeGroupRealmWide', {}, 'Realm-wide (OIDC standard)')
+        : t('admin.serviceAccountCredentials.scopeGroupApp', { app: appLabel ?? '—' }, `App: ${appLabel ?? '—'}`),
     }
   })
 })
@@ -99,7 +108,9 @@ const appOptions = computed(() =>
     label: a.DisplayName,
     subtitle: a.Description ?? a.Slug,
     icon: a.IsSystem ? 'shield' : 'layout-grid',
-    group: a.IsSystem ? 'System apps' : 'User apps',
+    group: a.IsSystem
+      ? t('admin.serviceAccountCredentials.appGroupSystem', {}, 'System apps')
+      : t('admin.serviceAccountCredentials.appGroupUser', {}, 'User apps'),
   })),
 )
 
@@ -224,7 +235,7 @@ async function copySecret() {
 </script>
 
 <template>
-  <ModalLayout :close="close" :title="modalTitle" icon="key" :footer-button="footerButton" width="56rem">
+  <ModalLayout :close="close" :title="modalTitle" icon="key" :footer-button="footerButton">
     <div v-if="loading && !newSecret" class="flex flex-1 items-center justify-center p-8">
       <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>
     </div>
@@ -253,68 +264,128 @@ async function copySecret() {
       </AppNote>
     </div>
 
-    <div v-else class="flex flex-col gap-4 p-1">
-      <CoarFormField :label="t('admin.serviceAccountCredentials.displayName', {}, 'Display name')">
-        <CoarTextInput v-model="form.DisplayName" clearable
-          :placeholder="t('admin.serviceAccountCredentials.displayNamePlaceholder', {}, 'CI build agent — staging')" />
-      </CoarFormField>
+    <div v-else class="modal-body">
+      <AppNote v-if="error" variant="error" :truncate="false" class="flex-shrink-0">{{ error }}</AppNote>
 
-      <div>
-        <div class="mb-2 flex items-baseline justify-between gap-3">
-          <h4 class="text-sm font-medium">{{ t('admin.serviceAccountCredentials.scopes', {}, 'Scopes') }}</h4>
-          <p class="text-xs text-surface-500">
-            {{ t('admin.serviceAccountCredentials.scopesHint', {}, 'Which scopes this credential is allowed to ask for. Realm-wide OIDC scopes are always available; per-API scopes need a matching App link below.') }}
-          </p>
+      <CoarTabGroup v-model="activeTab" class="tab-bar">
+        <CoarTab id="basics">{{ t('admin.serviceAccountCredentials.section.basics', {}, 'Basics') }}</CoarTab>
+        <CoarTab id="scopes">{{ t('admin.serviceAccountCredentials.scopes', {}, 'Scopes') }}</CoarTab>
+        <CoarTab id="apps">{{ t('admin.serviceAccountCredentials.apps', {}, 'Apps') }}</CoarTab>
+      </CoarTabGroup>
+
+      <div v-show="activeTab === 'basics'" class="tab-content">
+        <div class="modal-form">
+          <section class="form-section">
+            <div class="modal-form-grid">
+              <CoarFormField class="col-half" :label="t('admin.serviceAccountCredentials.displayName', {}, 'Display name')"
+                :hint="t('admin.serviceAccountCredentials.displayNameHint', {}, 'Free text so you can tell this credential apart from the others of this account.')">
+                <CoarTextInput v-model="form.DisplayName" clearable
+                  :placeholder="t('admin.serviceAccountCredentials.displayNamePlaceholder', {}, 'CI build agent — staging')" />
+              </CoarFormField>
+
+              <!-- No .field-num cap here: the width cap applies to the whole
+                   field block, so it would wrap this long label over 3 lines. -->
+              <CoarFormField class="col-half" :label="t('admin.serviceAccountCredentials.accessTokenLifetime', {}, 'Access-token lifetime (seconds)')"
+                :hint="t('admin.serviceAccountCredentials.accessTokenLifetimeHint', {}, 'Empty = the realm default (3600 s). Keep it short for JWT credentials — a JWT stays valid until it expires, even after a revoke.')">
+                <CoarTextInput v-model="accessTokenLifetimeText"
+                  :placeholder="t('admin.serviceAccountCredentials.accessTokenLifetimePlaceholder', {}, '3600 (default)')" />
+              </CoarFormField>
+
+              <CoarFormField class="col-half" :label="t('admin.serviceAccountCredentials.accessTokenType', {}, 'Access-token format')"
+                :hint="t('admin.serviceAccountCredentials.accessTokenTypeHint', {}, 'Reference tokens are revoked immediately (disabling/deleting/rotating takes effect right away); the resource server must introspect. A JWT validates itself but survives a revoke until it expires — keep the lifetime short in that case.')">
+                <CoarSelect v-model="form.AccessTokenType" :options="accessTokenTypeOptions" />
+              </CoarFormField>
+            </div>
+          </section>
+
+          <!-- Status — edit-only; a credential can be switched off without
+               deleting it (existing tokens keep working until expiry). -->
+          <section v-if="!isCreate" class="form-section">
+            <h3 class="form-section-heading">{{ t('admin.serviceAccountCredentials.section.status', {}, 'Status') }}</h3>
+            <div class="modal-form-grid">
+              <CoarFormField class="col-full" :label="t('admin.serviceAccountCredentials.enabledLabel', {}, 'Credential')"
+                :hint="t('admin.serviceAccountCredentials.enabledHint', {}, 'An inactive credential can no longer request tokens — issued tokens stay valid until they expire.')">
+                <CoarCheckbox v-model="form.Enabled" :label="t('admin.serviceAccountCredentials.enabled', {}, 'Active')" />
+              </CoarFormField>
+            </div>
+          </section>
         </div>
-        <CoarDualListbox
-          v-model="form.Scopes"
-          :options="scopeOptions"
-          drag-drop
-          sort-options="asc"
-          :search-fields="['label', 'subtitle', 'group']"
-          :available-label="t('admin.serviceAccountCredentials.scopesAvailable', {}, 'Available')"
-          :selected-label="t('admin.serviceAccountCredentials.scopesSelected', {}, 'Allowed')"
-          :search-placeholder="t('admin.serviceAccountCredentials.scopesSearch', {}, 'Search scopes…')"
-          class="min-h-[14rem]" />
       </div>
 
-      <div>
-        <div class="mb-2 flex items-baseline justify-between gap-3">
-          <h4 class="text-sm font-medium">{{ t('admin.serviceAccountCredentials.apps', {}, 'Apps') }}</h4>
-          <p class="text-xs text-surface-500">
+      <div v-show="activeTab === 'scopes'" class="tab-content">
+        <AppNote variant="info">
+          {{ t('admin.serviceAccountCredentials.scopesHintShort', {}, 'Which scopes this credential may ask for.') }}
+          <template #details>
+            {{ t('admin.serviceAccountCredentials.scopesHint', {}, 'Which scopes this credential is allowed to ask for. Realm-wide OIDC scopes are always available; per-API scopes need a matching App link on the Apps tab.') }}
+          </template>
+        </AppNote>
+        <!-- .flex-section gives the listbox a definite height, so both tabs'
+             lists are the same size whether they hold 0 or 50 entries. -->
+        <section class="flex-section">
+          <CoarDualListbox
+            class="flex-1 min-h-0"
+            v-model="form.Scopes"
+            :options="scopeOptions"
+            drag-drop
+            sort-options="asc"
+            :search-fields="['label', 'subtitle', 'group']"
+            :available-label="t('admin.serviceAccountCredentials.scopesAvailable', {}, 'Available')"
+            :selected-label="t('admin.serviceAccountCredentials.scopesSelected', {}, 'Allowed')"
+            :search-placeholder="t('admin.serviceAccountCredentials.scopesSearch', {}, 'Search scopes…')" />
+        </section>
+      </div>
+
+      <div v-show="activeTab === 'apps'" class="tab-content">
+        <AppNote variant="info">
+          {{ t('admin.serviceAccountCredentials.appsHintShort', {}, 'Empty = realm-wide.') }}
+          <template #details>
             {{ t('admin.serviceAccountCredentials.appsHint', {}, 'Apps this credential is allowed to act for. Empty = realm-wide. Use multiple when the M2M backend talks to several APIs.') }}
-          </p>
-        </div>
-        <CoarDualListbox
-          v-model="form.AppIds"
-          :options="appOptions"
-          drag-drop
-          sort-options="asc"
-          :search-fields="['label', 'subtitle', 'group']"
-          :available-label="t('admin.serviceAccountCredentials.appsAvailable', {}, 'Available')"
-          :selected-label="t('admin.serviceAccountCredentials.appsSelected', {}, 'Linked')"
-          :search-placeholder="t('admin.serviceAccountCredentials.appsSearch', {}, 'Search apps…')"
-          class="min-h-[10rem]" />
+          </template>
+        </AppNote>
+        <section class="flex-section">
+          <CoarDualListbox
+            class="flex-1 min-h-0"
+            v-model="form.AppIds"
+            :options="appOptions"
+            drag-drop
+            sort-options="asc"
+            :search-fields="['label', 'subtitle', 'group']"
+            :available-label="t('admin.serviceAccountCredentials.appsAvailable', {}, 'Available')"
+            :selected-label="t('admin.serviceAccountCredentials.appsSelected', {}, 'Linked')"
+            :search-placeholder="t('admin.serviceAccountCredentials.appsSearch', {}, 'Search apps…')" />
+        </section>
       </div>
-
-      <CoarFormField :label="t('admin.serviceAccountCredentials.accessTokenLifetime', {}, 'Access-Token-Lebenszeit (Sekunden)')">
-        <CoarTextInput v-model="accessTokenLifetimeText"
-          :placeholder="t('admin.serviceAccountCredentials.accessTokenLifetimePlaceholder', {}, '3600 (Default)')" />
-      </CoarFormField>
-
-      <CoarFormField :label="t('admin.serviceAccountCredentials.accessTokenType', {}, 'Access-Token-Format')">
-        <CoarSelect v-model="form.AccessTokenType" :options="accessTokenTypeOptions" />
-        <p class="mt-1 text-xs text-surface-500">
-          {{ t('admin.serviceAccountCredentials.accessTokenTypeHint', {},
-            'Reference tokens are revoked immediately (disabling/deleting/rotating takes effect right away); the resource server must introspect. A JWT validates itself but survives a revoke until it expires — keep the lifetime short in that case.') }}
-        </p>
-      </CoarFormField>
-
-      <div v-if="!isCreate" class="mt-1">
-        <CoarCheckbox v-model="form.Enabled" :label="t('admin.serviceAccountCredentials.enabled', {}, 'Active')" />
-      </div>
-
-      <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
     </div>
   </ModalLayout>
 </template>
+
+<style scoped>
+/* Body-level layout — flex column so the tab bar stays put and the active
+   tab body takes the rest of the fixed panel height. */
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  gap: 12px;
+}
+.tab-bar {
+  flex-shrink: 0;
+}
+.tab-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* Definite height for the dual-listboxes: the lists keep the same size
+   whether they are empty or full, on both tabs. */
+.flex-section {
+  flex: 1;
+  display: flex;
+  min-height: 22rem;
+}
+</style>

@@ -8,13 +8,14 @@ import {
   CoarButton,
   CoarPopconfirm,
   CoarTag,
-  useDialog,
   useToast,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import AppNote from '@/components/AppNote.vue'
 import CredentialEditModal from './CredentialEditModal.vue'
+import { MODAL_LIST_FORM } from '@/router/modal-sizes'
+import { useModalOverlay } from '@/composables/useModalOverlay'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
@@ -23,7 +24,7 @@ import type { ClientSecretDto } from '@/models/oauth'
 
 const { t } = useI18n()
 const toast = useToast()
-const dialog = useDialog()
+const modalOverlay = useModalOverlay()
 
 const props = defineProps<{
   id: string
@@ -143,14 +144,15 @@ async function save() {
   }
 }
 
+// Opened from inside this modal, so there is no routed fragment for it — but
+// it uses the same bare-overlay plumbing (see useModalOverlay: the CoarDialog
+// shell would draw a second modal frame around the ModalLayout).
 async function openCredentialModal(credentialId: string) {
-  const ref$ = dialog.open<boolean>(CredentialEditModal, {
-    title: credentialId === 'create'
-      ? t('admin.serviceAccountCredentials.issueTitle', {}, 'Issue credential')
-      : t('admin.serviceAccountCredentials.editTitle', {}, 'Edit credential'),
-    size: 'l',
-  }, { saId: props.id, id: credentialId })
-  const result = await ref$.result
+  const result = await modalOverlay.open<boolean>(
+    CredentialEditModal,
+    MODAL_LIST_FORM,
+    { saId: props.id, id: credentialId },
+  )
   if (result) {
     await loadCredentials()
   }
@@ -235,17 +237,21 @@ function extractScopes(cred: OAuthClientDto): string[] {
       <!-- Credentials section — only visible when editing an existing SA.
            On create, the SA has to be saved first before credentials can be
            issued (the API needs a persisted SA.Id to link against). -->
-      <section v-if="!isCreate" class="mt-2 border-t border-surface-200 pt-4">
-        <div class="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <h3 class="text-base font-medium">
-              {{ t('admin.serviceAccountCredentials.sectionTitle', {}, 'Credentials') }}
-            </h3>
-            <p class="text-xs text-surface-500">
+      <section v-if="!isCreate" class="form-section mt-2">
+        <h3 class="form-section-heading">
+          {{ t('admin.serviceAccountCredentials.sectionTitle', {}, 'Credentials') }}
+        </h3>
+
+        <div class="mb-3 flex items-center gap-3">
+          <AppNote variant="info" class="min-w-0 flex-1">
+            {{ t('admin.serviceAccountCredentials.sectionHintShort', {}, 'OAuth clients of this Service Account.') }}
+            <template #details>
               {{ t('admin.serviceAccountCredentials.sectionHint', {}, 'OAuth clients owned by this Service Account. Each credential authenticates separately at /connect/token but shares this SA\'s permissions and group memberships.') }}
-            </p>
-          </div>
-          <CoarButton size="s" icon-start="plus" @click="openCredentialModal('create')">
+            </template>
+          </AppNote>
+          <!-- shrink-0: the label is `white-space:nowrap; overflow:hidden`, so a
+               shrinking button silently cuts its own text off. -->
+          <CoarButton size="s" icon-start="plus" class="shrink-0" @click="openCredentialModal('create')">
             {{ t('admin.serviceAccountCredentials.issueButton', {}, 'Issue credential') }}
           </CoarButton>
         </div>
@@ -273,7 +279,7 @@ function extractScopes(cred: OAuthClientDto): string[] {
           {{ t('common.loading', {}, 'Loading...') }}
         </div>
         <div v-else-if="credentials.length === 0" class="rounded border border-dashed border-surface-300 p-4 text-center text-sm text-surface-500">
-          {{ t('admin.serviceAccountCredentials.empty', {}, 'No credentials yet. Issue one to let services authenticate as this account.') }}
+          {{ t('admin.serviceAccountCredentials.empty', {}, 'No credentials yet.') }}
         </div>
         <ul v-else class="flex flex-col gap-2">
           <li v-for="cred in credentials" :key="cred.Id"
