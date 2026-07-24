@@ -504,6 +504,8 @@
     },
     "userDetails": {
       "createTitle": "Benutzer erstellen",
+      "initialPassword": "Initiales Passwort",
+      "initialPasswordHint": "Optional. Leer lassen für ein Konto, das sich per Magic Link, Passkey oder externem Identity Provider anmeldet.",
       "profileSection": "Profil",
       "accountSection": "Konto",
       "rolesSection": "Rollen",

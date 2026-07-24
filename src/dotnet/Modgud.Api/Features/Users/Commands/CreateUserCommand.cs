@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Modgud.Application.DTOs.User;
 using Modgud.Domain.Errors;
 using Modgud.Domain.Realms;
+using Modgud.Authentication.Events;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authorization.Principals;
@@ -12,7 +13,7 @@ using Modgud.Authorization.Principals;
 
 namespace Modgud.Api.Features.Users.Commands;
 
-public record CreateUserCommand(string? Firstname, string? Lastname, string? Acronym, string? Email, string UserName, string? Password, bool EmailConfirmed = false);
+public record CreateUserCommand(string? Firstname, string? Lastname, string? Acronym, string? Email, string UserName, string? Password, bool EmailConfirmed = false, bool IsActive = true);
 
 public class CreateUserHandler(
     IDocumentSession session,
@@ -87,7 +88,7 @@ public class CreateUserHandler(
             Firstname = command.Firstname,
             Lastname = command.Lastname,
             Acronym = command.Acronym,
-            IsActive = true,
+            IsActive = command.IsActive,
             EmailConfirmed = command.EmailConfirmed,
         };
 
@@ -110,6 +111,19 @@ public class CreateUserHandler(
                 string.Join("; ", createResult.Errors.Select(e => e.Description)));
         }
 
+        // The read model takes IsActive exclusively from UserActivatedEvent /
+        // UserDeactivatedEvent — UserCreatedEvent carries no such field and
+        // UserView defaults to active. Writing it on the ApplicationUser
+        // document alone would leave the grid, the list query and everything
+        // else projection-driven claiming the user is active. Append the same
+        // event the update path appends, so "created inactive" is one honest
+        // stream rather than a document that disagrees with its projection.
+        if (!command.IsActive)
+        {
+            session.Events.Append(id, new UserDeactivatedEvent(id));
+            await session.SaveChangesAsync(ct);
+        }
+
         return new UserDto
         {
             Id = new ShortGuid(id).ToString(),
@@ -118,7 +132,7 @@ public class CreateUserHandler(
             Acronym = command.Acronym,
             Email = command.Email,
             UserName = normalizedUserName,
-            IsActive = true,
+            IsActive = command.IsActive,
             HasPassword = hasPassword,
             EmailConfirmed = command.EmailConfirmed,
         };

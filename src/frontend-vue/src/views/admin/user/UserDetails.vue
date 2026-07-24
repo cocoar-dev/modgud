@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useUserStore, type UserGroupDto, type InheritedUserGroupDto, type EffectiveGroupDto, type EffectiveGroupDiagnostic } from '@/stores/user.store'
 import { useGroupStore } from '@/stores/group.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
-import { CoarTextInput, CoarNumberInput, CoarFormField, CoarIcon, CoarTabGroup, CoarTab, CoarListbox, CoarDualListbox, CoarButton, CoarCheckbox, CoarTag } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarPasswordInput, CoarNumberInput, CoarFormField, CoarIcon, CoarTabGroup, CoarTab, CoarListbox, CoarDualListbox, CoarButton, CoarCheckbox, CoarTag } from '@cocoar/vue-ui'
 import type { CoarListboxOption } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
@@ -54,7 +54,9 @@ const parsedOverride = computed<number | null>(() => {
 })
 
 const policyDirty = computed(() => {
-  if (!securityInfo.value) return false
+  // On create there is no securityInfo to compare against — the baseline is
+  // the backend default (no override, not exempt), so any deviation is dirty.
+  if (!isCreate.value && !securityInfo.value) return false
   return parsedOverride.value !== originalOverride.value
     || exemptLocal.value !== originalExempt.value
 })
@@ -90,7 +92,13 @@ const effectiveDiagnostics = ref<EffectiveGroupDiagnostic[]>([])
 const groupsLoaded = ref(false)
 
 async function loadGroups() {
-  if (isCreate.value) return
+  // On create there is nothing to read yet — the user has no memberships and
+  // no id. The picker still works: it stages against an empty baseline and the
+  // save commits the additions once the id exists.
+  if (isCreate.value) {
+    groupsLoaded.value = true
+    return
+  }
   // Both endpoints in parallel — independent reads, both per-tab one-shot.
   const [data, eff] = await Promise.all([
     userStore.getGroups(props.id),
@@ -216,6 +224,12 @@ const requiredFieldMissing = computed(() => {
 const isActive = ref(true)
 const originalActive = ref(true)
 
+// Initial password — create only. The create API has always accepted one
+// (CreateUserCommand.Password); the form simply never offered the field, which
+// forced a second trip through "Set password" after creating. Blank = no
+// password, i.e. the user signs in via magic link / passkey / external IdP.
+const initialPassword = ref('')
+
 const modalTitle = computed(() => {
   const name = `${form.value.Firstname} ${form.value.Lastname}`.trim()
   const acronym = form.value.Acronym?.trim()
@@ -246,6 +260,10 @@ const footerButton = computed(() => ({
 onMounted(async () => {
   // Ensure the field policy is available (idempotent; usually already loaded at boot).
   appConfig.load()
+  if (isCreate.value) {
+    // The group picker needs the assignable-groups list on create too.
+    await groupStore.initialize()
+  }
   if (!isCreate.value) {
     loading.value = true
     try {
@@ -281,15 +299,33 @@ async function save() {
   loading.value = true
   try {
     if (isCreate.value) {
-      await userStore.createEntity({
+      // One Save creates the WHOLE user: profile, initial password, active
+      // state and email-verified flag in the POST, then the two things that
+      // can only be addressed once an id exists — group memberships and the
+      // per-user 2FA policy — against the id from the response.
+      const created = await userStore.createEntity({
         Firstname: form.value.Firstname,
         Lastname: form.value.Lastname,
         Acronym: form.value.Acronym || undefined,
         Email: form.value.Email || undefined,
         // Blank username is fine — the backend defaults it to the email address.
         UserName: form.value.UserName,
+        Password: initialPassword.value || undefined,
         EmailConfirmed: emailConfirmed.value || undefined,
+        IsActive: isActive.value,
       })
+
+      for (const groupId of stagedGroupIds.value) {
+        await userStore.addGroup(created.Id, groupId)
+      }
+
+      if (policyDirty.value) {
+        await userStore.setGracePolicy(created.Id, {
+          // Sentinel -1 clears the per-user override on the backend; null would skip it.
+          GracePeriodDaysOverride: parsedOverride.value === null ? -1 : parsedOverride.value,
+          TwoFactorExempt: exemptLocal.value,
+        })
+      }
     } else {
       // Optimistic update — update store immediately with expected state
       const existing = userStore.getFromStore(props.id)
@@ -361,17 +397,25 @@ watch(() => form.value.UserName, () => {
 
 <template>
   <ModalLayout :close="close" :title="modalTitle" icon="user" :footer-button="footerButton" width="42rem">
-    <div v-if="!loading" class="flex flex-col min-w-0 min-h-0 flex-1"
-      :class="{ 'user-edit-frame': !isCreate }">
-      <CoarTabGroup v-if="!isCreate" v-model="activeTab" class="tab-bar">
+    <!-- The pinned body height applies in create too, now that create is
+         tabbed: without it the panel would jump between the short General tab
+         and the tall group picker, and the picker would have no definite
+         height to fill. -->
+    <div v-if="!loading" class="flex flex-col min-w-0 min-h-0 flex-1 user-edit-frame">
+      <!-- Same navigation in create and edit (contract rule 5): a user is
+           created COMPLETE — groups and 2FA policy included — instead of
+           being created bare and then edited. Only "Effektiv" drops out,
+           because effective membership is derived and there is nothing to
+           derive it from yet. -->
+      <CoarTabGroup v-model="activeTab" class="tab-bar">
         <CoarTab id="general">{{ t('admin.userDetails.tabs.general', {}, 'General') }}</CoarTab>
         <CoarTab id="groups">{{ t('admin.userDetails.tabs.groups', {}, 'Direct Groups') }}</CoarTab>
-        <CoarTab id="effective">{{ t('admin.userDetails.tabs.effective', {}, 'Effektiv') }}</CoarTab>
+        <CoarTab v-if="!isCreate" id="effective">{{ t('admin.userDetails.tabs.effective', {}, 'Effektiv') }}</CoarTab>
         <CoarTab id="security">{{ t('admin.userDetails.tabs.security', {}, 'Security') }}</CoarTab>
       </CoarTabGroup>
 
       <!-- Tab: General -->
-      <div v-show="isCreate || activeTab === 'general'" class="tab-content">
+      <div v-show="activeTab === 'general'" class="tab-content">
         <div class="modal-form">
           <!-- Section: Identity -->
           <section class="form-section">
@@ -406,12 +450,20 @@ watch(() => form.value.UserName, () => {
                 <CoarTextInput v-model="form.UserName" clearable />
                 <span v-if="userNameError" class="text-xs text-red-600">{{ userNameError }}</span>
               </CoarFormField>
+              <!-- Create only: on an existing user the password is changed
+                   through the explicit "Set password" action, which is a
+                   separate operation and not part of this form's Save. -->
+              <CoarFormField v-if="isCreate" class="col-half" :label="t('admin.userDetails.initialPassword', {}, 'Initial password')"
+                :hint="t('admin.userDetails.initialPasswordHint', {}, 'Optional. Leave empty for an account that signs in via magic link, passkey or an external identity provider.')">
+                <CoarPasswordInput v-model="initialPassword" autocomplete="new-password" />
+              </CoarFormField>
             </div>
           </section>
 
-          <!-- Section: Account status — edit only. Active flag + email-verified
-               override, the account-state toggles set off in their own band. -->
-          <section v-if="!isCreate" class="form-section">
+          <!-- Section: Account status — same band in both modes. The active
+               flag is settable on create too (POST carries IsActive), so an
+               account can be staged inactive ahead of a start date. -->
+          <section class="form-section">
             <h3 class="form-section-heading">{{ t('admin.userDetails.section.accountStatus', {}, 'Kontostatus') }}</h3>
             <div class="modal-form-grid">
               <CoarFormField class="col-full" :label="t('admin.userDetails.activeLabel', {}, 'Konto')"
@@ -419,24 +471,10 @@ watch(() => form.value.UserName, () => {
                 <CoarCheckbox v-model="isActive"
                   :label="t('admin.userDetails.activeCheckbox', {}, 'User active')" />
               </CoarFormField>
-              <!-- Email-verified toggle pinned at the section end with its existing
-                   v-if (only meaningful once an email is set). -->
+              <!-- Email-verified toggle pinned at the section end; only meaningful
+                   once an email is set. On create the admin is vouching for the
+                   address they are typing right now. -->
               <CoarFormField v-if="form.Email" class="col-full" :label="t('admin.userDetails.emailVerifiedLabel', {}, 'Email Status')"
-                :hint="emailConfirmed
-                    ? t('admin.userDetails.emailVerifiedHint', {}, 'Forgot-password and self-magic-link are unlocked for this user.')
-                    : t('admin.userDetails.emailUnverifiedHint', {}, 'Forgot-password and self-magic-link are blocked until the user verifies their email.')">
-                <CoarCheckbox v-model="emailConfirmed"
-                  :label="t('admin.userDetails.emailVerifiedToggle', {}, 'Mark email address as verified')" />
-              </CoarFormField>
-            </div>
-          </section>
-
-          <!-- On create the email-verified override still applies (the admin vouches
-               for the address they're typing). Kept at the end, mirroring edit. -->
-          <section v-if="isCreate && form.Email" class="form-section">
-            <h3 class="form-section-heading">{{ t('admin.userDetails.section.accountStatus', {}, 'Kontostatus') }}</h3>
-            <div class="modal-form-grid">
-              <CoarFormField class="col-full" :label="t('admin.userDetails.emailVerifiedLabel', {}, 'Email Status')"
                 :hint="emailConfirmed
                     ? t('admin.userDetails.emailVerifiedHint', {}, 'Forgot-password and self-magic-link are unlocked for this user.')
                     : t('admin.userDetails.emailUnverifiedHint', {}, 'Forgot-password and self-magic-link are blocked until the user verifies their email.')">
@@ -449,8 +487,31 @@ watch(() => form.value.UserName, () => {
       </div>
 
       <!-- Tab: Security -->
-      <div v-show="!isCreate && activeTab === 'security'" class="tab-content">
-        <section v-if="securityInfo" class="flex flex-col gap-4 text-sm">
+      <div v-show="activeTab === 'security'" class="tab-content">
+        <!-- Create: only the per-user policy is meaningful. 2FA status and the
+             grace actions describe a history the account does not have yet —
+             hidden by the meaning rule, not to reduce clutter. -->
+        <section v-if="isCreate" class="flex flex-col gap-4 text-sm">
+          <div>
+            <div class="section-heading">{{ t('admin.userDetails.policyHeading', {}, 'Individuelle Richtlinie') }}</div>
+            <div class="flex flex-col gap-3">
+              <CoarFormField :label="t('admin.userDetails.policyDays', {}, 'Individual deadline in days (empty = global default)')">
+                <CoarNumberInput v-model="overrideInput" :min="0"
+                  :placeholder="t('admin.userDetails.policyDaysPlaceholder', { days: appConfig.config.TwoFactorGracePeriodDays }, `${appConfig.config.TwoFactorGracePeriodDays} (Default)`)"
+                  :disabled="exemptLocal" />
+              </CoarFormField>
+              <div class="flex flex-col gap-1">
+                <CoarCheckbox v-model="exemptLocal"
+                  :label="t('admin.userDetails.exemptCheckbox', {}, 'Disable 2FA requirement for this user')" />
+                <span class="text-xs text-gray-500 pl-6">
+                  {{ t('admin.userDetails.exemptHint', {}, 'User bypasses grace period and enforcement entirely. For service accounts / legacy users.') }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section v-else-if="securityInfo" class="flex flex-col gap-4 text-sm">
           <!-- 2FA status -->
           <div>
             <div class="section-heading">{{ t('admin.userDetails.twoFactorHeading', {}, 'Two-factor authentication') }}</div>
@@ -520,7 +581,7 @@ watch(() => form.value.UserName, () => {
       <!-- Tab: Direct Groups — the editor surface. The admin picks who
            the user is a direct member of; everything else (inheritance,
            auto-script matches) is shown on the Effektiv tab. -->
-      <div v-show="!isCreate && activeTab === 'groups'" class="tab-content">
+      <div v-show="activeTab === 'groups'" class="tab-content">
         <!-- In edit mode the body has a fixed height (.user-edit-frame, so the
              modal doesn't resize on tab switch); this section fills it via flex so
              the dual-listbox gets a definite height. -->
