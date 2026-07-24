@@ -457,18 +457,18 @@ watch(() => form.value.UserName, () => {
             <div class="section-heading">{{ t('admin.userDetails.twoFactorHeading', {}, 'Two-factor authentication') }}</div>
             <div class="flex items-center gap-2">
               <span class="text-gray-600">{{ t('admin.userDetails.twoFactor', {}, '2FA:') }}</span>
-              <span v-if="securityInfo.Has2FA" class="status-badge status-active">
+              <CoarTag v-if="securityInfo.Has2FA" variant="success" size="s">
                 <CoarIcon name="check" size="s" />
                 {{ securityInfo.TwoFactorMethods.join(', ') }}
-              </span>
-              <span v-else-if="exemptLocal" class="status-badge status-exempt">
+              </CoarTag>
+              <CoarTag v-else-if="exemptLocal" variant="warning" size="s">
                 <CoarIcon name="shield-alert" size="s" />
                 {{ t('admin.userDetails.exemptBadge', {}, 'Exempt — 2FA not required') }}
-              </span>
-              <span v-else class="status-badge status-inactive">
+              </CoarTag>
+              <CoarTag v-else variant="neutral" size="s">
                 <CoarIcon name="x" size="s" />
                 {{ t('admin.userDetails.noTwoFactor', {}, 'Not configured') }}
-              </span>
+              </CoarTag>
             </div>
           </div>
 
@@ -662,24 +662,6 @@ watch(() => form.value.UserName, () => {
   padding-bottom: 4px;
   margin-bottom: 8px;
 }
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 10px;
-  border-radius: 9999px;
-  font-size: 0.8rem;
-  font-weight: 500;
-  cursor: pointer;
-  border: none;
-  transition: opacity 0.15s;
-}
-
-.status-badge:hover { opacity: 0.8; }
-.status-active { background-color: #dcfce7; color: #166534; }
-.status-inactive { background-color: #f3f4f6; color: #6b7280; }
-.status-exempt { background-color: #fef3c7; color: #92400e; }
 
 .tab-bar {
   margin-bottom: 12px;
