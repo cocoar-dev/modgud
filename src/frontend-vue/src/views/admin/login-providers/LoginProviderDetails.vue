@@ -2,12 +2,13 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import {
   CoarTextInput, CoarPasswordInput, CoarNumberInput, CoarFormField, CoarCheckbox, CoarTabGroup, CoarTab,
-  CoarButton, CoarIcon, CoarNote, CoarSelect, CoarSwitch,
+  CoarButton, CoarIcon, CoarSelect, CoarSwitch,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation } from '@cocoar/vue-fragment-parser'
 import ModalLayout from '@/components/ModalLayout.vue'
 import ColorField from '@/components/ColorField.vue'
+import AppNote from '@/components/AppNote.vue'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import type { FlavorConfigFieldDto, FlavorDto, LoginProviderDto } from '@/models/loginProvider'
 import UserUpdateScriptEditor from './UserUpdateScriptEditor.vue'
@@ -503,9 +504,9 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
 
     <div v-else class="flex flex-col flex-1 min-h-0 gap-3">
       <!-- Built-in banner — hard-block on edits via UI; backend rejects too. -->
-      <CoarNote v-if="isBuiltIn" variant="info">
+      <AppNote v-if="isBuiltIn" variant="info" :truncate="false">
         {{ t('admin.loginProviders.builtIn.banner', {}, 'This is the built-in internal login provider — its configuration is managed by the system and can\'t be changed here.') }}
-      </CoarNote>
+      </AppNote>
 
       <!-- Header row: type/flavor badge, enabled-toggle, error -->
       <div class="flex items-center gap-3 flex-wrap">

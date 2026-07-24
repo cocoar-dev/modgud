@@ -2,8 +2,9 @@
 import { ref, computed } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useI18n } from '@cocoar/vue-localization'
-import { CoarPasswordInput, CoarFormField, CoarNote } from '@cocoar/vue-ui'
+import { CoarPasswordInput, CoarFormField } from '@cocoar/vue-ui'
 import ModalLayout from '@/components/ModalLayout.vue'
+import AppNote from '@/components/AppNote.vue'
 
 const { t } = useI18n()
 
@@ -66,9 +67,9 @@ async function changePassword() {
     width="28rem"
   >
     <div class="flex flex-col gap-4 p-2 pb-4">
-      <CoarNote v-if="success" variant="success">
+      <AppNote v-if="success" variant="success" :truncate="false">
         {{ t('profile.changePassword.success', {}, 'Password has been changed.') }}
-      </CoarNote>
+      </AppNote>
 
       <template v-else>
         <CoarFormField :label="t('profile.changePassword.currentPassword', {}, 'Current Password')">
@@ -83,11 +84,11 @@ async function changePassword() {
           <CoarPasswordInput v-model="confirmPassword" autocomplete="new-password" />
         </CoarFormField>
 
-        <CoarNote v-if="mismatch" variant="error">
+        <AppNote v-if="mismatch" variant="error" :truncate="false">
           {{ t('profile.changePassword.mismatch', {}, 'Passwords do not match.') }}
-        </CoarNote>
+        </AppNote>
 
-        <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+        <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
       </template>
     </div>
   </ModalLayout>

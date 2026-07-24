@@ -5,7 +5,6 @@ import {
   CoarTextInput,
   CoarFormField,
   CoarCheckbox,
-  CoarNote,
   CoarButton,
   CoarPopconfirm,
   CoarTag,
@@ -14,6 +13,7 @@ import {
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
+import AppNote from '@/components/AppNote.vue'
 import CredentialEditModal from './CredentialEditModal.vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
@@ -236,7 +236,7 @@ function extractScopes(cred: OAuthClientDto): string[] {
         </section>
       </div>
 
-      <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+      <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
 
       <!-- Credentials section — only visible when editing an existing SA.
            On create, the SA has to be saved first before credentials can be
@@ -257,7 +257,7 @@ function extractScopes(cred: OAuthClientDto): string[] {
         </div>
 
         <!-- Rotated-secret panel (shown after rotate; dismissable). -->
-        <CoarNote v-if="rotatedSecret" variant="warning" class="mb-3">
+        <AppNote v-if="rotatedSecret" variant="warning" :truncate="false" class="mb-3">
           <div class="flex flex-col gap-2">
             <div class="font-medium">
               {{ t('admin.serviceAccountCredentials.rotatedTitle', {}, 'New secret for') }}
@@ -273,7 +273,7 @@ function extractScopes(cred: OAuthClientDto): string[] {
               </CoarButton>
             </div>
           </div>
-        </CoarNote>
+        </AppNote>
 
         <div v-if="credentialsLoading" class="text-xs text-surface-500">
           {{ t('common.loading', {}, 'Loading...') }}

@@ -6,10 +6,10 @@ import {
   CoarCheckbox,
   CoarSelect,
   CoarButton,
-  CoarNote,
   CoarTag,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
+import AppNote from '@/components/AppNote.vue'
 import EditableStringList from '@/components/EditableStringList.vue'
 import type { OAuthApiDto } from '@/models/oauth'
 
@@ -152,7 +152,7 @@ async function copyAudience() {
       <p class="field-hint">{{ t('admin.oauthApis.allowDcr.help', {}, 'Off by default: dynamically registered clients cannot request tokens for this API until allowed here.') }}</p>
     </CoarFormField>
 
-    <CoarNote v-if="!isCreate && dto && !dto.HasImplicitScope" variant="info">
+    <AppNote v-if="!isCreate && dto && !dto.HasImplicitScope" variant="info" :truncate="false">
       <div class="flex items-center gap-3">
         <div class="flex flex-col min-w-0 flex-1">
           <div class="text-sm font-medium">
@@ -166,7 +166,7 @@ async function copyAudience() {
           {{ t('admin.oauthApis.implicitScope.button', {}, 'Create scope') }}
         </CoarButton>
       </div>
-    </CoarNote>
+    </AppNote>
   </div>
 
   <!-- ── Review (create wizard only) ──────────────────────────────── -->

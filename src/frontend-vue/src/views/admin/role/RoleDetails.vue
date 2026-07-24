@@ -3,9 +3,10 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoleStore } from '@/stores/role.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, ROLE_CLONE } from '@/composables/useClone'
-import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarNote, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
+import AppNote from '@/components/AppNote.vue'
 import type { RoleDto } from '@/models/role'
 
 const { t } = useI18n()
@@ -211,9 +212,9 @@ async function save() {
                   :label="t('admin.roleDetails.isRealmAdmin.toggle', {}, 'System administrator (realm:admin)')"
                 />
                 <p class="field-hint">{{ t('admin.roleDetails.isRealmAdmin.hint', {}, 'Bypasses every App permission in this realm only. It never grants access to another realm.') }}</p>
-                <CoarNote v-if="form.IsRealmAdmin" variant="warning">
+                <AppNote v-if="form.IsRealmAdmin" variant="warning" :truncate="false">
                   {{ t('admin.roleDetails.isRealmAdmin.warning', {}, 'This creates a pure realm-admin role. Its Application and App permissions are cleared.') }}
-                </CoarNote>
+                </AppNote>
               </CoarFormField>
             </div>
           </section>

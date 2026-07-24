@@ -4,13 +4,13 @@ import {
   CoarTextInput,
   CoarFormField,
   CoarCheckbox,
-  CoarNote,
   CoarDualListbox,
   CoarButton,
   CoarSelect,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
+import AppNote from '@/components/AppNote.vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
@@ -232,7 +232,7 @@ async function copySecret() {
     <!-- Secret-disclosure panel: shown once after Issue / Rotate. Modal
          footer flips to "Done" while this panel is visible. -->
     <div v-else-if="newSecret" class="flex flex-col gap-4 p-2">
-      <CoarNote variant="warning">
+      <AppNote variant="warning" :truncate="false">
         <div class="flex flex-col gap-3">
           <div class="font-medium">
             {{ t('admin.serviceAccountCredentials.secretOnce', {}, 'Copy the client secret now — it will not be shown again.') }}
@@ -250,7 +250,7 @@ async function copySecret() {
             </CoarButton>
           </div>
         </div>
-      </CoarNote>
+      </AppNote>
     </div>
 
     <div v-else class="flex flex-col gap-4 p-1">
@@ -314,7 +314,7 @@ async function copySecret() {
         <CoarCheckbox v-model="form.Enabled" :label="t('admin.serviceAccountCredentials.enabled', {}, 'Active')" />
       </div>
 
-      <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+      <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
     </div>
   </ModalLayout>
 </template>

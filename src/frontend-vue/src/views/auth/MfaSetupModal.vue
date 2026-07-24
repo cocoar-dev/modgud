@@ -7,8 +7,8 @@ import {
   CoarButton,
   CoarOtpInput,
   CoarFormField,
-  CoarNote,
 } from '@cocoar/vue-ui'
+import AppNote from '@/components/AppNote.vue'
 
 const { t } = useI18n()
 
@@ -90,7 +90,7 @@ async function verifyCode() {
             />
           </CoarFormField>
 
-          <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+          <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
 
           <CoarButton
             type="submit"

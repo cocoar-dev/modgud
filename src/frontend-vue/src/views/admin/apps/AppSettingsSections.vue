@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
 import {
-  CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarNote,
+  CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect,
   CoarTabGroup, CoarTab, CoarMultiSelect,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
+import AppNote from '@/components/AppNote.vue'
 import EditableStringList from '@/components/EditableStringList.vue'
 import { useGroupStore } from '@/stores/group.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
@@ -291,9 +292,9 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
 <template>
   <div class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-    <CoarNote variant="info">
+    <AppNote variant="info" :truncate="false">
       {{ t('admin.appSettings.hint', {}, 'These settings override the realm defaults only for this app. A disabled section inherits from the realm.') }}
-    </CoarNote>
+    </AppNote>
 
     <CoarTabGroup v-model="activeTab" class="tab-bar">
       <CoarTab id="origin">{{ t('admin.appSettings.tabs.origin', {}, 'Origin & Branding') }}</CoarTab>
@@ -368,9 +369,12 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
       <CoarCheckbox v-model="f.registrationFields.override" :label="t('admin.appSettings.regFields.override', {}, 'Custom Required Fields at Registration')" />
       <template v-if="f.registrationFields.override">
-        <CoarNote variant="info">
-          {{ t('admin.appSettings.regFields.hint', {}, 'Which identity fields are required at account creation. Email is always required. Native clients must collect required fields.') }}
-        </CoarNote>
+        <AppNote variant="info">
+          {{ t('admin.appSettings.regFields.hintShort', {}, 'Which identity fields are required at sign-up. Email is always required.') }}
+          <template #details>
+            {{ t('admin.appSettings.regFields.hint', {}, 'Which identity fields are required at account creation. Email is always required. Native clients must collect required fields.') }}
+          </template>
+        </AppNote>
         <CoarFormField :label="t('admin.regFields.username', {}, 'Benutzername')">
           <CoarSelect v-model="f.registrationFields.username" :options="requirementOptions" />
         </CoarFormField>
@@ -385,9 +389,12 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
     <!-- Native app / OAuth client sessions -->
     <div v-show="activeTab === 'sessions'" class="tab-content">
-      <CoarNote variant="info">
-        {{ t('admin.appSettings.sessions.hint', {}, 'Override the realm default for refresh-token-backed sessions in this app. Individual OAuth clients can override this again. Access-token lifetime is configured separately and remains short.') }}
-      </CoarNote>
+      <AppNote variant="info">
+        {{ t('admin.appSettings.sessions.hintShort', {}, 'Override the realm default for this app\'s refresh-token sessions.') }}
+        <template #details>
+          {{ t('admin.appSettings.sessions.hint', {}, 'Override the realm default for refresh-token-backed sessions in this app. Individual OAuth clients can override this again. Access-token lifetime is configured separately and remains short.') }}
+        </template>
+      </AppNote>
       <CoarCheckbox
         v-model="f.clientSessions.override"
         :label="t('admin.appSettings.sessions.override', {}, 'Custom client-session policy')" />
@@ -462,14 +469,17 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
     <!-- PageBuilder schemas live behind dedicated endpoints so regular settings
          saves cannot accidentally overwrite a large page tree. -->
     <div v-if="appConfig.config.Features.PageBuilder" v-show="activeTab === 'pages'" class="tab-content">
-      <CoarNote v-if="!applicationId" variant="info">
+      <AppNote v-if="!applicationId" variant="info" :truncate="false">
         {{ t('admin.appSettings.pages.saveFirst', {}, 'Save the application first, then you can give its authentication pages their own layout.') }}
-      </CoarNote>
+      </AppNote>
       <template v-else>
-        <CoarNote variant="info">
-          {{ t('admin.appSettings.pages.hintV3', {}, 'Pick which authentication page this application uses. Inherit follows the realm; variants are authored in Platform → Pages.') }}
-        </CoarNote>
-        <CoarNote v-if="pagesError" variant="error">{{ pagesError }}</CoarNote>
+        <AppNote variant="info">
+          {{ t('admin.appSettings.pages.hintV3Short', {}, 'Pick which page variant this app uses per slot; inherit follows the realm.') }}
+          <template #details>
+            {{ t('admin.appSettings.pages.hintV3', {}, 'Pick which authentication page this application uses. Inherit follows the realm; variants are authored in Platform → Pages.') }}
+          </template>
+        </AppNote>
+        <AppNote v-if="pagesError" variant="error" :truncate="false">{{ pagesError }}</AppNote>
 
         <CoarFormField v-for="m in PAGE_SLOT_META" :key="m.slug" :label="m.label">
           <CoarSelect

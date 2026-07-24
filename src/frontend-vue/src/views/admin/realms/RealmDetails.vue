@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTextInput, CoarFormField, CoarCheckbox, CoarNote, CoarButton } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarFormField, CoarCheckbox, CoarButton } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import RealmDomainsField from '@/components/RealmDomainsField.vue'
+import AppNote from '@/components/AppNote.vue'
 import { useRealmStore } from '@/stores/realm.store'
 import type { RealmDto, InitialAdminInviteDto } from '@/models/realm'
 
@@ -242,14 +243,17 @@ async function copyLink() {
 
     <!-- Invite-reveal screen — replaces the form after successful create/resend. -->
     <div v-else-if="issuedInvite" class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-      <CoarNote variant="success">
+      <AppNote variant="success" :truncate="false">
         {{ inviteSource === 'resent'
             ? t('admin.realms.inviteResentTitle', {}, 'Bootstrap invite reissued — the old token has been revoked.')
             : t('admin.realms.inviteIssuedTitle', {}, 'Realm created — bootstrap invite issued.') }}
-      </CoarNote>
-      <CoarNote variant="warning">
-        {{ t('admin.realms.inviteIssuedHint', {}, 'This magic link URL is shown exactly once. If the email isn\'t delivered (e.g. local development without SMTP), copy it now — afterwards it\'s only available via "Resend".') }}
-      </CoarNote>
+      </AppNote>
+      <AppNote variant="warning">
+        {{ t('admin.realms.inviteIssuedHintShort', {}, 'The magic-link URL is shown only once — copy it now if email isn\'t set up.') }}
+        <template #details>
+          {{ t('admin.realms.inviteIssuedHint', {}, 'This magic link URL is shown exactly once. If the email isn\'t delivered (e.g. local development without SMTP), copy it now — afterwards it\'s only available via "Resend".') }}
+        </template>
+      </AppNote>
       <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
         <span class="text-gray-500">{{ t('admin.realms.inviteUserName', {}, 'Benutzername') }}</span>
         <span class="font-medium">{{ issuedInvite.UserName }}</span>
@@ -270,12 +274,15 @@ async function copyLink() {
 
     <!-- Control-plane transfer result — terminal state (this host is no longer the CP). -->
     <div v-else-if="transferResult" class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-      <CoarNote variant="success">
+      <AppNote variant="success" :truncate="false">
         {{ t('admin.realms.transferDoneTitle', { slug: transferResult.Slug }, `Control plane moved to "${transferResult.Slug}".`) }}
-      </CoarNote>
-      <CoarNote variant="warning">
-        {{ t('admin.realms.transferDoneHint', {}, 'This host is no longer the control plane — realm management now lives on the target realm domain(s) below. Continue administration there.') }}
-      </CoarNote>
+      </AppNote>
+      <AppNote variant="warning">
+        {{ t('admin.realms.transferDoneHintShort', {}, 'Control-plane administration now lives on the target realm\'s domain(s).') }}
+        <template #details>
+          {{ t('admin.realms.transferDoneHint', {}, 'This host is no longer the control plane — realm management now lives on the target realm domain(s) below. Continue administration there.') }}
+        </template>
+      </AppNote>
       <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
         <span class="text-gray-500">{{ t('admin.realms.displayName', {}, 'Display Name') }}</span>
         <span class="font-medium">{{ transferResult.DisplayName }}</span>
@@ -288,9 +295,9 @@ async function copyLink() {
 
     <!-- Edit/Create form -->
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-      <CoarNote v-if="isCreate" variant="info">
+      <AppNote v-if="isCreate" variant="info" :truncate="false">
         {{ t('admin.realms.createHint', {}, 'Creating it automatically provisions a dedicated database and seeds it with the default OAuth scopes.') }}
-      </CoarNote>
+      </AppNote>
 
       <div class="modal-form">
         <!-- Section: Identity -->
@@ -318,9 +325,12 @@ async function copyLink() {
               <p class="field-hint">
                 {{ t('admin.realms.primaryDomainHint', {}, 'The realm routes on any domain, but the one marked Primary is its canonical public host: all invite / magic-link / reset mails use it, and passkeys (WebAuthn) only work on it.') }}
               </p>
-              <CoarNote v-if="primaryChanged" variant="warning" class="mt-2">
-                {{ t('admin.realms.primaryChangedWarning', {}, 'Changing the primary domain invalidates this realm\'s existing passkeys — they are bound to the previous host. Affected users must re-register their passkeys on the new primary domain.') }}
-              </CoarNote>
+              <AppNote v-if="primaryChanged" variant="warning" class="mt-2">
+                {{ t('admin.realms.primaryChangedWarningShort', {}, 'Changing the primary domain invalidates existing passkeys for this realm.') }}
+                <template #details>
+                  {{ t('admin.realms.primaryChangedWarning', {}, 'Changing the primary domain invalidates this realm\'s existing passkeys — they are bound to the previous host. Affected users must re-register their passkeys on the new primary domain.') }}
+                </template>
+              </AppNote>
             </CoarFormField>
           </div>
         </section>
@@ -380,9 +390,12 @@ async function copyLink() {
           {{ t('admin.realms.controlPlaneTitle', {}, 'Control Plane') }}
         </h4>
 
-        <CoarNote v-if="dto.IsControlPlane" variant="info">
-          {{ t('admin.realms.isControlPlaneNote', {}, 'This realm is the control plane — it hosts cross-realm administration. To move the role, open the target realm and make it the control plane.') }}
-        </CoarNote>
+        <AppNote v-if="dto.IsControlPlane" variant="info">
+          {{ t('admin.realms.isControlPlaneNoteShort', {}, 'This realm hosts cross-realm administration as the control plane.') }}
+          <template #details>
+            {{ t('admin.realms.isControlPlaneNote', {}, 'This realm is the control plane — it hosts cross-realm administration. To move the role, open the target realm and make it the control plane.') }}
+          </template>
+        </AppNote>
 
         <template v-else>
           <p class="text-xs text-gray-500">

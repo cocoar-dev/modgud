@@ -7,9 +7,9 @@ import {
   CoarCard,
   CoarButton,
   CoarTextInput,
-  CoarNote,
   CoarSpinner,
 } from '@cocoar/vue-ui'
+import AppNote from '@/components/AppNote.vue'
 import type { DeviceVerificationInfo } from '@/models/device'
 
 const { t, language } = useI18n()
@@ -231,7 +231,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
 
         <!-- Error -->
         <div v-else-if="phase === 'error'" class="space-y-4">
-          <CoarNote variant="error">{{ error }}</CoarNote>
+          <AppNote variant="error" :truncate="false">{{ error }}</AppNote>
           <CoarButton full-width @click="router.push('/login')">
             {{ t('consent.toLogin', {}, 'Back to sign-in') }}
           </CoarButton>
@@ -254,7 +254,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
             autocomplete="one-time-code"
             @keyup.enter="submitCode"
           />
-          <CoarNote v-if="codeError" variant="error">{{ codeError }}</CoarNote>
+          <AppNote v-if="codeError" variant="error" :truncate="false">{{ codeError }}</AppNote>
           <CoarButton :loading="submitting" :disabled="!codeInput.trim()" full-width @click="submitCode">
             {{ t('device.continue', {}, 'Continue') }}
           </CoarButton>
@@ -284,7 +284,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
             </div>
           </div>
 
-          <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+          <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
 
           <div class="flex gap-2">
             <CoarButton variant="secondary" :disabled="submitting" full-width @click="decide(false)">

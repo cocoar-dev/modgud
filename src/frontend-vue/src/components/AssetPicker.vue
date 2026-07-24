@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { CoarButton, CoarCard, CoarNote } from '@cocoar/vue-ui'
+import { CoarButton, CoarCard } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
+import AppNote from '@/components/AppNote.vue'
 import { useAssets } from '@/composables/useAssets'
 import type { AssetDto } from '@/models/assets'
 
@@ -70,8 +71,8 @@ onMounted(() => list())
         @change="onFileInputChange" />
     </div>
 
-    <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
-    <CoarNote v-if="uploadError" variant="error">{{ uploadError }}</CoarNote>
+    <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
+    <AppNote v-if="uploadError" variant="error" :truncate="false">{{ uploadError }}</AppNote>
 
     <div v-if="loading" class="picker-empty">{{ t('common.loading', {}, 'Loading…') }}</div>
     <div v-else-if="assets.length === 0" class="picker-empty">

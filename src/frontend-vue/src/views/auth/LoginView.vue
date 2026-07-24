@@ -13,9 +13,9 @@ import {
   CoarPasswordInput,
   CoarFormField,
   CoarCheckbox,
-  CoarNote,
   CoarOtpInput,
 } from '@cocoar/vue-ui'
+import AppNote from '@/components/AppNote.vue'
 import SecureSetupModal from './SecureSetupModal.vue'
 import {
   CoarPageRenderer,
@@ -463,7 +463,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
     </div>
 
     <template v-else-if="step === 'credentials' && customLoginSchema && !isPasswordless()">
-      <CoarNote v-if="error" variant="error" class="custom-login-error">{{ error }}</CoarNote>
+      <AppNote v-if="error" variant="error" :truncate="false" class="custom-login-error">{{ error }}</AppNote>
       <CoarPageRenderer
         :schema="customLoginSchema"
         :config="loginPageConfig"
@@ -527,7 +527,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
 
             <CoarCheckbox v-model="rememberMe" :label="t('auth.login.rememberMe', {}, 'Stay signed in')" />
 
-            <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+            <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
 
             <CoarButton
               type="submit"
@@ -540,11 +540,11 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
           </template>
 
           <!-- Passwordless notice (Level 2) -->
-          <CoarNote v-if="isPasswordless()" variant="info">
+          <AppNote v-if="isPasswordless()" variant="info" :truncate="false">
             {{ t('auth.login.passwordlessMode', {}, 'This application uses passwordless login.') }}
-          </CoarNote>
+          </AppNote>
 
-          <CoarNote v-if="isPasswordless() && error" variant="error">{{ error }}</CoarNote>
+          <AppNote v-if="isPasswordless() && error" variant="error" :truncate="false">{{ error }}</AppNote>
 
           <!-- Divider -->
           <div class="flex items-center gap-3 text-surface-400 text-xs">
@@ -622,7 +622,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
           <CoarFormField :label="t('auth.mfa.authenticatorCode', {}, 'Authenticator Code')">
             <CoarOtpInput v-model="totpCode" type="numeric" :length="6" auto-focus required />
           </CoarFormField>
-          <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+          <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
           <CoarButton type="submit" :disabled="!totpCode.trim()" :loading="submitting" full-width>
             {{ t('common.confirm', {}, 'Confirm') }}
           </CoarButton>
@@ -636,13 +636,13 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
 
         <!-- Step: Email OTP -->
         <form v-else-if="step === 'email-otp'" class="space-y-4" @submit.prevent="handleEmailOtpLogin">
-          <CoarNote v-if="emailOtpSent" variant="success">
+          <AppNote v-if="emailOtpSent" variant="success" :truncate="false">
             {{ t('auth.emailOtp.codeSent', {}, 'A code was sent to your email address.') }}
-          </CoarNote>
+          </AppNote>
           <CoarFormField :label="t('auth.emailOtp.label', {}, 'Email Code')">
             <CoarOtpInput v-model="emailOtpCode" type="numeric" :length="6" auto-focus required />
           </CoarFormField>
-          <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+          <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
           <CoarButton type="submit" :disabled="!emailOtpCode.trim()" :loading="submitting" full-width>
             {{ t('common.confirm', {}, 'Confirm') }}
           </CoarButton>
@@ -664,15 +664,15 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
               <CoarTextInput v-model="magicLinkEmail" :placeholder="t('auth.magicLink.emailPlaceholder', {}, 'email@example.com')"
                 type="email" required @keydown.enter="handleMagicLinkRequest" />
             </CoarFormField>
-            <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+            <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
             <CoarButton :disabled="!magicLinkEmail.trim()" :loading="submitting" full-width @click="handleMagicLinkRequest">
               {{ t('auth.magicLink.sendLink', {}, 'Send link') }}
             </CoarButton>
           </template>
           <template v-else>
-            <CoarNote variant="success">
+            <AppNote variant="success" :truncate="false">
               {{ t('auth.magicLink.sent', {}, 'If an account exists with this email, a login link was sent. Please check your inbox.') }}
-            </CoarNote>
+            </AppNote>
           </template>
           <div class="text-center">
             <button type="button" class="text-sm text-surface-500 hover:text-surface-700 hover:underline" @click="backToCredentials">

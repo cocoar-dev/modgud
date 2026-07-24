@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTextInput, CoarFormField, CoarNote, CoarButton, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
+import { CoarTextInput, CoarFormField, CoarButton, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
+import AppNote from '@/components/AppNote.vue'
 import AppSettingsSections from './AppSettingsSections.vue'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, APP_CLONE } from '@/composables/useClone'
@@ -348,12 +349,15 @@ async function save() {
         <CoarTab v-if="!isSystem" id="settings">{{ t('admin.apps.tabs.settings', {}, 'Settings') }}</CoarTab>
       </CoarTabGroup>
 
-      <CoarNote v-if="isCreate" variant="info">
+      <AppNote v-if="isCreate" variant="info" :truncate="false">
         {{ t('admin.apps.createHint', {}, 'A new app registers itself for permission resolution. The slug is immutable after creation.') }}
-      </CoarNote>
-      <CoarNote v-else-if="isSystem" variant="warning">
-        {{ t('admin.apps.systemHint', {}, 'This is a system app of the IdP. Slug, display name, and permission catalog are hardcoded in the backend — the catalog here is read-only and for inspection only. Changing the strings would break the RequiresPermission calls in the backend.') }}
-      </CoarNote>
+      </AppNote>
+      <AppNote v-else-if="isSystem" variant="warning">
+        {{ t('admin.apps.systemHintShort', {}, 'System app — catalog is read-only and hardcoded in the backend.') }}
+        <template #details>
+          {{ t('admin.apps.systemHint', {}, 'This is a system app of the IdP. Slug, display name, and permission catalog are hardcoded in the backend — the catalog here is read-only and for inspection only. Changing the strings would break the RequiresPermission calls in the backend.') }}
+        </template>
+      </AppNote>
 
       <!-- Tab: General -->
       <div v-show="activeTab === 'general'" class="tab-content">
@@ -380,9 +384,12 @@ async function save() {
             : t('admin.apps.permissionsHint', {}, 'Resource and action each need 1+ lowercase letters/digits/hyphens. Ids stay stable across renames — role grants and RS subsets follow automatically.') }}
         </p>
 
-        <CoarNote v-if="renamedCount > 0 && !isSystem" variant="warning">
-          {{ t('admin.apps.renamedWarning', { count: renamedCount }, `${renamedCount} entry/entries were renamed. The string form changes (e.g. in UserInfo), but role grants and RS subsets follow automatically via the stable id.`) }}
-        </CoarNote>
+        <AppNote v-if="renamedCount > 0 && !isSystem" variant="warning">
+          {{ t('admin.apps.renamedWarningShort', { count: renamedCount }, '{count} entry/entries renamed — string form changed, id stays stable.') }}
+          <template #details>
+            {{ t('admin.apps.renamedWarning', { count: renamedCount }, '{count} entry/entries were renamed. The string form changes (e.g. in UserInfo), but role grants and RS subsets follow automatically via the stable id.') }}
+          </template>
+        </AppNote>
 
         <div class="catalog-grid">
           <CoarDataGrid :builder="catalogBuilder" bordered>
@@ -411,7 +418,7 @@ async function save() {
           </span>
         </div>
 
-        <CoarNote v-if="catalogBlockers.length > 0" variant="error">
+        <AppNote v-if="catalogBlockers.length > 0" variant="error" :truncate="false">
           <div class="font-semibold mb-1">
             {{ t('admin.apps.cat.blockedTitle', {}, 'These entries are still in use:') }}
           </div>
@@ -426,7 +433,7 @@ async function save() {
               </span>
             </li>
           </ul>
-        </CoarNote>
+        </AppNote>
       </div>
 
       <!-- Tab: Settings (ADR-0011 per-App override) — one App, one modal -->
