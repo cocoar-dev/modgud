@@ -304,27 +304,25 @@ async function copyLink() {
         <section class="form-section">
           <h3 class="form-section-heading">{{ t('admin.realms.section.identity', {}, 'Identity') }}</h3>
           <div class="modal-form-grid">
-            <CoarFormField class="col-half" :label="t('admin.realms.slug', {}, 'Slug')" required>
+            <CoarFormField class="col-half" :label="t('admin.realms.slug', {}, 'Slug')" required
+              :hint="t('admin.realms.slug.hint', {}, 'Permanent URL / API identifier in kebab-case. Immutable after creation.')">
               <CoarTextInput v-model="form.Slug" :disabled="!isCreate" clearable
                 :placeholder="t('admin.realms.slugPlaceholder', {}, 'kebab-case-slug')" />
-              <p class="field-hint">{{ t('admin.realms.slug.hint', {}, 'Permanent URL / API identifier in kebab-case. Immutable after creation.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-half" :label="t('admin.realms.displayName', {}, 'Display name')" required>
+            <CoarFormField class="col-half" :label="t('admin.realms.displayName', {}, 'Display name')" required
+              :hint="t('admin.realms.displayName.hint', {}, 'Human-friendly name shown in the realm switcher and headers.')">
               <CoarTextInput v-model="form.DisplayName" clearable />
-              <p class="field-hint">{{ t('admin.realms.displayName.hint', {}, 'Human-friendly name shown in the realm switcher and headers.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-full" :label="t('common.description', {}, 'Description')">
+            <CoarFormField class="col-full" :label="t('common.description', {}, 'Description')"
+              :hint="t('admin.realms.description.hint', {}, 'Optional note describing this realm\'s purpose.')">
               <CoarTextInput v-model="form.Description" clearable :rows="2" />
-              <p class="field-hint">{{ t('admin.realms.description.hint', {}, 'Optional note describing this realm\'s purpose.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-full" :label="t('admin.realms.domains', {}, 'Domains')" required>
+            <CoarFormField class="col-full" :label="t('admin.realms.domains', {}, 'Domains')" required
+              :hint="t('admin.realms.primaryDomainHint', {}, 'The realm routes on any domain, but the one marked Primary is its canonical public host: all invite / magic-link / reset mails use it, and passkeys (WebAuthn) only work on it.')">
               <RealmDomainsField
                 v-model:domains="form.Domains"
                 v-model:primary="form.PrimaryDomain"
                 :placeholder="t('admin.realms.domain.placeholder', {}, 'auth.example.com')" />
-              <p class="field-hint">
-                {{ t('admin.realms.primaryDomainHint', {}, 'The realm routes on any domain, but the one marked Primary is its canonical public host: all invite / magic-link / reset mails use it, and passkeys (WebAuthn) only work on it.') }}
-              </p>
               <AppNote v-if="primaryChanged" variant="warning" class="mt-2">
                 {{ t('admin.realms.primaryChangedWarningShort', {}, 'Changing the primary domain invalidates existing passkeys for this realm.') }}
                 <template #details>
@@ -366,9 +364,9 @@ async function copyLink() {
         <section v-if="!isCreate" class="form-section">
           <h3 class="form-section-heading">{{ t('admin.realms.section.status', {}, 'Status') }}</h3>
           <div class="modal-form-grid">
-            <CoarFormField class="col-full">
+            <CoarFormField class="col-full"
+              :hint="t('admin.realms.isActive.hint', {}, 'Inactive realms cannot sign in and cannot become the control plane.')">
               <CoarCheckbox v-model="form.IsActive" :label="t('common.active', {}, 'Active')" />
-              <p class="field-hint">{{ t('admin.realms.isActive.hint', {}, 'Inactive realms cannot sign in and cannot become the control plane.') }}</p>
             </CoarFormField>
           </div>
         </section>

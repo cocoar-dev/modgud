@@ -74,7 +74,8 @@ async function copyAudience() {
   <div v-if="section === 'identity'" class="section-grid">
     <CoarFormField
       :label="t('admin.oauthApis.audience', {}, 'Audience (aud)')"
-      :required="isCreate">
+      :required="isCreate"
+      :hint="t('admin.oauthApis.audience.hint', {}, 'The aud value of this protected resource — this exact value lands in the token (aud) and is the resource= value a client requests. Immutable after creation (tokens, scopes and clients all reference it).')">
       <!-- Create: editable. Edit: read-only identity with copy — the aud is a
            stable token target referenced by issued tokens, scopes, clients and
            the resource server config, so it can't change after creation. -->
@@ -89,32 +90,29 @@ async function copyAudience() {
       </div>
       <CoarTextInput v-else v-model="form.Name" clearable
         :placeholder="t('admin.oauthApis.audience.placeholder', {}, 'https://event-tree.api')" />
-      <p class="field-hint">
-        {{ t('admin.oauthApis.audience.hint', {}, 'The aud value of this protected resource — this exact value lands in the token (aud) and is the resource= value a client requests. Immutable after creation (tokens, scopes and clients all reference it).') }}
-      </p>
     </CoarFormField>
 
-    <CoarFormField :label="t('admin.oauthApis.displayName', {}, 'Display name')">
+    <CoarFormField :label="t('admin.oauthApis.displayName', {}, 'Display name')"
+      :hint="t('admin.oauthApis.displayName.hint', {}, 'Human-readable name in lists and titles; purely cosmetic and changeable anytime.')">
       <CoarTextInput v-model="form.DisplayName" clearable />
-      <p class="field-hint">{{ t('admin.oauthApis.displayName.hint', {}, 'Human-readable name in lists and titles; purely cosmetic and changeable anytime.') }}</p>
     </CoarFormField>
 
-    <CoarFormField :label="t('admin.oauthApis.description', {}, 'Description')">
+    <CoarFormField :label="t('admin.oauthApis.description', {}, 'Description')"
+      :hint="t('admin.oauthApis.description.hint', {}, 'Optional note about what this API is for.')">
       <CoarTextInput v-model="form.Description" clearable :rows="2" />
-      <p class="field-hint">{{ t('admin.oauthApis.description.hint', {}, 'Optional note about what this API is for.') }}</p>
     </CoarFormField>
   </div>
 
   <!-- ── Linkage & gating ─────────────────────────────────────────── -->
   <div v-else-if="section === 'linkage'" class="section-grid">
-    <CoarFormField :label="t('admin.oauthApis.app', {}, 'Application')">
+    <CoarFormField :label="t('admin.oauthApis.app', {}, 'Application')"
+      :hint="t('admin.oauthApis.app.hint', {}, 'Links this API to an application’s permission catalog; UserInfo resolves the user’s permissions through it.')">
       <CoarSelect v-model="form.AppId" :options="appOptions" class="field-enum" />
-      <p class="field-hint">{{ t('admin.oauthApis.app.hint', {}, 'Links this API to an application’s permission catalog; UserInfo resolves the user’s permissions through it.') }}</p>
     </CoarFormField>
 
     <CoarFormField v-if="form.AppId"
-      :label="t('admin.oauthApis.permissions', {}, 'Permission selection (application catalog)')">
-      <p class="field-hint">{{ t('admin.oauthApis.permissionsHint', {}, 'Which catalog permissions this API gates on. UserInfo returns only the intersection of this selection and the user’s permissions.') }}</p>
+      :label="t('admin.oauthApis.permissions', {}, 'Permission selection (application catalog)')"
+      :hint="t('admin.oauthApis.permissionsHint', {}, 'Which catalog permissions this API gates on. UserInfo returns only the intersection of this selection and the user’s permissions.')">
       <div v-if="linkedAppCatalog.length === 0" class="text-xs text-gray-400 italic mt-2">
         {{ t('admin.oauthApis.permissions.empty', {}, 'The application has no catalog permissions yet. Add entries there first, then select them here.') }}
       </div>
@@ -128,15 +126,15 @@ async function copyAudience() {
 
   <!-- ── OAuth surface ────────────────────────────────────────────── -->
   <div v-else-if="section === 'surface'" class="section-grid">
-    <CoarFormField :label="t('admin.oauthApis.scopes', {}, 'Scopes')">
+    <CoarFormField :label="t('admin.oauthApis.scopes', {}, 'Scopes')"
+      :hint="t('admin.oauthApis.scopes.hint', {}, 'Scopes a client may request to obtain tokens for this API.')">
       <EditableStringList v-model="form.Scopes"
         :placeholder="t('admin.oauthApis.scope.placeholder', {}, 'event-tree.api')" />
-      <p class="field-hint">{{ t('admin.oauthApis.scopes.hint', {}, 'Scopes a client may request to obtain tokens for this API.') }}</p>
     </CoarFormField>
-    <CoarFormField :label="t('admin.oauthApis.userClaims', {}, 'User claims')">
+    <CoarFormField :label="t('admin.oauthApis.userClaims', {}, 'User claims')"
+      :hint="t('admin.oauthApis.userClaims.hint', {}, 'User claims included in access tokens for this API.')">
       <EditableStringList v-model="form.UserClaims"
         :placeholder="t('admin.oauthApis.userClaim.placeholder', {}, 'email')" />
-      <p class="field-hint">{{ t('admin.oauthApis.userClaims.hint', {}, 'User claims included in access tokens for this API.') }}</p>
     </CoarFormField>
   </div>
 
@@ -146,10 +144,10 @@ async function copyAudience() {
       <CoarCheckbox v-model="form.Enabled" :label="t('common.enabled', {}, 'Enabled')" />
       <p class="field-hint">{{ t('admin.oauthApis.enabled.hint', {}, 'Disabled APIs no longer accept tokens.') }}</p>
     </CoarFormField>
-    <CoarFormField :label="t('admin.oauthApis.allowDcr.label', {}, 'Dynamic Client Registration (DCR)')">
+    <CoarFormField :label="t('admin.oauthApis.allowDcr.label', {}, 'Dynamic Client Registration (DCR)')"
+      :hint="t('admin.oauthApis.allowDcr.help', {}, 'Off by default: dynamically registered clients cannot request tokens for this API until allowed here.')">
       <CoarCheckbox v-model="form.AllowDynamicRegistration"
         :label="t('admin.oauthApis.allowDcr', {}, 'DCR clients may request this API')" />
-      <p class="field-hint">{{ t('admin.oauthApis.allowDcr.help', {}, 'Off by default: dynamically registered clients cannot request tokens for this API until allowed here.') }}</p>
     </CoarFormField>
 
     <AppNote v-if="!isCreate && dto && !dto.HasImplicitScope" variant="info" :truncate="false">

@@ -537,12 +537,10 @@ async function copySecret() {
           <CoarFormField :label="t('admin.oauthClients.consentType', {}, 'Consent Type')">
             <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" class="input-enum" />
           </CoarFormField>
-          <CoarFormField :label="t('admin.oauthClients.webAuthnRpId', {}, 'WebAuthn RP-ID (Passkeys)')">
+          <CoarFormField :label="t('admin.oauthClients.webAuthnRpId', {}, 'WebAuthn RP-ID (Passkeys)')"
+            :hint="t('admin.oauthClients.webAuthnRpIdHint', {}, 'Optional. Dedicated relying-party domain for this app\'s native passkeys (e.g. app.example.com). Empty = realm domain. Warning: changing this invalidates all passkeys already registered for this app.')">
             <CoarTextInput v-model="form.WebAuthnRpId" clearable class="input-name"
               :placeholder="t('admin.oauthClients.webAuthnRpIdPlaceholder', {}, 'empty = realm domain')" />
-            <p class="field-hint">
-              {{ t('admin.oauthClients.webAuthnRpIdHint', {}, 'Optional. Dedicated relying-party domain for this app\'s native passkeys (e.g. app.example.com). Empty = realm domain. Warning: changing this invalidates all passkeys already registered for this app.') }}
-            </p>
           </CoarFormField>
           <CoarFormField v-if="isCreate" :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (empty = generate)')">
             <CoarPasswordInput v-model="form.ClientSecret" clearable class="input-name" />
@@ -684,11 +682,10 @@ async function copySecret() {
                 v-model="form.PostLogoutRedirectUris"
                 :placeholder="t('admin.oauthClients.postLogoutRedirectUri.placeholder', {}, 'https://app.example.com/signout-callback-oidc')" />
             </CoarFormField>
-            <CoarFormField :label="t('admin.oauthClients.accessTokenType', {}, 'Access Token Type')">
+            <CoarFormField
+              :label="t('admin.oauthClients.accessTokenType', {}, 'Access Token Type')"
+              :hint="t('admin.oauthClients.accessTokenType.hint', {}, 'JWT: token is self-contained, the resource server validates it locally via signature. Reference: token is opaque, the RS must call /connect/introspect on every request. JWT is the right pick for AddJwtBearer-based RSes.')">
               <CoarSelect v-model="form.AccessTokenType" :options="accessTokenTypeOptions" class="input-enum" />
-              <p class="text-xs text-gray-500 mt-1">
-                {{ t('admin.oauthClients.accessTokenType.hint', {}, 'JWT: token is self-contained, the resource server validates it locally via signature. Reference: token is opaque, the RS must call /connect/introspect on every request. JWT is the right pick for AddJwtBearer-based RSes.') }}
-              </p>
             </CoarFormField>
             <CoarFormField :label="t('admin.oauthClients.corsOrigins', {}, 'CORS Origins')">
               <EditableStringList

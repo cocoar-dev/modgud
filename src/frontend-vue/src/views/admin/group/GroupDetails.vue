@@ -413,21 +413,19 @@ async function save() {
           <section class="form-section">
             <h3 class="form-section-heading">{{ t('admin.groupDetails.section.identity', {}, 'Identity') }}</h3>
             <div class="modal-form-grid">
-              <CoarFormField class="col-half" :label="t('admin.groupDetails.name', {}, 'Name')" required>
+              <CoarFormField class="col-half" :label="t('admin.groupDetails.name', {}, 'Name')" required
+                :hint="t('admin.groupDetails.name.hint', {}, 'Display name of the group; also sets this dialog\'s title.')">
                 <CoarTextInput v-model="form.Name" clearable />
-                <p class="field-hint">{{ t('admin.groupDetails.name.hint', {}, 'Display name of the group; also sets this dialog\'s title.') }}</p>
               </CoarFormField>
-              <CoarFormField class="col-half" :label="t('admin.groupDetails.type', {}, 'Type')">
+              <CoarFormField class="col-half" :label="t('admin.groupDetails.type', {}, 'Type')"
+                :hint="isAutoMode
+                  ? t('admin.groupDetails.membership.autoHint', {}, 'Members are computed from the script in the Script tab.')
+                  : t('admin.groupDetails.membership.manualHint', {}, 'Pick members directly in the Members tab.')">
                 <CoarSelect v-model="form.MembershipMode" :options="membershipModeOptions" />
-                <p class="field-hint">
-                  {{ isAutoMode
-                    ? t('admin.groupDetails.membership.autoHint', {}, 'Members are computed from the script in the Script tab.')
-                    : t('admin.groupDetails.membership.manualHint', {}, 'Pick members directly in the Members tab.') }}
-                </p>
               </CoarFormField>
-              <CoarFormField class="col-full" :label="t('admin.groupDetails.description', {}, 'Description')">
+              <CoarFormField class="col-full" :label="t('admin.groupDetails.description', {}, 'Description')"
+                :hint="t('admin.groupDetails.description.hint', {}, 'Optional note; shown as a subtitle in member and picker lists.')">
                 <CoarTextInput v-model="form.Description" clearable :rows="2" />
-                <p class="field-hint">{{ t('admin.groupDetails.description.hint', {}, 'Optional note; shown as a subtitle in member and picker lists.') }}</p>
               </CoarFormField>
             </div>
           </section>
@@ -436,17 +434,15 @@ async function save() {
           <section class="form-section">
             <h3 class="form-section-heading">{{ t('admin.groupDetails.section.notifications', {}, 'Notifications') }}</h3>
             <div class="modal-form-grid">
-              <CoarFormField class="col-half" :label="t('admin.groupDetails.emailModeLabel', {}, 'Email mode')">
+              <CoarFormField class="col-half" :label="t('admin.groupDetails.emailModeLabel', {}, 'Email mode')"
+                :hint="form.EmailMode === 'Shared'
+                  ? t('admin.groupDetails.emailMode.sharedHint', {}, 'The group has one shared mailbox — notifications go to the address on the right.')
+                  : t('admin.groupDetails.emailMode.expandHelp', {}, 'Notifications are sent to each member individually (recursive across nested groups).')">
                 <CoarSelect v-model="form.EmailMode" :options="emailModeOptions" />
-                <p class="field-hint">
-                  {{ form.EmailMode === 'Shared'
-                    ? t('admin.groupDetails.emailMode.sharedHint', {}, 'The group has one shared mailbox — notifications go to the address on the right.')
-                    : t('admin.groupDetails.emailMode.expandHelp', {}, 'Notifications are sent to each member individually (recursive across nested groups).') }}
-                </p>
               </CoarFormField>
-              <CoarFormField v-if="form.EmailMode === 'Shared'" class="col-half" :label="t('admin.groupDetails.email', {}, 'Email address')">
+              <CoarFormField v-if="form.EmailMode === 'Shared'" class="col-half" :label="t('admin.groupDetails.email', {}, 'Email address')"
+                :hint="t('admin.groupDetails.emailMode.sharedHelp', {}, 'Notifications go to this address.')">
                 <CoarTextInput v-model="form.Email" clearable placeholder="team@example.com" />
-                <p class="field-hint">{{ t('admin.groupDetails.emailMode.sharedHelp', {}, 'Notifications go to this address.') }}</p>
               </CoarFormField>
             </div>
           </section>
@@ -455,24 +451,18 @@ async function save() {
           <section class="form-section">
             <h3 class="form-section-heading">{{ t('admin.groupDetails.section.scope', {}, 'Scope') }}</h3>
             <div class="modal-form-grid">
-              <CoarFormField class="col-full" :label="t('admin.groupDetails.boundTo', {}, 'Active in applications')">
+              <CoarFormField class="col-full" :label="t('admin.groupDetails.boundTo', {}, 'Active in applications')"
+                :hint="isAllAppsWildcard
+                  ? t('admin.groupDetails.boundTo.wildcardHint', {}, '★ &quot;All applications&quot; selected — this group is active in every application in the realm. Typical for the realm-admin group.')
+                  : isDormantBoundTo
+                  ? t('admin.groupDetails.boundTo.dormantHint', {}, 'No applications selected — the group is dormant for permissions (e.g. a distribution list / org group). It still receives mail and appears in member views, but its roles grant nothing.')
+                  : t('admin.groupDetails.boundTo.scopedHint', {}, 'Only contributes to permission resolution when the requesting application is selected here. Its roles only fire in those applications.')">
                 <CoarMultiSelect
                   v-model="form.BoundTo"
                   :options="boundToOptions"
                   searchable
                   clearable
                   :placeholder="t('admin.groupDetails.boundTo.placeholder', {}, 'Select applications…')" />
-                <p class="field-hint">
-                  <template v-if="isAllAppsWildcard">
-                    {{ t('admin.groupDetails.boundTo.wildcardHint', {}, '★ "All applications" selected — this group is active in every application in the realm. Typical for the realm-admin group.') }}
-                  </template>
-                  <template v-else-if="isDormantBoundTo">
-                    {{ t('admin.groupDetails.boundTo.dormantHint', {}, 'No applications selected — the group is dormant for permissions (e.g. a distribution list / org group). It still receives mail and appears in member views, but its roles grant nothing.') }}
-                  </template>
-                  <template v-else>
-                    {{ t('admin.groupDetails.boundTo.scopedHint', {}, 'Only contributes to permission resolution when the requesting application is selected here. Its roles only fire in those applications.') }}
-                  </template>
-                </p>
               </CoarFormField>
             </div>
           </section>
@@ -482,17 +472,12 @@ async function save() {
           <section v-if="isAutoMode" class="form-section">
             <h3 class="form-section-heading">{{ t('admin.groupDetails.section.advanced', {}, 'Advanced') }}</h3>
             <div class="modal-form-grid">
-              <CoarFormField class="col-full" :label="t('admin.groupDetails.externallyDrivable.label', {}, 'External membership (federation)')">
+              <CoarFormField class="col-full" :label="t('admin.groupDetails.externallyDrivable.label', {}, 'External membership (federation)')"
+                :hint="hasRealmAdminRole
+                  ? t('admin.groupDetails.externallyDrivable.realmAdminBlocked', {}, 'Disabled: this group confers realm:admin, which can never be externally driven (realm:admin is hard local-only). Remove the realm-admin role to enable.')
+                  : t('admin.groupDetails.externallyDrivable.hint', {}, 'When on, a trusted federated login whose membership script matches confers this group for that session only — never stored as a durable member, never realm:admin.')">
                 <CoarCheckbox v-model="form.ExternallyDrivable" :disabled="externallyDrivableDisabled"
                   :label="t('admin.groupDetails.externallyDrivable.toggle', {}, 'Assign this group via a federated login script')" />
-                <p class="field-hint">
-                  <template v-if="hasRealmAdminRole">
-                    {{ t('admin.groupDetails.externallyDrivable.realmAdminBlocked', {}, 'Disabled: this group confers realm:admin, which can never be externally driven (realm:admin is hard local-only). Remove the realm-admin role to enable.') }}
-                  </template>
-                  <template v-else>
-                    {{ t('admin.groupDetails.externallyDrivable.hint', {}, 'When on, a trusted federated login whose membership script matches confers this group for that session only — never stored as a durable member, never realm:admin.') }}
-                  </template>
-                </p>
               </CoarFormField>
             </div>
           </section>

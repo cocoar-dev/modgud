@@ -381,9 +381,9 @@ watch(() => form.value.UserName, () => {
               <CoarFormField class="col-half" :label="t('admin.users.lastname', {}, 'Last Name')" :required="lastnameRequired">
                 <CoarTextInput v-model="form.Lastname" clearable />
               </CoarFormField>
-              <CoarFormField class="col-half" :label="t('admin.users.acronym', {}, 'Acronym')">
+              <CoarFormField class="col-half" :label="t('admin.users.acronym', {}, 'Acronym')"
+                :hint="t('admin.userDetails.acronym.hint', {}, 'Initials; appear in the title as &quot;Name | Acronym&quot;. Optional.')">
                 <CoarTextInput v-model="form.Acronym" clearable />
-                <p class="field-hint">{{ t('admin.userDetails.acronym.hint', {}, 'Initials; appear in the title as "Name | Acronym". Optional.') }}</p>
               </CoarFormField>
             </div>
           </section>
@@ -392,17 +392,17 @@ watch(() => form.value.UserName, () => {
           <section class="form-section">
             <h3 class="form-section-heading">{{ t('admin.userDetails.section.signin', {}, 'Anmeldung') }}</h3>
             <div class="modal-form-grid">
-              <CoarFormField class="col-half" :label="t('admin.users.email', {}, 'Email')" required>
+              <CoarFormField class="col-half" :label="t('admin.users.email', {}, 'Email')" required
+                :hint="t('admin.userDetails.email.hint', {}, 'Primary address; needed for password reset and magic link.')">
                 <CoarTextInput v-model="form.Email" clearable />
                 <span v-if="emailInvalid" class="text-xs text-red-600">{{ t('admin.userDetails.emailInvalid', {}, 'Please enter a valid email address.') }}</span>
-                <p class="field-hint">{{ t('admin.userDetails.email.hint', {}, 'Primary address; needed for password reset and magic link.') }}</p>
               </CoarFormField>
-              <CoarFormField v-if="showUsername" class="col-half" :label="t('admin.users.username', {}, 'Username')" :required="usernameRequired">
+              <CoarFormField v-if="showUsername" class="col-half" :label="t('admin.users.username', {}, 'Username')" :required="usernameRequired"
+                :hint="usernameRequired
+                  ? t('admin.userDetails.username.hintRequired', {}, 'Login name; must be unique and is required.')
+                  : t('admin.userDetails.username.hint', {}, 'Login name; must be unique. Empty = the email address is used.')">
                 <CoarTextInput v-model="form.UserName" clearable />
                 <span v-if="userNameError" class="text-xs text-red-600">{{ userNameError }}</span>
-                <p class="field-hint">{{ usernameRequired
-                  ? t('admin.userDetails.username.hintRequired', {}, 'Login name; must be unique and is required.')
-                  : t('admin.userDetails.username.hint', {}, 'Login name; must be unique. Empty = the email address is used.') }}</p>
               </CoarFormField>
             </div>
           </section>
@@ -412,21 +412,19 @@ watch(() => form.value.UserName, () => {
           <section v-if="!isCreate" class="form-section">
             <h3 class="form-section-heading">{{ t('admin.userDetails.section.accountStatus', {}, 'Kontostatus') }}</h3>
             <div class="modal-form-grid">
-              <CoarFormField class="col-full" :label="t('admin.userDetails.activeLabel', {}, 'Konto')">
+              <CoarFormField class="col-full" :label="t('admin.userDetails.activeLabel', {}, 'Konto')"
+                :hint="t('admin.userDetails.activeHint', {}, 'Disabled users can\'t sign in.')">
                 <CoarCheckbox v-model="isActive"
                   :label="t('admin.userDetails.activeCheckbox', {}, 'User active')" />
-                <p class="field-hint">{{ t('admin.userDetails.activeHint', {}, 'Disabled users can\'t sign in.') }}</p>
               </CoarFormField>
               <!-- Email-verified toggle pinned at the section end with its existing
                    v-if (only meaningful once an email is set). -->
-              <CoarFormField v-if="form.Email" class="col-full" :label="t('admin.userDetails.emailVerifiedLabel', {}, 'Email Status')">
+              <CoarFormField v-if="form.Email" class="col-full" :label="t('admin.userDetails.emailVerifiedLabel', {}, 'Email Status')"
+                :hint="emailConfirmed
+                    ? t('admin.userDetails.emailVerifiedHint', {}, 'Forgot-password and self-magic-link are unlocked for this user.')
+                    : t('admin.userDetails.emailUnverifiedHint', {}, 'Forgot-password and self-magic-link are blocked until the user verifies their email.')">
                 <CoarCheckbox v-model="emailConfirmed"
                   :label="t('admin.userDetails.emailVerifiedToggle', {}, 'Mark email address as verified')" />
-                <p class="field-hint">
-                  {{ emailConfirmed
-                      ? t('admin.userDetails.emailVerifiedHint', {}, 'Forgot-password and self-magic-link are unlocked for this user.')
-                      : t('admin.userDetails.emailUnverifiedHint', {}, 'Forgot-password and self-magic-link are blocked until the user verifies their email.') }}
-                </p>
               </CoarFormField>
             </div>
           </section>
@@ -436,14 +434,12 @@ watch(() => form.value.UserName, () => {
           <section v-if="isCreate && form.Email" class="form-section">
             <h3 class="form-section-heading">{{ t('admin.userDetails.section.accountStatus', {}, 'Kontostatus') }}</h3>
             <div class="modal-form-grid">
-              <CoarFormField class="col-full" :label="t('admin.userDetails.emailVerifiedLabel', {}, 'Email Status')">
+              <CoarFormField class="col-full" :label="t('admin.userDetails.emailVerifiedLabel', {}, 'Email Status')"
+                :hint="emailConfirmed
+                    ? t('admin.userDetails.emailVerifiedHint', {}, 'Forgot-password and self-magic-link are unlocked for this user.')
+                    : t('admin.userDetails.emailUnverifiedHint', {}, 'Forgot-password and self-magic-link are blocked until the user verifies their email.')">
                 <CoarCheckbox v-model="emailConfirmed"
                   :label="t('admin.userDetails.emailVerifiedToggle', {}, 'Mark email address as verified')" />
-                <p class="field-hint">
-                  {{ emailConfirmed
-                      ? t('admin.userDetails.emailVerifiedHint', {}, 'Forgot-password and self-magic-link are unlocked for this user.')
-                      : t('admin.userDetails.emailUnverifiedHint', {}, 'Forgot-password and self-magic-link are blocked until the user verifies their email.') }}
-                </p>
               </CoarFormField>
             </div>
           </section>

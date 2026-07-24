@@ -175,28 +175,26 @@ async function save() {
           <section class="form-section">
             <h3 class="form-section-heading">{{ t('admin.roleDetails.section.identity', {}, 'Identity') }}</h3>
             <div class="modal-form-grid">
-              <CoarFormField class="col-half" :label="t('admin.roleDetails.name', {}, 'Name')" required>
+              <CoarFormField class="col-half" :label="t('admin.roleDetails.name', {}, 'Name')" required
+                :hint="t('admin.roleDetails.name.hint', {}, 'Display/identification name of the role.')">
                 <CoarTextInput v-model="form.Name" clearable />
-                <p class="field-hint">{{ t('admin.roleDetails.name.hint', {}, 'Display/identification name of the role.') }}</p>
               </CoarFormField>
-              <CoarFormField class="col-half" :label="t('admin.roleDetails.app', {}, 'Application')">
+              <CoarFormField class="col-half" :label="t('admin.roleDetails.app', {}, 'Application')"
+                :hint="form.IsRealmAdmin
+                  ? t('admin.roleDetails.app.realmAdminHint', {}, 'Realm-admin roles are deliberately not linked to an application.')
+                  : form.AppId
+                  ? t('admin.roleDetails.app.linkedHint', {}, 'Role grants the selected permissions of this application.')
+                  : t('admin.roleDetails.app.noneHint', {}, 'Choose exactly one application, or enable the realm-admin role below.')">
                 <CoarSelect
                   v-model="form.AppId"
                   :options="appOptions"
                   :disabled="form.IsRealmAdmin"
                   @update:model-value="onAppIdChange"
                 />
-                <p class="field-hint">
-                  {{ form.IsRealmAdmin
-                    ? t('admin.roleDetails.app.realmAdminHint', {}, 'Realm-admin roles are deliberately not linked to an application.')
-                    : form.AppId
-                    ? t('admin.roleDetails.app.linkedHint', {}, 'Role grants the selected permissions of this application.')
-                    : t('admin.roleDetails.app.noneHint', {}, 'Choose exactly one application, or enable the realm-admin role below.') }}
-                </p>
               </CoarFormField>
-              <CoarFormField class="col-full" :label="t('admin.roleDetails.description', {}, 'Description')">
+              <CoarFormField class="col-full" :label="t('admin.roleDetails.description', {}, 'Description')"
+                :hint="t('admin.roleDetails.description.hint', {}, 'Optional note describing what this role is for.')">
                 <CoarTextInput v-model="form.Description" clearable :rows="2" />
-                <p class="field-hint">{{ t('admin.roleDetails.description.hint', {}, 'Optional note describing what this role is for.') }}</p>
               </CoarFormField>
             </div>
           </section>
@@ -205,13 +203,13 @@ async function save() {
           <section class="form-section">
             <h3 class="form-section-heading">{{ t('admin.roleDetails.section.danger', {}, 'Permissions — caution') }}</h3>
             <div class="modal-form-grid">
-              <CoarFormField class="col-full" :label="t('admin.roleDetails.isRealmAdmin.label', {}, 'Privileged role')">
+              <CoarFormField class="col-full" :label="t('admin.roleDetails.isRealmAdmin.label', {}, 'Privileged role')"
+                :hint="t('admin.roleDetails.isRealmAdmin.hint', {}, 'Bypasses every App permission in this realm only. It never grants access to another realm.')">
                 <CoarCheckbox
                   :model-value="form.IsRealmAdmin"
                   @update:model-value="onRealmAdminChange"
                   :label="t('admin.roleDetails.isRealmAdmin.toggle', {}, 'System administrator (realm:admin)')"
                 />
-                <p class="field-hint">{{ t('admin.roleDetails.isRealmAdmin.hint', {}, 'Bypasses every App permission in this realm only. It never grants access to another realm.') }}</p>
                 <AppNote v-if="form.IsRealmAdmin" variant="warning" :truncate="false">
                   {{ t('admin.roleDetails.isRealmAdmin.warning', {}, 'This creates a pure realm-admin role. Its Application and App permissions are cleared.') }}
                 </AppNote>

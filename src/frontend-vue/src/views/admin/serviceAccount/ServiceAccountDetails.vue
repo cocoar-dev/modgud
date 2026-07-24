@@ -205,19 +205,15 @@ function extractScopes(cred: OAuthClientDto): string[] {
         <section class="form-section">
           <h3 class="form-section-heading">{{ t('admin.serviceAccounts.section.basics', {}, 'Basics') }}</h3>
           <div class="modal-form-grid">
-            <CoarFormField class="col-half" :label="t('admin.serviceAccounts.accountName', {}, 'Account name')" required>
+            <CoarFormField class="col-half" :label="t('admin.serviceAccounts.accountName', {}, 'Account name')" required
+              :hint="t('admin.serviceAccounts.accountNameHint', {}, 'Lowercase letters, digits, dots, hyphens or underscores. Becomes the audit-log handle for this account.')">
               <CoarTextInput v-model="form.AccountName" clearable :disabled="!isCreate"
                 :placeholder="t('admin.serviceAccounts.accountNamePlaceholder', {}, 'ci.build-agent, integrations.acme, …')" />
-              <p class="field-hint">
-                {{ t('admin.serviceAccounts.accountNameHint', {}, 'Lowercase letters, digits, dots, hyphens or underscores. Becomes the audit-log handle for this account.') }}
-              </p>
             </CoarFormField>
-            <CoarFormField class="col-half" :label="t('admin.serviceAccounts.purpose', {}, 'Purpose')">
+            <CoarFormField class="col-half" :label="t('admin.serviceAccounts.purpose', {}, 'Purpose')"
+              :hint="t('admin.serviceAccounts.purposeHint', {}, 'Free text describing what this service account is used for. Optional.')">
               <CoarTextInput v-model="form.Purpose" clearable
                 :placeholder="t('admin.serviceAccounts.purposePlaceholder', {}, 'CI deployment, nightly sync, …')" />
-              <p class="field-hint">
-                {{ t('admin.serviceAccounts.purposeHint', {}, 'Free text describing what this service account is used for. Optional.') }}
-              </p>
             </CoarFormField>
           </div>
         </section>
@@ -226,11 +222,9 @@ function extractScopes(cred: OAuthClientDto): string[] {
         <section v-if="!isCreate" class="form-section">
           <h3 class="form-section-heading">{{ t('admin.serviceAccounts.section.status', {}, 'Status') }}</h3>
           <div class="modal-form-grid">
-            <CoarFormField class="col-full" :label="t('admin.serviceAccounts.activeLabel', {}, 'Status')">
+            <CoarFormField class="col-full" :label="t('admin.serviceAccounts.activeLabel', {}, 'Status')"
+              :hint="t('admin.serviceAccounts.activeHint', {}, 'Inactive accounts can no longer authenticate — existing tokens stay valid until expiry, but no new ones are issued.')">
               <CoarCheckbox v-model="form.IsActive" :label="t('admin.serviceAccounts.active', {}, 'Active')" />
-              <p class="field-hint">
-                {{ t('admin.serviceAccounts.activeHint', {}, 'Inactive accounts can no longer authenticate — existing tokens stay valid until expiry, but no new ones are issued.') }}
-              </p>
             </CoarFormField>
           </div>
         </section>

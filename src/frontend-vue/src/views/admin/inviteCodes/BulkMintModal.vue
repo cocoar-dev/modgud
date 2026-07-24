@@ -93,22 +93,22 @@ async function copyAll() {
         <!-- Phase 1: the mint form -->
         <section v-if="!isDone" class="form-section">
           <div class="modal-form-grid">
-            <CoarFormField class="col-full" :label="t('admin.inviteCodes.app', {}, 'App')" required>
+            <CoarFormField class="col-full" :label="t('admin.inviteCodes.app', {}, 'App')" required
+              :hint="t('admin.inviteCodes.app.hint', {}, 'Which application these codes belong to. Codes are single-use and app-bound.')">
               <CoarSelect v-model="appId" :options="appOptions" />
-              <p class="field-hint">{{ t('admin.inviteCodes.app.hint', {}, 'Which application these codes belong to. Codes are single-use and app-bound.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-half" :label="t('admin.inviteCodes.count', {}, 'How many')" required>
+            <CoarFormField class="col-half" :label="t('admin.inviteCodes.count', {}, 'How many')" required
+              :hint="t('admin.inviteCodes.count.hint', {}, 'Number of single-use codes to generate.')">
               <CoarNumberInput v-model="count" :min="1" :step="1" />
-              <p class="field-hint">{{ t('admin.inviteCodes.count.hint', {}, 'Number of single-use codes to generate.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-half" :label="t('admin.inviteCodes.expiresInDays', {}, 'Expires in (days)')">
+            <CoarFormField class="col-half" :label="t('admin.inviteCodes.expiresInDays', {}, 'Expires in (days)')"
+              :hint="t('admin.inviteCodes.expiresInDays.hint', {}, 'Code lifetime. Default 14 days.')">
               <CoarNumberInput v-model="expiresInDays" :min="1" :step="1" />
-              <p class="field-hint">{{ t('admin.inviteCodes.expiresInDays.hint', {}, 'Code lifetime. Default 14 days.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-full" :label="t('admin.inviteCodes.bindEmail', {}, 'Bind to email (optional)')">
+            <CoarFormField class="col-full" :label="t('admin.inviteCodes.bindEmail', {}, 'Bind to email (optional)')"
+              :hint="t('admin.inviteCodes.bindEmail.hint', {}, 'When set, a code only works for that exact recipient. Blank = bearer (anyone holding the code).')">
               <CoarTextInput v-model="boundEmail" clearable
                 :placeholder="t('admin.inviteCodes.bindEmail.placeholder', {}, 'Leave blank for bearer codes')" />
-              <p class="field-hint">{{ t('admin.inviteCodes.bindEmail.hint', {}, 'When set, a code only works for that exact recipient. Blank = bearer (anyone holding the code).') }}</p>
             </CoarFormField>
           </div>
           <p v-if="error" class="text-red-500 text-sm mt-2">{{ error }}</p>

@@ -172,17 +172,17 @@ async function save() {
         <section class="form-section">
           <h3 class="form-section-heading">{{ t('admin.oauthScopes.section.identity', {}, 'Identity') }}</h3>
           <div class="modal-form-grid">
-            <CoarFormField class="col-half" :label="t('admin.oauthScopes.name', {}, 'Name')" required>
+            <CoarFormField class="col-half" :label="t('admin.oauthScopes.name', {}, 'Name')" required
+              :hint="t('admin.oauthScopes.name.hint', {}, 'Machine identifier clients send in the scope parameter (e.g. read:events). Immutable after creation.')">
               <CoarTextInput v-model="form.Name" :disabled="!isCreate" clearable />
-              <p class="field-hint">{{ t('admin.oauthScopes.name.hint', {}, 'Machine identifier clients send in the scope parameter (e.g. read:events). Immutable after creation.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-half" :label="t('admin.oauthScopes.displayName', {}, 'Display Name')">
+            <CoarFormField class="col-half" :label="t('admin.oauthScopes.displayName', {}, 'Display Name')"
+              :hint="t('admin.oauthScopes.displayName.hint', {}, 'Human-readable name shown on the consent screen.')">
               <CoarTextInput v-model="form.DisplayName" clearable />
-              <p class="field-hint">{{ t('admin.oauthScopes.displayName.hint', {}, 'Human-readable name shown on the consent screen.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-full" :label="t('admin.oauthScopes.description', {}, 'Description')">
+            <CoarFormField class="col-full" :label="t('admin.oauthScopes.description', {}, 'Description')"
+              :hint="t('admin.oauthScopes.description.hint', {}, 'Optional explanation shown to users on the consent screen.')">
               <CoarTextInput v-model="form.Description" clearable :rows="2" />
-              <p class="field-hint">{{ t('admin.oauthScopes.description.hint', {}, 'Optional explanation shown to users on the consent screen.') }}</p>
             </CoarFormField>
           </div>
         </section>
@@ -191,25 +191,23 @@ async function save() {
         <section class="form-section">
           <h3 class="form-section-heading">{{ t('admin.oauthScopes.section.target', {}, 'Target & content') }}</h3>
           <div class="modal-form-grid">
-            <CoarFormField class="col-half" :label="t('admin.oauthScopes.app', {}, 'Application')">
+            <CoarFormField class="col-half" :label="t('admin.oauthScopes.app', {}, 'Application')"
+              :hint="form.AppId
+                ? t('admin.oauthScopes.app.scopedHint', {}, 'Only OAuth clients linked to this App may request this scope.')
+                : t('admin.oauthScopes.app.globalHint', {}, 'Cross-app scope (e.g. standard OIDC scopes). Any client may request it.')">
               <CoarSelect v-model="form.AppId" :options="appOptions" />
-              <p class="field-hint">
-                {{ form.AppId
-                  ? t('admin.oauthScopes.app.scopedHint', {}, 'Only OAuth clients linked to this App may request this scope.')
-                  : t('admin.oauthScopes.app.globalHint', {}, 'Cross-app scope (e.g. standard OIDC scopes). Any client may request it.') }}
-              </p>
             </CoarFormField>
-            <CoarFormField class="col-full" :label="t('admin.oauthScopes.resources', {}, 'Resources (API-Audiences)')">
+            <CoarFormField class="col-full" :label="t('admin.oauthScopes.resources', {}, 'Resources (API-Audiences)')"
+              :hint="t('admin.oauthScopes.resources.hint', {}, 'API audiences a token carrying this scope is valid for.')">
               <EditableStringList
                 v-model="form.Resources"
                 :placeholder="t('admin.oauthScopes.resource.placeholder', {}, 'event-tree-api')" />
-              <p class="field-hint">{{ t('admin.oauthScopes.resources.hint', {}, 'API audiences a token carrying this scope is valid for.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-full" :label="t('admin.oauthScopes.userClaims', {}, 'User Claims')">
+            <CoarFormField class="col-full" :label="t('admin.oauthScopes.userClaims', {}, 'User Claims')"
+              :hint="t('admin.oauthScopes.userClaims.hint', {}, 'OIDC claim names added to the token / UserInfo when this scope is granted.')">
               <EditableStringList
                 v-model="form.UserClaims"
                 :placeholder="t('admin.oauthScopes.userClaim.placeholder', {}, 'email')" />
-              <p class="field-hint">{{ t('admin.oauthScopes.userClaims.hint', {}, 'OIDC claim names added to the token / UserInfo when this scope is granted.') }}</p>
             </CoarFormField>
           </div>
         </section>
@@ -234,11 +232,11 @@ async function save() {
               <CoarCheckbox v-model="form.ShowInDiscoveryDocument" :label="t('admin.oauthScopes.showInDiscovery', {}, 'Show in Discovery')" />
               <p class="field-hint">{{ t('admin.oauthScopes.showInDiscovery.hint', {}, 'Visible in the public OIDC discovery document. (Default: on)') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-full" :label="t('admin.oauthScopes.allowDcr', {}, 'Dynamic Client Registration')">
+            <CoarFormField class="col-full" :label="t('admin.oauthScopes.allowDcr', {}, 'Dynamic Client Registration')"
+              :hint="t('admin.oauthScopes.allowDcr.hint', {}, 'Clients registered via DCR may only request this scope when this is enabled.')">
               <CoarCheckbox
                 v-model="form.AllowDynamicRegistrationClients"
                 :label="t('admin.oauthScopes.allowDcr.toggle', {}, 'DCR clients may request this scope')" />
-              <p class="field-hint">{{ t('admin.oauthScopes.allowDcr.hint', {}, 'Clients registered via DCR may only request this scope when this is enabled.') }}</p>
             </CoarFormField>
           </div>
         </section>

@@ -562,14 +562,17 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
               <CoarFormField
                 class="col-half"
                 :label="t('admin.loginProviders.displayName', {}, 'Display Name')"
+                :hint="t('admin.loginProviders.displayName.hint', {}, 'Erscheint auf dem Login-Button; setzt den Slug vor.')"
                 required>
                 <CoarTextInput v-model="form.DisplayName" :disabled="isBuiltIn" clearable />
-                <p class="field-hint">{{ t('admin.loginProviders.displayName.hint', {}, 'Erscheint auf dem Login-Button; setzt den Slug vor.') }}</p>
               </CoarFormField>
               <CoarFormField
                 v-if="!isInternal"
                 class="col-half"
                 :label="t('admin.loginProviders.slug', {}, 'Slug')"
+                :hint="isCreate
+                  ? t('admin.loginProviders.slugHintCreate', {}, 'Appears in the provider URLs (e.g. /signin-oidc/<slug>). Not changeable after creation.')
+                  : t('admin.loginProviders.slugHintEdit', {}, 'Not changeable — a different slug means deleting and recreating.')"
                 :required="isCreate">
                 <CoarTextInput
                   :model-value="form.Slug"
@@ -577,15 +580,10 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
                   :placeholder="t('admin.loginProviders.slugPlaceholder', {}, 'z. B. acme-entra')"
                   clearable
                   @update:model-value="onSlugInput" />
-                <p class="field-hint">
-                  {{ isCreate
-                    ? t('admin.loginProviders.slugHintCreate', {}, 'Appears in the provider URLs (e.g. /signin-oidc/<slug>). Not changeable after creation.')
-                    : t('admin.loginProviders.slugHintEdit', {}, 'Not changeable — a different slug means deleting and recreating.') }}
-                </p>
               </CoarFormField>
-              <CoarFormField class="col-full" :label="t('common.description', {}, 'Description')">
+              <CoarFormField class="col-full" :label="t('common.description', {}, 'Description')"
+                :hint="t('admin.loginProviders.description.hint', {}, 'Optional note for the internal description of this provider.')">
                 <CoarTextInput v-model="form.Description" :disabled="isBuiltIn" clearable :rows="2" />
-                <p class="field-hint">{{ t('admin.loginProviders.description.hint', {}, 'Optional note for the internal description of this provider.') }}</p>
               </CoarFormField>
             </div>
           </section>
@@ -595,13 +593,13 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
           <section v-if="!isInternal" class="form-section">
             <h3 class="form-section-heading">{{ t('admin.loginProviders.section.appearance', {}, 'Erscheinungsbild') }}</h3>
             <div class="modal-form-grid">
-              <CoarFormField class="col-half" :label="t('admin.loginProviders.iconName', {}, 'Button-Icon')">
+              <CoarFormField class="col-half" :label="t('admin.loginProviders.iconName', {}, 'Button-Icon')"
+                :hint="t('admin.loginProviders.iconName.hint', {}, 'Name of a Lucide icon (e.g. microsoft, key, building). See lucide.dev.')">
                 <CoarTextInput v-model="form.IconName" :disabled="isBuiltIn" placeholder="microsoft" clearable />
-                <p class="field-hint">{{ t('admin.loginProviders.iconName.hint', {}, 'Name of a Lucide icon (e.g. microsoft, key, building). See lucide.dev.') }}</p>
               </CoarFormField>
-              <CoarFormField class="col-half" :label="t('admin.loginProviders.buttonColorHex', {}, 'Button-Farbe')">
+              <CoarFormField class="col-half" :label="t('admin.loginProviders.buttonColorHex', {}, 'Button-Farbe')"
+                :hint="t('admin.loginProviders.buttonColorHex.hint', {}, 'Hex color of the login button (optional, e.g. #0078D4).')">
                 <ColorField v-model="form.ButtonColorHex" :disabled="isBuiltIn" placeholder="#0078D4" />
-                <p class="field-hint">{{ t('admin.loginProviders.buttonColorHex.hint', {}, 'Hex color of the login button (optional, e.g. #0078D4).') }}</p>
               </CoarFormField>
             </div>
           </section>
@@ -614,34 +612,34 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
             <div class="modal-form-grid">
               <!-- SAML SP URLs are slug-derived (host + /saml/{slug}/...). -->
               <template v-if="isSaml && samlSpMetadataUrl">
-                <CoarFormField class="col-full" :label="t('admin.loginProviders.samlSpMetadataUrl', {}, 'SP-Metadata-URL')">
+                <CoarFormField class="col-full" :label="t('admin.loginProviders.samlSpMetadataUrl', {}, 'SP-Metadata-URL')"
+                  :hint="t('admin.loginProviders.idpReadOnlyHint', {}, 'Read-only — enter this in the external IdP\'s app registration.')">
                   <div class="flex gap-2 items-center">
                     <CoarTextInput :model-value="samlSpMetadataUrl" readonly class="flex-1" />
                     <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlSpMetadataUrl)">
                       {{ t('common.copy', {}, 'Copy') }}
                     </CoarButton>
                   </div>
-                  <p class="field-hint">{{ t('admin.loginProviders.idpReadOnlyHint', {}, 'Read-only — enter this in the external IdP\'s app registration.') }}</p>
                 </CoarFormField>
-                <CoarFormField class="col-full" :label="t('admin.loginProviders.samlAcsUrl', {}, 'ACS-URL / Reply-URL')">
+                <CoarFormField class="col-full" :label="t('admin.loginProviders.samlAcsUrl', {}, 'ACS-URL / Reply-URL')"
+                  :hint="t('admin.loginProviders.idpReadOnlyHint', {}, 'Read-only — enter this in the external IdP\'s app registration.')">
                   <div class="flex gap-2 items-center">
                     <CoarTextInput :model-value="samlAcsUrl" readonly class="flex-1" />
                     <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyText(samlAcsUrl)">
                       {{ t('common.copy', {}, 'Copy') }}
                     </CoarButton>
                   </div>
-                  <p class="field-hint">{{ t('admin.loginProviders.idpReadOnlyHint', {}, 'Read-only — enter this in the external IdP\'s app registration.') }}</p>
                 </CoarFormField>
               </template>
               <!-- OIDC redirect URI is slug-derived (host + /signin-oidc/{slug}). -->
-              <CoarFormField v-if="!isSaml && redirectUri" class="col-full" :label="t('admin.loginProviders.redirectUri', {}, 'Redirect URI')">
+              <CoarFormField v-if="!isSaml && redirectUri" class="col-full" :label="t('admin.loginProviders.redirectUri', {}, 'Redirect URI')"
+                :hint="t('admin.loginProviders.idpReadOnlyHint', {}, 'Read-only — enter this in the external IdP\'s app registration.')">
                 <div class="flex gap-2 items-center">
                   <CoarTextInput :model-value="redirectUri" readonly class="flex-1" />
                   <CoarButton size="s" variant="ghost" icon-start="copy" @click="copyRedirect">
                     {{ t('common.copy', {}, 'Copy') }}
                   </CoarButton>
                 </div>
-                <p class="field-hint">{{ t('admin.loginProviders.idpReadOnlyHint', {}, 'Read-only — enter this in the external IdP\'s app registration.') }}</p>
               </CoarFormField>
             </div>
           </section>
