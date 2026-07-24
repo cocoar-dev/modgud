@@ -233,7 +233,10 @@ const modalTitle = computed(() => {
   if (name && acronym) return `${name} | ${acronym}`
   if (name) return name
   if (acronym) return acronym
-  return isCreate.value ? t('admin.userDetails.createTitle', {}, 'Create User') : ''
+  if (isCreate.value) return t('admin.userDetails.createTitle', {}, 'Create User')
+  // Existing user without a display name — fall back to the login identity
+  // (username, then email) so the modal header is never blank.
+  return form.value.UserName?.trim() || form.value.Email?.trim() || ''
 })
 
 const footerButton = computed(() => ({
