@@ -88,7 +88,6 @@ const inheritedGroups = ref<InheritedUserGroupDto[]>([])
 const effectiveGroups = ref<EffectiveGroupDto[]>([])
 const effectiveDiagnostics = ref<EffectiveGroupDiagnostic[]>([])
 const groupsLoaded = ref(false)
-const groupsSaving = ref(false)
 
 async function loadGroups() {
   if (isCreate.value) return
@@ -101,6 +100,8 @@ async function loadGroups() {
   inheritedGroups.value = data.Inherited
   effectiveGroups.value = eff.Groups
   effectiveDiagnostics.value = eff.Diagnostics
+  stagedGroupIds.value = data.Direct.map(g => g.Id)
+  originalGroupIds.value = [...stagedGroupIds.value]
   groupsLoaded.value = true
 }
 
@@ -144,23 +145,11 @@ const allGroupsOptions = computed<CoarListboxOption<string>[]>(() =>
     }))
 )
 
-const directGroupIds = computed({
-  get: () => directGroups.value.map(g => g.Id),
-  set: async (newIds) => {
-    const prev = directGroups.value.map(g => g.Id)
-    const added = newIds.filter(id => !prev.includes(id))
-    const removed = prev.filter(id => !newIds.includes(id))
-    if (added.length === 0 && removed.length === 0) return
-    groupsSaving.value = true
-    try {
-      for (const id of added) await userStore.addGroup(props.id, id)
-      for (const id of removed) await userStore.removeGroup(props.id, id)
-      await loadGroups() // refresh direct + inherited
-    } finally {
-      groupsSaving.value = false
-    }
-  },
-})
+// Direct-group membership is STAGED into the form and committed by the single
+// Save (Modal & Form Contract R2/R3) — no per-click writes. stagedGroupIds is
+// the dual-listbox model; originalGroupIds is the baseline for the save-time diff.
+const stagedGroupIds = ref<string[]>([])
+const originalGroupIds = ref<string[]>([])
 
 const inheritedOptions = computed<CoarListboxOption<string>[]>(() =>
   inheritedGroups.value.map(g => ({
@@ -340,6 +329,16 @@ async function save() {
           GracePeriodDaysOverride: parsedOverride.value === null ? -1 : parsedOverride.value,
           TwoFactorExempt: exemptLocal.value,
         })
+      }
+
+      // Direct-group membership: commit the staged diff as part of the one Save.
+      // Guarded on groupsLoaded so a user whose Groups tab was never opened does
+      // not get every membership stripped by an empty staged list.
+      if (groupsLoaded.value) {
+        const added = stagedGroupIds.value.filter(id => !originalGroupIds.value.includes(id))
+        const removed = originalGroupIds.value.filter(id => !stagedGroupIds.value.includes(id))
+        for (const id of added) await userStore.addGroup(props.id, id)
+        for (const id of removed) await userStore.removeGroup(props.id, id)
       }
     }
     props.close()
@@ -527,7 +526,7 @@ watch(() => form.value.UserName, () => {
              the dual-listbox gets a definite height. -->
         <section class="flex-section groups-editor">
           <CoarDualListbox
-            v-model="directGroupIds"
+            v-model="stagedGroupIds"
             :options="allGroupsOptions"
             drag-drop
             sort-options="asc"
@@ -535,7 +534,7 @@ watch(() => form.value.UserName, () => {
             :available-label="t('admin.userDetails.availableGroups', {}, 'Available')"
             :selected-label="t('admin.userDetails.memberOf', {}, 'Member of')"
             :search-placeholder="t('admin.userDetails.searchGroups', {}, 'Search groups…')"
-            :disabled="groupsSaving"
+            :disabled="loading"
             class="flex-1 min-h-0"
           />
         </section>
