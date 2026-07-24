@@ -61,10 +61,12 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<RealmDto>(), { open
     (col) => col.field('Description').header('Description', 'common.description').flex(2),
     (col) => col.field('Domains').header('Domains', 'admin.realms.domains').flex(1)
       .option('valueGetter', (p: any) => (p.data?.Domains ?? []).join(', ')),
-    (col) => col.field('IsActive').header('Active', 'common.active').width(90)
-      .option('valueGetter', (p: any) => p.data?.IsActive
-        ? t('common.yes', {}, 'Ja')
-        : t('common.no', {}, 'Nein')),
+    (col) => col.tag('IsActive', {
+      variantMap: { active: 'success', inactive: 'neutral' },
+      i18nPrefix: 'common.statusTag.',
+    })
+      .header('Active', 'common.active').width(110)
+      .option('valueGetter', (p: any) => p.data?.IsActive ? 'active' : 'inactive'),
     (col) => col.field('IsControlPlane').header('Control Plane', 'admin.realms.isControlPlane').width(150)
       .option('valueGetter', (p: any) => p.data?.IsControlPlane
         ? t('admin.realms.controlPlaneBadge', {}, 'Control Plane')

@@ -93,10 +93,12 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<UserDto>(), { opena
     (col) => col.field('Firstname').header('First Name', 'admin.users.firstname').flex(1),
     (col) => col.field('Lastname').header('Last Name', 'admin.users.lastname').flex(1),
     (col) => col.field('Acronym').header('Acronym', 'admin.users.acronym').width(100),
-    (col) => col.icon('IsActive', { color: '#16a34a', size: 's' })
-      .option('valueGetter', (p: any) => p.data?.IsActive ? 'check' : '')
-      .option('tooltipValueGetter', () => null)
-      .header('Active', 'admin.users.active').width(80),
+    (col) => col.tag('IsActive', {
+      variantMap: { active: 'success', inactive: 'neutral' },
+      i18nPrefix: 'common.statusTag.',
+    })
+      .header('Active', 'admin.users.active').width(110)
+      .option('valueGetter', (p: any) => p.data?.IsActive ? 'active' : 'inactive'),
     // Lifecycle badge — only meaningful for pending-deletion rows (visible
     // when the recycle bin is revealed). Empty for normal active users.
     (col) => col.field('DeletionInitiator').header('Lifecycle', 'admin.users.lifecycle')

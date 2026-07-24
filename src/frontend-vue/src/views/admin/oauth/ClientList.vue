@@ -96,10 +96,12 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthClientDto>(), 
     (col) => col.field('IsDynamicallyRegistered').header('DCR', 'admin.oauthClients.dcr').width(80)
       .option('valueGetter', (p: any) => p.data?.IsDynamicallyRegistered ? '●' : '')
       .option('cellStyle', { textAlign: 'center', color: 'var(--coar-accent-primary, #6366f1)' }),
-    (col) => col.field('Enabled').header('Enabled', 'admin.oauthClients.enabled').width(100)
-      .option('valueGetter', (p: any) => p.data?.Enabled === false
-        ? t('common.no', {}, 'No')
-        : t('common.yes', {}, 'Yes')),
+    (col) => col.tag('Enabled', {
+      variantMap: { active: 'success', inactive: 'neutral' },
+      i18nPrefix: 'common.statusTag.',
+    })
+      .header('Enabled', 'admin.oauthClients.enabled').width(110)
+      .option('valueGetter', (p: any) => p.data?.Enabled === false ? 'inactive' : 'active'),
     (col) => col.field('RedirectUris').header('Redirects', 'admin.oauthClients.redirectCount').width(110)
       .option('valueGetter', (p: any) => (p.data?.RedirectUris ?? []).length),
     (col) => col.field('AllowedGrantTypes').header('Grants', 'admin.oauthClients.grantCount').width(110)

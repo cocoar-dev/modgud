@@ -30,6 +30,10 @@
     "active": "Aktiv",
     "enabled": "Aktiviert",
     "disabled": "Deaktiviert",
+    "statusTag": {
+      "active": "Aktiv",
+      "inactive": "Inaktiv"
+    },
     "none": "Keine",
     "archive": "Archiv",
     "restore": "Wiederherstellen",

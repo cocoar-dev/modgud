@@ -80,10 +80,10 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<ApplicationDto>(), 
       .option('valueGetter', (p: any) => (p.data?.Permissions ?? [])
         .map((perm: any) => `${perm.Resource}:${perm.Action}`)
         .join(', ')),
-    (col) => col.field('IsSystem').header('System', 'admin.apps.isSystem').width(100)
-      .option('valueGetter', (p: any) => p.data?.IsSystem
-        ? t('common.yes', {}, 'Ja')
-        : t('common.no', {}, 'Nein')),
+    (col) => col.icon('IsSystem', { size: 's' })
+      .option('valueGetter', (p: any) => p.data?.IsSystem ? 'lock' : '')
+      .option('tooltipValueGetter', () => null)
+      .header('System', 'admin.apps.isSystem').width(90),
   ])
 
 // Clone: load the full source App (the list endpoint omits Settings + only the

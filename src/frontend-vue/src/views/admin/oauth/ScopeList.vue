@@ -78,10 +78,12 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthScopeDto>(), {
     (col) => col.field('Description').header('Description', 'admin.oauthScopes.description').flex(2),
     (col) => col.field('Resources').header('Resources', 'admin.oauthScopes.resources').flex(1)
       .option('valueGetter', (p: any) => (p.data?.Resources ?? []).join(', ')),
-    (col) => col.field('Enabled').header('Enabled', 'common.enabled').width(100)
-      .option('valueGetter', (p: any) => p.data?.Enabled
-        ? t('common.yes', {}, 'Ja')
-        : t('common.no', {}, 'Nein')),
+    (col) => col.tag('Enabled', {
+      variantMap: { active: 'success', inactive: 'neutral' },
+      i18nPrefix: 'common.statusTag.',
+    })
+      .header('Enabled', 'common.enabled').width(110)
+      .option('valueGetter', (p: any) => p.data?.Enabled ? 'active' : 'inactive'),
   ])
 
 async function deleteSelected() {

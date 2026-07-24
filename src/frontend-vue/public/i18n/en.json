@@ -1,1 +1,8 @@
-{}
+{
+  "common": {
+    "statusTag": {
+      "active": "Active",
+      "inactive": "Inactive"
+    }
+  }
+}
