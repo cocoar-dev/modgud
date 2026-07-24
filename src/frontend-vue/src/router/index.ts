@@ -138,8 +138,12 @@ const GROUP_MODAL_SIZE = {
   height: '80vh', minHeight: '80vh', maxHeight: '80vh',
 } as const
 
-// Heaviest builders (wide AG-Grid catalog / 6-tab client builder) → full.
-const APP_MODAL_SIZE = MODAL_FULL
+// The 6-tab client builder (persistent identity column + two-column
+// DualListboxes) genuinely earns the full frame. The app modal does not:
+// even for user apps a settings form + a 3-column permission catalog fit a
+// tall LG frame, and 112rem/90vh only left system apps (read-only, a few
+// fields) marooned in empty space. LG keeps the grid its definite height.
+const APP_MODAL_SIZE = MODAL_LG
 const CLIENT_MODAL_SIZE = MODAL_FULL
 
 const routes = [
