@@ -945,15 +945,12 @@ async function rotateSigningKey() {
             </CoarFormField>
           </div>
 
-          <CoarFormField :label="t('admin.realmSettings.dcr.reservedNames', {}, 'Reserved client names (substring match, NFKC + case-insensitive)')">
+          <CoarFormField
+            :label="t('admin.realmSettings.dcr.reservedNames', {}, 'Reserved client names (substring match, NFKC + case-insensitive)')"
+            :hint="t('admin.realmSettings.dcr.reservedNames.help', {}, 'Block client_name impersonation. Anything containing one of these strings is rejected at registration. Each entry is NFKC-normalised + lower-cased before comparison.')">
             <EditableStringList
               v-model="dcrForm.ReservedNames"
               :placeholder="t('admin.realmSettings.dcr.reservedNames.placeholder', {}, 'Cocoar')" />
-            <template #footer>
-              <p class="text-xs text-gray-500">
-                {{ t('admin.realmSettings.dcr.reservedNames.help', {}, 'Block client_name impersonation. Anything containing one of these strings is rejected at registration. Each entry is NFKC-normalised + lower-cased before comparison.') }}
-              </p>
-            </template>
           </CoarFormField>
         </template>
 
@@ -1086,21 +1083,19 @@ async function rotateSigningKey() {
             {{ t('admin.realmSettings.audit.hint', {}, 'Security events belong to this realm and are hard-deleted after the configured retention. The event-sourced audit history uses a separate visibility window.') }}
           </template>
         </AppNote>
-        <CoarFormField :label="t('admin.realmSettings.audit.securityRetentionDays', {}, 'Security-event retention (days)')">
+        <CoarFormField
+          :label="t('admin.realmSettings.audit.securityRetentionDays', {}, 'Security-event retention (days)')"
+          :hint="t('admin.realmSettings.audit.securityRetentionHelp', {}, 'Allowed range: 1–365 days. The security-audit-prune job deletes only expired events.')">
           <CoarTextInput
             :model-value="String(auditForm.SecurityRetentionDays)"
             @update:model-value="(v) => (auditForm.SecurityRetentionDays = Math.min(365, Math.max(1, parseInt(v) || 7)))" />
-          <template #help>
-            {{ t('admin.realmSettings.audit.securityRetentionHelp', {}, 'Allowed range: 1–365 days. The security-audit-prune job deletes only expired events.') }}
-          </template>
         </CoarFormField>
-        <CoarFormField :label="t('admin.realmSettings.audit.visibilityWindowDays', {}, 'Audit-history visibility (days)')">
+        <CoarFormField
+          :label="t('admin.realmSettings.audit.visibilityWindowDays', {}, 'Audit-history visibility (days)')"
+          :hint="t('admin.realmSettings.audit.visibilityHelp', {}, 'This hides older event-sourced audit rows; it does not delete their aggregate history.')">
           <CoarTextInput
             :model-value="String(auditForm.VisibilityWindowDays)"
             @update:model-value="(v) => (auditForm.VisibilityWindowDays = Math.max(1, parseInt(v) || 90))" />
-          <template #help>
-            {{ t('admin.realmSettings.audit.visibilityHelp', {}, 'This hides older event-sourced audit rows; it does not delete their aggregate history.') }}
-          </template>
         </CoarFormField>
       </div>
     </CoarCard>
@@ -1201,5 +1196,13 @@ async function rotateSigningKey() {
 <style scoped>
 .tab-bar {
   border-bottom: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
+  min-width: 0;
+}
+/* 11 wide tabs would otherwise force the tab row (and with it the whole
+   settings column) past the viewport, clipping tabs and the intro text.
+   Let the tab row wrap so every tab stays reachable and the column can
+   shrink to the available width. */
+.tab-bar :deep(.coar-tab-list) {
+  flex-wrap: wrap;
 }
 </style>
