@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
@@ -8,12 +8,12 @@ import { usePreferences, localeOptions } from '@/composables/usePreferences'
 import { useI18n } from '@cocoar/vue-localization'
 import { CoarCard, CoarButton, CoarIcon, CoarMenu, CoarMenuItem, CoarSelect, CoarTextInput, CoarPasswordInput, CoarFormField } from '@cocoar/vue-ui'
 import type { CoarSelectOption } from '@cocoar/vue-ui'
+import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useAppConfigStore } from '@/stores/appconfig.store'
-import MfaSetupModal from '../auth/MfaSetupModal.vue'
-import ChangePasswordModal from './ChangePasswordModal.vue'
 import AppNote from '@/components/AppNote.vue'
 
 const { t, language } = useI18n()
+const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const appConfig = useAppConfigStore()
@@ -23,6 +23,12 @@ const passkeyHttp = useHttpClient('/api/account/passkey')
 const profileHttp = useHttpClient('/api/account/profile')
 
 const ui = useUI()
+
+// Password change and MFA setup are routed fragments (#change-password /
+// #mfa-setup, declared on the profile route) like every other modal in the
+// app — no local visibility flags, no hand-rolled backdrop.
+useRoutedModals()
+const { navigateToModal } = useFragmentNavigation()
 watch(language, () => ui.set((ctx) => {
   ctx.header.title = t('profile.title', {}, 'Profile')
   ctx.header.icon = 'user'
@@ -201,8 +207,6 @@ function deviceLabel(s: SessionDto | ClientSessionDto): string {
 
 // MFA state
 const mfaStatus = ref<{ Enabled: boolean } | null>(null)
-const showMfaSetup = ref(false)
-const showChangePassword = ref(false)
 const disabling = ref(false)
 
 // Email OTP state
@@ -564,10 +568,11 @@ function bufferToBase64Url(b: ArrayBuffer): string {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-function onMfaSetupClose(enabled: boolean) {
-  showMfaSetup.value = false
-  if (enabled) mfaStatus.value = { Enabled: true }
-}
+// A routed modal reports back through the API, not through a return value —
+// so re-read the MFA status once the setup fragment is gone again.
+watch(() => route.hash, (now, before) => {
+  if (before?.includes('mfa-setup') && !now.includes('mfa-setup')) loadMfaStatus()
+})
 </script>
 
 <template>
@@ -748,7 +753,7 @@ function onMfaSetupClose(enabled: boolean) {
                   <CoarIcon name="key" size="m" class="text-surface-500" />
                   <h2 class="text-lg font-semibold">{{ t('profile.changePassword.title', {}, 'Change Password') }}</h2>
                 </div>
-                <CoarButton @click="showChangePassword = true">
+                <CoarButton @click="navigateToModal('change-password')">
                   {{ t('profile.changePassword.button', {}, 'Change Password') }}
                 </CoarButton>
               </div>
@@ -769,7 +774,7 @@ function onMfaSetupClose(enabled: boolean) {
               </div>
               <template v-if="mfaStatus && !mfaStatus.Enabled">
                 <p class="text-sm text-surface-600 mb-4">{{ t('profile.mfa.setupDescription', {}, 'Protect your account with an authenticator app.') }}</p>
-                <CoarButton @click="showMfaSetup = true">{{ t('profile.mfa.setupButton', {}, 'Set up MFA') }}</CoarButton>
+                <CoarButton @click="navigateToModal('mfa-setup')">{{ t('profile.mfa.setupButton', {}, 'Set up MFA') }}</CoarButton>
               </template>
               <template v-else-if="mfaStatus?.Enabled">
                 <p class="text-sm text-surface-600 mb-4">{{ t('profile.mfa.enabledDescription', {}, 'Your account is protected by an authenticator app.') }}</p>
@@ -1135,18 +1140,6 @@ function onMfaSetupClose(enabled: boolean) {
     </div>
   </div>
 
-  <!-- MFA Setup Modal -->
-  <Teleport to="body">
-    <div v-if="showMfaSetup" class="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40" @click.self="onMfaSetupClose(false)">
-      <MfaSetupModal :close="onMfaSetupClose" />
-    </div>
-  </Teleport>
-
-  <Teleport to="body">
-    <div v-if="showChangePassword" class="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40" @click.self="showChangePassword = false">
-      <ChangePasswordModal :close="() => showChangePassword = false" />
-    </div>
-  </Teleport>
 </template>
 
 <style scoped>

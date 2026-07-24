@@ -8,6 +8,8 @@ import AppNote from '@/components/AppNote.vue'
 
 const { t } = useI18n()
 
+// Opened as the routed `#change-password` fragment on /profile — `close` is
+// injected by the overlay host.
 const props = defineProps<{
   close: (result?: unknown) => void
 }>()
@@ -64,9 +66,8 @@ async function changePassword() {
     :title="t('profile.changePassword.title', {}, 'Change Password')"
     icon="key"
     :footer-button="footerButton"
-    width="28rem"
   >
-    <div class="flex flex-col gap-4 p-2 pb-4">
+    <div class="flex flex-col gap-4">
       <AppNote v-if="success" variant="success" :truncate="false">
         {{ t('profile.changePassword.success', {}, 'Password has been changed.') }}
       </AppNote>

@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { NavigationGuard, RouteLocationGeneric } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
+import { MODAL_MD, MODAL_LG, MODAL_FULL } from './modal-sizes'
 
 /**
  * Per-route gate for routes that depend on the page-builder feature
@@ -54,44 +55,9 @@ const authPageSlotGate: NavigationGuard = (to) => {
  * decision is the route's, the inner component just fills.</para>
  */
 
-// ── Named modal sizes (UI/UX wave 3) ────────────────────────────────────────
-//
-// A single named-size contract replaces the per-modal one-offs. Two height
-// strategies, chosen by content:
-//
-//  • cap-to-content (height:auto + minHeight:auto + maxHeight) — the panel
-//    sizes to its content and scrolls past the cap. No dead lower half. Use
-//    for single-form modals. Proven by the old SERVICE_ACCOUNT size.
-//  • stable frame (height==minHeight==maxHeight in vh) — a definite ancestor
-//    height for tabbed / grid / editor modals whose flex:1 children
-//    (CoarDualListbox, AG-Grid, Monaco, read-only JSON panes) collapse to 0
-//    without one. Sized for the heaviest tab.
-//
-// Big (vw) sizes carry NO minWidth rem floor: a floor wins over the vw
-// computation once the viewport is narrower than the floor, overflowing the
-// viewport horizontally (tested 2026-05-15 — an 84rem floor cut off the close
-// button at 1280px). vw + a maxWidth cap scales to any viewport. SM/MD keep a
-// rem min==max because 32/42rem are always below a real admin viewport.
-
-// Cap-to-content single forms. (A 32rem MODAL_SM can be added when a modal of
-// ≤4 short fields needs it — none do today.)
-const MODAL_MD = {
-  width: '42rem', minWidth: '42rem', maxWidth: '42rem',
-  height: 'auto', minHeight: 'auto', maxHeight: '85vh',
-} as const
-
-// Stable tall frames for tabbed / grid / editor modals.
-const MODAL_LG = {
-  width: '78vw', maxWidth: '80rem',
-  height: '82vh', minHeight: '82vh', maxHeight: '82vh',
-} as const
-
-const MODAL_FULL = {
-  width: '92vw', maxWidth: '112rem',
-  height: '90vh', minHeight: '90vh', maxHeight: '90vh',
-} as const
-
 // ── Per-modal assignments ───────────────────────────────────────────────────
+// The named sizes themselves live in ./modal-sizes so modals opened from
+// inside another modal (useModalOverlay) can reuse the same values.
 // Single forms → cap-to-content (MD); drive the family toward ScopeDetails.
 const SCOPE_MODAL_SIZE = MODAL_MD
 const REALM_MODAL_SIZE = MODAL_MD
@@ -226,6 +192,22 @@ const routes = [
         {
           path: 'profile',
           component: () => import('@/views/profile/ProfileView.vue'),
+          meta: {
+            routedFragments: [
+              {
+                type: 'modal',
+                path: 'change-password',
+                component: () => import('@/views/profile/ChangePasswordModal.vue'),
+                overlayOptions: { size: MODAL_MD },
+              },
+              {
+                type: 'modal',
+                path: 'mfa-setup',
+                component: () => import('@/views/auth/MfaSetupModal.vue'),
+                overlayOptions: { size: MODAL_MD },
+              },
+            ],
+          },
         },
         {
           // Self-service grace interstitial: shown right after a self-pending
