@@ -175,7 +175,14 @@ const hasCta = computed(() => !!slots.cta)
 .notice--warning,
 .notice--error,
 .notice--success {
-  --coar-notice-bg: oklch(from var(--coar-notice-tint) calc(l + 0.06) calc(c - 0.018) h);
+  /* Lighten only — do NOT touch chroma. An earlier version subtracted a fixed
+     0.018 from it, which works for warning (C 0.04) but drives info NEGATIVE:
+     its seed is a slate (C 0.012), so the channel clamped to zero and the info
+     notice rendered as flat #f8f8f8 grey with no colour at all. Any absolute
+     arithmetic on chroma breaks whichever variant happens to be the quietest;
+     raising lightness alone already produces the pale ground, and each variant
+     keeps the saturation the design system gave it. */
+  --coar-notice-bg: oklch(from var(--coar-notice-tint) calc(l + 0.06) c h);
   --coar-notice-border: oklch(from var(--coar-notice-line) calc(l + 0.05) c h);
   --coar-notice-fg: var(--coar-notice-ink);
 }
@@ -185,7 +192,16 @@ const hasCta = computed(() => !!slots.cta)
 .notice--error   { --coar-notice-tint: var(--coar-background-semantic-error-subtle);   --coar-notice-line: var(--coar-border-semantic-error-subtle);   --coar-notice-ink: var(--coar-background-semantic-error-bold); }
 .notice--success { --coar-notice-tint: var(--coar-background-semantic-success-subtle); --coar-notice-line: var(--coar-border-semantic-success-subtle); --coar-notice-ink: var(--coar-background-semantic-success-bold); }
 
-.notice--neutral { --coar-notice-bg: var(--coar-background-neutral-secondary); --coar-notice-border: var(--coar-border-neutral-secondary); --coar-notice-fg: var(--coar-text-neutral-primary); }
+/* Neutral's border comes off the neutral ramp, which is a good deal darker than
+   the semantic `-subtle` lines (#5a5a5a next to #ffd8a8) and would draw a hard
+   box where the others draw a hairline. Lightened to sit in the same weight
+   class; chroma is untouched here too — it is a grey, and forcing chroma onto
+   an achromatic hue tints it unpredictably. */
+.notice--neutral {
+  --coar-notice-bg: var(--coar-background-neutral-secondary);
+  --coar-notice-border: oklch(from var(--coar-border-neutral-secondary) 0.86 c h);
+  --coar-notice-fg: var(--coar-text-neutral-primary);
+}
 .notice--accent  { --coar-notice-bg: var(--coar-background-accent-tertiary);   --coar-notice-border: var(--coar-border-accent-primary);    --coar-notice-fg: var(--coar-text-neutral-primary); }
 
 .notice__icon {
@@ -273,6 +289,10 @@ const hasCta = computed(() => !!slots.cta)
   --coar-notice-bg: var(--coar-notice-tint);
   --coar-notice-border: var(--coar-notice-line);
 }
+/* Neutral's light-mode border carries an absolute lightness (its source is a
+   grey, so there is no hue to derive from) — hand it back to the raw token
+   here, where that token is already the light end of the ramp. */
+.dark-mode .notice--neutral { --coar-notice-border: var(--coar-border-neutral-secondary); }
 .dark-mode .notice--info    { --coar-notice-ink: var(--coar-border-semantic-info-bold); }
 .dark-mode .notice--warning { --coar-notice-ink: var(--coar-border-semantic-warning-bold); }
 .dark-mode .notice--error   { --coar-notice-ink: var(--coar-border-semantic-error-bold); }
