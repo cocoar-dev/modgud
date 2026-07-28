@@ -351,9 +351,15 @@ async function save() {
         :label="t('admin.apps.createBannerLabel', {}, 'New app')">
         {{ t('admin.apps.createHint', {}, 'A new app registers itself for permission resolution. The slug is immutable after creation.') }}
       </AppBanner>
-      <AppBanner v-else-if="isSystem" variant="warning"
-        :label="t('admin.apps.systemBannerLabel', {}, 'System app')">
-        {{ t('admin.apps.systemHint', {}, 'Cannot be changed.') }}
+      <!-- System-managed entities all say this the same way, through the same
+           two strings — see LoginProviderDetails. Deliberately `info`, not
+           `warning`: read-only is a fact, not a hazard. Nothing can go wrong
+           here (fields are disabled, the backend rejects anyway), and warning
+           colours only keep their force if they stay reserved for things that
+           can actually bite. -->
+      <AppBanner v-else-if="isSystem" variant="info"
+        :label="t('common.systemManagedLabel', {}, 'System')">
+        {{ t('common.systemManaged', {}, 'Cannot be changed.') }}
       </AppBanner>
     </template>
 

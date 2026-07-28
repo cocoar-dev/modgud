@@ -481,16 +481,22 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
     :title="modalTitle"
     icon="log-in"
     :footer-button="footerButton"
+    :readonly="isBuiltIn"
   >
     <!--
       Built-in provider: hard-block on edits via UI, backend rejects too. The
       statement covers the entire modal, so it is a banner pinned under the
       header rather than a note floating above the first section.
+
+      `:readonly` so this modal carries the same "read-only" tag in the title
+      bar as every other read-only modal — the block was hand-rolled here (Save
+      hidden + :disabled on every field), which worked but left the header
+      silent. Tag = the state, banner = the reason.
     -->
     <template #banner>
       <AppBanner v-if="isBuiltIn" variant="info"
-        :label="t('admin.loginProviders.builtIn.bannerLabel', {}, 'Built-in')">
-        {{ t('admin.loginProviders.builtIn.banner', {}, 'Cannot be changed.') }}
+        :label="t('common.systemManagedLabel', {}, 'System')">
+        {{ t('common.systemManaged', {}, 'Cannot be changed.') }}
       </AppBanner>
     </template>
 

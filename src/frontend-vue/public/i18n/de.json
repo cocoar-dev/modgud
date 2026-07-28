@@ -1,6 +1,8 @@
 {
   "common": {
     "loading": "Laden...",
+    "systemManagedLabel": "System",
+    "systemManaged": "Nicht veränderbar.",
     "colorPicker": "Farbe wählen",
     "colorInvalid": "Bitte eine gültige Farbe eingeben, z. B. #5A6478.",
     "create": "Erstellen",
@@ -1272,9 +1274,7 @@
         }
       },
       "builtIn": {
-        "badge": "System",
-        "bannerLabel": "Eingebaut",
-        "banner": "Nicht veränderbar."
+        "badge": "System"
       },
       "errors": {
         "typeNotSupported": "Login-Provider-Typ {type} wird derzeit nicht unterstützt.",
@@ -1324,8 +1324,6 @@
       "permissionsHintSystem": "Permission-Catalog der System-App — schreibgeschützt. Diese Einträge entsprechen 1:1 den RequiresPermission-Aufrufen im Backend-Code.",
       "slug": "Slug (unveränderbar)",
       "slugPlaceholder": "kebab-case-slug",
-      "systemBannerLabel": "System-App",
-      "systemHint": "Nicht veränderbar.",
       "tabs": {
         "catalog": "Permission-Catalog",
         "general": "Allgemein",
