@@ -8,7 +8,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation } from '@cocoar/vue-fragment-parser'
 import ModalLayout from '@/components/ModalLayout.vue'
 import ColorField from '@/components/ColorField.vue'
-import AppBanner from '@/components/AppBanner.vue'
+import Notice from '@/components/Notice.vue'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import type { FlavorConfigFieldDto, FlavorDto, LoginProviderDto } from '@/models/loginProvider'
 import UserUpdateScriptEditor from './UserUpdateScriptEditor.vue'
@@ -494,10 +494,10 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
       silent. Tag = the state, banner = the reason.
     -->
     <template #banner>
-      <AppBanner v-if="isBuiltIn" variant="info"
+      <Notice placement="banner" v-if="isBuiltIn" variant="info"
         :label="t('common.systemManagedLabel', {}, 'System')">
         {{ t('common.systemManaged', {}, 'Cannot be changed.') }}
-      </AppBanner>
+      </Notice>
     </template>
 
     <!--

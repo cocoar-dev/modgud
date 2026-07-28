@@ -8,7 +8,7 @@ import { CoarButton, CoarCheckbox, CoarTextInput, CoarFormField } from '@cocoar/
 import { useGridLocale } from '@/composables/useGridLocale'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 import ModalLayout from '@/components/ModalLayout.vue'
-import AppNote from '@/components/AppNote.vue'
+import Notice from '@/components/Notice.vue'
 
 const { t, language } = useI18n()
 const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
@@ -194,7 +194,7 @@ const gridBuilder = applyListGridDefaults(CoarGridBuilder.create<ChangeRequest>(
               </CoarFormField>
               <CoarCheckbox v-model="notifyUser"
                 :label="t('admin.changeRequests.notifyUser', {}, 'Notify user by email')" />
-              <AppNote v-if="actionError" variant="error" :truncate="false">{{ actionError }}</AppNote>
+              <Notice v-if="actionError" variant="error">{{ actionError }}</Notice>
               <div class="flex gap-2 justify-end pt-2">
                 <CoarButton variant="danger" icon-start="x" :loading="busy"
                   :disabled="selected.Status === 'EmailVerificationPending'"
@@ -207,9 +207,9 @@ const gridBuilder = applyListGridDefaults(CoarGridBuilder.create<ChangeRequest>(
                   {{ t('admin.changeRequests.approve', {}, 'Approve') }}
                 </CoarButton>
               </div>
-              <AppNote v-if="selected.Status === 'EmailVerificationPending'" variant="info" :truncate="false">
+              <Notice v-if="selected.Status === 'EmailVerificationPending'" variant="info">
                 {{ t('admin.changeRequests.waitingForVerify', {}, 'The user has not yet confirmed the new address via email. Approval is only possible once ownership has been proven.') }}
-              </AppNote>
+              </Notice>
             </template>
           </div>
         </ModalLayout>

@@ -9,7 +9,7 @@ import {
   CoarPasswordInput,
   CoarFormField,
 } from '@cocoar/vue-ui'
-import AppNote from '@/components/AppNote.vue'
+import Notice from '@/components/Notice.vue'
 
 // First-admin bootstrap form (C15b). Recipient lands here from the
 // magic-link in the bootstrap email (or printed on stdout by the CLI).
@@ -93,9 +93,9 @@ async function handleSubmit() {
       <CoarCard elevated>
         <!-- Invalid link -->
         <div v-if="!isValid" class="space-y-4">
-          <AppNote variant="error" :truncate="false">
+          <Notice variant="error">
             {{ t('auth.bootstrap.invalidLink', {}, 'Invalid bootstrap link. Ask your administrator to issue a new invite.') }}
-          </AppNote>
+          </Notice>
           <RouterLink to="/login" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.bootstrap.backToLogin', {}, 'Back to login') }}
           </RouterLink>
@@ -103,16 +103,16 @@ async function handleSubmit() {
 
         <!-- Success -->
         <div v-else-if="success" class="space-y-4">
-          <AppNote variant="success" :truncate="false">
+          <Notice variant="success">
             {{ t('auth.bootstrap.success', {}, 'Your admin account has been created. Redirecting to the dashboard…') }}
-          </AppNote>
+          </Notice>
         </div>
 
         <!-- Form -->
         <form v-else class="space-y-4" @submit.prevent="handleSubmit">
-          <AppNote variant="info" :truncate="false">
+          <Notice variant="info">
             {{ t('auth.bootstrap.intro', {}, 'Set a password to activate your admin account. This link is single-use and expires in 7 days.') }}
-          </AppNote>
+          </Notice>
 
           <CoarFormField :label="t('auth.bootstrap.newPassword', {}, 'New Password')">
             <CoarPasswordInput
@@ -132,11 +132,11 @@ async function handleSubmit() {
             />
           </CoarFormField>
 
-          <AppNote v-if="confirmPassword && !passwordsMatch" variant="error" :truncate="false">
+          <Notice v-if="confirmPassword && !passwordsMatch" variant="error">
             {{ t('auth.bootstrap.passwordMismatch', {}, 'Passwords do not match.') }}
-          </AppNote>
+          </Notice>
 
-          <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
+          <Notice v-if="error" variant="error">{{ error }}</Notice>
 
           <CoarButton
             type="submit"

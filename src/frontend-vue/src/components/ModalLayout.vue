@@ -94,7 +94,8 @@ watch(
     </div>
 
     <!--
-      Banner — a statement about the WHOLE modal (see AppBanner). Rendered
+      Banner — a statement about the WHOLE modal (a Notice with
+      placement="banner"; see Notice.vue for the inline/banner split). Rendered
       between the header and the content on purpose: inside .modal-content it
       would inherit the 20px padding (so it would no longer be full-bleed) and
       it would scroll out of view, which is wrong for something that describes

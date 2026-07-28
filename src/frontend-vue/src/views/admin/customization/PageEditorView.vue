@@ -5,7 +5,7 @@ import { CoarPageBuilder, type PageNode } from '@cocoar/vue-page-builder'
 import { CoarButton, CoarTextInput, CoarFormField, useDialog } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
-import AppNote from '@/components/AppNote.vue'
+import Notice from '@/components/Notice.vue'
 import AssetPicker from '@/components/AssetPicker.vue'
 import type { AssetDto } from '@/models/assets'
 import {
@@ -151,13 +151,13 @@ watch([slot, variantId], load, { immediate: true })
       </CoarButton>
     </div>
 
-    <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
-    <AppNote v-if="resetHint" variant="info" :truncate="false">
+    <Notice v-if="error" variant="error">{{ error }}</Notice>
+    <Notice v-if="resetHint" variant="info">
       {{ t('admin.customization.pages.resetHint', {}, 'Loaded the built-in template into the editor. Nothing is saved until you click Save.') }}
-    </AppNote>
-    <AppNote v-if="savedFlash" variant="success">
+    </Notice>
+    <Notice truncate v-if="savedFlash" variant="success">
       {{ t('admin.realmSettings.saved', {}, 'Saved.') }}
-    </AppNote>
+    </Notice>
 
     <div v-if="loading" class="text-sm text-gray-400">{{ t('common.loading', {}, 'Loading…') }}</div>
     <CoarPageBuilder v-else v-model="schema" :config="pageConfig" class="builder" />

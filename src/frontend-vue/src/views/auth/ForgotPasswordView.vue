@@ -11,7 +11,7 @@ import {
   CoarTextInput,
   CoarFormField,
 } from '@cocoar/vue-ui'
-import AppNote from '@/components/AppNote.vue'
+import Notice from '@/components/Notice.vue'
 import {
   CoarPageRenderer,
   normalizePageSchema,
@@ -164,9 +164,9 @@ const customForgotActions: Record<string, ActionHandler> = {
       <CoarCard elevated>
         <!-- Passwordless mode -->
         <div v-if="isPasswordless" class="space-y-4">
-          <AppNote variant="info" :truncate="false">
+          <Notice variant="info">
             {{ t('auth.forgotPassword.passwordlessMode', {}, 'Password reset is not available. This application uses passwordless login.') }}
-          </AppNote>
+          </Notice>
           <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.forgotPassword.backToLogin', {}, 'Back to login') }}
           </RouterLink>
@@ -174,9 +174,9 @@ const customForgotActions: Record<string, ActionHandler> = {
 
         <!-- Success state -->
         <div v-else-if="sent" class="space-y-4">
-          <AppNote variant="success" :truncate="false">
+          <Notice variant="success">
             {{ t('auth.forgotPassword.sent', {}, 'If an account exists with this username, an email with a reset link has been sent.') }}
-          </AppNote>
+          </Notice>
           <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.forgotPassword.backToLogin', {}, 'Back to login') }}
           </RouterLink>
@@ -197,7 +197,7 @@ const customForgotActions: Record<string, ActionHandler> = {
             />
           </CoarFormField>
 
-          <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
+          <Notice v-if="error" variant="error">{{ error }}</Notice>
 
           <CoarButton
             type="submit"

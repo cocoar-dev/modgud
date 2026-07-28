@@ -13,7 +13,7 @@ import {
   CoarFormField,
   CoarCheckbox,
 } from '@cocoar/vue-ui'
-import AppNote from '@/components/AppNote.vue'
+import Notice from '@/components/Notice.vue'
 
 interface SelfRegistrationInfoDto {
   Enabled: boolean
@@ -228,7 +228,7 @@ async function handleSubmit() {
         </div>
 
         <div v-else-if="submitted" class="space-y-4">
-          <AppNote variant="success" :truncate="false">{{ successMessage }}</AppNote>
+          <Notice variant="success">{{ successMessage }}</Notice>
           <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }"
             class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.register.toLogin', {}, 'To login') }}
@@ -286,7 +286,7 @@ async function handleSubmit() {
             </label>
           </div>
 
-          <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
+          <Notice v-if="error" variant="error">{{ error }}</Notice>
 
           <CoarButton
             type="submit"

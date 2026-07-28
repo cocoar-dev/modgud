@@ -9,7 +9,7 @@ import {
   CoarCheckbox,
   CoarSpinner,
 } from '@cocoar/vue-ui'
-import AppNote from '@/components/AppNote.vue'
+import Notice from '@/components/Notice.vue'
 import type {
   ConsentModel,
   ConsentDecision,
@@ -229,7 +229,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
 
         <!-- Error -->
         <div v-else-if="phase === 'error'" class="space-y-4">
-          <AppNote variant="error" :truncate="false">{{ error }}</AppNote>
+          <Notice variant="error">{{ error }}</Notice>
           <!-- Expired/consumed tickets carry a retry URL — re-entering
                /connect/authorize mints a fresh ticket (or completes silently
                via the remembered authorization), so the OIDC flow resumes
@@ -276,18 +276,18 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
             </p>
           </div>
 
-          <AppNote v-if="model!.ClientIdHostname" variant="warning">
+          <Notice truncate v-if="model!.ClientIdHostname" variant="warning">
             {{ t('consent.cimdWarningShort', { host: model!.ClientIdHostname }, 'This app is identified by the domain {host} — make sure you trust it.') }}
             <template #details>
               {{ t('consent.cimdWarning', { host: model!.ClientIdHostname }, 'This app is identified by the domain {host}. Make sure you trust this domain before continuing — only authorise it if you intended to sign in to an app at {host}.') }}
             </template>
-          </AppNote>
-          <AppNote v-else-if="model!.IsDynamicallyRegistered" variant="warning">
+          </Notice>
+          <Notice truncate v-else-if="model!.IsDynamicallyRegistered" variant="warning">
             {{ t('consent.dcrWarningShort', {}, 'This app self-registered and its name is unverified.') }}
             <template #details>
               {{ t('consent.dcrWarning', {}, 'This app registered itself with the identity provider — its name has not been verified by an administrator. Make sure the name above matches the app you actually intended to authorise before continuing.') }}
             </template>
-          </AppNote>
+          </Notice>
 
           <div class="space-y-2">
             <div
@@ -314,7 +314,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
             </div>
           </div>
 
-          <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
+          <Notice v-if="error" variant="error">{{ error }}</Notice>
 
           <div class="flex gap-2">
             <CoarButton

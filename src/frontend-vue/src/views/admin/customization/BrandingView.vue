@@ -10,7 +10,7 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import { useRealmSettingsStore } from '@/stores/realmSettings.store'
-import AppNote from '@/components/AppNote.vue'
+import Notice from '@/components/Notice.vue'
 import AssetPicker from '@/components/AssetPicker.vue'
 import ColorField from '@/components/ColorField.vue'
 import type { AssetDto } from '@/models/assets'
@@ -159,10 +159,10 @@ async function save() {
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4 gap-3">
-    <AppNote v-if="error" variant="error" :truncate="false">{{ error }}</AppNote>
-    <AppNote v-if="savedFlash" variant="success">
+    <Notice v-if="error" variant="error">{{ error }}</Notice>
+    <Notice truncate v-if="savedFlash" variant="success">
       {{ t('admin.realmSettings.saved', {}, 'Saved.') }}
-    </AppNote>
+    </Notice>
 
     <div v-if="initialLoad" class="text-sm text-gray-400">
       {{ t('common.loading', {}, 'Loading...') }}

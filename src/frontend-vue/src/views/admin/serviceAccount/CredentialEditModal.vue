@@ -12,7 +12,7 @@ import {
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
-import AppNote from '@/components/AppNote.vue'
+import Notice from '@/components/Notice.vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
@@ -243,7 +243,7 @@ async function copySecret() {
     <!-- Secret-disclosure panel: shown once after Issue / Rotate. Modal
          footer flips to "Done" while this panel is visible. -->
     <div v-else-if="newSecret" class="flex flex-col gap-4 p-2">
-      <AppNote variant="warning" :truncate="false">
+      <Notice variant="warning">
         <div class="flex flex-col gap-3">
           <div class="font-medium">
             {{ t('admin.serviceAccountCredentials.secretOnce', {}, 'Copy the client secret now — it will not be shown again.') }}
@@ -261,11 +261,11 @@ async function copySecret() {
             </CoarButton>
           </div>
         </div>
-      </AppNote>
+      </Notice>
     </div>
 
     <div v-else class="modal-body">
-      <AppNote v-if="error" variant="error" :truncate="false" class="flex-shrink-0">{{ error }}</AppNote>
+      <Notice v-if="error" variant="error" class="flex-shrink-0">{{ error }}</Notice>
 
       <CoarTabGroup v-model="activeTab" class="tab-bar">
         <CoarTab id="basics">{{ t('admin.serviceAccountCredentials.section.basics', {}, 'Basics') }}</CoarTab>
@@ -313,12 +313,12 @@ async function copySecret() {
       </div>
 
       <div v-show="activeTab === 'scopes'" class="tab-content">
-        <AppNote variant="info">
+        <Notice truncate variant="info">
           {{ t('admin.serviceAccountCredentials.scopesHintShort', {}, 'Which scopes this credential may ask for.') }}
           <template #details>
             {{ t('admin.serviceAccountCredentials.scopesHint', {}, 'Which scopes this credential is allowed to ask for. Realm-wide OIDC scopes are always available; per-API scopes need a matching App link on the Apps tab.') }}
           </template>
-        </AppNote>
+        </Notice>
         <!-- .flex-section gives the listbox a definite height, so both tabs'
              lists are the same size whether they hold 0 or 50 entries. -->
         <section class="flex-section">
@@ -336,12 +336,12 @@ async function copySecret() {
       </div>
 
       <div v-show="activeTab === 'apps'" class="tab-content">
-        <AppNote variant="info">
+        <Notice truncate variant="info">
           {{ t('admin.serviceAccountCredentials.appsHintShort', {}, 'Empty = realm-wide.') }}
           <template #details>
             {{ t('admin.serviceAccountCredentials.appsHint', {}, 'Apps this credential is allowed to act for. Empty = realm-wide. Use multiple when the M2M backend talks to several APIs.') }}
           </template>
-        </AppNote>
+        </Notice>
         <section class="flex-section">
           <CoarDualListbox
             class="flex-1 min-h-0"
