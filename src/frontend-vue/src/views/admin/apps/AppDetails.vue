@@ -5,6 +5,7 @@ import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import AppNote from '@/components/AppNote.vue'
+import AppBanner from '@/components/AppBanner.vue'
 import AppSettingsSections from './AppSettingsSections.vue'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, APP_CLONE } from '@/composables/useClone'
@@ -339,6 +340,23 @@ async function save() {
 <template>
   <ModalLayout :close="close" :title="modalTitle" :sub-title="modalSubtitle" icon="layout-grid"
     :footer-button="footerButton" :readonly="isSystem" width="56rem">
+    <!--
+      Both statements describe the whole modal, and they are mutually
+      exclusive — so exactly one banner, pinned under the header. The header's
+      "read-only" tag names the STATE; the banner gives the REASON and says
+      what the surface is still good for.
+    -->
+    <template #banner>
+      <AppBanner v-if="isCreate" variant="info"
+        :label="t('admin.apps.createBannerLabel', {}, 'New app')">
+        {{ t('admin.apps.createHint', {}, 'A new app registers itself for permission resolution. The slug is immutable after creation.') }}
+      </AppBanner>
+      <AppBanner v-else-if="isSystem" variant="warning"
+        :label="t('admin.apps.systemBannerLabel', {}, 'System app')">
+        {{ t('admin.apps.systemHint', {}, 'Slug, display name and permission catalog are hardcoded in the backend — the catalog here is read-only and for inspection only. Changing the strings would break the RequiresPermission calls in the backend.') }}
+      </AppBanner>
+    </template>
+
     <div v-if="loading && !dto && !isCreate" class="flex flex-1 items-center justify-center p-8">
       <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>
     </div>
@@ -348,16 +366,6 @@ async function save() {
         <CoarTab id="catalog">{{ t('admin.apps.tabs.catalog', {}, 'Permission-Catalog') }}</CoarTab>
         <CoarTab v-if="!isSystem" id="settings">{{ t('admin.apps.tabs.settings', {}, 'Settings') }}</CoarTab>
       </CoarTabGroup>
-
-      <AppNote v-if="isCreate" variant="info" :truncate="false">
-        {{ t('admin.apps.createHint', {}, 'A new app registers itself for permission resolution. The slug is immutable after creation.') }}
-      </AppNote>
-      <AppNote v-else-if="isSystem" variant="warning">
-        {{ t('admin.apps.systemHintShort', {}, 'System app — catalog is read-only and hardcoded in the backend.') }}
-        <template #details>
-          {{ t('admin.apps.systemHint', {}, 'This is a system app of the IdP. Slug, display name, and permission catalog are hardcoded in the backend — the catalog here is read-only and for inspection only. Changing the strings would break the RequiresPermission calls in the backend.') }}
-        </template>
-      </AppNote>
 
       <!-- Tab: General -->
       <div v-show="activeTab === 'general'" class="tab-content">

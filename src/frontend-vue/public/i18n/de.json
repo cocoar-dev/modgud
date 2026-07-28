@@ -1273,7 +1273,8 @@
       },
       "builtIn": {
         "badge": "System",
-        "banner": "Dies ist der eingebaute interne Login-Provider — die Konfiguration wird vom System verwaltet und kann hier nicht geändert werden."
+        "bannerLabel": "Eingebaut",
+        "banner": "Der interne Login-Provider wird vom System verwaltet und kann hier nicht geändert werden."
       },
       "errors": {
         "typeNotSupported": "Login-Provider-Typ {type} wird derzeit nicht unterstützt.",
@@ -1314,6 +1315,7 @@
       },
       "catalogBlocked": "Einige Catalog-Einträge sind noch in Verwendung.",
       "confirmDelete": "App wirklich löschen?",
+      "createBannerLabel": "Neue App",
       "createHint": "Eine neue App registriert sich für die Permission-Resolution. Der Slug ist nach dem Erstellen unveränderbar.",
       "createTitle": "Application erstellen",
       "displayName": "Display Name",
@@ -1322,7 +1324,8 @@
       "permissionsHintSystem": "Permission-Catalog der System-App — schreibgeschützt. Diese Einträge entsprechen 1:1 den RequiresPermission-Aufrufen im Backend-Code.",
       "slug": "Slug (unveränderbar)",
       "slugPlaceholder": "kebab-case-slug",
-      "systemHint": "Dies ist eine System-App des IdP. Slug, Display Name und Permission-Catalog sind im Backend fest hinterlegt — der Catalog hier ist schreibgeschützt und dient nur zur Einsicht. Änderungen an den Strings würden die RequiresPermission-Aufrufe im Backend brechen.",
+      "systemBannerLabel": "System-App",
+      "systemHint": "Slug, Display Name und Permission-Catalog sind im Backend fest hinterlegt — der Catalog hier ist schreibgeschützt und dient nur zur Einsicht. Änderungen an den Strings würden die RequiresPermission-Aufrufe im Backend brechen.",
       "tabs": {
         "catalog": "Permission-Catalog",
         "general": "Allgemein",

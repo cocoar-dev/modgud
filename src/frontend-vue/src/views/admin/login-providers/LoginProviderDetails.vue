@@ -8,7 +8,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation } from '@cocoar/vue-fragment-parser'
 import ModalLayout from '@/components/ModalLayout.vue'
 import ColorField from '@/components/ColorField.vue'
-import AppNote from '@/components/AppNote.vue'
+import AppBanner from '@/components/AppBanner.vue'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import type { FlavorConfigFieldDto, FlavorDto, LoginProviderDto } from '@/models/loginProvider'
 import UserUpdateScriptEditor from './UserUpdateScriptEditor.vue'
@@ -483,6 +483,18 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
     :footer-button="footerButton"
   >
     <!--
+      Built-in provider: hard-block on edits via UI, backend rejects too. The
+      statement covers the entire modal, so it is a banner pinned under the
+      header rather than a note floating above the first section.
+    -->
+    <template #banner>
+      <AppBanner v-if="isBuiltIn" variant="info"
+        :label="t('admin.loginProviders.builtIn.bannerLabel', {}, 'Built-in')">
+        {{ t('admin.loginProviders.builtIn.banner', {}, 'This is the built-in internal login provider — its configuration is managed by the system and can\'t be changed here.') }}
+      </AppBanner>
+    </template>
+
+    <!--
       Header-actions slot: flavor picker lives next to the title so switching
       type in Add mode visibly morphs the modal. Disabled in Edit (Type/Flavor
       are immutable after Create) so the admin can still see *which* flavor
@@ -503,10 +515,6 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
     </div>
 
     <div v-else class="flex flex-col flex-1 min-h-0 gap-3">
-      <!-- Built-in banner — hard-block on edits via UI; backend rejects too. -->
-      <AppNote v-if="isBuiltIn" variant="info" :truncate="false">
-        {{ t('admin.loginProviders.builtIn.banner', {}, 'This is the built-in internal login provider — its configuration is managed by the system and can\'t be changed here.') }}
-      </AppNote>
 
       <!-- Header row: type/flavor badge, enabled-toggle, error -->
       <div class="flex items-center gap-3 flex-wrap">
