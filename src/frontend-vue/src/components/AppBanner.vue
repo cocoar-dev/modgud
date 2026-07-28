@@ -84,22 +84,31 @@ const iconName = computed(() => props.icon ?? DEFAULT_ICON[props.variant])
   font-size: 0.8125rem; /* 13px — same register as AppNote */
   line-height: 1.4;
   /* Deliberately square and full-bleed: it belongs to the frame, and a rounded
-     inset strip would read as content scoped to one section. */
-  border-top: 1px solid var(--coar-banner-border);
+     inset strip would read as content scoped to one section.
+
+     Bottom rule only, in the SUBTLE border token. The `-bold` border tokens are
+     near-black (#3f2503 for warning) — a hairline of those top and bottom reads
+     as a heavy box drawn around the text instead of a tinted wash under the
+     header. Nothing is needed at the top: the header's own shadow separates. */
   border-bottom: 1px solid var(--coar-banner-border);
   background-color: var(--coar-banner-bg);
-  color: var(--coar-text-primary, #3f3f46);
+  /* Text tinted in the banner's own hue rather than neutral grey — that tint is
+     what makes the strip read as one calm surface instead of grey text sitting
+     on a coloured patch. Uses the `-bold` BORDER token, not
+     `--coar-text-semantic-*-bold`: the latter is #ffffff for the info variant
+     and would be invisible here. */
+  color: var(--coar-banner-fg);
 }
 
-.app-banner--info    { --coar-banner-bg: var(--coar-background-semantic-info-subtle);    --coar-banner-border: var(--coar-border-semantic-info-bold); }
-.app-banner--warning { --coar-banner-bg: var(--coar-background-semantic-warning-subtle); --coar-banner-border: var(--coar-border-semantic-warning-bold); }
-.app-banner--error   { --coar-banner-bg: var(--coar-background-semantic-error-subtle);   --coar-banner-border: var(--coar-border-semantic-error-bold); }
-.app-banner--success { --coar-banner-bg: var(--coar-background-semantic-success-subtle); --coar-banner-border: var(--coar-border-semantic-success-bold); }
-.app-banner--neutral { --coar-banner-bg: var(--coar-background-neutral-secondary);       --coar-banner-border: var(--coar-border-neutral-secondary); }
+.app-banner--info    { --coar-banner-bg: var(--coar-background-semantic-info-subtle);    --coar-banner-border: var(--coar-border-semantic-info-subtle);    --coar-banner-fg: var(--coar-border-semantic-info-bold); }
+.app-banner--warning { --coar-banner-bg: var(--coar-background-semantic-warning-subtle); --coar-banner-border: var(--coar-border-semantic-warning-subtle); --coar-banner-fg: var(--coar-border-semantic-warning-bold); }
+.app-banner--error   { --coar-banner-bg: var(--coar-background-semantic-error-subtle);   --coar-banner-border: var(--coar-border-semantic-error-subtle);   --coar-banner-fg: var(--coar-border-semantic-error-bold); }
+.app-banner--success { --coar-banner-bg: var(--coar-background-semantic-success-subtle); --coar-banner-border: var(--coar-border-semantic-success-subtle); --coar-banner-fg: var(--coar-border-semantic-success-bold); }
+.app-banner--neutral { --coar-banner-bg: var(--coar-background-neutral-secondary);       --coar-banner-border: var(--coar-border-neutral-secondary);       --coar-banner-fg: var(--coar-text-neutral-primary); }
 
 .app-banner__icon {
   flex: none;
-  color: var(--coar-banner-border);
+  color: var(--coar-banner-fg);
 }
 
 /* Wraps rather than truncates: a statement about the whole surface must stay
