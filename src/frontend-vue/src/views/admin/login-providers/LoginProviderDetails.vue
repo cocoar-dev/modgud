@@ -490,7 +490,7 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
     <template #banner>
       <AppBanner v-if="isBuiltIn" variant="info"
         :label="t('admin.loginProviders.builtIn.bannerLabel', {}, 'Built-in')">
-        {{ t('admin.loginProviders.builtIn.banner', {}, 'This is the built-in internal login provider — its configuration is managed by the system and can\'t be changed here.') }}
+        {{ t('admin.loginProviders.builtIn.banner', {}, 'Cannot be changed.') }}
       </AppBanner>
     </template>
 

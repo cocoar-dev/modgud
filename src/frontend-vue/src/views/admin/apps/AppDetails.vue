@@ -353,7 +353,7 @@ async function save() {
       </AppBanner>
       <AppBanner v-else-if="isSystem" variant="warning"
         :label="t('admin.apps.systemBannerLabel', {}, 'System app')">
-        {{ t('admin.apps.systemHint', {}, 'Slug, display name and permission catalog are hardcoded in the backend — the catalog here is read-only and for inspection only. Changing the strings would break the RequiresPermission calls in the backend.') }}
+        {{ t('admin.apps.systemHint', {}, 'Cannot be changed.') }}
       </AppBanner>
     </template>
 

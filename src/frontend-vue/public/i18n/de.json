@@ -1274,7 +1274,7 @@
       "builtIn": {
         "badge": "System",
         "bannerLabel": "Eingebaut",
-        "banner": "Der interne Login-Provider wird vom System verwaltet und kann hier nicht geändert werden."
+        "banner": "Nicht veränderbar."
       },
       "errors": {
         "typeNotSupported": "Login-Provider-Typ {type} wird derzeit nicht unterstützt.",
@@ -1325,7 +1325,7 @@
       "slug": "Slug (unveränderbar)",
       "slugPlaceholder": "kebab-case-slug",
       "systemBannerLabel": "System-App",
-      "systemHint": "Slug, Display Name und Permission-Catalog sind im Backend fest hinterlegt — der Catalog hier ist schreibgeschützt und dient nur zur Einsicht. Änderungen an den Strings würden die RequiresPermission-Aufrufe im Backend brechen.",
+      "systemHint": "Nicht veränderbar.",
       "tabs": {
         "catalog": "Permission-Catalog",
         "general": "Allgemein",
