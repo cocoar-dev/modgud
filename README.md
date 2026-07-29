@@ -55,6 +55,7 @@ emission, full 2FA spectrum, GDPR self-service.
 |---|---|
 | [📘 Get Started](./docs/getting-started/) | What this is, requirements, first-time setup |
 | [⚡ Quickstart (Docker)](./docs/getting-started/quickstart.md) | From `docker compose up` to first login in 10 minutes |
+| [🧑‍💻 Developing locally](./docs/contribute/developing-locally.md) | Running from source: dev loop, `*.localhost` realms, recovery CLI, tests |
 | [🧠 Concepts](./docs/concepts/) | Realms, apps, permissions, OAuth, tokens — the mental model |
 | [🛠️ Operate](./docs/operate/) | Deployment, observability, recovery CLI, feature flags |
 | [👤 Administer](./docs/admin/) | Users, groups, roles, OAuth clients, login providers |
@@ -90,9 +91,16 @@ pnpm install
 pnpm dev
 ```
 
-First-time admin bootstrap via the recovery CLI — see
-[First-time setup](./docs/getting-started/first-time-setup.md) for
-the walkthrough.
+That is the short version. [Developing locally](./docs/contribute/developing-locally.md)
+is the full one and the page that is kept in sync with the code: the
+Postgres container, what the first boot actually does, reaching tenant
+realms at `*.localhost`, the recovery CLI, demo seed data, tests and
+Playwright.
+
+For the first admin you need the recovery CLI — that guide covers it, and
+[First-time setup](./docs/getting-started/first-time-setup.md) has the
+decision tree for the other bootstrap routes (invite mode, provisioning
+further realms).
 
 ## Contributing
 
