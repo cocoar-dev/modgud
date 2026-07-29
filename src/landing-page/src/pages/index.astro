@@ -27,7 +27,7 @@ const accessMethods = [
   },
   {
     name: 'Enterprise SSO',
-    note: 'Connect Microsoft Entra ID and standards-compatible OIDC or SAML identity providers.',
+    note: 'Federate with Microsoft Entra ID and standards-compatible OIDC or SP-initiated SAML.',
     icon: 'building',
   },
 ];
@@ -36,12 +36,12 @@ const operations = [
   {
     eyebrow: 'See',
     title: 'Live operations',
-    text: 'OpenTelemetry metrics and traces, security events and a live activity feed keep the control plane observable.',
+    text: 'OpenTelemetry metrics and traces, a structured security event feed and live activity keep the control plane observable.',
   },
   {
     eyebrow: 'Control',
     title: 'Active sessions',
-    text: 'Device-aware session tracking gives users and admins a clear view of where an account is signed in.',
+    text: 'Device-aware sessions show where an account is active, mark the current browser and let users or admins revoke another session.',
   },
   {
     eyebrow: 'Recover',
@@ -51,14 +51,14 @@ const operations = [
   {
     eyebrow: 'Respect',
     title: 'GDPR workflows',
-    text: 'Self-service export and irreversible PII erasure preserve the audit chain without preserving the person.',
+    text: 'Self-service export and irreversible profile erasure retain de-identified audit history; pseudonymous security events expire with the realm’s retention policy.',
   },
 ];
 ---
 
 <BaseLayout
   title="Modgud — identity boundaries for multi-tenant applications"
-  description="Self-hosted OAuth 2.0 and OpenID Connect for multi-tenant applications. Database-per-realm isolation, app-aware RBAC, passkeys, federation and an ASP.NET Core client."
+  description="Self-hosted OAuth 2.0 and OpenID Connect for multi-tenant applications. Database-per-realm isolation, app-aware RBAC, passkeys, federation and an ASP.NET Core resource-server integration."
 >
   <a class="skip-link" href="#content">Skip to content</a>
 
@@ -94,17 +94,18 @@ const operations = [
           <h1>“Who are you,<br /> <em>and what brings you here?”</em></h1>
           <p class="hero-thesis">Identity, isolated by realm. Access, shaped for every app.</p>
           <p class="hero-lede">
-            Modgud is a self-hosted OAuth 2.0 and OpenID Connect server for multi-tenant applications — with physical tenant isolation, app-aware permissions and every modern way in.
+            Modgud is a self-hosted OAuth 2.0 and OpenID Connect server for multi-tenant applications — with physical realm isolation, app-aware permissions, passkeys, passwordless authentication and enterprise federation.
           </p>
           <div class="hero-actions">
             <a class="button button-primary" href={quickstartUrl}>
-              Start in 10 minutes
+              Open the quickstart
               <svg aria-hidden="true" viewBox="0 0 20 20" width="18" height="18">
                 <path d="m7 4 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </a>
             <a class="button button-secondary" href={githubUrl}>Explore the source</a>
           </div>
+          <p class="hero-quickstart">From Docker Compose to your first successful OIDC login in about 10 minutes.</p>
           <p class="hero-status">
             <span>Pre-1.0</span>
             Active development · Apache 2.0
@@ -314,7 +315,7 @@ const operations = [
           <p class="section-kicker">App-aware authorization</p>
           <h2>Permissions arrive where they belong.</h2>
           <p>
-            Apps own resource catalogs. Application roles bind to one app; <code>realm:admin</code> is the explicit realm-local exception. When the matching audience and claim scopes are present, tokens can carry a familiar <code>resource_access[&lt;audience&gt;]</code> block narrowed to that API — not a bag of global claims every service has to interpret.
+            Apps own their permission catalogs, and application roles belong to one app. When audience and claim scopes match, tokens can carry a familiar <code>resource_access[&lt;audience&gt;]</code> block narrowed to that API. <code>realm:admin</code> is the explicit realm-local exception.
           </p>
           <ul class="check-list">
             <li>
@@ -390,7 +391,7 @@ const operations = [
           <p class="section-kicker">The .NET path is short</p>
           <h2>Your API already speaks the language.</h2>
           <p>
-            Modgud uses standard JWT bearer validation and ships a small ASP.NET Core client that selects the current audience, projects roles and permissions, and adds a readable endpoint gate.
+            Modgud ships one ASP.NET Core resource-server integration for JWTs, reference tokens or both. It validates the chosen token mode, projects audience-scoped roles and permissions, and adds readable endpoint gates.
           </p>
           <a class="text-link" href={`${docsUrl}integrate/resource-server.html`}>
             Read the resource server guide
@@ -404,7 +405,7 @@ const operations = [
             <span>Program.cs</span>
             <small>ASP.NET Core</small>
           </div>
-          <pre aria-label="ASP.NET Core integration example"><code><span class="code-muted">// One method: OnlyJwt (default), OnlyReferenceToken, or Both.</span>
+          <pre aria-label="ASP.NET Core integration example"><code><span class="code-muted">// JWT validation is the default; reference tokens are opt-in.</span>
 builder.Services.<span class="code-function">AddModgudResourceServer</span>(options =>
 &#123;
     options.Authority = <span class="code-string">"https://id.acme.example"</span>;
@@ -415,7 +416,7 @@ app.MapPost(<span class="code-string">"/orders"</span>, CreateOrder)
    .<span class="code-function">RequireModgudPermission</span>(
        <span class="code-string">"orders:write"</span>);</code></pre>
           <div class="code-result">
-            <span><i></i> JWT or reference token</span>
+            <span><i></i> JWT default · reference tokens optional</span>
             <span>401 anonymous · 403 forbidden</span>
           </div>
         </div>
