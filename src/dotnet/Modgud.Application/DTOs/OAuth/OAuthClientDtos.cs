@@ -1,4 +1,5 @@
 using Modgud.Domain.OAuth.Common;
+using Modgud.Application.DTOs.ServiceAccount;
 
 namespace Modgud.Application.DTOs.OAuth;
 
@@ -180,6 +181,14 @@ public record CreateOAuthClientDto
     /// is present — endpoint-level validation enforces the split.
     /// </summary>
     public string? LinkedServiceAccountId { get; init; }
+
+    /// <summary>
+    /// Optional ServiceAccount to create atomically with this OAuth client.
+    /// Mutually exclusive with <see cref="LinkedServiceAccountId"/>. This keeps
+    /// first-time M2M setup in one save without leaving an orphaned principal
+    /// when client validation or persistence fails.
+    /// </summary>
+    public ServiceAccountCreateDto? NewServiceAccount { get; init; }
 }
 
 public record UpdateOAuthClientDto
@@ -260,4 +269,5 @@ public record OAuthClientCreatedDto
 {
     public required OAuthClientDto Client { get; init; }
     public string? ClientSecret { get; init; }
+    public ServiceAccountDto? CreatedServiceAccount { get; init; }
 }

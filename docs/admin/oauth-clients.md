@@ -32,7 +32,11 @@ Use the [SaaS App Integration Walkthrough](../integrate/saas-walkthrough) for th
 
 Administration → **OAuth → Clients** → **Create**.
 
-The create modal exposes the full configuration up front — identity on the left, and tabs for **Grants**, **Scopes**, **Redirect URIs** and **Apps** on the right. (These used to be edit-only, so a freshly created client was born non-functional.) Set them at create time and the client is usable immediately.
+The create modal exposes the full configuration up front in one expert editor:
+**General**, **Login & Consent**, **Apps**, **Flows**, **Scopes**,
+**Redirects & CORS**, **Tokens & Sessions**, and **Security**. Every tab edits
+the same draft and the footer action persists the complete client in one
+request. Nothing has to be created first and completed in a second pass.
 
 ::: tip authorization_code clients: two create-time requirements
 For an `authorization_code` client the Create button stays disabled until you have both: at least one **Redirect URI** (URLs tab) and the **`authorization_code`** grant (Grants tab). This stops you from silently producing a client that can't complete a login.
@@ -53,8 +57,13 @@ There are exactly two client types — `public` and `confidential`:
 | **Confidential** | Server-side web apps (ASP.NET, Node, Rails) — can store secrets | Yes |
 | **Public** | SPAs and mobile apps — can't safely store secrets | No, PKCE only |
 
-::: tip Machine-to-machine? Use a Service Account
-There is no separate "service" client type. For server-to-server flows with no user involved, create a [Service Account](./service-accounts) — it owns a confidential client wired to the `client_credentials` grant. The standard create-client form deliberately can't produce a client-credentials client on its own (see the grant-type rules below).
+::: tip Machine-to-machine? Link a Service Account
+There is no separate "service" client type. For server-to-server flows with no
+user involved, use a [Service Account](./service-accounts). Selecting
+`client_credentials` in the **Flows** tab reveals the required Service Account
+field. You can select an existing account or create a new one directly in the
+client editor. The optional new Service Account, client, grant and ownership
+link are then persisted atomically by the single Create action.
 :::
 
 ### Consent type
@@ -133,10 +142,12 @@ Pick the grants the client actually needs (multi-select). There are **no silent 
 ::: warning No hybrid user-flow + client-credentials clients
 A client is **either** a user-flow client (`authorization_code` / `refresh_token` / `device_code` / …) **or** a machine-to-machine client (`client_credentials`) — never both. The split is structural, enforced at the create/update endpoint:
 
-- `client_credentials` requires the client to be linked to a [Service Account](./service-accounts); the standard create-client form has no such link field, so it rejects a bare `client_credentials` selection.
+- `client_credentials` requires the client to be linked to a [Service Account](./service-accounts); the **Flows** tab lets you select an existing account or create one inline before the first save and blocks Create while the link is missing.
 - A Service-Account-linked client may carry **only** `client_credentials` — adding any user-flow grant alongside it is rejected.
 
-To get machine-to-machine tokens, create a Service Account; it provisions the confidential client + `client_credentials` grant for you.
+The reverse workflow remains available too: issuing a credential from a Service
+Account provisions its confidential client and `client_credentials` grant
+through the same client-creation validation path.
 :::
 
 ### Lifetimes

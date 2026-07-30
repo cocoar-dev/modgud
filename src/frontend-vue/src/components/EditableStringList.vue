@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
+import { nextTick, ref, watch } from 'vue'
+import { CoarDataGrid, CoarDataGridPanel, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { CoarButton } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 
 /**
- * Inline-editable list of plain strings — one per row.
+ * Editable list of plain strings — one per row. Supports the standard data
+ * grid and a compact grid whose toolbar acts as the list header.
  *
  * <para>Drop-in replacement for the textarea-newline-list idiom used
  * across the admin views (redirect URIs, allowed CORS origins, scopes,
@@ -15,9 +16,9 @@ import { useI18n } from '@cocoar/vue-localization'
  *
  * <para>Empty rows are filtered out of the emitted <c>modelValue</c> so
  * a freshly-added-not-yet-typed row doesn't reach the backend. The
- * empty row stays in the internal grid state until the user fills it
- * or removes it — the diff-check on external updates keeps the watch
- * loop from clobbering the cell mid-edit.</para>
+ * empty row stays in internal state until the user fills it or removes it —
+ * the diff-check on external updates keeps the watch loop from clobbering an
+ * in-progress edit.</para>
  */
 interface Row {
   id: string
@@ -27,15 +28,21 @@ interface Row {
 const props = withDefaults(defineProps<{
   modelValue: string[]
   placeholder?: string
+  searchPlaceholder?: string
+  /** Label rendered on the left of the compact-grid toolbar. */
+  headerLabel?: string
   addLabel?: string
   /** Disable the whole control (no edit, no add, no remove). */
   disabled?: boolean
   /** Read-only: show data, hide affordances. Equivalent to disabled for now. */
   readonly?: boolean
   minHeight?: string
+  /** Compact grid hides the technical column header and empty-row overlay. */
+  appearance?: 'grid' | 'compact-grid' | 'panel-grid'
 }>(), {
   modelValue: () => [],
   minHeight: '12rem',
+  appearance: 'grid',
 })
 
 const emit = defineEmits<{
@@ -47,7 +54,11 @@ const { t } = useI18n()
 let counter = 0
 const newId = () => `row-${Date.now()}-${counter++}`
 
-const rows = ref<Row[]>(props.modelValue.map((v) => ({ id: newId(), value: v })))
+function rowsFrom(values: string[]): Row[] {
+  return values.map((value) => ({ id: newId(), value }))
+}
+
+const rows = ref<Row[]>(rowsFrom(props.modelValue))
 
 function filteredEmit(): string[] {
   return rows.value.map((r) => r.value.trim()).filter((v) => v.length > 0)
@@ -66,15 +77,23 @@ watch(
   (next) => {
     const emitted = filteredEmit()
     if (JSON.stringify(next) === JSON.stringify(emitted)) return
-    rows.value = next.map((v) => ({ id: newId(), value: v }))
+    rows.value = rowsFrom(next)
   },
   { deep: true },
 )
 
 function addRow() {
-  rows.value = [...rows.value, { id: newId(), value: '' }]
-  // No emit — empty row doesn't count yet. Once user types and commits,
-  // onCellValueChanged → emitChange picks it up.
+  const row = { id: newId(), value: '' }
+  rows.value = [...rows.value, row]
+  // No emit — an empty row does not count yet. Start editing immediately in
+  // the compact form-grid so Add behaves like inserting a new input row.
+  if (props.appearance !== 'grid') {
+    nextTick(() => {
+      const rowIndex = rows.value.findIndex((candidate) => candidate.id === row.id)
+      builder.api?.ensureIndexVisible(rowIndex)
+      builder.api?.startEditingCell({ rowIndex, colKey: 'value' })
+    })
+  }
 }
 
 function removeRow(id: string) {
@@ -89,9 +108,20 @@ const builder = CoarGridBuilder.create<Row>()
   // height and pre-loaded rows render into the DOM but are clipped to nothing
   // (e.g. a realm's existing domains showed in the list grid but not in the
   // edit modal). autoHeight makes the grid grow with its content instead.
-  .option('domLayout', 'autoHeight')
+  // The compact form variant keeps a stable viewport and scrolls its rows.
+  // Other usages retain the existing grow-to-content behaviour.
+  .option('domLayout', props.appearance === 'grid' ? 'autoHeight' : 'normal')
   .option('getRowId', (p: any) => p.data.id)
   .stopEditingWhenCellsLoseFocus(true)
+
+if (props.appearance !== 'grid') {
+  builder
+    .option('headerHeight', 0)
+    .option('suppressNoRowsOverlay', true)
+    .option('singleClickEdit', true)
+}
+
+builder
   .columns([
     (col) =>
       col
@@ -111,19 +141,58 @@ const builder = CoarGridBuilder.create<Row>()
         }),
   ])
   .onCellValueChanged(() => emitChange())
+
+const search = ref('')
 </script>
 
 <template>
-  <div class="editable-string-list" :style="{ minHeight }">
-    <CoarDataGrid :builder="builder" bordered>
-      <template #toolbar-left>
+  <div
+    class="editable-string-list"
+    :class="{ 'editable-string-list--compact-grid': appearance !== 'grid' }"
+    :style="appearance !== 'grid'
+      ? { height: minHeight, maxHeight: minHeight }
+      : { minHeight }">
+    <CoarDataGridPanel
+      v-if="appearance === 'panel-grid'"
+      v-model:search="search"
+      :builder="builder"
+      :search-placeholder="searchPlaceholder ?? t('common.search', {}, 'Search…')"
+      bordered>
+      <template #actions>
         <CoarButton
           v-if="!(disabled || readonly)"
           size="s"
           icon-start="plus"
           variant="ghost"
+          @click="addRow">
+          {{ addLabel ?? t('common.add', {}, 'Add') }}
+        </CoarButton>
+      </template>
+    </CoarDataGridPanel>
+
+    <CoarDataGrid v-else :builder="builder" bordered>
+      <template #toolbar-left>
+        <span v-if="appearance === 'compact-grid'" class="compact-grid-title">
+          {{ headerLabel }}
+        </span>
+        <CoarButton
+          v-else-if="!(disabled || readonly)"
+          size="s"
+          icon-start="plus"
+          variant="ghost"
           @click="addRow"
         >
+          {{ addLabel ?? t('common.add', {}, 'Add') }}
+        </CoarButton>
+      </template>
+
+      <template v-if="appearance === 'compact-grid'" #toolbar-right>
+        <CoarButton
+          v-if="!(disabled || readonly)"
+          size="s"
+          icon-start="plus"
+          variant="ghost"
+          @click="addRow">
           {{ addLabel ?? t('common.add', {}, 'Add') }}
         </CoarButton>
       </template>
@@ -136,5 +205,24 @@ const builder = CoarGridBuilder.create<Row>()
   display: flex;
   flex-direction: column;
   min-height: 12rem;
+}
+
+.editable-string-list--compact-grid {
+  min-height: 0;
+}
+
+.editable-string-list--compact-grid :deep(.ag-theme-cocoar--bordered > .coar-grid-toolbar) {
+  min-height: 2.75rem;
+  margin: 0;
+  padding: 0.35rem 0.6rem;
+}
+
+.compact-grid-title {
+  overflow: hidden;
+  color: var(--coar-text-neutral-primary, #1f2937);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

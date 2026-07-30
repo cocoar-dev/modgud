@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { NavigationGuard, RouteLocationGeneric } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
-import { MODAL_MD, MODAL_LG, MODAL_FULL } from './modal-sizes'
+import { MODAL_MD, MODAL_LG } from './modal-sizes'
 
 /**
  * Per-route gate for routes that depend on the page-builder feature
@@ -104,13 +104,15 @@ const GROUP_MODAL_SIZE = {
   height: '80vh', minHeight: '80vh', maxHeight: '80vh',
 } as const
 
-// The 6-tab client builder (persistent identity column + two-column
-// DualListboxes) genuinely earns the full frame. The app modal does not:
-// even for user apps a settings form + a 3-column permission catalog fit a
-// tall LG frame, and 112rem/90vh only left system apps (read-only, a few
-// fields) marooned in empty space. LG keeps the grid its definite height.
+// The client editor keeps the complete draft accessible before one atomic
+// save, but no longer carries a permanently visible identity column. A
+// deliberate 72rem frame gives its dual-listboxes room without turning every
+// short form tab into a near-full-screen workspace.
 const APP_MODAL_SIZE = MODAL_LG
-const CLIENT_MODAL_SIZE = MODAL_FULL
+const CLIENT_MODAL_SIZE = {
+  width: '72rem', maxWidth: '88vw',
+  height: '78vh', minHeight: '78vh', maxHeight: '78vh',
+} as const
 
 const routes = [
     {

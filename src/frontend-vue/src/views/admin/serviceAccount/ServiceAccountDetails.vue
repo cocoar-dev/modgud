@@ -21,6 +21,7 @@ import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import type { OAuthClientDto } from '@/models/oauth'
 import type { ClientSecretDto } from '@/models/oauth'
+import type { ServiceAccountCreateDto } from '@/models/serviceAccount'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -29,6 +30,12 @@ const modalOverlay = useModalOverlay()
 const props = defineProps<{
   id: string
   close: (result?: unknown) => void
+  /**
+   * Reuse the normal create dialog as an embedded draft editor. In this mode
+   * Save returns the validated DTO to the parent without calling the API.
+   */
+  draftOnly?: boolean
+  initial?: ServiceAccountCreateDto
 }>()
 
 const store = useServiceAccountStore()
@@ -39,12 +46,25 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 
 const form = ref({
-  AccountName: '',
-  Purpose: '',
+  AccountName: props.initial?.AccountName ?? '',
+  Purpose: props.initial?.Purpose ?? '',
   IsActive: true,
 })
 const originalAccountName = ref('')
 const originalIsActive = ref(true)
+const accountNamePattern = /^[a-z0-9][a-z0-9._-]{1,63}$/
+
+const accountNameError = computed(() => {
+  const value = form.value.AccountName.trim()
+  if (!value || !isCreate.value) return ''
+  if (!accountNamePattern.test(value))
+    return t(
+      'admin.serviceAccounts.accountNameInvalid',
+      {},
+      '2–64 Zeichen; nur Kleinbuchstaben, Ziffern, Punkt, Bindestrich und Unterstrich.',
+    )
+  return ''
+})
 
 // Credentials section state. Credentials is the list of OAuth clients
 // linked to this SA via LinkedServiceAccountId. Loaded on mount + after
@@ -64,8 +84,12 @@ const modalTitle = computed(() => {
 
 const footerButton = computed(() => ({
   visible: true,
-  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
-  disabled: !form.value.AccountName.trim() || loading.value,
+  text: props.draftOnly
+    ? t('admin.oauthClients.newServiceAccount.apply', {}, 'Übernehmen')
+    : isCreate.value
+      ? t('common.create', {}, 'Create')
+      : t('common.save', {}, 'Save'),
+  disabled: !form.value.AccountName.trim() || !!accountNameError.value || loading.value,
   onClick: save,
 }))
 
@@ -112,15 +136,20 @@ async function loadCredentials() {
 }
 
 async function save() {
-  if (!form.value.AccountName.trim()) return
+  if (!form.value.AccountName.trim() || accountNameError.value) return
   loading.value = true
   error.value = null
   try {
     if (isCreate.value) {
-      await store.createEntity({
+      const createDto: ServiceAccountCreateDto = {
         AccountName: form.value.AccountName.trim(),
         Purpose: form.value.Purpose.trim() || undefined,
-      })
+      }
+      if (props.draftOnly) {
+        props.close(createDto)
+        return
+      }
+      await store.createEntity(createDto)
     } else {
       // Send only fields that actually changed. Treat empty string in Purpose
       // as explicit clear (server normalises blank to null).
@@ -207,12 +236,13 @@ function extractScopes(cred: OAuthClientDto): string[] {
         <section class="form-section">
           <h3 class="form-section-heading">{{ t('admin.serviceAccounts.section.basics', {}, 'Basics') }}</h3>
           <div class="modal-form-grid">
-            <CoarFormField class="col-half" :label="t('admin.serviceAccounts.accountName', {}, 'Account name')" required
+            <CoarFormField class="col-full" :label="t('admin.serviceAccounts.accountName', {}, 'Account name')" required
+              :error="accountNameError"
               :hint="t('admin.serviceAccounts.accountNameHint', {}, 'Lowercase letters, digits, dots, hyphens or underscores. Becomes the audit-log handle for this account.')">
               <CoarTextInput v-model="form.AccountName" clearable :disabled="!isCreate"
                 :placeholder="t('admin.serviceAccounts.accountNamePlaceholder', {}, 'ci.build-agent, integrations.acme, …')" />
             </CoarFormField>
-            <CoarFormField class="col-half" :label="t('admin.serviceAccounts.purpose', {}, 'Purpose')"
+            <CoarFormField class="col-full" :label="t('admin.serviceAccounts.purpose', {}, 'Purpose')"
               :hint="t('admin.serviceAccounts.purposeHint', {}, 'Free text describing what this service account is used for. Optional.')">
               <CoarTextInput v-model="form.Purpose" clearable
                 :placeholder="t('admin.serviceAccounts.purposePlaceholder', {}, 'CI deployment, nightly sync, …')" />

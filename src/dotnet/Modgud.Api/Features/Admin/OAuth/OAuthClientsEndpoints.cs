@@ -3,7 +3,9 @@ using Marten;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Services;
 using Modgud.Authentication.ExtensionMethods;
+using Modgud.Authorization.Apps;
 using Modgud.Authorization.AspNetCore;
+using Modgud.Authorization.Services;
 
 namespace Modgud.Api.Features.Admin.OAuth;
 
@@ -38,12 +40,24 @@ public static class OAuthClientsEndpoints
         .WithName("OAuth_Clients_Get")
         .RequiresPermission("oauth-client:read");
 
-        group.MapPost("", async (CreateOAuthClientDto dto, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
+        group.MapPost("", async (CreateOAuthClientDto dto, HttpContext http, IPermissionService permissions, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
         {
+            if (dto.NewServiceAccount is not null)
+            {
+                var userId = http.GetUserId();
+                if (userId is null || !await permissions.HasPermissionAsync(
+                        userId.Value, AppSlugs.Modgud, "service-account:write", ct))
+                    return Results.Forbid();
+            }
+
             var result = await svc.CreateClientAsync(dto, ct);
             // Broadcast only the client view (never the one-time secret in the wrapper).
             if (!result.IsError)
+            {
                 dispatcher.DispatchCreatedEvent("OAuthClient", result.Value.Client, session.TenantId);
+                if (result.Value.CreatedServiceAccount is { } serviceAccount)
+                    dispatcher.DispatchCreatedEvent("ServiceAccount", serviceAccount, session.TenantId);
+            }
             return result.ToResult(created => Results.Created($"{path}/admin/oauth/clients/{created.Client.Id}", created));
         })
         .WithName("OAuth_Clients_Create")

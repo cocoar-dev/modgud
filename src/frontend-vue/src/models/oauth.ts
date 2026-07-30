@@ -2,6 +2,8 @@
 // src/dotnet-next/Modgud.Application/DTOs/OAuth/.
 // Backend serializes with PropertyNamingPolicy=null, so PascalCase is required.
 
+import type { ServiceAccountCreateDto, ServiceAccountDto } from './serviceAccount'
+
 export interface OAuthClientClaimDto {
   Type: string
   Value: string
@@ -103,8 +105,11 @@ export interface CreateOAuthClientDto {
   Scopes?: string[]
   AccessTokenType?: AccessTokenType
   Enabled?: boolean
+  AllowAccessTokensViaBrowser?: boolean
   RequireClientSecret?: boolean
+  EnableLocalLogin?: boolean
   RequireConsent?: boolean
+  AllowRememberConsent?: boolean
   AllowedGrantTypes?: string[]
   AllowedCorsOrigins?: string[]
   IdentityTokenLifetime?: number | null
@@ -126,6 +131,16 @@ export interface CreateOAuthClientDto {
    * entries = Keycloak-style multi-app client.
    */
   AppIds?: string[]
+  /**
+   * Existing Service Account that owns a pure client_credentials client.
+   * Required for M2M clients and intentionally immutable after creation.
+   */
+  LinkedServiceAccountId?: string | null
+  /**
+   * Service Account created atomically with this OAuth client. Mutually
+   * exclusive with LinkedServiceAccountId.
+   */
+  NewServiceAccount?: ServiceAccountCreateDto | null
 }
 
 export interface UpdateOAuthClientDto {
@@ -184,6 +199,7 @@ export interface OAuthClientListDto {
 export interface OAuthClientCreatedDto {
   Client: OAuthClientDto
   ClientSecret?: string | null
+  CreatedServiceAccount?: ServiceAccountDto | null
 }
 
 export interface ClientSecretDto {

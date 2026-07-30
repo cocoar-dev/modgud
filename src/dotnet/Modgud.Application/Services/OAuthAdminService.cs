@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using BuildingBlocks.Helper;
 using Modgud.Application.Dcr;
 using Modgud.Application.DTOs.OAuth;
@@ -28,6 +29,9 @@ namespace Modgud.Application.Services;
 /// </summary>
 public class OAuthAdminService
 {
+    private static readonly Regex ServiceAccountNamePattern =
+        new("^[a-z0-9][a-z0-9._-]{1,63}$", RegexOptions.Compiled);
+
     private readonly IDocumentSession _session;
 
     public OAuthAdminService(IDocumentSession session)
@@ -129,16 +133,51 @@ public class OAuthAdminService
             }
         }
 
-        // ServiceAccount-link validation. The endpoint accepts a raw
-        // LinkedServiceAccountId on the create DTO so M2M setup is a single
-        // round-trip; downstream mutations of the link (rotate, unlink, etc.)
-        // go through the SA-scoped credentials endpoints instead. Parse, then
-        // confirm the SA exists, then enforce the SA-link invariant
-        // (R1/R2/R3) against the combination of grants + link the admin
-        // submitted. DCR clients never come with a link — the DCR pipeline
-        // doesn't surface it.
+        // ServiceAccount-link validation. Admin-created M2M clients may either
+        // reference an existing SA or create one inline. Inline creation is
+        // stored in this same Marten session and committed together with the
+        // OAuth event stream, so a later validation/persistence failure cannot
+        // leave an orphaned principal behind. DCR never supplies either shape.
         Guid? linkedServiceAccountId = null;
-        if (!string.IsNullOrWhiteSpace(dto.LinkedServiceAccountId))
+        ServiceAccountDto? createdServiceAccount = null;
+        if (!string.IsNullOrWhiteSpace(dto.LinkedServiceAccountId) && dto.NewServiceAccount is not null)
+            return OAuthErrors.ServiceAccountLinkModesAreMutuallyExclusive;
+
+        if (dto.NewServiceAccount is not null)
+        {
+            var accountName = (dto.NewServiceAccount.AccountName ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+            if (!ServiceAccountNamePattern.IsMatch(accountName))
+                return OAuthErrors.InvalidNewServiceAccountName;
+
+            var personTaken = await _session.Query<Person>()
+                .AnyAsync(p => !p.IsDeleted && p.AccountName == accountName, ct);
+            var serviceAccountTaken = await _session.Query<ServiceAccount>()
+                .AnyAsync(sa => !sa.IsDeleted && sa.AccountName == accountName, ct);
+            if (personTaken || serviceAccountTaken)
+                return OAuthErrors.ServiceAccountNameAlreadyExists(accountName);
+
+            var serviceAccount = new ServiceAccount
+            {
+                Id = Guid.NewGuid(),
+                AccountName = accountName,
+                Purpose = string.IsNullOrWhiteSpace(dto.NewServiceAccount.Purpose)
+                    ? null
+                    : dto.NewServiceAccount.Purpose.Trim(),
+                IsActive = true,
+            };
+            _session.Store(serviceAccount);
+            linkedServiceAccountId = serviceAccount.Id;
+            createdServiceAccount = new ServiceAccountDto
+            {
+                Id = new ShortGuid(serviceAccount.Id).ToString(),
+                AccountName = serviceAccount.AccountName,
+                Purpose = serviceAccount.Purpose,
+                IsActive = true,
+            };
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.LinkedServiceAccountId))
         {
             if (!ShortGuid.TryParse(dto.LinkedServiceAccountId, out Guid parsedSa))
                 return OAuthErrors.InvalidServiceAccountId(dto.LinkedServiceAccountId);
@@ -283,6 +322,7 @@ public class OAuthAdminService
         {
             Client = MapClient(state!),
             ClientSecret = clientSecret,
+            CreatedServiceAccount = createdServiceAccount,
         };
     }
 
