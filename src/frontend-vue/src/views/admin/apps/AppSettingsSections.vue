@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
+  CoarNotice,
   CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect,
   CoarTabGroup, CoarTab, CoarMultiSelect,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
-import Notice from '@/components/Notice.vue'
 import EditableStringList from '@/components/EditableStringList.vue'
 import { useGroupStore } from '@/stores/group.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
@@ -363,9 +363,9 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
 <template>
   <div class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-    <Notice variant="info">
+    <CoarNotice variant="info">
       {{ t('admin.appSettings.hint', {}, 'These settings override the realm defaults only for this app. A disabled section inherits from the realm.') }}
-    </Notice>
+    </CoarNotice>
 
     <CoarTabGroup v-model="activeTab" class="tab-bar">
       <CoarTab id="origin">{{ t('admin.appSettings.tabs.origin', {}, 'Origin & Branding') }}</CoarTab>
@@ -449,12 +449,12 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
     <!-- Native app / OAuth client sessions -->
     <div v-show="activeTab === 'sessions'" class="tab-content">
-      <Notice truncate variant="info">
+      <CoarNotice truncate variant="info">
         {{ t('admin.appSettings.sessions.hintShort', {}, 'Override the realm default for this app\'s refresh-token sessions.') }}
         <template #details>
           {{ t('admin.appSettings.sessions.hint', {}, 'Override the realm default for refresh-token-backed sessions in this app. Individual OAuth clients can override this again. Access-token lifetime is configured separately and remains short.') }}
         </template>
-      </Notice>
+      </CoarNotice>
       <CoarCheckbox
         v-model="f.clientSessions.override"
         :label="t('admin.appSettings.sessions.override', {}, 'Custom client-session policy')" />
@@ -521,17 +521,17 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
     <!-- PageBuilder schemas live behind dedicated endpoints so regular settings
          saves cannot accidentally overwrite a large page tree. -->
     <div v-if="appConfig.config.Features.PageBuilder" v-show="activeTab === 'pages'" class="tab-content">
-      <Notice v-if="!applicationId" variant="info">
+      <CoarNotice v-if="!applicationId" variant="info">
         {{ t('admin.appSettings.pages.saveFirst', {}, 'Save the application first, then you can give its authentication pages their own layout.') }}
-      </Notice>
+      </CoarNotice>
       <template v-else>
-        <Notice truncate variant="info">
+        <CoarNotice truncate variant="info">
           {{ t('admin.appSettings.pages.hintV3Short', {}, 'Pick which page variant this app uses per slot; inherit follows the realm.') }}
           <template #details>
             {{ t('admin.appSettings.pages.hintV3', {}, 'Pick which authentication page this application uses. Inherit follows the realm; variants are authored in Platform → Pages.') }}
           </template>
-        </Notice>
-        <Notice v-if="pagesError" variant="error">{{ pagesError }}</Notice>
+        </CoarNotice>
+        <CoarNotice v-if="pagesError" variant="error">{{ pagesError }}</CoarNotice>
 
         <CoarFormField v-for="m in PAGE_SLOT_META" :key="m.slug" :label="m.label">
           <CoarSelect

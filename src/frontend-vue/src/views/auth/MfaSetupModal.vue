@@ -4,10 +4,10 @@ import { useHttpClient } from '@/composables/useHttpClient'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import {
+  CoarNotice,
   CoarOtpInput,
   CoarFormField,
 } from '@cocoar/vue-ui'
-import Notice from '@/components/Notice.vue'
 
 const { t } = useI18n()
 
@@ -106,7 +106,7 @@ async function verifyCode() {
             />
           </CoarFormField>
 
-          <Notice v-if="error" variant="error">{{ error }}</Notice>
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
         </div>
       </template>
     </div>

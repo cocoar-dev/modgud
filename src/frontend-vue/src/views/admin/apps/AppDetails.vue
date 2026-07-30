@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTextInput, CoarFormField, CoarButton, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
+import { CoarNotice, CoarTextInput, CoarFormField, CoarButton, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
-import Notice from '@/components/Notice.vue'
 import AppSettingsSections from './AppSettingsSections.vue'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, APP_CLONE } from '@/composables/useClone'
@@ -346,20 +345,20 @@ async function save() {
       what the surface is still good for.
     -->
     <template #banner>
-      <Notice placement="banner" v-if="isCreate" variant="info"
+      <CoarNotice placement="banner" v-if="isCreate" variant="info"
         :label="t('admin.apps.createBannerLabel', {}, 'New app')">
         {{ t('admin.apps.createHint', {}, 'A new app registers itself for permission resolution. The slug is immutable after creation.') }}
-      </Notice>
+      </CoarNotice>
       <!-- System-managed entities all say this the same way, through the same
            two strings — see LoginProviderDetails. Deliberately `info`, not
            `warning`: read-only is a fact, not a hazard. Nothing can go wrong
            here (fields are disabled, the backend rejects anyway), and warning
            colours only keep their force if they stay reserved for things that
            can actually bite. -->
-      <Notice placement="banner" v-else-if="isSystem" variant="info"
+      <CoarNotice placement="banner" v-else-if="isSystem" variant="info"
         :label="t('common.systemManagedLabel', {}, 'System')">
         {{ t('common.systemManaged', {}, 'Cannot be changed.') }}
-      </Notice>
+      </CoarNotice>
     </template>
 
     <div v-if="loading && !dto && !isCreate" class="flex flex-1 items-center justify-center p-8">
@@ -397,12 +396,12 @@ async function save() {
             : t('admin.apps.permissionsHint', {}, 'Resource and action each need 1+ lowercase letters/digits/hyphens. Ids stay stable across renames — role grants and RS subsets follow automatically.') }}
         </p>
 
-        <Notice truncate v-if="renamedCount > 0 && !isSystem" variant="warning">
+        <CoarNotice truncate v-if="renamedCount > 0 && !isSystem" variant="warning">
           {{ t('admin.apps.renamedWarningShort', { count: renamedCount }, '{count} entry/entries renamed — string form changed, id stays stable.') }}
           <template #details>
             {{ t('admin.apps.renamedWarning', { count: renamedCount }, '{count} entry/entries were renamed. The string form changes (e.g. in UserInfo), but role grants and RS subsets follow automatically via the stable id.') }}
           </template>
-        </Notice>
+        </CoarNotice>
 
         <div class="catalog-grid">
           <CoarDataGrid :builder="catalogBuilder" bordered>
@@ -431,7 +430,7 @@ async function save() {
           </span>
         </div>
 
-        <Notice v-if="catalogBlockers.length > 0" variant="error">
+        <CoarNotice v-if="catalogBlockers.length > 0" variant="error">
           <div class="font-semibold mb-1">
             {{ t('admin.apps.cat.blockedTitle', {}, 'These entries are still in use:') }}
           </div>
@@ -446,7 +445,7 @@ async function save() {
               </span>
             </li>
           </ul>
-        </Notice>
+        </CoarNotice>
       </div>
 
       <!-- Tab: Settings (ADR-0011 per-App override) — one App, one modal -->

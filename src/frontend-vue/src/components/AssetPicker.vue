@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { CoarButton, CoarCard } from '@cocoar/vue-ui'
+import { CoarNotice, CoarButton, CoarCard } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
-import Notice from '@/components/Notice.vue'
 import { useAssets } from '@/composables/useAssets'
 import type { AssetDto } from '@/models/assets'
 
@@ -71,8 +70,8 @@ onMounted(() => list())
         @change="onFileInputChange" />
     </div>
 
-    <Notice v-if="error" variant="error">{{ error }}</Notice>
-    <Notice v-if="uploadError" variant="error">{{ uploadError }}</Notice>
+    <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
+    <CoarNotice v-if="uploadError" variant="error">{{ uploadError }}</CoarNotice>
 
     <div v-if="loading" class="picker-empty">{{ t('common.loading', {}, 'Loading…') }}</div>
     <div v-else-if="assets.length === 0" class="picker-empty">

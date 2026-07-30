@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import {
+  CoarNotice,
   CoarCard,
   CoarTextInput,
   CoarFormField,
@@ -16,7 +17,6 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import EditableStringList from '@/components/EditableStringList.vue'
-import Notice from '@/components/Notice.vue'
 import { useRealmSettingsStore } from '@/stores/realmSettings.store'
 import { useGroupStore } from '@/stores/group.store'
 import { useAuthStore } from '@/stores/auth.store'
@@ -698,10 +698,10 @@ async function rotateSigningKey() {
       </CoarTab>
     </CoarTabGroup>
 
-    <Notice v-if="error" variant="error">{{ error }}</Notice>
-    <Notice truncate v-if="savedFlash" variant="success">
+    <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
+    <CoarNotice truncate v-if="savedFlash" variant="success">
       {{ t('admin.realmSettings.saved', {}, 'Saved.') }}
-    </Notice>
+    </CoarNotice>
 
     <div v-if="initialLoad" class="text-sm text-gray-400">
       {{ t('common.loading', {}, 'Loading...') }}
@@ -825,9 +825,9 @@ async function rotateSigningKey() {
           </CoarFormField>
         </div>
 
-        <Notice v-if="regFieldsForm.Username === 'Off'" variant="info">
+        <CoarNotice v-if="regFieldsForm.Username === 'Off'" variant="info">
           {{ t('admin.regFields.usernameOffHint', {}, 'Benutzername = E-Mail (kein separates Feld).') }}
-        </Notice>
+        </CoarNotice>
 
         <div class="flex justify-end mt-2">
           <CoarButton :loading="saving" @click="save">
@@ -906,12 +906,12 @@ async function rotateSigningKey() {
           v-model="dcrForm.Enabled"
           :label="t('admin.realmSettings.dcr.enabled', {}, 'Enable Dynamic Client Registration')" />
 
-        <Notice truncate v-if="dcrForm.Enabled" variant="info">
+        <CoarNotice truncate v-if="dcrForm.Enabled" variant="info">
           {{ t('admin.realmSettings.dcr.tripleOptInWarningShort', {}, 'Triple opt-in required before DCR clients can mint usable tokens.') }}
           <template #details>
             {{ t('admin.realmSettings.dcr.tripleOptInWarning', {}, 'Triple opt-in: clients registered here can only request access tokens for OAuth APIs with AllowDynamicRegistration enabled AND scopes with AllowDynamicRegistrationClients enabled. Until you opt in at least one API and one scope, DCR clients cannot mint usable tokens.') }}
           </template>
-        </Notice>
+        </CoarNotice>
 
         <template v-if="dcrForm.Enabled">
           <div class="grid grid-cols-2 gap-3">
@@ -972,12 +972,12 @@ async function rotateSigningKey() {
           v-model="cimdForm.Enabled"
           :label="t('admin.realmSettings.cimd.enabled', {}, 'Enable Client ID Metadata Documents')" />
 
-        <Notice truncate v-if="cimdForm.Enabled" variant="info">
+        <CoarNotice truncate v-if="cimdForm.Enabled" variant="info">
           {{ t('admin.realmSettings.cimd.optInWarningShort', {}, 'Opt-in required, and the server fetches the client’s metadata URL.') }}
           <template #details>
             {{ t('admin.realmSettings.cimd.optInWarning', {}, 'Like DCR, a CIMD client can only request access tokens for OAuth APIs with AllowDynamicRegistration enabled and scopes the metadata document declares. Until you opt in at least one API, CIMD clients cannot mint usable tokens. The server fetches the client’s metadata URL — only enable this if you trust the realm’s outbound network egress.') }}
           </template>
-        </Notice>
+        </CoarNotice>
 
         <template v-if="cimdForm.Enabled">
           <div class="grid grid-cols-2 gap-3">
@@ -1012,12 +1012,12 @@ async function rotateSigningKey() {
           v-model="nativeGrantsForm.Enabled"
           :label="t('admin.realmSettings.nativeGrants.enabled', {}, 'Enable native passwordless grants')" />
 
-        <Notice truncate v-if="nativeGrantsForm.Enabled" variant="info">
+        <CoarNotice truncate v-if="nativeGrantsForm.Enabled" variant="info">
           {{ t('admin.realmSettings.nativeGrants.optInWarningShort', {}, 'Per-client opt-in still required — this realm toggle alone isn’t enough.') }}
           <template #details>
             {{ t('admin.realmSettings.nativeGrants.optInWarning', {}, 'Per-client opt-in still required: a client can only use a native grant once it carries the matching grant-type permission (gt:urn:cocoar:otp / :magic / :passkey), enabled on the client’s Grants tab. Flipping this realm toggle is necessary but not sufficient. Only catalog clients qualify — DCR/CIMD clients are excluded.') }}
           </template>
-        </Notice>
+        </CoarNotice>
 
         <template v-if="nativeGrantsForm.Enabled">
           <div class="grid grid-cols-2 gap-3">
@@ -1077,12 +1077,12 @@ async function rotateSigningKey() {
 
     <CoarCard v-else-if="activeTab === 'audit'" class="p-4">
       <div class="flex flex-col gap-4 max-w-2xl">
-        <Notice truncate variant="info">
+        <CoarNotice truncate variant="info">
           {{ t('admin.realmSettings.audit.hintShort', {}, 'Security events are hard-deleted after the configured retention.') }}
           <template #details>
             {{ t('admin.realmSettings.audit.hint', {}, 'Security events belong to this realm and are hard-deleted after the configured retention. The event-sourced audit history uses a separate visibility window.') }}
           </template>
-        </Notice>
+        </CoarNotice>
         <CoarFormField
           :label="t('admin.realmSettings.audit.securityRetentionDays', {}, 'Security-event retention (days)')"
           :hint="t('admin.realmSettings.audit.securityRetentionHelp', {}, 'Allowed range: 1–365 days. The security-audit-prune job deletes only expired events.')">
@@ -1119,9 +1119,9 @@ async function rotateSigningKey() {
           </CoarFormField>
         </div>
 
-        <Notice v-if="deletionForm.ReminderLeadDays >= deletionForm.GraceDays" variant="warning">
+        <CoarNotice v-if="deletionForm.ReminderLeadDays >= deletionForm.GraceDays" variant="warning">
           {{ t('admin.realmSettings.deletion.reminderTooLong', {}, 'Reminder lead time must be shorter than the grace period, otherwise the reminder never fires.') }}
-        </Notice>
+        </CoarNotice>
 
         <div class="grid grid-cols-2 gap-3">
           <CoarFormField :label="t('admin.realmSettings.deletion.adminRetentionDays', {}, 'Admin recycle-bin retention (days)')">
@@ -1136,9 +1136,9 @@ async function rotateSigningKey() {
           </div>
         </div>
 
-        <Notice v-if="!deletionForm.AutoPurgeEnabled" variant="info">
+        <CoarNotice v-if="!deletionForm.AutoPurgeEnabled" variant="info">
           {{ t('admin.realmSettings.deletion.autoPurgeOff', {}, 'Auto-purge is off — admin-binned accounts are kept until an admin force-deletes them manually.') }}
-        </Notice>
+        </CoarNotice>
 
         <div class="flex justify-end mt-2">
           <CoarButton :loading="saving" @click="save">
@@ -1154,12 +1154,12 @@ async function rotateSigningKey() {
           {{ t('admin.realmSettings.signingKeys.hint', {}, 'This realm signs its OpenIddict access and id tokens with a per-realm RSA key. Rotating generates a fresh key for new tokens; the previous key is retired but kept in the JWKS for a 30-day overlap so tokens already issued stay valid. Expired retired keys are purged automatically.') }}
         </p>
 
-        <Notice truncate variant="warning">
+        <CoarNotice truncate variant="warning">
           {{ t('admin.realmSettings.signingKeys.warningShort', {}, 'Rotate keys only with good reason — cached JWKS may briefly reject new tokens.') }}
           <template #details>
             {{ t('admin.realmSettings.signingKeys.warning', {}, 'Rotate only when you have reason to (suspected key exposure, scheduled hygiene). Resource servers that cache the JWKS aggressively may briefly reject new tokens until they refresh.') }}
           </template>
-        </Notice>
+        </CoarNotice>
 
         <div class="flex justify-end mt-2">
           <CoarPopconfirm
@@ -1179,7 +1179,7 @@ async function rotateSigningKey() {
         <p class="text-xs text-gray-500">
           {{ t('admin.realmSettings.pages.hint', {}, 'Choose which authentication page is live for this realm. "Built-in" renders the fixed default. Variants are authored in Platform → Pages.') }}
         </p>
-        <Notice v-if="pagesError" variant="error">{{ pagesError }}</Notice>
+        <CoarNotice v-if="pagesError" variant="error">{{ pagesError }}</CoarNotice>
 
         <CoarFormField v-for="m in PAGE_SLOT_META" :key="m.slug" :label="m.label">
           <CoarSelect

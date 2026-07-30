@@ -5,12 +5,12 @@ import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import {
+  CoarNotice,
   CoarCard,
   CoarButton,
   CoarPasswordInput,
   CoarFormField,
 } from '@cocoar/vue-ui'
-import Notice from '@/components/Notice.vue'
 
 const { t, language } = useI18n()
 const localization = useLocalization()!
@@ -86,9 +86,9 @@ async function handleSubmit() {
       <CoarCard elevated>
         <!-- Passwordless mode -->
         <div v-if="useAppConfigStore().config.AuthenticationMinimumLevel >= 2" class="space-y-4">
-          <Notice variant="info">
+          <CoarNotice variant="info">
             {{ t('auth.resetPassword.passwordlessMode', {}, 'Password reset is not available. This application uses passwordless login.') }}
-          </Notice>
+          </CoarNotice>
           <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.resetPassword.backToLogin', {}, 'Back to login') }}
           </RouterLink>
@@ -96,9 +96,9 @@ async function handleSubmit() {
 
         <!-- Invalid link -->
         <div v-else-if="!isValid" class="space-y-4">
-          <Notice variant="error">
+          <CoarNotice variant="error">
             {{ t('auth.resetPassword.invalidLink', {}, 'Invalid link. Please request a new link.') }}
-          </Notice>
+          </CoarNotice>
           <RouterLink to="/forgot-password" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.resetPassword.requestNewLink', {}, 'Request new link') }}
           </RouterLink>
@@ -106,9 +106,9 @@ async function handleSubmit() {
 
         <!-- Success -->
         <div v-else-if="success" class="space-y-4">
-          <Notice variant="success">
+          <CoarNotice variant="success">
             {{ t('auth.resetPassword.success', {}, 'Password has been successfully reset. You can now sign in.') }}
-          </Notice>
+          </CoarNotice>
           <CoarButton full-width @click="router.push({ path: '/login', query: { redirect: route.query.redirect } })">{{ t('auth.resetPassword.goToLogin', {}, 'Go to login') }}</CoarButton>
         </div>
 
@@ -132,11 +132,11 @@ async function handleSubmit() {
             />
           </CoarFormField>
 
-          <Notice v-if="confirmPassword && !passwordsMatch" variant="error">
+          <CoarNotice v-if="confirmPassword && !passwordsMatch" variant="error">
             {{ t('auth.resetPassword.passwordMismatch', {}, 'Passwords do not match.') }}
-          </Notice>
+          </CoarNotice>
 
-          <Notice v-if="error" variant="error">{{ error }}</Notice>
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
 
           <CoarButton
             type="submit"

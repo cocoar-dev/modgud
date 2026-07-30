@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useServiceAccountStore } from '@/stores/serviceAccount.store'
 import {
+  CoarNotice,
   CoarTextInput,
   CoarFormField,
   CoarCheckbox,
@@ -12,7 +13,6 @@ import {
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
-import Notice from '@/components/Notice.vue'
 import CredentialEditModal from './CredentialEditModal.vue'
 import { MODAL_LIST_FORM } from '@/router/modal-sizes'
 import { useModalOverlay } from '@/composables/useModalOverlay'
@@ -232,7 +232,7 @@ function extractScopes(cred: OAuthClientDto): string[] {
         </section>
       </div>
 
-      <Notice v-if="error" variant="error">{{ error }}</Notice>
+      <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
 
       <!-- Credentials section — only visible when editing an existing SA.
            On create, the SA has to be saved first before credentials can be
@@ -243,12 +243,12 @@ function extractScopes(cred: OAuthClientDto): string[] {
         </h3>
 
         <div class="mb-3 flex items-center gap-3">
-          <Notice truncate variant="info" class="min-w-0 flex-1">
+          <CoarNotice truncate variant="info" class="min-w-0 flex-1">
             {{ t('admin.serviceAccountCredentials.sectionHintShort', {}, 'OAuth clients of this Service Account.') }}
             <template #details>
               {{ t('admin.serviceAccountCredentials.sectionHint', {}, 'OAuth clients owned by this Service Account. Each credential authenticates separately at /connect/token but shares this SA\'s permissions and group memberships.') }}
             </template>
-          </Notice>
+          </CoarNotice>
           <!-- shrink-0: the label is `white-space:nowrap; overflow:hidden`, so a
                shrinking button silently cuts its own text off. -->
           <CoarButton size="s" icon-start="plus" class="shrink-0" @click="openCredentialModal('create')">
@@ -257,7 +257,7 @@ function extractScopes(cred: OAuthClientDto): string[] {
         </div>
 
         <!-- Rotated-secret panel (shown after rotate; dismissable). -->
-        <Notice v-if="rotatedSecret" variant="warning" class="mb-3">
+        <CoarNotice v-if="rotatedSecret" variant="warning" class="mb-3">
           <div class="flex flex-col gap-2">
             <div class="font-medium">
               {{ t('admin.serviceAccountCredentials.rotatedTitle', {}, 'New secret for') }}
@@ -273,7 +273,7 @@ function extractScopes(cred: OAuthClientDto): string[] {
               </CoarButton>
             </div>
           </div>
-        </Notice>
+        </CoarNotice>
 
         <div v-if="credentialsLoading" class="text-xs text-surface-500">
           {{ t('common.loading', {}, 'Loading...') }}

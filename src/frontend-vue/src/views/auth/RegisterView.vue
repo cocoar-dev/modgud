@@ -6,6 +6,7 @@ import { useAppConfigStore } from '@/stores/appconfig.store'
 import { isSameOriginPath } from '@/composables/useLoginRedirect'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import {
+  CoarNotice,
   CoarCard,
   CoarButton,
   CoarTextInput,
@@ -13,7 +14,6 @@ import {
   CoarFormField,
   CoarCheckbox,
 } from '@cocoar/vue-ui'
-import Notice from '@/components/Notice.vue'
 
 interface SelfRegistrationInfoDto {
   Enabled: boolean
@@ -228,7 +228,7 @@ async function handleSubmit() {
         </div>
 
         <div v-else-if="submitted" class="space-y-4">
-          <Notice variant="success">{{ successMessage }}</Notice>
+          <CoarNotice variant="success">{{ successMessage }}</CoarNotice>
           <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }"
             class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.register.toLogin', {}, 'To login') }}
@@ -286,7 +286,7 @@ async function handleSubmit() {
             </label>
           </div>
 
-          <Notice v-if="error" variant="error">{{ error }}</Notice>
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
 
           <CoarButton
             type="submit"

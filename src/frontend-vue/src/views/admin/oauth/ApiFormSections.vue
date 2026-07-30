@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import {
+  CoarNotice,
   CoarTextInput,
   CoarFormField,
   CoarCheckbox,
@@ -9,7 +10,6 @@ import {
   CoarTag,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
-import Notice from '@/components/Notice.vue'
 import EditableStringList from '@/components/EditableStringList.vue'
 import type { OAuthApiDto } from '@/models/oauth'
 
@@ -150,7 +150,7 @@ async function copyAudience() {
         :label="t('admin.oauthApis.allowDcr', {}, 'DCR clients may request this API')" />
     </CoarFormField>
 
-    <Notice v-if="!isCreate && dto && !dto.HasImplicitScope" variant="info">
+    <CoarNotice v-if="!isCreate && dto && !dto.HasImplicitScope" variant="info">
       <div class="flex items-center gap-3">
         <div class="flex flex-col min-w-0 flex-1">
           <div class="text-sm font-medium">
@@ -164,7 +164,7 @@ async function copyAudience() {
           {{ t('admin.oauthApis.implicitScope.button', {}, 'Create scope') }}
         </CoarButton>
       </div>
-    </Notice>
+    </CoarNotice>
   </div>
 
   <!-- ── Review (create wizard only) ──────────────────────────────── -->

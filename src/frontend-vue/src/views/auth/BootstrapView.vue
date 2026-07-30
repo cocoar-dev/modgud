@@ -4,12 +4,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import {
+  CoarNotice,
   CoarCard,
   CoarButton,
   CoarPasswordInput,
   CoarFormField,
 } from '@cocoar/vue-ui'
-import Notice from '@/components/Notice.vue'
 
 // First-admin bootstrap form (C15b). Recipient lands here from the
 // magic-link in the bootstrap email (or printed on stdout by the CLI).
@@ -93,9 +93,9 @@ async function handleSubmit() {
       <CoarCard elevated>
         <!-- Invalid link -->
         <div v-if="!isValid" class="space-y-4">
-          <Notice variant="error">
+          <CoarNotice variant="error">
             {{ t('auth.bootstrap.invalidLink', {}, 'Invalid bootstrap link. Ask your administrator to issue a new invite.') }}
-          </Notice>
+          </CoarNotice>
           <RouterLink to="/login" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.bootstrap.backToLogin', {}, 'Back to login') }}
           </RouterLink>
@@ -103,16 +103,16 @@ async function handleSubmit() {
 
         <!-- Success -->
         <div v-else-if="success" class="space-y-4">
-          <Notice variant="success">
+          <CoarNotice variant="success">
             {{ t('auth.bootstrap.success', {}, 'Your admin account has been created. Redirecting to the dashboard…') }}
-          </Notice>
+          </CoarNotice>
         </div>
 
         <!-- Form -->
         <form v-else class="space-y-4" @submit.prevent="handleSubmit">
-          <Notice variant="info">
+          <CoarNotice variant="info">
             {{ t('auth.bootstrap.intro', {}, 'Set a password to activate your admin account. This link is single-use and expires in 7 days.') }}
-          </Notice>
+          </CoarNotice>
 
           <CoarFormField :label="t('auth.bootstrap.newPassword', {}, 'New Password')">
             <CoarPasswordInput
@@ -132,11 +132,11 @@ async function handleSubmit() {
             />
           </CoarFormField>
 
-          <Notice v-if="confirmPassword && !passwordsMatch" variant="error">
+          <CoarNotice v-if="confirmPassword && !passwordsMatch" variant="error">
             {{ t('auth.bootstrap.passwordMismatch', {}, 'Passwords do not match.') }}
-          </Notice>
+          </CoarNotice>
 
-          <Notice v-if="error" variant="error">{{ error }}</Notice>
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
 
           <CoarButton
             type="submit"

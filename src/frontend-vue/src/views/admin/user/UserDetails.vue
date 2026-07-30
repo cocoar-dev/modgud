@@ -3,11 +3,10 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useUserStore, type UserGroupDto, type InheritedUserGroupDto, type EffectiveGroupDto, type EffectiveGroupDiagnostic } from '@/stores/user.store'
 import { useGroupStore } from '@/stores/group.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
-import { CoarTextInput, CoarPasswordInput, CoarNumberInput, CoarFormField, CoarIcon, CoarTabGroup, CoarTab, CoarListbox, CoarDualListbox, CoarButton, CoarCheckbox, CoarTag } from '@cocoar/vue-ui'
+import { CoarNotice, CoarTextInput, CoarPasswordInput, CoarNumberInput, CoarFormField, CoarIcon, CoarTabGroup, CoarTab, CoarListbox, CoarDualListbox, CoarButton, CoarCheckbox, CoarTag } from '@cocoar/vue-ui'
 import type { CoarListboxOption } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
-import Notice from '@/components/Notice.vue'
 
 const { t } = useI18n()
 
@@ -535,15 +534,15 @@ watch(() => form.value.UserName, () => {
           <!-- Grace period — hidden when user has 2FA or is exempt -->
           <div v-if="!securityInfo.Has2FA && !exemptLocal && appConfig.config.AuthenticationMinimumLevel >= 1">
             <div class="section-heading">{{ t('admin.userDetails.graceHeading', {}, 'Grace period') }}</div>
-            <Notice v-if="graceDaysRemaining === null" variant="info">
+            <CoarNotice v-if="graceDaysRemaining === null" variant="info">
               {{ t('admin.userDetails.graceNotStarted', {}, 'Grace period starts on first login.') }}
-            </Notice>
-            <Notice v-else-if="graceDaysRemaining > 0" variant="warning">
+            </CoarNotice>
+            <CoarNotice v-else-if="graceDaysRemaining > 0" variant="warning">
               {{ t('admin.userDetails.graceRemaining', { days: graceDaysRemaining }, `${graceDaysRemaining} day(s) remaining.`) }}
-            </Notice>
-            <Notice v-else variant="error">
+            </CoarNotice>
+            <CoarNotice v-else variant="error">
               {{ t('admin.userDetails.graceExpired', {}, 'Grace expired — next login forces 2FA setup.') }}
-            </Notice>
+            </CoarNotice>
             <div class="flex gap-2 mt-2">
               <CoarButton size="s" variant="primary" icon-start="rotate-ccw" :loading="graceBusy" @click="resetGrace">
                 {{ t('admin.userDetails.resetGrace', { days: securityInfo.GracePeriodDaysOverride ?? appConfig.config.TwoFactorGracePeriodDays }, `Reset grace (+${securityInfo.GracePeriodDaysOverride ?? appConfig.config.TwoFactorGracePeriodDays}d)`) }}
@@ -632,7 +631,7 @@ watch(() => form.value.UserName, () => {
               </CoarTag>
             </div>
           </div>
-          <Notice v-if="effectiveDiagnostics.length > 0" variant="warning" class="mt-2">
+          <CoarNotice v-if="effectiveDiagnostics.length > 0" variant="warning" class="mt-2">
             <div class="text-xs font-semibold mb-1">
               {{ t('admin.userDetails.effectiveGroups.diagnosticsHeading', {}, 'Skripte mit Fehlern') }}
             </div>
@@ -643,7 +642,7 @@ watch(() => form.value.UserName, () => {
                      `Script for group ${d.GroupName} could not be evaluated: ${d.Error}`) }}
               </li>
             </ul>
-          </Notice>
+          </CoarNotice>
         </section>
 
         <section v-if="inheritedGroups.length > 0" class="flex-section">

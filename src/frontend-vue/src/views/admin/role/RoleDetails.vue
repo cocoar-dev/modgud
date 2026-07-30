@@ -3,10 +3,9 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoleStore } from '@/stores/role.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, ROLE_CLONE } from '@/composables/useClone'
-import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
+import { CoarNotice, CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
-import Notice from '@/components/Notice.vue'
 import type { RoleDto } from '@/models/role'
 
 const { t } = useI18n()
@@ -210,9 +209,9 @@ async function save() {
                   @update:model-value="onRealmAdminChange"
                   :label="t('admin.roleDetails.isRealmAdmin.toggle', {}, 'System administrator (realm:admin)')"
                 />
-                <Notice v-if="form.IsRealmAdmin" variant="warning">
+                <CoarNotice v-if="form.IsRealmAdmin" variant="warning">
                   {{ t('admin.roleDetails.isRealmAdmin.warning', {}, 'This creates a pure realm-admin role. Its Application and App permissions are cleared.') }}
-                </Notice>
+                </CoarNotice>
               </CoarFormField>
             </div>
           </section>

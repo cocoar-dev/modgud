@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import {
+  CoarNotice,
   CoarTextInput,
   CoarPasswordInput,
   CoarNumberInput,
@@ -14,7 +15,6 @@ import {
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
-import Notice from '@/components/Notice.vue'
 import EditableStringList from '@/components/EditableStringList.vue'
 import { useOAuthClientStore } from '@/stores/oauthClient.store'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
@@ -487,7 +487,7 @@ async function copySecret() {
     </div>
     <div v-else class="modal-body">
       <!-- New-secret notice — full-width across both columns -->
-      <Notice v-if="newSecret" variant="warning" class="secret-banner">
+      <CoarNotice v-if="newSecret" variant="warning" class="secret-banner">
         <div class="flex flex-col gap-2">
           <div class="font-medium">{{ t('admin.oauthClients.secretOnce', {}, 'Please copy the client secret now — it won\'t be shown again.') }}</div>
           <div class="flex items-center gap-2">
@@ -497,24 +497,24 @@ async function copySecret() {
             </CoarButton>
           </div>
         </div>
-      </Notice>
+      </CoarNotice>
 
       <!-- Create-mode guard rails — a client with no grants / no redirect URI
            can't complete a flow. Surface the blockers so the admin knows to
            visit the Grants / URLs tabs before clicking Create. -->
-      <Notice v-if="isCreate && createBlockers.length" variant="info" class="secret-banner">
+      <CoarNotice v-if="isCreate && createBlockers.length" variant="info" class="secret-banner">
         <ul class="blocker-list">
           <li v-for="msg in createBlockers" :key="msg">{{ msg }}</li>
         </ul>
-      </Notice>
+      </CoarNotice>
 
       <!-- Server / validation error — surfaced at the top of the modal so it is
            visible regardless of the active tab or scroll position. The server
            sends an actionable message (e.g. "client_credentials must be linked
            to a ServiceAccount"); show it instead of a bare "HTTP 400". -->
-      <Notice v-if="error" variant="error" class="secret-banner">
+      <CoarNotice v-if="error" variant="error" class="secret-banner">
         {{ error }}
-      </Notice>
+      </CoarNotice>
 
       <!-- Unified master-detail for both create + edit.
            Left = identity + status (always visible, never lost on tab switch).
@@ -644,18 +644,18 @@ async function copySecret() {
             <p class="tab-hint tab-hint--shortcut">
               {{ t('admin.dualListbox.multiSelectHint', {}, 'Tip: Ctrl/Cmd-click for multi-select · Shift-click for a range · drag and drop between columns.') }}
             </p>
-            <Notice truncate v-if="nativeGrantsEnabled" variant="info">
+            <CoarNotice truncate v-if="nativeGrantsEnabled" variant="info">
               {{ t('admin.oauthClients.grantTypes.nativeHintShort', {}, 'Passwordless grants are enabled for this realm — add one to allow it for this client.') }}
               <template #details>
                 {{ t('admin.oauthClients.grantTypes.nativeHint', {}, 'Native passwordless grants (urn:cocoar:otp / :magic / :passkey) are enabled for this realm and available below. Add one here to give this client the matching gt:urn:cocoar:* permission — only then can it exchange a passwordless proof at /connect/token.') }}
               </template>
-            </Notice>
-            <Notice truncate v-if="hasNativeGrantWithRealmOff" variant="warning">
+            </CoarNotice>
+            <CoarNotice truncate v-if="hasNativeGrantWithRealmOff" variant="warning">
               {{ t('admin.oauthClients.grantTypes.nativeDisabledWarningShort', {}, 'A native grant is selected but disabled for this realm — it will not work.') }}
               <template #details>
                 {{ t('admin.oauthClients.grantTypes.nativeDisabledWarning', {}, 'This client has a native passwordless grant (urn:cocoar:otp / :magic / :passkey) selected, but native grants are DISABLED for this realm — so it will not work: the token endpoint rejects the grant and the OTP-request endpoint returns an error instead of emailing a code. Enable them under Realm Settings → Native Passwordless Grants.') }}
               </template>
-            </Notice>
+            </CoarNotice>
             <section class="flex-section">
               <CoarDualListbox
                 class="flex-1 min-h-0"
@@ -713,12 +713,12 @@ async function copySecret() {
                 <CoarNumberInput v-model="form.SlidingRefreshTokenLifetime" clearable class="input-number" />
               </CoarFormField>
             </div>
-            <Notice truncate variant="info">
+            <CoarNotice truncate variant="info">
               {{ t('admin.oauthClients.clientSessionsHintShort', {}, 'Client sessions govern refresh-token use — idle lifetime slides, absolute lifetime is fixed.') }}
               <template #details>
                 {{ t('admin.oauthClients.clientSessionsHint', {}, 'Client sessions are authoritative for refresh-token use. Idle lifetime slides when the app refreshes; absolute lifetime never slides. Maximum: 315,360,000 seconds (3650 days / 10 years). Access tokens remain short-lived independently.') }}
               </template>
-            </Notice>
+            </CoarNotice>
             <div class="lifetime-grid">
               <CoarFormField :label="t('admin.oauthClients.clientSessionIdleLifetime', {}, 'Client session idle lifetime')">
                 <CoarNumberInput v-model="form.ClientSessionIdleLifetime" clearable class="input-number" />

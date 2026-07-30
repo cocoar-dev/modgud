@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { CoarButton, CoarCard, CoarTag, CoarPopconfirm } from '@cocoar/vue-ui'
+import { CoarNotice, CoarButton, CoarCard, CoarTag, CoarPopconfirm } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
-import Notice from '@/components/Notice.vue'
 import { useUI } from '@/composables/useUI'
 import { useAssets } from '@/composables/useAssets'
 import type { AssetDto } from '@/models/assets'
@@ -79,11 +78,11 @@ onMounted(() => list())
 
 <template>
   <div class="asset-page">
-    <Notice v-if="error" variant="error">{{ error }}</Notice>
-    <Notice v-if="uploadError" variant="error" @click="uploadError = null">
+    <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
+    <CoarNotice v-if="uploadError" variant="error" @click="uploadError = null">
       {{ uploadError }}
-    </Notice>
-    <Notice v-if="referencesBlock" variant="warning">
+    </CoarNotice>
+    <CoarNotice v-if="referencesBlock" variant="warning">
       {{ t('admin.assets.inUseHeadline', {}, 'Cannot delete — still referenced by:') }}
       <ul class="ml-4 mt-1 list-disc">
         <li v-for="ref in referencesBlock.references" :key="ref">{{ ref }}</li>
@@ -91,7 +90,7 @@ onMounted(() => list())
       <CoarButton size="s" variant="ghost" class="mt-2" @click="referencesBlock = null">
         {{ t('common.ok', {}, 'OK') }}
       </CoarButton>
-    </Notice>
+    </CoarNotice>
 
     <div class="upload-area"
       :class="{ 'upload-area-drag': dragOver }"

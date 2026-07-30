@@ -2,8 +2,7 @@
 import { computed, onMounted, watch, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@cocoar/vue-localization'
-import { CoarCard, CoarIcon, CoarSpinner, CoarTag } from '@cocoar/vue-ui'
-import Notice from '@/components/Notice.vue'
+import { CoarNotice, CoarCard, CoarIcon, CoarSpinner, CoarTag } from '@cocoar/vue-ui'
 import { useUI } from '@/composables/useUI'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useAuthStore } from '@/stores/auth.store'
@@ -510,9 +509,9 @@ onMounted(() => {
             <div v-if="sessionsLoading" class="list-card__loading">
               <CoarSpinner size="m" />
             </div>
-            <Notice v-else-if="sessionsError" variant="error">
+            <CoarNotice v-else-if="sessionsError" variant="error">
               {{ t('dashboard.errors.loadFailed', {}, 'Failed to load the data.') }}
-            </Notice>
+            </CoarNotice>
             <div v-else-if="sessions.length === 0" class="list-card__empty">
               {{ t('dashboard.sessions.none', {}, 'No sessions.') }}
             </div>
@@ -572,9 +571,9 @@ onMounted(() => {
               <div v-if="authLogLoading" class="list-card__loading">
                 <CoarSpinner size="m" />
               </div>
-              <Notice v-else-if="authLogError" variant="error">
+              <CoarNotice v-else-if="authLogError" variant="error">
                 {{ t('dashboard.errors.loadFailed', {}, 'Failed to load the data.') }}
-              </Notice>
+              </CoarNotice>
               <div v-else-if="authLog.length === 0" class="list-card__empty">
                 {{ t('dashboard.systemActivity.none', {}, 'No events yet.') }}
               </div>
@@ -616,9 +615,9 @@ onMounted(() => {
               <div v-if="providersLoading" class="list-card__loading">
                 <CoarSpinner size="m" />
               </div>
-              <Notice v-else-if="providersError" variant="error">
+              <CoarNotice v-else-if="providersError" variant="error">
                 {{ t('dashboard.errors.loadFailed', {}, 'Failed to load the data.') }}
-              </Notice>
+              </CoarNotice>
               <div v-else-if="loginProviders.length === 0" class="list-card__empty">
                 {{ t('dashboard.loginProviderStatus.none', {}, 'No providers configured.') }}
               </div>

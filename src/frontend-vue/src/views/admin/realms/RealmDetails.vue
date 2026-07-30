@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTextInput, CoarFormField, CoarCheckbox, CoarButton } from '@cocoar/vue-ui'
+import { CoarNotice, CoarTextInput, CoarFormField, CoarCheckbox, CoarButton } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import RealmDomainsField from '@/components/RealmDomainsField.vue'
-import Notice from '@/components/Notice.vue'
 import { useRealmStore } from '@/stores/realm.store'
 import type { RealmDto, InitialAdminInviteDto } from '@/models/realm'
 
@@ -243,17 +242,17 @@ async function copyLink() {
 
     <!-- Invite-reveal screen — replaces the form after successful create/resend. -->
     <div v-else-if="issuedInvite" class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-      <Notice variant="success">
+      <CoarNotice variant="success">
         {{ inviteSource === 'resent'
             ? t('admin.realms.inviteResentTitle', {}, 'Bootstrap invite reissued — the old token has been revoked.')
             : t('admin.realms.inviteIssuedTitle', {}, 'Realm created — bootstrap invite issued.') }}
-      </Notice>
-      <Notice truncate variant="warning">
+      </CoarNotice>
+      <CoarNotice truncate variant="warning">
         {{ t('admin.realms.inviteIssuedHintShort', {}, 'The magic-link URL is shown only once — copy it now if email isn\'t set up.') }}
         <template #details>
           {{ t('admin.realms.inviteIssuedHint', {}, 'This magic link URL is shown exactly once. If the email isn\'t delivered (e.g. local development without SMTP), copy it now — afterwards it\'s only available via "Resend".') }}
         </template>
-      </Notice>
+      </CoarNotice>
       <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
         <span class="text-gray-500">{{ t('admin.realms.inviteUserName', {}, 'Benutzername') }}</span>
         <span class="font-medium">{{ issuedInvite.UserName }}</span>
@@ -274,15 +273,15 @@ async function copyLink() {
 
     <!-- Control-plane transfer result — terminal state (this host is no longer the CP). -->
     <div v-else-if="transferResult" class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-      <Notice variant="success">
+      <CoarNotice variant="success">
         {{ t('admin.realms.transferDoneTitle', { slug: transferResult.Slug }, `Control plane moved to "${transferResult.Slug}".`) }}
-      </Notice>
-      <Notice truncate variant="warning">
+      </CoarNotice>
+      <CoarNotice truncate variant="warning">
         {{ t('admin.realms.transferDoneHintShort', {}, 'Control-plane administration now lives on the target realm\'s domain(s).') }}
         <template #details>
           {{ t('admin.realms.transferDoneHint', {}, 'This host is no longer the control plane — realm management now lives on the target realm domain(s) below. Continue administration there.') }}
         </template>
-      </Notice>
+      </CoarNotice>
       <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
         <span class="text-gray-500">{{ t('admin.realms.displayName', {}, 'Display Name') }}</span>
         <span class="font-medium">{{ transferResult.DisplayName }}</span>
@@ -295,9 +294,9 @@ async function copyLink() {
 
     <!-- Edit/Create form -->
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-      <Notice v-if="isCreate" variant="info">
+      <CoarNotice v-if="isCreate" variant="info">
         {{ t('admin.realms.createHint', {}, 'Creating it automatically provisions a dedicated database and seeds it with the default OAuth scopes.') }}
-      </Notice>
+      </CoarNotice>
 
       <div class="modal-form">
         <!-- Section: Identity -->
@@ -323,12 +322,12 @@ async function copyLink() {
                 v-model:domains="form.Domains"
                 v-model:primary="form.PrimaryDomain"
                 :placeholder="t('admin.realms.domain.placeholder', {}, 'auth.example.com')" />
-              <Notice truncate v-if="primaryChanged" variant="warning" class="mt-2">
+              <CoarNotice truncate v-if="primaryChanged" variant="warning" class="mt-2">
                 {{ t('admin.realms.primaryChangedWarningShort', {}, 'Changing the primary domain invalidates existing passkeys for this realm.') }}
                 <template #details>
                   {{ t('admin.realms.primaryChangedWarning', {}, 'Changing the primary domain invalidates this realm\'s existing passkeys — they are bound to the previous host. Affected users must re-register their passkeys on the new primary domain.') }}
                 </template>
-              </Notice>
+              </CoarNotice>
             </CoarFormField>
           </div>
         </section>
@@ -388,12 +387,12 @@ async function copyLink() {
           {{ t('admin.realms.controlPlaneTitle', {}, 'Control Plane') }}
         </h4>
 
-        <Notice truncate v-if="dto.IsControlPlane" variant="info">
+        <CoarNotice truncate v-if="dto.IsControlPlane" variant="info">
           {{ t('admin.realms.isControlPlaneNoteShort', {}, 'This realm hosts cross-realm administration as the control plane.') }}
           <template #details>
             {{ t('admin.realms.isControlPlaneNote', {}, 'This realm is the control plane — it hosts cross-realm administration. To move the role, open the target realm and make it the control plane.') }}
           </template>
-        </Notice>
+        </CoarNotice>
 
         <template v-else>
           <p class="text-xs text-gray-500">

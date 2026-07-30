@@ -4,8 +4,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useLoginRedirect } from '@/composables/useLoginRedirect'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
-import { CoarCard, CoarFormField, CoarOtpInput, CoarButton } from '@cocoar/vue-ui'
-import Notice from '@/components/Notice.vue'
+import { CoarNotice, CoarCard, CoarFormField, CoarOtpInput, CoarButton } from '@cocoar/vue-ui'
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -100,7 +99,7 @@ async function submitTotp() {
           <CoarFormField :label="t('auth.mfa.authenticatorCode', {}, 'Authenticator Code')">
             <CoarOtpInput v-model="totpCode" type="numeric" :length="6" auto-focus required />
           </CoarFormField>
-          <Notice v-if="errorMessage" variant="error">{{ errorMessage }}</Notice>
+          <CoarNotice v-if="errorMessage" variant="error">{{ errorMessage }}</CoarNotice>
           <CoarButton type="submit" :disabled="!totpCode.trim()" :loading="submitting" full-width>
             {{ t('common.confirm', {}, 'Confirm') }}
           </CoarButton>

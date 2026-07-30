@@ -4,12 +4,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import {
+  CoarNotice,
   CoarCard,
   CoarButton,
   CoarCheckbox,
   CoarSpinner,
 } from '@cocoar/vue-ui'
-import Notice from '@/components/Notice.vue'
 import type {
   ConsentModel,
   ConsentDecision,
@@ -229,7 +229,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
 
         <!-- Error -->
         <div v-else-if="phase === 'error'" class="space-y-4">
-          <Notice variant="error">{{ error }}</Notice>
+          <CoarNotice variant="error">{{ error }}</CoarNotice>
           <!-- Expired/consumed tickets carry a retry URL — re-entering
                /connect/authorize mints a fresh ticket (or completes silently
                via the remembered authorization), so the OIDC flow resumes
@@ -276,18 +276,18 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
             </p>
           </div>
 
-          <Notice truncate v-if="model!.ClientIdHostname" variant="warning">
+          <CoarNotice truncate v-if="model!.ClientIdHostname" variant="warning">
             {{ t('consent.cimdWarningShort', { host: model!.ClientIdHostname }, 'This app is identified by the domain {host} — make sure you trust it.') }}
             <template #details>
               {{ t('consent.cimdWarning', { host: model!.ClientIdHostname }, 'This app is identified by the domain {host}. Make sure you trust this domain before continuing — only authorise it if you intended to sign in to an app at {host}.') }}
             </template>
-          </Notice>
-          <Notice truncate v-else-if="model!.IsDynamicallyRegistered" variant="warning">
+          </CoarNotice>
+          <CoarNotice truncate v-else-if="model!.IsDynamicallyRegistered" variant="warning">
             {{ t('consent.dcrWarningShort', {}, 'This app self-registered and its name is unverified.') }}
             <template #details>
               {{ t('consent.dcrWarning', {}, 'This app registered itself with the identity provider — its name has not been verified by an administrator. Make sure the name above matches the app you actually intended to authorise before continuing.') }}
             </template>
-          </Notice>
+          </CoarNotice>
 
           <div class="space-y-2">
             <div
@@ -314,7 +314,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
             </div>
           </div>
 
-          <Notice v-if="error" variant="error">{{ error }}</Notice>
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
 
           <div class="flex gap-2">
             <CoarButton

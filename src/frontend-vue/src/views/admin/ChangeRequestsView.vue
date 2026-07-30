@@ -4,11 +4,10 @@ import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
 import { useI18n } from '@cocoar/vue-localization'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
-import { CoarButton, CoarCheckbox, CoarTextInput, CoarFormField } from '@cocoar/vue-ui'
+import { CoarNotice, CoarButton, CoarCheckbox, CoarTextInput, CoarFormField } from '@cocoar/vue-ui'
 import { useGridLocale } from '@/composables/useGridLocale'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 import ModalLayout from '@/components/ModalLayout.vue'
-import Notice from '@/components/Notice.vue'
 
 const { t, language } = useI18n()
 const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
@@ -194,7 +193,7 @@ const gridBuilder = applyListGridDefaults(CoarGridBuilder.create<ChangeRequest>(
               </CoarFormField>
               <CoarCheckbox v-model="notifyUser"
                 :label="t('admin.changeRequests.notifyUser', {}, 'Notify user by email')" />
-              <Notice v-if="actionError" variant="error">{{ actionError }}</Notice>
+              <CoarNotice v-if="actionError" variant="error">{{ actionError }}</CoarNotice>
               <div class="flex gap-2 justify-end pt-2">
                 <CoarButton variant="danger" icon-start="x" :loading="busy"
                   :disabled="selected.Status === 'EmailVerificationPending'"
@@ -207,9 +206,9 @@ const gridBuilder = applyListGridDefaults(CoarGridBuilder.create<ChangeRequest>(
                   {{ t('admin.changeRequests.approve', {}, 'Approve') }}
                 </CoarButton>
               </div>
-              <Notice v-if="selected.Status === 'EmailVerificationPending'" variant="info">
+              <CoarNotice v-if="selected.Status === 'EmailVerificationPending'" variant="info">
                 {{ t('admin.changeRequests.waitingForVerify', {}, 'The user has not yet confirmed the new address via email. Approval is only possible once ownership has been proven.') }}
-              </Notice>
+              </CoarNotice>
             </template>
           </div>
         </ModalLayout>

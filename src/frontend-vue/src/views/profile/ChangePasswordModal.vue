@@ -2,9 +2,8 @@
 import { ref, computed } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useI18n } from '@cocoar/vue-localization'
-import { CoarPasswordInput, CoarFormField } from '@cocoar/vue-ui'
+import { CoarNotice, CoarPasswordInput, CoarFormField } from '@cocoar/vue-ui'
 import ModalLayout from '@/components/ModalLayout.vue'
-import Notice from '@/components/Notice.vue'
 
 const { t } = useI18n()
 
@@ -68,9 +67,9 @@ async function changePassword() {
     :footer-button="footerButton"
   >
     <div class="flex flex-col gap-4">
-      <Notice v-if="success" variant="success">
+      <CoarNotice v-if="success" variant="success">
         {{ t('profile.changePassword.success', {}, 'Password has been changed.') }}
-      </Notice>
+      </CoarNotice>
 
       <template v-else>
         <CoarFormField :label="t('profile.changePassword.currentPassword', {}, 'Current Password')">
@@ -85,11 +84,11 @@ async function changePassword() {
           <CoarPasswordInput v-model="confirmPassword" autocomplete="new-password" />
         </CoarFormField>
 
-        <Notice v-if="mismatch" variant="error">
+        <CoarNotice v-if="mismatch" variant="error">
           {{ t('profile.changePassword.mismatch', {}, 'Passwords do not match.') }}
-        </Notice>
+        </CoarNotice>
 
-        <Notice v-if="error" variant="error">{{ error }}</Notice>
+        <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
       </template>
     </div>
   </ModalLayout>

@@ -4,12 +4,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import {
+  CoarNotice,
   CoarCard,
   CoarButton,
   CoarTextInput,
   CoarSpinner,
 } from '@cocoar/vue-ui'
-import Notice from '@/components/Notice.vue'
 import type { DeviceVerificationInfo } from '@/models/device'
 
 const { t, language } = useI18n()
@@ -231,7 +231,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
 
         <!-- Error -->
         <div v-else-if="phase === 'error'" class="space-y-4">
-          <Notice variant="error">{{ error }}</Notice>
+          <CoarNotice variant="error">{{ error }}</CoarNotice>
           <CoarButton full-width @click="router.push('/login')">
             {{ t('consent.toLogin', {}, 'Back to sign-in') }}
           </CoarButton>
@@ -254,7 +254,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
             autocomplete="one-time-code"
             @keyup.enter="submitCode"
           />
-          <Notice v-if="codeError" variant="error">{{ codeError }}</Notice>
+          <CoarNotice v-if="codeError" variant="error">{{ codeError }}</CoarNotice>
           <CoarButton :loading="submitting" :disabled="!codeInput.trim()" full-width @click="submitCode">
             {{ t('device.continue', {}, 'Continue') }}
           </CoarButton>
@@ -284,7 +284,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
             </div>
           </div>
 
-          <Notice v-if="error" variant="error">{{ error }}</Notice>
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
 
           <div class="flex gap-2">
             <CoarButton variant="secondary" :disabled="submitting" full-width @click="decide(false)">

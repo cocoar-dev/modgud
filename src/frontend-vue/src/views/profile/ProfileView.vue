@@ -6,11 +6,10 @@ import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
 import { usePreferences, localeOptions } from '@/composables/usePreferences'
 import { useI18n } from '@cocoar/vue-localization'
-import { CoarCard, CoarButton, CoarIcon, CoarMenu, CoarMenuItem, CoarSelect, CoarTextInput, CoarPasswordInput, CoarFormField } from '@cocoar/vue-ui'
+import { CoarNotice, CoarCard, CoarButton, CoarIcon, CoarMenu, CoarMenuItem, CoarSelect, CoarTextInput, CoarPasswordInput, CoarFormField } from '@cocoar/vue-ui'
 import type { CoarSelectOption } from '@cocoar/vue-ui'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useAppConfigStore } from '@/stores/appconfig.store'
-import Notice from '@/components/Notice.vue'
 
 const { t, language } = useI18n()
 const route = useRoute()
@@ -688,9 +687,9 @@ watch(() => route.hash, (now, before) => {
                 </div>
               </div>
 
-              <Notice v-if="emailUnverified" variant="warning">
+              <CoarNotice v-if="emailUnverified" variant="warning">
                 {{ t('profile.lockedUnverified', {}, 'Profile changes are blocked until you verify your email address.') }}
-              </Notice>
+              </CoarNotice>
 
               <div class="flex items-center gap-3 flex-wrap">
                 <CoarButton :disabled="!profileDirty || emailUnverified" :loading="profileSaving" @click="saveProfile">
@@ -717,9 +716,9 @@ watch(() => route.hash, (now, before) => {
           <!-- Last rejected request — surface the reviewer note so the user knows why -->
           <CoarCard v-if="!openRequest && lastTerminal?.Status === 'Rejected' && lastTerminal.ReviewerNote" elevated>
             <div class="p-6 space-y-2">
-              <Notice variant="warning">
+              <CoarNotice variant="warning">
                 {{ t('profile.request.lastRejected', {}, 'Your last change request was rejected.') }}
-              </Notice>
+              </CoarNotice>
               <p class="text-sm">
                 <span class="text-surface-500">{{ t('profile.email.rejectedNote', {}, 'Reason:') }}</span>
                 <span class="ml-1">{{ lastTerminal.ReviewerNote }}</span>
@@ -803,9 +802,9 @@ watch(() => route.hash, (now, before) => {
                 <!-- Enabling Email-OTP makes the inbox load-bearing; gate it
                      on a verified email. Disable is left ungated so users
                      who accidentally turned it on can recover. -->
-                <Notice v-if="emailUnverified" variant="warning" class="mb-2">
+                <CoarNotice v-if="emailUnverified" variant="warning" class="mb-2">
                   {{ t('profile.emailOtp.lockedUnverified', {}, 'Enabling Email-OTP is blocked until you verify your email address.') }}
-                </Notice>
+                </CoarNotice>
                 <CoarButton :loading="emailOtpToggling" :disabled="emailUnverified" @click="toggleEmailOtp">
                   {{ t('profile.emailOtp.enableButton', {}, 'Enable email code') }}
                 </CoarButton>
@@ -1055,21 +1054,21 @@ watch(() => route.hash, (now, before) => {
                   <h2 class="text-lg font-semibold">{{ t('profile.privacy.deleteTitle', {}, 'Delete Account') }}</h2>
                 </div>
 
-                <Notice v-if="deletionStatus?.IsPending && deletionStatus.Initiator === 'Admin'" variant="error">
+                <CoarNotice v-if="deletionStatus?.IsPending && deletionStatus.Initiator === 'Admin'" variant="error">
                   {{ t('profile.privacy.statusAdminBin', {},
                     'An administrator has scheduled your account for deletion. Contact your administrator if this is unexpected.') }}
-                </Notice>
-                <Notice v-else-if="deletionStatus?.IsPending" variant="warning">
+                </CoarNotice>
+                <CoarNotice v-else-if="deletionStatus?.IsPending" variant="warning">
                   {{ t('profile.privacy.statusPending', {}, 'Your account is scheduled for deletion.') }}
                   <span v-if="deletionStatus.ConfirmationDeadline">
                     {{ t('profile.privacy.willDeleteOn', {}, 'It will be permanently erased on') }}
                     {{ new Date(deletionStatus.ConfirmationDeadline).toLocaleString() }}.
                     {{ t('profile.privacy.cancelHint', {}, 'Cancel below any time before then to keep your account.') }}
                   </span>
-                </Notice>
-                <Notice v-else-if="deletionStatus?.IsDataMasked" variant="info">
+                </CoarNotice>
+                <CoarNotice v-else-if="deletionStatus?.IsDataMasked" variant="info">
                   {{ t('profile.privacy.statusMasked', {}, 'Personal data has already been masked.') }}
-                </Notice>
+                </CoarNotice>
                 <p v-else class="text-sm text-surface-600">
                   {{ t('profile.privacy.deleteDescription', {},
                     'Requesting deletion schedules your account for permanent erasure after a grace period. You can log in and cancel any time during that window. For audit reasons the event stream is kept masked.') }}
