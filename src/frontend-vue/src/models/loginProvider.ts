@@ -72,6 +72,8 @@ export interface FlavorDto {
   DefaultScopes: string[]
   DefaultUserUpdateScript: string
   DefaultStoreRawClaims: boolean
+  /** Complete create-time flavor defaults, including SAML claim/AMR maps. */
+  DefaultFlavorData?: Record<string, unknown> | null
   ConfigSchema: FlavorConfigFieldDto[]
   /**
    * Protocol family — 'Oidc' or 'Saml'. The admin UI uses this to pick
@@ -114,6 +116,8 @@ export interface CreateLoginProviderRequest {
   AllowedEmailDomains?: string[] | null
   IconName?: string | null
   ButtonColorHex?: string | null
+  /** Plaintext is accepted only by create and encrypted before persistence. */
+  InitialClientSecret?: string | null
 }
 
 // PATCH semantics — every field optional. Omitted fields keep their current

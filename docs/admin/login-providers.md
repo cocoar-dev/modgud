@@ -104,7 +104,7 @@ on access.
 
 1. Admin → **Login Providers** → **Add provider.** A single modal
    opens — flavor picker in the header, all tabs (General, Connection,
-   User Update Script, Linking & Policies) visible.
+   Protocol & Security, User Update Script, Users & Trust) visible.
 2. **Flavor** (header dropdown): *OIDC · Microsoft Entra ID*. Switching
    flavor in this modal re-seeds the flavor-derived defaults (Scopes,
    default User Update Script, button icon) without touching what you've
@@ -114,15 +114,15 @@ on access.
    identifier (lowercase letters/digits/hyphens, 3-64 chars) that becomes
    part of the Redirect URI (`/signin-oidc/<slug>`). It is **immutable
    after create** — pick a stable name (e.g. `company-sso`); typing a
-   Display Name first lets Modgud suggest one. The Redirect URI field
-   appears AFTER first save.
+   Display Name first lets Modgud suggest one. As soon as the slug is
+   valid, the Redirect URI appears in the Connection tab — before save.
 4. **Connection** tab:
    - **Tenant ID** (Entra-specific): paste from Entra.
    - **Client ID**: from Entra.
    - **Scopes**: `openid profile email` (default is fine).
-   - **Initial Secret** (optional): paste the Entra client secret here
-     so it's set in one step. You can also skip this and rotate via the
-     Connection tab after Save — same audit-event shape either way.
+   - **Client Secret**: paste the Entra client secret here so the complete
+     provider can be created in one step. You can omit it while the provider
+     is disabled and add/rotate it later.
 5. **User Update Script** tab: default for Entra is
 
    ```js
@@ -138,13 +138,12 @@ on access.
    against a sample claims object — instant feedback on what comes out.
    After at least one successful login, **Last Login** loads the
    actual claims that came through last.
-6. **Create.** The provider is created **disabled** (security default;
-   enable explicitly after the smoke-test). The modal stays open and
-   transitions into Edit mode — the URL fragment updates to the new
-   provider id and the **Redirect URI** field now appears in the
-   General tab with a copy button next to it.
+6. Choose **Active** on the General tab only if Client ID, Client Secret
+   and the provider-specific connection fields are already complete.
+   **Create** saves the full provider atomically; otherwise leave it
+   disabled and enable it after the smoke-test.
 
-**Copy the Redirect URI** from the General tab — you'll paste it into
+**Copy the Redirect URI** from the Connection tab — you'll paste it into
 Entra next. Because the URI is built from your chosen slug (not a
 generated GUID), deleting and recreating the provider with the same slug
 keeps the **same** Redirect URI — no need to re-edit the Entra app.

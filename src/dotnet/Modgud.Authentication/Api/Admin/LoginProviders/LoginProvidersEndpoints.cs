@@ -47,6 +47,7 @@ public static class LoginProvidersEndpoints
                     DefaultScopes = f.DefaultScopes.ToList(),
                     DefaultUserUpdateScript = f.DefaultUserUpdateScript,
                     DefaultStoreRawClaims = f.DefaultStoreRawClaims,
+                    DefaultFlavorData = null,
                     ConfigSchema = f.ConfigSchema.Select(c => new FlavorConfigFieldDto(
                         c.Key, c.Type.ToString(), c.Label, c.Required, c.HelpText, c.Placeholder, c.Default,
                         c.Section,
@@ -54,19 +55,24 @@ public static class LoginProvidersEndpoints
                     Type = nameof(LoginProviderType.Oidc),
                 });
 
-                var saml = samlFlavors.All.Select(f => new FlavorDto
+                var saml = samlFlavors.All.Select(f =>
                 {
-                    Key = f.Key,
-                    DisplayName = f.DisplayName,
-                    DefaultIconName = f.DefaultIconName,
-                    DefaultScopes = [], // SAML has no scopes.
-                    DefaultUserUpdateScript = f.DefaultUserUpdateScript,
-                    DefaultStoreRawClaims = f.DefaultStoreRawClaims,
-                    ConfigSchema = f.ConfigSchema.Select(c => new FlavorConfigFieldDto(
-                        c.Key, c.Type.ToString(), c.Label, c.Required, c.HelpText, c.Placeholder, c.Default,
-                        c.Section,
-                        c.Options?.Select(o => new FlavorConfigFieldOptionDto(o.Value, o.Label)).ToList())).ToList(),
-                    Type = nameof(LoginProviderType.Saml),
+                    using var defaults = f.ApplyDefaults(null).ToJson();
+                    return new FlavorDto
+                    {
+                        Key = f.Key,
+                        DisplayName = f.DisplayName,
+                        DefaultIconName = f.DefaultIconName,
+                        DefaultScopes = [], // SAML has no scopes.
+                        DefaultUserUpdateScript = f.DefaultUserUpdateScript,
+                        DefaultStoreRawClaims = f.DefaultStoreRawClaims,
+                        DefaultFlavorData = defaults.RootElement.Clone(),
+                        ConfigSchema = f.ConfigSchema.Select(c => new FlavorConfigFieldDto(
+                            c.Key, c.Type.ToString(), c.Label, c.Required, c.HelpText, c.Placeholder, c.Default,
+                            c.Section,
+                            c.Options?.Select(o => new FlavorConfigFieldOptionDto(o.Value, o.Label)).ToList())).ToList(),
+                        Type = nameof(LoginProviderType.Saml),
+                    };
                 });
 
                 return Results.Ok(oidc.Concat(saml).ToArray());
@@ -141,7 +147,8 @@ public static class LoginProvidersEndpoints
                     IconName: request.IconName,
                     ButtonColorHex: request.ButtonColorHex,
                     TrustForAuthorization: request.TrustForAuthorization,
-                    AuthoritativeForProfile: request.AuthoritativeForProfile);
+                    AuthoritativeForProfile: request.AuthoritativeForProfile,
+                    InitialClientSecret: request.InitialClientSecret);
                 var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(command, ct);
                 return result.Match<IResult>(
                     v => Results.Created($"/api/admin/login-providers/{v.Id:N}", ToDto(v, publicUrl)),
@@ -313,7 +320,8 @@ public static class LoginProvidersEndpoints
         string? IconName = null,
         string? ButtonColorHex = null,
         bool? TrustForAuthorization = null,
-        bool? AuthoritativeForProfile = null);
+        bool? AuthoritativeForProfile = null,
+        string? InitialClientSecret = null);
 
     // PATCH semantics: every field is Optional<T>, so a caller can send just
     // the properties it wants to change (e.g. the grid sends only Enabled to
