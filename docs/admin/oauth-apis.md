@@ -27,15 +27,11 @@ responses. Specifically, it's required when:
 - You want **per-Audience permission narrowing** in `resource_access`
   blocks. The RS declares its `PermissionIds` subset of the App's
   catalog, and the IdP narrows each user's emission to that subset.
-- The API wants to **authenticate against the OAuth server itself**
-  (e.g. for token introspection)
-- You want **multi-secret support** (several parallel valid secrets,
-  e.g. for seamless rotation)
 - The API needs **explicit scope lists** for discovery
 
 ## Relationship to Applications
 
-Every OAuth API belongs to **exactly one [Application](./applications)**.
+An OAuth API normally belongs to **one [Application](./applications)**.
 A microservice architecture under one app — e.g. `acme-api`,
 `acme-search`, `acme-files` all linked to the App `acme` — works
 because permissions stay app-centric: each microservice gets its own
@@ -44,17 +40,21 @@ the separate `resource_access["acme-api"]`,
 `resource_access["acme-search"]` and
 `resource_access["acme-files"]` blocks accordingly.
 
+An API can temporarily remain unassigned for legacy or standalone setups.
+Without an Application link, Modgud has no permission catalog to resolve and
+does not emit a `resource_access` block for that audience.
+
 ## Creating an API
 
-Administration → **OAuth → APIs** → **Create**.
+Administration → **OAuth & Federation → OAuth-APIs** → **Create**.
 
 ### Required fields
 
 - **Audience (aud)** — technical identifier (e.g. `acme-api`). Used in
   `aud` claims when the token is issued.
 - **Display Name** — UI label
-- **Application** — which App does this RS belong to? Required for
-  per-Audience subset narrowing.
+- **Application** — which App does this RS belong to? Recommended and required
+  for per-Audience permission emission.
 - **Description** — optional
 
 ### PermissionIds
@@ -64,8 +64,8 @@ IdP to narrow `resource_access[<this API's Audience>].permissions` —
 sibling resource servers under the same App get their own Audience
 keys and do not project each other's permissions.
 
-Default at creation: full catalog. Tighten to a strict subset for
-microservices that only need a slice.
+The selection starts empty. Pick only the catalog entries this resource server
+actually exposes.
 
 ### Scopes
 
@@ -154,7 +154,7 @@ immediately switch to the new app context.
 resource server, clone it. List → right-click → **Clone**. The Create
 wizard opens pre-filled — display name, description, scopes, user claims,
 the linked Application and its catalog subset are copied; only
-**Audience (aud)** is blank. API secrets are not copied; the copy starts with none.
+**Audience (aud)** is blank.
 
 ## Deleting
 

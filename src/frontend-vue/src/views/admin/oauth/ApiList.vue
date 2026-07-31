@@ -61,13 +61,11 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthApiDto>(), { o
   })
   .onViewportContextMenu(($event) => viewportMenu.open($event))
   .columns([
-    (col) => col.field('Name').header('Name', 'admin.oauthApis.name').flex(2).minWidth(160),
+    (col) => col.field('Name').header('Audience', 'admin.oauthApis.audience').flex(2).minWidth(160),
     (col) => col.field('DisplayName').header('Display Name', 'admin.oauthApis.displayName').flex(1),
     (col) => col.field('Description').header('Description', 'common.description').flex(2),
     (col) => col.field('Scopes').header('Scopes', 'admin.oauthApis.scopes').width(110)
       .option('valueGetter', (p: any) => (p.data?.Scopes ?? []).length),
-    (col) => col.field('Secrets').header('Secrets', 'admin.oauthApis.secretCount').width(110)
-      .option('valueGetter', (p: any) => (p.data?.Secrets ?? []).length),
     (col) => col.tag('Enabled', {
       variantMap: { active: 'success', inactive: 'neutral' },
       i18nPrefix: 'common.statusTag.',
@@ -79,7 +77,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthApiDto>(), { o
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
-  if (!confirm(t('common.confirmDelete', {}, 'Really delete?'))) return
+  if (!confirm(t('admin.oauthApis.confirmDelete', {}, 'Really delete this API?'))) return
   try { await store.remove(id) } catch (e: any) { alert(e?.message ?? String(e)) }
 }
 

@@ -193,24 +193,17 @@ Plus two pipeline hooks:
 `Program.cs` runs an explicit bootstrap path at startup
 (before `app.Run()`):
 
-1. **Create the master DB and the `<master-db>_system` DB** (raw SQL, because
-   Marten can't `CREATE DATABASE` on its own connection)
-2. **Apply Marten schema** (`Storage.ApplyAllConfiguredChangesToDatabaseAsync`)
-   → `realms.mt_tenant_databases` is created
-3. **Register system tenant** (`tenancy.AddDatabaseRecordAsync("system", systemCs)`)
-   pointing at its own `<master-db>_system` DB — the master DB is pure
-   control-plane infra (registry + global Realm store + Wolverine durability)
-   and holds no tenant content
-4. **Apply Marten schema again** → per-tenant tables for the system realm, in
-   its own DB
-5. **Seed system realm document** (`EnsureSystemRealmExistsAsync`), stamped as
-   the control plane
-6. **Seed default OAuth scopes + internal login provider**
-   (`OAuthRealmSeeder.SeedAsync`)
-7. **Seed the system Apps** (`AppRealmSeeder.SeedAsync`), including the
-   control-plane App, so App-scoped permissions resolve before the
-   first realm is created
-8. **Warm up RealmCache**
+1. **Create the master DB** (raw SQL, because Marten cannot create its own
+   target database)
+2. **Apply the primary-store schema** so the tenant registry exists
+3. **Apply the Global Store schema**, including installation state
+4. **Load every existing active realm** and idempotently apply its realm seeders
+5. **Warm RealmCache**
+
+On a fresh database this intentionally leaves the registry empty. The
+shell-authorized installation API creates the first tenant database, its first
+`realm:admin`, and the initial `IsControlPlane` assignment. See
+[First-time setup](../getting-started/first-time-setup).
 
 Only after this does Kestrel start listening.
 

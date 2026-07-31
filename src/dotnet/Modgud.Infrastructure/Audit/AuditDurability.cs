@@ -45,6 +45,8 @@ public static class AuditDurability
         AuditEvents.RealmProvisioned or
         AuditEvents.RealmAdopted or
         AuditEvents.ControlPlaneTransferred or
+        AuditEvents.InstallationChallengeIssued or
+        AuditEvents.InstallationCompleted or
         AuditEvents.ControlPlaneRealmOperation or
         AuditEvents.BootstrapInviteIssued or
         AuditEvents.DcrClientRegistered

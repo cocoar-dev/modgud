@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { CoarDataGrid, CoarDataGridPanel, CoarGridBuilder } from '@cocoar/vue-data-grid'
-import { CoarButton } from '@cocoar/vue-ui'
+import { CoarButton, CoarIcon, CoarPopover } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 
 /**
@@ -31,12 +31,16 @@ const props = withDefaults(defineProps<{
   searchPlaceholder?: string
   /** Label rendered on the left of the compact-grid toolbar. */
   headerLabel?: string
+  /** Optional help text rendered from an info icon beside the toolbar label. */
+  headerHint?: string
   addLabel?: string
   /** Disable the whole control (no edit, no add, no remove). */
   disabled?: boolean
   /** Read-only: show data, hide affordances. Equivalent to disabled for now. */
   readonly?: boolean
   minHeight?: string
+  /** Grow to the height supplied by the parent instead of using a fixed viewport. */
+  fillAvailable?: boolean
   /** Compact grid hides the technical column header and empty-row overlay. */
   appearance?: 'grid' | 'compact-grid' | 'panel-grid'
 }>(), {
@@ -148,9 +152,12 @@ const search = ref('')
 <template>
   <div
     class="editable-string-list"
-    :class="{ 'editable-string-list--compact-grid': appearance !== 'grid' }"
+    :class="{
+      'editable-string-list--compact-grid': appearance !== 'grid',
+      'editable-string-list--fill': appearance !== 'grid' && fillAvailable,
+    }"
     :style="appearance !== 'grid'
-      ? { height: minHeight, maxHeight: minHeight }
+      ? fillAvailable ? undefined : { height: minHeight, maxHeight: minHeight }
       : { minHeight }">
     <CoarDataGridPanel
       v-if="appearance === 'panel-grid'"
@@ -172,9 +179,20 @@ const search = ref('')
 
     <CoarDataGrid v-else :builder="builder" bordered>
       <template #toolbar-left>
-        <span v-if="appearance === 'compact-grid'" class="compact-grid-title">
-          {{ headerLabel }}
-        </span>
+        <div v-if="appearance === 'compact-grid'" class="compact-grid-heading">
+          <span class="compact-grid-title">{{ headerLabel }}</span>
+          <CoarPopover v-if="headerHint" mode="both" :offset="6">
+            <button
+              type="button"
+              class="compact-grid-help"
+              :aria-label="`${t('common.info', {}, 'Info')}: ${headerLabel}`">
+              <CoarIcon name="info" size="s" aria-hidden="true" />
+            </button>
+            <template #content>
+              <p class="compact-grid-help-text">{{ headerHint }}</p>
+            </template>
+          </CoarPopover>
+        </div>
         <CoarButton
           v-else-if="!(disabled || readonly)"
           size="s"
@@ -211,10 +229,22 @@ const search = ref('')
   min-height: 0;
 }
 
+.editable-string-list--fill {
+  height: 100%;
+  max-height: none;
+}
+
 .editable-string-list--compact-grid :deep(.ag-theme-cocoar--bordered > .coar-grid-toolbar) {
   min-height: 2.75rem;
   margin: 0;
   padding: 0.35rem 0.6rem;
+}
+
+.compact-grid-heading {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.35rem;
 }
 
 .compact-grid-title {
@@ -224,5 +254,42 @@ const search = ref('')
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.compact-grid-heading :deep(.coar-popover),
+.compact-grid-heading :deep(.coar-popover-trigger) {
+  display: inline-flex;
+  align-items: center;
+  height: 1.5rem;
+  line-height: 1;
+}
+
+.compact-grid-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: 0;
+  color: var(--coar-text-neutral-tertiary, #6b7280);
+  background: transparent;
+  cursor: help;
+}
+
+.compact-grid-help:focus-visible {
+  border-radius: 50%;
+  outline: 2px solid var(--coar-border-brand-primary, #009fe3);
+  outline-offset: 2px;
+}
+
+.compact-grid-help-text {
+  width: min(22rem, calc(100vw - 2rem));
+  margin: 0;
+  padding: 0.75rem;
+  color: var(--coar-text-neutral-secondary, #525e76);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-line;
 }
 </style>

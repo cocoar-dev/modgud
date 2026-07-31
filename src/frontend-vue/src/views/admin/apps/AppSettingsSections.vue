@@ -363,10 +363,6 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
 <template>
   <div class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-    <CoarNotice variant="info">
-      {{ t('admin.appSettings.hint', {}, 'These settings override the realm defaults only for this app. A disabled section inherits from the realm.') }}
-    </CoarNotice>
-
     <CoarTabGroup v-model="activeTab" class="tab-bar">
       <CoarTab id="origin">{{ t('admin.appSettings.tabs.origin', {}, 'Origin & Branding') }}</CoarTab>
       <CoarTab id="registration">{{ t('admin.appSettings.tabs.registration', {}, 'Registrierung') }}</CoarTab>

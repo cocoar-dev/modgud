@@ -16,12 +16,20 @@ public class ServiceAccountDto
     public string? Purpose { get; set; }
     public bool IsActive { get; set; } = true;
     public EntityStatus Status { get; set; } = EntityStatus.Active;
+
+    /// <summary>
+    /// Present only on create when an initial credential was requested. The
+    /// plaintext secret is returned exactly once and is never persisted.
+    /// </summary>
+    public ServiceAccountCredentialIssuedDto? InitialCredential { get; set; }
 }
 
 public class ServiceAccountCreateDto
 {
     public string AccountName { get; set; } = string.Empty;
     public string? Purpose { get; set; }
+    public bool IsActive { get; set; } = true;
+    public IssueServiceAccountCredentialDto? InitialCredential { get; set; }
 }
 
 public class ServiceAccountUpdateDto

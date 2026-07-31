@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.Identity;
 namespace Modgud.Authentication.Setup;
 
 /// <summary>
-/// Atomic creation of the very first admin user inside a realm — used in three
+/// Atomic creation of a new admin user inside a realm — used in three
 /// places that all need exactly the same state-write:
 /// <list type="bullet">
 ///   <item><description>Recovery-CLI <c>bootstrap-admin --password</c> (Direct mode)</description></item>
@@ -32,7 +32,8 @@ namespace Modgud.Authentication.Setup;
 /// seed rather than duplicating.</para>
 ///
 /// <para>The seeded structure mirrors what the legacy <c>POST /api/setup/create-admin</c>
-/// endpoint produced, so existing realms keep the same shape.</para>
+/// endpoint produced, so existing realms keep the same shape. When the
+/// administrator role/group already exists, the new user is added to it.</para>
 ///
 /// <para>Tenant-scoping: the <see cref="IDocumentSession"/> resolved by DI is
 /// tenant-aware via <c>TenantedSessionFactory</c>. Callers must establish the

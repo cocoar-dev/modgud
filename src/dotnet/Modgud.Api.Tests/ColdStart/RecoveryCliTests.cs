@@ -87,7 +87,7 @@ public class RecoveryCliTests(ColdStartFixture fixture) : ColdStartTestBase(fixt
     }
 
     [Fact]
-    public async Task Tenant_scoped_command_announces_the_implicit_default_when_multiple_realms_exist()
+    public async Task Tenant_scoped_command_requires_an_explicit_target_when_multiple_realms_exist()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var ct = TestContext.Current.CancellationToken;
@@ -112,9 +112,9 @@ public class RecoveryCliTests(ColdStartFixture fixture) : ColdStartTestBase(fixt
 
         var result = await CliHarness.RunAsync(host.Services, "list"); // no --realm
 
-        Assert.Equal(0, result.ExitCode);
-        Assert.Contains("no --realm specified", result.StdErr);
-        Assert.Contains("'system'", result.StdErr);
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("2 active realms exist", result.StdErr);
+        Assert.Contains("--realm <slug> explicitly", result.StdErr);
     }
 
     // ── realm-domain guards (previously never validated) ─────────────────

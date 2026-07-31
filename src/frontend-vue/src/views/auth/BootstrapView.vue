@@ -111,7 +111,7 @@ async function handleSubmit() {
         <!-- Form -->
         <form v-else class="space-y-4" @submit.prevent="handleSubmit">
           <CoarNotice variant="info">
-            {{ t('auth.bootstrap.intro', {}, 'Set a password to activate your admin account. This link is single-use and expires in 7 days.') }}
+            {{ t('auth.bootstrap.intro', {}, 'Set a password to activate your admin account. This link is single-use and expires in 24 hours.') }}
           </CoarNotice>
 
           <CoarFormField :label="t('auth.bootstrap.newPassword', {}, 'New Password')">

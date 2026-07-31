@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Modgud.Authentication;
 using Modgud.Authentication.Setup;
 using Modgud.Authorization.Apps;
@@ -13,6 +14,7 @@ using Modgud.Permissions;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
+using Modgud.Infrastructure.Installation;
 using Marten;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,6 +28,59 @@ namespace Modgud.Authentication.Api.Admin;
 // One class per Recovery-CLI command. The dispatcher in RecoveryCli resolves the
 // tenant, enters the TenantContext, opens a DI scope, and calls ExecuteAsync; each
 // command resolves only the services it needs from ctx.Services and writes through
+
+// ── install-link ──────────────────────────────────────────────────────────
+
+/// <summary>
+/// Issues the short-lived operator authorization used by both the browser
+/// installation wizard and automated CI installation.
+/// </summary>
+internal sealed class InstallLinkCommand : IRecoveryCommand
+{
+    public string Name => "install-link";
+    public bool RequiresRealm => false;
+
+    public async Task<int> ExecuteAsync(RecoveryCliContext ctx)
+    {
+        var baseUrl = ctx.Flag("--base-url");
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            return ctx.Fail("Usage: recover install-link --base-url <https://host> [--minutes 30] [--json]");
+
+        var minutesRaw = ctx.Flag("--minutes");
+        if (minutesRaw is not null
+            && (!int.TryParse(minutesRaw, out var parsed) || parsed is < 1 or > 1440))
+        {
+            return ctx.Fail("--minutes must be an integer between 1 and 1440.");
+        }
+
+        var minutes = minutesRaw is null ? 30 : int.Parse(minutesRaw);
+        var service = ctx.Services.GetRequiredService<IInstallationChallengeService>();
+        var result = await service.IssueAsync(baseUrl, TimeSpan.FromMinutes(minutes));
+        if (result.IsError)
+            return ctx.Fail($"{result.FirstError.Code}: {result.FirstError.Description}");
+
+        var issued = result.Value;
+        if (ctx.Args.Any(a => a.Equals("--json", StringComparison.OrdinalIgnoreCase)))
+        {
+            ctx.WriteLine(JsonSerializer.Serialize(new
+            {
+                token = issued.PlaintextToken,
+                installUrl = issued.InstallUrl,
+                expiresAt = issued.ExpiresAt,
+            }));
+            return 0;
+        }
+
+        ctx.WriteLine("✓ First-installation link issued:");
+        ctx.WriteLine($"  Expires: {issued.ExpiresAt:yyyy-MM-dd HH:mm:ss zzz}");
+        ctx.WriteLine();
+        ctx.WriteLine($"  Link:    {issued.InstallUrl}");
+        ctx.WriteLine();
+        ctx.WriteLine("The previous unconsumed installation link, if any, is now revoked.");
+        ctx.WriteLine("For CI, add --json and POST the token to /api/install/complete.");
+        return 0;
+    }
+}
 // ctx.Out / ctx.Error. The execution model is unchanged from the original
 // monolith (same in-process host boot, same real events) — this is internal
 // modularization only.

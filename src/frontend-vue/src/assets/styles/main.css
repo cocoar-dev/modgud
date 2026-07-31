@@ -213,6 +213,11 @@ body {
   margin-top: 0.25rem;
 }
 
+/* Form-field help may deliberately contain short paragraphs or examples. */
+.coar-form-field__status-section--hint .coar-form-field__status-section-body > p {
+  white-space: pre-line;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

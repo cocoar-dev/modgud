@@ -160,9 +160,17 @@ internal sealed class RealmJobScheduler(
             if (existing.Count > 0)
                 await scheduler.DeleteJobs(existing.ToList(), ct);
 
-            logger.LogError(
-                "[Jobs] Expected exactly one active Control-Plane realm but found {Count}; system jobs are unscheduled",
-                controlPlanes.Count);
+            if (realms.Count == 0)
+            {
+                logger.LogInformation(
+                    "[Jobs] No realm exists yet; deployment-wide jobs remain unscheduled until first installation");
+            }
+            else
+            {
+                logger.LogError(
+                    "[Jobs] Expected exactly one active Control-Plane realm but found {Count}; system jobs are unscheduled",
+                    controlPlanes.Count);
+            }
             return;
         }
 

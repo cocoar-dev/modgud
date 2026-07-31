@@ -33,12 +33,10 @@ carries the **stored** `Realm.IsControlPlane` flag:
 public bool IsControlPlane { get; set; } // stored, transferable
 ```
 
-The bootstrap (`system`) realm is stamped with the flag at first boot
-(`EnsureSystemRealmExistsAsync`), but the slug is only the default anchor
-*name* — it no longer determines control-plane status. The flag is
-**transferable** to any active realm, so a deployment that starts
-single-tenant can later hand cross-realm administration to a different realm
-and let the original system realm become an equal, deletable peer.
+The first-installation API stamps the first ordinary realm with the flag only
+after its first `realm:admin` has been created. No realm is special by slug.
+The flag is **transferable** to any active realm, so a deployment that starts
+single-tenant can later hand cross-realm administration to another realm.
 
 ### Authority = realm:admin in the flag-holding realm
 
@@ -60,10 +58,9 @@ It is enforced defensively, not by a DB constraint:
 - `TransferControlPlaneAsync` clears the flag on every other holder in the
   same transaction — self-healing an accidental multi-holder state down to
   exactly the target.
-- At boot, `EnsureSystemRealmExistsAsync` adopts the flag onto the system
-  realm **only when no realm currently holds it**. This is the load-bearing
-  guard that makes a transfer durable across reboots — without it every boot
-  would steal the flag back to `system`.
+- The initial realm receives the flag only while the global realm registry is
+  empty. Normal realm creation never sets it, and startup never assigns or
+  moves it, so a transfer remains durable across reboots.
 
 `RealmProvisioningService` still blocks deactivating or deleting the realm
 that currently holds the flag — losing it would lock the deployment out of
@@ -221,28 +218,25 @@ dotnet Modgud.Api.dll recover bootstrap-admin \
 ### Path 3 — HTTP, control-plane admin issues an invite
 
 `POST /api/admin/realms` is the only HTTP path that creates a realm.
-It is CP-only (gated by all three layers above) and now requires
-`InitialAdmin: { UserName, Email, Firstname?, Lastname? }`. The backend
-atomically:
+It is CP-only (gated by all three layers above). Realm creation and
+administrator onboarding are separate operations:
 
 1. Creates the realm (DB, OAuth scopes, login providers, app seeding)
-2. Switches into the new tenant via `TenantContext.Enter(slug)`
-3. Issues a `PendingAdminInvite` and sends the email
-4. Returns `{Realm, InitialAdminInvite { UserName, Email, ExpiresAt, MagicLinkUrl }}`
+2. A CP admin may later call
+   `POST /api/admin/realms/{slug}/admin-invites`
+3. The API issues a `PendingAdminInvite`, sends the email, and returns
+   its one-time `MagicLinkUrl`
 
-The SPA reveals the `MagicLinkUrl` once after creation — useful in
+The SPA reveals the `MagicLinkUrl` once after invitation — useful in
 SMTP-less dev and air-gapped scenarios where the email won't arrive.
-A `POST /api/admin/realms/{slug}/resend-bootstrap-invite` endpoint
-issues a fresh token (and revokes any open ones) for the same
-recipient identity if the original is lost.
 
 ### Token lifecycle
 
 - 32-byte URL-safe random plaintext, SHA-256-hashed in the DB
-- 7-day TTL (`PendingAdminInvite.DefaultExpirationDays`)
+- 24-hour TTL (`PendingAdminInvite.DefaultExpirationHours`)
 - Single-use: `UsedAt` is set on success; reuse → 400 `BootstrapInvite.TokenUsed`
-- Reissue revokes prior open invites for the same email — there is at
-  most one consumable invite per recipient per realm
+- A new invite revokes every prior open invite — there is at most one
+  consumable admin invitation per realm
 
 ### Anti-race-window
 

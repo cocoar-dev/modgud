@@ -1,148 +1,135 @@
 # First-time setup
 
-How to bootstrap the very first admin account in a fresh deployment, and how to onboard the admin of every additional realm you create later.
+A fresh Modgud deployment starts with **zero realms and zero users**. Startup
+creates only the master database, the tenant registry and the Global Store.
+The first installation then creates:
 
-## The mental model
+- the first ordinary realm;
+- that realm's tenant database and standard seed data;
+- the first user and its `realm:admin` membership; and
+- the `Realm.IsControlPlane` flag on that first realm.
 
-Modgud has **no anonymous setup wizard**. A freshly-deployed instance with zero users does not expose a "click here to claim the instance" form — that would be a race window where the first stranger to reach the URL becomes the global admin.
+There is no special runtime `system` realm. Every realm has the same data
+shape. Cross-realm authority belongs to `realm:admin` users in whichever realm
+currently carries `IsControlPlane`.
 
-Instead, the first admin is created by someone with a **proven trust boundary**:
+## Trust boundary
 
-- **Container shell** (recovery CLI). Whoever can run commands inside the container is at the same trust level as someone who has the database password. That's an acceptable identity for "I'm the operator".
-- **An existing admin** (HTTP API). Once at least one admin exists in the deployment's Control-Plane realm, every new realm's first admin is bootstrapped by that existing admin via the regular admin API.
+The installation form is not anonymously claimable. An operator with shell
+access first issues a short-lived, single-use installation token through the
+recovery CLI. Only its SHA-256 hash is stored in the Global Store.
 
-There are three concrete paths. Pick by your scenario:
+Both the browser wizard and CI call the same HTTP API with that token. The API
+never issues installation tokens itself.
 
-| Scenario | Use |
+## Interactive installation
+
+Start the container, then issue an installation link from inside it:
+
+```bash
+docker exec modgud \
+  dotnet Modgud.Api.dll recover install-link \
+    --base-url https://auth.example.com
+```
+
+The command prints a URL like:
+
+```text
+https://auth.example.com/install?token=...
+```
+
+Open the URL and enter:
+
+- realm slug and display name;
+- primary domain (normally the host used in `--base-url`);
+- first administrator username, email and password.
+
+The API provisions the realm inactive, creates the administrator, activates
+the realm and marks installation complete. Normal API and browser routes return
+`503 not_initialized` or redirect to `/install` until that sequence succeeds.
+
+Issuing another link revokes any previous unconsumed link. The default lifetime
+is 30 minutes; `--minutes` accepts values from 1 to 1440.
+
+::: warning Production boot guards
+The published image runs as **Production** and refuses dev-shaped security
+configuration. In particular, OpenIddict development mode must be disabled and
+an enabled Prometheus endpoint needs a strong bearer token. See
+[Deployment](../operate/deployment).
+:::
+
+## Automated installation (CI/test)
+
+Use `--json` to make the recovery command's final output line
+machine-readable:
+
+```bash
+install_json="$(
+  docker exec modgud \
+    dotnet Modgud.Api.dll recover install-link \
+      --base-url https://auth.test.localhost \
+      --minutes 10 \
+      --json |
+  tail -n 1
+)"
+
+token="$(printf '%s' "$install_json" | jq -r .token)"
+```
+
+Wait until `GET /health/live` succeeds, then call the completion API:
+
+```bash
+curl --fail-with-body \
+  --request POST \
+  --header 'Content-Type: application/json' \
+  --data @- \
+  https://auth.test.localhost/api/install/complete <<JSON
+{
+  "token": "$token",
+  "realm": {
+    "slug": "test",
+    "displayName": "Test",
+    "description": "Ephemeral CI realm",
+    "domains": ["auth.test.localhost"],
+    "primaryDomain": "auth.test.localhost"
+  },
+  "admin": {
+    "userName": "ci-admin",
+    "email": "ci-admin@test.localhost",
+    "firstName": "CI",
+    "lastName": "Admin",
+    "password": "$MODGUD_CI_ADMIN_PASSWORD"
+  }
+}
+JSON
+```
+
+Useful endpoints:
+
+| Endpoint | Purpose |
 | --- | --- |
-| Local dev / first install on a self-hosted box | **Recovery CLI — direct mode** |
-| Operator delegates the first sign-in to someone else (e.g. handing the system to a customer admin) | **Recovery CLI — invite mode** |
-| Provisioning a new tenant realm in an already-running deployment (SaaS or multi-environment self-hosted) | **HTTP API — `POST /api/admin/realms`** |
+| `GET /api/install/status` | Returns whether installation is complete |
+| `POST /api/install/validate` | Validates a token without consuming it |
+| `POST /api/install/complete` | Performs the complete first installation |
 
-::: tip Running a single-tenant deployment?
-If your deployment hosts one app for one company (no SaaS, no
-per-customer isolation), you don't need to provision additional
-realms — the system realm is fully featured and works on its own.
-See [Single-tenant mode](single-tenant-mode) for the recipe.
-:::
+`complete` is idempotently closed after success: once a realm exists or the
+global completion marker is present, another first installation is rejected.
+The token is a bearer secret; do not print or persist it in CI artifacts.
 
-All three paths end up with the same shape inside the realm: an `ApplicationUser`, the three default roles (System Admin / User Manager / Viewer), and an `Administrators` group containing the new user with `realm:admin` — exactly what every other admin in the system has.
+For an HTTP-only test host, pass its `http://...` origin as `--base-url`.
+Production and local Caddy installations should use their external HTTPS URL.
 
-## Prerequisite — add your public hostname to the system realm
+## Additional realms
 
-::: warning Production deployments must do this BEFORE the first admin bootstrap
-The system realm is auto-created on first boot with a hardcoded dev-friendly domain list — `system.localhost`, `localhost`, `127.0.0.1`. `RealmMiddleware` matches incoming requests against that list to resolve which realm a request belongs to. A request to `https://auth.example.com/...` against an unmodified system realm gets rejected as "no realm" and you can't reach the SPA, the login page, or even the bootstrap-magic-link.
-
-Add your real public hostname first:
-
-```bash
-# 1. Register the public hostname on the system realm
-docker exec modgud \
-  dotnet Modgud.Api.dll recover realm-add-domain \
-    --slug system \
-    --domain auth.example.com
-
-# 2. Make it the realm's primary so outbound email links (magic-link,
-#    password reset, invites) resolve to the public host, not localhost
-docker exec modgud \
-  dotnet Modgud.Api.dll recover realm-set-primary-domain \
-    --slug system \
-    --domain auth.example.com
-
-# 3. Restart the container to pick up the change
-docker restart modgud
-```
-
-`realm-add-domain` is idempotent — re-running with the same domain is a no-op. `realm-set-primary-domain` requires the domain to already be on the realm (run `realm-add-domain` first); it also re-points the WebAuthn relying-party ID, so existing passkeys are invalidated by a primary-domain change. List the current domains with `recover realm-list`. Remove with `recover realm-remove-domain --slug system --domain auth.example.com` (you cannot remove the current primary — re-point it first).
-
-Skip this section if you're on the default `localhost` Docker quickstart — the seeded domains already cover `localhost`, `127.0.0.1`, and `system.localhost`.
-:::
-
-::: warning Production boot guards (fail-closed)
-The published image runs as **Production** and refuses to boot on a dev-shaped config. Before the container will start in production you must satisfy all of these:
-
-- `OpenIddict__DevelopmentMode` is `false` (the default) — ephemeral keys are rejected.
-- If Prometheus scraping stays enabled (the default), `Observability__Prometheus__BearerToken` is set to a strong random string. Otherwise set `Observability__Prometheus__Enabled=false`. An unauthenticated `/metrics` endpoint on a public host leaks realm-labelled telemetry, so the guard blocks boot until you pick one.
-
-A misconfigured value throws at startup with a descriptive message rather than silently yielding an insecure IdP. See [Deployment](../operate/deployment) for the full env-var reference.
-:::
-
-## Path A — Recovery CLI, direct mode
-
-The simplest path for local development and self-hosted first-installs. Sets the password right away — no email roundtrip needed.
-
-```bash
-docker exec modgud \
-  dotnet Modgud.Api.dll recover bootstrap-admin \
-    --email admin@example.com \
-    --username admin \
-    --password 'StrongPass1!' \
-    [--realm system]
-```
-
-The `--realm` flag defaults to `system`. You only need it for non-system tenants (rare from the CLI — usually you'd use Path C for those).
-
-Output:
-
-```
-✓ Admin created in realm 'system':
-  UserName: admin
-  Email:    admin@example.com
-  Mode:     Direct (password set on creation)
-```
-
-Sign in immediately at the realm's host — `http://localhost/` for the default Docker quickstart.
-
-::: tip Password rules apply
-The CLI enforces the same Identity password policy the SPA uses (length ≥ 8, mixed case, at least one digit). A weak password is rejected with a clear error — no privileged bypass. See [Settings](../platform/settings) to relax the policy if your operational needs require it.
-:::
-
-## Path B — Recovery CLI, invite mode
-
-Same CLI, but **without** `--password`. Useful when the operator (you) shouldn't know the admin's password — e.g. when handing off a customer's instance.
-
-```bash
-docker exec modgud \
-  dotnet Modgud.Api.dll recover bootstrap-admin \
-    --email max@acme.com \
-    --username max \
-    [--realm system]
-```
-
-Output:
-
-```
-✓ Bootstrap-invite issued for realm 'system':
-  UserName:  max
-  Email:     max@acme.com
-  Expires:   2026-05-12 10:26:51 +00:00
-
-  Link:      http://localhost/bootstrap?token=…
-```
-
-The CLI:
-
-1. Writes a **`PendingAdminInvite`** record into the realm's tenant DB (single-use, 7-day expiry, hashed token).
-2. Sends a **magic-link email** to the recipient (if SMTP is configured).
-3. Prints the magic-link URL on stdout regardless — useful for SMTP-less dev setups or air-gapped operations.
-
-The recipient opens the link, lands on `/bootstrap?token=…` in the SPA, sets their own password, and is auto-signed-in. The token is revoked on first successful use.
-
-If the link expires or gets lost, run the same CLI command again — it revokes any open invite for that email and issues a fresh one.
-
-## Path C — HTTP API (Control-Plane admin issues an invite)
-
-Used for **every realm beyond the first**. Once you have at least one admin in the Control-Plane realm, you create new tenant realms (and their first admins) through `POST /api/admin/realms` from the Control-Plane host.
-
-This is the SaaS-friendly path: a customer registers, you provision their realm by calling one endpoint, the customer gets the magic link in their inbox and never shares a password with you.
-
-The Control-Plane admin sends:
+After installation, a `realm:admin` in the Control-Plane realm creates further
+realms through `POST /api/admin/realms`. Those realms are normal data-plane
+realms and do not receive the Control-Plane flag.
 
 ```http
 POST /api/admin/realms HTTP/1.1
-Host: auth.example.com           # the Control-Plane host
+Host: auth.example.com
 Content-Type: application/json
-Cookie: Modgud.Auth=…       # the CP-admin's session cookie
+Cookie: Modgud.Auth=...
 
 {
   "Slug": "acme",
@@ -157,70 +144,37 @@ Cookie: Modgud.Auth=…       # the CP-admin's session cookie
 }
 ```
 
-Response (201 Created):
+The existing Control-Plane admin authorizes this operation. The new realm's
+first admin receives the regular bootstrap invite. This is separate from the
+deployment-wide first-installation token.
 
-```json
-{
-  "Realm": {
-    "Slug": "acme", "DisplayName": "Acme Corp",
-    "Domains": ["auth.acme.com"], "IsControlPlane": false,
-    "IsActive": true, "CreatedAt": "..."
-  },
-  "InitialAdminInvite": {
-    "UserName": "max",
-    "Email": "max@acme.com",
-    "ExpiresAt": "...",
-    "MagicLinkUrl": "https://auth.acme.com/bootstrap?token=…"
-  }
-}
+## Recovery after installation
+
+Tenant-scoped recovery commands infer the realm only when exactly one active
+realm exists. With multiple realms, pass `--realm <slug>` explicitly. For
+example:
+
+```bash
+docker exec modgud \
+  dotnet Modgud.Api.dll recover bootstrap-admin \
+    --realm acme \
+    --email recovery-admin@example.com \
+    --username recovery-admin \
+    --password 'StrongPass1!'
 ```
 
-Behind the scenes, atomically with the realm creation:
+`bootstrap-admin` adds the user to the realm's existing Administrators group
+and therefore restores a `realm:admin` path. See
+[Recovery CLI](../operate/recovery-cli).
 
-1. The tenant DB is provisioned and the realm-internal `modgud` app is seeded.
-2. A `PendingAdminInvite` is written into the new tenant DB.
-3. The magic-link email is sent to `InitialAdmin.Email`.
+## Recommended next steps
 
-The magic-link URL is also returned in the response — useful when SMTP isn't reachable in the calling environment. Treat the URL as secret-equivalent until it's been clicked.
+1. Enable TOTP or a passkey on the first administrator.
+2. Configure SMTP and test outbound mail.
+3. Register the first OAuth/OIDC application.
+4. Configure external SSO if required.
+5. Plan and test Control-Plane transfer before relying on it operationally.
 
-To re-issue a fresh token (e.g. operator pressing the button after an expired link is reported):
-
-```http
-POST /api/admin/realms/acme/resend-bootstrap-invite
-```
-
-The previous invite is revoked, a fresh `MagicLinkUrl` is returned. The recipient identity (UserName + Email + Firstname + Lastname) is reused from the original invite — no `body` needed.
-
-::: warning Email is mandatory
-The HTTP API requires `InitialAdmin.UserName` and `InitialAdmin.Email`. There is no way to create a realm without a recipient — a realm with no admin path would be an orphaned shell. If the recipient's email turns out to be wrong, delete the realm and provision a fresh one (the soft-delete leaves data for forensics; see [Realms admin](../admin/realms)).
-:::
-
-## After the first admin is in
-
-You're now signed in. The admin SPA dashboard shows:
-
-- Sidebar with every section visible — you hold `realm:admin`, the wildcard bypass.
-- The `modgud` system app already registered (seeded by `AppRealmSeeder` on realm creation).
-
-Recommended next steps:
-
-1. **Enable 2FA on your admin account** — Profile → Security → TOTP or Passkey.
-2. **Configure SMTP** — Settings → SMTP, then send a test email. Without real SMTP, outbound email is silently dropped (there is no on-disk dev mailbox); the recovery CLI and realm-creation API still surface invite / magic-link URLs directly. For local capture, point Modgud at a dev SMTP catcher such as Mailpit or smtp4dev.
-3. **Seed demo data** (optional, dev/test only, repo checkout required) — run `node scripts/seed-demo.mjs` to fill the realm with users, groups, OAuth clients and a sample external IdP. Not in the published image.
-4. **Bind your first SaaS app** — [SaaS Integration Walkthrough](../integrate/saas-walkthrough).
-5. **Configure external SSO** (optional) — [Login Providers](../admin/login-providers).
-6. **Plan additional realms** — [Realms admin](../admin/realms).
-
-## Lost the admin account?
-
-If the only admin in a realm loses their access, no UI flow can restore them — but the recovery CLI can. Run the same `bootstrap-admin` command again with a fresh email/username; it adds you to the existing `Administrators` group rather than duplicating it. See [Recovery CLI](../operate/recovery-cli) for related commands (`reset-2fa`, `magic-link`, `set-email`).
-
-## Tips
-
-::: tip Always set an email
-Without an email address you have no recovery channel — no magic link, no password reset. Always set one on the first admin and verify SMTP works before you need it.
-:::
-
-::: tip One Control-Plane realm per deployment
-Exactly one realm in a deployment is the Control Plane — the realm carrying the persisted `Realm.IsControlPlane` flag. The `system` realm is stamped with it at first boot, so it's the default anchor, but the flag is **transferable**: a deployment that starts single-tenant can later hand cross-realm administration to a different realm via `recover control-plane transfer <slug>` or `POST /api/admin/realms/{slug}/transfer-control-plane`. Once moved, the original system realm becomes an equal, deletable peer. The "exactly one" invariant is enforced on create and transfer. See [Concepts: Control Plane / Data Plane](../concepts/control-plane).
-:::
+The guard that prevents removal of the final realm or final effective
+`realm:admin` path is a separate hardening concern. The recovery CLI remains the
+break-glass path if an administrator is locked out.

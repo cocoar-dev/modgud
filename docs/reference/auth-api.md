@@ -170,7 +170,7 @@ surface) because they're identity-lifecycle operations:
 
 There is no anonymous setup wizard. The first admin in any realm is
 created either through the recovery CLI (filesystem trust) or via a
-Control-Plane admin issuing an invite through the realm-create API.
+Control-Plane admin issuing an invitation for that realm.
 The single anonymous endpoint is the bootstrap-invite consumer:
 
 | Method | Path | Description |
@@ -181,12 +181,12 @@ The token comes from one of:
 
 - `dotnet Modgud.Api.dll recover bootstrap-admin --email <e>`
   (without `--password`) — see [Recovery CLI](../operate/recovery-cli)
-- `POST /api/admin/realms` with an `InitialAdmin` payload — see
+- `POST /api/admin/realms/{slug}/admin-invites` — see
   [Realm API](./realm-api)
-- `POST /api/admin/realms/{slug}/resend-bootstrap-invite` — re-issue a
-  fresh token for the same recipient
+- `POST /api/admin/realms` with an optional `InitialAdmin` payload for
+  backwards-compatible create-and-invite automation
 
-Token properties: SHA-256-hashed in the DB, 7-day TTL, single-use
+Token properties: SHA-256-hashed in the DB, 24-hour TTL, single-use
 (reuse → 400 `BootstrapInvite.TokenUsed`). Endpoint is rate-limited
 under the `bootstrap` policy (10 attempts per IP per 15 minutes).
 

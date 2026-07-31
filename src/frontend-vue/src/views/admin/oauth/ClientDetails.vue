@@ -14,6 +14,7 @@ import {
   CoarDivider,
   CoarTabGroup,
   CoarTab,
+  CoarTag,
   CoarDualListbox,
   vTooltip,
 } from '@cocoar/vue-ui'
@@ -298,6 +299,7 @@ const useNewServiceAccountDraft = ref(false)
 const newServiceAccountForm = ref({
   AccountName: '',
   Purpose: '',
+  IsActive: true,
 })
 const serviceAccountNamePattern = /^[a-z0-9][a-z0-9._-]{1,63}$/
 
@@ -319,6 +321,7 @@ async function openNewServiceAccountModal() {
     ? {
         AccountName: newServiceAccountForm.value.AccountName,
         Purpose: newServiceAccountForm.value.Purpose || undefined,
+        IsActive: newServiceAccountForm.value.IsActive,
       }
     : undefined
   const draft = await modalOverlay.open<ServiceAccountCreateDto>(
@@ -332,13 +335,14 @@ async function openNewServiceAccountModal() {
   newServiceAccountForm.value = {
     AccountName: draft.AccountName,
     Purpose: draft.Purpose ?? '',
+    IsActive: draft.IsActive ?? true,
   }
   useNewServiceAccountDraft.value = true
 }
 
 function discardNewServiceAccountDraft() {
   useNewServiceAccountDraft.value = false
-  newServiceAccountForm.value = { AccountName: '', Purpose: '' }
+  newServiceAccountForm.value = { AccountName: '', Purpose: '', IsActive: true }
 }
 
 function fromDto(dto: OAuthClientDto): FormState {
@@ -523,6 +527,7 @@ function buildCreateDto(): CreateOAuthClientDto {
       dto.NewServiceAccount = {
         AccountName: newServiceAccountForm.value.AccountName.trim(),
         Purpose: newServiceAccountForm.value.Purpose.trim() || undefined,
+        IsActive: newServiceAccountForm.value.IsActive,
       }
     } else if (form.value.LinkedServiceAccountId) {
       dto.LinkedServiceAccountId = form.value.LinkedServiceAccountId
@@ -942,7 +947,14 @@ async function copySecret() {
                     <div class="service-account-draft__identity">
                       <CoarIcon name="cpu" size="m" />
                       <div class="service-account-draft__text">
-                        <strong>{{ newServiceAccountForm.AccountName }}</strong>
+                        <div class="flex items-center gap-2">
+                          <strong>{{ newServiceAccountForm.AccountName }}</strong>
+                          <CoarTag :variant="newServiceAccountForm.IsActive ? 'success' : 'warning'">
+                            {{ newServiceAccountForm.IsActive
+                              ? t('common.active', {}, 'Aktiv')
+                              : t('common.inactive', {}, 'Inaktiv') }}
+                          </CoarTag>
+                        </div>
                         <span>
                           {{ newServiceAccountForm.Purpose || t('admin.oauthClients.newServiceAccount.noPurpose', {}, 'Kein Verwendungszweck angegeben') }}
                         </span>

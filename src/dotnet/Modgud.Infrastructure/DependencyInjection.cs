@@ -19,6 +19,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Modgud.Application.Contracts;
 using Modgud.Infrastructure.Events;
 using Modgud.Infrastructure.Persistence.Marten.Configuration;
+using Modgud.Infrastructure.Installation;
 using Wolverine.Marten;
 
 namespace Modgud.Infrastructure;
@@ -58,8 +59,9 @@ public static class DependencyInjection
         })
         // BuildSessionsWith installs our TenantedSessionFactory as the singleton
         // ISessionFactory. Every IDocumentSession / IQuerySession injection now
-        // resolves the tenant from HttpContext.Items["TenantId"] (set by RealmMiddleware),
-        // falling back to the "system" tenant when no HttpContext is available.
+        // resolves the tenant from HttpContext.Items["TenantId"] (set by
+        // RealmMiddleware) or an explicit TenantContext. Missing realm context
+        // fails closed; deployment-wide state belongs in IGlobalStore.
         // NOTE: this replaces the previous .UseLightweightSessions() call — our factory
         // also returns LightweightSession()-backed sessions.
         // Singleton lifetime: the factory is stateless — IHttpContextAccessor (Singleton)
@@ -86,6 +88,11 @@ public static class DependencyInjection
             opts.Schema.For<Realm>()
                 .Identity(x => x.Id)
                 .Index(x => x.Slug, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsActive')::boolean = true)"; });
+
+            opts.Schema.For<InstallationState>().Identity(x => x.Id);
+            opts.Schema.For<InstallationChallenge>()
+                .Identity(x => x.Id)
+                .Index(x => x.TokenHash, x => x.IsUnique = true);
 
             // Deployment-wide scheduled jobs are controlled from whichever
             // realm currently holds the Control-Plane role, but their config
@@ -142,6 +149,7 @@ public static class DependencyInjection
         services.AddSingleton<IRealmKeyStore, RealmKeyStore>();
         services.AddSingleton<IRealmCache, RealmCache>();
         services.AddScoped<IRealmProvisioningService, RealmProvisioningService>();
+        services.AddScoped<IInstallationChallengeService, InstallationChallengeService>();
 
         // Required for Marten projection side effects to publish messages via Wolverine
         // EventForwardingToWolverine: forwards domain events as Wolverine messages on commit

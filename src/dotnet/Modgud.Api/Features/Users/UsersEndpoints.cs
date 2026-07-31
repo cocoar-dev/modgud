@@ -85,7 +85,10 @@ public static class UsersEndpoints
                     createDto.UserName ?? "",
                     createDto.Password,
                     createDto.EmailConfirmed,
-                    createDto.IsActive);
+                    createDto.IsActive,
+                    createDto.GroupIds,
+                    createDto.GracePeriodDaysOverride,
+                    createDto.TwoFactorExempt);
                 var result = await bus.InvokeAsync<ErrorOr.ErrorOr<UserDto>>(command);
                 return result.ToResult(dto =>
                 {

@@ -15,7 +15,6 @@ export interface RealmDto {
   PrimaryDomain: string
   IsControlPlane: boolean
   IsActive: boolean
-  NeedsSetup: boolean
   CreatedAt: string
 }
 
@@ -43,12 +42,13 @@ export interface CreateRealmDto {
   /** Optional. Canonical public host for outbound links + WebAuthn RP. When set
    * it must be one of `Domains`; when omitted the first `Domains` entry is used. */
   PrimaryDomain?: string | null
-  InitialAdmin: InitialAdminDto
+  /** Initial activation state. Defaults to true. */
+  IsActive?: boolean | null
 }
 
 export interface CreatedRealmDto {
   Realm: RealmDto
-  InitialAdminInvite: InitialAdminInviteDto
+  InitialAdminInvite?: InitialAdminInviteDto | null
 }
 
 export interface UpdateRealmDto {

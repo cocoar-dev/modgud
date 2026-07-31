@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarNotice, CoarTextInput, CoarFormField, CoarButton, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
+import { CoarNotice, CoarTextInput, CoarFormField, CoarButton, CoarIcon, CoarTabGroup, CoarTab, vTooltip } from '@cocoar/vue-ui'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
@@ -66,6 +66,9 @@ const newCatalogUid = () => `catalog-${Date.now()}-${catalogUidCounter++}`
 const catalog = ref<CatalogRow[]>([])
 
 const SEGMENT_REGEX = /^[a-z0-9-]+$/
+// Mirrors AppSlugRules on the backend: 3–63 chars, starts with a lowercase
+// letter, ends with a lowercase letter/digit, middle may also contain hyphens.
+const APP_SLUG_REGEX = /^[a-z][a-z0-9-]{1,61}[a-z0-9]$/
 
 interface FormState {
   Slug: string
@@ -247,12 +250,21 @@ const modalTitle = computed(() =>
 )
 const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.Slug)
 
+const slugInvalid = computed(() => isCreate.value && !APP_SLUG_REGEX.test(form.value.Slug.trim()))
+const displayNameInvalid = computed(() => !form.value.DisplayName.trim())
+const slugError = computed(() => slugInvalid.value
+  ? t('admin.apps.validation.slug', {}, 'Enter a valid slug (3–63 lowercase letters, digits or hyphens).')
+  : '')
+const displayNameError = computed(() => displayNameInvalid.value
+  ? t('admin.apps.validation.displayName', {}, 'Display name is required.')
+  : '')
+
 const footerButton = computed(() => ({
   visible: true,
   text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: loading.value
-    || !form.value.DisplayName.trim()
-    || (isCreate.value && !form.value.Slug.trim())
+    || displayNameInvalid.value
+    || slugInvalid.value
     || hasInvalidSegments.value
     || hasIncompleteRows.value
     || duplicateKeys.value.size > 0,
@@ -368,23 +380,42 @@ async function save() {
       <CoarTabGroup v-model="activeTab" class="tab-bar">
         <CoarTab id="general">{{ t('admin.apps.tabs.general', {}, 'General') }}</CoarTab>
         <CoarTab id="catalog">{{ t('admin.apps.tabs.catalog', {}, 'Permission-Catalog') }}</CoarTab>
-        <CoarTab v-if="!isSystem" id="settings">{{ t('admin.apps.tabs.settings', {}, 'Settings') }}</CoarTab>
+        <CoarTab
+          v-if="!isSystem"
+          id="settings"
+          v-tooltip="{
+            content: t('admin.appSettings.hint', {}, 'These settings override the realm defaults only for this app. A disabled section inherits from the realm.'),
+            placement: 'top',
+          }"
+        >
+          <span class="settings-tab-label">
+            {{ t('admin.apps.tabs.settings', {}, 'Settings') }}
+            <span class="settings-tab-info" aria-hidden="true">
+              <CoarIcon name="info" size="s" aria-hidden="true" />
+            </span>
+          </span>
+        </CoarTab>
       </CoarTabGroup>
 
       <!-- Tab: General -->
       <div v-show="activeTab === 'general'" class="tab-content">
         <div class="grid grid-cols-2 gap-3">
-          <CoarFormField :label="t('admin.apps.slug', {}, 'Slug (immutable)')">
+          <CoarFormField :label="t('admin.apps.slug', {}, 'Slug')" :required="isCreate"
+            :error="slugError"
+            :hint="t('admin.apps.slug.hint', {}, 'Permanent URL and API identifier in kebab-case.\n\nExample: acme-portal\nImmutable after creation.')">
             <CoarTextInput v-model="form.Slug" :disabled="!isCreate || isSystem" clearable
               :placeholder="t('admin.apps.slugPlaceholder', {}, 'kebab-case-slug')" />
           </CoarFormField>
-          <CoarFormField :label="t('admin.apps.displayName', {}, 'Display Name')">
+          <CoarFormField :label="t('admin.apps.displayName', {}, 'Display name')" required
+            :error="displayNameError"
+            :hint="t('admin.apps.displayName.hint', {}, 'Human-readable name shown in lists and selectors.')">
             <CoarTextInput v-model="form.DisplayName" :disabled="isSystem" clearable />
           </CoarFormField>
         </div>
 
-        <CoarFormField :label="t('common.description', {}, 'Description')">
-          <CoarTextInput v-model="form.Description" :disabled="isSystem" clearable />
+        <CoarFormField :label="t('common.description', {}, 'Description')"
+          :hint="t('admin.apps.description.hint', {}, 'Optional note about the product or system represented by this application.')">
+          <CoarTextInput v-model="form.Description" :disabled="isSystem" clearable :rows="3" />
         </CoarFormField>
       </div>
 
@@ -458,7 +489,7 @@ async function save() {
         />
       </div>
 
-      <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+      <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
     </div>
   </ModalLayout>
 </template>
@@ -466,6 +497,19 @@ async function save() {
 <style scoped>
 .tab-bar {
   margin-bottom: 12px;
+}
+.settings-tab-label,
+.settings-tab-info {
+  display: inline-flex;
+  align-items: center;
+}
+.settings-tab-label {
+  gap: 0.35rem;
+}
+.settings-tab-info {
+  width: 1rem;
+  height: 1rem;
+  color: var(--coar-text-neutral-tertiary, #6b7280);
 }
 .tab-content {
   display: flex;

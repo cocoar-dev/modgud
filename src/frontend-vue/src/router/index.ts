@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { NavigationGuard, RouteLocationGeneric } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
-import { MODAL_MD, MODAL_LG } from './modal-sizes'
+import { MODAL_MD, MODAL_LG, MODAL_LIST_FORM } from './modal-sizes'
 
 /**
  * Per-route gate for routes that depend on the page-builder feature
@@ -58,16 +58,20 @@ const authPageSlotGate: NavigationGuard = (to) => {
 // ── Per-modal assignments ───────────────────────────────────────────────────
 // The named sizes themselves live in ./modal-sizes so modals opened from
 // inside another modal (useModalOverlay) can reuse the same values.
-// Single forms → cap-to-content (MD); drive the family toward ScopeDetails.
-const SCOPE_MODAL_SIZE = MODAL_MD
-const REALM_MODAL_SIZE = MODAL_MD
-// Role is tabbed (Allgemein / Berechtigungen). FIXED frame so the size never
-// changes on tab switch — sized to the taller Permissions tab (its catalog
-// checklist scrolls inside). The short Allgemein tab fills the same frame.
-const ROLE_MODAL_SIZE = {
+// Scope combines a compact form with two editable token-content lists. A
+// stable frame prevents resizing between its General, Token content and
+// Behavior tabs and gives both list grids a definite height.
+const SCOPE_MODAL_SIZE = MODAL_LIST_FORM
+// Realm is a tabbed form now: General is content-heavy while Domains is a
+// fill-height grid. Keep the existing compact width, but pin the height so a
+// tab switch never changes the dialog frame.
+const REALM_MODAL_SIZE = {
   width: '42rem', minWidth: '42rem', maxWidth: '42rem',
-  height: '33rem', minHeight: '33rem', maxHeight: '85vh',
+  height: '36rem', minHeight: '36rem', maxHeight: '85vh',
 } as const
+// Role combines a form with a dual-listbox. Reuse the shared stable frame so
+// the warning/form content stays visible and both permission columns have room.
+const ROLE_MODAL_SIZE = MODAL_LIST_FORM
 const SERVICE_ACCOUNT_MODAL_SIZE = MODAL_MD
 
 // API modal is now Create=wizard / Edit=tabs. A FIXED frame (like ROLE) so the
@@ -115,6 +119,11 @@ const CLIENT_MODAL_SIZE = {
 } as const
 
 const routes = [
+    {
+      path: '/install',
+      component: () => import('@/views/auth/InstallView.vue'),
+      meta: { public: true },
+    },
     {
       path: '/login',
       component: () => import('@/views/auth/LoginView.vue'),

@@ -6,7 +6,22 @@ import { useUserStore } from '@/stores/user.store'
 import { usePrincipalStore } from '@/stores/principal.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, GROUP_CLONE } from '@/composables/useClone'
-import { CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarMultiSelect, CoarTabGroup, CoarTab, CoarPopover, CoarCodeBlock, CoarIcon, CoarListbox, CoarDualListbox } from '@cocoar/vue-ui'
+import {
+  CoarTextInput,
+  CoarFormField,
+  CoarCheckbox,
+  CoarSelect,
+  CoarMultiSelect,
+  CoarTabGroup,
+  CoarTab,
+  CoarPopover,
+  CoarCodeBlock,
+  CoarIcon,
+  CoarListbox,
+  CoarDualListbox,
+  CoarNotice,
+  CoarDivider,
+} from '@cocoar/vue-ui'
 import type { CoarListboxOption } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
@@ -37,7 +52,7 @@ const isCreate = computed(() => props.id === 'create')
 const initialLoad = ref(false)
 const saving = ref(false)
 const saveError = ref<string | null>(null)
-const activeTab = ref<'general' | 'members' | 'script' | 'roles' | 'effective'>('general')
+const activeTab = ref<'general' | 'members' | 'script' | 'access' | 'effective'>('general')
 const effectiveMembers = ref<import('@/stores/group.store').EffectiveMembersDto | null>(null)
 const effectiveLoading = ref(false)
 
@@ -93,6 +108,22 @@ const boundToOptions = computed(() => {
 const isAllAppsWildcard = computed(() => form.value.BoundTo.includes(ALL_APPS_WILDCARD))
 const isDormantBoundTo = computed(() => form.value.BoundTo.length === 0)
 
+// The wildcard and explicit app slugs describe mutually-exclusive scopes.
+// Selecting "*" replaces specifics; selecting a specific app while "*" is
+// active switches back to an explicit set.
+watch(
+  () => [...form.value.BoundTo],
+  (next, previous = []) => {
+    const hasWildcard = next.includes(ALL_APPS_WILDCARD)
+    const hadWildcard = previous.includes(ALL_APPS_WILDCARD)
+    if (hasWildcard && !hadWildcard) {
+      form.value.BoundTo = [ALL_APPS_WILDCARD]
+    } else if (hasWildcard && hadWildcard && next.length > 1) {
+      form.value.BoundTo = next.filter(value => value !== ALL_APPS_WILDCARD)
+    }
+  },
+)
+
 const modalTitle = computed(() => {
   const name = form.value.Name?.trim()
   if (name) return name
@@ -100,6 +131,18 @@ const modalTitle = computed(() => {
 })
 
 const isAutoMode = computed(() => form.value.MembershipMode === 'Auto')
+const nameError = computed(() =>
+  form.value.Name.trim()
+    ? ''
+    : t('admin.groupDetails.validation.nameRequired', {}, 'Name is required.'),
+)
+const scriptError = computed(() =>
+  isAutoMode.value && !form.value.MembershipScript.trim()
+    ? t('admin.groupDetails.validation.scriptRequired', {}, 'A membership script is required for automatic groups.')
+    : '',
+)
+const generalIssues = computed(() => [nameError.value].filter(Boolean))
+const scriptIssues = computed(() => [scriptError.value].filter(Boolean))
 
 // Federation v1: a group whose selected roles confer realm:admin can NEVER be
 // externally drivable (realm:admin is hard local-only). Mirror the backend
@@ -140,9 +183,7 @@ watch(isAutoMode, (auto) => {
 const footerButton = computed(() => ({
   visible: true,
   text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
-  disabled: !form.value.Name.trim()
-    || saving.value
-    || (isAutoMode.value && !form.value.MembershipScript.trim()),
+  disabled: generalIssues.value.length > 0 || scriptIssues.value.length > 0 || saving.value,
   loading: saving.value,
   onClick: save,
 }))
@@ -340,8 +381,8 @@ async function save() {
   saveError.value = null
   try {
     const dto = {
-      Name: form.value.Name,
-      Description: form.value.Description || undefined,
+      Name: form.value.Name.trim(),
+      Description: form.value.Description.trim() || undefined,
       MemberIds: isAutoMode.value ? [] : form.value.MemberIds,
       RoleIds: form.value.RoleIds,
       MembershipMode: form.value.MembershipMode,
@@ -349,7 +390,9 @@ async function save() {
       // Only an Auto group can be externally driven; never send true for Manual
       // (the deriver ignores non-Auto groups anyway, but keep the payload honest).
       ExternallyDrivable: isAutoMode.value && form.value.ExternallyDrivable && !hasRealmAdminRole.value,
-      Email: form.value.Email?.trim() || undefined,
+      Email: form.value.EmailMode === 'Shared'
+        ? (form.value.Email?.trim() || undefined)
+        : undefined,
       EmailMode: form.value.EmailMode,
       BoundTo: [...form.value.BoundTo],
     }
@@ -370,7 +413,7 @@ async function save() {
     //   { Errors: [{ Code, Description }] }  (GroupEndpoints)
     //   { error: "..." }                      (ErrorOrExtensions default)
     //   { detail / title: "..." }             (ASP.NET ProblemDetails)
-    const body = e?.body
+    const body = e?.body ?? e?.data
     let detail: string | null = null
     if (typeof body === 'object' && body !== null) {
       if (Array.isArray(body.Errors) && body.Errors.length > 0) {
@@ -393,27 +436,64 @@ async function save() {
   <ModalLayout :close="close" :title="modalTitle" icon="users" :footer-button="footerButton">
     <div v-if="!initialLoad" class="flex flex-col min-w-0 min-h-0 flex-1">
       <CoarTabGroup v-model="activeTab" class="tab-bar">
-        <CoarTab id="general">{{ t('admin.groupDetails.tabs.general', {}, 'General') }}</CoarTab>
+        <CoarTab id="general">
+          <span class="tab-label">
+            {{ t('admin.groupDetails.tabs.general', {}, 'General') }}
+            <CoarPopover v-if="generalIssues.length" mode="hover" :offset="8">
+              <span class="tab-issue" role="img" :aria-label="generalIssues.join(' ')">
+                <CoarIcon name="circle-alert" size="s" />
+              </span>
+              <template #content>
+                <div class="tab-issue-panel">
+                  <h4>{{ t('admin.groupDetails.validation.incomplete', {}, 'Missing information') }}</h4>
+                  <ul>
+                    <li v-for="issue in generalIssues" :key="issue">{{ issue }}</li>
+                  </ul>
+                </div>
+              </template>
+            </CoarPopover>
+          </span>
+        </CoarTab>
+        <CoarTab v-if="isAutoMode" id="script">
+          <span class="tab-label">
+            {{ t('admin.groupDetails.tabs.script', {}, 'Script') }}
+            <CoarPopover v-if="scriptIssues.length" mode="hover" :offset="8">
+              <span class="tab-issue" role="img" :aria-label="scriptIssues.join(' ')">
+                <CoarIcon name="circle-alert" size="s" />
+              </span>
+              <template #content>
+                <div class="tab-issue-panel">
+                  <h4>{{ t('admin.groupDetails.validation.incomplete', {}, 'Missing information') }}</h4>
+                  <ul>
+                    <li v-for="issue in scriptIssues" :key="issue">{{ issue }}</li>
+                  </ul>
+                </div>
+              </template>
+            </CoarPopover>
+          </span>
+        </CoarTab>
         <CoarTab id="members">{{ t('admin.groupDetails.tabs.members', {}, 'Members') }}</CoarTab>
-        <CoarTab v-if="isAutoMode" id="script">{{ t('admin.groupDetails.tabs.script', {}, 'Script') }}</CoarTab>
-        <CoarTab id="roles">{{ t('admin.groupDetails.tabs.roles', {}, 'Roles') }}</CoarTab>
         <CoarTab v-if="!isCreate" id="effective">{{ t('admin.groupDetails.tabs.effective', {}, 'Effective') }}</CoarTab>
+        <CoarTab id="access">{{ t('admin.groupDetails.tabs.access', {}, 'Access') }}</CoarTab>
       </CoarTabGroup>
 
-      <div v-if="saveError" class="save-error">
-        <div class="save-error-title">{{ t('admin.groupDetails.saveError', {}, 'Save failed') }}</div>
-        <pre class="save-error-message">{{ saveError }}</pre>
-        <button type="button" class="save-error-dismiss" @click="saveError = null" :aria-label="t('common.close', {}, 'Close')">×</button>
-      </div>
+      <CoarNotice v-if="saveError" variant="error">
+        <strong>{{ t('admin.groupDetails.saveError', {}, 'Save failed') }}</strong>
+        <pre class="notice-message">{{ saveError }}</pre>
+      </CoarNotice>
 
       <!-- Tab: General -->
       <div v-show="activeTab === 'general'" class="tab-content">
         <div class="modal-form">
           <!-- Section: Identity -->
           <section class="form-section">
-            <h3 class="form-section-heading">{{ t('admin.groupDetails.section.identity', {}, 'Identity') }}</h3>
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h3 class="section-divider__title">
+                {{ t('admin.groupDetails.section.identity', {}, 'Identity') }}
+              </h3>
+            </CoarDivider>
             <div class="modal-form-grid">
-              <CoarFormField class="col-half" :label="t('admin.groupDetails.name', {}, 'Name')" required
+              <CoarFormField class="col-half" :label="t('admin.groupDetails.name', {}, 'Name')" required :error="nameError"
                 :hint="t('admin.groupDetails.name.hint', {}, 'Display name of the group; also sets this dialog\'s title.')">
                 <CoarTextInput v-model="form.Name" clearable />
               </CoarFormField>
@@ -432,7 +512,11 @@ async function save() {
 
           <!-- Section: Notifications -->
           <section class="form-section">
-            <h3 class="form-section-heading">{{ t('admin.groupDetails.section.notifications', {}, 'Notifications') }}</h3>
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h3 class="section-divider__title">
+                {{ t('admin.groupDetails.section.notifications', {}, 'Notifications') }}
+              </h3>
+            </CoarDivider>
             <div class="modal-form-grid">
               <CoarFormField class="col-half" :label="t('admin.groupDetails.emailModeLabel', {}, 'Email mode')"
                 :hint="form.EmailMode === 'Shared'
@@ -440,44 +524,15 @@ async function save() {
                   : t('admin.groupDetails.emailMode.expandHelp', {}, 'Notifications are sent to each member individually (recursive across nested groups).')">
                 <CoarSelect v-model="form.EmailMode" :options="emailModeOptions" />
               </CoarFormField>
-              <CoarFormField v-if="form.EmailMode === 'Shared'" class="col-half" :label="t('admin.groupDetails.email', {}, 'Email address')"
-                :hint="t('admin.groupDetails.emailMode.sharedHelp', {}, 'Notifications go to this address.')">
-                <CoarTextInput v-model="form.Email" clearable placeholder="team@example.com" />
-              </CoarFormField>
-            </div>
-          </section>
-
-          <!-- Section: Scope -->
-          <section class="form-section">
-            <h3 class="form-section-heading">{{ t('admin.groupDetails.section.scope', {}, 'Scope') }}</h3>
-            <div class="modal-form-grid">
-              <CoarFormField class="col-full" :label="t('admin.groupDetails.boundTo', {}, 'Active in applications')"
-                :hint="isAllAppsWildcard
-                  ? t('admin.groupDetails.boundTo.wildcardHint', {}, '★ &quot;All applications&quot; selected — this group is active in every application in the realm. Typical for the realm-admin group.')
-                  : isDormantBoundTo
-                  ? t('admin.groupDetails.boundTo.dormantHint', {}, 'No applications selected — the group is dormant for permissions (e.g. a distribution list / org group). It still receives mail and appears in member views, but its roles grant nothing.')
-                  : t('admin.groupDetails.boundTo.scopedHint', {}, 'Only contributes to permission resolution when the requesting application is selected here. Its roles only fire in those applications.')">
-                <CoarMultiSelect
-                  v-model="form.BoundTo"
-                  :options="boundToOptions"
-                  searchable
+              <CoarFormField class="col-half" :label="t('admin.groupDetails.email', {}, 'Email address')"
+                :hint="form.EmailMode === 'Shared'
+                  ? t('admin.groupDetails.emailMode.sharedHelp', {}, 'Notifications go to this address.')
+                  : t('admin.groupDetails.emailMode.expandAddressHint', {}, 'Not used when notifications are distributed to members.')">
+                <CoarTextInput
+                  v-model="form.Email"
                   clearable
-                  :placeholder="t('admin.groupDetails.boundTo.placeholder', {}, 'Select applications…')" />
-              </CoarFormField>
-            </div>
-          </section>
-
-          <!-- Section: Advanced — only relevant for Automatic groups, so hidden
-               entirely in the default Manual flow (no dangling cryptic toggle). -->
-          <section v-if="isAutoMode" class="form-section">
-            <h3 class="form-section-heading">{{ t('admin.groupDetails.section.advanced', {}, 'Advanced') }}</h3>
-            <div class="modal-form-grid">
-              <CoarFormField class="col-full" :label="t('admin.groupDetails.externallyDrivable.label', {}, 'External membership (federation)')"
-                :hint="hasRealmAdminRole
-                  ? t('admin.groupDetails.externallyDrivable.realmAdminBlocked', {}, 'Disabled: this group confers realm:admin, which can never be externally driven (realm:admin is hard local-only). Remove the realm-admin role to enable.')
-                  : t('admin.groupDetails.externallyDrivable.hint', {}, 'When on, a trusted federated login whose membership script matches confers this group for that session only — never stored as a durable member, never realm:admin.')">
-                <CoarCheckbox v-model="form.ExternallyDrivable" :disabled="externallyDrivableDisabled"
-                  :label="t('admin.groupDetails.externallyDrivable.toggle', {}, 'Assign this group via a federated login script')" />
+                  placeholder="team@example.com"
+                  :disabled="form.EmailMode !== 'Shared'" />
               </CoarFormField>
             </div>
           </section>
@@ -557,9 +612,36 @@ async function save() {
         </template>
       </div>
 
-      <!-- Tab: Roles -->
-      <div v-show="activeTab === 'roles'" class="tab-content">
-        <section class="flex-section">
+      <!-- Tab: Access — app scope and roles jointly determine when this
+           group contributes permissions, so they belong on one surface. -->
+      <div v-show="activeTab === 'access'" class="tab-content access-tab">
+        <section class="access-scope">
+          <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+            <h3 class="section-divider__title">
+              {{ t('admin.groupDetails.section.scope', {}, 'Scope') }}
+            </h3>
+          </CoarDivider>
+          <CoarFormField class="col-full" :label="t('admin.groupDetails.boundTo', {}, 'Active in applications')"
+            :hint="isAllAppsWildcard
+              ? t('admin.groupDetails.boundTo.wildcardHint', {}, '★ &quot;All applications&quot; selected — this group is active in every application in the realm. Typical for the realm-admin group.')
+              : isDormantBoundTo
+              ? t('admin.groupDetails.boundTo.dormantHint', {}, 'No applications selected — the group is dormant for permissions. It can still receive mail and have members, but its roles grant nothing.')
+              : t('admin.groupDetails.boundTo.scopedHint', {}, 'The assigned roles contribute only when the requesting application is selected here.')">
+            <CoarMultiSelect
+              v-model="form.BoundTo"
+              :options="boundToOptions"
+              searchable
+              clearable
+              :placeholder="t('admin.groupDetails.boundTo.placeholder', {}, 'Select applications…')" />
+          </CoarFormField>
+        </section>
+
+        <section class="access-roles">
+          <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+            <h3 class="section-divider__title">
+              {{ t('admin.groupDetails.roles', {}, 'Roles') }}
+            </h3>
+          </CoarDivider>
           <CoarDualListbox
             class="flex-1 min-h-0"
             v-model="form.RoleIds"
@@ -603,6 +685,7 @@ async function save() {
               </template>
             </CoarPopover>
           </div>
+          <CoarNotice v-if="scriptError" variant="warning">{{ scriptError }}</CoarNotice>
           <CoarScriptEditor
             class="flex-1 min-h-0"
             v-model="form.MembershipScript"
@@ -613,12 +696,21 @@ async function save() {
             placeholder="(p) => Type.Is(p, 'person') && p.IsActive"
           />
 
-          <div v-if="form.MembershipLastError" class="auto-error">
-            <div class="auto-error-title">
-              {{ t('admin.groupDetails.membership.lastError', {}, 'Script error at last evaluation') }}
-            </div>
-            <pre class="auto-error-message">{{ form.MembershipLastError }}</pre>
-          </div>
+          <CoarFormField
+            class="script-federation-option"
+            :label="t('admin.groupDetails.externallyDrivable.toggle', {}, 'Assign this group via a federated login script')"
+            :hint="hasRealmAdminRole
+              ? t('admin.groupDetails.externallyDrivable.realmAdminBlocked', {}, 'Disabled: this group confers realm:admin, which can never be externally driven. Remove the realm-admin role to enable.')
+              : t('admin.groupDetails.externallyDrivable.hint', {}, 'A trusted federated login may confer this group for its session when the membership script matches.')"
+            layout="inline"
+            label-position="after">
+            <CoarCheckbox v-model="form.ExternallyDrivable" :disabled="externallyDrivableDisabled" />
+          </CoarFormField>
+
+          <CoarNotice v-if="form.MembershipLastError" variant="error">
+            <strong>{{ t('admin.groupDetails.membership.lastError', {}, 'Script error at last evaluation') }}</strong>
+            <pre class="notice-message">{{ form.MembershipLastError }}</pre>
+          </CoarNotice>
         </section>
       </div>
 
@@ -765,12 +857,80 @@ async function save() {
   min-height: 0;
 }
 
+.form-section + .form-section {
+  margin-top: 1.5rem;
+}
+
+.section-divider__title {
+  margin: 0;
+  color: var(--coar-text-neutral-primary, #1f2937);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
 .flex-section {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
   gap: 6px;
+}
+
+.access-tab {
+  gap: 1rem;
+}
+
+.access-scope {
+  flex-shrink: 0;
+}
+
+.access-roles {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.script-federation-option {
+  flex-shrink: 0;
+}
+
+.notice-message {
+  margin: 0.35rem 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.75rem;
+}
+
+.tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tab-issue {
+  display: flex;
+  align-items: center;
+  color: var(--coar-text-warning-primary, #b45309);
+  cursor: help;
+}
+
+.tab-issue-panel {
+  width: min(24rem, 70vw);
+  padding: 0.75rem 0.875rem;
+}
+
+.tab-issue-panel h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.tab-issue-panel ul {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.8rem;
 }
 
 .empty-hint {

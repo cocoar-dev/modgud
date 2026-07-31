@@ -179,6 +179,12 @@ public static class AuditEvents
     /// (platform-only).</summary>
     public const string ControlPlaneTransferred = "ops.control_plane_transferred";
 
+    /// <summary>A shell-authorized first-installation link was issued.</summary>
+    public const string InstallationChallengeIssued = "ops.installation_challenge_issued";
+
+    /// <summary>The first realm and its first administrator were provisioned.</summary>
+    public const string InstallationCompleted = "ops.installation_completed";
+
     /// <summary>A Control-Plane actor changed one explicitly selected realm.</summary>
     public const string ControlPlaneRealmOperation = "ops.control_plane_realm_operation";
 

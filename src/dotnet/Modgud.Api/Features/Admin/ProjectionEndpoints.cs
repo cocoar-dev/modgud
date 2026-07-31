@@ -44,15 +44,15 @@ public static class ProjectionEndpoints
             // the host they hit determines which tenant DB gets replayed. We
             // intentionally do NOT iterate every active realm: rebuild is heavy,
             // non-resumable mid-flight, and per-realm host gating is the right
-            // authorization boundary. Defensive fallback to the system tenant if
-            // RealmMiddleware didn't run (shouldn't happen for this authenticated
-            // route, but opening against system is safer than throwing).
+            // authorization boundary. RealmMiddleware must have resolved the
+            // authenticated request; a missing realm fails closed.
             //
             // Under MasterTableTenancy a session without an explicit tenant id is
             // an error ("Default tenant does not supported"), so passing the id
             // explicitly here is REQUIRED, not optional.
             var tenantId = httpContext.Items[TenantConstants.HttpContextTenantIdKey] as string
-                           ?? TenantConstants.SystemTenantId;
+                           ?? throw new InvalidOperationException(
+                               "Projection rebuild requires a resolved realm.");
 
             Serilog.Log.Information("Admin: Starting full projection rebuild for tenant {TenantId}", tenantId);
             try

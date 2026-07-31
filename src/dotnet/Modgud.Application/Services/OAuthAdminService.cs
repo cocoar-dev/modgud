@@ -165,7 +165,7 @@ public class OAuthAdminService
                 Purpose = string.IsNullOrWhiteSpace(dto.NewServiceAccount.Purpose)
                     ? null
                     : dto.NewServiceAccount.Purpose.Trim(),
-                IsActive = true,
+                IsActive = dto.NewServiceAccount.IsActive,
             };
             _session.Store(serviceAccount);
             linkedServiceAccountId = serviceAccount.Id;
@@ -174,7 +174,7 @@ public class OAuthAdminService
                 Id = new ShortGuid(serviceAccount.Id).ToString(),
                 AccountName = serviceAccount.AccountName,
                 Purpose = serviceAccount.Purpose,
-                IsActive = true,
+                IsActive = serviceAccount.IsActive,
             };
         }
         else if (!string.IsNullOrWhiteSpace(dto.LinkedServiceAccountId))
@@ -598,7 +598,7 @@ public class OAuthAdminService
             Scopes = dto.Scopes,
             RequireClientSecret = true,
             RequireConsent = false,
-            Enabled = true,
+            Enabled = dto.Enabled,
             // Audit #6/#7/#8 — default Reference (opaque + instantly revocable) so
             // SA deactivate/delete/rotate cuts off live M2M access immediately. JWT
             // is opt-in for resource servers that must self-validate (its already-

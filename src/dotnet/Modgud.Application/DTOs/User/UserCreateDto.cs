@@ -21,4 +21,21 @@ public class UserCreateDto
     /// created complete in one step.
     /// </summary>
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// Direct manual group memberships that should be part of the newly
+    /// created user. The create endpoint validates all groups before writing
+    /// anything and commits the user and memberships together.
+    /// </summary>
+    public List<string> GroupIds { get; set; } = [];
+
+    /// <summary>
+    /// Per-user 2FA grace-period override. Null uses the application default.
+    /// </summary>
+    public int? GracePeriodDaysOverride { get; set; }
+
+    /// <summary>
+    /// Whether this user bypasses the 2FA grace period and enforcement.
+    /// </summary>
+    public bool TwoFactorExempt { get; set; }
 }

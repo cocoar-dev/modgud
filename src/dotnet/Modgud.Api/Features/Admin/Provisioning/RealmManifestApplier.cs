@@ -1,6 +1,7 @@
 using BuildingBlocks.Helper;
 using ErrorOr;
 using Marten;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Modgud.Api.Features.Admin.Apps;
@@ -11,6 +12,7 @@ using Modgud.Application.DTOs.User;
 using Modgud.Application.Services;
 using Modgud.Authentication.Api.Users;
 using Modgud.Authentication.Applications;
+using Modgud.Authentication.Domain;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Authentication.Sessions;
 using Modgud.Authorization.Apps;
@@ -26,7 +28,6 @@ using Modgud.Domain.OAuth.Scopes;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using Modgud.Permissions;
-using Wolverine;
 
 namespace Modgud.Api.Features.Admin.Provisioning;
 
@@ -38,14 +39,13 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// operation the admin UI / admin API uses (<see cref="IRealmProvisioningService"/>,
 /// <see cref="IRealmSettingsService"/>, <see cref="AppAdminService"/>,
 /// <see cref="OAuthAdminService"/>, <see cref="RoleAdminService"/>, the user/group
-/// Wolverine commands), so the manifest path and the manual path can never drift.</para>
+/// command handlers), so the manifest path and the manual path can never drift.</para>
 ///
 /// <para>Tenant routing: the realm shell is created via the global store, then the
 /// per-tenant config runs inside <c>TenantContext.Enter(slug)</c> + a fresh DI scope —
 /// <c>TenantedSessionFactory</c> prefers the AsyncLocal <c>TenantContext</c> over the
-/// ambient (control-plane) <c>HttpContext</c>. Wolverine handlers resolve their session
-/// from the message-envelope tenant, so the user/group commands use
-/// <c>InvokeForTenantAsync(slug, ...)</c>.</para>
+/// ambient (control-plane) <c>HttpContext</c>. Handlers resolved in that fresh scope
+/// therefore write to the newly provisioned tenant.</para>
 ///
 /// <para>Cross-references resolve in dependency order: apps → apis/scopes/clients →
 /// roles → users → groups. Keys (app slug, role/user key, <c>resource:action</c>) are
@@ -272,13 +272,23 @@ public sealed class RealmManifestApplier(
             roleIds[r.ResolveKey()] = created.Value.Id;
         }
 
-        // ── Users — Wolverine commands, dispatched for the realm tenant ───────────
-        var bus = sp.GetRequiredService<IMessageBus>();
+        // ── Users — canonical handler on a plain tenant session ───────────────────
+        // A freshly provisioned realm deliberately has no Wolverine inbox/outbox
+        // tables. Calling the handler through IMessageBus would enroll its now-
+        // atomic Marten session in the outbox and fail on wolverine_*_envelopes.
+        // Direct invocation preserves the canonical user operation and its one-
+        // transaction completeness without introducing messaging infrastructure
+        // into every tenant database.
+        var userSession = sp.GetRequiredService<IDocumentSession>();
+        var createUser = new CreateUserHandler(
+            userSession,
+            sp.GetRequiredService<UserManager<ApplicationUser>>(),
+            sp.GetRequiredService<IApplicationSettingsResolver>());
         foreach (var u in manifest.Users)
         {
             var cmd = new CreateUserCommand(u.Firstname, u.Lastname, u.Acronym, u.Email,
                 u.UserName ?? string.Empty, u.Password, u.EmailConfirmed);
-            var created = await bus.InvokeForTenantAsync<ErrorOr<UserDto>>(slug, cmd, ct);
+            var created = await createUser.Handle(cmd, ct);
             EnsureOk(created, $"user '{u.Email}'");
             if (ShortGuid.TryParse(created.Value.Id, out Guid uid))
                 userIds[u.ResolveKey()] = uid;
@@ -530,8 +540,11 @@ public sealed class RealmManifestApplier(
         }
 
         // ── Users (natural key = email or username) ────────────────────────────────
-        var bus = sp.GetRequiredService<IMessageBus>();
         var setPassword = sp.GetRequiredService<SetUserPasswordHandler>();
+        var createUser = new CreateUserHandler(
+            session,
+            sp.GetRequiredService<UserManager<ApplicationUser>>(),
+            sp.GetRequiredService<IApplicationSettingsResolver>());
         foreach (var u in manifest.Users)
         {
             var ctx = $"user '{u.Email}'";
@@ -547,7 +560,7 @@ public sealed class RealmManifestApplier(
             {
                 var createCmd = new CreateUserCommand(u.Firstname, u.Lastname, u.Acronym, u.Email,
                     u.UserName ?? string.Empty, u.Password, u.EmailConfirmed);
-                var created = await bus.InvokeForTenantAsync<ErrorOr<UserDto>>(slug, createCmd, ct);
+                var created = await createUser.Handle(createCmd, ct);
                 EnsureOk(created, ctx);
                 uid = ShortGuid.TryParse(created.Value.Id, out Guid cid) ? cid : null;
             }
@@ -558,12 +571,11 @@ public sealed class RealmManifestApplier(
                 var updateCmd = new UpdateUserCommand(existing.Id,
                     OptionalOf(u.Firstname), OptionalOf(u.Lastname), OptionalOf(u.Acronym),
                     new Optional<string>(u.Email), OptionalOf(u.UserName));
-                // Plain-session direct call (NOT the bus): UpdateUserHandler appends
+                // Plain-session direct call: UpdateUserHandler appends
                 // UserUpdatedEvent straight to its session, and under InvokeForTenantAsync
                 // that's the Wolverine outbox session — the durable ReferenceSync forwarding
                 // would then write wolverine_*_envelopes tables the tenant DB doesn't have
-                // (the same reason groups use a plain session). CreateUser is unaffected: it
-                // persists via UserManager on a separate, non-outbox session.
+                // (the same reason create-user and groups use a plain session).
                 var updateHandler = new UpdateUserHandler(session);
                 var updated = await updateHandler.Handle(updateCmd,
                     sp.GetRequiredService<IUserAccessRevoker>(),

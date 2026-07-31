@@ -10,8 +10,8 @@ namespace Modgud.Api.Tests.ColdStart;
 /// HTTP request that never resolved a realm used to silently fall back to the
 /// 'system' tenant — the "I created it, got no error, and it isn't where I
 /// expected" symptom (<c>TenantedSessionFactory.ResolveTenantId</c>). It must now
-/// fail loudly. The load-bearing background fallback (no HttpContext) and the
-/// explicit-TenantContext path must stay intact.
+/// fail loudly. Background work without an explicit realm must fail in exactly
+/// the same way; the explicit-TenantContext path stays intact.
 ///
 /// <para>RealmMiddleware resolves (or 404s) every routed request, so the
 /// dangerous "HttpContext present but no tenant" state is reproduced directly at
@@ -33,7 +33,7 @@ public class TenantSilentFallbackTests(ColdStartFixture fixture) : ColdStartTest
             accessor.HttpContext = new DefaultHttpContext();
 
             var ex = Assert.Throws<InvalidOperationException>(() => sessions.OpenSession());
-            Assert.Contains("system", ex.Message);
+            Assert.Contains("No realm/tenant resolved", ex.Message);
         }
         finally
         {
@@ -42,19 +42,19 @@ public class TenantSilentFallbackTests(ColdStartFixture fixture) : ColdStartTest
     }
 
     [Fact]
-    public void Background_write_session_with_no_http_context_still_falls_back_to_system()
+    public void Background_write_session_with_no_http_context_is_rejected()
     {
         var accessor = Factory.Services.GetRequiredService<IHttpContextAccessor>();
         var sessions = Factory.Services.GetRequiredService<ITenantSessionFactory>();
         var previous = accessor.HttpContext;
         try
         {
-            // Genuine background path: no HttpContext, no ambient tenant. The
-            // system fallback here is load-bearing and must stay silent.
+            // Deployment-wide background work must use IGlobalStore. A realm
+            // job must explicitly enter the realm it is processing.
             accessor.HttpContext = null;
 
-            using var session = sessions.OpenSession();
-            Assert.Equal(TenantConstants.SystemTenantId, session.TenantId);
+            var ex = Assert.Throws<InvalidOperationException>(() => sessions.OpenSession());
+            Assert.Contains("No realm/tenant resolved", ex.Message);
         }
         finally
         {

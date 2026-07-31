@@ -204,9 +204,8 @@ public class Realm
     public string[] Domains { get; set; }       // ["acme.example.com", ...]
     public string PrimaryDomain { get; set; }   // must be one of Domains — see "Primary domain" above
     public Dictionary<string, Guid> ApplicationDomains { get; set; } // subdomain -> Application id
-    // Stored, transferable: exactly one realm carries the flag. The
-    // bootstrap "system" realm is stamped at first boot, but the role
-    // can be moved to any active realm.
+    // Stored and transferable. The first installed realm receives the
+    // flag; it can later be moved to any active realm.
     public bool IsControlPlane { get; set; }
     public bool IsActive { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
@@ -220,37 +219,16 @@ public class Realm
 
 In `Program.cs` (before `app.Run`):
 
-1. **Create the master DB and `<master-db>_system`** (raw SQL)
-2. **Apply Marten storage** → `realms.mt_tenant_databases` is created
-3. **Register the system tenant in the tenancy table**
-   (`tenancy.AddDatabaseRecordAsync("system", systemCs)` — pointing at
-   `<master-db>_system`, not the master DB)
-4. **Apply Marten storage again** → the system tenant gets per-tenant
-   tables in its own DB
-5. **Seed system realm document** (`EnsureSystemRealmExistsAsync`)
-6. **OAuthRealmSeeder** seeds 6 default scopes
-   (`openid`, `email`, `profile`, `roles`, `offline_access`,
-   `permissions`) + internal LoginProvider into the system tenant
-7. **Warm up RealmCache**
-8. **Check the recovery-CLI path** or start Kestrel
+1. **Create the master DB** (raw SQL)
+2. **Apply primary and Global Store schemas**
+3. **Load and idempotently seed every existing active realm**
+4. **Warm RealmCache**
+5. **Check the recovery-CLI path** or start Kestrel
 
-::: warning Upgrading across the system-DB split
-Older deployments ran the system realm **inside** the master DB. This version
-moves it to its own `<master-db>_system` database. On a fresh install — or when
-you can recreate data — nothing is needed; the boot block provisions the new
-layout. For an existing deployment with data you must relocate the system
-realm's data **before** first boot:
-
-1. Stop the app and terminate open connections, then
-   `CREATE DATABASE "<master-db>_system" TEMPLATE "<master-db>";`
-2. Repoint the registry **before** the first boot (a boot-time self-correction
-   is not single-boot-safe — writes in the stale window strand in the master
-   DB): `UPDATE realms.mt_tenant_databases SET connection_string = replace(connection_string, 'Database=<master-db>;', 'Database=<master-db>_system;') WHERE tenant_id = 'system';`
-3. Deploy the new code; verify the system realm resolves and data is intact.
-4. Optionally clean the now-duplicated `mt_*` tables out of the master DB
-   (table-precise — do **not** `DROP SCHEMA public`, it is shared with
-   Wolverine infra).
-:::
+A fresh boot stops here with zero realms. The first-installation flow creates
+the first tenant database and assigns its realm the Control-Plane flag only
+after the first `realm:admin` exists. Existing deployments keep their registered
+realms and persisted Control-Plane assignment.
 
 ## Realm CRUD
 
@@ -296,9 +274,7 @@ Backend:
    the Control Plane.
 7. `Realm` document persisted in `IGlobalStore`.
 8. `RealmCache.Invalidate()`.
-9. **Bootstrap-invite** issued atomically: a `PendingAdminInvite` is
-   written into the new tenant DB, the magic-link email is sent, and
-   the URL is returned in the response (`InitialAdminInvite.MagicLinkUrl`).
+9. Realm creation completes independently from administrator onboarding.
 
 The recipient consumes the invite at `POST /api/account/bootstrap-admin`
 on the new realm's host (anonymous, rate-limited under `bootstrap`),
@@ -307,10 +283,9 @@ sets a password, gets auto-signed-in. Atomic with that consume,
 `PermissionRole`s (System Admin / User Manager / Viewer) and adds the
 user to the `Administrators` group with `realm:admin`.
 
-If the invite link gets lost or expires before it's consumed,
-`POST /api/admin/realms/{slug}/resend-bootstrap-invite` revokes the
-previous invite and issues a fresh one for the same recipient, with a
-new 7-day expiry.
+`POST /api/admin/realms/{slug}/admin-invites` issues a single-use,
+24-hour realm-admin invitation. Issuing a new invitation revokes every
+previous open admin invitation in that realm.
 
 ### Update
 

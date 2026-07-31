@@ -3,7 +3,18 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoleStore } from '@/stores/role.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, ROLE_CLONE } from '@/composables/useClone'
-import { CoarNotice, CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
+import {
+  CoarNotice,
+  CoarTextInput,
+  CoarFormField,
+  CoarSelect,
+  CoarTabGroup,
+  CoarTab,
+  CoarDualListbox,
+  CoarDivider,
+  CoarIcon,
+  CoarPopover,
+} from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import type { RoleDto } from '@/models/role'
@@ -20,7 +31,9 @@ const applicationsStore = useApplicationsStore()
 const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
+const saveError = ref('')
 const activeTab = ref<'general' | 'permissions'>('general')
+type RoleType = 'application' | 'realmAdmin'
 
 interface FormState {
   Name: string
@@ -29,7 +42,7 @@ interface FormState {
   AppId: string
   IsRealmAdmin: boolean
   /** Selected AppPermission.Ids in the linked App's catalog. */
-  PermissionIds: Set<string>
+  PermissionIds: string[]
 }
 
 const form = ref<FormState>({
@@ -37,16 +50,25 @@ const form = ref<FormState>({
   Description: '',
   AppId: '',
   IsRealmAdmin: false,
-  PermissionIds: new Set<string>(),
+  PermissionIds: [],
 })
 
-const appOptions = computed(() => [
-  { value: '', label: t('admin.roleDetails.app.none', {}, '— None (realm-admin role)') },
-  ...applicationsStore.apps.map((a) => ({
+const roleTypeOptions = computed(() => [
+  { value: 'application', label: t('admin.roleDetails.type.application', {}, 'Application role') },
+  { value: 'realmAdmin', label: t('admin.roleDetails.type.realmAdmin', {}, 'Realm administrator') },
+])
+
+const roleType = computed<RoleType>({
+  get: () => form.value.IsRealmAdmin ? 'realmAdmin' : 'application',
+  set: (value) => onRoleTypeChange(value),
+})
+
+const appOptions = computed(() =>
+  applicationsStore.apps.map((a) => ({
     value: a.Id,
     label: `${a.DisplayName} (${a.Slug})`,
   })),
-])
+)
 
 /** Catalog of the currently linked App, sorted for stable display. */
 const linkedAppCatalog = computed(() => {
@@ -60,6 +82,29 @@ const linkedAppCatalog = computed(() => {
   })
 })
 
+const permissionOptions = computed(() =>
+  linkedAppCatalog.value.map((permission) => ({
+    value: permission.Id,
+    label: `${permission.Resource}:${permission.Action}`,
+    subtitle: permission.Description ?? undefined,
+    group: permission.Resource,
+  })),
+)
+
+const nameError = computed(() =>
+  form.value.Name.trim()
+    ? ''
+    : t('admin.roleDetails.validation.nameRequired', {}, 'Name is required.'),
+)
+
+const appError = computed(() =>
+  !form.value.IsRealmAdmin && !form.value.AppId
+    ? t('admin.roleDetails.validation.appRequired', {}, 'Select an application for this role.')
+    : '',
+)
+
+const generalIssues = computed(() => [nameError.value, appError.value].filter(Boolean))
+
 const modalTitle = computed(() => {
   const name = form.value.Name?.trim()
   if (name) return name
@@ -69,9 +114,7 @@ const modalTitle = computed(() => {
 const footerButton = computed(() => ({
   visible: true,
   text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
-  disabled: !form.value.Name.trim()
-    || (!form.value.IsRealmAdmin && !form.value.AppId)
-    || loading.value,
+  disabled: generalIssues.value.length > 0 || loading.value,
   onClick: save,
 }))
 
@@ -87,7 +130,7 @@ onMounted(async () => {
         Description: clone.Description || '',
         AppId: clone.IsRealmAdmin ? '' : (clone.AppId ?? ''),
         IsRealmAdmin: clone.IsRealmAdmin,
-        PermissionIds: new Set(clone.IsRealmAdmin ? [] : (clone.PermissionIds ?? [])),
+        PermissionIds: clone.IsRealmAdmin ? [] : [...(clone.PermissionIds ?? [])],
       }
     }
     return
@@ -102,7 +145,7 @@ onMounted(async () => {
         Description: role.Description || '',
         AppId: role.IsRealmAdmin ? '' : (role.AppId ?? ''),
         IsRealmAdmin: role.IsRealmAdmin,
-        PermissionIds: new Set(role.IsRealmAdmin ? [] : (role.PermissionIds ?? [])),
+        PermissionIds: role.IsRealmAdmin ? [] : [...(role.PermissionIds ?? [])],
       }
     }
   } finally {
@@ -110,38 +153,31 @@ onMounted(async () => {
   }
 })
 
-function togglePermissionId(id: string) {
-  const next = new Set(form.value.PermissionIds)
-  if (next.has(id)) next.delete(id); else next.add(id)
-  form.value.PermissionIds = next
-}
-
 function onAppIdChange() {
   // Detaching the App must clear the catalog subset — otherwise stale ids
   // would land in the payload and the backend would reject them.
-  form.value.PermissionIds = new Set<string>()
+  form.value.PermissionIds = []
 }
 
-function onRealmAdminChange(value: boolean) {
-  form.value.IsRealmAdmin = value
-  if (value) {
-    form.value.AppId = ''
-    form.value.PermissionIds = new Set<string>()
-  }
+function onRoleTypeChange(value: RoleType) {
+  form.value.IsRealmAdmin = value === 'realmAdmin'
+  form.value.AppId = ''
+  form.value.PermissionIds = []
 }
 
 async function save() {
-  if (!form.value.Name.trim()) return
+  if (generalIssues.value.length > 0) return
   loading.value = true
+  saveError.value = ''
   try {
     const dto = {
-      Name: form.value.Name,
-      Description: form.value.Description || null,
+      Name: form.value.Name.trim(),
+      Description: form.value.Description.trim() || null,
       AppId: form.value.IsRealmAdmin ? null : (form.value.AppId || null),
       IsRealmAdmin: form.value.IsRealmAdmin,
       PermissionIds: form.value.IsRealmAdmin
         ? []
-        : (form.value.AppId ? Array.from(form.value.PermissionIds) : []),
+        : (form.value.AppId ? [...form.value.PermissionIds] : []),
     }
     if (isCreate.value) {
       await roleStore.createRole(dto)
@@ -149,8 +185,11 @@ async function save() {
       await roleStore.updateRole(props.id, dto)
     }
     props.close()
-  } catch (e) {
-    console.error('Role save failed', e)
+  } catch (e: unknown) {
+    const err = e as { data?: { Message?: string }; message?: string }
+    saveError.value = err?.data?.Message
+      ?? err?.message
+      ?? t('admin.roleDetails.saveError', {}, 'The role could not be saved.')
   } finally {
     loading.value = false
   }
@@ -159,94 +198,122 @@ async function save() {
 
 <template>
   <ModalLayout :close="close" :title="modalTitle" icon="shield" :footer-button="footerButton">
-    <div v-if="!loading" class="flex flex-col min-w-0 min-h-0 flex-1">
+    <div v-if="!loading" class="role-editor-frame">
       <CoarTabGroup v-model="activeTab" class="tab-bar">
-        <CoarTab id="general">{{ t('admin.roleDetails.tabs.general', {}, 'General') }}</CoarTab>
+        <CoarTab id="general">
+          <span class="tab-label">
+            {{ t('admin.roleDetails.tabs.general', {}, 'General') }}
+            <CoarPopover
+              v-if="generalIssues.length"
+              class="tab-issue-popover"
+              mode="hover"
+              :offset="8">
+              <span class="tab-issue" role="img" :aria-label="generalIssues.join(' ')">
+                <CoarIcon name="circle-alert" size="s" />
+              </span>
+              <template #content>
+                <div class="tab-issue-panel">
+                  <h4>{{ t('admin.roleDetails.validation.incomplete', {}, 'Missing information') }}</h4>
+                  <ul>
+                    <li v-for="issue in generalIssues" :key="issue">{{ issue }}</li>
+                  </ul>
+                </div>
+              </template>
+            </CoarPopover>
+          </span>
+        </CoarTab>
         <CoarTab id="permissions">{{ t('admin.roleDetails.tabs.permissions', {}, 'Permissions') }}</CoarTab>
       </CoarTabGroup>
 
-      <!-- Tab: Allgemein — identity + mutually-exclusive role scope.
-           The permission picker moves to its own tab so the role's
-           grant surface gets full breathing room. -->
       <div v-show="activeTab === 'general'" class="tab-content">
         <div class="modal-form">
-          <!-- Section: Identität -->
           <section class="form-section">
-            <h3 class="form-section-heading">{{ t('admin.roleDetails.section.identity', {}, 'Identity') }}</h3>
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h3 class="section-divider__title">
+                {{ t('admin.roleDetails.section.identity', {}, 'Identity') }}
+              </h3>
+            </CoarDivider>
             <div class="modal-form-grid">
-              <CoarFormField class="col-half" :label="t('admin.roleDetails.name', {}, 'Name')" required
+              <CoarFormField
+                class="col-full"
+                :label="t('admin.roleDetails.name', {}, 'Name')"
+                required
+                :error="nameError"
                 :hint="t('admin.roleDetails.name.hint', {}, 'Display/identification name of the role.')">
                 <CoarTextInput v-model="form.Name" clearable />
               </CoarFormField>
-              <CoarFormField class="col-half" :label="t('admin.roleDetails.app', {}, 'Application')"
+              <CoarFormField
+                class="col-full"
+                :label="t('admin.roleDetails.description', {}, 'Description')"
+                :hint="t('admin.roleDetails.description.hint', {}, 'Optional note describing what this role is for.')">
+                <CoarTextInput v-model="form.Description" clearable />
+              </CoarFormField>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h3 class="section-divider__title">
+                {{ t('admin.roleDetails.section.scope', {}, 'Scope') }}
+              </h3>
+            </CoarDivider>
+            <div class="modal-form-grid">
+              <CoarFormField
+                class="col-half"
+                :label="t('admin.roleDetails.type.label', {}, 'Role type')"
+                required
+                :hint="t('admin.roleDetails.type.hint', {}, 'Application roles grant selected permissions; realm administrators bypass permission checks in this realm.')">
+                <CoarSelect v-model="roleType" :options="roleTypeOptions" />
+              </CoarFormField>
+              <CoarFormField
+                class="col-half"
+                :label="t('admin.roleDetails.app', {}, 'Application')"
+                :required="!form.IsRealmAdmin"
+                :error="appError"
                 :hint="form.IsRealmAdmin
-                  ? t('admin.roleDetails.app.realmAdminHint', {}, 'Realm-admin roles are deliberately not linked to an application.')
-                  : form.AppId
-                  ? t('admin.roleDetails.app.linkedHint', {}, 'Role grants the selected permissions of this application.')
-                  : t('admin.roleDetails.app.noneHint', {}, 'Choose exactly one application, or enable the realm-admin role below.')">
+                  ? t('admin.roleDetails.app.realmAdminHint', {}, 'Realm administrators are deliberately not linked to an application.')
+                  : t('admin.roleDetails.app.linkedHint', {}, 'The role grants selected permissions from this application.')">
                 <CoarSelect
                   v-model="form.AppId"
                   :options="appOptions"
                   :disabled="form.IsRealmAdmin"
-                  @update:model-value="onAppIdChange"
-                />
+                  :placeholder="form.IsRealmAdmin
+                    ? t('admin.roleDetails.app.realmAdminPlaceholder', {}, 'No application (realm administrator)')
+                    : t('admin.roleDetails.app.placeholder', {}, 'Select application…')"
+                  @update:model-value="onAppIdChange" />
               </CoarFormField>
-              <CoarFormField class="col-full" :label="t('admin.roleDetails.description', {}, 'Description')"
-                :hint="t('admin.roleDetails.description.hint', {}, 'Optional note describing what this role is for.')">
-                <CoarTextInput v-model="form.Description" clearable :rows="2" />
-              </CoarFormField>
-            </div>
-          </section>
-
-          <!-- Section: Berechtigung — Vorsicht (current-realm bypass, LAST). -->
-          <section class="form-section">
-            <h3 class="form-section-heading">{{ t('admin.roleDetails.section.danger', {}, 'Permissions — caution') }}</h3>
-            <div class="modal-form-grid">
-              <CoarFormField class="col-full" :label="t('admin.roleDetails.isRealmAdmin.label', {}, 'Privileged role')"
-                :hint="t('admin.roleDetails.isRealmAdmin.hint', {}, 'Bypasses every App permission in this realm only. It never grants access to another realm.')">
-                <CoarCheckbox
-                  :model-value="form.IsRealmAdmin"
-                  @update:model-value="onRealmAdminChange"
-                  :label="t('admin.roleDetails.isRealmAdmin.toggle', {}, 'System administrator (realm:admin)')"
-                />
-                <CoarNotice v-if="form.IsRealmAdmin" variant="warning">
-                  {{ t('admin.roleDetails.isRealmAdmin.warning', {}, 'This creates a pure realm-admin role. Its Application and App permissions are cleared.') }}
-                </CoarNotice>
-              </CoarFormField>
+              <CoarNotice v-if="form.IsRealmAdmin" class="col-full" variant="warning">
+                {{ t('admin.roleDetails.isRealmAdmin.warning', {}, 'This role grants realm:admin and bypasses every permission check in this realm. Application and individual permissions are cleared.') }}
+              </CoarNotice>
             </div>
           </section>
         </div>
+        <CoarNotice v-if="saveError" variant="error">{{ saveError }}</CoarNotice>
       </div>
 
-      <!-- Tab: Permissions — App-Catalog-Subset picker. Empty state
-           covers both "no App linked" and "linked App's catalog empty"
-           because they're admin-functionally the same: nothing to pick. -->
       <div v-show="activeTab === 'permissions'" class="tab-content">
-        <p v-if="!form.AppId" class="text-sm text-gray-500">
-          {{ form.IsRealmAdmin
-            ? t('admin.roleDetails.permissions.realmAdmin', {}, 'A realm-admin role needs no catalog entries; it bypasses every App permission inside this realm.')
-            : t('admin.roleDetails.permissions.noApp', {}, 'Choose an app in the General tab, then its catalog will appear here.') }}
-        </p>
-        <template v-else>
-          <p class="tab-hint">
-            {{ t('admin.roleDetails.permissions.hint', {}, 'Subset of the app catalog. This role grants every checked permission through groups that carry it.') }}
-          </p>
-          <div v-if="linkedAppCatalog.length === 0" class="text-xs text-gray-400 italic">
-            {{ t('admin.roleDetails.permissions.empty', {}, 'The selected Application has no entries in its catalog. Add entries via the App admin first.') }}
-          </div>
-          <div v-else class="permission-checklist">
-            <div v-for="p in linkedAppCatalog" :key="p.Id" class="permission-row">
-              <CoarCheckbox
-                :model-value="form.PermissionIds.has(p.Id)"
-                @update:model-value="() => togglePermissionId(p.Id)"
-              />
-              <span class="permission-label" @click="togglePermissionId(p.Id)">
-                <code>{{ p.Resource }}:{{ p.Action }}</code>
-                <span v-if="p.Description" class="permission-desc">— {{ p.Description }}</span>
-              </span>
-            </div>
-          </div>
-        </template>
+        <CoarNotice v-if="form.IsRealmAdmin" variant="warning">
+          {{ t('admin.roleDetails.permissions.realmAdmin', {}, 'A realm administrator bypasses every application permission in this realm; individual permissions cannot be assigned.') }}
+        </CoarNotice>
+        <CoarNotice v-else-if="!form.AppId" variant="warning">
+          {{ t('admin.roleDetails.permissions.noApp', {}, 'Select an application in the General tab before assigning permissions.') }}
+        </CoarNotice>
+        <CoarNotice v-else-if="linkedAppCatalog.length === 0" variant="info">
+          {{ t('admin.roleDetails.permissions.empty', {}, 'The selected application has no permission catalog entries.') }}
+        </CoarNotice>
+        <section v-else class="permissions-editor">
+          <CoarDualListbox
+            v-model="form.PermissionIds"
+            class="flex-1 min-h-0"
+            :options="permissionOptions"
+            drag-drop
+            sort-options="asc"
+            :search-fields="['label', 'subtitle', 'group']"
+            :available-label="t('admin.roleDetails.permissions.available', {}, 'Available')"
+            :selected-label="t('admin.roleDetails.permissions.selected', {}, 'Assigned')"
+            :search-placeholder="t('admin.roleDetails.permissions.search', {}, 'Search permissions…')" />
+        </section>
+        <CoarNotice v-if="saveError" variant="error">{{ saveError }}</CoarNotice>
       </div>
     </div>
     <div v-else class="flex flex-1 items-center justify-center p-8">
@@ -256,59 +323,72 @@ async function save() {
 </template>
 
 <style scoped>
+.role-editor-frame {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
 .tab-bar {
+  flex-shrink: 0;
   margin-bottom: 12px;
 }
+
 .tab-content {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-height: 0;
-}
-.tab-hint {
-  font-size: 0.78rem;
-  color: var(--coar-text-neutral-secondary, #6b7280);
-}
-.section-heading {
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #525e76;
-  border-bottom: 1px solid #d1d5db;
-  padding-bottom: 4px;
-  margin-bottom: 8px;
-}
-.permission-checklist {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 280px;
   overflow-y: auto;
-  padding: 8px;
-  border: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
-  border-radius: var(--coar-radius-m, 4px);
-  background: var(--coar-background-neutral-primary, #fff);
 }
-.permission-row {
+
+.form-section + .form-section {
+  margin-top: 1.5rem;
+}
+
+.section-divider__title {
+  margin: 0;
+  color: var(--coar-text-neutral-primary, #1f2937);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.permissions-editor {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tab-issue {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.82rem;
-  cursor: pointer;
+  color: var(--coar-text-warning-primary, #b45309);
+  cursor: help;
 }
-.permission-row:hover {
-  background: var(--coar-background-neutral-tertiary, #f3f4f6);
+
+.tab-issue-panel {
+  width: min(24rem, 70vw);
+  padding: 0.75rem 0.875rem;
 }
-.permission-label {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
+
+.tab-issue-panel h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 600;
 }
-.permission-desc {
-  color: var(--coar-text-neutral-secondary, #6b7280);
-  font-size: 0.78rem;
+
+.tab-issue-panel ul {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.8rem;
 }
 </style>

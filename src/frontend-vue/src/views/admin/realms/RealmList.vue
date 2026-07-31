@@ -15,6 +15,7 @@ import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import type { RealmDto } from '@/models/realm'
 import GridEmptyState from '@/components/GridEmptyState.vue'
+import RealmAdminInviteModal from './RealmAdminInviteModal.vue'
 
 const { t, language } = useI18n()
 const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
@@ -34,6 +35,7 @@ const rows = computed(() => store.realms)
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedSlugs = ref<string[]>([])
+const adminInviteSlug = ref<string | null>(null)
 
 const showEmpty = computed(() => store.loaded && store.realms.length === 0)
 
@@ -105,9 +107,11 @@ onMounted(() => store.initialize())
     <CoarContextMenu :menu="cellMenu">
       <CoarMenuItem :label="t('common.open', {}, 'Open')" icon="pencil"
         @clicked="selectedSlugs[0] && navigateToModal(selectedSlugs[0])" />
+      <CoarMenuItem :label="t('admin.realms.adminInvite.action', {}, 'Realm-Admin einladen')" icon="mail"
+        @clicked="adminInviteSlug = selectedSlugs[0] ?? null" />
+      <CoarMenuDivider />
       <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus"
         @clicked="navigateToModal('create')" />
-      <CoarMenuDivider />
       <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteSelected" />
     </CoarContextMenu>
 
@@ -115,5 +119,35 @@ onMounted(() => store.initialize())
       <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus"
         @clicked="navigateToModal('create')" />
     </CoarContextMenu>
+
+    <Teleport to="body">
+      <div v-if="adminInviteSlug" class="admin-invite-modal-overlay" @click.self="adminInviteSlug = null">
+        <div class="admin-invite-modal-panel">
+          <RealmAdminInviteModal :slug="adminInviteSlug" :close="() => adminInviteSlug = null" />
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
+
+<style scoped>
+.admin-invite-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.4);
+}
+
+.admin-invite-modal-panel {
+  width: 42rem;
+  max-width: calc(100vw - 2rem);
+}
+
+.admin-invite-modal-panel :deep(.modal-container) {
+  height: auto;
+  max-height: 85vh;
+}
+</style>

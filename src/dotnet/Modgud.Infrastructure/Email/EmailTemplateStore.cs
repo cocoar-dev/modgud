@@ -177,7 +177,7 @@ public partial class EmailTemplateStore
                         <tr><td style="padding: 6px 12px; color:#666;">E-Mail</td><td style="padding: 6px 12px;">{{Email}}</td></tr>
                     </table>
                     <p style="color: #666; font-size: 14px;">
-                        Dieser Link ist {{ExpirationDays}} Tage gültig und kann nur einmal verwendet werden.
+                        Dieser Link ist {{ExpirationHours}} Stunden gültig und kann nur einmal verwendet werden.
                     </p>
                     <p style="color: #888; font-size: 0.85em;">
                         Falls du diesen Realm nicht beantragt hast, ignoriere diese E-Mail. Solange der Link nicht eingelöst wird, bleibt der Realm leer.

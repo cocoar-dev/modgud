@@ -50,15 +50,6 @@ public class RealmsEndpointsTests
             Assert.Equal(created, dto.CreatedAt);
         }
 
-        [Fact]
-        public void NeedsSetup_is_always_false_in_current_etappe()
-        {
-            // Per-realm setup detection is intentionally deferred — the field is
-            // wired through to the SPA so it stays stable, but always false today.
-            // Pinning keeps the contract in lockstep with the comment in the source.
-            var dto = RealmsEndpoints.MapToDto(new Realm { Id = Guid.NewGuid(), Slug = "x", DisplayName = "X" });
-            Assert.False(dto.NeedsSetup);
-        }
     }
 
     public class RequireControlPlaneFilterTests

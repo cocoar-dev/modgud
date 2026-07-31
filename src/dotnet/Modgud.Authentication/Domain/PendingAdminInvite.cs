@@ -1,10 +1,9 @@
 namespace Modgud.Authentication.Domain;
 
 /// <summary>
-/// One-shot bootstrap-invite for the first admin in a freshly provisioned
-/// realm (C15). Stored in the tenant DB; issued by either the
-/// Realm-Provisioning-Service (when the CP-admin creates the realm) or the
-/// recovery CLI <c>bootstrap-admin</c> command (no <c>--password</c> flag).
+/// One-shot invitation for a new realm administrator (C15). Stored in the
+/// tenant DB; issued by the Control-Plane API or the recovery CLI
+/// <c>bootstrap-admin</c> command (no <c>--password</c> flag).
 ///
 /// <para>Single-use: <see cref="UsedAt"/> is set when the recipient's
 /// password-set form succeeds. A second submit with the same token is
@@ -55,7 +54,7 @@ public class PendingAdminInvite
     /// </summary>
     public string? IssuedBy { get; set; }
 
-    public const int DefaultExpirationDays = 7;
+    public const int DefaultExpirationHours = 24;
 
     public bool IsExpired => DateTimeOffset.UtcNow >= ExpiresAt;
     public bool IsUsed => UsedAt.HasValue;

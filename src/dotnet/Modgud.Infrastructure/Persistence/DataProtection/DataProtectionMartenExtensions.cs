@@ -40,38 +40,41 @@ public static class DataProtectionMartenExtensions
         {
             var store = sp.GetRequiredService<IDocumentStore>();
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+            var httpContextAccessor = sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
 
-            return new TenantedDataProtectionProvider(tenantId =>
-            {
-                // One mini-DI per tenant, lifetime bound to the outer
-                // singleton. Bounded by realm count so memory isn't a
-                // concern; first request per tenant is slightly slower
-                // (one-time provider build).
-                var inner = new ServiceCollection();
-                inner.AddSingleton(loggerFactory);
-                inner.AddLogging();
-                var dpBuilder = inner
-                    .AddDataProtection()
-                    // Defense-in-depth: even if storage isolation were
-                    // bypassed accidentally, ApplicationName-prefixed
-                    // payloads from one tenant wouldn't decrypt with
-                    // another tenant's keys.
-                    .SetApplicationName($"Modgud-{tenantId}");
-
-                // Audit M7: encrypt the key ring at rest when an operator cert
-                // is configured. Mixing is safe — pre-existing unencrypted keys
-                // stay readable; only new keys are wrapped.
-                if (protectionCertificate is not null)
-                    dpBuilder.ProtectKeysWithCertificate(protectionCertificate);
-
-                inner.Configure<KeyManagementOptions>(opts =>
+            return new TenantedDataProtectionProvider(
+                tenantId =>
                 {
-                    opts.XmlRepository = new MartenXmlRepository(store, tenantId);
-                });
+                    // One mini-DI per tenant, lifetime bound to the outer
+                    // singleton. Bounded by realm count so memory isn't a
+                    // concern; first request per tenant is slightly slower
+                    // (one-time provider build).
+                    var inner = new ServiceCollection();
+                    inner.AddSingleton(loggerFactory);
+                    inner.AddLogging();
+                    var dpBuilder = inner
+                        .AddDataProtection()
+                        // Defense-in-depth: even if storage isolation were
+                        // bypassed accidentally, ApplicationName-prefixed
+                        // payloads from one tenant wouldn't decrypt with
+                        // another tenant's keys.
+                        .SetApplicationName($"Modgud-{tenantId}");
 
-                return inner.BuildServiceProvider()
-                    .GetRequiredService<IDataProtectionProvider>();
-            });
+                    // Audit M7: encrypt the key ring at rest when an operator cert
+                    // is configured. Mixing is safe — pre-existing unencrypted keys
+                    // stay readable; only new keys are wrapped.
+                    if (protectionCertificate is not null)
+                        dpBuilder.ProtectKeysWithCertificate(protectionCertificate);
+
+                    inner.Configure<KeyManagementOptions>(opts =>
+                    {
+                        opts.XmlRepository = new MartenXmlRepository(store, tenantId);
+                    });
+
+                    return inner.BuildServiceProvider()
+                        .GetRequiredService<IDataProtectionProvider>();
+                },
+                httpContextAccessor);
         });
 
         services.AddSingleton<IDataProtectionProvider>(sp =>

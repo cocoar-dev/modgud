@@ -32,6 +32,9 @@ public class IssueServiceAccountCredentialDto
     /// <summary>Optional override for the access-token lifetime (seconds).</summary>
     public int? AccessTokenLifetime { get; set; }
 
+    /// <summary>Whether the credential may issue tokens immediately.</summary>
+    public bool Enabled { get; set; } = true;
+
     /// <summary>
     /// Access-token format. Defaults to <see cref="AccessTokenType.Reference"/>
     /// (opaque, stored, INSTANTLY revocable) — so deactivating/deleting/rotating

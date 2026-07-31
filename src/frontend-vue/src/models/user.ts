@@ -35,6 +35,12 @@ export interface UserCreateDto {
   EmailConfirmed?: boolean
   /** Whether the account can sign in. Omitted = active. */
   IsActive?: boolean
+  /** Direct manual group memberships committed as part of user creation. */
+  GroupIds?: string[]
+  /** Per-user 2FA grace-period override. Empty = application default. */
+  GracePeriodDaysOverride?: number | null
+  /** Bypass the 2FA grace period and enforcement for this user. */
+  TwoFactorExempt?: boolean
 }
 
 export interface UserUpdateDto {

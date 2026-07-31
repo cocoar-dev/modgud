@@ -26,15 +26,19 @@ you need to expose those claims.
 
 For your own APIs/resources you define custom scopes — e.g. `acme.read`, `acme.write`, `crm.api`.
 
-Administration → **OAuth → Scopes** → **Create**.
+Administration → **OAuth & Federation → OAuth-Scopes** → **Create**.
 
 ### Fields
 
-- **Name** — the technical scope string, exactly as it appears in `scope=…` requests (e.g. `acme.read`)
-- **Display Name** — appears on the consent screen ("Read Acme")
-- **Description** — plain-language explanation on the consent screen ("Allows the Acme app to read your tasks")
-- **Application** — the [App](./applications) this scope belongs to. Empty = global (cross-app, like the standard OIDC scopes)
-- **Resources** — list of resource URIs (audience) for which tokens with this scope are issued
+The editor groups the settings into three tabs:
+
+- **General** — immutable technical name, display name, description and optional [App](./applications) binding. No application means realm-wide (cross-app, like the standard OIDC scopes).
+- **Token content** — API audiences and OIDC user-claim names included for the scope.
+- **Behavior** — active state, consent presentation, discovery visibility and Dynamic Client Registration eligibility.
+
+The scope name is the exact value clients send in `scope=…` requests (for example `acme.read`). It cannot be changed after creation; clone the scope when you need a new name.
+
+The six seeded standard scopes can be opened for inspection, but are shown read-only because they are managed by the IdP.
 
 ### Application binding
 
@@ -42,17 +46,17 @@ App-scoped scopes can only be requested by OAuth clients whose `AppIds` list con
 
 If a client requests an app-scoped scope it isn't entitled to, `/connect/authorize` rejects with `invalid_scope`.
 
-### Resources (audience)
+### API audiences
 
-A **resource URI** identifies the resource server (API) that accepts tokens. Example:
+An audience identifies the resource server (API) that accepts tokens. It can be a stable identifier or an absolute URI. Example:
 
 - Scope: `acme.read`
-- Resource: `https://api.acme.example.com`
+- Audience: `acme-api`
 
-When a client requests `scope=acme.read` and gets back an access token, the token's `aud` claim contains `https://api.acme.example.com` — the Acme API checks exactly that during token validation and rejects everything else.
+When a client requests `scope=acme.read` and gets back an access token, the token's `aud` claim contains `acme-api` — the Acme API checks exactly that during token validation and rejects everything else.
 
 ::: warning Audience mismatch
-If the resource URI here is spelled differently from how the API checks during validation (e.g. `http` vs. `https`, trailing slash, port differences), every API request fails with `401 Unauthorized — invalid audience`. Keep both sides in sync.
+If the audience here is spelled differently from how the API checks during validation, every API request fails with `401 Unauthorized — invalid audience`. For URI audiences, scheme, host, trailing slash and port are significant. Keep both sides in sync.
 :::
 
 ### Discovery visibility
@@ -81,7 +85,7 @@ Scope **Name** is immutable, so to make a variant of an existing scope, clone it
 
 ## Deleting a scope
 
-List → right-click → **Delete** (soft delete).
+List → right-click → **Delete** (soft delete). Standard scopes cannot be deleted; their menu action is disabled.
 
 ::: warning Active tokens stay valid
 Already-issued tokens carrying the deleted scope remain valid until their lifetime expires — deletion only affects newly issued tokens. For compromised scopes, also revoke active tokens or set the shortest practical token lifetime.

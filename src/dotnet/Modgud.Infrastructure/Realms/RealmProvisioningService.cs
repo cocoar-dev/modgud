@@ -25,6 +25,8 @@ public interface IRealmProvisioningService
     Task<List<Realm>> GetAllRealmsAsync(CancellationToken ct = default);
     Task<Realm?> GetRealmBySlugAsync(string slug, CancellationToken ct = default);
     Task<ErrorOr<Realm>> CreateRealmAsync(CreateRealmDto dto, CancellationToken ct = default);
+    Task<ErrorOr<Realm>> CreateInitialRealmAsync(CreateRealmDto dto, CancellationToken ct = default);
+    Task<ErrorOr<Realm>> ActivateInitialRealmAsync(string slug, CancellationToken ct = default);
     /// <summary>
     /// Patches a realm's structural metadata (DisplayName, Description,
     /// Domains, IsActive). Tenant-owned settings (self-registration etc.)
@@ -143,7 +145,24 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             .FirstOrDefaultAsync(r => r.Slug == slug, ct);
     }
 
-    public async Task<ErrorOr<Realm>> CreateRealmAsync(CreateRealmDto dto, CancellationToken ct = default)
+    public Task<ErrorOr<Realm>> CreateRealmAsync(CreateRealmDto dto, CancellationToken ct = default) =>
+        CreateRealmCoreAsync(dto, isInitialControlPlane: false, activateImmediately: true, ct);
+
+    /// <summary>
+    /// Provisions the deployment's first realm. It is created inactive and
+    /// carries the initial Control-Plane flag; the installation coordinator
+    /// activates it only after the first realm administrator exists.
+    /// </summary>
+    public Task<ErrorOr<Realm>> CreateInitialRealmAsync(
+        CreateRealmDto dto,
+        CancellationToken ct = default) =>
+        CreateRealmCoreAsync(dto, isInitialControlPlane: true, activateImmediately: false, ct);
+
+    private async Task<ErrorOr<Realm>> CreateRealmCoreAsync(
+        CreateRealmDto dto,
+        bool isInitialControlPlane,
+        bool activateImmediately,
+        CancellationToken ct)
     {
         if (!RealmSlugRules.IsValidFormat(dto.Slug))
         {
@@ -155,22 +174,6 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         {
             return Error.Validation("Realm.ReservedSlug",
                 $"The slug '{dto.Slug}' is reserved and cannot be used.");
-        }
-
-        // C15c — InitialAdmin is mandatory: a realm without an admin path
-        // is unusable, and the only way to onboard the first admin
-        // post-creation is via Recovery-CLI (filesystem trust). Forcing
-        // an Email here prevents accidentally provisioning a tenant the
-        // recipient can't ever activate.
-        if (string.IsNullOrWhiteSpace(dto.InitialAdmin?.UserName))
-        {
-            return Error.Validation("Realm.InitialAdminUserNameRequired",
-                "InitialAdmin.UserName is required.");
-        }
-        if (string.IsNullOrWhiteSpace(dto.InitialAdmin.Email) || !dto.InitialAdmin.Email.Contains('@'))
-        {
-            return Error.Validation("Realm.InitialAdminEmailRequired",
-                "InitialAdmin.Email is required and must be a valid address.");
         }
 
         // Domains are mandatory: a realm with no domain can neither route
@@ -194,6 +197,13 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         }
 
         await using var session = _globalStore.LightweightSession();
+        if (isInitialControlPlane && await session.Query<Realm>().AnyAsync(ct))
+        {
+            return Error.Conflict(
+                "Installation.RealmAlreadyExists",
+                "The initial realm can only be provisioned while the deployment has no realms.");
+        }
+
         var existing = await session.Query<Realm>()
             .FirstOrDefaultAsync(r => r.Slug == dto.Slug, ct);
         if (existing is not null)
@@ -206,11 +216,8 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         var domainClash = await CheckDomainUniquenessAsync(session, dto.Domains, selfId: null, ct);
         if (domainClash is not null) return domainClash.Value;
 
-        // New realms are never the control plane: the IsControlPlane flag is
-        // stored and defaults to false, and there is no create-time switch to
-        // request it (CreateRealmDto carries none). The control-plane role is
-        // only moved via TransferControlPlaneAsync. The bootstrap realm is
-        // stamped once in EnsureSystemRealmExistsAsync.
+        // Ordinary realms never become Control Plane at creation. The sole
+        // exception is the installation-only path while the registry is empty.
 
         // Build the tenant database connection string
         var csBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value);
@@ -272,8 +279,8 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             Description = dto.Description,
             Domains = dto.Domains,
             PrimaryDomain = primaryDomain,
-            IsControlPlane = false,
-            IsActive = true,
+            IsControlPlane = isInitialControlPlane,
+            IsActive = activateImmediately && (dto.IsActive ?? true),
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
@@ -313,6 +320,41 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             isControlPlane: realm.IsControlPlane,
             _logger,
             ct);
+
+        _realmCache.Invalidate();
+        if (realm.IsActive)
+            await ReconcileJobSchedulesAsync(ct);
+        return realm;
+    }
+
+    public async Task<ErrorOr<Realm>> ActivateInitialRealmAsync(
+        string slug,
+        CancellationToken ct = default)
+    {
+        await using var session = _globalStore.LightweightSession();
+        var realm = await session.Query<Realm>()
+            .FirstOrDefaultAsync(r => r.Slug == slug, ct);
+        if (realm is null)
+            return Error.NotFound("Realm.NotFound", $"Realm '{slug}' not found.");
+        if (!realm.IsControlPlane)
+            return Error.Validation(
+                "Installation.InitialRealmNotControlPlane",
+                "The initial realm must carry the Control-Plane flag before activation.");
+
+        var otherActive = await session.Query<Realm>()
+            .AnyAsync(r => r.Slug != slug && r.IsActive, ct);
+        if (otherActive)
+            return Error.Conflict(
+                "Installation.OtherRealmActive",
+                "Cannot activate an initial realm after another realm became active.");
+
+        if (!realm.IsActive)
+        {
+            realm.IsActive = true;
+            realm.UpdatedAt = DateTimeOffset.UtcNow;
+            session.Store(realm);
+            await session.SaveChangesAsync(ct);
+        }
 
         _realmCache.Invalidate();
         await ReconcileJobSchedulesAsync(ct);
@@ -567,14 +609,14 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         if (realm is null)
             return;
 
-        if (realm.IsControlPlane)
+        if (realm.IsControlPlane && realm.IsActive)
         {
-            // Provisioning never creates a control-plane realm, so this branch
-            // means something is badly wrong — refuse to hard-delete the
-            // deployment's administration anchor.
+            // An active Control Plane is the deployment's administration
+            // anchor. The installation path deliberately creates its first
+            // realm inactive, so that partial realm may be compensated safely.
             _logger.LogError(
                 "Refusing to roll back realm {Slug}: it holds the control-plane flag. " +
-                "Provisioning never creates a control-plane realm, so this indicates a logic error.",
+                "Only an inactive, partially installed initial realm may be rolled back.",
                 slug);
             return;
         }

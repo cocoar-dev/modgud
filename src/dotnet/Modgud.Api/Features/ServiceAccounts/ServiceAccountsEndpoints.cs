@@ -2,11 +2,13 @@ using System.Text.RegularExpressions;
 using BuildingBlocks.EventDispatcher;
 using BuildingBlocks.Helper;
 using Modgud.Application.DTOs.ServiceAccount;
+using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Services;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Principals;
 using Modgud.Domain.ValueObjects;
+using Modgud.Domain.OAuth.Common;
 using Modgud.Infrastructure.OpenIddict;
 using Marten;
 
@@ -52,7 +54,12 @@ public static class ServiceAccountsEndpoints
             .WithName("V2_ServiceAccount_GetById")
             .RequiresPermission("service-account:read");
 
-        group.MapPost("", async (ServiceAccountCreateDto dto, IDocumentSession session, DataEventDispatcher dispatcher) =>
+        group.MapPost("", async (
+                ServiceAccountCreateDto dto,
+                IDocumentSession session,
+                OAuthAdminService oauth,
+                DataEventDispatcher dispatcher,
+                CancellationToken ct) =>
             {
                 var normalised = (dto.AccountName ?? string.Empty).Trim().ToLowerInvariant();
                 var validation = ValidateAccountName(normalised);
@@ -69,15 +76,62 @@ public static class ServiceAccountsEndpoints
                     return Results.Conflict(new { Error = "ServiceAccount.AccountNameTaken",
                         Message = $"Account name '{normalised}' is already in use." });
 
+                // When an initial credential is supplied, delegate to the OAuth
+                // create path that already supports inline ServiceAccount
+                // creation. It stages principal, OAuth stream and hashed secret
+                // in the same Marten session and commits them atomically.
+                if (dto.InitialCredential is { } initialCredential)
+                {
+                    var clientId = string.IsNullOrWhiteSpace(initialCredential.ClientId)
+                        ? $"{normalised}.{new ShortGuid(Guid.NewGuid()).ToString()[..8]}"
+                        : initialCredential.ClientId.Trim();
+                    var result = await oauth.CreateClientAsync(new CreateOAuthClientDto
+                    {
+                        ClientId = clientId,
+                        DisplayName = string.IsNullOrWhiteSpace(initialCredential.DisplayName)
+                            ? normalised
+                            : initialCredential.DisplayName.Trim(),
+                        ClientType = OAuthClientTypes.Confidential,
+                        ConsentType = OAuthConsentTypes.Implicit,
+                        AllowedGrantTypes = ["client_credentials"],
+                        Scopes = initialCredential.Scopes,
+                        RequireClientSecret = true,
+                        RequireConsent = false,
+                        Enabled = initialCredential.Enabled,
+                        AccessTokenType = initialCredential.AccessTokenType,
+                        AccessTokenLifetime = initialCredential.AccessTokenLifetime,
+                        AppIds = initialCredential.AppIds,
+                        NewServiceAccount = new ServiceAccountCreateDto
+                        {
+                            AccountName = normalised,
+                            Purpose = dto.Purpose,
+                            IsActive = dto.IsActive,
+                        },
+                    }, ct);
+                    if (result.IsError) return result.ToResult();
+
+                    var createdWithCredential = result.Value.CreatedServiceAccount!;
+                    createdWithCredential.InitialCredential = new ServiceAccountCredentialIssuedDto
+                    {
+                        Credential = result.Value.Client,
+                        ClientSecret = result.Value.ClientSecret!,
+                    };
+                    // Keep both admin grids in sync: this endpoint created both
+                    // aggregate types even though the response is SA-shaped.
+                    dispatcher.DispatchCreatedEvent("OAuthClient", result.Value.Client, session.TenantId);
+                    dispatcher.DispatchCreatedEvent("ServiceAccount", createdWithCredential, session.TenantId);
+                    return Results.Ok(createdWithCredential);
+                }
+
                 var sa = new ServiceAccount
                 {
                     Id = Guid.NewGuid(),
                     AccountName = normalised,
                     Purpose = string.IsNullOrWhiteSpace(dto.Purpose) ? null : dto.Purpose.Trim(),
-                    IsActive = true,
+                    IsActive = dto.IsActive,
                 };
                 session.Store(sa);
-                await session.SaveChangesAsync();
+                await session.SaveChangesAsync(ct);
 
                 var created = ToDto(sa);
                 dispatcher.DispatchCreatedEvent("ServiceAccount", created, session.TenantId);

@@ -82,6 +82,27 @@ public class ColdStartFixture : IAsyncLifetime
         return new IsolatedColdStartHost(factory);
     }
 
+    /// <summary>
+    /// Boots the production-shaped zero-realm state for first-installation
+    /// tests. Unlike <see cref="CreateIsolatedHostAsync"/>, the test factory
+    /// does not provision the legacy "system" test tenant.
+    /// </summary>
+    public async Task<UninitializedColdStartHost> CreateUninitializedHostAsync()
+    {
+        var isolatedDb = "install_" + Guid.NewGuid().ToString("N")[..12];
+        var isolatedConnectionString = Container.GetConnectionString()
+            .Replace($"Database={MasterDbName}", $"Database={isolatedDb}", StringComparison.OrdinalIgnoreCase);
+
+        var ctx = BuildContext(isolatedConnectionString);
+        CocoarTestConfiguration.Apply(ctx);
+
+        var factory = new UninitializedModgudWebApplicationFactory();
+        factory.CreateClient().Dispose();
+
+        CocoarTestConfiguration.Apply(TestContext);
+        return new UninitializedColdStartHost(factory);
+    }
+
     private static TestConfigurationContext BuildContext(string connectionString) =>
         TestConfigurationContext.Replace(rule =>
         [
@@ -131,6 +152,14 @@ public sealed class IsolatedColdStartHost(ColdStartWebApplicationFactory factory
 
     public IServiceProvider Services => Factory.Services;
 
+    public async ValueTask DisposeAsync() => await Factory.DisposeAsync();
+}
+
+public sealed class UninitializedColdStartHost(
+    UninitializedModgudWebApplicationFactory factory) : IAsyncDisposable
+{
+    public UninitializedModgudWebApplicationFactory Factory { get; } = factory;
+    public IServiceProvider Services => Factory.Services;
     public async ValueTask DisposeAsync() => await Factory.DisposeAsync();
 }
 

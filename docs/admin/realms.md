@@ -90,11 +90,6 @@ Admin → **Realms** → **Create**.
 | Description | `Production tenant for Acme` |
 | Domains | `acme.auth.example.com` |
 | Primary Domain | `acme.auth.example.com` — defaults to the first domain; pick which one is canonical when a realm has several |
-| **Initial admin** | **required** — UserName + Email of the recipient who'll bootstrap the realm |
-
-The Initial-Admin block is mandatory. A realm with no admin path
-would be unreachable; the UI rejects the form if either UserName or
-Email is empty.
 
 On save, Modgud:
 
@@ -109,18 +104,16 @@ On save, Modgud:
 6. Seeds the `modgud` app (the realm-internal admin surface). The
    `control-plane` app is **not** seeded into a tenant realm — it
    only exists in the Control-Plane realm.
-7. Issues a **bootstrap-invite** for the Initial-Admin: writes a
-   single-use, 7-day token into the new tenant DB and sends a
-   magic-link email. The magic-link URL is also returned in the API
-   response so you can copy it manually if SMTP isn't reachable.
+7. Finishes the realm creation. Creating a realm and inviting an
+   administrator are deliberately separate actions.
 
-The recipient clicks the magic link, lands on `/bootstrap?token=…`
-in the new realm's SPA, sets their own password, and is auto-signed-in.
-The token is revoked on first use.
+To add an administrator, open the realm's context menu and choose
+**Realm-Admin einladen**. The recipient clicks the magic link, lands
+on `/bootstrap?token=…` in the realm's SPA, sets their own password,
+and is auto-signed-in.
 
-If the link gets lost (expired, deleted, never delivered), open the
-realm in the admin UI and click **Resend invite** — a fresh token is
-issued for the same recipient and the previous one is revoked.
+Only one admin invitation can be open in a realm. A new invitation
+revokes the previous link, is valid for 24 hours, and can be used once.
 
 ## Editing a realm
 

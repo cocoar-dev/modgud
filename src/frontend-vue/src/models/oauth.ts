@@ -227,8 +227,8 @@ export interface OAuthScopeDto {
    */
   AppId?: string | null
   /**
-   * True for the five OIDC standard scopes (openid/email/profile/roles/
-   * offline_access) — shipped with the IdP and not editable. Drives the
+   * True for the six seeded standard scopes (openid/email/profile/roles/
+   * permissions/offline_access) — shipped with the IdP and not editable. Drives the
    * dimmed row treatment in the admin grid.
    */
   IsStandard: boolean

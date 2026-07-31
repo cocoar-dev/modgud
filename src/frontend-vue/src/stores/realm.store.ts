@@ -5,6 +5,7 @@ import type {
   RealmDto,
   CreateRealmDto,
   CreatedRealmDto,
+  InitialAdminDto,
   InitialAdminInviteDto,
   UpdateRealmDto,
   RealmListDto,
@@ -44,14 +45,13 @@ export const useRealmStore = defineStore('realm', () => {
   }
 
   async function create(dto: CreateRealmDto): Promise<CreatedRealmDto> {
-    // Response shape changed in C15c: {Realm, InitialAdminInvite}.
     const created = await http.post<CreatedRealmDto>(dto)
     realms.value = upsert(realms.value, created.Realm)
     return created
   }
 
-  async function resendBootstrapInvite(slug: string): Promise<InitialAdminInviteDto> {
-    return await http.addPath(slug).addPath('resend-bootstrap-invite').post<InitialAdminInviteDto>({})
+  async function issueAdminInvite(slug: string, dto: InitialAdminDto): Promise<InitialAdminInviteDto> {
+    return await http.addPath(slug).addPath('admin-invites').post<InitialAdminInviteDto>(dto)
   }
 
   async function update(slug: string, dto: UpdateRealmDto): Promise<RealmDto> {
@@ -80,7 +80,7 @@ export const useRealmStore = defineStore('realm', () => {
     loadAll,
     loadOne,
     create,
-    resendBootstrapInvite,
+    issueAdminInvite,
     update,
     remove,
     transferControlPlane,

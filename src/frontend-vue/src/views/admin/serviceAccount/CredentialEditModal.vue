@@ -10,6 +10,7 @@ import {
   CoarSelect,
   CoarTabGroup,
   CoarTab,
+  CoarDivider,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
@@ -18,6 +19,7 @@ import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import type {
   ServiceAccountCredentialIssuedDto,
+  IssueServiceAccountCredentialDto,
   UpdateServiceAccountCredentialDto,
 } from '@/models/serviceAccount'
 import type { OAuthClientDto, AccessTokenType } from '@/models/oauth'
@@ -31,6 +33,8 @@ const props = defineProps<{
   saId: string
   id: string
   close: (result?: unknown) => void
+  draftOnly?: boolean
+  initial?: IssueServiceAccountCredentialDto
 }>()
 
 const isCreate = computed(() => props.id === 'create')
@@ -52,14 +56,14 @@ const newSecret = ref<string | null>(null)
 const newClientIdForSecret = ref<string | null>(null)
 
 const form = ref({
-  DisplayName: '',
-  Scopes: [] as string[],
-  AppIds: [] as string[],
-  AccessTokenLifetime: null as number | null,
+  DisplayName: props.initial?.DisplayName ?? '',
+  Scopes: props.initial?.Scopes?.slice() ?? [] as string[],
+  AppIds: props.initial?.AppIds?.slice() ?? [] as string[],
+  AccessTokenLifetime: props.initial?.AccessTokenLifetime ?? null as number | null,
   // Default Reference — opaque + instantly revocable, so deactivate/delete/rotate
   // cuts off live M2M access immediately (Audit #6/#7/#8). JWT is opt-in.
-  AccessTokenType: 'Reference' as AccessTokenType,
-  Enabled: true,
+  AccessTokenType: props.initial?.AccessTokenType ?? 'Reference' as AccessTokenType,
+  Enabled: props.initial?.Enabled ?? true,
 })
 const originalForm = ref<typeof form.value | null>(null)
 
@@ -116,10 +120,10 @@ const appOptions = computed(() =>
 
 const modalTitle = computed(() => {
   if (newSecret.value)
-    return t('admin.serviceAccountCredentials.secretTitle', {}, 'Credential issued')
+    return t('admin.serviceAccountCredentials.secretTitle', {}, 'OAuth client created')
   return isCreate.value
-    ? t('admin.serviceAccountCredentials.issueTitle', {}, 'Issue credential')
-    : (form.value.DisplayName || t('admin.serviceAccountCredentials.editTitle', {}, 'Edit credential'))
+    ? t('admin.serviceAccountCredentials.issueTitle', {}, 'Add OAuth client')
+    : (form.value.DisplayName || t('admin.serviceAccountCredentials.editTitle', {}, 'Edit OAuth client'))
 })
 
 const footerButton = computed(() => {
@@ -133,7 +137,11 @@ const footerButton = computed(() => {
   }
   return {
     visible: true,
-    text: isCreate.value ? t('common.issue', {}, 'Issue') : t('common.save', {}, 'Save'),
+    text: props.draftOnly
+      ? t('admin.oauthClients.newServiceAccount.apply', {}, 'Übernehmen')
+      : isCreate.value
+        ? t('common.issue', {}, 'Issue')
+        : t('common.save', {}, 'Save'),
     disabled: loading.value,
     onClick: save,
   }
@@ -153,7 +161,7 @@ onMounted(async () => {
       const list = await credentialsHttp.value.get<OAuthClientDto[]>()
       const cred = list.find((c) => c.Id === props.id)
       if (!cred) {
-        error.value = t('admin.serviceAccountCredentials.notFound', {}, 'Credential not found.')
+        error.value = t('admin.serviceAccountCredentials.notFound', {}, 'OAuth client not found.')
         return
       }
       // Map back from OAuthClientDto. AppIds on the server-side dto come as
@@ -184,12 +192,24 @@ async function save() {
   error.value = null
   try {
     if (isCreate.value) {
+      if (props.draftOnly) {
+        props.close({
+          DisplayName: form.value.DisplayName.trim() || undefined,
+          Scopes: form.value.Scopes,
+          AppIds: form.value.AppIds,
+          AccessTokenLifetime: form.value.AccessTokenLifetime ?? undefined,
+          AccessTokenType: form.value.AccessTokenType,
+          Enabled: form.value.Enabled,
+        } satisfies IssueServiceAccountCredentialDto)
+        return
+      }
       const res = await credentialsHttp.value.post<ServiceAccountCredentialIssuedDto>({
         DisplayName: form.value.DisplayName.trim() || undefined,
         Scopes: form.value.Scopes,
         AppIds: form.value.AppIds,
         AccessTokenLifetime: form.value.AccessTokenLifetime ?? undefined,
         AccessTokenType: form.value.AccessTokenType,
+        Enabled: form.value.Enabled,
       })
       newSecret.value = res.ClientSecret
       newClientIdForSecret.value = res.Credential.ClientId
@@ -276,9 +296,14 @@ async function copySecret() {
       <div v-show="activeTab === 'basics'" class="tab-content">
         <div class="modal-form">
           <section class="form-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h3 class="section-divider__title">
+                {{ t('admin.serviceAccountCredentials.section.basics', {}, 'Basis') }}
+              </h3>
+            </CoarDivider>
             <div class="modal-form-grid">
               <CoarFormField class="col-half" :label="t('admin.serviceAccountCredentials.displayName', {}, 'Display name')"
-                :hint="t('admin.serviceAccountCredentials.displayNameHint', {}, 'Free text so you can tell this credential apart from the others of this account.')">
+                :hint="t('admin.serviceAccountCredentials.displayNameHint', {}, 'Free text so you can tell this OAuth client apart from the others of this service account.')">
                 <CoarTextInput v-model="form.DisplayName" clearable
                   :placeholder="t('admin.serviceAccountCredentials.displayNamePlaceholder', {}, 'CI build agent — staging')" />
               </CoarFormField>
@@ -286,7 +311,7 @@ async function copySecret() {
               <!-- No .field-num cap here: the width cap applies to the whole
                    field block, so it would wrap this long label over 3 lines. -->
               <CoarFormField class="col-half" :label="t('admin.serviceAccountCredentials.accessTokenLifetime', {}, 'Access-token lifetime (seconds)')"
-                :hint="t('admin.serviceAccountCredentials.accessTokenLifetimeHint', {}, 'Empty = the realm default (3600 s). Keep it short for JWT credentials — a JWT stays valid until it expires, even after a revoke.')">
+                :hint="t('admin.serviceAccountCredentials.accessTokenLifetimeHint', {}, 'Empty = the realm default (3600 s). Keep JWT access tokens short-lived — a JWT stays valid until it expires, even after a revoke.')">
                 <CoarTextInput v-model="accessTokenLifetimeText"
                   :placeholder="t('admin.serviceAccountCredentials.accessTokenLifetimePlaceholder', {}, '3600 (default)')" />
               </CoarFormField>
@@ -298,14 +323,19 @@ async function copySecret() {
             </div>
           </section>
 
-          <!-- Status — edit-only; a credential can be switched off without
-               deleting it (existing tokens keep working until expiry). -->
-          <section v-if="!isCreate" class="form-section">
-            <h3 class="form-section-heading">{{ t('admin.serviceAccountCredentials.section.status', {}, 'Status') }}</h3>
+          <section class="form-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h3 class="section-divider__title">
+                {{ t('admin.serviceAccountCredentials.section.status', {}, 'Status') }}
+              </h3>
+            </CoarDivider>
             <div class="modal-form-grid">
-              <CoarFormField class="col-full" :label="t('admin.serviceAccountCredentials.enabledLabel', {}, 'Credential')"
-                :hint="t('admin.serviceAccountCredentials.enabledHint', {}, 'An inactive credential can no longer request tokens — issued tokens stay valid until they expire.')">
-                <CoarCheckbox v-model="form.Enabled" :label="t('admin.serviceAccountCredentials.enabled', {}, 'Active')" />
+              <CoarFormField class="col-full"
+                :label="t('admin.serviceAccountCredentials.enabled', {}, 'Aktiv')"
+                :hint="t('admin.serviceAccountCredentials.enabledHint', {}, 'An inactive OAuth client can no longer request tokens — issued tokens stay valid until they expire.')"
+                layout="inline"
+                label-position="after">
+                <CoarCheckbox v-model="form.Enabled" />
               </CoarFormField>
             </div>
           </section>
@@ -314,9 +344,9 @@ async function copySecret() {
 
       <div v-show="activeTab === 'scopes'" class="tab-content">
         <CoarNotice truncate variant="info">
-          {{ t('admin.serviceAccountCredentials.scopesHintShort', {}, 'Which scopes this credential may ask for.') }}
+          {{ t('admin.serviceAccountCredentials.scopesHintShort', {}, 'Which scopes this OAuth client may request.') }}
           <template #details>
-            {{ t('admin.serviceAccountCredentials.scopesHint', {}, 'Which scopes this credential is allowed to ask for. Realm-wide OIDC scopes are always available; per-API scopes need a matching App link on the Apps tab.') }}
+            {{ t('admin.serviceAccountCredentials.scopesHint', {}, 'Which scopes this OAuth client may request. Realm-wide OIDC scopes are always available; per-API scopes need a matching App link on the Apps tab.') }}
           </template>
         </CoarNotice>
         <!-- .flex-section gives the listbox a definite height, so both tabs'
@@ -339,7 +369,7 @@ async function copySecret() {
         <CoarNotice truncate variant="info">
           {{ t('admin.serviceAccountCredentials.appsHintShort', {}, 'Empty = realm-wide.') }}
           <template #details>
-            {{ t('admin.serviceAccountCredentials.appsHint', {}, 'Apps this credential is allowed to act for. Empty = realm-wide. Use multiple when the M2M backend talks to several APIs.') }}
+            {{ t('admin.serviceAccountCredentials.appsHint', {}, 'Apps this OAuth client may act for. Empty = realm-wide. Use multiple when the M2M backend talks to several APIs.') }}
           </template>
         </CoarNotice>
         <section class="flex-section">
@@ -387,5 +417,16 @@ async function copySecret() {
   flex: 1;
   display: flex;
   min-height: 22rem;
+}
+
+.form-section + .form-section {
+  margin-top: 1.5rem;
+}
+
+.section-divider__title {
+  margin: 0;
+  color: var(--coar-text-neutral-primary, #1f2937);
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 </style>

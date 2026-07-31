@@ -7,11 +7,15 @@ export interface ServiceAccountDto {
   Purpose?: string | null
   IsActive: boolean
   Status: EntityStatus
+  /** Present exactly once when create also issued the initial credential. */
+  InitialCredential?: ServiceAccountCredentialIssuedDto
 }
 
 export interface ServiceAccountCreateDto {
   AccountName: string
   Purpose?: string
+  IsActive?: boolean
+  InitialCredential?: IssueServiceAccountCredentialDto
 }
 
 export interface ServiceAccountUpdateDto {
@@ -35,6 +39,7 @@ export interface IssueServiceAccountCredentialDto {
   Scopes: string[]
   AppIds: string[]
   AccessTokenLifetime?: number
+  Enabled?: boolean
   /** Reference (opaque, instantly revocable — default) vs Jwt (self-validating). */
   AccessTokenType?: AccessTokenType
 }

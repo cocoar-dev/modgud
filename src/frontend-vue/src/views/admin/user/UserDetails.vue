@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useUserStore, type UserGroupDto, type InheritedUserGroupDto, type EffectiveGroupDto, type EffectiveGroupDiagnostic } from '@/stores/user.store'
 import { useGroupStore } from '@/stores/group.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
-import { CoarNotice, CoarTextInput, CoarPasswordInput, CoarNumberInput, CoarFormField, CoarIcon, CoarTabGroup, CoarTab, CoarListbox, CoarDualListbox, CoarButton, CoarCheckbox, CoarTag } from '@cocoar/vue-ui'
+import { CoarNotice, CoarTextInput, CoarPasswordInput, CoarNumberInput, CoarFormField, CoarIcon, CoarTabGroup, CoarTab, CoarListbox, CoarDualListbox, CoarButton, CoarCheckbox, CoarTag, CoarDivider, CoarPopover } from '@cocoar/vue-ui'
 import type { CoarListboxOption } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
@@ -206,6 +206,31 @@ const usernameRequired = computed(() => fieldPolicy.value.Username === 'Required
 const firstnameRequired = computed(() => fieldPolicy.value.Firstname === 'Required')
 const lastnameRequired = computed(() => fieldPolicy.value.Lastname === 'Required')
 
+const emailError = computed(() => {
+  if (!form.value.Email.trim())
+    return t('admin.userDetails.validation.emailRequired', {}, 'E-Mail ist erforderlich.')
+  if (emailInvalid.value)
+    return t('admin.userDetails.emailInvalid', {}, 'Bitte eine gültige E-Mail-Adresse eingeben.')
+  return ''
+})
+const firstnameError = computed(() =>
+  firstnameRequired.value && !form.value.Firstname.trim()
+    ? t('admin.userDetails.validation.firstnameRequired', {}, 'Vorname ist erforderlich.')
+    : '')
+const lastnameError = computed(() =>
+  lastnameRequired.value && !form.value.Lastname.trim()
+    ? t('admin.userDetails.validation.lastnameRequired', {}, 'Nachname ist erforderlich.')
+    : '')
+const usernameFieldError = computed(() => {
+  if (userNameError.value) return userNameError.value
+  if (usernameRequired.value && !form.value.UserName.trim())
+    return t('admin.userDetails.validation.usernameRequired', {}, 'Benutzername ist erforderlich.')
+  return ''
+})
+const generalIssues = computed(() =>
+  [firstnameError.value, lastnameError.value, emailError.value, showUsername.value ? usernameFieldError.value : '']
+    .filter(Boolean))
+
 // A required field that is empty blocks save. On edit a blank username means
 // "no change" (the user keeps its existing one), so it isn't enforced there;
 // a cleared required NAME is a real empty and is blocked on both paths.
@@ -298,11 +323,9 @@ async function save() {
   loading.value = true
   try {
     if (isCreate.value) {
-      // One Save creates the WHOLE user: profile, initial password, active
-      // state and email-verified flag in the POST, then the two things that
-      // can only be addressed once an id exists — group memberships and the
-      // per-user 2FA policy — against the id from the response.
-      const created = await userStore.createEntity({
+      // One request and one backend transaction create the complete user:
+      // profile, credentials, status, memberships and per-user 2FA policy.
+      await userStore.createEntity({
         Firstname: form.value.Firstname,
         Lastname: form.value.Lastname,
         Acronym: form.value.Acronym || undefined,
@@ -312,19 +335,10 @@ async function save() {
         Password: initialPassword.value || undefined,
         EmailConfirmed: emailConfirmed.value || undefined,
         IsActive: isActive.value,
+        GroupIds: stagedGroupIds.value,
+        GracePeriodDaysOverride: parsedOverride.value,
+        TwoFactorExempt: exemptLocal.value,
       })
-
-      for (const groupId of stagedGroupIds.value) {
-        await userStore.addGroup(created.Id, groupId)
-      }
-
-      if (policyDirty.value) {
-        await userStore.setGracePolicy(created.Id, {
-          // Sentinel -1 clears the per-user override on the backend; null would skip it.
-          GracePeriodDaysOverride: parsedOverride.value === null ? -1 : parsedOverride.value,
-          TwoFactorExempt: exemptLocal.value,
-        })
-      }
     } else {
       // Optimistic update — update store immediately with expected state
       const existing = userStore.getFromStore(props.id)
@@ -407,7 +421,28 @@ watch(() => form.value.UserName, () => {
            because effective membership is derived and there is nothing to
            derive it from yet. -->
       <CoarTabGroup v-model="activeTab" class="tab-bar">
-        <CoarTab id="general">{{ t('admin.userDetails.tabs.general', {}, 'General') }}</CoarTab>
+        <CoarTab id="general">
+          <span class="tab-label">
+            {{ t('admin.userDetails.tabs.general', {}, 'Allgemein') }}
+            <CoarPopover
+              v-if="generalIssues.length"
+              class="tab-issue-popover"
+              mode="hover"
+              :offset="8">
+              <span class="tab-issue" role="img" :aria-label="generalIssues.join(' ')">
+                <CoarIcon name="circle-alert" size="s" />
+              </span>
+              <template #content>
+                <div class="tab-issue-panel">
+                  <h4>{{ t('admin.userDetails.validation.incomplete', {}, 'Fehlende Angaben') }}</h4>
+                  <ul>
+                    <li v-for="issue in generalIssues" :key="issue">{{ issue }}</li>
+                  </ul>
+                </div>
+              </template>
+            </CoarPopover>
+          </span>
+        </CoarTab>
         <CoarTab id="groups">{{ t('admin.userDetails.tabs.groups', {}, 'Direct Groups') }}</CoarTab>
         <CoarTab v-if="!isCreate" id="effective">{{ t('admin.userDetails.tabs.effective', {}, 'Effektiv') }}</CoarTab>
         <CoarTab id="security">{{ t('admin.userDetails.tabs.security', {}, 'Security') }}</CoarTab>
@@ -418,15 +453,17 @@ watch(() => form.value.UserName, () => {
         <div class="modal-form">
           <!-- Section: Identity -->
           <section class="form-section">
-            <h3 class="form-section-heading">{{ t('admin.userDetails.section.identity', {}, 'Identity') }}</h3>
-            <div class="modal-form-grid">
-              <CoarFormField class="col-half" :label="t('admin.users.firstname', {}, 'First Name')" :required="firstnameRequired">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h3 class="section-divider__title">{{ t('admin.userDetails.section.identity', {}, 'Identität') }}</h3>
+            </CoarDivider>
+            <div class="identity-grid">
+              <CoarFormField :label="t('admin.users.firstname', {}, 'Vorname')" :required="firstnameRequired" :error="firstnameError">
                 <CoarTextInput v-model="form.Firstname" clearable />
               </CoarFormField>
-              <CoarFormField class="col-half" :label="t('admin.users.lastname', {}, 'Last Name')" :required="lastnameRequired">
+              <CoarFormField :label="t('admin.users.lastname', {}, 'Nachname')" :required="lastnameRequired" :error="lastnameError">
                 <CoarTextInput v-model="form.Lastname" clearable />
               </CoarFormField>
-              <CoarFormField class="col-half" :label="t('admin.users.acronym', {}, 'Acronym')"
+              <CoarFormField :label="t('admin.users.acronym', {}, 'Kürzel')"
                 :hint="t('admin.userDetails.acronym.hint', {}, 'Initials; appear in the title as &quot;Name | Acronym&quot;. Optional.')">
                 <CoarTextInput v-model="form.Acronym" clearable />
               </CoarFormField>
@@ -435,19 +472,21 @@ watch(() => form.value.UserName, () => {
 
           <!-- Section: Sign-in -->
           <section class="form-section">
-            <h3 class="form-section-heading">{{ t('admin.userDetails.section.signin', {}, 'Anmeldung') }}</h3>
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h3 class="section-divider__title">{{ t('admin.userDetails.section.signin', {}, 'Anmeldung & Status') }}</h3>
+            </CoarDivider>
             <div class="modal-form-grid">
               <CoarFormField class="col-half" :label="t('admin.users.email', {}, 'Email')" required
-                :hint="t('admin.userDetails.email.hint', {}, 'Primary address; needed for password reset and magic link.')">
+                :hint="t('admin.userDetails.email.hint', {}, 'Primary address; needed for password reset and magic link.')"
+                :error="emailError">
                 <CoarTextInput v-model="form.Email" clearable />
-                <span v-if="emailInvalid" class="text-xs text-red-600">{{ t('admin.userDetails.emailInvalid', {}, 'Please enter a valid email address.') }}</span>
               </CoarFormField>
               <CoarFormField v-if="showUsername" class="col-half" :label="t('admin.users.username', {}, 'Username')" :required="usernameRequired"
                 :hint="usernameRequired
                   ? t('admin.userDetails.username.hintRequired', {}, 'Login name; must be unique and is required.')
-                  : t('admin.userDetails.username.hint', {}, 'Login name; must be unique. Empty = the email address is used.')">
+                  : t('admin.userDetails.username.hint', {}, 'Login name; must be unique. Empty = the email address is used.')"
+                :error="usernameFieldError">
                 <CoarTextInput v-model="form.UserName" clearable />
-                <span v-if="userNameError" class="text-xs text-red-600">{{ userNameError }}</span>
               </CoarFormField>
               <!-- Create only: on an existing user the password is changed
                    through the explicit "Set password" action, which is a
@@ -456,29 +495,25 @@ watch(() => form.value.UserName, () => {
                 :hint="t('admin.userDetails.initialPasswordHint', {}, 'Optional. Leave empty for an account that signs in via magic link, passkey or an external identity provider.')">
                 <CoarPasswordInput v-model="initialPassword" autocomplete="new-password" />
               </CoarFormField>
-            </div>
-          </section>
-
-          <!-- Section: Account status — same band in both modes. The active
-               flag is settable on create too (POST carries IsActive), so an
-               account can be staged inactive ahead of a start date. -->
-          <section class="form-section">
-            <h3 class="form-section-heading">{{ t('admin.userDetails.section.accountStatus', {}, 'Kontostatus') }}</h3>
-            <div class="modal-form-grid">
-              <CoarFormField class="col-full" :label="t('admin.userDetails.activeLabel', {}, 'Konto')"
-                :hint="t('admin.userDetails.activeHint', {}, 'Disabled users can\'t sign in.')">
-                <CoarCheckbox v-model="isActive"
-                  :label="t('admin.userDetails.activeCheckbox', {}, 'User active')" />
+              <CoarFormField
+                class="col-half account-flag-field"
+                :label="t('admin.userDetails.activeCheckbox', {}, 'Benutzer aktiv')"
+                :hint="t('admin.userDetails.activeHint', {}, 'Deaktivierte Benutzer können sich nicht anmelden.')"
+                layout="inline"
+                label-position="after">
+                <CoarCheckbox v-model="isActive" />
               </CoarFormField>
-              <!-- Email-verified toggle pinned at the section end; only meaningful
-                   once an email is set. On create the admin is vouching for the
-                   address they are typing right now. -->
-              <CoarFormField v-if="form.Email" class="col-full" :label="t('admin.userDetails.emailVerifiedLabel', {}, 'Email Status')"
-                :hint="emailConfirmed
-                    ? t('admin.userDetails.emailVerifiedHint', {}, 'Forgot-password and self-magic-link are unlocked for this user.')
-                    : t('admin.userDetails.emailUnverifiedHint', {}, 'Forgot-password and self-magic-link are blocked until the user verifies their email.')">
-                <CoarCheckbox v-model="emailConfirmed"
-                  :label="t('admin.userDetails.emailVerifiedToggle', {}, 'Mark email address as verified')" />
+              <CoarFormField
+                class="col-full"
+                :label="t('admin.userDetails.emailVerifiedToggle', {}, 'E-Mail-Adresse als bestätigt markieren')"
+                :hint="!form.Email.trim()
+                    ? t('admin.userDetails.emailVerifiedDisabledHint', {}, 'Wird verfügbar, sobald eine E-Mail-Adresse eingetragen ist.')
+                    : emailConfirmed
+                      ? t('admin.userDetails.emailVerifiedHint', {}, 'Forgot-password and self-magic-link are unlocked for this user.')
+                    : t('admin.userDetails.emailUnverifiedHint', {}, 'Forgot-password and self-magic-link are blocked until the user verifies their email.')"
+                layout="inline"
+                label-position="after">
+                <CoarCheckbox v-model="emailConfirmed" :disabled="!form.Email.trim()" />
               </CoarFormField>
             </div>
           </section>
@@ -488,24 +523,43 @@ watch(() => form.value.UserName, () => {
       <!-- Tab: Security -->
       <div v-show="activeTab === 'security'" class="tab-content">
         <!-- Create: only the per-user policy is meaningful. 2FA status and the
-             grace actions describe a history the account does not have yet —
-             hidden by the meaning rule, not to reduce clutter. -->
+             grace actions describe a history the account does not have yet.
+             The status remains visible for create/edit layout parity, but is
+             explicitly marked as only becoming available after creation. -->
         <section v-if="isCreate" class="flex flex-col gap-4 text-sm">
           <div>
-            <div class="section-heading">{{ t('admin.userDetails.policyHeading', {}, 'Individuelle Richtlinie') }}</div>
-            <div class="flex flex-col gap-3">
-              <CoarFormField :label="t('admin.userDetails.policyDays', {}, 'Individual deadline in days (empty = global default)')">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h3 class="section-divider__title">{{ t('admin.userDetails.twoFactorHeading', {}, 'Zwei-Faktor-Authentifizierung') }}</h3>
+            </CoarDivider>
+            <div class="flex items-center gap-2">
+              <span class="text-gray-600">{{ t('admin.userDetails.twoFactor', {}, '2FA:') }}</span>
+              <CoarTag variant="neutral" size="s" class="create-only-status">
+                <CoarIcon name="lock" size="s" />
+                {{ t('admin.userDetails.twoFactorAfterCreate', {}, 'Nach dem Erstellen verfügbar') }}
+              </CoarTag>
+            </div>
+          </div>
+          <div>
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h3 class="section-divider__title">{{ t('admin.userDetails.policyHeading', {}, 'Individuelle Richtlinie') }}</h3>
+            </CoarDivider>
+            <div class="security-policy-fields">
+              <CoarFormField class="policy-days-field"
+                :label="t('admin.userDetails.policyDays', {}, 'Individuelle Grace Period')"
+                :hint="t('admin.userDetails.policyDaysHint', {}, 'Leer verwendet den globalen Standardwert.')">
                 <CoarNumberInput v-model="overrideInput" :min="0"
+                  stepper-buttons="both"
+                  :step="1"
                   :placeholder="t('admin.userDetails.policyDaysPlaceholder', { days: appConfig.config.TwoFactorGracePeriodDays }, `${appConfig.config.TwoFactorGracePeriodDays} (Default)`)"
                   :disabled="exemptLocal" />
               </CoarFormField>
-              <div class="flex flex-col gap-1">
-                <CoarCheckbox v-model="exemptLocal"
-                  :label="t('admin.userDetails.exemptCheckbox', {}, 'Disable 2FA requirement for this user')" />
-                <span class="text-xs text-gray-500 pl-6">
-                  {{ t('admin.userDetails.exemptHint', {}, 'User bypasses grace period and enforcement entirely. For service accounts / legacy users.') }}
-                </span>
-              </div>
+              <CoarFormField
+                :label="t('admin.userDetails.exemptCheckbox', {}, 'Benutzer von der 2FA-Pflicht ausnehmen')"
+                :hint="t('admin.userDetails.exemptHint', {}, 'Umgeht Grace Period und 2FA-Enforcement vollständig. Nur für ausdrücklich genehmigte Ausnahme- oder Legacy-Konten.')"
+                layout="inline"
+                label-position="after">
+                <CoarCheckbox v-model="exemptLocal" />
+              </CoarFormField>
             </div>
           </div>
         </section>
@@ -513,7 +567,9 @@ watch(() => form.value.UserName, () => {
         <section v-else-if="securityInfo" class="flex flex-col gap-4 text-sm">
           <!-- 2FA status -->
           <div>
-            <div class="section-heading">{{ t('admin.userDetails.twoFactorHeading', {}, 'Two-factor authentication') }}</div>
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h3 class="section-divider__title">{{ t('admin.userDetails.twoFactorHeading', {}, 'Zwei-Faktor-Authentifizierung') }}</h3>
+            </CoarDivider>
             <div class="flex items-center gap-2">
               <span class="text-gray-600">{{ t('admin.userDetails.twoFactor', {}, '2FA:') }}</span>
               <CoarTag v-if="securityInfo.Has2FA" variant="success" size="s">
@@ -533,7 +589,9 @@ watch(() => form.value.UserName, () => {
 
           <!-- Grace period — hidden when user has 2FA or is exempt -->
           <div v-if="!securityInfo.Has2FA && !exemptLocal && appConfig.config.AuthenticationMinimumLevel >= 1">
-            <div class="section-heading">{{ t('admin.userDetails.graceHeading', {}, 'Grace period') }}</div>
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h3 class="section-divider__title">{{ t('admin.userDetails.graceHeading', {}, 'Grace Period') }}</h3>
+            </CoarDivider>
             <CoarNotice v-if="graceDaysRemaining === null" variant="info">
               {{ t('admin.userDetails.graceNotStarted', {}, 'Grace period starts on first login.') }}
             </CoarNotice>
@@ -555,23 +613,29 @@ watch(() => form.value.UserName, () => {
 
           <!-- Per-user policy overrides — committed together with the main Speichern button -->
           <div>
-            <div class="section-heading">{{ t('admin.userDetails.policyHeading', {}, 'Individuelle Richtlinie') }}</div>
-            <div class="flex flex-col gap-3">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h3 class="section-divider__title">{{ t('admin.userDetails.policyHeading', {}, 'Individuelle Richtlinie') }}</h3>
+            </CoarDivider>
+            <div class="security-policy-fields">
               <!-- Grace days override -->
-              <CoarFormField :label="t('admin.userDetails.policyDays', {}, 'Individual deadline in days (empty = global default)')">
+              <CoarFormField class="policy-days-field"
+                :label="t('admin.userDetails.policyDays', {}, 'Individuelle Grace Period')"
+                :hint="t('admin.userDetails.policyDaysHint', {}, 'Leer verwendet den globalen Standardwert.')">
                 <CoarNumberInput v-model="overrideInput" :min="0"
+                  stepper-buttons="both"
+                  :step="1"
                   :placeholder="t('admin.userDetails.policyDaysPlaceholder', { days: appConfig.config.TwoFactorGracePeriodDays }, `${appConfig.config.TwoFactorGracePeriodDays} (Default)`)"
                   :disabled="exemptLocal" />
               </CoarFormField>
 
               <!-- Exempt checkbox -->
-              <div class="flex flex-col gap-1">
-                <CoarCheckbox v-model="exemptLocal"
-                  :label="t('admin.userDetails.exemptCheckbox', {}, 'Disable 2FA requirement for this user')" />
-                <span class="text-xs text-gray-500 pl-6">
-                  {{ t('admin.userDetails.exemptHint', {}, 'User bypasses grace period and enforcement entirely. For service accounts / legacy users.') }}
-                </span>
-              </div>
+              <CoarFormField
+                :label="t('admin.userDetails.exemptCheckbox', {}, 'Benutzer von der 2FA-Pflicht ausnehmen')"
+                :hint="t('admin.userDetails.exemptHint', {}, 'Umgeht Grace Period und 2FA-Enforcement vollständig. Nur für ausdrücklich genehmigte Ausnahme- oder Legacy-Konten.')"
+                layout="inline"
+                label-position="after">
+                <CoarCheckbox v-model="exemptLocal" />
+              </CoarFormField>
             </div>
           </div>
         </section>
@@ -607,9 +671,11 @@ watch(() => form.value.UserName, () => {
            not in MemberIds — somebody never recomputed. -->
       <div v-show="!isCreate && activeTab === 'effective'" class="tab-content">
         <section v-if="effectiveGroups.length > 0 || effectiveDiagnostics.length > 0" class="flex-section">
-          <div class="section-heading">
-            {{ t('admin.userDetails.effectiveGroups.heading', {}, 'Effektive Mitgliedschaft') }}
-          </div>
+          <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+            <h3 class="section-divider__title">
+              {{ t('admin.userDetails.effectiveGroups.heading', {}, 'Effektive Mitgliedschaft') }}
+            </h3>
+          </CoarDivider>
           <p class="tab-hint">
             {{ t('admin.userDetails.effectiveGroups.hint', {}, 'Materialized view of all groups currently assigned to this user — directly, inherited via nested groups, or via auto-script.') }}
           </p>
@@ -646,9 +712,11 @@ watch(() => form.value.UserName, () => {
         </section>
 
         <section v-if="inheritedGroups.length > 0" class="flex-section">
-          <div class="section-heading">
-            {{ t('admin.userDetails.inheritedGroups', {}, 'Inherited via nested groups') }}
-          </div>
+          <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+            <h3 class="section-divider__title">
+              {{ t('admin.userDetails.inheritedGroups', {}, 'Über verschachtelte Gruppen geerbt') }}
+            </h3>
+          </CoarDivider>
           <p class="tab-hint">
             {{ t('admin.userDetails.inheritedGroups.hint', {}, 'These groups aren\'t assigned directly, but the user is in them via another group (which has them as a member).') }}
           </p>
@@ -711,19 +779,48 @@ watch(() => form.value.UserName, () => {
   color: #6b7280;
   font-size: 0.7rem;
 }
-.section-heading {
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #525e76;
-  border-bottom: 1px solid #d1d5db;
-  padding-bottom: 4px;
-  margin-bottom: 8px;
-}
-
 .tab-bar {
   margin-bottom: 12px;
+}
+
+.tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tab-issue,
+.tab-issue-popover {
+  display: inline-flex;
+  align-items: center;
+}
+
+.tab-issue {
+  color: var(--coar-text-semantic-warning, #a15c00);
+  cursor: help;
+}
+
+.tab-issue-panel {
+  min-width: 15rem;
+  max-width: 24rem;
+  padding: 0.75rem 0.875rem;
+}
+
+.tab-issue-panel h4 {
+  margin: 0 0 0.5rem;
+  color: var(--coar-text-neutral-primary, #1f2937);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.tab-issue-panel ul {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.125rem;
+  color: var(--coar-text-neutral-secondary, #4b5563);
+  font-size: 0.8125rem;
+  line-height: 1.4;
 }
 
 .tab-content {
@@ -746,6 +843,43 @@ watch(() => form.value.UserName, () => {
   flex-direction: column;
   min-height: 0;
   gap: 6px;
+}
+
+.modal-form {
+  width: 100%;
+  min-width: 0;
+}
+
+.form-section + .form-section {
+  margin-top: 1.5rem;
+}
+
+.section-divider__title {
+  margin: 0;
+  color: var(--coar-text-neutral-primary, #1f2937);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.identity-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.account-flag-field {
+  align-self: center;
+  transform: translateY(0.625rem);
+}
+
+.security-policy-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.policy-days-field {
+  width: min(18rem, 100%);
 }
 
 /* The Groups dual-listbox tab gets an explicit height so it stays usable
@@ -801,5 +935,15 @@ watch(() => form.value.UserName, () => {
 .effective-roles {
   color: #6b7280;
   font-size: 0.75rem;
+}
+
+@media (max-width: 760px) {
+  .identity-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-flag-field {
+    transform: none;
+  }
 }
 </style>

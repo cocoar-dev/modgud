@@ -235,7 +235,8 @@ public class GdprService(
         // masks/archives in the correct realm DB — HttpContext is null there.
         var tenantId = TenantContext.CurrentOrNull
                        ?? httpContextAccessor.HttpContext?.Items[TenantConstants.HttpContextTenantIdKey] as string
-                       ?? TenantConstants.SystemTenantId;
+                       ?? throw new InvalidOperationException(
+                           "Permanent erase requires an explicit realm context.");
 
         // 0) Revoke live access (OAuth grants + sessions + security stamp) BEFORE
         //    the user document is masked/deleted: the stamp rotation must load
