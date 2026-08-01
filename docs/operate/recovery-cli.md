@@ -38,7 +38,7 @@ is written to stderr.
 ### `install-link`
 
 Issue the short-lived, single-use authorization for the initial installation.
-This command works while the deployment has zero realms. The browser wizard
+This command works while the deployment has zero realms. The browser installation form
 and CI both submit the resulting token to `/api/install/complete`.
 
 ```bash
@@ -142,7 +142,7 @@ Idempotent — already-linked clients are skipped; existing `legacy.*`
 SAs are re-used.
 
 ```bash
-dotnet Modgud.Api.dll recover migrate-cc-credentials --realm system
+dotnet Modgud.Api.dll recover migrate-cc-credentials --realm acme
 ```
 
 ### `realm-list`
@@ -153,13 +153,12 @@ dotnet Modgud.Api.dll recover realm-list
 ```
 
 ### `realm-add-domain`
-Add a domain to an active realm's `Domains` list. Typically used
-once after a fresh deploy to add the production hostname to the
-system realm.
+Add a domain to an active realm's `Domains` list. This is useful when adding a
+hostname after installation or preparing a reverse-proxy change.
 
 ```bash
 dotnet Modgud.Api.dll recover realm-add-domain \
-  --slug system \
+  --slug acme \
   --domain auth.example.com
 ```
 
@@ -244,8 +243,8 @@ dotnet Modgud.Api.dll recover help
 
 For orchestrators where overriding the container's command/entrypoint is
 awkward (Portainer, some Compose setups), set the `STARTUP_COMMAND` environment
-variable to a recover command. On boot — **after** the master + system tenant
-are provisioned — the value is split into argv and run; the process then
+variable to a recover command. On boot — **after** deployment-wide storage is
+ready — the value is split into argv and run; the process then
 **idles** (it never starts Kestrel and never exits) so a restart policy can't
 crash-loop it.
 

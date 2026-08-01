@@ -234,8 +234,8 @@ var secret = realm.SecretFor("acme-web");
 
 ## Caveat — using a provisioned realm for OAuth flows
 
-Creating, updating and deleting realms is host-agnostic (the control-plane endpoints
-live on the system realm). But **driving OAuth flows _against_ a provisioned realm is
+Creating, updating and deleting realms uses the current Control-Plane host. But
+**driving OAuth flows _against_ a provisioned realm is
 host-routed**: Modgud resolves the tenant from the request's `Host` header
 (`Realm.Domains`), and each realm's issuer is `https://{PrimaryDomain}`. So a token
 request for a realm must arrive with that realm's host. For machine flows

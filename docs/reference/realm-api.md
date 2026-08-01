@@ -1,7 +1,7 @@
 # Realm Endpoints
 
 Realm management is only callable from the **Control-Plane realm** (the
-realm flagged `IsControlPlane = true`, which is the system realm).
+ordinary realm that currently holds `IsControlPlane = true`).
 On any other host the endpoints return **404** — not 403, because the
 existence of the realm-management surface must not be leaked to tenant
 realms. See [Concepts: Control Plane](../concepts/control-plane) for
@@ -82,7 +82,7 @@ Content-Type: application/json
    `permissions`) and the built-in Internal login provider.
 6. **`AppRealmSeeder.SeedAsync`**: the `modgud` App is registered in
    the new tenant DB. The `control-plane` App is **only** seeded for
-   the system realm — tenant realms physically cannot grant
+   the realm that becomes the Control Plane — data-plane realms cannot grant
    `realm:read`/`realm:write` (the App that owns those catalog
    entries doesn't exist in their tenant DB).
 7. **Realm document** persisted in `IGlobalStore` (master DB, schema

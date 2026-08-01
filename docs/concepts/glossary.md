@@ -16,14 +16,14 @@ Mapping to other systems:
 |---|---|---|---|
 | Realm | Realm | Tenant | Tenant (Directory) |
 
-The **system realm** is the first realm, created automatically on first
-boot. It starts as the **Control-Plane** realm — flagged
-`IsControlPlane = true` — meaning only its users may create further
-realms. Exactly one realm per deployment is the Control Plane.
+The first realm is created explicitly during first installation. It starts as
+the **Control-Plane** realm — flagged `IsControlPlane = true` — meaning only
+its `realm:admin` users may create further realms. The flag can later move to
+another active realm; no realm is special by slug.
 
 The realm boundary is the **domain** (Host header), not the URL path.
-Realm `acme` lives under `acme.example.com`, the system realm under
-`system.example.com` or `localhost`.
+Realm `acme` might live under `acme.example.com`; a local realm commonly uses
+`auth.localhost` or `localhost`.
 
 ### Application
 

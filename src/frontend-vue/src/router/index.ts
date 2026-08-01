@@ -74,10 +74,10 @@ const REALM_MODAL_SIZE = {
 const ROLE_MODAL_SIZE = MODAL_LIST_FORM
 const SERVICE_ACCOUNT_MODAL_SIZE = MODAL_MD
 
-// API modal is now Create=wizard / Edit=tabs. A FIXED frame (like ROLE) so the
-// size never jumps between wizard steps or edit tabs — sized to the tallest
-// content (the linkage permission checklist + the review list); shorter
-// steps/tabs fill the same frame, taller ones scroll internally.
+// API modal uses the same tabbed expert editor for create and edit. A FIXED
+// frame (like ROLE) keeps the size stable across tabs and is sized to the
+// tallest content (the linkage permission checklist + token-content lists);
+// shorter tabs fill the same frame, taller ones scroll internally.
 const API_MODAL_SIZE = {
   width: '46rem', minWidth: '46rem', maxWidth: '46rem',
   height: '38rem', minHeight: '38rem', maxHeight: '85vh',

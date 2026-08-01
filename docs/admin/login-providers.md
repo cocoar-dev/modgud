@@ -20,7 +20,7 @@ three types are wired up:
 Future types — **LDAP**, **Kerberos** — are reserved at the API level and
 will surface in the picker once the backend handlers ship.
 
-![Login providers list](/screenshots/admin-login-provider.png)
+![Create login provider dialog](/screenshots/admin-login-provider-modal.png)
 
 ## The Internal provider
 

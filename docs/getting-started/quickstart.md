@@ -6,7 +6,7 @@ Get a local Modgud running, sign in for the first time, and verify the OAuth/OID
 
 - Docker Desktop (or Docker Engine + Compose)
 - A free host port 80 (the Modgud container serves both the API and the admin SPA same-origin)
-- About 200 MB of disk for the container + the system-realm DB
+- About 200 MB of disk for the container and PostgreSQL data
 
 This quickstart uses the **published image** `ghcr.io/cocoar-dev/modgud` — you do not clone the repo or build anything. You copy the compose file below, save it, and start it.
 
@@ -52,66 +52,58 @@ Then start it:
 docker compose up -d
 ```
 
-This starts PostgreSQL + Modgud in the background. First boot takes ~15 seconds while Marten provisions the master DB and seeds the system realm.
+This starts PostgreSQL + Modgud in the background. First boot takes about
+15 seconds while Marten provisions the master database, tenant registry and
+Global Store. No realm or user exists yet.
 
 ::: tip Why `ASPNETCORE_ENVIRONMENT: Development`
 The published image runs as **Production** by default, which fail-closes on a dev-shaped config: it refuses to boot with an `http`/`localhost` issuer, with `OpenIddict__DevelopmentMode=true`, or with Prometheus enabled but no bearer token. Those guards are exactly what you want in production and exactly what gets in the way of a 10-minute local eval. Setting `Development` legitimately allows the `http://localhost` issuer and ephemeral signing keys used here. Do **not** ship this compose to production — see [Deployment](../operate/deployment).
 :::
 
-## 2. Create your first admin
+## 2. Complete first installation
 
-A fresh deployment has zero users. There is no anonymous "first-run wizard" — the very first admin is created explicitly by someone with shell access to the container, and from then on every admin is provisioned through the regular admin UI / API.
-
-For local development the simplest path is the recovery CLI in **direct mode** (sets a password right away):
+A fresh deployment has zero realms and zero users. Normal routes remain closed
+until an operator with shell access issues a short-lived, single-use
+installation link:
 
 ```bash
 docker exec modgud \
-  dotnet Modgud.Api.dll recover bootstrap-admin \
-    --email admin@example.com \
-    --username admin \
-    --password 'StrongPass1!'
+  dotnet Modgud.Api.dll recover install-link \
+    --base-url http://localhost
 ```
 
-You should see:
-
-```
-✓ Admin created in realm 'system':
-  UserName: admin
-  Email:    admin@example.com
-  Mode:     Direct (password set on creation)
-```
-
-The CLI atomically creates the user, seeds the three default roles (System Admin / User Manager / Viewer) into the system realm, and adds the user to the **Administrators** group with `realm:admin`.
+Open the printed `/install?token=...` URL. Enter a realm slug and display name,
+use `localhost` as the primary domain, then choose the first administrator's
+username, email and password. Completion creates the first ordinary realm and
+its tenant database, assigns `IsControlPlane`, creates the administrator with
+`realm:admin`, and redirects to the login page.
 
 ::: tip Password rules
-The CLI enforces the same Identity password policy the SPA uses (length, mixed case, digit). A weak password is rejected — see [Settings](../platform/settings) for how to relax the policy if needed.
+The installation API enforces the same Identity password policy as the regular
+admin UI (length, mixed case, digit). A weak password is rejected — see
+[Settings](../platform/settings) for how to adjust the policy if needed.
 :::
 
-::: details Other ways to create the first admin
-Two more paths are available — they trade off CLI convenience against email verification:
-
-**Invite mode** (CLI, no `--password`) — the CLI writes a magic-link invite and prints the URL on stdout. You click the link, set the password yourself in the SPA. Useful when you want the recipient to own their credentials end-to-end. With no SMTP configured the email is silently dropped, but the printed URL is all you need locally.
-
-```bash
-docker exec modgud \
-  dotnet Modgud.Api.dll recover bootstrap-admin \
-    --email admin@example.com \
-    --username admin
-# → magic-link printed on stdout; open it in your browser
-```
-
-**HTTP path** — once you already have one admin, additional realms (and their initial admins) are created through `POST /api/admin/realms` with an `InitialAdmin` payload. See [First-time setup](./first-time-setup) for the full decision tree.
+::: details Automated installation for CI/test
+`recover install-link --json` returns the plaintext bearer token in a
+machine-readable final line. A trusted runner can submit it together with the
+realm and administrator payload to `POST /api/install/complete`. The browser
+uses the same API. See [First-time setup](./first-time-setup#automated-installation-citest)
+for a complete `curl` example.
 :::
 
 ## 3. Sign in
 
-Open <http://localhost> and sign in with `admin` + your password. The admin SPA is served same-origin by the Modgud container on port 80 — there is no separate frontend port in the Docker flow. You land in the admin SPA's dashboard.
+Open <http://localhost> and sign in with the credentials chosen during
+installation. The admin SPA is served same-origin by the Modgud container on
+port 80 — there is no separate frontend port in the Docker flow. You land in
+the admin SPA's dashboard.
 
 The sidebar shows everything because you hold `realm:admin`:
 
 - **Authorization** — Users, Service Accounts, Roles, Groups
 - **OAuth & Federation** — Login Providers, OAuth Clients, Scopes, APIs, Invite Codes
-- **System** — Apps, Realms, Realm Settings, Auth Log, Scheduled Jobs, Change Requests
+- **System** — Applications, Realms, Realm Settings, Logs, Scheduled Jobs, Change Requests
 
 ## 4. Verify OIDC endpoints
 
@@ -122,7 +114,11 @@ In a separate terminal:
 curl http://localhost/.well-known/openid-configuration | jq
 ```
 
-You should see `issuer`, `authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`, etc. The endpoints are rooted at `http://localhost/` — Modgud resolves the realm from the **Host header**, not from a URL path segment. For `localhost` requests that's the system realm.
+You should see `issuer`, `authorization_endpoint`, `token_endpoint`,
+`userinfo_endpoint`, etc. The endpoints are rooted at `http://localhost/` —
+Modgud resolves the realm from the **Host header**, not from a URL path segment.
+Because `localhost` was registered during installation, it resolves to your
+first realm.
 
 ```bash
 # JWKS (signing keys)
@@ -162,15 +158,27 @@ The script uses your admin login (defaults: `admin` / `ABC12abc!`; pass `--user=
 ## Troubleshooting
 
 ::: details I get 401 "Invalid credentials" on the login page
-The bootstrap-admin command writes the user immediately. If login still fails, check `docker logs modgud` for the boot output — the admin creation also prints there. Most common cause: trying to sign in before the container finished its first migration. Wait ~15 seconds and retry.
+Check that installation completed successfully and use the username, not the
+email address, unless both are identical. `docker logs modgud` shows migration
+or provisioning failures. If the container is still starting, wait for
+`/health/ready` and retry.
 :::
 
 ::: details Magic-link emails don't arrive
-With no SMTP configured, Modgud silently drops outbound email — there is no on-disk dev mailbox. For the bootstrap flow this is fine: the recovery CLI prints the invite / magic-link URL straight to stdout, and `POST /api/admin/realms` returns it in the response. To actually capture emails locally, point Modgud at a dev SMTP catcher such as [Mailpit](https://github.com/axllent/mailpit) or [smtp4dev](https://github.com/rnwood/smtp4dev) via the SMTP settings — see [Settings](../platform/settings). For real delivery, configure your production SMTP host.
+With no SMTP configured, Modgud silently drops outbound email — there is no
+on-disk dev mailbox. Realm-admin invitation endpoints return the one-time URL,
+so local setup is still possible. To capture emails locally, point Modgud at a
+dev SMTP catcher such as [Mailpit](https://github.com/axllent/mailpit) or
+[smtp4dev](https://github.com/rnwood/smtp4dev) via the SMTP settings — see
+[Settings](../platform/settings). For real delivery, configure your production
+SMTP host.
 :::
 
 ::: details OIDC discovery returns 404
-Modgud resolves the realm from the Host header. For `localhost`, that's the system realm (its seeded domain list includes `localhost`). Check `docker logs modgud` for `RealmMiddleware` warnings if you suspect a host-resolution problem.
+Modgud resolves the realm from the Host header. Make sure the requested host is
+listed in the realm's Domains and that one of them is the Primary Domain. Check
+`docker logs modgud` for `RealmMiddleware` warnings if you suspect a
+host-resolution problem.
 :::
 
 ::: details Is the container healthy?
@@ -183,21 +191,16 @@ curl http://localhost/health/live
 :::
 
 ::: details I want to start over
-Bring the stack down and drop **all** Modgud databases — the master infra DB `modgud`, the system-realm DB `modgud_system`, and any per-tenant DBs `modgud_<slug>` you created — then bring it back up:
+For this disposable quickstart, remove the Compose volume and start again. This
+deletes the master database and every realm database:
 
 ```bash
-docker compose down
-docker compose up -d postgres
-# wait for postgres to be healthy, then drop every Modgud DB:
-docker exec modgud-postgres-1 \
-  psql -U postgres -c "DROP DATABASE IF EXISTS modgud; DROP DATABASE IF EXISTS modgud_system;"
-# drop any tenant DBs you provisioned, e.g.:
-#   DROP DATABASE IF EXISTS modgud_acme;
+docker compose down -v
 docker compose up -d
-# then re-run step 2
 ```
 
-(The Postgres container name follows Compose's `<project>-postgres-1` convention — adjust if you renamed the project. List databases with `psql -U postgres -l`.)
+Then repeat step 2. Do not use `down -v` on an environment whose data you need;
+it is intentionally destructive.
 :::
 
 ## Next steps

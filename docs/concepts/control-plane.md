@@ -1,7 +1,8 @@
 # Control Plane / Data Plane
 
-Modgud separates **cross-realm administration** (realm CRUD, the
-first-run setup wizard) from **tenant self-service** (everything else)
+Modgud separates **deployment-wide installation and cross-realm
+administration** (first installation, realm CRUD) from **tenant self-service**
+(everything else)
 on three independent layers. A request that hits a Control-Plane endpoint
 from a tenant host has to defeat all three to succeed — and they're
 deliberately decoupled so a regression in one doesn't open the others.
@@ -159,24 +160,17 @@ recover one via the CLI.
 
 ## Hostname routing — DB is source of truth
 
-The system realm is seeded with the localhost-style domains
-`["system.localhost", "localhost", "127.0.0.1"]` so a fresh checkout
-boots without any ENV setup. For a deployed installation, the
-operator adds the public hostname via the Recovery CLI:
+The first-installation form requires the first realm's domain and primary
+domain. Additional hostnames are managed on the realm or with
+`recover realm-add-domain`; there is no seeded hostname or special slug.
 
-```bash
-docker exec modgud dotnet Modgud.Api.dll \
-  recover realm-add-domain --slug system --domain auth.example.com
-```
+`IRealmCache` is invalidated when realm metadata changes. From the next request
+onward, a matching Host header resolves to that realm. If it currently holds
+`IsControlPlane`, `ControlPlaneGateMiddleware` exposes
+`/api/admin/realms/*`; otherwise that surface remains 404.
 
-The `IRealmCache` is invalidated immediately — no container restart
-needed. From the next request onwards, `Host: auth.example.com`
-resolves to the system realm and `ControlPlaneGateMiddleware` lets
-`/api/admin/realms/*` through.
-
-There's no separate ENV variable mirroring the hostname list. The
-realm's own `Domains` field is the single source of truth — kept in
-the DB next to the rest of the realm metadata.
+There's no separate environment variable mirroring the hostname list. The
+realm's own `Domains` field in `IGlobalStore` is the single source of truth.
 
 ## First-admin onboarding
 
@@ -193,7 +187,7 @@ docker exec <container> dotnet Modgud.Api.dll recover bootstrap-admin \
     --email admin@example.com \
     --username admin \
     --password 'StrongPass1!' \
-    --realm system
+    --realm acme
 ```
 
 Atomic seed of `ApplicationUser` (Identity-Password-Rules enforced —

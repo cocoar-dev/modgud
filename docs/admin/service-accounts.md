@@ -58,6 +58,8 @@ A backend-for-frontend that both **brokers user login** (redeeming a native gran
 
 ## Creating a Service Account
 
+![Create service account dialog](/screenshots/admin-service-account-modal.png)
+
 1. Open `/admin/service-accounts` and click **Create**.
 2. Fill in:
    - **Account name** — lowercase letters, digits, dots, hyphens or underscores; 2-64 chars; starts with a letter or digit. This is the audit-log handle (`ci.build-agent`, `integrations.acme-tasks`, `nightly.sync`). Unique across the whole principal table — a Person and a ServiceAccount can't share an account name, because both can act as the login handle in different contexts.

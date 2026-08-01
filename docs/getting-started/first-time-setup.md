@@ -19,7 +19,7 @@ The installation form is not anonymously claimable. An operator with shell
 access first issues a short-lived, single-use installation token through the
 recovery CLI. Only its SHA-256 hash is stored in the Global Store.
 
-Both the browser wizard and CI call the same HTTP API with that token. The API
+Both the browser installation form and CI call the same HTTP API with that token. The API
 never issues installation tokens itself.
 
 ## Interactive installation
@@ -134,19 +134,21 @@ Cookie: Modgud.Auth=...
 {
   "Slug": "acme",
   "DisplayName": "Acme Corp",
-  "Domains": ["auth.acme.com"],
-  "InitialAdmin": {
-    "UserName": "max",
-    "Email": "max@acme.com",
-    "Firstname": "Max",
-    "Lastname": "Mustermann"
-  }
+  "Domains": ["auth.acme.com"]
 }
 ```
 
-The existing Control-Plane admin authorizes this operation. The new realm's
-first admin receives the regular bootstrap invite. This is separate from the
-deployment-wide first-installation token.
+The existing Control-Plane admin authorizes this operation. The result is a
+complete, active realm and tenant database; an administrator is not required
+for realm creation.
+
+When ownership should be handed over, use the realm's context-menu action
+**Invite realm admin** or call
+`POST /api/admin/realms/{slug}/admin-invites`. The link is single-use, expires
+after 24 hours, and issuing a new invitation revokes any previous open one.
+For API compatibility, realm creation also accepts an optional `InitialAdmin`
+object and issues the same invitation atomically. Realm-admin invitations are
+separate from the deployment-wide first-installation token.
 
 ## Recovery after installation
 

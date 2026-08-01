@@ -168,10 +168,11 @@ surface) because they're identity-lifecycle operations:
 
 ## Bootstrap (first admin in a realm)
 
-There is no anonymous setup wizard. The first admin in any realm is
-created either through the recovery CLI (filesystem trust) or via a
-Control-Plane admin issuing an invitation for that realm.
-The single anonymous endpoint is the bootstrap-invite consumer:
+The deployment's first realm and administrator are created together through
+the shell-authorized [first-installation flow](../getting-started/first-time-setup).
+After installation, an administrator can be recovered through the CLI or
+invited by a Control-Plane admin. The invitation consumer itself is anonymous
+because possession of its short-lived token is the authorization:
 
 | Method | Path | Description |
 |---|---|---|

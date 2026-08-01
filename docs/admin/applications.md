@@ -69,6 +69,8 @@ or with system invariants:
 
 ## Creating an app
 
+![Create application dialog](/screenshots/admin-anwendung-modal.png)
+
 Click **Create** in the list view.
 
 1. Pick a slug — kebab-case, memorable: `acme`, `billing`,

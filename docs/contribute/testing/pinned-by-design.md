@@ -8,19 +8,18 @@ an accidental change flips the test red.
 > change is **probably wrong** — read the entry, decide whether the
 > rationale still holds, and only then update the test.
 
-## TenantContextMiddleware silently coerces non-string `TenantId` values
+## TenantContextMiddleware never guesses a realm
 
 **Test:** `Api/TenantContextMiddlewareTests.cs`
 
-**Behaviour:** if `HttpContext.Items["TenantId"]` is anything other
-than a `string`, the middleware silently falls back to `"system"`
-instead of throwing.
+**Behaviour:** if `HttpContext.Items["TenantId"]` is absent, empty or not a
+string, the middleware leaves Wolverine's message bus tenantless.
 
-**Why:** defensive. A tenant-resolution path that misbehaves should
-land the request on the system tenant (which is heavily protected by
-permission checks) rather than crashing the whole request pipeline. A
-loud failure mode here would turn a single bad host header into a
-5xx storm.
+**Why:** defensive and fail-closed. Installation and health routes are
+realm-independent and must not dispatch realm-scoped messages. Guessing a
+tenant would make deployment-wide work land in an arbitrary realm, especially
+after Control-Plane transfer. Realm work must carry an explicit tenant;
+deployment-wide work belongs in `IGlobalStore`.
 
 ## ResourceRegistry lookup is case-sensitive
 
