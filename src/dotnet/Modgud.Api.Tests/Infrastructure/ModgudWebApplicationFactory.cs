@@ -266,6 +266,8 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         var tenancy = (MasterTableTenancy)store.Options.Tenancy;
         await tenancy.AddDatabaseRecordAsync(TenantConstants.SystemTenantId, systemCs);
         await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
+        await services.GetRequiredService<IRealmMessageStorageProvisioner>()
+            .EnsureProvisionedAsync(TenantConstants.SystemTenantId);
 
         await using var scope = services.CreateAsyncScope();
         var provisioning = scope.ServiceProvider.GetRequiredService<IRealmProvisioningService>();

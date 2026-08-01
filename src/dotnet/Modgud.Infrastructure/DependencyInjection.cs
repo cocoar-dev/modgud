@@ -12,6 +12,7 @@ using Cocoar.JsEval.TsDefinition;
 using Cocoar.JsEval.TypeScript;
 using JasperFx;
 using JasperFx.Events.Daemon;
+using JasperFx.Resources;
 using Marten;
 using Marten.Events.Daemon;
 using Microsoft.Extensions.DependencyInjection;
@@ -148,6 +149,7 @@ public static class DependencyInjection
         // active credentials run on every token issuance.
         services.AddSingleton<IRealmKeyStore, RealmKeyStore>();
         services.AddSingleton<IRealmCache, RealmCache>();
+        services.AddSingleton<IRealmMessageStorageProvisioner, RealmMessageStorageProvisioner>();
         services.AddScoped<IRealmProvisioningService, RealmProvisioningService>();
         services.AddScoped<IInstallationChallengeService, InstallationChallengeService>();
 
@@ -155,8 +157,20 @@ public static class DependencyInjection
         // EventForwardingToWolverine: forwards domain events as Wolverine messages on commit
         martenBuilder.IntegrateWithWolverine(options =>
         {
+            // Database-per-realm tenancy still needs a tenant-neutral master
+            // database for Wolverine's node coordination. Supplying it also
+            // enables Wolverine's multi-tenanted message-store source. Realm
+            // databases registered after startup are initialized explicitly by
+            // IRealmMessageStorageProvisioner.
+            options.MainDatabaseConnectionString = connectionString;
             options.UseFastEventForwarding = true;
         });
+
+        // Apply Wolverine/Marten resources for the master database and every
+        // tenant known at startup. Dynamic realms are handled during realm
+        // provisioning rather than relying on the first message to discover
+        // missing storage.
+        services.AddResourceSetupOnStartup();
 
         martenBuilder.AddAsyncDaemon(DaemonMode.Solo);
 

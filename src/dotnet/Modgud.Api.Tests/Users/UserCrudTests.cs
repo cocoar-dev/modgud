@@ -62,6 +62,12 @@ public class UserCrudTests : IntegrationTestBase
         var created = await response.ReadSuccessJsonAsync<UserDto>(JsonOptions);
         Assert.False(created.IsActive);
 
+        // UserView is an async projection. The create response is intentionally
+        // optimistic (Status=Pending), so wait for the projection before
+        // asserting the read model instead of racing the daemon on slower CI
+        // runners.
+        await Factory.WaitForProjectionsAsync();
+
         var readBack = await Client.GetAsync($"/api/user/{created.Id}", TestContext.Current.CancellationToken);
         readBack.EnsureSuccessStatusCode();
         var fetched = await readBack.ReadSuccessJsonAsync<UserDto>(JsonOptions);

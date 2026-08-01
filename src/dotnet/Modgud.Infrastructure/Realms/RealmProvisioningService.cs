@@ -104,6 +104,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
     private readonly IDocumentStore _tenantedStore;
     private readonly IMasterConnectionString _masterCs;
     private readonly IRealmCache _realmCache;
+    private readonly IRealmMessageStorageProvisioner _messageStorageProvisioner;
     private readonly IServiceProvider _serviceProvider;
     private readonly ISecurityAuditLog _securityAudit;
     private readonly IReadOnlyList<IRealmJobScheduleObserver> _jobScheduleObservers;
@@ -114,6 +115,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         IDocumentStore tenantedStore,
         IMasterConnectionString masterCs,
         IRealmCache realmCache,
+        IRealmMessageStorageProvisioner messageStorageProvisioner,
         IServiceProvider serviceProvider,
         ISecurityAuditLog securityAudit,
         IEnumerable<IRealmJobScheduleObserver> jobScheduleObservers,
@@ -123,6 +125,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         _tenantedStore = tenantedStore;
         _masterCs = masterCs;
         _realmCache = realmCache;
+        _messageStorageProvisioner = messageStorageProvisioner;
         _serviceProvider = serviceProvider;
         _securityAudit = securityAudit;
         _jobScheduleObservers = jobScheduleObservers.ToList();
@@ -270,6 +273,11 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         var newTenantDb = await tenancy.FindOrCreateDatabase(dto.Slug);
         await ApplyTenantSchemaResilientlyAsync(
             () => newTenantDb.ApplyAllConfiguredChangesToDatabaseAsync(), dto.Slug, ct);
+
+        // Marten tenants can be registered after Wolverine's startup resource
+        // scan. Provision the transactional inbox/outbox before any handler or
+        // event-forwarding path can use this realm.
+        await _messageStorageProvisioner.EnsureProvisionedAsync(dto.Slug);
 
         var realm = new Realm
         {
@@ -887,6 +895,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         var adoptedDb = await tenancy.FindOrCreateDatabase(slug);
         await ApplyTenantSchemaResilientlyAsync(
             () => adoptedDb.ApplyAllConfiguredChangesToDatabaseAsync(), slug, ct);
+        await _messageStorageProvisioner.EnsureProvisionedAsync(slug);
 
         var realm = new Realm
         {

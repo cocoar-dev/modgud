@@ -272,13 +272,10 @@ public sealed class RealmManifestApplier(
             roleIds[r.ResolveKey()] = created.Value.Id;
         }
 
-        // ── Users — canonical handler on a plain tenant session ───────────────────
-        // A freshly provisioned realm deliberately has no Wolverine inbox/outbox
-        // tables. Calling the handler through IMessageBus would enroll its now-
-        // atomic Marten session in the outbox and fail on wolverine_*_envelopes.
-        // Direct invocation preserves the canonical user operation and its one-
-        // transaction completeness without introducing messaging infrastructure
-        // into every tenant database.
+        // ── Users — canonical handler on the manifest's tenant session ────────────
+        // Realm provisioning has already initialized Wolverine's inbox/outbox.
+        // Direct invocation keeps manifest application sequential and exposes the
+        // canonical handler result immediately for contextual import errors.
         var userSession = sp.GetRequiredService<IDocumentSession>();
         var createUser = new CreateUserHandler(
             userSession,
@@ -294,12 +291,9 @@ public sealed class RealmManifestApplier(
                 userIds[u.ResolveKey()] = uid;
         }
 
-        // ── Groups — committed via a PLAIN tenant-scoped session (NOT the Wolverine
-        //    outbox session). InvokeForTenantAsync would enroll the Wolverine outbox, and
-        //    the durable-inbox auto-membership event forwarding (ReferenceSync) would try
-        //    to write wolverine_incoming_envelopes in the tenant DB, which a fresh realm
-        //    lacks. A plain session skips that forwarding (auto-membership re-derives at
-        //    login). We call the canonical CreateGroupHandler directly with this session.
+        // ── Groups — canonical handler on the manifest's tenant session ───────────
+        // Keep the same explicit, sequential dispatch used for users so reference
+        // resolution and contextual import failures remain deterministic.
         if (manifest.Groups.Count > 0)
         {
             var groupHandler = new CreateGroupHandler(
@@ -571,11 +565,8 @@ public sealed class RealmManifestApplier(
                 var updateCmd = new UpdateUserCommand(existing.Id,
                     OptionalOf(u.Firstname), OptionalOf(u.Lastname), OptionalOf(u.Acronym),
                     new Optional<string>(u.Email), OptionalOf(u.UserName));
-                // Plain-session direct call: UpdateUserHandler appends
-                // UserUpdatedEvent straight to its session, and under InvokeForTenantAsync
-                // that's the Wolverine outbox session — the durable ReferenceSync forwarding
-                // would then write wolverine_*_envelopes tables the tenant DB doesn't have
-                // (the same reason create-user and groups use a plain session).
+                // Direct invocation keeps the manifest update sequential and makes
+                // the canonical handler result available for contextual errors.
                 var updateHandler = new UpdateUserHandler(session);
                 var updated = await updateHandler.Handle(updateCmd,
                     sp.GetRequiredService<IUserAccessRevoker>(),
@@ -593,9 +584,7 @@ public sealed class RealmManifestApplier(
             if (uid.HasValue) userIds[u.ResolveKey()] = uid.Value;
         }
 
-        // ── Groups (natural key = Name) — PLAIN tenant-scoped session, NOT the Wolverine
-        //    outbox: the durable-inbox auto-membership forwarding would write to wolverine
-        //    tables the tenant DB doesn't have (see ApplyTenantConfigAsync). ──────────────
+        // ── Groups (natural key = Name) ───────────────────────────────────────────
         if (manifest.Groups.Count > 0)
         {
             var groupSession = sp.GetRequiredService<IDocumentSession>();
