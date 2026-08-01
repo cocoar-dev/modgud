@@ -1,7 +1,9 @@
 using System.Security.Cryptography.X509Certificates;
+using System.Xml.Linq;
 using Marten;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -36,6 +38,19 @@ public static class DataProtectionMartenExtensions
         this IServiceCollection services,
         X509Certificate2? protectionCertificate = null)
     {
+        // AddSession/AddAntiforgery register ASP.NET Core's default key manager
+        // before this extension replaces IDataProtectionProvider. Its hosted
+        // service would otherwise create a second, unused key ring under
+        // ~/.aspnet/DataProtection-Keys and emit a misleading container-
+        // persistence warning. Keep that root key manager deliberately inert;
+        // the per-tenant mini-containers below have independent options and
+        // continue to use MartenXmlRepository with normal key generation.
+        services.Configure<KeyManagementOptions>(options =>
+        {
+            options.AutoGenerateKeys = false;
+            options.XmlRepository = DisabledRootXmlRepository.Instance;
+        });
+
         services.AddSingleton<TenantedDataProtectionProvider>(sp =>
         {
             var store = sp.GetRequiredService<IDocumentStore>();
@@ -81,5 +96,18 @@ public static class DataProtectionMartenExtensions
             sp.GetRequiredService<TenantedDataProtectionProvider>());
 
         return services;
+    }
+
+    private sealed class DisabledRootXmlRepository : IXmlRepository
+    {
+        public static readonly DisabledRootXmlRepository Instance = new();
+
+        public IReadOnlyCollection<XElement> GetAllElements() => [];
+
+        public void StoreElement(XElement element, string friendlyName)
+        {
+            // Intentionally ignored. The root provider is replaced by
+            // TenantedDataProtectionProvider and must never persist keys.
+        }
     }
 }
