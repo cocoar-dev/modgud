@@ -2,8 +2,9 @@ namespace Modgud.Infrastructure.Persistence.DataProtection;
 
 /// <summary>
 /// Marten document holding a single ASP.NET Core DataProtection key as XML.
-/// Stored in the system tenant (= master DB) so every instance reads from
-/// the same source and a Pod-Restart doesn't invalidate the live cookies.
+/// Stored in the owning realm's tenant database so every instance reads from
+/// the same source, container restarts don't invalidate live cookies, and a
+/// database compromise cannot expose another realm's key ring.
 ///
 /// <para>The XML payload itself is what
 /// <c>Microsoft.AspNetCore.DataProtection</c> serializes via its

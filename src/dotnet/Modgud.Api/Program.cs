@@ -1461,10 +1461,15 @@ try
                         .Take(1).ToListAsync();
                 }
 
-                var oauthAdmin = realmScope.ServiceProvider
-                    .GetRequiredService<Modgud.Application.Services.OAuthAdminService>();
                 using (TenantContext.Enter(warmupRealm.Slug))
+                using (var oauthWarmupScope = app.Services.CreateScope())
                 {
+                    // OAuthAdminService owns a scoped IDocumentSession. Create and
+                    // resolve its scope only after the ambient tenant is active;
+                    // otherwise TenantedSessionFactory correctly rejects the
+                    // tenant-scoped write session during application startup.
+                    var oauthAdmin = oauthWarmupScope.ServiceProvider
+                        .GetRequiredService<Modgud.Application.Services.OAuthAdminService>();
                     await oauthAdmin.GetClientsAsync(new Modgud.Application.DTOs.OAuth.PaginationRequest { PageSize = 1 });
                     await oauthAdmin.GetScopesAsync();
                     await oauthAdmin.GetApisAsync(new Modgud.Application.DTOs.OAuth.PaginationRequest { PageSize = 1 });
