@@ -9,7 +9,7 @@ Examples:
 - A CLI tool with the device-code flow
 - A server-to-server job using client-credentials
 
-![OAuth clients list](/screenshots/admin-oauth-clients.png)
+![Create OAuth client dialog](/screenshots/admin-oauth-client-modal.png)
 
 ## Relationship to Applications
 

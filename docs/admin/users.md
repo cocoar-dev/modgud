@@ -2,7 +2,7 @@
 
 Administration → **Users**.
 
-![User list](/screenshots/admin-benutzer-liste.png)
+![Create user dialog](/screenshots/admin-benutzer-modal.png)
 
 ## User list
 

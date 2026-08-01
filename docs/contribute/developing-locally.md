@@ -29,15 +29,13 @@ cd Modgud.Api
 ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile
 ```
 
-On first start the bootstrap path runs:
+On first start the deployment-wide bootstrap path runs:
 
-1. Apply master DB schema (`realms.mt_tenant_databases` is created)
-2. Register the system tenant in the tenancy table
-3. Apply the system tenant schema
-4. Seed the system realm document (flagged `IsControlPlane = true`)
-5. Seed 5 default OAuth scopes + the Internal login provider into the system tenant DB
-6. Seed the `modgud` and `control-plane` apps into the system tenant DB
-7. Warm up RealmCache
+1. Create or connect to the master database.
+2. Apply the tenant registry and Global Store schema.
+3. Register the installation-state, platform audit and system-job documents.
+4. Leave the deployment intentionally empty: no realm, tenant database or user
+   exists until first installation completes.
 
 Then Kestrel starts listening on `http://localhost:9099`.
 
@@ -57,10 +55,9 @@ The Vite dev server runs on `http://localhost:4300` and proxies
 
 ::: tip Multi-realm dev
 The Vite proxy uses `changeOrigin: false` so the original `Host` header
-reaches the backend. A tenant realm with `Domains: ["acme.localhost"]`
-is then reachable at `http://acme.localhost:4300/` during development.
-The single-realm fallback in `RealmCache` ensures the default `localhost`
-URL still works on a fresh DB with only the system realm.
+reaches the backend. A realm with `Domains: ["acme.localhost"]` is reachable
+at `http://acme.localhost:4300/` during development. Register every hostname
+you intend to use on the realm; there is no implicit system-realm fallback.
 
 Most desktop OSes resolve `*.localhost` → `127.0.0.1` automatically
 (Windows since Vista, macOS, glibc-based Linux with `nss-myhostname`).
@@ -75,30 +72,33 @@ hostnames are real DNS names served by the Docker container behind
 your reverse proxy.
 :::
 
-## Create the first admin
+## Complete first installation
 
-There is no anonymous setup wizard. Run the recovery CLI in direct mode:
+Issue a short-lived installation link from a second terminal:
 
 ```bash
 cd src/dotnet/Modgud.Api
-dotnet run --no-launch-profile -- recover bootstrap-admin \
-    --email admin@example.com \
-    --username admin \
-    --password 'ABC12abc!'
+dotnet run --no-launch-profile -- recover install-link \
+    --base-url http://localhost:4300
 ```
 
-The CLI atomically creates:
+Open the printed URL. The installation form atomically creates:
 
-- An `ApplicationUser` with the given password (hashed with the configured Identity policy)
-- The three default `PermissionRole`s — System Admin, User Manager, Viewer
-- A `Group` "Administrators" with you as the only member, the System Admin role attached, `BoundTo: ["*"]` (active in every app)
+- the first ordinary realm and its tenant database;
+- the realm's standard OAuth, login-provider and application catalogs;
+- the first `ApplicationUser`, default roles and Administrators group; and
+- the realm's `IsControlPlane` flag.
 
-Sign in at `http://localhost:4300/` with `admin` / `ABC12abc!`. You hold `realm:admin`, so the sidebar shows everything.
+Use `localhost` as a realm domain for the plain Vite URL, then sign in with the
+credentials chosen in the form. The first user holds `realm:admin`, so the
+sidebar shows everything.
 
-::: tip Same identity, different scenarios
-- **Local dev**: direct mode with a known password (above) is fastest.
-- **Handing off to a customer**: drop `--password` to use invite mode — the CLI prints a magic-link URL on stdout, the recipient sets their own password.
-- **Provisioning additional tenant realms** (once you have an admin in the Control-Plane realm): use `POST /api/admin/realms` with an `InitialAdmin` payload — see [First-time setup](../getting-started/first-time-setup) for the full decision tree.
+::: tip Browser and automation use the same API
+For CI or repeatable test environments, add `--json`, extract the token and
+call `POST /api/install/complete`. Additional realms can be created without an
+admin; invite one later through the realm context menu or
+`POST /api/admin/realms/{slug}/admin-invites`. See
+[First-time setup](../getting-started/first-time-setup).
 :::
 
 ## Seed demo data (optional)

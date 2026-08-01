@@ -2,8 +2,8 @@
 
 Modgud is multi-tenant by design — every realm gets its own
 PostgreSQL database, hostname routing, OAuth-client + user store. But
-the multi-tenant architecture is **opt-in**: for a "one app, one
-company" deployment the system realm is enough on its own.
+you do not have to operate multiple tenants: for a "one app, one
+company" deployment, install one realm and keep it as the Control Plane.
 
 ## When this fits
 
@@ -19,11 +19,10 @@ and want one realm per tenant. See
 
 ## What you get
 
-The system realm is a **fully-featured realm** that behaves
-identically to any tenant realm for everyday IdP work — plus the
-control-plane functions on top.
+The first realm is an ordinary, **fully-featured realm**. First installation
+assigns it the Control-Plane flag, so it also owns the cross-realm functions.
 
-| Feature | Available in system realm |
+| Feature | Available in the single realm |
 |---|---|
 | Users, Groups, Roles, Permissions | ✅ |
 | OAuth clients for your apps | ✅ |
@@ -39,7 +38,10 @@ single-tenant deployment — they just sit there unused.
 
 ## Setup
 
-For a quick local eval, use the [Quickstart](quickstart) compose as-is — the system realm is all you get out of the box. For a real single-tenant **production** deployment, run the published image with every env var the Production boot guards require:
+For a quick local evaluation, use the [Quickstart](quickstart) and create one
+realm during installation. For a real single-tenant **production** deployment,
+run the published image with every environment variable the Production boot
+guards require:
 
 ```bash
 docker run -d \
@@ -55,19 +57,13 @@ docker run -d \
 Only two of these are boot-enforced guards that fail closed: `OpenIddict__DevelopmentMode` must be `false` (the default), and Prometheus must either carry a strong `BearerToken` or be turned off entirely with `-e Observability__Prometheus__Enabled=false`. The other two settings above are still important, just not startup checks: the issuer is derived per request from the realm's Host header rather than checked at boot, so it's on you to make sure `https://auth.example.com` is what actually resolves; and omitting `ProxyAllowedNetworks` doesn't fail startup, it silently falls back to a sentinel network that never matches, so forwarded headers from your reverse proxy get rejected instead of honoured. The `-v cocoar-keys:/app/data/keys` volume persists the signing keys across restarts. Configuration is by env var only — `configuration.json` is not shipped in the published image, and Cocoar.Configuration v6 binds `Section__Property` case-insensitively. See [Deployment](../operate/deployment) for the full guard list.
 
 ```bash
-# Add the public hostname to the system realm, make it the primary
-# (so outbound email links resolve), then restart to pick it up
+# Issue the shell-authorized installation URL
 docker exec modgud dotnet Modgud.Api.dll \
-    recover realm-add-domain --slug system --domain auth.example.com
-docker exec modgud dotnet Modgud.Api.dll \
-    recover realm-set-primary-domain --slug system --domain auth.example.com
-docker restart modgud
-
-# Bootstrap the first admin into the system realm (default)
-docker exec modgud dotnet Modgud.Api.dll \
-    recover bootstrap-admin \
-    --email admin@example.com --username admin --password 'StrongPass1!'
+    recover install-link --base-url https://auth.example.com
 ```
+
+Open the printed URL. Use `auth.example.com` as the realm's primary domain and
+create the first administrator in the installation form.
 
 That's it. From the browser:
 
@@ -86,13 +82,13 @@ That's it. From the browser:
   you create yourself shouldn't list `control-plane:realm:read` or
   `control-plane:realm:write` unless the user genuinely is a
   deployment-level admin.
-- **Don't deactivate or delete the realm that currently holds the Control-Plane flag.** While a realm is the Control Plane, deactivating or deleting it is blocked by service-level guards (the deployment would lose its cross-realm admin surface). In a single-tenant deployment that's the system realm. The Control-Plane flag is transferable to another active realm first (`recover control-plane transfer <slug>`) if you genuinely need to retire the original — see [Concepts: Control Plane](../concepts/control-plane).
+- **Don't deactivate or delete the realm that currently holds the Control-Plane flag.** Both operations are blocked because the deployment would lose its cross-realm admin surface. The flag is transferable to another active realm first (`recover control-plane transfer <slug>`) if you genuinely need to retire the original — see [Concepts: Control Plane](../concepts/control-plane).
 
 ## Growing into multi-tenant later
 
 If a single-tenant deployment later needs to host a second tenant
 (merger, white-label rollout, …), nothing has to change in the
-existing system realm. You just create a new realm via
+existing realm. You just create a new realm via
 `POST /api/admin/realms` (or the Admin UI), give it its own
 hostname, and the existing users / clients / scopes in the system
 realm stay where they are.

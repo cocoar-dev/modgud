@@ -11,13 +11,15 @@ Some of this is already covered by the Playwright suite under `src/frontend-vue/
 - [ ] Backend builds: `cd src/dotnet && dotnet build`
 - [ ] Postgres container running
 - [ ] Master DB exists (created on the fly, or up front — see [Developing locally](../developing-locally))
-- [ ] Docker image boots cleanly on just the env vars from your compose file — no anonymous `/setup` wizard exists, so a fresh container has no admin yet
+- [ ] Docker image boots cleanly on just the env vars from your compose file; a fresh deployment has zero realms and normal routes remain closed until installation
 - [ ] Frontend loads without console errors
 
 ## 1. First-time setup
 
-- [ ] `recover bootstrap-admin` creates the first admin (see [First-time setup](../../getting-started/first-time-setup))
-- [ ] Signing in as that admin lands on the dashboard with the full sidebar (`realm:admin` bypasses every gate)
+- [ ] `recover install-link --base-url <url>` issues a short-lived, single-use installation URL
+- [ ] Browser installation creates the first realm, its first admin and the `IsControlPlane` assignment **(automated)**
+- [ ] `POST /api/install/complete` supports the same flow for CI/test automation **(automated)**
+- [ ] Signing in as the first admin lands on the dashboard with the full sidebar (`realm:admin` bypasses every gate)
 
 ## 2. Login & sign-out
 
@@ -124,8 +126,9 @@ See [Invite codes](../../admin/invite-codes) for the full flow.
 
 ## 15. Realms & provisioning
 
-- [ ] The system realm exists with `IsControlPlane: true` **(automated)**
-- [ ] Creating a realm provisions a fresh tenant database plus a bootstrap-admin invite **(automated)**
+- [ ] The first installed realm exists with `IsControlPlane: true` **(automated)**
+- [ ] Creating another realm provisions a fresh tenant database without requiring an admin **(automated)**
+- [ ] Issuing a realm-admin invite revokes an older open invite; only the newest 24-hour link is usable **(automated)**
 - [ ] Reserved/invalid slugs are rejected **(automated)**
 - [ ] Exporting a realm as a manifest and re-applying it is a no-op
 - [ ] Applying a manifest with `?prune=true` removes drifted entities but never locks out the last realm admin

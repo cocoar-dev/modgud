@@ -14,7 +14,7 @@ An app can be both (e.g. a BFF pattern: user-login as a client, its
 own API as an API).
 :::
 
-![OAuth APIs list](/screenshots/admin-oauth-apis.png)
+![Create OAuth API dialog](/screenshots/admin-oauth-api-modal.png)
 
 ## When do I need an OAuth API registration?
 
@@ -152,7 +152,7 @@ immediately switch to the new app context.
 
 **Audience (aud)** is immutable, so to make a near-identical
 resource server, clone it. List → right-click → **Clone**. The Create
-wizard opens pre-filled — display name, description, scopes, user claims,
+create dialog opens pre-filled — display name, description, scopes, user claims,
 the linked Application and its catalog subset are copied; only
 **Audience (aud)** is blank.
 

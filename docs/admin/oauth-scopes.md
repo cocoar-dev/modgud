@@ -2,7 +2,7 @@
 
 **Scopes** define what permissions an OAuth client may request from the user — and which resources (APIs) the resulting token may target.
 
-![OAuth scopes list](/screenshots/admin-oauth-scopes.png)
+![Create OAuth scope dialog](/screenshots/admin-oauth-scope-modal.png)
 
 ## Standard scopes (seeded per realm)
 

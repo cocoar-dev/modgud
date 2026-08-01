@@ -7,7 +7,7 @@ Groups are the **organisational layer** in Modgud. They serve two distinct purpo
 
 A user can be a member of any number of groups; a group can be a member of another group (transitive resolution).
 
-![Groups list](/screenshots/admin-gruppen-liste.png)
+![Create group dialog](/screenshots/admin-gruppe-modal.png)
 
 ## Why groups?
 

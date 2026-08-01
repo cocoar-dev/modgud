@@ -13,11 +13,11 @@ how multi-tenant Modgud deployments separate customers / environments
 - **Compliance isolation** (some customer data must not coexist in
   the same DB)
 
-Single-tenant deployments only need the system realm — provisioned
-automatically on first start.
+Single-tenant deployments only need the first realm created during
+[first installation](../getting-started/first-time-setup).
 :::
 
-![Realm list](/screenshots/admin-realms-liste.png)
+![Create realm dialog](/screenshots/admin-realm-modal.png)
 
 ## The Control-Plane realm
 
@@ -30,14 +30,10 @@ isn't seeded there). See
 [Concepts: Control Plane / Data Plane](../concepts/control-plane) for
 the full three-layer defence.
 
-The Control-Plane flag is a **stored, transferable** field. The `system`
-realm is stamped as the CP at first boot, but the role can be moved to any
+The Control-Plane flag is a **stored, transferable** field. First installation
+stamps the first ordinary realm as the CP; the role can later move to any
 active realm (see [Transferring the control plane](#transferring-the-control-plane)).
-There is always exactly one CP per deployment.
-
-The system realm's default domains are `system.localhost`,
-`localhost`, `127.0.0.1` — anything resolving to those lands on the
-system realm.
+There is exactly one CP after installation, and no slug has special meaning.
 
 ## Realm fields
 
@@ -154,17 +150,17 @@ transferring, or recover one afterwards via the
   database and removes the realm record (Control-Plane only, irreversible) —
   see [Declarative Realm Provisioning](./realm-provisioning) for the API surface.
 
-## First-time setup of a fresh realm
+## Inviting a realm administrator
 
-The realm is provisioned together with a bootstrap-invite for the
-Initial Admin (above). The invite recipient clicks the magic-link and
-sets their password — that's the standard path for nearly every
-realm.
+A realm is complete and active as soon as realm creation finishes; it does not
+need an administrator to be valid. When someone should manage it, use
+**Invite realm admin** in the realm's context menu. The recipient clicks the
+magic link and sets their password.
 
 If something goes wrong:
 
-- **Token lost or expired** — reopen the realm in the admin UI and
-  click **Resend invite**. Same recipient, fresh token.
+- **Token lost or expired** — issue a new invitation. It automatically revokes
+  the previous open link.
 - **No prior invite, no admin yet** (e.g. provisioned via a tool
   that didn't issue one) — drop into the container and run
   `dotnet Modgud.Api.dll recover bootstrap-admin --email <e> --realm <slug>`.
@@ -179,17 +175,16 @@ Modgud's `RealmMiddleware` resolves the realm from
 `HttpContext.Request.Host`. Each request finds its realm by matching
 the host against any realm's `Domains` list.
 
-If a host doesn't match any realm: 404 (the request is for an
-unrecognised tenant). For dev work without hosts-file edits, the
-system realm's default `Domains` list includes `localhost` and
-`127.0.0.1` — the single-realm fallback in `RealmCache` also catches
-localhost variants when only one realm is active.
+If a host doesn't match any realm, the request returns 404. Register every
+hostname explicitly in the realm's Domains list. `*.localhost` resolves to
+loopback on modern browsers and operating systems, but Modgud still needs the
+exact host-to-realm mapping.
 
 ## Tips
 
 ::: tip Naming conventions
-Realm slugs are baked into the tenant DB name and the default Domains
-list (`<slug>.localhost`). Pick stable, customer-friendly slugs and
+Realm slugs are baked into the tenant DB name. Pick stable,
+customer-friendly slugs and
 stick with them. Slug changes are not supported.
 :::
 

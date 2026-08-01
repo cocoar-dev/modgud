@@ -84,10 +84,10 @@ sign-on between them. A realm reached through any other, unrelated
 domain still gets a host-only cookie scoped to exactly that host.
 
 ::: tip Single-domain dev setup
-In dev, everything runs under `localhost:4300` (Vite proxy). Only the
-system realm exists there (single-tenant fallback in RealmCache). To
-test multi-realm in dev, use hosts-file entries or `*.localtest.me`
-style domains.
+In dev, the Vite proxy commonly runs under `localhost:4300`. Register
+`localhost` on the realm created during installation. To test multiple realms,
+use distinct `*.localhost` names (or explicit hosts-file entries) and add each
+hostname to the corresponding realm.
 :::
 
 ## Session tracking

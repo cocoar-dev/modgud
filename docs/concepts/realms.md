@@ -40,8 +40,7 @@ not via URL paths. Each realm has one or more configured domains.
 acme.example.com         → Realm "acme"
 auth.acme.example.com    → Realm "acme"  (second domain for the same realm)
 finance.example.com      → Realm "finance"
-system.example.com       → System realm
-localhost                → System realm  (single-tenant fallback in dev)
+auth.localhost           → Realm "local-dev"
 ```
 
 `RealmMiddleware` (in `Modgud.Api.Middleware`) runs before all
@@ -54,12 +53,10 @@ other middlewares and:
 
 The cache is warmed at boot and invalidated on realm CUD.
 
-::: tip Single-tenant fallback in dev
-If only one realm is active AND the host is a localhost variant
-(`localhost`, `127.0.0.1`, `::1`, `0.0.0.0`), the cache returns that
-single realm — even if it does not have the localhost domain in its
-list. This makes a single-realm dev boot work without a hosts-file
-entry.
+::: tip Local development
+`*.localhost` resolves to loopback on modern desktop systems. Modgud still
+requires the exact hostname in the realm's Domains list; an unknown host fails
+closed with 404 instead of guessing a tenant.
 :::
 
 ## Database-per-tenant via Marten
@@ -69,12 +66,10 @@ Modgud uses Marten's `MasterTableTenancy`:
 ```mermaid
 graph TD
     Master[(<master-db><br/>= Master DB)]
-    Master -->|realms.mt_tenant_databases| System[(<master-db>_system)]
     Master -->|realms.mt_tenant_databases| Acme[(<master-db>_acme)]
     Master -->|realms.mt_tenant_databases| Finance[(<master-db>_finance)]
 
     Master -->|global Schema| GlobalRealm["Realm-Documents<br/>(IGlobalStore)"]
-    System -->|tenant data| SystemUsers[Users, Groups, OAuth, ...]
     Acme -->|tenant data| AcmeUsers[Users, Groups, OAuth, ...]
     Finance -->|tenant data| FinanceUsers[Users, Groups, OAuth, ...]
 ```
@@ -82,16 +77,14 @@ graph TD
 | Database | Contents |
 |---|---|
 | `<master-db>` (Master) | Schema `realms.mt_tenant_databases` (tenant registry) + schema `global` (Realm documents) |
-| `<master-db>_system` | System realm data (users, groups, ...) — its own physical DB, like every other realm |
-| `<master-db>_<slug>` | A separate physical DB per additional realm |
+| `<master-db>_<slug>` | A separate physical DB for every realm, including the first |
 
-::: info Master DB vs. system realm
-The master DB is pure control-plane infrastructure — the tenant registry
-(`realms.mt_tenant_databases`) + the global Realm store (schema `global`) +
-Wolverine durability. It is **not** a tenant. Every realm, including the
-bootstrap `system` realm, lives in its own `<master-db>_<slug>` database.
-That makes the system realm an equal, deletable peer so the
-[control plane](./control-plane.md) can be transferred off it.
+::: info Master DB vs. realms
+The master DB is deployment-wide infrastructure — tenant registry,
+`IGlobalStore`, installation state, global jobs and platform audit. It is
+**not** a tenant. Every realm has the same data shape and lives in its own
+`<master-db>_<slug>` database. Cross-realm authority follows the transferable
+[Control-Plane flag](./control-plane.md), not a special database or slug.
 :::
 
 ### Tenant resolution in code
@@ -101,16 +94,19 @@ from `HttpContext.Items` and opens a tenant-scoped session:
 
 ```csharp
 public IDocumentSession OpenSession()
-    => _store.LightweightSession(ResolveTenantId());
+    => _store.LightweightSession(ResolveTenantId(forWrite: true));
 
-private string ResolveTenantId()
-    => _httpContextAccessor.HttpContext?.Items[TenantConstants.HttpContextTenantIdKey] as string
-       ?? TenantConstants.SystemTenantId;
+private string ResolveTenantId(bool forWrite)
+{
+    var tenant = TenantContext.CurrentOrNull
+        ?? httpContextAccessor.HttpContext?.Items["TenantId"] as string;
+    return tenant ?? throw new InvalidOperationException("No realm resolved");
+}
 ```
 
-Every `IDocumentSession`/`IQuerySession` injection is therefore
-automatically realm-scoped. Background services (without HttpContext)
-fall back to the system tenant.
+Every `IDocumentSession`/`IQuerySession` injection is realm-scoped and fails
+closed without an explicit realm. Deployment-wide code uses `IGlobalStore`;
+background realm work enters `TenantContext.Enter(slug)` explicitly.
 
 ### GlobalStore for realm documents
 
@@ -123,20 +119,19 @@ of the master DB.
 
 ## Realm lifecycle
 
-### 1. First-time bootstrap
+### 1. First installation
 
-On first start:
+Startup creates the master database, tenant registry and Global Store, but no
+realm. A shell-authorized [installation link](../getting-started/first-time-setup)
+then drives one browser/API transaction:
 
-1. **Create the master DB and the `<master-db>_system` DB** (raw SQL, because
-   Marten cannot `CREATE DATABASE` on an active connection)
-2. **Apply the Marten schema** → `realms.mt_tenant_databases` is created
-3. **Register the system tenant** → `tenancy.AddDatabaseRecordAsync("system", systemCs)` (pointing at `<master-db>_system`, not the master DB)
-4. **Apply the Marten schema again** → per-tenant tables for the system realm, in its own DB
-5. **Seed the system realm document** in `IGlobalStore`, stamped `IsControlPlane = true`
-6. **Seed default OAuth scopes + the Internal login provider**
-7. **Seed the `modgud` and `control-plane` apps** into the system tenant DB
-8. **Warm `RealmCache`**
-9. The instance is ready, but has zero users — the first admin is created via the [recovery CLI](../operate/recovery-cli) or, for additional realms, by an existing CP-admin via `POST /api/admin/realms`. See [First-time setup](../getting-started/first-time-setup).
+1. Create and register `<master-db>_<first-slug>`.
+2. Apply the tenant schema and seed standard OAuth scopes, the Internal login
+   provider and the `modgud`/`control-plane` apps.
+3. Store the first ordinary Realm document in `IGlobalStore` with
+   `IsControlPlane = true`.
+4. Create its first user and `realm:admin` membership.
+5. Activate the realm and mark installation complete.
 
 ### 2. Create additional realms
 
@@ -152,11 +147,7 @@ POST /api/admin/realms
 {
   "Slug": "acme",
   "DisplayName": "Acme Corp",
-  "Domains": ["acme.example.com"],
-  "InitialAdmin": {
-    "UserName": "max",
-    "Email": "max@acme.com"
-  }
+  "Domains": ["acme.example.com"]
 }
 ```
 
@@ -168,13 +159,17 @@ Backend:
 2. `CREATE DATABASE <master-db>_acme` (raw SQL).
 3. `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`.
 4. `Storage.ApplyAllConfiguredChangesToDatabaseAsync()`.
-5. **`OAuthRealmSeeder`** → 5 default scopes + Internal login provider.
+5. **`OAuthRealmSeeder`** → 6 default scopes + Internal login provider.
 6. **`AppRealmSeeder`** → registers the `modgud` app in the new tenant DB. The `control-plane` app is **not** seeded — it only exists in the Control-Plane realm.
 7. Save the `Realm` document in `IGlobalStore`.
 8. `RealmCache.Invalidate()`.
-9. **Bootstrap-invite** issued atomically: writes a `PendingAdminInvite` into the new tenant DB, sends a magic-link email to `InitialAdmin.Email`, returns the URL in the API response.
+9. The realm is complete and active without requiring an administrator.
 
-The recipient clicks the magic-link, lands at `/bootstrap?token=…`, sets a password, and is auto-signed-in with `realm:admin`. The first user creation runs through `RealmAdminBootstrapper`, which atomically seeds the three default roles and adds the user to the `Administrators` group.
+A Control-Plane admin can later issue a single-use, 24-hour invitation through
+`POST /api/admin/realms/{slug}/admin-invites`. Issuing a new link revokes the
+previous open one. The recipient sets a password and is auto-signed-in with
+`realm:admin`; `RealmAdminBootstrapper` seeds the default roles and adds the
+user to the Administrators group.
 
 ### 3. Deactivate a realm
 
@@ -187,9 +182,9 @@ PATCH /api/admin/realms/{slug}
 longer resolved, all requests to the domain land at `404`. The data
 stays in the DB.
 
-::: danger Do not deactivate the system realm
-The system realm must not be deactivated — otherwise you have no way
-back into the system.
+::: danger Do not deactivate the Control-Plane realm
+The realm currently holding `IsControlPlane` cannot be deactivated. Transfer
+the flag to another active realm first.
 :::
 
 ### 4. Hard-delete a realm

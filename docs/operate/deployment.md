@@ -117,13 +117,11 @@ password-protected PFX from elsewhere:
 
 ::: info Database naming
 `DbSettings.ConnectionString` points at the master DB — pick any name you like (the convention is `modgud`).
-The master DB holds only control-plane infrastructure (the tenant registry +
-the global Realm store + Wolverine durability); it is **not** a tenant. Every
-realm lives in its own `<master-db>_<slug>` DB, including the bootstrap system
-realm (`<master-db>_system`, created at first boot). So for a master DB called
-`modgud` you get `modgud_system`, `modgud_acme`, `modgud_finance`. Back up the master DB
-**and** every `modgud_<slug>` DB (system included — that's where system-realm
-users and keys live).
+The master DB holds only deployment-wide infrastructure (the tenant registry,
+Global Store and Wolverine durability); it is **not** a tenant. Every realm
+lives in its own `<master-db>_<slug>` DB. For a master DB called `modgud`,
+realms `acme` and `finance` use `modgud_acme` and `modgud_finance`. Back up the
+master DB **and** every realm DB.
 :::
 
 ## Docker image
@@ -206,36 +204,18 @@ Cocoar.Configuration v6 binds environment variables **case-insensitively**, so t
 
 ### First-time bootstrap
 
-The system realm is seeded automatically with the localhost-style
-domains `["system.localhost", "localhost", "127.0.0.1"]`. To make
-the public hostname route to the system realm, add it via the
-Recovery CLI, then restart so the in-process realm cache picks
-up the change:
+An empty deployment has no realm or user. Issue a short-lived installation URL
+from inside the container:
 
 ```bash
 docker exec modgud dotnet Modgud.Api.dll \
-    recover realm-add-domain --slug system --domain auth.example.com
-
-# Make it the realm's primary domain so outbound email links
-# (magic-link, invite, password-reset) resolve to the public host:
-docker exec modgud dotnet Modgud.Api.dll \
-    recover realm-set-primary-domain --slug system --domain auth.example.com
-
-# The CLI runs as a separate process; the running server's realm
-# cache doesn't see the change until restart:
-docker compose restart auth
+    recover install-link --base-url https://auth.example.com
 ```
 
-Then create the first admin user (the `system` slug is the default,
-so `--realm system` is implicit):
-
-```bash
-docker exec modgud dotnet Modgud.Api.dll \
-    recover bootstrap-admin \
-    --email admin@example.com --username admin --password 'StrongPass1!'
-```
-
-Open `https://auth.example.com/` in the browser and sign in.
+Open the printed `/install?token=...` URL. Create the first ordinary realm,
+register `auth.example.com` as its primary domain and create its first
+administrator. The same token can be submitted to `/api/install/complete` by
+CI; see [First-time setup](../getting-started/first-time-setup).
 
 ### Docker Compose (canonical production reference)
 
@@ -409,16 +389,15 @@ correct tenant DB.
 
 On first start (or after every image update):
 
-1. The master DB **and** the `<master-db>_system` DB are created if missing
-   (`CREATE DATABASE`)
-2. Marten schema is applied (idempotent) → the tenant registry table
-3. System tenant is registered in `realms.mt_tenant_databases`, pointing at its
-   own `<master-db>_system` DB (the master DB is pure control-plane infra)
-4. Marten schema is applied again (per-tenant tables for the system realm, in
-   its own DB)
-5. System realm document is seeded (stamped as the control plane)
-6. Default scopes + internal LoginProvider are seeded
-7. RealmCache is warmed up
+1. The master database is created if missing.
+2. Marten applies the tenant registry and Global Store schema idempotently.
+3. Deployment-wide installation, audit and scheduled-job documents become
+   available. No tenant is inferred or created.
+
+First installation then creates `<master-db>_<slug>`, registers the tenant,
+applies its schema, seeds the default scopes, login provider and apps, and
+stores the first realm in the Global Store. That realm receives the
+Control-Plane flag only as part of successful installation.
 
 Additional realms are created at runtime, either one at a time via
 `POST /api/admin/realms`, or declaratively: `POST /api/admin/realms/import`
@@ -518,9 +497,8 @@ The Recovery CLI runs the same binary in command mode instead of
 starting Kestrel — pass `recover <verb>` to `dotnet
 Modgud.Api.dll`. The CLI is for two situations:
 
-1. **First-time bootstrap** — set up the system realm's public
-   domain and create the first admin (covered in [Quick start](#quick-start)
-   above).
+1. **First installation** — issue the shell-authorized `install-link`; the
+   browser or CI then creates the first realm and administrator.
 2. **Break-glass recovery** — all admins locked out, 2FA reset,
    projection rebuild.
 
@@ -529,6 +507,7 @@ prints the same):
 
 | Verb | Purpose |
 |---|---|
+| `install-link --base-url [--minutes] [--json]` | Issue the single-use token for browser or automated first installation. |
 | `list` | List all users (UserName · Email · Active · Admin · 2FA · Passkeys) |
 | `reset-2fa <username>` | Disable TOTP + Email-OTP + delete all Passkeys |
 | `set-email <username> <email>` | Update the user's email address |

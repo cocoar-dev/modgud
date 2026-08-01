@@ -45,6 +45,8 @@ Double-click a row to open its **details** (adds who/when it was redeemed, once 
 
 ## Minting codes
 
+![Mint invite codes dialog](/screenshots/admin-einladungscode-modal.png)
+
 Click **Mint codes** (top-right of the grid, or the empty-state call to action) to open the mint dialog:
 
 1. **App** — which Application these codes belong to. Pre-filled from the header's current App selection if one is active. Codes are single-use and permanently bound to this app.

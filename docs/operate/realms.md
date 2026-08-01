@@ -18,10 +18,10 @@ realm has one or more configured domains:
 
 | Hostname | Realm |
 |---|---|
-| `system.example.com` | System realm |
+| `auth.example.com` | Control-Plane realm |
 | `acme.example.com` | Acme realm |
 | `auth.acme.example.com` | Acme realm (second domain) |
-| `localhost` (dev, single-realm) | System realm (single-tenant fallback) |
+| `auth.localhost` (dev) | Local development realm |
 
 `RealmMiddleware` (`src/dotnet/Modgud.Api/Middleware/RealmMiddleware.cs`)
 runs as the very first middleware:
@@ -110,10 +110,6 @@ graph TD
         GlobalSchema["Schema: global<br/>(Realm documents)"]
     end
 
-    subgraph System["<master-db>_system"]
-        SystemData["System realm data"]
-    end
-
     subgraph Acme["<master-db>_acme"]
         AcmeData["Acme tenant data"]
     end
@@ -122,7 +118,6 @@ graph TD
         FinanceData["Finance tenant data"]
     end
 
-    Tenancy -.->|Lookup| System
     Tenancy -.->|Lookup| Acme
     Tenancy -.->|Lookup| Finance
 ```
@@ -130,12 +125,12 @@ graph TD
 | Database | Contents |
 |---|---|
 | `<master-db>` (master) | `realms.mt_tenant_databases` (tenant registry) + schema `global` (Realm documents) + Wolverine durability — pure control-plane infra, **not** a tenant |
-| `<master-db>_<slug>` | A dedicated physical DB per realm, including the bootstrap `system` realm (`<master-db>_system`) |
+| `<master-db>_<slug>` | A dedicated physical DB for every realm, including the first |
 
-The master DB holds **no** tenant data. Every realm — including the
-bootstrap `system` realm — lives in its own `<master-db>_<slug>` database,
-so the system realm is an equal, deletable peer and the
-[control plane](../concepts/control-plane) can be transferred off it.
+The master DB holds **no** tenant data. Every realm has the same shape and
+lives in its own `<master-db>_<slug>` database. The
+[Control-Plane flag](../concepts/control-plane) can move between active realms;
+no database or slug is privileged by itself.
 
 ## TenantedSessionFactory
 
@@ -172,19 +167,11 @@ builder.Services.AddMarten(...)
     .BuildSessionsWith<TenantedSessionFactory>();
 ```
 
-This way every `IDocumentSession`/`IQuerySession` injection is
-automatically realm-scoped. When neither signal resolves a tenant, the
-fallback splits by intent:
-
-- **No `HttpContext` at all** (background service, hosted service, CLI,
-  test) — falls back to the system tenant. This is the intended,
-  load-bearing path for infrastructure jobs and single-realm boots.
-- **An in-flight HTTP request with no resolved realm** — this can only
-  happen on a realm-agnostic skip-path (`/health`, `/openapi`, …),
-  since every routed request is resolved or 404'd by `RealmMiddleware`.
-  A **write** in that state throws instead of silently landing in the
-  system tenant's database; a **read** falls back to the system tenant
-  with a warning logged.
+This way every `IDocumentSession`/`IQuerySession` injection is realm-scoped.
+When neither signal resolves a tenant, reads and writes both fail closed.
+Deployment-wide work uses `IGlobalStore`; background realm work explicitly
+enters `TenantContext.Enter(slug)`. Moving the Control Plane can therefore
+never redirect unrelated data into another realm.
 
 ## IGlobalStore
 
@@ -241,19 +228,16 @@ host: 404 (the existence of the surface is hidden from tenant realms
 
 ### Create
 
-`POST` requires an `InitialAdmin` payload — a realm with no admin path
-would be unreachable.
+`POST` creates a complete realm independently from administrator onboarding.
+`InitialAdmin` is optional for API clients that want creation and invitation in
+one atomic request; the admin UI uses the separate invitation action.
 
 ```http
 POST /api/admin/realms
 {
   "Slug": "acme",
   "DisplayName": "Acme Corp",
-  "Domains": ["acme.example.com"],
-  "InitialAdmin": {
-    "UserName": "max",
-    "Email": "max@acme.com"
-  }
+  "Domains": ["acme.example.com"]
 }
 ```
 
@@ -276,16 +260,14 @@ Backend:
 8. `RealmCache.Invalidate()`.
 9. Realm creation completes independently from administrator onboarding.
 
-The recipient consumes the invite at `POST /api/account/bootstrap-admin`
-on the new realm's host (anonymous, rate-limited under `bootstrap`),
-sets a password, gets auto-signed-in. Atomic with that consume,
-`RealmAdminBootstrapper` creates the user, seeds the three default
-`PermissionRole`s (System Admin / User Manager / Viewer) and adds the
-user to the `Administrators` group with `realm:admin`.
-
 `POST /api/admin/realms/{slug}/admin-invites` issues a single-use,
 24-hour realm-admin invitation. Issuing a new invitation revokes every
 previous open admin invitation in that realm.
+
+The recipient consumes the invite at `POST /api/account/bootstrap-admin` on
+the realm's host, sets a password and gets auto-signed-in. Atomic with that
+consume, `RealmAdminBootstrapper` creates the user, seeds the default roles and
+adds the user to the Administrators group with `realm:admin`.
 
 ### Update
 
@@ -309,8 +291,9 @@ PATCH /api/admin/realms/{slug}
 `RealmCache` filters on `IsActive = true` — all requests to the realm
 domain land on `404`. Data is preserved.
 
-::: danger System realm
-The system realm cannot be deactivated — the endpoint blocks that.
+::: danger Control-Plane realm
+The realm currently holding `IsControlPlane` cannot be deactivated. Transfer
+the flag first.
 :::
 
 ### Hard-delete

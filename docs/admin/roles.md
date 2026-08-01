@@ -5,8 +5,6 @@ An **application role** bundles permissions for exactly one app. A pure
 catalog permissions and grants the bypass across every app in its own realm.
 Users receive roles only through their [groups](./groups) — never directly.
 
-![Roles list](/screenshots/admin-rollen-liste.png)
-
 ## The permission model
 
 ```
@@ -99,7 +97,7 @@ External apps (Acme-Tasks, Knowledge, …) bring their own resources, defined in
 
 Administration → **Roles** → **Create**, or double-click an entry.
 
-![Role detail](/screenshots/admin-rolle-detail.png)
+![Create role dialog](/screenshots/admin-rolle-modal.png)
 
 The modal has two tabs:
 

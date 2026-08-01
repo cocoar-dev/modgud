@@ -8,8 +8,6 @@ Administration → **Change Requests**.
 Some compliance regimes require that user profile changes are reviewed — particularly email-address changes, which are an account-takeover vector. The approval flow inserts a human gate between "user wants to change" and "change is live".
 :::
 
-![Change request list](/screenshots/admin-change-requests-inbox.png)
-
 ## The list
 
 Columns: *Last changed*, *User*, *Type*, *Fields* (which fields the request touches), *Status*. By default only open requests show; tick **Also show completed** to include approved/rejected ones too. There's free-text search, but no separate Status/User/date-range filters — open a row to see the proposed old → new values for each field.

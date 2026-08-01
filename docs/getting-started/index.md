@@ -6,7 +6,7 @@ Modgud is an OpenID-Connect-shaped identity provider that puts a multi-app permi
 
 Pick the one that matches what you're trying to do right now:
 
-- **Run it locally** — [Quickstart (Docker)](./quickstart). Copy a compose file, `docker compose up`, create the first admin via the recovery CLI, and you land in a logged-in admin SPA on `http://localhost`.
+- **Run it locally** — [Quickstart (Docker)](./quickstart). Copy a compose file, `docker compose up`, issue a short-lived installation link, and create the first realm and administrator in the browser.
 - **Integrate a SaaS app you already have** — go straight to the [SaaS Integration Walkthrough](../integrate/saas-walkthrough). It links into the relevant admin docs as you go.
 - **Embed Modgud into your own deployment** — [Requirements](./requirements) and [Features](./features) explain what you're getting and what infrastructure you'll need.
 
@@ -23,7 +23,7 @@ A self-hostable IdP. OAuth 2.0 + OpenID Connect server, runs on .NET 10, persist
 
 ## Sections
 
-- [**Quickstart (Docker)**](./quickstart) — copy the compose file, `docker compose up`, bootstrap the first admin, sign in — in 10 minutes
+- [**Quickstart (Docker)**](./quickstart) — copy the compose file, `docker compose up`, complete first installation, sign in — in 10 minutes
 - [**Requirements**](./requirements) — runtime and infra checklist
 - [**Features**](./features) — point-by-point list of what the box delivers
 - [**First-time setup**](./first-time-setup) — the three bootstrap paths and when to use which

@@ -6,7 +6,11 @@ manual EF Core migrations.
 
 ## Multi-tenant setup
 
-Marten `MasterTableTenancy` with database-per-tenant. The master DB (convention: `modgud`) holds only control-plane infrastructure; each realm gets its own physical database named `<master-db>_<slug>` — so `modgud_system` for the bootstrap system realm, then `modgud_<slug>` per realm. Details: [Multi-tenancy / Realms](/operate/realms).
+Marten `MasterTableTenancy` with database-per-tenant. The master DB
+(convention: `modgud`) holds only deployment-wide infrastructure; each realm
+gets its own physical database named `<master-db>_<slug>`. A first realm named
+`acme` therefore uses `modgud_acme`; no special `system` database is created.
+Details: [Multi-tenancy / Realms](/operate/realms).
 
 ## Schema management
 
@@ -248,8 +252,6 @@ team already runs). What's specific to Modgud is *what* to back up:
 - the **master DB** (convention: `modgud`) — control-plane infra: the
   tenant registry (`realms.mt_tenant_databases`) and the global Realm
   store (`global.mt_doc_realm`);
-- **`<master-db>_system`** — the bootstrap system realm, including its
-  users and its own security events;
 - **every `<master-db>_<slug>` DB** — one per realm.
 
 Because each realm is a physically separate database, backup and
@@ -259,7 +261,7 @@ tenant, without touching any other realm's data. A minimal per-database
 dump loop:
 
 ```bash
-for db in modgud modgud_system modgud_acme modgud_finance; do
+for db in modgud modgud_acme modgud_finance; do
   pg_dump -Fc -h localhost -U postgres "$db" > "${db}_$(date -u +%Y%m%dT%H%M%SZ).dump"
 done
 ```

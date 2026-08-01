@@ -45,8 +45,9 @@ emission, full 2FA spectrum, GDPR self-service.
 - **Observability built-in** — OpenTelemetry metrics + traces,
   Prometheus scrape endpoint, custom IdP meter, in-app live
   activity feed.
-- **Recovery CLI** — break-glass admin path (bootstrap-admin,
-  reset-2fa, magic-link, rebuild-projections) when the UI can't
+- **Recovery CLI** — shell-authorized first installation plus
+  break-glass admin paths (`install-link`, `bootstrap-admin`,
+  `reset-2fa`, `magic-link`, `rebuild-projections`) when the UI can't
   help you.
 
 ## Quick links
@@ -97,10 +98,11 @@ Postgres container, what the first boot actually does, reaching tenant
 realms at `*.localhost`, the recovery CLI, demo seed data, tests and
 Playwright.
 
-For the first admin you need the recovery CLI — that guide covers it, and
-[First-time setup](./docs/getting-started/first-time-setup.md) has the
-decision tree for the other bootstrap routes (invite mode, provisioning
-further realms).
+On an empty database, issue a short-lived installation URL with
+`recover install-link`. The browser form (or the same API from CI) creates the
+first ordinary realm, marks it as the Control Plane, and creates its first
+`realm:admin`. [First-time setup](./docs/getting-started/first-time-setup.md)
+covers the complete interactive and automated flow.
 
 ## Contributing
 
