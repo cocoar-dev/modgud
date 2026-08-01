@@ -84,14 +84,14 @@ public class SamlMetadataRefreshService(
 
         if (refreshed > 0 || failed > 0)
         {
-            // Platform-wide control-plane tick — leave Realm unset.
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordPlatformTelemetry(new PlatformAuditRecord
             {
-                EventType = AuditEvents.SamlMetadataRefreshed,
-                Level = "Info",
-                Status = "refreshed",
-                Reason = $"refreshed={refreshed} failed={failed}",
-                Message = $"SAML metadata refresh tick — refreshed={refreshed} failed={failed} (scanned={snapshot.Count})",
+                EventType = AuditEvents.SamlMetadataRefreshCompleted,
+                OutcomeCode = failed == 0 ? AuditOutcomes.Succeeded : AuditOutcomes.Completed,
+                ReasonCode = failed == 0 ? null : "partial-failure",
+                OperationCode = "refresh-due-providers",
+                Count = refreshed,
+                RelatedCount = failed,
             });
         }
     }

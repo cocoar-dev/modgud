@@ -61,13 +61,14 @@ public class ExternalLoginProcessor(
         if (config.Type != LoginProviderType.Oidc && config.Type != LoginProviderType.Saml)
         {
             var err = LoginProviderErrors.TypeNotSupported(config.Type);
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordTelemetry(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
-                Level = "Warning",
-                Status = "rejected",
-                Reason = $"misconfigured provider type {config.Type} (LoginProvider {loginProviderId})",
-                Message = "External login rejected — provider misconfigured (expected Oidc or Saml)",
+                EventType = AuditEvents.ExternalLoginConfigurationError,
+                Severity = AuditSeverity.Warning,
+                LoginProviderId = loginProviderId,
+                AuthenticationMethod = "external",
+                OutcomeCode = AuditOutcomes.Rejected,
+                ReasonCode = $"unsupported-provider-type:{config.Type}",
             });
             return ExternalLoginResult.Failed(err.Code, err.Description);
         }
@@ -81,14 +82,15 @@ public class ExternalLoginProcessor(
 
         if (string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(subject))
         {
-            securityAudit.Record(new SecurityAuditRecord
+            await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
-                Level = "Warning",
-                Status = "rejected",
-                Reason = "missing iss/sub",
-                Message = "External login rejected — identity provider returned no iss/sub",
-            });
+                EventType = AuditEvents.ExternalLoginProtocolRejected,
+                Severity = AuditSeverity.Warning,
+                LoginProviderId = loginProviderId,
+                AuthenticationMethod = config.Type.ToString().ToLowerInvariant(),
+                OutcomeCode = AuditOutcomes.Rejected,
+                ReasonCode = "missing-issuer-or-subject",
+            }, ct);
             return ExternalLoginResult.Failed("Idp.InvalidToken", "The identity provider did not return a subject.");
         }
 
@@ -145,14 +147,17 @@ public class ExternalLoginProcessor(
                 // live one is not.)
                 if (authenticatedUserId is { } authId && authId != link.UserId)
                 {
-                    securityAudit.Record(new SecurityAuditRecord
+                    await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
                     {
                         EventType = AuditEvents.IdentityHijackBlocked,
-                        Level = "Warning",
-                        Status = "rejected",
-                        Reason = "external subject already linked to a different user",
-                        Message = "Link attempt rejected — external subject already linked to a different user",
-                    });
+                        Severity = AuditSeverity.Warning,
+                        ActorSubjectId = authId,
+                        TargetSubjectId = link.UserId,
+                        LoginProviderId = loginProviderId,
+                        AuthenticationMethod = config.Type.ToString().ToLowerInvariant(),
+                        OutcomeCode = AuditOutcomes.Blocked,
+                        ReasonCode = "subject-linked-to-different-user",
+                    }, ct);
                     return ExternalLoginResult.Failed("Idp.LinkedToOtherUser",
                         "This identity is already linked to another Modgud account.");
                 }
@@ -205,15 +210,16 @@ public class ExternalLoginProcessor(
         var email = scriptResult.Email.Presence == FieldPresence.Value ? scriptResult.Email.Value : null;
         if (!IsEmailAllowed(config, email))
         {
-            var maskedEmail = LogPiiMasking.MaskEmail(email);
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordAbuse(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
-                Level = "Warning",
-                Actor = maskedEmail,
-                Status = "rejected",
-                Reason = "email not in allowlist",
-                Message = $"External login rejected — email '{maskedEmail}' not in allowlist",
+                EventType = AuditEvents.ExternalLoginPolicyRejected,
+                Severity = AuditSeverity.Warning,
+                ActorKind = AuditActorKind.AnonymousIdentifier,
+                UnknownIdentifier = email,
+                LoginProviderId = loginProviderId,
+                AuthenticationMethod = config.Type.ToString().ToLowerInvariant(),
+                OutcomeCode = AuditOutcomes.Rejected,
+                ReasonCode = "email-domain-not-allowed",
             });
             return ExternalLoginResult.Failed("Idp.EmailNotAllowed", "Your email domain is not allowed for this provider.");
         }
@@ -239,16 +245,16 @@ public class ExternalLoginProcessor(
                 // specifically-configured IdP, which is the trust anchor.)
                 if (!IsEmailLinkTrustworthy(config, rawClaims, email))
                 {
-                    var maskedEmail = LogPiiMasking.MaskEmail(email);
-                    securityAudit.Record(new SecurityAuditRecord
+                    await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
                     {
                         EventType = AuditEvents.IdentityHijackBlocked,
-                        Level = "Warning",
-                        Actor = maskedEmail,
-                        Status = "rejected",
-                        Reason = "email-link blocked — IdP did not assert email_verified",
-                        Message = $"External email-link rejected — IdP did not verify email '{maskedEmail}' (TrustForEmailLink requires email_verified for OIDC)",
-                    });
+                        Severity = AuditSeverity.Warning,
+                        TargetSubjectId = existing.Id,
+                        LoginProviderId = loginProviderId,
+                        AuthenticationMethod = config.Type.ToString().ToLowerInvariant(),
+                        OutcomeCode = AuditOutcomes.Blocked,
+                        ReasonCode = "email-not-verified-by-provider",
+                    }, ct);
                     return ExternalLoginResult.Failed("Idp.EmailNotVerified",
                         "The identity provider did not verify this email address, so it cannot be auto-linked to an existing account.");
                 }
@@ -276,13 +282,16 @@ public class ExternalLoginProcessor(
         // 4. JIT user creation
         if (!config.AutoCreateUsers)
         {
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordAbuse(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
-                Level = "Warning",
-                Status = "rejected",
-                Reason = "no existing link and JIT creation disabled",
-                Message = "External login rejected — no existing link and automatic user creation is disabled",
+                EventType = AuditEvents.ExternalLoginPolicyRejected,
+                Severity = AuditSeverity.Warning,
+                ActorKind = AuditActorKind.AnonymousIdentifier,
+                UnknownIdentifier = email,
+                LoginProviderId = loginProviderId,
+                AuthenticationMethod = config.Type.ToString().ToLowerInvariant(),
+                OutcomeCode = AuditOutcomes.Rejected,
+                ReasonCode = "jit-disabled",
             });
             return ExternalLoginResult.Failed("Idp.NoUserAndAutoCreateOff",
                 "No user is linked to this identity and automatic creation is disabled.");
@@ -294,21 +303,22 @@ public class ExternalLoginProcessor(
 
         // Email-uniqueness on JIT: another user already owns this email → reject.
         var emailUpper = email.ToUpperInvariant();
-        var emailTaken = await session.Query<Person>()
+        var emailOwnerId = await session.Query<Person>()
             .Where(p => !p.IsDeleted && p.NormalizedEmail == emailUpper)
-            .AnyAsync(ct);
-        if (emailTaken)
+            .Select(p => p.Id)
+            .FirstOrDefaultAsync(ct);
+        if (emailOwnerId != Guid.Empty)
         {
-            var maskedEmail = LogPiiMasking.MaskEmail(email);
-            securityAudit.Record(new SecurityAuditRecord
+            await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
             {
                 EventType = AuditEvents.JitEmailConflict,
-                Level = "Warning",
-                Actor = maskedEmail,
-                Status = "rejected",
-                Reason = "email already taken (JIT create)",
-                Message = $"JIT creation rejected — email '{maskedEmail}' is already taken by another user",
-            });
+                Severity = AuditSeverity.Warning,
+                TargetSubjectId = emailOwnerId,
+                LoginProviderId = loginProviderId,
+                AuthenticationMethod = config.Type.ToString().ToLowerInvariant(),
+                OutcomeCode = AuditOutcomes.Rejected,
+                ReasonCode = "email-owned-by-existing-user",
+            }, ct);
             return ExternalLoginResult.Failed("Idp.EmailConflict",
                 "A Modgud account with this email already exists. Please contact your administrator.");
         }
@@ -358,16 +368,15 @@ public class ExternalLoginProcessor(
                         .FirstOrDefaultAsync(ct);
                     if (clashingUserId != Guid.Empty)
                     {
-                        var maskedEmail = LogPiiMasking.MaskEmail(newEmail);
-                        securityAudit.Record(new SecurityAuditRecord
+                        await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
                         {
                             EventType = AuditEvents.JitEmailConflict,
-                            Level = "Warning",
-                            Actor = maskedEmail,
-                            Status = "rejected",
-                            Reason = "email already taken (user-update script)",
-                            Message = $"UserUpdateScript email conflict — '{maskedEmail}' is already taken by another user; login rejected",
-                        });
+                            Severity = AuditSeverity.Warning,
+                            ActorSubjectId = user.Id,
+                            TargetSubjectId = clashingUserId,
+                            OutcomeCode = AuditOutcomes.Rejected,
+                            ReasonCode = "user-update-email-conflict",
+                        }, ct);
                         return new ApplyUpdatesError(
                             "Idp.EmailConflict",
                             "The identity provider reports an email that is already used by another Modgud account.");
@@ -445,14 +454,15 @@ public class ExternalLoginProcessor(
         // IsActive=true, so the JIT path passes this gate unaffected.
         if (user.IsDeleted || !user.IsActive)
         {
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordAbuse(new SecurityAuditRecord
             {
-                EventType = AuditEvents.ExternalLoginRejected,
-                Level = "Warning",
-                Actor = user.Id.ToString(),
-                Status = "rejected",
-                Reason = "user inactive or deleted",
-                Message = $"External login rejected — user {user.Id} is inactive or deleted",
+                EventType = AuditEvents.ExternalLoginPolicyRejected,
+                Severity = AuditSeverity.Warning,
+                TargetSubjectId = user.Id,
+                LoginProviderId = loginProviderId,
+                AuthenticationMethod = config.Type.ToString().ToLowerInvariant(),
+                OutcomeCode = AuditOutcomes.Rejected,
+                ReasonCode = user.IsDeleted ? "user-deleted" : "user-inactive",
             });
             return ExternalLoginResult.Failed("Idp.UserInactive", "This account is not active.");
         }
@@ -512,15 +522,17 @@ public class ExternalLoginProcessor(
             // lives in the Authorization layer, which cannot reach the audit store,
             // so it surfaces the count and we record the security event here.
             if (derived.DroppedRealmAdminCount > 0)
-                securityAudit.Record(new SecurityAuditRecord
+                await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
                 {
                     EventType = AuditEvents.PrivilegeEscalationBlocked,
-                    Level = "Warning",
-                    Actor = user.Id.ToString(),
-                    Status = "blocked",
-                    Reason = $"dropped {derived.DroppedRealmAdminCount} externally-derived group(s) conferring realm:admin via provider {config.Slug}",
-                    Message = $"Blocked {derived.DroppedRealmAdminCount} externally-derived realm:admin group(s) for user {user.Id}",
-                });
+                    Severity = AuditSeverity.Warning,
+                    TargetSubjectId = user.Id,
+                    LoginProviderId = loginProviderId,
+                    AuthenticationMethod = config.Type.ToString().ToLowerInvariant(),
+                    OutcomeCode = AuditOutcomes.Blocked,
+                    ReasonCode = "realm-admin-group-derived-externally",
+                    Count = derived.DroppedRealmAdminCount,
+                }, ct);
         }
 
         return new ExternalLoginResult(

@@ -119,7 +119,7 @@ What runs in dry-run:
 
 - `validate-version` — exercises the version-format check
 - `test-backend` — full unit + integration suite
-- `pack-nuget` — packs the client-library nupkg
+- `pack-nuget` — packs the resource-server nupkg
 - `build-docker` — builds the image, *doesn't push to GHCR*
 - `build-docs` — full VitePress build
 - `release-gate` — confirms all builds succeeded

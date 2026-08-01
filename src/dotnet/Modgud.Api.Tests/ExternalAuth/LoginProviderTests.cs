@@ -6,6 +6,7 @@ using Modgud.Authentication.Api.Admin.LoginProviders.Commands;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Domain.LoginProviders.Events;
+using Modgud.Authentication.Identity.LoginProviders;
 using Wolverine;
 
 namespace Modgud.Api.Tests.ExternalAuth;
@@ -203,9 +204,8 @@ public class LoginProviderTests : IntegrationTestBase
             FlavorData: flavorData,
             Type: LoginProviderType.Oidc,
             Description: "single-modal full submit",
-            // Enabled stays at its default (false) — OIDC Create cannot enable
-            // because the client secret is set via the separate RotateSecret
-            // command. See Create_OidcEnabledTrue_Rejected for the gate.
+            // Enabled stays at its default (false). The dedicated test below
+            // covers atomic Enabled + InitialClientSecret creation.
             ClientId: "client-xyz",
             Scopes: ["openid", "profile", "email", "groups"],
             UserUpdateScript: "return { firstname: claims.given_name };",
@@ -258,12 +258,11 @@ public class LoginProviderTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Create_OidcEnabledTrue_Rejected()
+    public async Task Create_OidcEnabledTrue_WithoutInitialSecret_Rejected()
     {
-        // Readiness-gate parity with EnableLoginProviderHandler: OIDC needs a
-        // ClientSecret to authenticate, and Create has no secret surface (it
-        // lives on a separate command for audit reasons), so Enabled=true at
-        // Create is structurally unsafe and the command refuses it.
+        // Readiness-gate parity with EnableLoginProviderHandler: an enabled
+        // OIDC provider must still have a ClientSecret. Atomic create supports
+        // one, but omitting it must remain unsafe.
         using var scope = Factory.Services.CreateScope();
         var bus = GetTenantedMessageBus(scope);
 
@@ -278,6 +277,38 @@ public class LoginProviderTests : IntegrationTestBase
 
         Assert.True(result.IsError);
         Assert.Equal("LoginProvider.SecretRequired", result.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task Create_OidcEnabledTrue_WithInitialSecret_SucceedsAtomically()
+    {
+        // The expert modal submits the complete provider in one request. The
+        // plaintext initial secret is encrypted before it enters the event and
+        // the readiness gate evaluates that encrypted value in the same
+        // command, so no create-then-rotate round-trip is needed.
+        using var scope = Factory.Services.CreateScope();
+        var bus = GetTenantedMessageBus(scope);
+
+        const string initialSecret = "integration-test-secret";
+        var flavorData = JsonDocument.Parse("""{"MetadataUri": "https://idp.test/.well-known/openid-configuration"}""");
+        var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(new CreateLoginProviderCommand(
+            Flavor: LoginProviderFlavor.GenericOidc,
+            DisplayName: $"OidcReady-{Guid.NewGuid():N}"[..18],
+            Slug: "oidc-ready",
+            FlavorData: flavorData,
+            Enabled: true,
+            ClientId: "client-xyz",
+            InitialClientSecret: initialSecret));
+
+        Assert.False(result.IsError, result.IsError ? result.FirstError.Description : "");
+        Assert.True(result.Value.Enabled);
+        Assert.NotNull(result.Value.ClientSecretEncrypted);
+        Assert.NotEqual(
+            initialSecret,
+            System.Text.Encoding.UTF8.GetString(result.Value.ClientSecretEncrypted!));
+
+        var secretStore = scope.ServiceProvider.GetRequiredService<LoginProviderSecretStore>();
+        Assert.Equal(initialSecret, secretStore.Decrypt(result.Value.ClientSecretEncrypted!));
     }
 
     [Fact]
@@ -330,8 +361,8 @@ public class LoginProviderTests : IntegrationTestBase
     [InlineData(LoginProviderType.Kerberos)]
     public async Task Create_OtherUnsupportedTypes_ReturnSameErrorCode(LoginProviderType type)
     {
-        // Phase 2: TypeNotSupported is a single centralized error — Saml/Ldap/
-        // Kerberos all share the same code so the frontend can render one message.
+        // LDAP and Kerberos share the centralized unsupported-type error.
+        // SAML is a supported protocol with its own flavor registry.
         using var scope = Factory.Services.CreateScope();
         var bus = GetTenantedMessageBus(scope);
 

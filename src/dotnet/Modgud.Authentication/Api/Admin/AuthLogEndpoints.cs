@@ -1,50 +1,42 @@
-using System.Security.Claims;
 using Marten;
-using Microsoft.AspNetCore.Http;
+using Modgud.Authorization.Apps;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Infrastructure.Audit;
+using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Authentication.Api.Admin;
 
 /// <summary>
-/// Admin <b>Security</b> log surface (logging/audit redesign Track A — the streamless
-/// half). Reads the typed <see cref="SecurityAuditEntry"/> store: unknown-actor login
-/// attempts, probes, rate-limits, policy rejections, and operational actions. Entries
-/// live cross-realm in the system DB but are attributed to a realm via
-/// <see cref="SecurityAuditEntry.Realm"/>.
-///
-/// <para>The read/clear scope by the CALLER'S realm so a tenant realm-admin sees and
-/// clears only their own realm's <b>tenant-visible</b> events; the <b>control-plane</b>
-/// realm (per <c>TenantInfo.IsControlPlane</c>, not a hard-coded "system" slug) sees and
-/// clears the full cross-realm log including control-plane-only operational rows
-/// (<see cref="SecurityAuditEntry.PlatformOnly"/>). This carries PR #50's scoping forward
-/// and extends it with the platform-only visibility gate.</para>
-///
-/// <para>The HTTP surface (route, shape) is carried forward from the legacy AuthLog so
-/// the SPA keeps working; the backing store changed from the flat AuthLogDocument to the
-/// typed SecurityAuditEntry.</para>
+/// Two deliberately separate log surfaces:
+/// - /auth-log reads only the caller realm's physical database.
+/// - /platform-audit reads only the PII-free Global Store and is Control-Plane only.
+/// Neither surface offers arbitrary deletion; retention jobs are the only delete path.
 /// </summary>
 public static class AuthLogEndpoints
 {
     public static WebApplication MapAuthLogEndpoints(this WebApplication application, string path)
+    {
+        MapRealmSecurityLog(application, path);
+        MapPlatformAuditLog(application, path);
+        return application;
+    }
+
+    private static void MapRealmSecurityLog(WebApplication application, string path)
     {
         var group = application.MapGroup($"{path}/admin/auth-log")
             .WithTags("Admin Security Log")
             .RequireAuthorization();
 
         group.MapGet("", async (
-            IDocumentStore store,
-            HttpContext http,
+            IDocumentSession session,
             string? category,
             string? eventType,
-            int? limit) =>
+            int? limit,
+            CancellationToken ct) =>
         {
-            await using var session = store.QuerySession(TenantConstants.SystemTenantId);
-
-            var query = ScopeToCallerRealm(
-                session.Query<SecurityAuditEntry>(), TenantContext.Current, IsControlPlane(http));
+            IQueryable<RealmSecurityAuditEvent> query = session.Query<RealmSecurityAuditEvent>();
             if (!string.IsNullOrWhiteSpace(category))
                 query = query.Where(x => x.Category == category);
             if (!string.IsNullOrWhiteSpace(eventType))
@@ -53,89 +45,270 @@ public static class AuthLogEndpoints
             var rows = await query
                 .OrderByDescending(x => x.Timestamp)
                 .Take(Math.Clamp(limit ?? 200, 1, 1000))
-                .ToListAsync();
+                .ToListAsync(ct);
 
-            // Carry-forward DTO: the legacy grid columns (Timestamp/Level/Message/
-            // UserName/Ip/Realm) keep their names — Actor maps to UserName — plus the
-            // new EventType/Category for taxonomy-chip filtering and Status/Reason.
-            var dtos = rows.Select(r => new SecurityLogEntryDto(
-                r.Timestamp, r.Realm, r.Category, r.EventType, r.Level,
-                r.Actor, r.Ip, r.Status, r.Reason, r.Message));
+            var subjectIds = rows
+                .SelectMany(x => new[] { x.ActorSubjectId, x.TargetSubjectId })
+                .Where(x => x.HasValue)
+                .Select(x => x!.Value)
+                .Distinct()
+                .ToArray();
 
-            return Results.Ok(dtos);
+            var users = subjectIds.Length == 0
+                ? []
+                : await session.Query<UserView>()
+                    .Where(x => subjectIds.Contains(x.Id))
+                    .ToListAsync(ct);
+            var names = users.ToDictionary(x => x.Id, x => x.GetDisplayLabel());
+
+            return Results.Ok(rows.Select(row => RealmSecurityLogDto.From(row, names)));
         })
         .WithName("AdminAuthLog_Get")
         .RequiresPermission("auth-log:read");
-
-        // Clearing the security log is destructive — gate behind the global app:admin
-        // bypass. Scoped to the caller's realm; the control-plane realm wipes the full
-        // log. The clear is itself audited (audit-of-the-audit): a typed
-        // audit.log_cleared record naming the operator is emitted AFTER the wipe, so it
-        // survives as the forensic trail of who cleared what, when.
-        group.MapDelete("", async (
-            IDocumentStore store,
-            HttpContext http,
-            ClaimsPrincipal user,
-            ISecurityAuditLog securityAudit) =>
-        {
-            var callerRealm = TenantContext.Current;
-            var isControlPlane = IsControlPlane(http);
-
-            await using var session = store.LightweightSession(TenantConstants.SystemTenantId);
-            if (isControlPlane)
-                session.DeleteWhere<SecurityAuditEntry>(x => true);
-            else
-                session.DeleteWhere<SecurityAuditEntry>(x => x.Realm == callerRealm);
-            await session.SaveChangesAsync();
-
-            var operatorName = user.Identity?.Name ?? "(unknown)";
-            securityAudit.Record(new SecurityAuditRecord
-            {
-                EventType = AuditEvents.AuditLogCleared,
-                Level = "Warning",
-                Actor = operatorName,
-                Status = "cleared",
-                Reason = isControlPlane ? "all realms (control-plane)" : $"realm {callerRealm}",
-                Message = $"Security log cleared by {operatorName}",
-            });
-
-            return Results.Ok(new { Message = "Security log cleared" });
-        })
-        .WithName("AdminAuthLog_Clear")
-        .RequiresPermission("realm:admin");
-
-        return application;
     }
 
-    private static bool IsControlPlane(HttpContext http) =>
-        http.Items[TenantConstants.HttpContextTenantInfoKey] is TenantInfo info && info.IsControlPlane;
+    private static void MapPlatformAuditLog(WebApplication application, string path)
+    {
+        var group = application.MapGroup($"{path}/admin/platform-audit")
+            .WithTags("Platform Audit Log")
+            .RequireAuthorization()
+            .AddEndpointFilter<RequireControlPlaneFilter>();
 
-    /// <summary>
-    /// Realm-scopes a security-log query: the control-plane realm sees the full
-    /// cross-realm log (including control-plane-only operational rows); every other
-    /// realm sees only its own realm's <b>tenant-visible</b> entries
-    /// (<c>!PlatformOnly</c>). Pure + provider-agnostic so it composes over either
-    /// Marten's IQueryable or an in-memory one (used by the unit tests).
-    /// </summary>
-    public static IQueryable<SecurityAuditEntry> ScopeToCallerRealm(
-        IQueryable<SecurityAuditEntry> query, string callerRealm, bool callerIsControlPlane)
-        => callerIsControlPlane
-            ? query
-            : query.Where(x => x.Realm == callerRealm && !x.PlatformOnly);
+        group.MapGet("", async (
+            IGlobalStore store,
+            string? category,
+            string? eventType,
+            int? limit,
+            CancellationToken ct) =>
+        {
+            await using var session = store.QuerySession();
+            IQueryable<PlatformAuditEvent> query = session.Query<PlatformAuditEvent>();
+            if (!string.IsNullOrWhiteSpace(category))
+                query = query.Where(x => x.Category == category);
+            if (!string.IsNullOrWhiteSpace(eventType))
+                query = query.Where(x => x.EventType == eventType);
+
+            var rows = await query
+                .OrderByDescending(x => x.Timestamp)
+                .Take(Math.Clamp(limit ?? 200, 1, 1000))
+                .ToListAsync(ct);
+
+            return Results.Ok(rows.Select(PlatformAuditLogDto.From));
+        })
+        .WithName("AdminPlatformAudit_Get")
+        .RequiresPermission("platform-audit:read", AppSlugs.ControlPlane);
+    }
 }
 
-/// <summary>Read DTO for the Security log grid. Carries the legacy column names
-/// (<see cref="UserName"/> = the entry's <c>Actor</c>) so the existing SPA keeps
-/// working, plus the typed <see cref="EventType"/>/<see cref="Category"/> for chip
-/// filtering and <see cref="Status"/>/<see cref="Reason"/> detail.</summary>
-public sealed record SecurityLogEntryDto(
+public sealed record RealmSecurityLogDto(
+    Guid Id,
     DateTimeOffset Timestamp,
-    string? Realm,
     string Category,
     string EventType,
-    string Level,
-    string? UserName,
-    string? Ip,
-    string? Status,
-    string? Reason,
-    string Message);
+    string Severity,
+    string ActorKind,
+    string Actor,
+    string? Target,
+    string? IpAddress,
+    string? UserAgent,
+    string? OAuthClientId,
+    Guid? ApplicationId,
+    Guid? SessionId,
+    Guid? LoginProviderId,
+    string? AuthenticationMethod,
+    string? CorrelationId,
+    string OutcomeCode,
+    string? ReasonCode,
+    string? OperationCode,
+    string? TargetRealmSlug,
+    string? KeyId,
+    int? Count,
+    int? RelatedCount,
+    int? RetentionDays,
+    DateTimeOffset? EffectiveAt,
+    DateTimeOffset? FirstObservedAt,
+    DateTimeOffset? LastObservedAt,
+    string Message)
+{
+    internal static RealmSecurityLogDto From(
+        RealmSecurityAuditEvent row,
+        IReadOnlyDictionary<Guid, string> names)
+        => new(
+            row.Id,
+            row.Timestamp,
+            row.Category,
+            row.EventType,
+            row.Severity.ToString(),
+            row.ActorKind.ToString(),
+            RenderActor(row, names),
+            RenderTarget(row.TargetSubjectId, names),
+            row.IpAddress,
+            row.UserAgent,
+            row.OAuthClientId,
+            row.ApplicationId,
+            row.SessionId,
+            row.LoginProviderId,
+            row.AuthenticationMethod,
+            row.CorrelationId,
+            row.OutcomeCode,
+            row.ReasonCode,
+            row.OperationCode,
+            row.TargetRealmSlug,
+            row.KeyId,
+            row.Count,
+            row.RelatedCount,
+            row.RetentionDays,
+            row.EffectiveAt,
+            row.FirstObservedAt,
+            row.LastObservedAt,
+            AuditEventRenderer.Render(row));
+
+    private static string RenderActor(
+        RealmSecurityAuditEvent row,
+        IReadOnlyDictionary<Guid, string> names)
+    {
+        if (row.ActorSubjectId is { } subject)
+            return names.TryGetValue(subject, out var name) ? name : "Deleted user";
+        if (row.UnknownIdentifierFingerprint is { Length: > 0 } fingerprint)
+            return $"Unknown identifier · {fingerprint[..Math.Min(10, fingerprint.Length)]}";
+        if (!string.IsNullOrWhiteSpace(row.OAuthClientId))
+            return row.OAuthClientId;
+
+        return row.ActorKind switch
+        {
+            AuditActorKind.ControlPlane => "Control Plane",
+            AuditActorKind.System => "System",
+            AuditActorKind.ServiceAccount => "Service account",
+            AuditActorKind.OAuthClient => "OAuth client",
+            _ => row.ActorKind.ToString(),
+        };
+    }
+
+    private static string? RenderTarget(Guid? subject, IReadOnlyDictionary<Guid, string> names)
+        => subject is null
+            ? null
+            : names.TryGetValue(subject.Value, out var name) ? name : "Deleted user";
+}
+
+public sealed record PlatformAuditLogDto(
+    Guid Id,
+    DateTimeOffset Timestamp,
+    string Category,
+    string EventType,
+    string Severity,
+    string OutcomeCode,
+    string? ReasonCode,
+    string? OperationCode,
+    string? TargetRealmSlug,
+    string? CorrelationId,
+    int? Count,
+    int? RelatedCount,
+    string Message)
+{
+    internal static PlatformAuditLogDto From(PlatformAuditEvent row)
+        => new(
+            row.Id,
+            row.Timestamp,
+            row.Category,
+            row.EventType,
+            row.Severity.ToString(),
+            row.OutcomeCode,
+            row.ReasonCode,
+            row.OperationCode,
+            row.TargetRealmSlug,
+            row.CorrelationId,
+            row.Count,
+            row.RelatedCount,
+            AuditEventRenderer.Render(row));
+}
+
+internal static class AuditEventRenderer
+{
+    public static string Render(RealmSecurityAuditEvent row)
+    {
+        var details = new List<string>();
+        Add(details, "reason", row.ReasonCode);
+        Add(details, "operation", row.OperationCode);
+        Add(details, "target-realm", row.TargetRealmSlug);
+        Add(details, "client", row.OAuthClientId);
+        Add(details, "key", row.KeyId);
+        Add(details, "count", row.Count);
+        Add(details, "related", row.RelatedCount);
+        Add(details, "retention-days", row.RetentionDays);
+        Add(details, "reminded", row.RemindedCount);
+        Add(details, "self-erased", row.SelfErasedCount);
+        Add(details, "auto-purged", row.AutoPurgedCount);
+        Add(details, "invite-codes-pruned", row.InviteCodesPrunedCount);
+        Add(details, "reused", row.ReusedCount);
+        Add(details, "effective-at", row.EffectiveAt);
+        Add(details, "first-observed-at", row.FirstObservedAt);
+        Add(details, "last-observed-at", row.LastObservedAt);
+        return Compose(row.EventType, row.OutcomeCode, details);
+    }
+
+    public static string Render(PlatformAuditEvent row)
+    {
+        var details = new List<string>();
+        Add(details, "reason", row.ReasonCode);
+        Add(details, "operation", row.OperationCode);
+        Add(details, "realm", row.TargetRealmSlug);
+        Add(details, "domain", row.Domain);
+        Add(details, "previous-domain", row.PreviousDomain);
+        Add(details, "count", row.Count);
+        Add(details, "related", row.RelatedCount);
+        Add(details, "retention-days", row.RetentionDays);
+        Add(details, "effective-at", row.EffectiveAt);
+        return Compose(row.EventType, row.OutcomeCode, details);
+    }
+
+    private static string Compose(
+        string eventType,
+        string outcome,
+        IReadOnlyCollection<string> details)
+    {
+        var occurrence = eventType switch
+        {
+            AuditEvents.LoginFailed => "Login",
+            AuditEvents.LoginFailedUnknownUser => "Login for an unknown identifier",
+            AuditEvents.MagicLinkInvalid => "Invalid or expired magic link",
+            AuditEvents.ExternalLoginProtocolRejected => "External login protocol",
+            AuditEvents.ExternalLoginPolicyRejected => "External login policy",
+            AuditEvents.ExternalLoginConfigurationError => "External login configuration",
+            AuditEvents.SamlSignatureRejected => "SAML signature validation",
+            AuditEvents.IdentityHijackBlocked => "External identity takeover attempt",
+            AuditEvents.JitEmailConflict => "JIT email conflict",
+            AuditEvents.PrivilegeEscalationBlocked => "Federated privilege escalation",
+            AuditEvents.RateLimitTriggered => "Rate limit",
+            AuditEvents.RefreshTokenReuseDetected => "Refresh-token reuse",
+            AuditEvents.DcrRegistrationRejected => "Dynamic client registration",
+            AuditEvents.BootstrapInviteRejected => "Bootstrap invite",
+            AuditEvents.SecurityRetentionChanged => "Security-log retention",
+            AuditEvents.SigningKeyRotated => "Signing key rotation",
+            AuditEvents.SigningKeyPurged => "Signing-key cleanup",
+            AuditEvents.SamlCertRotated => "SAML certificate rotation",
+            AuditEvents.SamlMetadataRefreshCompleted => "SAML metadata refresh",
+            AuditEvents.SamlSigningCertificatesChanged => "SAML signing certificates",
+            AuditEvents.RecoveryCliInvoked => "Recovery CLI operation",
+            AuditEvents.RealmProvisioned => "Realm provisioning",
+            AuditEvents.RealmAdopted => "Realm adoption",
+            AuditEvents.ControlPlaneTransferred => "Control-Plane transfer",
+            AuditEvents.ControlPlaneRealmOperation => "Control-Plane realm operation",
+            AuditEvents.AccountLifecycleSwept => "Account lifecycle sweep",
+            AuditEvents.BootstrapInviteIssued => "Bootstrap invite issuance",
+            AuditEvents.DcrClientRegistered => "Dynamic client registration",
+            AuditEvents.DcrClientFirstUsed => "Dynamic client first use",
+            AuditEvents.DcrClientGarbageCollected => "Dynamic client cleanup",
+            _ => eventType,
+        };
+
+        return details.Count == 0
+            ? $"{occurrence}: {outcome}"
+            : $"{occurrence}: {outcome} ({string.Join(", ", details)})";
+    }
+
+    private static void Add(List<string> details, string key, object? value)
+    {
+        if (value is not null && !string.IsNullOrWhiteSpace(value.ToString()))
+            details.Add($"{key}={value}");
+    }
+}

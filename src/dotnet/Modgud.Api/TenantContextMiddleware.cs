@@ -12,8 +12,8 @@ namespace Modgud.Api;
 /// own per-handler middleware runs, so the tenant must be set on the bus itself
 /// before anything is invoked.
 ///
-/// Falls back to the "system" tenant when HttpContext has nothing set — keeps
-/// background services and integration tests working without changes.
+/// If no realm was resolved (health/installation routes), the bus remains
+/// tenantless. Such routes must not dispatch realm-scoped messages.
 ///
 /// Must register AFTER <c>RealmMiddleware</c> in the pipeline.
 /// </summary>
@@ -22,9 +22,8 @@ public class TenantContextMiddleware(RequestDelegate next)
     public Task InvokeAsync(HttpContext context, IMessageBus bus)
     {
         var tenantId = context.Items["TenantId"] as string;
-        bus.TenantId = string.IsNullOrEmpty(tenantId)
-            ? TenantConstants.SystemTenantId
-            : tenantId;
+        if (!string.IsNullOrEmpty(tenantId))
+            bus.TenantId = tenantId;
         return next(context);
     }
 }

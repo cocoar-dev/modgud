@@ -115,8 +115,19 @@ public static class MartenStoreOptionsExtensions
         // force-logout flow.
         options.Schema.For<UserSession>()
             .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
             .Index(x => x.UserId)
-            .Index(x => x.ExpiresAt);
+            .Index(x => x.ExpiresAt)
+            .Index(x => x.AbsoluteExpiresAt);
+
+        options.Schema.For<ClientSession>()
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Index(x => x.UserId)
+            .Index(x => x.ClientId)
+            .Index(x => x.AuthorizationId)
+            .Index(x => x.ExpiresAt)
+            .Index(x => x.AbsoluteExpiresAt);
 
         // WebAuthn/passkey credentials (raw crypto, not event-sourced). One per
         // enrolled authenticator; indexed by UserId for the per-user list/login
@@ -170,15 +181,14 @@ public static class MartenStoreOptionsExtensions
             .Index(x => x.LoginProviderId)
             .Index(x => x.IsUnlinked);
 
-        // Streamless security/ops store (logging/audit redesign Track A, Phase 3).
-        // Cross-realm in the system DB; the typed successor to the personal-data-
-        // bearing-but-streamless portion of AuthLogDocument. Indexed for the admin
-        // read (Realm scope + EventType chip filter) and the retention prune.
-        options.Schema.For<Modgud.Infrastructure.Audit.SecurityAuditEntry>()
+        // Realm-owned security event store. The absence of a Realm column is
+        // deliberate: physical database ownership is the isolation boundary.
+        options.Schema.For<Modgud.Infrastructure.Audit.RealmSecurityAuditEvent>()
             .Identity(x => x.Id)
             .Index(x => x.Timestamp)
-            .Index(x => x.Realm)
             .Index(x => x.EventType);
+        options.Schema.For<Modgud.Infrastructure.Audit.RealmAuditFingerprintKey>()
+            .Identity(x => x.Id);
 
         // Tenant-scoped singleton config doc. One row per tenant DB,
         // addressed by the fixed `RealmSettings.SingletonId`. Owned by

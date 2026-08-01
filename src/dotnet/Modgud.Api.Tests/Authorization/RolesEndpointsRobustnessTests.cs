@@ -55,4 +55,35 @@ public class RolesEndpointsRobustnessTests : IntegrationTestBase
         var body = await res.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.Contains("Stage6 Realm Admin Role", body);
     }
+
+    [Fact]
+    public async Task Create_realm_admin_role_with_AppId_is_rejected()
+    {
+        var res = await Client.PostAsJsonAsync("/api/role", new
+        {
+            Name = "Mixed Realm Admin Role",
+            AppId = Guid.NewGuid().ToString(),
+            IsRealmAdmin = true,
+            PermissionIds = Array.Empty<string>(),
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var body = await res.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.Contains("Role.RealmAdminMustBeUnscoped", body);
+    }
+
+    [Fact]
+    public async Task Create_realm_admin_role_with_App_permissions_is_rejected()
+    {
+        var res = await Client.PostAsJsonAsync("/api/role", new
+        {
+            Name = "Mixed Realm Admin Grants",
+            IsRealmAdmin = true,
+            PermissionIds = new[] { Guid.NewGuid().ToString() },
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var body = await res.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.Contains("Role.RealmAdminMustBeUnscoped", body);
+    }
 }

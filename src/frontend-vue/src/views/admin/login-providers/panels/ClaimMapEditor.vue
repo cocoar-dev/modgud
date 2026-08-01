@@ -11,7 +11,7 @@
  * (provider/flavor switch) to avoid clobbering an in-progress edit.
  */
 import { ref, watch } from 'vue'
-import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
+import { CoarDataGridPanel, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { CoarButton } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 
@@ -22,6 +22,7 @@ const props = withDefaults(defineProps<{
   keyPlaceholder?: string
   valuePlaceholder?: string
   addLabel: string
+  searchPlaceholder?: string
   /** Re-init rows when this changes (e.g. provider id / flavor key). */
   reloadKey?: string
 }>(), { keyPlaceholder: '', valuePlaceholder: '', reloadKey: '' })
@@ -38,6 +39,7 @@ let counter = 0
 const newId = () => `cm-${Date.now()}-${counter++}`
 
 const rows = ref<Row[]>([])
+const search = ref('')
 
 function fromMap(m: Record<string, string[]> | undefined): Row[] {
   return Object.entries(m ?? {}).map(([key, values]) => ({
@@ -106,13 +108,17 @@ const builder = CoarGridBuilder.create<Row>()
 
 <template>
   <div class="claim-map">
-    <CoarDataGrid :builder="builder" bordered>
-      <template #toolbar-left>
+    <CoarDataGridPanel
+      v-model:search="search"
+      :builder="builder"
+      :search-placeholder="searchPlaceholder ?? t('common.search', {}, 'Suchen…')"
+      bordered>
+      <template #actions>
         <CoarButton size="s" icon-start="plus" variant="ghost" @click="addRow">
           {{ addLabel }}
         </CoarButton>
       </template>
-    </CoarDataGrid>
+    </CoarDataGridPanel>
   </div>
 </template>
 
@@ -120,6 +126,7 @@ const builder = CoarGridBuilder.create<Row>()
 .claim-map {
   display: flex;
   flex-direction: column;
-  min-height: 10rem;
+  height: 100%;
+  min-height: 0;
 }
 </style>

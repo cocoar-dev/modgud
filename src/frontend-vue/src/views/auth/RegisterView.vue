@@ -6,13 +6,13 @@ import { useAppConfigStore } from '@/stores/appconfig.store'
 import { isSameOriginPath } from '@/composables/useLoginRedirect'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import {
+  CoarNotice,
   CoarCard,
   CoarButton,
   CoarTextInput,
   CoarPasswordInput,
   CoarFormField,
   CoarCheckbox,
-  CoarNote,
 } from '@cocoar/vue-ui'
 
 interface SelfRegistrationInfoDto {
@@ -228,7 +228,7 @@ async function handleSubmit() {
         </div>
 
         <div v-else-if="submitted" class="space-y-4">
-          <CoarNote variant="success">{{ successMessage }}</CoarNote>
+          <CoarNotice variant="success">{{ successMessage }}</CoarNotice>
           <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }"
             class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.register.toLogin', {}, 'To login') }}
@@ -286,7 +286,7 @@ async function handleSubmit() {
             </label>
           </div>
 
-          <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
 
           <CoarButton
             type="submit"

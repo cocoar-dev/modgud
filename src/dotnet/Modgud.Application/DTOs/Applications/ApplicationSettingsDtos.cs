@@ -15,6 +15,7 @@ public record ApplicationSettingsDto
     public ApplicationEmailBrandingDto? EmailBranding { get; init; }
     public ApplicationSelfRegistrationDto? SelfRegistration { get; init; }
     public ApplicationNativeGrantsDto? NativeGrants { get; init; }
+    public ApplicationClientSessionsDto? ClientSessions { get; init; }
     public ApplicationDcrDto? Dcr { get; init; }
     public ApplicationCimdDto? Cimd { get; init; }
     public ApplicationRegistrationFieldsDto? RegistrationFields { get; init; }
@@ -62,6 +63,12 @@ public record ApplicationNativeGrantsDto
     public bool? Enabled { get; init; }
     public int? AccessTokenLifetimeMinutes { get; init; }
     public int? RefreshTokenLifetimeDays { get; init; }
+}
+
+public record ApplicationClientSessionsDto
+{
+    public int? IdleLifetimeDays { get; init; }
+    public int? AbsoluteLifetimeDays { get; init; }
 }
 
 public record ApplicationDcrDto

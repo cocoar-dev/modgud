@@ -12,7 +12,7 @@ thing.
 - The Modgud IdP itself — backend (`src/dotnet/Modgud.Api`,
   `Modgud.Authentication`, `Modgud.Authorization`, `Modgud.Domain`,
   `Modgud.Infrastructure`) and admin SPA (`src/frontend-vue/`).
-- The `Modgud.Client.AspNetCore` NuGet package that downstream apps
+- The `Modgud.AspNetCore.ResourceServer` NuGet package that downstream apps
   use to validate Modgud-issued tokens.
 - The official Docker image (`ghcr.io/cocoar-dev/modgud:*`).
 - The default configuration shipped in

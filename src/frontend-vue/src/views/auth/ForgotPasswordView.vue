@@ -6,11 +6,11 @@ import { isSameOriginPath } from '@/composables/useLoginRedirect'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import {
+  CoarNotice,
   CoarCard,
   CoarButton,
   CoarTextInput,
   CoarFormField,
-  CoarNote,
 } from '@cocoar/vue-ui'
 import {
   CoarPageRenderer,
@@ -164,9 +164,9 @@ const customForgotActions: Record<string, ActionHandler> = {
       <CoarCard elevated>
         <!-- Passwordless mode -->
         <div v-if="isPasswordless" class="space-y-4">
-          <CoarNote variant="info">
+          <CoarNotice variant="info">
             {{ t('auth.forgotPassword.passwordlessMode', {}, 'Password reset is not available. This application uses passwordless login.') }}
-          </CoarNote>
+          </CoarNotice>
           <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.forgotPassword.backToLogin', {}, 'Back to login') }}
           </RouterLink>
@@ -174,9 +174,9 @@ const customForgotActions: Record<string, ActionHandler> = {
 
         <!-- Success state -->
         <div v-else-if="sent" class="space-y-4">
-          <CoarNote variant="success">
+          <CoarNotice variant="success">
             {{ t('auth.forgotPassword.sent', {}, 'If an account exists with this username, an email with a reset link has been sent.') }}
-          </CoarNote>
+          </CoarNotice>
           <RouterLink :to="{ path: '/login', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.forgotPassword.backToLogin', {}, 'Back to login') }}
           </RouterLink>
@@ -197,7 +197,7 @@ const customForgotActions: Record<string, ActionHandler> = {
             />
           </CoarFormField>
 
-          <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
 
           <CoarButton
             type="submit"

@@ -11,8 +11,9 @@ namespace Modgud.Authentication.Api.Admin.LoginProviders.Commands;
 
 /// <summary>
 /// Admin creates a new login provider. <see cref="Type"/> is set on creation
-/// and immutable thereafter. Secret rotation has its own command so audit
-/// trails stay clean — never set at Create.
+/// and immutable thereafter. An optional initial OIDC secret is encrypted
+/// before the event is appended, allowing a fully configured provider to be
+/// created atomically. Later rotations retain their dedicated audit event.
 /// <para>
 /// All fields after <see cref="Description"/> are optional: when omitted, the
 /// chosen flavor's defaults are used (legacy two-step flow). When the admin
@@ -47,12 +48,14 @@ public record CreateLoginProviderCommand(
     string? IconName = null,
     string? ButtonColorHex = null,
     bool? TrustForAuthorization = null,
-    bool? AuthoritativeForProfile = null);
+    bool? AuthoritativeForProfile = null,
+    string? InitialClientSecret = null);
 
 public class CreateLoginProviderHandler(
     IDocumentSession session,
     LoginProviderFlavorRegistry oidcFlavors,
     SamlFlavorRegistry samlFlavors,
+    LoginProviderSecretStore secrets,
     TimeProvider clock)
 {
     public async Task<ErrorOr<LoginProvider>> Handle(CreateLoginProviderCommand command, CancellationToken ct)
@@ -110,15 +113,22 @@ public class CreateLoginProviderHandler(
             return Error.Validation("LoginProvider.FlavorDataInvalid", ex.Message);
         }
 
-        // Readiness gate parity with EnableLoginProviderHandler: an OIDC
-        // provider needs ClientId + ClientSecret before it can authenticate
-        // anyone, and Create never carries a secret (RotateClientSecret is a
-        // separate command for audit reasons). So Enabled=true at Create is
-        // structurally unsafe — refuse it. The single-modal frontend already
-        // hardcodes Enabled=false; this gate catches stale/scripted callers.
+        var initialSecret = string.IsNullOrWhiteSpace(command.InitialClientSecret)
+            ? null
+            : command.InitialClientSecret;
+        if (command.InitialClientSecret is not null && initialSecret is null)
+            return Error.Validation("LoginProvider.SecretEmpty", "Secret cannot be empty.");
+
+        var encryptedSecret = initialSecret is null ? null : secrets.Encrypt(initialSecret);
         if (command.Enabled == true)
-            return Error.Validation("LoginProvider.SecretRequired",
-                "Cannot create an OIDC provider as Enabled — set the client secret first via /secret, then enable explicitly.");
+        {
+            var readinessError = LoginProviderReadiness.CheckCanEnable(
+                LoginProviderType.Oidc,
+                command.ClientId ?? string.Empty,
+                encryptedSecret is { Length: > 0 },
+                command.FlavorData);
+            if (readinessError is not null) return readinessError.Value;
+        }
 
         var nameTaken = await session.Query<LoginProvider>()
             .Where(c => !c.IsDeleted && c.DisplayName == command.DisplayName)
@@ -140,7 +150,7 @@ public class CreateLoginProviderHandler(
             IsBuiltIn: false,
             Enabled: command.Enabled ?? false,
             ClientId: command.ClientId ?? string.Empty,
-            ClientSecretEncrypted: null,
+            ClientSecretEncrypted: encryptedSecret,
             Scopes: command.Scopes ?? [.. flavor.DefaultScopes],
             UserUpdateScript: command.UserUpdateScript ?? flavor.DefaultUserUpdateScript,
             StoreRawClaims: command.StoreRawClaims ?? flavor.DefaultStoreRawClaims,

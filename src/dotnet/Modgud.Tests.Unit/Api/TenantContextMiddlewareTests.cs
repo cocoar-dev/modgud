@@ -10,8 +10,8 @@ namespace Modgud.Tests.Unit.Api;
 /// Pins the very small but security-critical contract of <see cref="TenantContextMiddleware"/>:
 /// every request that flows through Wolverine MUST have <see cref="IMessageBus.TenantId"/>
 /// set to the tenant resolved by <c>RealmMiddleware</c> — never to a stale value, never to
-/// a different tenant. The fallback to <see cref="TenantConstants.SystemTenantId"/> is what
-/// keeps background services and tests working without a request scope.
+/// a different tenant. Realm-independent requests leave the bus tenantless and must not
+/// dispatch realm-scoped messages.
 /// </summary>
 public class TenantContextMiddlewareTests
 {
@@ -53,7 +53,9 @@ public class TenantContextMiddlewareTests
         }
     }
 
-    private static async Task<TenantIdRecordingBusProxy> RunMiddlewareAsync(HttpContext context)
+    private static async Task<TenantIdRecordingBusProxy> RunMiddlewareAsync(
+        HttpContext context,
+        bool expectTenantSet = true)
     {
         var (bus, proxy) = TenantIdRecordingBusProxy.Create();
         var nextCalled = false;
@@ -67,7 +69,7 @@ public class TenantContextMiddlewareTests
         await sut.InvokeAsync(context, bus);
 
         Assert.True(nextCalled, "TenantContextMiddleware must always call next.");
-        Assert.True(proxy.TenantIdWasSet, "TenantContextMiddleware must always set TenantId on the bus.");
+        Assert.Equal(expectTenantSet, proxy.TenantIdWasSet);
         return proxy;
     }
 
@@ -83,41 +85,39 @@ public class TenantContextMiddlewareTests
     }
 
     [Fact]
-    public async Task Falls_back_to_system_tenant_when_HttpContext_has_no_tenant()
+    public async Task Leaves_bus_tenantless_when_HttpContext_has_no_tenant()
     {
-        // Background services / health checks / tests often have no resolved tenant.
-        // The fallback keeps Wolverine routable to the master DB.
         var ctx = new DefaultHttpContext();
 
-        var proxy = await RunMiddlewareAsync(ctx);
+        var proxy = await RunMiddlewareAsync(ctx, expectTenantSet: false);
 
-        Assert.Equal(TenantConstants.SystemTenantId, proxy.CapturedTenantId);
+        Assert.Null(proxy.CapturedTenantId);
     }
 
     [Fact]
-    public async Task Falls_back_to_system_tenant_when_TenantId_is_empty_string()
+    public async Task Leaves_bus_tenantless_when_TenantId_is_empty_string()
     {
         // Defensive: an explicitly-empty string should be treated as "no tenant" so we
         // never dispatch a Wolverine message with TenantId == "".
         var ctx = new DefaultHttpContext();
         ctx.Items[TenantConstants.HttpContextTenantIdKey] = "";
 
-        var proxy = await RunMiddlewareAsync(ctx);
+        var proxy = await RunMiddlewareAsync(ctx, expectTenantSet: false);
 
-        Assert.Equal(TenantConstants.SystemTenantId, proxy.CapturedTenantId);
+        Assert.Null(proxy.CapturedTenantId);
     }
 
     [Fact]
-    public async Task Falls_back_to_system_tenant_when_TenantId_item_is_non_string()
+    public async Task Leaves_bus_tenantless_when_TenantId_item_is_non_string()
     {
         // RealmMiddleware always stores a string, but the cast is `as string` so any
-        // foreign type silently becomes null → must still use the system fallback.
+        // foreign type silently becomes null and must not guess a realm.
         var ctx = new DefaultHttpContext();
         ctx.Items[TenantConstants.HttpContextTenantIdKey] = 42;
 
-        var proxy = await RunMiddlewareAsync(ctx);
+        var proxy = await RunMiddlewareAsync(ctx, expectTenantSet: false);
 
-        Assert.Equal(TenantConstants.SystemTenantId, proxy.CapturedTenantId);
+        Assert.Null(proxy.CapturedTenantId);
     }
 
     [Fact]

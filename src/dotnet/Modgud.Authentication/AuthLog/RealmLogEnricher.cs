@@ -34,6 +34,8 @@ public sealed class RealmLogEnricher : ILogEventEnricher
 {
     public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
     {
-        logEvent.AddPropertyIfAbsent(propertyFactory.CreateProperty("Realm", TenantContext.Current));
+        var realm = TenantContext.CurrentOrNull;
+        if (!string.IsNullOrEmpty(realm))
+            logEvent.AddPropertyIfAbsent(propertyFactory.CreateProperty("Realm", realm));
     }
 }

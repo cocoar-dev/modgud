@@ -54,7 +54,12 @@ public class UserLifecycleRevocationTests : IntegrationTestBase
 
         var response = await Client.DeleteAsync(
             $"/api/user/{new ShortGuid(user.Id)}", TestContext.Current.CancellationToken);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+            throw new Xunit.Sdk.XunitException(
+                $"Delete returned HTTP {(int)response.StatusCode}: {body}");
+        }
 
         var subject = user.Id.ToString();
         await using var read = GetTenantedSession();

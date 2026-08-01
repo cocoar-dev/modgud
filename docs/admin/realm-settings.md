@@ -8,7 +8,7 @@
 :::
 
 ::: tip These are the realm defaults — Applications can override them
-The Self-Registration, Registration-Fields, DCR, CIMD and Native Passwordless
+The Self-Registration, Registration-Fields, Client Sessions, DCR, CIMD and Native Passwordless
 Grants policies (and branding / email branding) set here are the **realm
 defaults**. An individual [Application](./applications#application-settings)
 can override a slice of them per-app (sparse, field by field — anything it
@@ -23,6 +23,7 @@ The page currently has these tabs:
 - [Self-Registration](#self-registration) — public sign-up policy
 - [Registration Fields](#registration-fields) — which identity fields are
   required when an account is created
+- [Sessions](#sessions) — browser/SSO policy and the native/OAuth client-session default
 - [Dynamic Client Registration](#dynamic-client-registration) —
   anonymous OAuth-client registration policy (linked detail page:
   [Dynamic Client Registration](./dynamic-client-registration))
@@ -170,6 +171,27 @@ Anonymous OAuth-client registration policy: master toggle, token lifetimes, GC T
 Off by default. See the full feature page for when to enable it, what gets accepted, and the consent-screen `[unverified]` marker:
 
 → **[Dynamic Client Registration](./dynamic-client-registration)** (full feature page)
+
+## Sessions
+
+Browser and native clients deliberately use different policies:
+
+| Policy | Default | Meaning |
+| --- | --- | --- |
+| Browser idle lifetime | 30 days | Sliding inactivity window for the shared realm SSO cookie |
+| Browser absolute lifetime | 180 days | Hard limit from interactive sign-in; activity never extends it |
+| Allow remember me | on | Whether a caller may request a browser-persistent cookie |
+| Client-session idle lifetime | 30 days | Sliding window renewed when a native/OAuth app uses its refresh token |
+| Client-session absolute lifetime | 365 days | Hard limit before the app must perform a new user sign-in |
+
+Client-session values support 1–3650 days. Ten years is therefore valid for
+low-risk consumer apps where forced periodic login would be disruptive.
+Access tokens stay short-lived and independent of this setting.
+
+Resolution order is **OAuth client → Application → Realm**. Empty App/client
+fields inherit the next level. A client linked to several Applications uses
+the strictest participating App policy unless the client has an explicit
+override.
 
 ## Rate Limits
 

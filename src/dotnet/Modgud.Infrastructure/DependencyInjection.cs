@@ -12,6 +12,7 @@ using Cocoar.JsEval.TsDefinition;
 using Cocoar.JsEval.TypeScript;
 using JasperFx;
 using JasperFx.Events.Daemon;
+using JasperFx.Resources;
 using Marten;
 using Marten.Events.Daemon;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +20,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Modgud.Application.Contracts;
 using Modgud.Infrastructure.Events;
 using Modgud.Infrastructure.Persistence.Marten.Configuration;
+using Modgud.Infrastructure.Installation;
 using Wolverine.Marten;
 
 namespace Modgud.Infrastructure;
@@ -58,8 +60,9 @@ public static class DependencyInjection
         })
         // BuildSessionsWith installs our TenantedSessionFactory as the singleton
         // ISessionFactory. Every IDocumentSession / IQuerySession injection now
-        // resolves the tenant from HttpContext.Items["TenantId"] (set by RealmMiddleware),
-        // falling back to the "system" tenant when no HttpContext is available.
+        // resolves the tenant from HttpContext.Items["TenantId"] (set by
+        // RealmMiddleware) or an explicit TenantContext. Missing realm context
+        // fails closed; deployment-wide state belongs in IGlobalStore.
         // NOTE: this replaces the previous .UseLightweightSessions() call — our factory
         // also returns LightweightSession()-backed sessions.
         // Singleton lifetime: the factory is stateless — IHttpContextAccessor (Singleton)
@@ -86,6 +89,29 @@ public static class DependencyInjection
             opts.Schema.For<Realm>()
                 .Identity(x => x.Id)
                 .Index(x => x.Slug, x => { x.IsUnique = true; x.Predicate = "((data ->> 'IsActive')::boolean = true)"; });
+
+            opts.Schema.For<InstallationState>().Identity(x => x.Id);
+            opts.Schema.For<InstallationChallenge>()
+                .Identity(x => x.Id)
+                .Index(x => x.TokenHash, x => x.IsUnique = true);
+
+            // Deployment-wide scheduled jobs are controlled from whichever
+            // realm currently holds the Control-Plane role, but their config
+            // and history are platform data — never tenant/realm data.
+            opts.Schema.For<Modgud.Infrastructure.Scheduling.JobConfig>()
+                .Identity(x => x.Key);
+            opts.Schema.For<Modgud.Infrastructure.Scheduling.JobRunHistoryEntry>()
+                .Identity(x => x.Id)
+                .Index(x => new { x.JobKey, x.StartedAt });
+
+            // Deployment-wide operations are intentionally PII-free and live
+            // only in the non-tenanted Global Store. Realm security events are
+            // configured in each tenant store below.
+            opts.Schema.For<Modgud.Infrastructure.Audit.PlatformAuditEvent>()
+                .Identity(x => x.Id)
+                .Index(x => x.Timestamp)
+                .Index(x => x.EventType)
+                .Index(x => x.TargetRealmSlug);
 
             // RealmSigningKey lives in the per-tenant store (configured below),
             // not here. Defense-in-depth: a master-DB compromise must NOT leak
@@ -123,14 +149,28 @@ public static class DependencyInjection
         // active credentials run on every token issuance.
         services.AddSingleton<IRealmKeyStore, RealmKeyStore>();
         services.AddSingleton<IRealmCache, RealmCache>();
+        services.AddSingleton<IRealmMessageStorageProvisioner, RealmMessageStorageProvisioner>();
         services.AddScoped<IRealmProvisioningService, RealmProvisioningService>();
+        services.AddScoped<IInstallationChallengeService, InstallationChallengeService>();
 
         // Required for Marten projection side effects to publish messages via Wolverine
         // EventForwardingToWolverine: forwards domain events as Wolverine messages on commit
         martenBuilder.IntegrateWithWolverine(options =>
         {
+            // Database-per-realm tenancy still needs a tenant-neutral master
+            // database for Wolverine's node coordination. Supplying it also
+            // enables Wolverine's multi-tenanted message-store source. Realm
+            // databases registered after startup are initialized explicitly by
+            // IRealmMessageStorageProvisioner.
+            options.MainDatabaseConnectionString = connectionString;
             options.UseFastEventForwarding = true;
         });
+
+        // Apply Wolverine/Marten resources for the master database and every
+        // tenant known at startup. Dynamic realms are handled during realm
+        // provisioning rather than relying on the first message to discover
+        // missing storage.
+        services.AddResourceSetupOnStartup();
 
         martenBuilder.AddAsyncDaemon(DaemonMode.Solo);
 
@@ -173,10 +213,8 @@ public static class DependencyInjection
             opt.RegisterResource(app, "authorization-group", "read", "write");
             opt.RegisterResource(app, "permission-role", "read", "write");
 
-            // Sessions + audit. Two distinct read surfaces (logging/audit redesign):
-            //   auth-log:read  — the streamless security/ops store (failed logins on
-            //                    unknown actors, probes, rate-limits, operational
-            //                    actions). Cross-realm in the system DB.
+            // Sessions + audit. Two distinct realm-owned read surfaces:
+            //   auth-log:read  — structured security events in this realm DB.
             //   audit-log:read — the per-realm GDPR-audit (event-sourced account /
             //                    login history projected from the user streams).
             opt.RegisterResource(app, "session", "read", "write");
@@ -219,6 +257,7 @@ public static class DependencyInjection
             // into their tenant DB (see AppRealmSeeder).
             const string controlPlaneApp = AppSlugs.ControlPlane;
             opt.RegisterResource(controlPlaneApp, "realm", "read", "write");
+            opt.RegisterResource(controlPlaneApp, "platform-audit", "read");
         });
 
         // OAuth admin slice services — both consume the tenant-scoped IDocumentSession

@@ -123,10 +123,13 @@ After consent the agent holds an access token with `aud` narrowed to exactly `ht
 
 **Validate it on the MCP server.** Two options, same as any resource server:
 
-- **JWT + JWKS (local):** validate signature against `https://auth.example.com/.well-known/jwks`, check `iss` equals the realm root and `aud` equals your MCP URL. CIMD clients are issued JWT access tokens, so this is the default MCP path. For an ASP.NET Core MCP server the wiring is identical to [Integrating a resource server](./resource-server) — same `AddJwtBearer` + `AddModgudClient`, with `Audience = "https://mcp.acme.example"`.
+- **JWT + JWKS (local):** validate signature against `https://auth.example.com/.well-known/jwks`, check `iss` equals the realm root and `aud` equals your MCP URL. CIMD clients are issued JWT access tokens, so this is the default MCP path. For an ASP.NET Core MCP server the wiring is identical to [Integrating a resource server](./resource-server) — use `AddModgudResourceServer` with `Audience = "https://mcp.acme.example"`; `OnlyJwt` is the default mode.
 - **Introspection (server-side):** if your OAuth client issues reference tokens, `POST /connect/introspect` returns `active` plus the claims. Slower per call, but revocation is instant (see step 7).
 
-Decode the token (or introspect it) and confirm `aud` is your MCP URL alone and the `permissions` array inside `resource_access[acme]` holds what you expect.
+Decode the token (or introspect it) and confirm `aud` is your MCP URL
+alone and the permissions array inside
+`resource_access["https://mcp.acme.example"]` holds what you expect.
+The `acme` App slug selects the catalog but is not the claim key.
 
 **Check the audit trail.** [Auth Log](/admin/auth-log) records the lifecycle. CIMD and DCR events are prefixed `DCR ` in the message and surface under the **operations** chip (rejected registrations under **security-ops**):
 

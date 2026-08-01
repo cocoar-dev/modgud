@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Marten;
 using Microsoft.Extensions.Logging.Abstractions;
 using Modgud.Authentication.Api.ExternalAuth.Saml;
 using Modgud.Authentication.Domain.LoginProviders;
@@ -36,7 +37,20 @@ public class DynamicSamlSchemeManagerTests
     /// metadata-refresh audit record is exercised by the integration suite.</summary>
     private sealed class NoOpSecurityAuditLog : ISecurityAuditLog
     {
-        public void Record(SecurityAuditRecord record) { }
+        public ValueTask RecordRequiredAsync(
+            SecurityAuditRecord record,
+            CancellationToken ct = default) => ValueTask.CompletedTask;
+        public void StoreRequired(IDocumentSession session, SecurityAuditRecord record) { }
+        public ValueTask RecordIncidentAsync(
+            SecurityAuditRecord record,
+            CancellationToken ct = default) => ValueTask.CompletedTask;
+        public void RecordAbuse(SecurityAuditRecord record) { }
+        public void RecordTelemetry(SecurityAuditRecord record) { }
+        public ValueTask RecordPlatformRequiredAsync(
+            PlatformAuditRecord record,
+            CancellationToken ct = default) => ValueTask.CompletedTask;
+        public void StorePlatformRequired(IDocumentSession session, PlatformAuditRecord record) { }
+        public void RecordPlatformTelemetry(PlatformAuditRecord record) { }
     }
 
     /// <summary>

@@ -200,9 +200,10 @@ aggregate per entry, with a `Type` discriminator. Configurable per realm.
 | **Saml** | Wired up | External SAML 2.0 IdPs. See [SAML federation](/admin/saml-federation). |
 | **Ldap** / **Kerberos** | Reserved | Enum values exist; create endpoint rejects with `LoginProvider.TypeNotSupported`. The shape ships now so the FE doesn't have to add a "not supported yet" UI per type later. |
 
-Configured Oidc providers automatically show "Login with {Provider}"
-buttons in the login UI. Internal never produces an SSO button — it
-backs the local username/password form.
+Configured OIDC and SAML providers automatically show
+"Login with {Provider}" buttons in the login UI. Internal never produces an
+SSO button — it backs the local username/password form. SAML is SP-only and
+SP-initiated in v1.
 
 ---
 

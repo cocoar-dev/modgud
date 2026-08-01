@@ -16,25 +16,46 @@ Most invocations write an entry to the security audit log (see
 dotnet Modgud.Api.dll recover <command> [args...] [--realm <slug>]
 ```
 
-The `--realm` flag defaults to `system`. Commands that don't need a
-tenant context (the `realm-*`, `control-plane`, and `adopt-tenant`
-commands carry their own `--slug`) ignore it.
+Tenant-scoped commands infer the realm only when exactly one active realm
+exists. With multiple realms, `--realm <slug>` is required. With zero realms,
+only deployment-wide commands such as `install-link` can run.
 
 For tenant-scoped commands the named realm is resolved up front:
 
 - A misspelled or unknown `--realm` **fails fast** with
   `error: Realm '<slug>' not found.` and a non-zero exit code — it never
   silently acts on the wrong tenant.
-- When `--realm` is omitted **and more than one realm exists**, the CLI
-  prints a `note:` to stderr naming the realm it defaulted to, so a
-  multi-realm operator is never surprised. With a single realm the
-  default is unambiguous and stays quiet.
+- When `--realm` is omitted and more than one realm exists, the command
+  fails and asks for an explicit target. With a single realm the target
+  is unambiguous and stays quiet.
 
 Every command exits `0` on success and a non-zero code on failure (a
 validation error, an unknown realm, or an unknown command); error text
 is written to stderr.
 
 ## Commands
+
+### `install-link`
+
+Issue the short-lived, single-use authorization for the initial installation.
+This command works while the deployment has zero realms. The browser wizard
+and CI both submit the resulting token to `/api/install/complete`.
+
+```bash
+dotnet Modgud.Api.dll recover install-link \
+  --base-url https://auth.example.com \
+  --minutes 30
+
+# Machine-readable final output line for CI
+dotnet Modgud.Api.dll recover install-link \
+  --base-url https://auth.test.localhost \
+  --minutes 10 \
+  --json
+```
+
+Issuing a new link revokes older unconsumed links. The plaintext token is shown
+only in CLI output; the Global Store contains its SHA-256 hash. See
+[First-time setup](../getting-started/first-time-setup).
 
 ### `list`
 List every active user with `UserName · Email · Active · Admin · 2FA · Passkeys`.
@@ -81,7 +102,7 @@ dotnet Modgud.Api.dll recover rebuild-projections
 ```
 
 ### `bootstrap-admin`
-Create the first admin in a realm. Default realm: `system`. Two modes
+Create or recover an admin in an existing realm. Two modes
 — **Direct** (password set immediately) and **Invite** (a magic-link
 URL is printed and emailed if SMTP is configured).
 
@@ -109,7 +130,7 @@ Flags:
 | `--firstname` | no | Optional. |
 | `--lastname` | no | Optional. |
 | `--password` | no | If present: Direct mode. Validated against the configured Identity password rules. If absent: Invite mode. |
-| `--realm <slug>` | no | Defaults to `system`. |
+| `--realm <slug>` | when multiple realms exist | Inferred when exactly one active realm exists. |
 
 ### `migrate-cc-credentials`
 For every OAuth client that still has the `client_credentials` grant
@@ -125,7 +146,7 @@ dotnet Modgud.Api.dll recover migrate-cc-credentials --realm system
 ```
 
 ### `realm-list`
-List every active realm with its slug, display name, primary domain, and configured domains (the control-plane realm is marked `[CP]`). Useful first probe after a fresh deploy — shows the system realm's seeded localhost domains so you know which Host header to use.
+List every active realm with its slug, display name, primary domain, and configured domains (the control-plane realm is marked `[CP]`). A fresh, uninitialized deployment returns an empty list.
 
 ```bash
 dotnet Modgud.Api.dll recover realm-list

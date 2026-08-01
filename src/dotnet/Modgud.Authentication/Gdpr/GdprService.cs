@@ -50,6 +50,9 @@ public class GdprService(
         var sessions = await session.Query<UserSession>()
             .Where(s => s.UserId == userId)
             .ToListAsync(ct);
+        var clientSessions = await session.Query<ClientSession>()
+            .Where(s => s.UserId == userId)
+            .ToListAsync(ct);
 
         var loginHistory = await GetLoginHistoryAsync(userId, 100, ct);
 
@@ -60,7 +63,7 @@ public class GdprService(
             Metadata = new ExportMetadataDto
             {
                 ExportedAt = DateTimeOffset.UtcNow,
-                FormatVersion = "1.0",
+                FormatVersion = "1.1",
                 UserId = userId,
             },
             Profile = new ExportProfileDto
@@ -84,13 +87,29 @@ public class GdprService(
             Permissions = permissions,
             Sessions = sessions.Select(s => new ExportSessionDto
             {
+                Kind = "Browser",
                 IpAddress = s.IpAddress,
                 Browser = s.Browser,
                 OperatingSystem = s.OperatingSystem,
                 DeviceType = s.DeviceType,
                 CreatedAt = s.CreatedAt,
                 LastActiveAt = s.LastActiveAt,
-            }).ToList(),
+                ExpiresAt = s.ExpiresAt,
+                AbsoluteExpiresAt = s.AbsoluteExpiresAt,
+            }).Concat(clientSessions.Select(s => new ExportSessionDto
+            {
+                Kind = "OAuthClient",
+                ClientId = s.ClientId,
+                ClientDisplayName = s.ClientDisplayName,
+                IpAddress = s.IpAddress,
+                Browser = s.Browser,
+                OperatingSystem = s.OperatingSystem,
+                DeviceType = s.DeviceType,
+                CreatedAt = s.CreatedAt,
+                LastActiveAt = s.LastActiveAt,
+                ExpiresAt = s.ExpiresAt,
+                AbsoluteExpiresAt = s.AbsoluteExpiresAt,
+            })).ToList(),
             LoginHistory = loginHistory,
         };
     }
@@ -216,7 +235,8 @@ public class GdprService(
         // masks/archives in the correct realm DB — HttpContext is null there.
         var tenantId = TenantContext.CurrentOrNull
                        ?? httpContextAccessor.HttpContext?.Items[TenantConstants.HttpContextTenantIdKey] as string
-                       ?? TenantConstants.SystemTenantId;
+                       ?? throw new InvalidOperationException(
+                           "Permanent erase requires an explicit realm context.");
 
         // 0) Revoke live access (OAuth grants + sessions + security stamp) BEFORE
         //    the user document is masked/deleted: the stamp rotation must load
@@ -259,6 +279,7 @@ public class GdprService(
 
         // 2) Drop secondary documents (sessions + security data + change requests).
         session.DeleteWhere<UserSession>(s => s.UserId == userId);
+        session.DeleteWhere<ClientSession>(s => s.UserId == userId);
         session.Delete<UserSecurityData>(userId);
 
         //    Federation v1: the per-user external-claims snapshot is a plain

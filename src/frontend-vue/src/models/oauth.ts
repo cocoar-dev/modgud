@@ -2,6 +2,8 @@
 // src/dotnet-next/Modgud.Application/DTOs/OAuth/.
 // Backend serializes with PropertyNamingPolicy=null, so PascalCase is required.
 
+import type { ServiceAccountCreateDto, ServiceAccountDto } from './serviceAccount'
+
 export interface OAuthClientClaimDto {
   Type: string
   Value: string
@@ -32,6 +34,8 @@ export interface OAuthClientDto {
   AccessTokenLifetime?: number | null
   AuthorizationCodeLifetime?: number | null
   SlidingRefreshTokenLifetime?: number | null
+  ClientSessionIdleLifetime?: number | null
+  ClientSessionAbsoluteLifetime?: number | null
   AlwaysSendClientClaims: boolean
   UpdateAccessTokenClaimsOnRefresh: boolean
   ClientClaimsPrefix?: string | null
@@ -101,16 +105,25 @@ export interface CreateOAuthClientDto {
   Scopes?: string[]
   AccessTokenType?: AccessTokenType
   Enabled?: boolean
+  AllowAccessTokensViaBrowser?: boolean
   RequireClientSecret?: boolean
+  EnableLocalLogin?: boolean
   RequireConsent?: boolean
+  AllowRememberConsent?: boolean
   AllowedGrantTypes?: string[]
   AllowedCorsOrigins?: string[]
+  IdentityTokenLifetime?: number | null
+  AccessTokenLifetime?: number | null
+  AuthorizationCodeLifetime?: number | null
+  SlidingRefreshTokenLifetime?: number | null
   /** RFC 9126 — require this client to use Pushed Authorization Requests. Off by default. */
   RequirePushedAuthorizationRequests?: boolean
   /** RFC 9449 (#118) — require this client to present a DPoP proof at the token endpoint. Off by default. */
   RequireDpop?: boolean
   /** RFC 9449 §8-9 (#118) — require this client's DPoP proofs to carry a server-issued nonce. Off by default. */
   RequireDpopNonce?: boolean
+  ClientSessionIdleLifetime?: number | null
+  ClientSessionAbsoluteLifetime?: number | null
   /** ADR-0009 — admin-set per-client WebAuthn RP ID. Blank = realm-scoped. */
   WebAuthnRpId?: string | null
   /**
@@ -118,6 +131,16 @@ export interface CreateOAuthClientDto {
    * entries = Keycloak-style multi-app client.
    */
   AppIds?: string[]
+  /**
+   * Existing Service Account that owns a pure client_credentials client.
+   * Required for M2M clients and intentionally immutable after creation.
+   */
+  LinkedServiceAccountId?: string | null
+  /**
+   * Service Account created atomically with this OAuth client. Mutually
+   * exclusive with LinkedServiceAccountId.
+   */
+  NewServiceAccount?: ServiceAccountCreateDto | null
 }
 
 export interface UpdateOAuthClientDto {
@@ -139,6 +162,10 @@ export interface UpdateOAuthClientDto {
   AccessTokenLifetime?: number | null
   AuthorizationCodeLifetime?: number | null
   SlidingRefreshTokenLifetime?: number | null
+  ClientSessionIdleLifetime?: number | null
+  ClientSessionAbsoluteLifetime?: number | null
+  ClearClientSessionIdleLifetime?: boolean
+  ClearClientSessionAbsoluteLifetime?: boolean
   Claims?: OAuthClientClaimDto[] | null
   Roles?: string[] | null
   /** RFC 9126 PAR-requirement patch: null/missing = no change, true/false sets it. */
@@ -172,6 +199,7 @@ export interface OAuthClientListDto {
 export interface OAuthClientCreatedDto {
   Client: OAuthClientDto
   ClientSecret?: string | null
+  CreatedServiceAccount?: ServiceAccountDto | null
 }
 
 export interface ClientSecretDto {
@@ -199,8 +227,8 @@ export interface OAuthScopeDto {
    */
   AppId?: string | null
   /**
-   * True for the five OIDC standard scopes (openid/email/profile/roles/
-   * offline_access) — shipped with the IdP and not editable. Drives the
+   * True for the six seeded standard scopes (openid/email/profile/roles/
+   * permissions/offline_access) — shipped with the IdP and not editable. Drives the
    * dimmed row treatment in the admin grid.
    */
   IsStandard: boolean

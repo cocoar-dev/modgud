@@ -1,13 +1,11 @@
 using System.Text.Json;
 using Marten;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Quartz;
 using Modgud.Application.Dcr;
 using Modgud.Application.Scheduling;
 using Modgud.Domain.OAuth.Applications;
-using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Audit;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Api.Features.Admin.Jobs;
@@ -29,7 +27,7 @@ namespace Modgud.Api.Features.Admin.Jobs;
 /// </summary>
 [DisallowConcurrentExecution]
 public class DcrGcJob(
-    IServiceScopeFactory scopeFactory,
+    IDocumentSession session,
     ISecurityAuditLog securityAudit) : IJob
 {
     public const string Key = "dcr-gc";
@@ -45,41 +43,24 @@ public class DcrGcJob(
     public async Task Execute(IJobExecutionContext context)
     {
         var ct = context.CancellationToken;
+        var realmSlug = TenantContext.Current;
+        var swept = await SweepRealmAsync(session, realmSlug, ct);
 
-        using var rootScope = scopeFactory.CreateScope();
-        var store = rootScope.ServiceProvider.GetRequiredService<IDocumentStore>();
-
-        // Realms live in the master DB. The control-plane realm uses the
-        // "system" tenant; tenant realms use their slug.
-        await using var masterSession = store.LightweightSession("system");
-        var realms = await masterSession.Query<Realm>()
-            .Where(r => r.IsActive)
-            .ToListAsync(ct);
-
-        int realmsTouched = 0;
-        int totalSwept = 0;
-        foreach (var realm in realms)
+        context.Result = swept switch
         {
-            if (ct.IsCancellationRequested) break;
-            var swept = await SweepRealmAsync(store, realm.Slug, ct);
-            if (swept >= 0)
-            {
-                realmsTouched++;
-                totalSwept += swept;
-            }
-        }
-
-        context.Result = totalSwept == 0
-            ? $"No DCR clients aged out ({realmsTouched} realm(s) checked)"
-            : $"Soft-deleted {totalSwept} DCR client(s) across {realmsTouched} realm(s)";
+            < 0 => "Skipped because DCR is disabled",
+            0 => "No DCR clients aged out",
+            _ => $"Soft-deleted {swept} DCR client(s)",
+        };
     }
 
     /// <summary>Returns swept count, or -1 if the realm was skipped (DCR disabled).</summary>
-    private async Task<int> SweepRealmAsync(IDocumentStore store, string tenantId, CancellationToken ct)
+    private async Task<int> SweepRealmAsync(
+        IDocumentSession tenantSession,
+        string tenantId,
+        CancellationToken ct)
     {
-        await using var session = store.LightweightSession(tenantId);
-
-        var settings = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        var settings = await tenantSession.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
         var dcr = settings?.Dcr;
         if (dcr is null || !dcr.Enabled) return -1;
 
@@ -88,7 +69,7 @@ public class DcrGcJob(
         // match — pull the candidates and filter in memory. Set size is
         // bounded by the realm-rate-limit (default 100/d × TTL=90d = 9000
         // max-ever), tiny enough for an in-memory pass).
-        var candidates = await session.Query<OAuthApplicationState>()
+        var candidates = await tenantSession.Query<OAuthApplicationState>()
             .Where(x => !x.IsDeleted)
             .ToListAsync(ct);
 
@@ -102,27 +83,28 @@ public class DcrGcJob(
             var lastUsedAt = ParseTimestamp(state.Properties, OAuthApplicationPropertyKeys.DcrLastUsedAt);
             if (lastUsedAt is null || lastUsedAt > cutoff) continue;
 
-            var aggregate = await session.Events
+            var aggregate = await tenantSession.Events
                 .AggregateStreamAsync<OAuthApplicationAggregate>(state.Id, token: ct);
             if (aggregate is null || aggregate.IsDeleted) continue;
 
-            session.Events.Append(state.Id, aggregate.Delete());
+            tenantSession.Events.Append(state.Id, aggregate.Delete());
             swept++;
 
-            securityAudit.Record(new SecurityAuditRecord
+            securityAudit.RecordTelemetry(new SecurityAuditRecord
             {
                 EventType = AuditEvents.DcrClientGarbageCollected,
-                Realm = tenantId,
-                Level = "Info",
-                Status = "collected",
-                Reason = $"clientId {state.ClientId}, ttl {dcr.GcTtlDays}d",
-                Message = $"DCR client garbage-collected: {state.ClientId}",
+                RealmSlug = tenantId,
+                ActorKind = AuditActorKind.System,
+                OAuthClientId = state.ClientId,
+                OutcomeCode = AuditOutcomes.Pruned,
+                OperationCode = "garbage-collect",
+                RetentionDays = dcr.GcTtlDays,
             });
         }
 
         if (swept > 0)
         {
-            await session.SaveChangesAsync(ct);
+            await tenantSession.SaveChangesAsync(ct);
         }
         return swept;
     }

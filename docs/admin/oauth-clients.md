@@ -15,10 +15,14 @@ Examples:
 
 Every OAuth client can be linked to **zero, one, or more [Applications](./applications)** (n:m, multi-select dropdown in the detail modal). The link controls two things:
 
-1. **Token contents** — on `/connect/userinfo`, the issued token carries a `resource_access` block per linked app, with the user's app-specific roles. Resource servers read their own block (Keycloak convention).
-2. **Scope restriction** — the client may only request scopes that belong to one of its apps (or are global, like the OIDC standard scopes `openid`, `email`, `profile`, `roles`, `offline_access`).
+1. **Scope entitlement** — the client may only request scopes that belong to one of its apps (or are global, like the OIDC standard scopes `openid`, `email`, `profile`, `roles`, `permissions`, `offline_access`).
+2. **App context for targeted APIs** — a requested resource-bearing scope produces one or more token audiences. Each audience must resolve to an OAuth API, whose `AppId` selects the catalog used for its `resource_access[<audience>]` block.
 
 The default case is **one client → one app** (`acme-web` belongs to `acme`). Multi-app clients exist for bundle frontends that talk to several resource servers at once.
+
+Selecting an App does **not** automatically add a claim block. A block
+exists only when the token actually targets a registered OAuth API in
+that App and the request includes `roles` and/or `permissions`.
 
 ::: tip First time?
 Use the [SaaS App Integration Walkthrough](../integrate/saas-walkthrough) for the linear path through your first integration.
@@ -28,7 +32,11 @@ Use the [SaaS App Integration Walkthrough](../integrate/saas-walkthrough) for th
 
 Administration → **OAuth → Clients** → **Create**.
 
-The create modal exposes the full configuration up front — identity on the left, and tabs for **Grants**, **Scopes**, **Redirect URIs** and **Apps** on the right. (These used to be edit-only, so a freshly created client was born non-functional.) Set them at create time and the client is usable immediately.
+The create modal exposes the full configuration up front in one expert editor:
+**General**, **Login & Consent**, **Apps**, **Flows**, **Scopes**,
+**Redirects & CORS**, **Tokens & Sessions**, and **Security**. Every tab edits
+the same draft and the footer action persists the complete client in one
+request. Nothing has to be created first and completed in a second pass.
 
 ::: tip authorization_code clients: two create-time requirements
 For an `authorization_code` client the Create button stays disabled until you have both: at least one **Redirect URI** (URLs tab) and the **`authorization_code`** grant (Grants tab). This stops you from silently producing a client that can't complete a login.
@@ -49,8 +57,13 @@ There are exactly two client types — `public` and `confidential`:
 | **Confidential** | Server-side web apps (ASP.NET, Node, Rails) — can store secrets | Yes |
 | **Public** | SPAs and mobile apps — can't safely store secrets | No, PKCE only |
 
-::: tip Machine-to-machine? Use a Service Account
-There is no separate "service" client type. For server-to-server flows with no user involved, create a [Service Account](./service-accounts) — it owns a confidential client wired to the `client_credentials` grant. The standard create-client form deliberately can't produce a client-credentials client on its own (see the grant-type rules below).
+::: tip Machine-to-machine? Link a Service Account
+There is no separate "service" client type. For server-to-server flows with no
+user involved, use a [Service Account](./service-accounts). Selecting
+`client_credentials` in the **Flows** tab reveals the required Service Account
+field. You can select an existing account or create a new one directly in the
+client editor. The optional new Service Account, client, grant and ownership
+link are then persisted atomically by the single Create action.
 :::
 
 ### Consent type
@@ -63,9 +76,14 @@ There is no separate "service" client type. For server-to-server flows with no u
 
 ### Applications
 
-The **Applications** multi-select binds the client to one or more apps. Empty means realm-wide (no app context — good for a tool that genuinely doesn't belong to any specific app).
+The **Applications** multi-select binds the client to one or more apps. Empty means realm-wide/unassigned for App-scope entitlement; it does not mean that tokens automatically receive every App's permissions.
 
-Picking multiple apps means: when this client requests a token and asks for the `roles` scope, the issued token's UserInfo carries a `resource_access` block for each picked app. That's how multi-app frontends work.
+Picking multiple apps means the client may request resource-bearing
+scopes from each of them. If a request targets `orders-api` and
+`billing-api` and includes the `roles` scope, the resulting principal
+can contain `resource_access["orders-api"].roles` and
+`resource_access["billing-api"].roles`. The keys are API Audiences,
+never App slugs inferred from the multi-select.
 
 ### Redirect URIs
 
@@ -75,14 +93,19 @@ For SPAs and mobile use a deep link (`com.example.app:/oauth/callback`) or a HTT
 
 ### Access Token Type
 
-New clients default to **JWT**. Two options:
+New clients default to **Reference**. Two options:
 
 | Type | What it is | Validation |
 | --- | --- | --- |
-| **JWT** (default) | Self-contained signed token — the claims are inside the token | The resource server validates it locally against the realm's signing key (JWKS); no callback to Modgud |
-| **Reference** | Opaque random string — carries no claims | The resource server must call `/connect/introspect` on every request to resolve it |
+| **Reference** (default) | Opaque random string — carries no claims on the wire | The resource server must call `/connect/introspect` on every request to resolve it |
+| **JWT** | Self-contained signed token — the claims are inside the token | The resource server validates it locally against the realm's signing key (JWKS); no callback to Modgud |
 
-A resource server built with ASP.NET Core's `AddJwtBearer` expects a **JWT** — that's the right pick for the common case. Use **Reference** only when you specifically want every token resolvable/revocable at the introspection endpoint and you've wired the RS to call it. The [.NET client library](../integrate/resource-server) supports both — `AddModgudClient` for JWT, `AddModgudReferenceTokenClient` for reference tokens.
+A resource server configured for local JWT validation expects a
+**JWT**. Keep the default **Reference** format when you want every
+token resolved and immediately revocable at the introspection endpoint.
+The [.NET resource-server library](../integrate/resource-server) uses
+one `AddModgudResourceServer` method; its `TokenMode` accepts JWTs,
+reference tokens, or both.
 
 ### Require Pushed Authorization Requests
 
@@ -119,15 +142,19 @@ Pick the grants the client actually needs (multi-select). There are **no silent 
 ::: warning No hybrid user-flow + client-credentials clients
 A client is **either** a user-flow client (`authorization_code` / `refresh_token` / `device_code` / …) **or** a machine-to-machine client (`client_credentials`) — never both. The split is structural, enforced at the create/update endpoint:
 
-- `client_credentials` requires the client to be linked to a [Service Account](./service-accounts); the standard create-client form has no such link field, so it rejects a bare `client_credentials` selection.
+- `client_credentials` requires the client to be linked to a [Service Account](./service-accounts); the **Flows** tab lets you select an existing account or create one inline before the first save and blocks Create while the link is missing.
 - A Service-Account-linked client may carry **only** `client_credentials` — adding any user-flow grant alongside it is rejected.
 
-To get machine-to-machine tokens, create a Service Account; it provisions the confidential client + `client_credentials` grant for you.
+The reverse workflow remains available too: issuing a credential from a Service
+Account provisions its confidential client and `client_credentials` grant
+through the same client-creation validation path.
 :::
 
 ### Lifetimes
 
-The **Token Lifetimes** tab is edit-only (it appears once a client exists, not on the create form). Each field is **entered in seconds**; leaving it empty falls back to the IdP default. The defaults are:
+The **Lifetimes** tab is available during create and edit. Each field is
+**entered in seconds**. Empty token fields use the IdP default; empty
+client-session fields inherit from the linked Application and then the Realm.
 
 | Field | Default | In seconds |
 | --- | --- | --- |
@@ -135,8 +162,16 @@ The **Token Lifetimes** tab is edit-only (it appears once a client exists, not o
 | **Authorization Code Lifetime** | 5 min | `300` |
 | **Identity Token Lifetime** | OpenIddict default (no Modgud override) | — |
 | **Sliding Refresh Token Lifetime** | OpenIddict default (no Modgud override) | — |
+| **Client Session Idle Lifetime** | App/Realm policy | — |
+| **Client Session Absolute Lifetime** | App/Realm policy | — |
 
 Access-token, authorization-code and refresh-token defaults are set globally on the IdP (`AccessTokenLifetimeMinutes`, `AuthorizationCodeLifetimeMinutes`, `RefreshTokenLifetimeDays`). The identity-token and sliding-refresh fields have no Modgud-level default — leave them blank unless you have a specific reason to override OpenIddict's built-in value.
+
+Client-session lifetimes control how long refresh-token-backed user sessions
+may continue. Idle lifetime slides on successful refresh; absolute lifetime
+never slides. Both accept 1–3650 days (`86400`–`315360000` seconds), and the
+absolute value must not be shorter than idle. These do not lengthen access
+tokens.
 
 ## Editing / regenerating
 

@@ -4,9 +4,8 @@ namespace Modgud.Tests.Unit.Infrastructure.Persistence.Tenancy;
 
 /// <summary>
 /// Pin <see cref="TenantConstants"/> values. These constants are wire-level
-/// contracts: <c>SystemTenantId</c> is what every background service falls
-/// back to, and the HttpContext.Items keys are read by middleware all over
-/// the request pipeline. Renaming them silently breaks tenant isolation.
+/// compatibility contracts and HttpContext.Items keys read by middleware.
+/// Runtime tenant resolution deliberately has no implicit system fallback.
 /// </summary>
 public class TenantConstantsTests
 {
@@ -14,6 +13,14 @@ public class TenantConstantsTests
     public void SystemTenantId_is_system()
     {
         Assert.Equal("system", TenantConstants.SystemTenantId);
+    }
+
+    [Fact]
+    public void TenantContext_without_an_explicit_realm_fails_closed()
+    {
+        Assert.Null(TenantContext.CurrentOrNull);
+        var error = Assert.Throws<InvalidOperationException>(() => TenantContext.Current);
+        Assert.Contains("No realm context", error.Message);
     }
 
     [Fact]

@@ -10,10 +10,9 @@ public static class ExternalAuthEndpoints
 {
     public static void MapExternalAuthEndpoints(this IEndpointRouteBuilder endpoints, string path)
     {
-        // Public — login page needs the list to render buttons. Only returns
-        // enabled, non-deleted, Oidc-typed providers. Internal is rendered by
-        // the built-in form, not as a button on this list; Saml/Ldap/Kerberos
-        // are not yet wired and stay hidden until a future phase plugs them in.
+        // Public — login page needs the list to render buttons. Returns
+        // enabled, non-deleted OIDC and SAML providers. Internal is rendered by
+        // the built-in form; LDAP/Kerberos remain unsupported and stay hidden.
         endpoints.MapGet($"{path}/account/external-logins",
             async ([FromServices] IQuerySession session, CancellationToken ct) =>
             {
@@ -49,10 +48,10 @@ public static class ExternalAuthEndpoints
                 if (config is null || config.IsDeleted || !config.Enabled)
                     return Results.NotFound();
 
-                // Internal is invisible to this surface (no silent enumeration);
-                // Saml/Ldap/Kerberos are intentionally surfaced as "not yet
-                // supported" so admins/CI can tell the difference between
-                // "wrong id" and "type not implemented".
+                // This route is the OIDC entry point. SAML has its own
+                // SP-initiated /saml/{slug}/login route; LDAP/Kerberos remain
+                // unsupported. Preserve the distinction between a missing
+                // provider and a provider of the wrong protocol type.
                 if (config.Type == LoginProviderType.Internal)
                     return Results.NotFound();
                 if (config.Type != LoginProviderType.Oidc)
@@ -91,7 +90,11 @@ public static class ExternalAuthEndpoints
         // sends an Origin header matching the IdP's host; cross-origin
         // forced loads do not.
         endpoints.MapGet($"{path}/account/external-logout/{{loginProviderId:guid}}",
-            async (Guid loginProviderId, HttpContext http) =>
+            async (Guid loginProviderId,
+                   HttpContext http,
+                   [FromServices] IQuerySession session,
+                   [FromServices] IAuthenticationSchemeProvider schemeProvider,
+                   CancellationToken ct) =>
             {
                 if (!IsSameSiteRequest(http))
                 {
@@ -101,7 +104,21 @@ public static class ExternalAuthEndpoints
                         detail: "External logout must originate from the IdP's own UI.");
                 }
 
+                var config = await session.LoadAsync<LoginProvider>(loginProviderId, ct);
+                if (config is null
+                    || config.IsDeleted
+                    || !config.Enabled
+                    || config.Type != LoginProviderType.Oidc)
+                {
+                    return Results.Redirect("/logged-out");
+                }
+
                 var schemeName = DynamicOidcSchemeManager.SchemeNameFor(loginProviderId);
+                if (await schemeProvider.GetSchemeAsync(schemeName) is null)
+                {
+                    return Results.Redirect("/logged-out");
+                }
+
                 var props = new AuthenticationProperties { RedirectUri = "/logged-out" };
                 return Results.SignOut(props, [schemeName]);
             }).AllowAnonymous();
@@ -115,7 +132,6 @@ public static class ExternalAuthEndpoints
             async (HttpContext http,
                    [FromServices] ExternalLoginProcessor processor,
                    [FromServices] Microsoft.AspNetCore.Identity.SignInManager<Modgud.Authentication.Domain.ApplicationUser> signInManager,
-                   [FromServices] Modgud.Authentication.Sessions.ISessionService sessionService,
                    CancellationToken ct) =>
             {
                 var auth = await http.AuthenticateAsync(Microsoft.AspNetCore.Identity.IdentityConstants.ExternalScheme);
@@ -150,8 +166,8 @@ public static class ExternalAuthEndpoints
                     return Results.Redirect($"/login?error={code}");
                 }
 
-                // Sign in with the app cookie. Persistent=true gives the OIDC
-                // path the same 30-day sliding lifetime as Passkey/Magic-Link.
+                // Sign in with the app cookie. Persistent=true applies the
+                // realm's browser-session policy, like Passkey/Magic-Link.
                 await http.SignInAsync(
                     Microsoft.AspNetCore.Identity.IdentityConstants.ApplicationScheme,
                     result.Principal!,
@@ -162,11 +178,6 @@ public static class ExternalAuthEndpoints
                 // Discard the short-lived External ticket now that we have
                 // the application cookie — defense against stale claim-replay.
                 await http.SignOutAsync(Microsoft.AspNetCore.Identity.IdentityConstants.ExternalScheme);
-
-                // Track per-user device session (best-effort).
-                var signedInIdClaim = result.Principal!.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-                if (Guid.TryParse(signedInIdClaim, out var signedInUserId))
-                    await Modgud.Authentication.Sessions.SessionTracker.RecordLoginAsync(sessionService, http, signedInUserId, ct);
 
                 var returnUrl = auth.Properties.Items.TryGetValue("returnUrl", out var ru) && !string.IsNullOrWhiteSpace(ru)
                     ? ru

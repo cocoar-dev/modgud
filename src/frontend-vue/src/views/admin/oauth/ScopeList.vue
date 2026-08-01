@@ -39,6 +39,7 @@ const rows = computed(() =>
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
+const selectedIsStandard = ref(false)
 
 const showEmpty = computed(() => store.loaded && store.scopes.length === 0)
 
@@ -62,7 +63,9 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthScopeDto>(), {
       event.api.deselectAll()
       event.node.setSelected(true)
     }
-    selectedIds.value = event.api.getSelectedRows().map((r: OAuthScopeDto) => r.Id)
+    const selected = event.api.getSelectedRows() as OAuthScopeDto[]
+    selectedIds.value = selected.map((r) => r.Id)
+    selectedIsStandard.value = selected.some((r) => r.IsStandard)
     cellMenu.open(event.event as MouseEvent)
   })
   .onViewportContextMenu(($event) => viewportMenu.open($event))
@@ -78,16 +81,22 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthScopeDto>(), {
     (col) => col.field('Description').header('Description', 'admin.oauthScopes.description').flex(2),
     (col) => col.field('Resources').header('Resources', 'admin.oauthScopes.resources').flex(1)
       .option('valueGetter', (p: any) => (p.data?.Resources ?? []).join(', ')),
-    (col) => col.field('Enabled').header('Enabled', 'common.enabled').width(100)
-      .option('valueGetter', (p: any) => p.data?.Enabled
-        ? t('common.yes', {}, 'Ja')
-        : t('common.no', {}, 'Nein')),
+    (col) => col.tag('Enabled', {
+      variantMap: { active: 'success', inactive: 'neutral' },
+      i18nPrefix: 'common.statusTag.',
+    })
+      .header('Enabled', 'common.enabled').width(110)
+      .option('valueGetter', (p: any) => p.data?.Enabled ? 'active' : 'inactive'),
   ])
 
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
-  if (!confirm(t('common.confirmDelete', {}, 'Really delete?'))) return
+  if (selectedIsStandard.value) {
+    alert(t('admin.oauthScopes.cannotDeleteStandard', {}, 'Standard OIDC scopes cannot be deleted.'))
+    return
+  }
+  if (!confirm(t('admin.oauthScopes.confirmDelete', {}, 'Really delete this scope?'))) return
   try { await store.remove(id) } catch (e: any) { alert(e?.message ?? String(e)) }
 }
 
@@ -128,14 +137,15 @@ onMounted(() => store.initialize())
     />
 
     <CoarContextMenu :menu="cellMenu">
-      <CoarMenuItem :label="t('common.open', {}, 'Open')" icon="pencil"
+      <CoarMenuItem :label="t('common.open', {}, 'Open')" :icon="selectedIsStandard ? 'eye' : 'pencil'"
         @clicked="selectedIds[0] && navigateToModal(selectedIds[0])" />
       <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus"
         @clicked="navigateToModal('create')" />
       <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy"
         @clicked="cloneSelected" />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteSelected" />
+      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2"
+        :disabled="selectedIsStandard" @clicked="deleteSelected" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">

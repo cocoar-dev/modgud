@@ -14,8 +14,8 @@ using Microsoft.Extensions.Logging;
 namespace Modgud.Authentication.Setup;
 
 /// <summary>
-/// Issues + consumes the one-shot bootstrap-invite for the first admin
-/// in a realm (C15). Two issuance call-sites:
+/// Issues + consumes a one-shot realm-admin invitation (C15). Issuance
+/// is available from the Control-Plane API and the recovery CLI:
 /// <list type="bullet">
 ///   <item><description>Recovery-CLI <c>bootstrap-admin</c> without
 ///   <c>--password</c></description></item>
@@ -39,9 +39,9 @@ public interface IPendingAdminInviteService
     /// to print/email. The plain-text token is only available here —
     /// after this method returns, only the SHA-256 hash is recoverable.
     ///
-    /// <para>If a non-used, non-expired invite already exists for the
-    /// same email in this realm, the old one is marked Used (revoked)
-    /// before a new one is issued. This is the "resend" path.</para>
+    /// <para>Every non-used invite in the realm is marked Used (revoked)
+    /// before a new one is issued, so only one admin invitation can be
+    /// active per realm.</para>
     /// </summary>
     Task<IssuedInvite> IssueAsync(
         string userName,
@@ -103,12 +103,10 @@ public sealed class PendingAdminInviteService(
         var normalizedUserName = userName.Trim().ToLowerInvariant();
         var normalizedEmail = email.Trim();
 
-        // Revoke any open invites for the same email in this realm.
-        // This makes IssueAsync the resend path too: a new call invalidates
-        // the previous link. (Tenant-scoped session so this only reaches
-        // invites in the current realm DB.)
+        // A realm may have exactly one open admin invite. Issuing a new one
+        // revokes every prior open invite, regardless of recipient.
         var openInvites = await session.Query<PendingAdminInvite>()
-            .Where(i => i.Email == normalizedEmail && i.UsedAt == null)
+            .Where(i => i.UsedAt == null)
             .ToListAsync(ct);
         foreach (var open in openInvites)
         {
@@ -128,11 +126,22 @@ public sealed class PendingAdminInviteService(
             Firstname = firstname,
             Lastname = lastname,
             TokenHash = tokenHash,
-            ExpiresAt = DateTimeOffset.UtcNow.AddDays(PendingAdminInvite.DefaultExpirationDays),
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(PendingAdminInvite.DefaultExpirationHours),
             CreatedAt = DateTimeOffset.UtcNow,
             IssuedBy = issuedBy,
         };
         session.Store(invite);
+        securityAudit.StoreRequired(session, new SecurityAuditRecord
+        {
+            EventType = AuditEvents.BootstrapInviteIssued,
+            CaptureRequestContext = false,
+            ActorKind = issuedBy is null
+                ? AuditActorKind.System
+                : AuditActorKind.ControlPlane,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "issue",
+            EffectiveAt = invite.ExpiresAt,
+        });
         await session.SaveChangesAsync(ct);
 
         var url = BuildMagicLinkUrl(realm, token);
@@ -157,7 +166,7 @@ public sealed class PendingAdminInviteService(
                     ["Email"] = normalizedEmail,
                     ["RealmDisplayName"] = realm.DisplayName,
                     ["ActionUrl"] = url,
-                    ["ExpirationDays"] = PendingAdminInvite.DefaultExpirationDays.ToString(),
+                    ["ExpirationHours"] = PendingAdminInvite.DefaultExpirationHours.ToString(),
                 },
                 ct);
         }
@@ -167,16 +176,6 @@ public sealed class PendingAdminInviteService(
                 "Bootstrap-invite issued but email delivery failed. Realm={Realm} Email={MaskedEmail}. The plaintext URL is still on the issuer's side.",
                 realm.Slug, LogPiiMasking.MaskEmail(normalizedEmail));
         }
-
-        securityAudit.Record(new SecurityAuditRecord
-        {
-            EventType = AuditEvents.BootstrapInviteIssued,
-            Level = "Info",
-            Actor = LogPiiMasking.MaskEmail(normalizedEmail),
-            Status = "issued",
-            Reason = $"expires {invite.ExpiresAt}, issued by {issuedBy ?? "(self/CLI)"}",
-            Message = "Bootstrap invite issued",
-        });
 
         return new IssuedInvite(invite.Id, token, url, invite.ExpiresAt, normalizedEmail, normalizedUserName);
     }

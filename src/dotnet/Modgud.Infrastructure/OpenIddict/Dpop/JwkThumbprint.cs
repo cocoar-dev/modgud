@@ -30,7 +30,7 @@ namespace Modgud.Infrastructure.OpenIddict.Dpop;
 /// <para>
 /// Kept dependency-free (BCL only: <see cref="System.Buffers.Text.Base64Url"/> +
 /// <see cref="System.Security.Cryptography"/>) so the exact same file can be
-/// duplicated verbatim into the dependency-light <c>Modgud.Client.AspNetCore</c>
+/// duplicated verbatim into the dependency-light <c>Modgud.AspNetCore.ResourceServer</c>
 /// NuGet for resource-server-side validation. Any change here MUST be mirrored
 /// there — see the "keep in sync" note on the client copy.
 /// </para>

@@ -1,69 +1,112 @@
+using Marten;
+
 namespace Modgud.Infrastructure.Audit;
 
 /// <summary>
-/// One streamless security/ops occurrence to record. The caller supplies the
-/// <see cref="AuditEvents"/> code plus whatever context it has; the sink derives
-/// the <c>Category</c> + control-plane visibility from the code (the taxonomy is
-/// the source of truth) and stamps the realm + timestamp at emit.
-///
-/// <para><b>PII is the caller's responsibility to minimise.</b> Pass an attempted
-/// username / masked email / IP as <see cref="Actor"/> only where it is the
-/// security signal; never put secrets, tokens, or invite codes in any field.</para>
+/// Structured input for a realm-owned security event. <see cref="RealmSlug"/> is
+/// routing metadata only and is never persisted in the realm document.
+/// <see cref="UnknownIdentifier"/> is accepted transiently so the writer can HMAC
+/// it with the owning realm's key; its raw value never reaches storage.
+/// <see cref="CaptureRequestContext"/> is disabled for non-identifying
+/// cross-realm counterpart events so actor PII stays in the actor's realm.
 /// </summary>
 public sealed record SecurityAuditRecord
 {
-    /// <summary>An <see cref="AuditEvents"/> streamless code (<c>security.* /
-    /// ops.* / audit.*</c>).</summary>
     public required string EventType { get; init; }
-
-    /// <summary>Explicit realm slug, overriding the ambient
-    /// <c>TenantContext.Current</c>. Set this from <b>realm-iterating background
-    /// jobs</b> (the signing-key janitor, DCR GC, lifecycle sweep, realm
-    /// provisioning) which run in the <c>system</c> session but emit per-realm
-    /// rows — exactly the case the legacy <c>RealmLogEnricher</c>'s explicit
-    /// <c>{Realm}</c> binding handled. Leave null on the request path (the ambient
-    /// realm is correct there).</summary>
-    public string? Realm { get; init; }
-
-    /// <summary>"Info" | "Warning" | "Error" — the legacy level mapping.</summary>
-    public string Level { get; init; } = "Info";
-
-    /// <summary>Who/what the event is about: an attempted username, a masked email,
-    /// an acting admin's username, or an IP for a purely anonymous actor. A display
-    /// string (NOT a user-id GUID) so the cross-realm read needs no per-tenant join.
-    /// Null when there is no meaningful actor.</summary>
-    public string? Actor { get; init; }
-
-    /// <summary>Source IP where the event carries one. Personal data under CJEU
-    /// <i>Breyer</i> — retained only for the short prune window.</summary>
-    public string? Ip { get; init; }
-
-    /// <summary>Coarse outcome, e.g. "rejected" | "succeeded" | "rotated". Optional.</summary>
-    public string? Status { get; init; }
-
-    /// <summary>Disambiguating detail (e.g. the rejection reason, the recovery-CLI
-    /// operation). Already PII-minimised by the caller.</summary>
-    public string? Reason { get; init; }
-
-    /// <summary>Human-readable rendering for the admin grid (carried forward from the
-    /// legacy free-text <c>Message</c> column so the existing view keeps working).</summary>
-    public string Message { get; init; } = "";
+    public string? RealmSlug { get; init; }
+    public bool CaptureRequestContext { get; init; } = true;
+    public AuditSeverity Severity { get; init; } = AuditSeverity.Info;
+    public AuditActorKind? ActorKind { get; init; }
+    public Guid? ActorSubjectId { get; init; }
+    public Guid? TargetSubjectId { get; init; }
+    public string? UnknownIdentifier { get; init; }
+    public string? IpAddress { get; init; }
+    public string? UserAgent { get; init; }
+    public string? OAuthClientId { get; init; }
+    public string? AuthorizationId { get; init; }
+    public Guid? ApplicationId { get; init; }
+    public Guid? SessionId { get; init; }
+    public Guid? LoginProviderId { get; init; }
+    public string? AuthenticationMethod { get; init; }
+    public string? CorrelationId { get; init; }
+    public string OutcomeCode { get; init; } = AuditOutcomes.Observed;
+    public string? ReasonCode { get; init; }
+    public string? OperationCode { get; init; }
+    public string? TargetRealmSlug { get; init; }
+    public string? KeyId { get; init; }
+    public int? Count { get; init; }
+    public int? RelatedCount { get; init; }
+    public int? RemindedCount { get; init; }
+    public int? SelfErasedCount { get; init; }
+    public int? AutoPurgedCount { get; init; }
+    public int? InviteCodesPrunedCount { get; init; }
+    public int? ReusedCount { get; init; }
+    public int? RetentionDays { get; init; }
+    public DateTimeOffset? EffectiveAt { get; init; }
+    public DateTimeOffset? FirstObservedAt { get; init; }
+    public DateTimeOffset? LastObservedAt { get; init; }
 }
 
 /// <summary>
-/// Best-effort sink for the streamless security/ops audit store (Track A, Phase 3).
-/// Replaces the <c>"Auth:"</c>-message-prefix Serilog sink: call sites emit a typed
-/// <see cref="SecurityAuditRecord"/> instead of stringly-typed log lines.
-///
-/// <para><b>Contract:</b> <see cref="Record"/> is non-blocking and NEVER throws — a
-/// failed enqueue drops the record rather than break the auth flow. The realm is
-/// captured from <c>TenantContext.Current</c> at call time (the background writer
-/// runs tenant-less). Durability is best-effort by design: this is a short-retention
-/// legitimate-interest store, not the per-subject GDPR audit (which is the
-/// event-sourced <c>AuthAuditView</c>).</para>
+/// Structured deployment-wide event. The absence of subject, identifier, IP,
+/// user-agent, client and session fields is an intentional compile-time privacy
+/// boundary.
+/// </summary>
+public sealed record PlatformAuditRecord
+{
+    public required string EventType { get; init; }
+    public AuditSeverity Severity { get; init; } = AuditSeverity.Info;
+    public string OutcomeCode { get; init; } = AuditOutcomes.Observed;
+    public string? ReasonCode { get; init; }
+    public string? OperationCode { get; init; }
+    public string? TargetRealmSlug { get; init; }
+    public string? Domain { get; init; }
+    public string? PreviousDomain { get; init; }
+    public string? CorrelationId { get; init; }
+    public int? Count { get; init; }
+    public int? RelatedCount { get; init; }
+    public int? RetentionDays { get; init; }
+    public DateTimeOffset? EffectiveAt { get; init; }
+}
+
+/// <summary>
+/// Classified streamless audit sink. Required changes and individual incidents
+/// wait for durable persistence. Abuse signals are bounded and aggregated.
+/// Reconstructable operations telemetry remains explicitly best-effort.
 /// </summary>
 public interface ISecurityAuditLog
 {
-    /// <summary>Enqueue a streamless security/ops record. Non-blocking, never throws.</summary>
-    void Record(SecurityAuditRecord record);
+    ValueTask RecordRequiredAsync(
+        SecurityAuditRecord record,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Adds a required realm event to an existing Marten unit of work. The
+    /// caller's next <see cref="IDocumentSession.SaveChangesAsync"/> commits the
+    /// business state and audit row atomically.
+    /// </summary>
+    void StoreRequired(
+        IDocumentSession session,
+        SecurityAuditRecord record);
+
+    ValueTask RecordIncidentAsync(
+        SecurityAuditRecord record,
+        CancellationToken ct = default);
+
+    void RecordAbuse(SecurityAuditRecord record);
+    void RecordTelemetry(SecurityAuditRecord record);
+
+    ValueTask RecordPlatformRequiredAsync(
+        PlatformAuditRecord record,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Adds a required deployment-wide event to the caller's Global Store unit
+    /// of work so business state and audit row commit atomically.
+    /// </summary>
+    void StorePlatformRequired(
+        IDocumentSession session,
+        PlatformAuditRecord record);
+
+    void RecordPlatformTelemetry(PlatformAuditRecord record);
 }

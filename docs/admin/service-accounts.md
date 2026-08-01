@@ -117,7 +117,7 @@ For an SA-issued token:
 - `sub` — `ServiceAccount.Id`
 - `name` — `ServiceAccount.AccountName`
 - `scope` — exactly what was requested (and allowed by the linked client)
-- `resource_access` — per-audience `roles` and `permissions` blocks built from the SA's group/role/permission chain, embedded directly in the access token. The `client_credentials` flow has no UserInfo round-trip in practice, so the resource server gets everything it needs from the JWT itself. The shape mirrors what human tokens carry via UserInfo per audience.
+- `resource_access` — per-audience `roles` and `permissions` blocks built from the SA's group/role/permission chain when the request targets registered OAuth APIs and includes the corresponding claim scopes. A JWT carries the claim directly; a reference token keeps it in the server-side payload for authorized introspection. The `client_credentials` flow has no UserInfo round-trip in practice.
 
 The downstream API validates the token, reads `sub`, and gates access exactly the same way it does for a Person — the permission evaluator doesn't care whether the principal is a Person or a ServiceAccount.
 

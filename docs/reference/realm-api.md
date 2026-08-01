@@ -16,7 +16,7 @@ Endpoints in `Modgud.Api/Features/Admin/RealmsEndpoints.cs`.
 | `POST` | `/api/admin/realms` | `realm:write` |
 | `PATCH` | `/api/admin/realms/{slug}` | `realm:write` |
 | `DELETE` | `/api/admin/realms/{slug}` | `realm:write` (soft-delete = deactivate; `?hard=true` drops the tenant database) |
-| `POST` | `/api/admin/realms/{slug}/resend-bootstrap-invite` | `realm:write` |
+| `POST` | `/api/admin/realms/{slug}/admin-invites` | `realm:write` |
 | `POST` | `/api/admin/realms/import` | `realm:write` (create a realm from a manifest) |
 | `POST` | `/api/admin/realms/{slug}/apply` | `realm:write` (merge a manifest; `?prune=true` = full sync) |
 | `GET` | `/api/admin/realms/{slug}/export` | `realm:read` (structure-only manifest) |
@@ -47,8 +47,10 @@ in the `modgud` App's catalog would be a different permission. The
 
 ## Create a realm
 
-`POST` requires an `InitialAdmin` payload. A realm without a recipient
-on file would have no admin path; the endpoint refuses to create one.
+`POST` creates the realm independently from its administrators.
+`InitialAdmin` remains an optional API convenience for callers that want
+to create the realm and issue an invitation in one request; the admin UI
+uses the separate invitation endpoint.
 The Control-Plane flag is a stored, transferable field; you cannot set it on
 create (new realms are never the control plane). See
 [Transfer the control plane](#transfer-the-control-plane).
@@ -62,13 +64,7 @@ Content-Type: application/json
   "Slug": "acme",
   "DisplayName": "Acme Corp",
   "Description": "Acme Corporation Identity",
-  "Domains": ["acme.example.com"],
-  "InitialAdmin": {
-    "UserName": "max",
-    "Email": "max@acme.com",
-    "Firstname": "Max",
-    "Lastname": "Mustermann"
-  }
+  "Domains": ["acme.example.com"]
 }
 ```
 
@@ -76,28 +72,25 @@ Content-Type: application/json
 
 1. **Slug validation**: regex `^[a-z][a-z0-9-]{1,61}[a-z0-9]$`, no
    reserved word (`system`, `health`, `swagger`, `api`, `connect`, …)
-2. **`InitialAdmin` validation**: `UserName` and `Email` are required;
-   `Firstname` and `Lastname` are optional.
-3. **Create PostgreSQL DB** (raw SQL):
+2. **Create PostgreSQL DB** (raw SQL):
    `CREATE DATABASE <master-db>_acme`
-4. **Register in Marten tenancy**:
+3. **Register in Marten tenancy**:
    `tenancy.AddDatabaseRecordAsync("acme", connStringForAcme)`
-5. **Apply Marten schema** (tables, indexes, functions)
-6. **`OAuthRealmSeeder.SeedAsync`** seeds the 6 default scopes
+4. **Apply Marten schema** (tables, indexes, functions)
+5. **`OAuthRealmSeeder.SeedAsync`** seeds the 6 default scopes
    (`openid`, `email`, `profile`, `roles`, `offline_access`,
    `permissions`) and the built-in Internal login provider.
-7. **`AppRealmSeeder.SeedAsync`**: the `modgud` App is registered in
+6. **`AppRealmSeeder.SeedAsync`**: the `modgud` App is registered in
    the new tenant DB. The `control-plane` App is **only** seeded for
    the system realm — tenant realms physically cannot grant
    `realm:read`/`realm:write` (the App that owns those catalog
    entries doesn't exist in their tenant DB).
-8. **Realm document** persisted in `IGlobalStore` (master DB, schema
+7. **Realm document** persisted in `IGlobalStore` (master DB, schema
    `global`).
-9. **`RealmCache.Invalidate()`** — the next request loads it fresh.
-10. **Bootstrap-invite issued** atomically into the new tenant DB.
-    The recipient's SHA-256-hashed token is stored as
-    `PendingAdminInvite`; the plaintext is embedded in the magic-link
-    URL emailed to `InitialAdmin.Email`.
+8. **`RealmCache.Invalidate()`** — the next request loads it fresh.
+9. When optional `InitialAdmin` is present, its invitation is issued
+    atomically and returned as `InitialAdminInvite`; otherwise that
+    response property is `null`/omitted.
 
 ### Response (201 Created)
 
@@ -111,42 +104,35 @@ Content-Type: application/json
     "Domains": ["acme.example.com"],
     "IsControlPlane": false,
     "IsActive": true,
-    "NeedsSetup": false,
     "CreatedAt": "2026-05-05T10:00:00Z"
-  },
-  "InitialAdminInvite": {
-    "UserName": "max",
-    "Email": "max@acme.com",
-    "ExpiresAt": "2026-05-12T10:00:00Z",
-    "MagicLinkUrl": "https://acme.example.com/bootstrap?token=…"
   }
 }
 ```
 
 `IsControlPlane` is read-only — it appears in responses but is never
-accepted in requests. `MagicLinkUrl` is returned **only here**, only
-this once — capture it if SMTP delivery isn't reliable in the issuing
-environment. To re-issue use the resend endpoint.
+accepted in requests.
 
-The recipient consumes the token at `POST /api/account/bootstrap-admin`
-on the new realm's host (see [Auth API](./auth-api)).
-
-## Resend a bootstrap-invite
+## Invite a realm admin
 
 ```http
-POST /api/admin/realms/acme/resend-bootstrap-invite HTTP/1.1
+POST /api/admin/realms/acme/admin-invites HTTP/1.1
 Host: auth.example.com
+Content-Type: application/json
+
+{
+  "UserName": "max",
+  "Email": "max@acme.com",
+  "Firstname": "Max",
+  "Lastname": "Mustermann"
+}
 ```
 
-Re-uses the recipient identity (UserName + Email + Firstname +
-Lastname) from the **most recent prior invite** — no body needed. The
-previous invite is revoked (`UsedAt` set), a fresh 7-day token is
-issued, the email is sent again, and the new `MagicLinkUrl` is
-returned in the response (same shape as `InitialAdminInvite` above).
-
-Returns `404 Realm.NoPriorInvite` if no invite was ever issued (e.g.
-a realm whose first admin was created via the recovery CLI in direct
-mode).
+Issues a new single-use, 24-hour invitation. Every prior open admin
+invitation in the realm is revoked, regardless of recipient, so at most
+one link is active. The response contains `InitialAdminInviteDto`,
+including the one-time `MagicLinkUrl` for SMTP-less development.
+The recipient consumes the token at `POST /api/account/bootstrap-admin`
+on the realm's host (see [Auth API](./auth-api)).
 
 ## Edit a realm
 

@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { NavigationGuard, RouteLocationGeneric } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
+import { MODAL_MD, MODAL_LG, MODAL_LIST_FORM } from './modal-sizes'
 
 /**
  * Per-route gate for routes that depend on the page-builder feature
@@ -54,54 +55,23 @@ const authPageSlotGate: NavigationGuard = (to) => {
  * decision is the route's, the inner component just fills.</para>
  */
 
-// ── Named modal sizes (UI/UX wave 3) ────────────────────────────────────────
-//
-// A single named-size contract replaces the per-modal one-offs. Two height
-// strategies, chosen by content:
-//
-//  • cap-to-content (height:auto + minHeight:auto + maxHeight) — the panel
-//    sizes to its content and scrolls past the cap. No dead lower half. Use
-//    for single-form modals. Proven by the old SERVICE_ACCOUNT size.
-//  • stable frame (height==minHeight==maxHeight in vh) — a definite ancestor
-//    height for tabbed / grid / editor modals whose flex:1 children
-//    (CoarDualListbox, AG-Grid, Monaco, read-only JSON panes) collapse to 0
-//    without one. Sized for the heaviest tab.
-//
-// Big (vw) sizes carry NO minWidth rem floor: a floor wins over the vw
-// computation once the viewport is narrower than the floor, overflowing the
-// viewport horizontally (tested 2026-05-15 — an 84rem floor cut off the close
-// button at 1280px). vw + a maxWidth cap scales to any viewport. SM/MD keep a
-// rem min==max because 32/42rem are always below a real admin viewport.
-
-// Cap-to-content single forms. (A 32rem MODAL_SM can be added when a modal of
-// ≤4 short fields needs it — none do today.)
-const MODAL_MD = {
-  width: '42rem', minWidth: '42rem', maxWidth: '42rem',
-  height: 'auto', minHeight: 'auto', maxHeight: '85vh',
-} as const
-
-// Stable tall frames for tabbed / grid / editor modals.
-const MODAL_LG = {
-  width: '78vw', maxWidth: '80rem',
-  height: '82vh', minHeight: '82vh', maxHeight: '82vh',
-} as const
-
-const MODAL_FULL = {
-  width: '92vw', maxWidth: '112rem',
-  height: '90vh', minHeight: '90vh', maxHeight: '90vh',
-} as const
-
 // ── Per-modal assignments ───────────────────────────────────────────────────
-// Single forms → cap-to-content (MD); drive the family toward ScopeDetails.
-const SCOPE_MODAL_SIZE = MODAL_MD
-const REALM_MODAL_SIZE = MODAL_MD
-// Role is tabbed (Allgemein / Berechtigungen). FIXED frame so the size never
-// changes on tab switch — sized to the taller Permissions tab (its catalog
-// checklist scrolls inside). The short Allgemein tab fills the same frame.
-const ROLE_MODAL_SIZE = {
+// The named sizes themselves live in ./modal-sizes so modals opened from
+// inside another modal (useModalOverlay) can reuse the same values.
+// Scope combines a compact form with two editable token-content lists. A
+// stable frame prevents resizing between its General, Token content and
+// Behavior tabs and gives both list grids a definite height.
+const SCOPE_MODAL_SIZE = MODAL_LIST_FORM
+// Realm is a tabbed form now: General is content-heavy while Domains is a
+// fill-height grid. Keep the existing compact width, but pin the height so a
+// tab switch never changes the dialog frame.
+const REALM_MODAL_SIZE = {
   width: '42rem', minWidth: '42rem', maxWidth: '42rem',
-  height: '33rem', minHeight: '33rem', maxHeight: '85vh',
+  height: '36rem', minHeight: '36rem', maxHeight: '85vh',
 } as const
+// Role combines a form with a dual-listbox. Reuse the shared stable frame so
+// the warning/form content stays visible and both permission columns have room.
+const ROLE_MODAL_SIZE = MODAL_LIST_FORM
 const SERVICE_ACCOUNT_MODAL_SIZE = MODAL_MD
 
 // API modal is now Create=wizard / Edit=tabs. A FIXED frame (like ROLE) so the
@@ -138,11 +108,22 @@ const GROUP_MODAL_SIZE = {
   height: '80vh', minHeight: '80vh', maxHeight: '80vh',
 } as const
 
-// Heaviest builders (wide AG-Grid catalog / 6-tab client builder) → full.
-const APP_MODAL_SIZE = MODAL_FULL
-const CLIENT_MODAL_SIZE = MODAL_FULL
+// The client editor keeps the complete draft accessible before one atomic
+// save, but no longer carries a permanently visible identity column. A
+// deliberate 72rem frame gives its dual-listboxes room without turning every
+// short form tab into a near-full-screen workspace.
+const APP_MODAL_SIZE = MODAL_LG
+const CLIENT_MODAL_SIZE = {
+  width: '72rem', maxWidth: '88vw',
+  height: '78vh', minHeight: '78vh', maxHeight: '78vh',
+} as const
 
 const routes = [
+    {
+      path: '/install',
+      component: () => import('@/views/auth/InstallView.vue'),
+      meta: { public: true },
+    },
     {
       path: '/login',
       component: () => import('@/views/auth/LoginView.vue'),
@@ -222,6 +203,22 @@ const routes = [
         {
           path: 'profile',
           component: () => import('@/views/profile/ProfileView.vue'),
+          meta: {
+            routedFragments: [
+              {
+                type: 'modal',
+                path: 'change-password',
+                component: () => import('@/views/profile/ChangePasswordModal.vue'),
+                overlayOptions: { size: MODAL_MD },
+              },
+              {
+                type: 'modal',
+                path: 'mfa-setup',
+                component: () => import('@/views/auth/MfaSetupModal.vue'),
+                overlayOptions: { size: MODAL_MD },
+              },
+            ],
+          },
         },
         {
           // Self-service grace interstitial: shown right after a self-pending
@@ -557,7 +554,7 @@ router.beforeEach(async (to) => {
       'oauth-api:read',
       'login-provider:read',
       'realm:read', 'realm-settings:read',
-      'auth-log:read', 'audit-log:read', 'session:read', 'observability:read', 'asset:read',
+      'auth-log:read', 'audit-log:read', 'platform-audit:read', 'session:read', 'observability:read', 'asset:read',
       'app:read',
     ]
     if (!ADMIN_PERMS.some((p) => authStore.hasPermission(p))) {

@@ -22,9 +22,13 @@ A point-by-point list of what Modgud delivers out of the box.
 ### External Identity Providers (SSO)
 - **Microsoft Entra ID** (Azure AD)
 - **Generic OIDC** (anything Discovery-compliant — Keycloak, Okta, Auth0, Cognito, etc.)
+- **SAML 2.0 Service Provider federation** (Microsoft Entra Enterprise Apps,
+  ADFS, Okta and standards-compatible SAML IdPs)
 - Per-IdP user-update scripts for claim → profile mapping
 - Just-in-time user provisioning (toggle-able)
 - Mixed-mode realms (Internal + External providers side by side)
+- SAML v1 is SP-initiated and SP-only; IdP-initiated SSO, SAML Single
+  Logout and Artifact Binding are not supported
 
 ### Magic-link sign-in
 - One-time token via email, no password required
@@ -36,15 +40,15 @@ A point-by-point list of what Modgud delivers out of the box.
 ### Multi-app permission model
 - **Apps** as first-class organisational containers within a realm
 - **Resources** declared per app
-- **Roles** bound to one app, holding permissions on its resources
+- **Application roles** bound to one app, holding permissions on its resources; pure `realm:admin` roles are the explicit realm-local exception
 - **Groups** with `BoundTo` activation switch — wildcard `*`, specific apps, or dormant
 - Permission strings shaped `<resource>:<action>` (two segments; app context implicit from the catalog container) with two bypass tiers (`realm:admin`, `<resource>:admin`)
 - Apps also carry their own soft configuration facet — origin, branding, and login posture — while still sharing the realm's user pool and a single `sub` per user
 
 ### Permission distribution to resource servers
-- **Own `resource_access` claim** (shaped like Keycloak's nested format for familiarity) emitted in `/connect/userinfo`, keyed by app slug, per-Audience
+- **Own `resource_access` claim** (shaped like Keycloak's nested format for familiarity), keyed by the exact registered OAuth API Audience when that audience and the `roles` and/or `permissions` scope are present
 - **Bypass-pre-expanded + per-RS narrowed** — consumers do straight exact-match without porting the evaluator
-- **`Modgud.Client.AspNetCore`** library ships an `IClaimsTransformation` that flattens `resource_access[<app>].roles` into `ClaimTypes.Role` so `[Authorize(Roles="...")]` works on resource servers without per-endpoint code
+- **`Modgud.AspNetCore.ResourceServer`** supports local JWT validation and reference-token introspection; each authentication scheme projects its own audience block into native role and permission claims
 
 ### ABAC
 
@@ -143,13 +147,13 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 ## Developer integration
 
 ### Resource server libraries
-- **`Modgud.Client.AspNetCore`** — drop-in `IClaimsTransformation` that flattens the per-Audience `resource_access` block onto the principal
-- Standard `JwtBearerHandler` for token validation; nothing custom required on the framework side
+- **`Modgud.AspNetCore.ResourceServer`** — explicit JWT and introspection handlers that validate tokens and project the configured audience block onto the principal
+- JWT validation is local; reference-token validation uses RFC 7662 introspection for immediate revocation
 
 ### UserInfo as the permission delivery channel
-- `/connect/userinfo` emits `resource_access` keyed by app slug, per Audience
+- JWT access tokens, UserInfo and authorized introspection responses can expose the same audience-keyed `resource_access` claim
 - Bypass-pre-expanded server-side + narrowed to each RS's declared `OAuthApi.PermissionIds` subset
-- Delivered via the standard OIDC UserInfo endpoint and standard JWT claims — any OIDC-aware consumer can parse it. `Modgud.Client.AspNetCore` adds the audience selection and claims projection for ASP.NET Core on top; it's not a custom protocol
+- Delivered via standard JWT claims, UserInfo, and token-introspection responses — any OIDC-aware consumer can parse it. `Modgud.AspNetCore.ResourceServer` adds audience selection and scheme-local claims projection for ASP.NET Core; it's not a custom protocol
 
 ## Standards
 

@@ -52,4 +52,24 @@ public sealed class OpenIddictGrantRevoker(
         }
         return revoked;
     }
+
+    public async Task<int> RevokeTokensByAuthorizationIdAsync(string authorizationId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(authorizationId)) return 0;
+
+        var revoked = 0;
+        await foreach (var token in tokenManager.FindByAuthorizationIdAsync(authorizationId, ct))
+        {
+            if (await tokenManager.TryRevokeAsync(token, ct))
+                revoked++;
+        }
+        return revoked;
+    }
+
+    public async Task<bool> RevokeAuthorizationByIdAsync(string authorizationId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(authorizationId)) return false;
+        var authorization = await authorizationManager.FindByIdAsync(authorizationId, ct);
+        return authorization is not null && await authorizationManager.TryRevokeAsync(authorization, ct);
+    }
 }

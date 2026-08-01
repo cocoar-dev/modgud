@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using BuildingBlocks.Helper;
 using Modgud.Application.Dcr;
 using Modgud.Application.DTOs.OAuth;
@@ -28,6 +29,9 @@ namespace Modgud.Application.Services;
 /// </summary>
 public class OAuthAdminService
 {
+    private static readonly Regex ServiceAccountNamePattern =
+        new("^[a-z0-9][a-z0-9._-]{1,63}$", RegexOptions.Compiled);
+
     private readonly IDocumentSession _session;
 
     public OAuthAdminService(IDocumentSession session)
@@ -80,6 +84,23 @@ public class OAuthAdminService
     /// </summary>
     public async Task<ErrorOr<OAuthClientCreatedDto>> CreateClientAsync(
         CreateOAuthClientDto dto, DcrMetadataInput? dcrMetadata, CancellationToken ct = default)
+        => await CreateClientAsync(
+            dto,
+            dcrMetadata,
+            enlistInTransaction: null,
+            ct);
+
+    /// <summary>
+    /// DCR-capable create path with an optional same-session enlistment hook.
+    /// The API layer uses this to add its infrastructure-owned required audit
+    /// document before this service commits, without introducing an
+    /// Application-to-Infrastructure dependency.
+    /// </summary>
+    public async Task<ErrorOr<OAuthClientCreatedDto>> CreateClientAsync(
+        CreateOAuthClientDto dto,
+        DcrMetadataInput? dcrMetadata,
+        Action<IDocumentSession>? enlistInTransaction,
+        CancellationToken ct = default)
     {
         if (dto.ClientType is not (OAuthClientTypes.Public or OAuthClientTypes.Confidential))
             return OAuthErrors.InvalidClientType(dto.ClientType);
@@ -112,16 +133,51 @@ public class OAuthAdminService
             }
         }
 
-        // ServiceAccount-link validation. The endpoint accepts a raw
-        // LinkedServiceAccountId on the create DTO so M2M setup is a single
-        // round-trip; downstream mutations of the link (rotate, unlink, etc.)
-        // go through the SA-scoped credentials endpoints instead. Parse, then
-        // confirm the SA exists, then enforce the SA-link invariant
-        // (R1/R2/R3) against the combination of grants + link the admin
-        // submitted. DCR clients never come with a link — the DCR pipeline
-        // doesn't surface it.
+        // ServiceAccount-link validation. Admin-created M2M clients may either
+        // reference an existing SA or create one inline. Inline creation is
+        // stored in this same Marten session and committed together with the
+        // OAuth event stream, so a later validation/persistence failure cannot
+        // leave an orphaned principal behind. DCR never supplies either shape.
         Guid? linkedServiceAccountId = null;
-        if (!string.IsNullOrWhiteSpace(dto.LinkedServiceAccountId))
+        ServiceAccountDto? createdServiceAccount = null;
+        if (!string.IsNullOrWhiteSpace(dto.LinkedServiceAccountId) && dto.NewServiceAccount is not null)
+            return OAuthErrors.ServiceAccountLinkModesAreMutuallyExclusive;
+
+        if (dto.NewServiceAccount is not null)
+        {
+            var accountName = (dto.NewServiceAccount.AccountName ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+            if (!ServiceAccountNamePattern.IsMatch(accountName))
+                return OAuthErrors.InvalidNewServiceAccountName;
+
+            var personTaken = await _session.Query<Person>()
+                .AnyAsync(p => !p.IsDeleted && p.AccountName == accountName, ct);
+            var serviceAccountTaken = await _session.Query<ServiceAccount>()
+                .AnyAsync(sa => !sa.IsDeleted && sa.AccountName == accountName, ct);
+            if (personTaken || serviceAccountTaken)
+                return OAuthErrors.ServiceAccountNameAlreadyExists(accountName);
+
+            var serviceAccount = new ServiceAccount
+            {
+                Id = Guid.NewGuid(),
+                AccountName = accountName,
+                Purpose = string.IsNullOrWhiteSpace(dto.NewServiceAccount.Purpose)
+                    ? null
+                    : dto.NewServiceAccount.Purpose.Trim(),
+                IsActive = dto.NewServiceAccount.IsActive,
+            };
+            _session.Store(serviceAccount);
+            linkedServiceAccountId = serviceAccount.Id;
+            createdServiceAccount = new ServiceAccountDto
+            {
+                Id = new ShortGuid(serviceAccount.Id).ToString(),
+                AccountName = serviceAccount.AccountName,
+                Purpose = serviceAccount.Purpose,
+                IsActive = serviceAccount.IsActive,
+            };
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.LinkedServiceAccountId))
         {
             if (!ShortGuid.TryParse(dto.LinkedServiceAccountId, out Guid parsedSa))
                 return OAuthErrors.InvalidServiceAccountId(dto.LinkedServiceAccountId);
@@ -165,6 +221,10 @@ public class OAuthAdminService
 
         // Settings (primitive lifetime + token-type values).
         var settings = BuildClientSettings(dto);
+        if (ValidateClientSessionLifetimes(
+                dto.ClientSessionIdleLifetime,
+                dto.ClientSessionAbsoluteLifetime) is { } clientSessionError)
+            return clientSessionError;
         if (dcrMetadata is null)
         {
             // Issue #115 — standard (non-DCR) clients: wire the admin's
@@ -253,6 +313,7 @@ public class OAuthAdminService
             _session.Store(sec);
         }
 
+        enlistInTransaction?.Invoke(_session);
         await _session.SaveChangesAsync(ct);
 
         // Reload projected state so the response reflects the persisted view.
@@ -261,6 +322,7 @@ public class OAuthAdminService
         {
             Client = MapClient(state!),
             ClientSecret = clientSecret,
+            CreatedServiceAccount = createdServiceAccount,
         };
     }
 
@@ -341,6 +403,15 @@ public class OAuthAdminService
         // Settings — partial-PATCH merge; only emit the event when the merge
         // actually produced a different dictionary.
         var newSettings = MergeClientSettings(aggregate.Settings, dto);
+        if ((dto.ClearClientSessionIdleLifetime && dto.ClientSessionIdleLifetime.HasValue) ||
+            (dto.ClearClientSessionAbsoluteLifetime && dto.ClientSessionAbsoluteLifetime.HasValue))
+            return Error.Validation(
+                "OAuthClient.ConflictingClientSessionLifetimeUpdate",
+                "A client-session lifetime cannot be set and cleared in the same update.");
+        if (ValidateClientSessionLifetimes(
+                dto.ClientSessionIdleLifetime,
+                dto.ClientSessionAbsoluteLifetime) is { } clientSessionError)
+            return clientSessionError;
 
         // Issue #115 — same native tkn_lft:* wiring as CreateClientAsync, PATCH
         // semantics: a field omitted from the DTO leaves any existing
@@ -527,7 +598,7 @@ public class OAuthAdminService
             Scopes = dto.Scopes,
             RequireClientSecret = true,
             RequireConsent = false,
-            Enabled = true,
+            Enabled = dto.Enabled,
             // Audit #6/#7/#8 — default Reference (opaque + instantly revocable) so
             // SA deactivate/delete/rotate cuts off live M2M access immediately. JWT
             // is opt-in for resource servers that must self-validate (its already-

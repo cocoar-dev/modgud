@@ -109,10 +109,10 @@ public class DynamicOidcSchemeManagerTests : IntegrationTestBase
     [InlineData(LoginProviderType.Saml)]
     [InlineData(LoginProviderType.Ldap)]
     [InlineData(LoginProviderType.Kerberos)]
-    public async Task RegisterAsync_NotYetSupportedTypes_AreSkipped(LoginProviderType type)
+    public async Task RegisterAsync_NonOidcTypes_AreSkipped(LoginProviderType type)
     {
-        // Saml/Ldap/Kerberos types must skip silently — same posture as
-        // Internal until their flavor surfaces land.
+        // SAML has its own DynamicSamlSchemeManager; LDAP/Kerberos remain
+        // unsupported. None of them may enter the OIDC scheme machinery.
         var config = new LoginProvider
         {
             Id = Guid.NewGuid(),

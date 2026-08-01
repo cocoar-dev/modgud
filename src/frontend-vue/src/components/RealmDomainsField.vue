@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { CoarTextInput, CoarRadioGroup, CoarRadioButton, CoarButton, CoarTag } from '@cocoar/vue-ui'
+import { nextTick, ref, watch } from 'vue'
+import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
+import { CoarButton } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 
 /**
@@ -12,10 +13,9 @@ import { useI18n } from '@cocoar/vue-localization'
  * so a passkey only works on the primary domain. This control lets the admin
  * edit the domain set and pick which one is primary in one place.</para>
  *
- * <para>Deliberately plain flex markup, not the shared AG-Grid
- * <c>EditableStringList</c>: (a) realm-specific primary semantics don't belong
- * in that generic component, and (b) it sidesteps the AG-Grid auto-height
- * pitfalls. Primary is tracked by row <i>id</i>, not by value, so renaming the
+ * <para>The realm-specific primary semantics stay in this component, while
+ * its presentation follows the compact editable grids used throughout the
+ * admin UI. Primary is tracked by row <i>id</i>, not by value, so renaming the
  * primary domain in place keeps it primary.</para>
  */
 interface Row {
@@ -80,6 +80,7 @@ function emitAll() {
   }
   emit('update:domains', emittedDomains())
   emit('update:primary', emittedPrimary())
+  nextTick(() => builder.api?.refreshCells({ force: true }))
 }
 
 // External sync — only rebuild when the incoming set differs from what we'd
@@ -101,23 +102,16 @@ watch(
   },
 )
 
-// CoarRadioGroup binds to the primary row id.
-const selectedPrimary = computed<string>({
-  get: () => primaryId.value,
-  set: (id) => {
-    primaryId.value = id
-    emitAll()
-  },
-})
-
-function onRowInput(row: Row, value: string) {
-  row.value = value
-  emitAll()
-}
-
 function addRow() {
-  rows.value = [...rows.value, { id: newId(), value: '' }]
-  // No emit yet — an empty row doesn't count until the user types into it.
+  const row = { id: newId(), value: '' }
+  rows.value = [...rows.value, row]
+  // An empty row doesn't count until the user types into it. Start editing it
+  // immediately so Add behaves like inserting a row in the other form grids.
+  nextTick(() => {
+    const rowIndex = rows.value.findIndex((candidate) => candidate.id === row.id)
+    builder.api?.ensureIndexVisible(rowIndex)
+    builder.api?.startEditingCell({ rowIndex, colKey: 'value' })
+  })
 }
 
 function removeRow(id: string) {
@@ -125,65 +119,94 @@ function removeRow(id: string) {
   emitAll()
 }
 
-// Empty-state guidance: keyed off whether any *filled* domain exists, not the
-// raw row count — so blanking the sole row (clear button) still shows the hint.
-const isEmpty = computed(() => emittedDomains().length === 0)
+function setPrimary(row: Row) {
+  if (props.disabled || !row.value.trim()) return
+  primaryId.value = row.id
+  emitAll()
+}
+
+const builder = CoarGridBuilder.create<Row>()
+  .rowDataRef(rows)
+  .option('getRowId', (p: any) => p.data.id)
+  .option('headerHeight', 0)
+  .option('loading', false)
+  .option('suppressNoRowsOverlay', true)
+  .option('singleClickEdit', true)
+  .stopEditingWhenCellsLoseFocus(true)
+  .columns([
+    (col) =>
+      col
+        .wrap(
+          col
+            .text('value', (c) => c.placeholder(props.placeholder))
+            .editable(!props.disabled)
+            .flex(1),
+        )
+        .right([
+          {
+            icon: (row) => row.id === primaryId.value ? 'circle-check' : 'circle',
+            size: 's',
+            color: (row) => row.id === primaryId.value
+              ? 'var(--coar-text-brand-primary, #009fe3)'
+              : 'var(--coar-text-neutral-tertiary, #9ca3af)',
+            tooltip: (row) => row.id === primaryId.value
+              ? t('admin.realms.primaryBadge', {}, 'Primary')
+              : t('admin.realms.makePrimary', {}, 'Make primary domain'),
+            show: (row) => !!row.value.trim(),
+            onClick: (row) => setPrimary(row),
+          },
+          {
+            icon: 'trash-2',
+            size: 's',
+            color: 'var(--coar-text-neutral-secondary, #9ca3af)',
+            tooltip: t('common.delete', {}, 'Delete'),
+            show: () => !props.disabled,
+            onClick: (row) => removeRow(row.id),
+          },
+        ]),
+  ])
+  .onCellValueChanged(() => emitAll())
 </script>
 
 <template>
-  <div class="flex flex-col gap-2">
-    <CoarRadioGroup
-      name="realm-primary-domain"
-      :model-value="selectedPrimary"
-      :disabled="disabled"
-      orientation="vertical"
-      @update:model-value="(v: unknown) => (selectedPrimary = v as string)"
-    >
-      <div v-for="row in rows" :key="row.id" class="flex items-center gap-2">
-        <CoarRadioButton
-          :value="row.id"
-          :disabled="disabled || !row.value.trim()"
-        >
-          <!-- Per-option accessible name: the radio's :value is an opaque row id,
-               so screen readers need the domain text spelled out (visually hidden). -->
-          <span class="sr-only">
-            {{ row.value.trim() || t('admin.realms.newDomainRadioLabel', {}, 'New domain') }}
-          </span>
-        </CoarRadioButton>
-        <CoarTextInput
-          class="flex-1"
-          :model-value="row.value"
-          :placeholder="placeholder"
-          :disabled="disabled"
-          clearable
-          @update:model-value="(v: string) => onRowInput(row, v)"
-        />
-        <CoarTag
-          v-if="row.id === primaryId && row.value.trim()"
-          variant="accent"
-          size="s"
-        >
-          {{ t('admin.realms.primaryBadge', {}, 'Primary') }}
-        </CoarTag>
-        <CoarButton
-          v-if="!disabled"
-          variant="ghost"
-          size="s"
-          icon-start="trash-2"
-          :title="t('common.delete', {}, 'Delete')"
-          @click="removeRow(row.id)"
-        />
-      </div>
-    </CoarRadioGroup>
+  <div class="realm-domains-field">
+    <CoarDataGrid :builder="builder" bordered>
+      <template #toolbar-left>
+        <span class="realm-domains-title">{{ t('admin.realms.domains', {}, 'Domains') }}</span>
+      </template>
+      <template #toolbar-right>
+        <CoarButton v-if="!disabled" size="s" icon-start="plus" variant="ghost" @click="addRow">
+          {{ t('admin.realms.addDomain', {}, 'Add domain') }}
+        </CoarButton>
+      </template>
+    </CoarDataGrid>
 
-    <p v-if="isEmpty" class="text-xs text-gray-500">
-      {{ t('admin.realms.domainsEmpty', {}, 'No domains yet — add at least one. The first you add becomes the primary.') }}
-    </p>
-
-    <div v-if="!disabled">
-      <CoarButton size="s" icon-start="plus" variant="ghost" @click="addRow">
-        {{ t('admin.realms.addDomain', {}, 'Add domain') }}
-      </CoarButton>
-    </div>
   </div>
 </template>
+
+<style scoped>
+.realm-domains-field {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 16rem;
+}
+
+.realm-domains-field :deep(.ag-theme-cocoar--bordered) {
+  flex: 1;
+  min-height: 0;
+}
+
+.realm-domains-field :deep(.ag-theme-cocoar--bordered > .coar-grid-toolbar) {
+  min-height: 2.75rem;
+  margin: 0;
+  padding: 0.35rem 0.6rem;
+}
+
+.realm-domains-title {
+  color: var(--coar-text-neutral-primary, #1f2937);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+</style>

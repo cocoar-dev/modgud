@@ -32,7 +32,9 @@ Modgud is not just a login frontend — it's a full **OAuth 2.0 / OpenID Connect
 
 ### Federation & Realms
 
-- [Login Providers](./login-providers) — built-in Internal plus external OIDC (Google, Microsoft, Entra, any OIDC); step-by-step setup walkthroughs included
+- [Login Providers](./login-providers) — built-in Internal plus Microsoft
+  Entra ID and standards-compatible OIDC or SAML providers; setup
+  walkthroughs included
 - [Realms](./realms) — multi-tenant setup; each tenant gets its own database
 - [Declarative Realm Provisioning](./realm-provisioning) — create/update/tear down a whole realm from one JSON manifest (realm-as-code, per-test realms, agent automation); serves a fetchable schema
 - [Realm Settings](./realm-settings) — realm-admin-owned config (self-registration, DCR policy, branding)
@@ -48,7 +50,7 @@ Per-realm look and feel. SPA-shell branding plus a beta page-builder editor.
 ### Operations
 
 - [Observability](../operate/observability) — OpenTelemetry metrics + tracing + in-app live activity feed
-- [Logs](./auth-log) — a combined **Audit** tab (GDPR audit trail of user/config changes) and **Security** tab (login events, lockouts, rejected logins), gated separately
+- [Logs](./auth-log) — realm-owned **Audit** and **Security** tabs; the Control Plane additionally gets a separate PII-free **Platform** tab
 - [Change Requests](./change-requests) — approve profile changes (when the approval flow is enabled)
 - [Settings](../platform/settings) — 2FA enforcement, grace period, SMTP, …
 - [Feature Flags](../operate/feature-flags) — operator-level toggles for beta / WIP surfaces

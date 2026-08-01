@@ -1,5 +1,6 @@
 using Modgud.Authentication.Domain;
 using ErrorOr;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Authentication.Sessions;
 
@@ -14,6 +15,12 @@ public interface ISessionService
     /// </summary>
     Task<ErrorOr<UserSession>> CreateSessionAsync(Guid userId, string? ipAddress, string? userAgent, CancellationToken ct = default);
 
+    Task<BrowserSessionPolicy> GetPolicyAsync(CancellationToken ct = default);
+
+    /// <summary>Loads and validates the authoritative session. Successful
+    /// validation also performs a throttled sliding-idle touch.</summary>
+    Task<UserSession?> ValidateSessionAsync(Guid userId, Guid sessionId, bool touch, CancellationToken ct = default);
+
     /// <summary>Revokes a single session owned by the caller.</summary>
     Task<ErrorOr<bool>> RevokeSessionAsync(Guid userId, Guid sessionId, CancellationToken ct = default);
 
@@ -25,4 +32,6 @@ public interface ISessionService
 
     /// <summary>Updates the last-active timestamp.</summary>
     Task TouchSessionAsync(Guid sessionId, CancellationToken ct = default);
+
+    Task<int> PruneExpiredAsync(CancellationToken ct = default);
 }

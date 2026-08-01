@@ -18,12 +18,12 @@ Implemented in the **Authentication slice**
 
 | Method | When | Cookie lifetime |
 |---|---|---|
-| **Password** | Default, allowed at AuthLevel 0/1 | Session or 30 days (RememberMe) |
+| **Password** | Default, allowed at AuthLevel 0/1 | Session or realm browser-session policy (RememberMe) |
 | **TOTP** | Second factor after password | Inherits from the password step |
 | **Email OTP** | Second factor — or as an alternative login | Inherits from the password step |
-| **Passkey (FIDO2)** | Second factor — or as a sole login (passwordless) | Always 30 days (persistent) |
-| **Magic Link** | Email with single-use token; can also be sent by an admin | Always 30 days |
-| **OIDC External** | Federated login via Entra ID, Google, ... | 30 days |
+| **Passkey (FIDO2)** | Second factor — or as a sole login (passwordless) | Realm browser-session policy |
+| **Magic Link** | Email with single-use token; can also be sent by an admin | Realm browser-session policy |
+| **OIDC/SAML External** | Federated login via an upstream IdP | Realm browser-session policy |
 
 See [Login flows](/integrate/login-flows) for details.
 
@@ -44,7 +44,7 @@ authenticated requests from users without 2FA (with a grace period).
 
 | Cookie | Purpose | SameSite | Lifetime |
 |---|---|---|---|
-| `Modgud.Auth` | Main session (HttpOnly) | Lax | Session or 30 days |
+| `Modgud.Auth` | Main session (HttpOnly) | Lax | Session or realm browser-session policy |
 | `Modgud.2FA` | UserId between password step and 2FA step | Strict | 5 min |
 | `Modgud.External` | OIDC callback holder | Lax | 10 min |
 | `Modgud.Session` | Only for passkey attestation options | Strict | 5 min idle |
@@ -125,36 +125,34 @@ Plus **recovery codes** as a last-resort backup.
 A passkey is registered against a WebAuthn relying-party ID, and Modgud uses the realm's **PrimaryDomain** as that ID. A passkey therefore only works when the user reaches the realm on its primary domain — not via a secondary domain in the realm's `Domains` list — and changing the realm's PrimaryDomain invalidates every existing passkey (affected users must re-register). See [Realms — primary domain](/operate/realms#primary-domain).
 :::
 
-## External login (OIDC IdPs and SAML)
+## External login (OIDC and SAML)
 
-Users can sign in via external OIDC providers (Entra ID, Google,
-Auth0, ...). Configurable per realm.
+Users can sign in through Microsoft Entra ID and standards-compatible OIDC
+or SAML providers. Providers are configured independently per realm.
 
-1. Admin creates a `LoginProvider` of `Type = Oidc`: authority, client ID,
-   client secret, `UserUpdateScript`
-2. Login page automatically shows buttons for enabled OIDC providers
-3. Click → OIDC Authorization Code + PKCE → IdP login
-4. On callback: `ExternalLoginProcessor` runs
+1. Admin creates an OIDC or SAML `LoginProvider`.
+2. The login page shows a button for every enabled external provider.
+3. OIDC uses Authorization Code + PKCE. SAML uses an SP-initiated
+   AuthnRequest and a correlated ACS response.
+4. After protocol validation, `ExternalLoginProcessor` runs:
    - Looks up `ExternalIdentityLink` (issuer + subject) → existing user
      or JIT-create
    - `UserUpdateScript` (Jint) maps claims to user fields
-5. If the user has 2FA enabled, the normal 2FA flow runs afterwards
-6. Login cookie is set (always 30 days)
+5. If the user has 2FA enabled, the normal 2FA flow runs afterwards.
+6. The realm's browser-session policy determines the login-cookie lifetime.
 
-See [Login providers (OIDC)](/integrate/login-providers)
-for details.
-
-Modgud also supports **SAML 2.0** as an external login provider type
-(`LoginProvider` of `Type = Saml`), for IdPs that only speak SAML. It
-follows the same JIT-create-on-first-login shape as OIDC. See
-[SAML federation](/admin/saml-federation) for setup.
+Modgud consumes SAML only as a Service Provider and accepts only
+SP-initiated, correlated responses. IdP-initiated SSO, SAML Single Logout
+and Artifact Binding are outside the v1 surface. See
+[Login providers](/integrate/login-providers) and
+[SAML federation](/admin/saml-federation).
 
 ## Account lifecycle
 
 | How does a user enter the system? | Mechanism |
 |---|---|
 | Self-registration | Registration form (when enabled for the realm) |
-| External login | OIDC IdP → JIT-create on first login |
+| External login | OIDC/SAML IdP → JIT-create on first login |
 | Admin-created | Admin creates the user via the UI |
 | Setup | First-time setup — the first user becomes system admin |
 

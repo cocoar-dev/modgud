@@ -3,7 +3,7 @@
   <PropertyGroup>
     <RootNamespace>Modgud.Permissions</RootNamespace>
     <AssemblyName>Modgud.Permissions.Abstractions</AssemblyName>
-    <Description>Pure permission-evaluation primitives shared by the IdP server-side and external resource-server libs. No persistence / web / DI deps — reuse without transitive bloat.</Description>
+    <Description>Pure permission-evaluation primitives for the IdP and consumers that evaluate raw grants. No persistence / web / DI deps — reuse without transitive bloat.</Description>
   </PropertyGroup>
 
   <ItemGroup>

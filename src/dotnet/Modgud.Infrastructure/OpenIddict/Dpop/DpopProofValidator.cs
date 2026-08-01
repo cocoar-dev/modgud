@@ -22,7 +22,7 @@ namespace Modgud.Infrastructure.OpenIddict.Dpop;
 /// <c>jti</c> replay detection is left to the caller (it needs a per-realm store
 /// and a TTL policy that live outside this crypto core). Keeping it side-effect
 /// free is what lets the identical file be duplicated into the dependency-light
-/// <c>Modgud.Client.AspNetCore</c> NuGet for the resource-server side.
+/// <c>Modgud.AspNetCore.ResourceServer</c> NuGet for the resource-server side.
 /// </para>
 ///
 /// <para>

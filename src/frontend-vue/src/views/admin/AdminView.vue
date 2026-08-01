@@ -24,8 +24,9 @@ interface NavItemDef {
   to: string
   /**
    * Resource permissions that grant visibility. Matches if the user holds
-   * any of these. `app:admin` is a global bypass and applied implicitly by
-   * `authStore.hasPermission`.
+   * any of these. `realm:admin` is the current-realm bypass and
+   * `<resource>:admin` is the resource-wide bypass; both are applied
+   * implicitly by `authStore.hasPermission`.
    */
   requirePermissions: string[]
   /**
@@ -87,7 +88,7 @@ const sections = computed<SectionDef[]>(() => [
       { label: 'admin.apps.title', labelEn: 'Applications', icon: 'layout-grid', to: '/admin/apps', requirePermissions: ['app:read'] },
       { label: 'admin.realms.title', labelEn: 'Realms', icon: 'globe', to: '/admin/realms', requirePermissions: ['realm:read'] },
       { label: 'admin.realmSettings.title', labelEn: 'Realm Settings', icon: 'sliders-horizontal', to: '/admin/realm-settings', requirePermissions: ['realm-settings:read'] },
-      { label: 'admin.logs.title', labelEn: 'Logs', icon: 'scroll-text', to: '/admin/logs', requirePermissions: ['auth-log:read', 'audit-log:read'] },
+      { label: 'admin.logs.title', labelEn: 'Logs', icon: 'scroll-text', to: '/admin/logs', requirePermissions: ['auth-log:read', 'audit-log:read', 'platform-audit:read'] },
       { label: 'admin.scheduledJobs.title', labelEn: 'Scheduled Jobs', icon: 'clock', to: '/admin/scheduled-jobs', requirePermissions: ['scheduled-job:read'] },
       { label: 'admin.changeRequests.title', labelEn: 'Change Requests', icon: 'inbox', to: '/admin/change-requests', requirePermissions: ['user:write'] },
     ],

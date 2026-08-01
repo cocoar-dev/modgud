@@ -65,11 +65,13 @@ dotnet test
 | OAuthAdminMapping (extracted) | `Application/OAuthAdminMappingTests.cs` | 70+ | `BuildClientPermissions`, grant-type round-trip, `BuildClient*` defaults + property survival, `MapClient`/`MapScope`, `MapApiState` (id-stringification, defensive list copies), `MergeClientSettings`/`MergeClientProperties` partial-PATCH semantics (omit-preserve / value-overwrite / list-replace / no-mutation), BCrypt hash+verify round-trip and malformed-hash safety |
 | OAuth `*StateProjection` (3) + LoginProvider | `Infrastructure/Persistence/Marten/Projections/OAuth/*Tests.cs` + `LoginProviders/...Tests.cs` | 54 | Create + every Apply + replay (incl. AccessTokenType case-sensitive parse bug pinning, AppIds n:m projection, AppId set/null/created-default for Scope + Api) |
 
-### ClaimsTransformation library
+### Resource-server library
 
 | Area | File(s) | Tests | What's pinned |
 |---|---|---:|---|
-| `ModgudClaimsTransformation` | `Client/AspNetCore/ModgudClaimsTransformationTests.cs` | 12 | per-app role flattening from `resource_access[<app>].roles` to `ClaimTypes.Role`, cross-app isolation, malformed JSON tolerance, idempotence, anonymous short-circuit, `AppSlug` configuration validation |
+| Scheme-local claims projection | `ResourceServer/ModgudClaimsProjectorTests.cs`, `ResourceServerRegistrationTests.cs` | — | audience isolation, role/permission projection, malformed JSON tolerance, idempotence, simultaneous JWT + introspection registration, startup validation, and absence of global claims transformation |
+| Permission metadata | `ResourceServer/ModgudPermissionExtensionsTests.cs` | — | exact permission policy on endpoints and route groups |
+| Reference-token introspection | `ResourceServer/IntrospectionHandlerTests.cs` | — | active/audience checks, claim construction, malformed response rejection, and scheme-local projection |
 
 ### ExternalAuth (OIDC IdP federation)
 
@@ -83,10 +85,10 @@ dotnet test
 
 | Area | File(s) | Tests | What's pinned |
 |---|---|---:|---|
-| Domain types | `Authentication/Domain/{EmailOtpChallenge, MagicLinkChallenge, UserSecurityData, UserSession, ApplicationUser}Tests.cs` | 51 | OTP/Magic-Link expiry + match semantics, security-stamp rotation asymmetry, session expiry, ApplicationUser default state |
+| Domain types | `Authentication/Domain/{EmailOtpChallenge, MagicLinkChallenge, UserSecurityData, UserSession, ClientSession, ApplicationUser}Tests.cs` | — | OTP/Magic-Link expiry + match semantics, security-stamp rotation asymmetry, browser/native session expiry, ApplicationUser default state |
 | Extensions | `Authentication/ExtensionMethods/{HttpContextExtensions, HttpRequestExtensions, ErrorOrExtensions}Tests.cs` | 25 | tenant accessor on HttpContext, source-IP resolution incl. the X-Forwarded-For pinning bug, ErrorOr → ProblemDetails mapping |
 | TwoFactorEnforcementMiddleware | `Authentication/Account/TwoFactorEnforcementMiddlewareTests.cs` | 23 | whitelist paths, federated-MFA AMR detection, early-exit branches; DB branches unit-untested by design |
-| Sessions / SessionTracker | `Authentication/Sessions/SessionTrackerTests.cs` | 5 | best-effort tracking, swallows failures from `ISessionService` |
+| Session policy + mapping | `Applications/EffectiveSettingsTests.cs`, `Application/OAuthAdminMappingTests.cs` | — | realm/application/client lifetime precedence, bounds, and API mapping |
 | Device info parsing | `Sessions/DeviceInfoServiceTests.cs` | 8 | Wangkanai.Detection mapping pins driven by a fake `IDetectionService`: browser/platform/device → DeviceInfo, "Others" collapse to "Unknown", version-zero collapse to null, defensive throw-swallow. Mac-Safari-as-Mobile pin gone (fix landed with the swap) |
 | EmailOtpConfiguration | `Authentication/Identity/EmailOtpConfigurationTests.cs` | 2 | default values |
 | TwoFactorHelper (extracted) | `Authentication/Account/Services/TwoFactorHelperTests.cs` | 10 | `BuildMethodsList` order/conditions (TOTP/email-with-address-required/passkey count), `TryExpireSetupGrace` exempt-bypass + DueAt overwrite |
@@ -124,7 +126,7 @@ dotnet test
 | `Security/` | 20 | AuthEnforcement (grace period, whitelist), MFA (TOTP), EmailOtp, MagicLink, ProfileSelfService (UserChangeRequest), OWASP Top 10 (see below), security-stamp/session revocation on password/2FA/credential changes, control-plane transfer + separation, passkey hardening, service-account revocation |
 | `Authorization/` | 37 | End-to-end permission gating (`PermissionResolutionTests`), plus the newer feature surfaces: invite-code self-registration, per-realm auth rate limits, CIMD, native cookieless grants (OTP/magic-link/passkey, incl. per-client WebAuthn RP-ID), the device authorization flow, dynamic client registration, OIDC federation (issuer anchoring, first-signal consistency), application settings + the settings cascade, signing-key rotation, roles/groups endpoint robustness |
 | `ColdStart/` | 15 | Full-process boot + declarative realm provisioning: cold-start bootstrap, login/magic-link/passkey contracts, realm create/hard-delete, manifest export/apply/parity, the provisioning test kit, recovery CLI commands |
-| `ExternalAuth/` | 13 | OIDC IdpConfig CRUD, ExternalLoginProcessor (JIT account creation + linking), DynamicOidcSchemeManager, FlavorRegistry, ExternalIdentityLink aggregate + lifecycle, UserUpdateScriptRunner (JsEval), federation |
+| `ExternalAuth/` | 14 | OIDC/SAML LoginProvider CRUD and logout boundaries, ExternalLoginProcessor (JIT account creation + linking), dynamic provider managers, flavor registries, ExternalIdentityLink lifecycle, UserUpdateScriptRunner (JsEval), federation |
 | `Admin/` | 1 | Projection-rebuild endpoint |
 | `Audit/` | 5 | Audit endpoint, GDPR erasure survival in the audit trail, auth-audit-view projection, login-failure-streak emission, security audit store |
 | `Observability/` | 1 | OpenTelemetry log redaction |

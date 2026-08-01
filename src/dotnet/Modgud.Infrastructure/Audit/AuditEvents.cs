@@ -10,10 +10,9 @@ namespace Modgud.Infrastructure.Audit;
 /// federation.* / admin.*</c> codes name occurrences on the <i>user- and config-
 /// aggregate streams</i> (projected into the per-realm GDPR-audit view). The
 /// <c>security.* / ops.* / audit.*</c> codes name <i>streamless</i> occurrences
-/// (no aggregate to attach to) routed to the cross-realm
-/// <c>SecurityAuditEntry</c> store under a legitimate-interest basis with short
-/// retention. The boundary is about whether a stream exists, not whether the data
-/// is personal — see the maintainers' <c>logging-audit-redesign</c> design note.</para>
+/// routed either to the owning realm's <c>RealmSecurityAuditEvent</c> store or,
+/// for genuinely deployment-wide work, to the PII-free Global Store
+/// <c>PlatformAuditEvent</c>.</para>
 ///
 /// <para><b>PII discipline:</b> these name <i>occurrences</i>, not payloads. The
 /// stream-backed rows store only metadata (who/when/what-kind/realm) and inherit
@@ -69,7 +68,7 @@ public static class AuditEvents
     public const string LoginProviderDeleted = "admin.login_provider_deleted";
 
     // ─────────────────────────────────────────────────────────────────────
-    // Streamless (Track A — SecurityAuditEntry, legitimate interest + retention)
+    // Streamless realm/platform security events
     // ─────────────────────────────────────────────────────────────────────
 
     // ── Security: streamless threats (tenant-visible) ────────────────
@@ -81,12 +80,23 @@ public static class AuditEvents
     /// Carries Ip.</summary>
     public const string MagicLinkInvalid = "security.magic_link_invalid";
 
-    /// <summary>An external/federation login was rejected before any user link —
-    /// domain allowlist, JIT disabled, inactive user, malformed token, or a
-    /// misconfigured provider. <c>Reason</c> disambiguates. Covers the SAML
-    /// protocol gates (no metadata, no SSO endpoint, context-build / response-read
-    /// failure, non-success status) as well as the OIDC/processor rejections.</summary>
-    public const string ExternalLoginRejected = "security.external_login_rejected";
+    /// <summary>An external/federation response was rejected because its protocol
+    /// shape, signature-independent validation or request correlation was invalid.
+    /// This is a durable security incident, not a policy decision.</summary>
+    public const string ExternalLoginProtocolRejected =
+        "security.external_login_protocol_rejected";
+
+    /// <summary>An otherwise valid external identity was rejected by realm policy:
+    /// domain allowlist, JIT disabled or inactive/deleted user. Individual attempts
+    /// are abuse telemetry and are durably aggregated.</summary>
+    public const string ExternalLoginPolicyRejected =
+        "security.external_login_policy_rejected";
+
+    /// <summary>An external login could not start because provider metadata,
+    /// endpoints or configuration were unavailable. Operational telemetry rather
+    /// than a security incident.</summary>
+    public const string ExternalLoginConfigurationError =
+        "ops.external_login_configuration_error";
 
     /// <summary>A SAML response failed the admin-required signature check
     /// (response/assertion unsigned). A distinct <b>tamper / signature-wrapping</b>
@@ -126,27 +136,32 @@ public static class AuditEvents
     public const string BootstrapInviteRejected = "security.bootstrap_invite_rejected";
 
     // ── Audit-of-the-audit (tenant-visible) ──────────────────────────
-    /// <summary>The audit/security log was cleared by an operator. Records WHO +
-    /// when + realm — a forensic record of the destructive action itself.</summary>
-    public const string AuditLogCleared = "audit.log_cleared";
-
     /// <summary>The audit/security log was exported by an operator.</summary>
     public const string AuditLogExported = "audit.log_exported";
+
+    /// <summary>A realm admin changed the hard retention of realm security events.</summary>
+    public const string SecurityRetentionChanged = "audit.security_retention_changed";
 
     // ── Operations: realm/platform actions ───────────────────────────
     /// <summary>A realm signing key was rotated by an admin (tenant-visible).</summary>
     public const string SigningKeyRotated = "ops.signing_key_rotated";
 
-    /// <summary>The signing-key janitor purged expired retired keys (platform-only).</summary>
+    /// <summary>The owning realm's signing-key janitor purged expired retired keys.</summary>
     public const string SigningKeyPurged = "ops.signing_key_purged";
 
     /// <summary>A realm's SAML SP certificate was rotated or first generated
     /// (tenant-visible — a realm-relevant trust change).</summary>
     public const string SamlCertRotated = "ops.saml_cert_rotated";
 
-    /// <summary>Background SAML metadata refresh tick / IdP signing-cert change
-    /// (platform-only).</summary>
-    public const string SamlMetadataRefreshed = "ops.saml_metadata_refreshed";
+    /// <summary>Background SAML metadata refresh summary. Operational telemetry;
+    /// no trust-material change is represented by this event.</summary>
+    public const string SamlMetadataRefreshCompleted =
+        "ops.saml_metadata_refresh_completed";
+
+    /// <summary>The trusted IdP signing-certificate set changed after a metadata
+    /// refresh. This trust-boundary change requires a durable audit record.</summary>
+    public const string SamlSigningCertificatesChanged =
+        "ops.saml_signing_certificates_changed";
 
     /// <summary>A recovery-CLI operation was invoked (filesystem-trust, control-plane
     /// only). <c>Reason</c> carries the specific operation + parameters.</summary>
@@ -164,12 +179,22 @@ public static class AuditEvents
     /// (platform-only).</summary>
     public const string ControlPlaneTransferred = "ops.control_plane_transferred";
 
+    /// <summary>A shell-authorized first-installation link was issued.</summary>
+    public const string InstallationChallengeIssued = "ops.installation_challenge_issued";
+
+    /// <summary>The first realm and its first administrator were provisioned.</summary>
+    public const string InstallationCompleted = "ops.installation_completed";
+
+    /// <summary>A Control-Plane actor changed one explicitly selected realm.</summary>
+    public const string ControlPlaneRealmOperation = "ops.control_plane_realm_operation";
+
     /// <summary>A per-realm account-lifecycle sweep ran (reminders / self-erase /
-    /// auto-purge counts). Platform-only operational summary.</summary>
+    /// auto-purge counts). Realm-owned operational summary.</summary>
     public const string AccountLifecycleSwept = "ops.account_lifecycle_swept";
 
     /// <summary>A bootstrap-admin invite was issued (tenant-visible realm-init).
-    /// Any email is masked at the call site.</summary>
+    /// The recipient remains in the short-lived invite document; the durable
+    /// audit row deliberately carries no recipient PII.</summary>
     public const string BootstrapInviteIssued = "ops.bootstrap_invite_issued";
 
     /// <summary>A DCR client was registered (tenant-visible).</summary>
@@ -183,9 +208,8 @@ public static class AuditEvents
     public const string DcrClientGarbageCollected = "ops.dcr_client_garbage_collected";
 
     // ─────────────────────────────────────────────────────────────────────
-    // Routing helpers (the taxonomy is the source of truth for category +
-    // visibility, so a call site passes only the EventType — it cannot mark a
-    // platform-only event tenant-visible by mistake).
+    // Taxonomy helper. Store ownership is selected through separate realm and
+    // platform record types, never inferred from this event code.
     // ─────────────────────────────────────────────────────────────────────
 
     /// <summary>The <see cref="AuditCategories"/> code an event type belongs to,
@@ -201,24 +225,4 @@ public static class AuditEvents
         _ => AuditCategories.Authentication, // auth.*
     };
 
-    /// <summary>
-    /// Streamless event types that are <b>control-plane-only</b> — cross-realm infra
-    /// or platform operations a tenant realm-admin must NOT see. Everything else in
-    /// the streamless store is tenant-visible (a realm-admin sees their own realm's
-    /// rows). The read endpoint filters on the resolved flag stored on each row.
-    /// </summary>
-    private static readonly HashSet<string> PlatformOnlyEvents =
-    [
-        SigningKeyPurged,
-        SamlMetadataRefreshed,
-        RecoveryCliInvoked,
-        RealmProvisioned,
-        RealmAdopted,
-        ControlPlaneTransferred,
-        AccountLifecycleSwept,
-    ];
-
-    /// <summary>True if the event type is control-plane-only (see
-    /// <see cref="PlatformOnlyEvents"/>).</summary>
-    public static bool IsPlatformOnly(string eventType) => PlatformOnlyEvents.Contains(eventType);
 }

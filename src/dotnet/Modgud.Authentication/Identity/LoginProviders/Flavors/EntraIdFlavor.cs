@@ -48,8 +48,8 @@ public class EntraIdFlavor : ILoginProviderFlavor
             Type: FlavorConfigFieldType.String,
             Label: "Tenant ID",
             Required: true,
-            HelpText: "Entra Directory (Tenant) ID, or 'common' for multi-tenant apps.",
-            Placeholder: "00000000-0000-0000-0000-000000000000"),
+            HelpText: "Entra tenant GUID, verified domain, or audience alias ('common', 'organizations', 'consumers').",
+            Placeholder: "contoso.onmicrosoft.com"),
         .. OidcAdvancedConfigFields.All,
     ];
 

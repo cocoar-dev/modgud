@@ -41,7 +41,7 @@ public static class AppRealmSeeder
         ("authorization-group", ["read", "write"]),
         ("permission-role", ["read", "write"]),
 
-        // Sessions + audit. auth-log:read = the streamless security/ops store;
+        // Sessions + audit. auth-log:read = this realm's security/ops store;
         // audit-log:read = the per-realm GDPR-audit (event-sourced) — two surfaces.
         ("session", ["read", "write"]),
         ("auth-log", ["read"]),
@@ -89,6 +89,7 @@ public static class AppRealmSeeder
     private static readonly (string Resource, string[] Actions)[] ControlPlaneCatalog =
     [
         ("realm", ["read", "write"]),
+        ("platform-audit", ["read"]),
     ];
 
     public static async Task SeedAsync(

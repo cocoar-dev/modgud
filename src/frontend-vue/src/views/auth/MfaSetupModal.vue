@@ -1,19 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import {
-  CoarButton,
+  CoarNotice,
   CoarOtpInput,
   CoarFormField,
-  CoarNote,
 } from '@cocoar/vue-ui'
 
 const { t } = useI18n()
 
+// Opened as the routed `#mfa-setup` fragment on /profile — `close` is
+// injected by the overlay host. Closing without a verified code resolves
+// to `false`; the profile view re-reads the MFA status either way.
 const props = defineProps<{
-  close: (enabled: boolean) => void
+  close: (enabled?: boolean) => void
 }>()
 
 const http = useHttpClient('/api/account/mfa')
@@ -37,6 +39,14 @@ onMounted(async () => {
   }
 })
 
+const footerButton = computed(() => ({
+  visible: !loading.value,
+  text: t('profile.mfaSetup.confirm', {}, 'Confirm code and activate'),
+  disabled: !verificationCode.value.trim(),
+  loading: submitting.value,
+  onClick: verifyCode,
+}))
+
 async function verifyCode() {
   if (!verificationCode.value.trim() || submitting.value) return
   submitting.value = true
@@ -53,8 +63,13 @@ async function verifyCode() {
 </script>
 
 <template>
-  <ModalLayout :close="() => close(false)" :title="t('profile.mfaSetup.title', {}, 'Set up MFA')" icon="shield-check">
-    <div class="p-6">
+  <ModalLayout
+    :close="() => close(false)"
+    :title="t('profile.mfaSetup.title', {}, 'Set up MFA')"
+    icon="shield-check"
+    :footer-button="footerButton"
+  >
+    <div>
       <div v-if="loading" class="text-center text-surface-400 py-8">{{ t('common.loading', {}, 'Loading...') }}</div>
 
       <template v-else>
@@ -78,8 +93,8 @@ async function verifyCode() {
           {{ sharedKey }}
         </div>
 
-        <!-- Verification -->
-        <form @submit.prevent="verifyCode" class="space-y-4">
+        <!-- Verification — committed by the modal footer button. -->
+        <div class="space-y-4">
           <CoarFormField :label="t('profile.mfaSetup.verificationCode', {}, 'Verification Code')">
             <CoarOtpInput
               v-model="verificationCode"
@@ -87,20 +102,12 @@ async function verifyCode() {
               :length="6"
               auto-focus
               required
+              @complete="verifyCode"
             />
           </CoarFormField>
 
-          <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
-
-          <CoarButton
-            type="submit"
-            :disabled="!verificationCode.trim()"
-            :loading="submitting"
-            full-width
-          >
-            {{ t('profile.mfaSetup.confirm', {}, 'Confirm code and activate') }}
-          </CoarButton>
-        </form>
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
+        </div>
       </template>
     </div>
   </ModalLayout>

@@ -8,6 +8,8 @@ public static class OAuthApplicationSettingKeys
     public const string AccessTokenLifetime = "modgud:access_token_lifetime";
     public const string AuthorizationCodeLifetime = "modgud:authorization_code_lifetime";
     public const string SlidingRefreshTokenLifetime = "modgud:sliding_refresh_token_lifetime";
+    public const string ClientSessionIdleLifetime = "modgud:client_session_idle_lifetime";
+    public const string ClientSessionAbsoluteLifetime = "modgud:client_session_absolute_lifetime";
     public const string ClientClaimsPrefix = "modgud:client_claims_prefix";
 
     /// <summary>

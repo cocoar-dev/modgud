@@ -68,9 +68,21 @@ public static class OAuthErrors
         code: "OAuth.ServiceAccountNotFound",
         description: $"ServiceAccount '{id}' not found or deleted.");
 
+    public static Error ServiceAccountLinkModesAreMutuallyExclusive => Error.Validation(
+        code: "OAuth.ServiceAccountLinkModesAreMutuallyExclusive",
+        description: "Provide either LinkedServiceAccountId or NewServiceAccount, not both.");
+
+    public static Error InvalidNewServiceAccountName => Error.Validation(
+        code: "OAuth.InvalidNewServiceAccountName",
+        description: "The new ServiceAccount account name must be 2-64 characters and contain only lowercase letters, digits, dots, hyphens, or underscores.");
+
+    public static Error ServiceAccountNameAlreadyExists(string accountName) => Error.Conflict(
+        code: "OAuth.ServiceAccountNameAlreadyExists",
+        description: $"Account name '{accountName}' is already used by a person or ServiceAccount.");
+
     public static Error ClientCredentialsRequiresServiceAccountLink => Error.Validation(
         code: "OAuth.ClientCredentialsRequiresServiceAccountLink",
-        description: "A client with the 'client_credentials' grant must be linked to a ServiceAccount. Create the SA first, then link it via LinkedServiceAccountId.");
+        description: "A client with the 'client_credentials' grant must reference LinkedServiceAccountId or include NewServiceAccount.");
 
     public static Error ServiceAccountLinkRequiresClientCredentialsOnly => Error.Validation(
         code: "OAuth.ServiceAccountLinkRequiresClientCredentialsOnly",

@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
+import { CoarNotice, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
-import WizardStepper, { type WizardStep } from '@/components/WizardStepper.vue'
 import ApiFormSections, {
   type ApiFormState,
   type ApiFormSection,
 } from './ApiFormSections.vue'
 import { useOAuthApiStore } from '@/stores/oauthApi.store'
 import { useApplicationsStore } from '@/stores/applications.store'
+import { useAppContextStore } from '@/stores/appContext.store'
 import { useClone, API_CLONE } from '@/composables/useClone'
 import type { OAuthApiDto } from '@/models/oauth'
 
@@ -22,6 +22,7 @@ const props = defineProps<{
 
 const store = useOAuthApiStore()
 const applicationsStore = useApplicationsStore()
+const appContextStore = useAppContextStore()
 const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
 
@@ -35,7 +36,10 @@ const appOptions = computed(() => [
   })),
 ])
 const loading = ref(false)
+const saving = ref(false)
+const actionLoading = ref(false)
 const error = ref<string | null>(null)
+const busy = computed(() => saving.value || actionLoading.value)
 
 function emptyForm(): ApiFormState {
   return {
@@ -77,16 +81,6 @@ const linkedAppCatalog = computed(() => {
     `${a.Resource}:${a.Action}`.localeCompare(`${b.Resource}:${b.Action}`))
 })
 
-// ── Create = wizard ──────────────────────────────────────────────────
-const step = ref(0)
-const wizardSteps = computed<WizardStep[]>(() => [
-  { key: 'identity', title: t('admin.oauthApis.section.identity', {}, 'Identity'), valid: !!form.value.Name.trim() },
-  { key: 'linkage', title: t('admin.oauthApis.section.linkage', {}, 'Linkage') },
-  { key: 'config', title: t('admin.oauthApis.section.config', {}, 'OAuth & options') },
-  { key: 'review', title: t('admin.oauthApis.section.review', {}, 'Review') },
-])
-
-// ── Edit = tabs ──────────────────────────────────────────────────────
 const tab = ref<ApiFormSection>('identity')
 
 const modalTitle = computed(() =>
@@ -95,23 +89,25 @@ const modalTitle = computed(() =>
     : (form.value.DisplayName || form.value.Name))
 const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.Name)
 
-// Edit footer = single Save (ModalLayout footer). Create has no ModalLayout
-// footer — the wizard owns its own Back/Next/Create nav.
-const editFooterButton = computed(() => ({
+const footerButton = computed(() => ({
   visible: true,
-  text: t('common.save', {}, 'Save'),
-  disabled: loading.value,
-  loading: loading.value,
+  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
+  disabled: !form.value.Name.trim() || busy.value,
+  loading: saving.value,
   onClick: save,
 }))
 
 onMounted(async () => {
-  applicationsStore.initialize()
+  await applicationsStore.initialize()
   if (isCreate.value) {
-    // Clone: prefill the wizard with the Name (the immutable aud) blanked. The
-    // linked App + catalog subset clone 1:1; secrets reset to none.
+    // Clone: prefill the tabs with the immutable audience blanked. The linked
+    // application and its catalog subset clone 1:1.
     const clone = consume<OAuthApiDto>(API_CLONE.entity)
-    if (clone) form.value = fromDto(clone)
+    if (clone) {
+      form.value = fromDto(clone)
+    } else {
+      form.value.AppId = appContextStore.selectedAppId ?? ''
+    }
     return
   }
   loading.value = true
@@ -130,7 +126,7 @@ onMounted(async () => {
 
 async function save() {
   if (!form.value.Name.trim()) return
-  loading.value = true
+  saving.value = true
   error.value = null
   try {
     if (isCreate.value) {
@@ -162,16 +158,16 @@ async function save() {
       props.close()
     }
   } catch (e: any) {
-    error.value = e?.body?.Message ?? e?.message ?? String(e)
+    error.value = e?.body?.detail ?? e?.body?.Message ?? e?.body?.error ?? e?.message ?? String(e)
   } finally {
-    loading.value = false
+    saving.value = false
   }
 }
 
 /** Mint the 1:1 OAuthScope companion for this API (edit only). */
 async function createImplicitScope() {
   if (isCreate.value || !dto.value) return
-  loading.value = true
+  actionLoading.value = true
   error.value = null
   try {
     await store.createImplicitScope(dto.value.Id)
@@ -181,67 +177,40 @@ async function createImplicitScope() {
       form.value = fromDto(reloaded)
     }
   } catch (e: any) {
-    error.value = e?.body?.Message ?? e?.message ?? String(e)
+    error.value = e?.body?.detail ?? e?.body?.Message ?? e?.body?.error ?? e?.message ?? String(e)
   } finally {
-    loading.value = false
+    actionLoading.value = false
   }
 }
 </script>
 
 <template>
   <ModalLayout :close="close" :title="modalTitle" :sub-title="modalSubtitle" icon="server"
-    :footer-button="isCreate ? undefined : editFooterButton">
+    :footer-button="footerButton">
+    <template #banner>
+      <CoarNotice v-if="isCreate" placement="banner" variant="info"
+        :label="t('admin.oauthApis.createBannerLabel', {}, 'New API')">
+        {{ t('admin.oauthApis.createBanner', {}, 'The audience identifies this resource server in issued tokens and cannot be changed later.') }}
+      </CoarNotice>
+    </template>
+
     <div v-if="loading && !dto && !isCreate" class="flex flex-1 items-center justify-center p-8">
       <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>
     </div>
     <div v-else class="api-modal-body">
-      <p v-if="error" class="error-banner">{{ error }}</p>
+      <CoarNotice v-if="error" variant="error" class="error-banner">{{ error }}</CoarNotice>
 
-      <!-- CREATE: guided wizard -->
-      <WizardStepper
-        v-if="isCreate"
-        v-model="step"
-        :steps="wizardSteps"
-        :submitting="loading"
-        :finish-label="t('common.create', {}, 'Create')"
-        @finish="save"
-        @cancel="close()"
-      >
-        <template #step-identity>
-          <ApiFormSections section="identity" :form="form" :is-create="true"
-            :app-options="appOptions" :linked-app-catalog="linkedAppCatalog" :dto="dto" :loading="loading" />
-        </template>
-        <template #step-linkage>
-          <ApiFormSections section="linkage" :form="form" :is-create="true"
-            :app-options="appOptions" :linked-app-catalog="linkedAppCatalog" :dto="dto" :loading="loading" />
-        </template>
-        <template #step-config>
-          <ApiFormSections section="surface" :form="form" :is-create="true"
-            :app-options="appOptions" :linked-app-catalog="linkedAppCatalog" :dto="dto" :loading="loading" />
-          <div class="step-section-gap"></div>
-          <ApiFormSections section="options" :form="form" :is-create="true"
-            :app-options="appOptions" :linked-app-catalog="linkedAppCatalog" :dto="dto" :loading="loading" />
-        </template>
-        <template #step-review>
-          <ApiFormSections section="review" :form="form" :is-create="true"
-            :app-options="appOptions" :linked-app-catalog="linkedAppCatalog" :dto="dto" :loading="loading" />
-        </template>
-      </WizardStepper>
-
-      <!-- EDIT: tabs -->
-      <template v-else>
-        <CoarTabGroup v-model="tab" class="tab-bar">
-          <CoarTab id="identity">{{ t('admin.oauthApis.section.identity', {}, 'Identity') }}</CoarTab>
-          <CoarTab id="linkage">{{ t('admin.oauthApis.section.linkage', {}, 'Linkage') }}</CoarTab>
-          <CoarTab id="surface">{{ t('admin.oauthApis.section.surface', {}, 'OAuth surface') }}</CoarTab>
-          <CoarTab id="options">{{ t('admin.oauthApis.section.options', {}, 'Options') }}</CoarTab>
-        </CoarTabGroup>
-        <div class="tab-body">
-          <ApiFormSections :section="tab" :form="form" :is-create="false"
-            :app-options="appOptions" :linked-app-catalog="linkedAppCatalog" :dto="dto" :loading="loading"
-            @create-implicit-scope="createImplicitScope" />
-        </div>
-      </template>
+      <CoarTabGroup v-model="tab" class="tab-bar">
+        <CoarTab id="identity">{{ t('admin.oauthApis.section.identity', {}, 'Identity') }}</CoarTab>
+        <CoarTab id="linkage">{{ t('admin.oauthApis.section.linkage', {}, 'Linkage') }}</CoarTab>
+        <CoarTab id="surface">{{ t('admin.oauthApis.section.surface', {}, 'OAuth surface') }}</CoarTab>
+        <CoarTab id="options">{{ t('admin.oauthApis.section.options', {}, 'Options') }}</CoarTab>
+      </CoarTabGroup>
+      <div class="tab-body">
+        <ApiFormSections :section="tab" :form="form" :is-create="isCreate"
+          :app-options="appOptions" :linked-app-catalog="linkedAppCatalog" :dto="dto" :loading="busy"
+          @create-implicit-scope="createImplicitScope" />
+      </div>
     </div>
   </ModalLayout>
 </template>
@@ -257,18 +226,17 @@ async function createImplicitScope() {
 }
 .error-banner {
   flex-shrink: 0;
-  font-size: 0.85rem;
-  color: var(--coar-text-semantic-error, #b91c1c);
 }
 .tab-bar {
   flex-shrink: 0;
 }
 .tab-body {
+  display: flex;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
 }
-.step-section-gap {
-  height: 1rem;
+.tab-body > * {
+  width: 100%;
 }
 </style>

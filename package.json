@@ -4,6 +4,8 @@
   "license": "Apache-2.0",
   "description": "Root convenience scripts for building the Vue SPA and the in-app docs straight into the backend's wwwroot — used when you want `dotnet run` (no Docker) to serve a current frontend + docs.",
   "scripts": {
+    "dev:landing": "cd src/landing-page && pnpm dev",
+    "build:landing": "cd src/landing-page && pnpm install --prefer-offline && pnpm build",
     "build:frontend": "cd src/frontend-vue && pnpm install --prefer-offline && pnpm exec vite build --outDir ../dotnet/Modgud.Api/wwwroot --emptyOutDir",
     "build:docs": "cd docs && pnpm install --prefer-offline && pnpm exec vitepress build --config .vitepress/config.in-app.ts --outDir ../src/dotnet/Modgud.Api/wwwroot/docs",
     "build:backend": "pnpm run build:frontend && pnpm run build:docs",

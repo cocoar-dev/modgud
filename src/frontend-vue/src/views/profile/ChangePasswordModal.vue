@@ -2,11 +2,13 @@
 import { ref, computed } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useI18n } from '@cocoar/vue-localization'
-import { CoarPasswordInput, CoarFormField, CoarNote } from '@cocoar/vue-ui'
+import { CoarNotice, CoarPasswordInput, CoarFormField } from '@cocoar/vue-ui'
 import ModalLayout from '@/components/ModalLayout.vue'
 
 const { t } = useI18n()
 
+// Opened as the routed `#change-password` fragment on /profile — `close` is
+// injected by the overlay host.
 const props = defineProps<{
   close: (result?: unknown) => void
 }>()
@@ -63,12 +65,11 @@ async function changePassword() {
     :title="t('profile.changePassword.title', {}, 'Change Password')"
     icon="key"
     :footer-button="footerButton"
-    width="28rem"
   >
-    <div class="flex flex-col gap-4 p-2 pb-4">
-      <CoarNote v-if="success" variant="success">
+    <div class="flex flex-col gap-4">
+      <CoarNotice v-if="success" variant="success">
         {{ t('profile.changePassword.success', {}, 'Password has been changed.') }}
-      </CoarNote>
+      </CoarNotice>
 
       <template v-else>
         <CoarFormField :label="t('profile.changePassword.currentPassword', {}, 'Current Password')">
@@ -83,11 +84,11 @@ async function changePassword() {
           <CoarPasswordInput v-model="confirmPassword" autocomplete="new-password" />
         </CoarFormField>
 
-        <CoarNote v-if="mismatch" variant="error">
+        <CoarNotice v-if="mismatch" variant="error">
           {{ t('profile.changePassword.mismatch', {}, 'Passwords do not match.') }}
-        </CoarNote>
+        </CoarNotice>
 
-        <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+        <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
       </template>
     </div>
   </ModalLayout>

@@ -11,8 +11,9 @@ namespace Modgud.Authentication.Domain.LoginProviders;
 /// <b>Type discriminator:</b> <see cref="Type"/> is set on creation and
 /// immutable thereafter. Internal-typed providers are seed-only (the realm
 /// seeder writes one of them), do not have a flavor and skip Client/Secret
-/// validation. Oidc-typed (today) and Saml/Ldap/Kerberos-typed (future)
-/// providers go through the flavor + FlavorData mechanism.
+/// validation. OIDC- and SAML-typed providers use their respective flavor
+/// registries plus <c>FlavorData</c>. LDAP/Kerberos are reserved for future
+/// handlers.
 /// </para>
 /// <para>
 /// <b>Secret handling:</b> The client secret is never stored in clear text and
@@ -118,8 +119,9 @@ public class LoginProvider
 
     /// <summary>
     /// Federation v1 (decision G): when <c>true</c>, this provider's claims may
-    /// drive <c>app:admin</c>-and-below group membership at login (gated further
-    /// by per-group <see cref="Principals.Group.ExternallyDrivable"/>). Mirror of
+    /// drive ordinary App-scoped and <c>&lt;resource&gt;:admin</c> group
+    /// membership at login (gated further by per-group
+    /// <see cref="Principals.Group.ExternallyDrivable"/>). Mirror of
     /// <see cref="TrustForEmailLink"/>. <c>realm:admin</c> is never externally
     /// drivable regardless of this flag. Default <c>false</c>.
     /// </summary>

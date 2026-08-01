@@ -22,13 +22,13 @@ namespace Modgud.Authentication.Api.ExternalAuth;
 /// <c>ExternalLoginProcessor.ProcessAsync(authenticatedUserId: ...)</c>
 /// which creates the link.
 /// <para>
-/// Type-discriminator posture: only <see cref="LoginProviderType.Oidc"/>
-/// providers can be linked. The gate lives in two places — <c>/start</c>
-/// rejects non-Oidc ids before the OIDC challenge is issued, and
-/// <c>ExternalLoginProcessor</c> rejects again on the callback. The list
-/// endpoints below intentionally surface every link the user has, including
-/// any that may have come from a provider whose type was later changed —
-/// disconnecting a stale link must remain possible.
+/// Type-discriminator posture: the self-service start route supports only
+/// <see cref="LoginProviderType.Oidc"/>. SAML's cross-site ACS POST does not
+/// carry the <c>SameSite=Lax</c> application cookie, so SAML identities
+/// currently link through normal sign-in/JIT or trusted-email resolution
+/// rather than this self-service flow. The list endpoints below intentionally
+/// surface every OIDC or SAML link the user has; disconnecting any link must
+/// remain possible.
 /// </para>
 /// </summary>
 public static class ProfileLinkEndpoints

@@ -13,7 +13,6 @@ public record RealmDto
     public string PrimaryDomain { get; init; } = string.Empty;
     public bool IsControlPlane { get; init; }
     public bool IsActive { get; init; }
-    public bool NeedsSetup { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
 }
 
@@ -92,14 +91,18 @@ public record CreateRealmDto
     public string? PrimaryDomain { get; init; }
 
     /// <summary>
-    /// First-admin invite issued atomically with the realm (C15c).
-    /// Required: a realm with no admin path is unusable. The CP-admin
-    /// fills UserName + Email; the recipient gets a magic-link mail and
-    /// sets their own password — the CP-admin never sees the password,
-    /// which keeps SaaS scenarios clean (tenant requester is the only
-    /// person who knows the credentials).
+    /// Initial activation state for ordinary realm creation. Defaults to true.
+    /// First-installation realms remain inactive until installation completes,
+    /// regardless of this value.
     /// </summary>
-    public InitialAdminDto InitialAdmin { get; init; } = new();
+    public bool? IsActive { get; init; }
+
+    /// <summary>
+    /// Optional backwards-compatible convenience for API callers that want
+    /// to issue an admin invite together with realm creation. The Realm admin
+    /// UI deliberately keeps this as a separate action.
+    /// </summary>
+    public InitialAdminDto? InitialAdmin { get; init; }
 }
 
 public record InitialAdminDto
@@ -122,7 +125,7 @@ public record CreatedRealmDto
     /// secret-equivalent and either copy it to a secure channel or trust
     /// that the recipient will get the email.
     /// </summary>
-    public InitialAdminInviteDto InitialAdminInvite { get; init; } = new();
+    public InitialAdminInviteDto? InitialAdminInvite { get; init; }
 }
 
 public record InitialAdminInviteDto

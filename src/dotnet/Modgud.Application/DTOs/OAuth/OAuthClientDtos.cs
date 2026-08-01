@@ -1,4 +1,5 @@
 using Modgud.Domain.OAuth.Common;
+using Modgud.Application.DTOs.ServiceAccount;
 
 namespace Modgud.Application.DTOs.OAuth;
 
@@ -28,7 +29,8 @@ public record OAuthClientDto
     public int? AccessTokenLifetime { get; init; }
     public int? AuthorizationCodeLifetime { get; init; }
     public int? SlidingRefreshTokenLifetime { get; init; }
-
+    public int? ClientSessionIdleLifetime { get; init; }
+    public int? ClientSessionAbsoluteLifetime { get; init; }
     public bool AlwaysSendClientClaims { get; init; }
     public bool UpdateAccessTokenClaimsOnRefresh { get; init; }
     public string? ClientClaimsPrefix { get; init; }
@@ -68,9 +70,10 @@ public record OAuthClientDto
     /// <summary>
     /// Apps this client is linked to (Guid strings). Empty = realm-wide /
     /// unassigned. One id = typical SPA. Many = a frontend that bundles
-    /// multiple resource servers (Keycloak-style <c>resource_access</c> in
-    /// the issued token's UserInfo claims). The frontend joins these
-    /// against its apps store to resolve slugs.
+    /// scopes from several Apps. The link controls App-scope entitlement;
+    /// requested registered OAuth API Audiences, not these ids, determine
+    /// <c>resource_access</c> keys. The frontend joins these against its
+    /// apps store to resolve slugs.
     /// </summary>
     public List<string> AppIds { get; init; } = [];
 
@@ -139,6 +142,8 @@ public record CreateOAuthClientDto
     public int? AccessTokenLifetime { get; init; }
     public int? AuthorizationCodeLifetime { get; init; }
     public int? SlidingRefreshTokenLifetime { get; init; }
+    public int? ClientSessionIdleLifetime { get; init; }
+    public int? ClientSessionAbsoluteLifetime { get; init; }
 
     public bool AlwaysSendClientClaims { get; init; }
     public bool UpdateAccessTokenClaimsOnRefresh { get; init; }
@@ -176,6 +181,14 @@ public record CreateOAuthClientDto
     /// is present — endpoint-level validation enforces the split.
     /// </summary>
     public string? LinkedServiceAccountId { get; init; }
+
+    /// <summary>
+    /// Optional ServiceAccount to create atomically with this OAuth client.
+    /// Mutually exclusive with <see cref="LinkedServiceAccountId"/>. This keeps
+    /// first-time M2M setup in one save without leaving an orphaned principal
+    /// when client validation or persistence fails.
+    /// </summary>
+    public ServiceAccountCreateDto? NewServiceAccount { get; init; }
 }
 
 public record UpdateOAuthClientDto
@@ -201,6 +214,10 @@ public record UpdateOAuthClientDto
     public int? AccessTokenLifetime { get; init; }
     public int? AuthorizationCodeLifetime { get; init; }
     public int? SlidingRefreshTokenLifetime { get; init; }
+    public int? ClientSessionIdleLifetime { get; init; }
+    public int? ClientSessionAbsoluteLifetime { get; init; }
+    public bool ClearClientSessionIdleLifetime { get; init; }
+    public bool ClearClientSessionAbsoluteLifetime { get; init; }
 
     public bool? AlwaysSendClientClaims { get; init; }
     public bool? UpdateAccessTokenClaimsOnRefresh { get; init; }
@@ -252,4 +269,5 @@ public record OAuthClientCreatedDto
 {
     public required OAuthClientDto Client { get; init; }
     public string? ClientSecret { get; init; }
+    public ServiceAccountDto? CreatedServiceAccount { get; init; }
 }

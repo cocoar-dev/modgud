@@ -15,6 +15,7 @@ namespace Modgud.Authentication.Sessions;
 public sealed class UserAccessRevoker(
     UserManager<ApplicationUser> userManager,
     ISessionService sessionService,
+    IClientSessionService clientSessionService,
     IOAuthGrantRevoker grantRevoker,
     ILogger<UserAccessRevoker> logger) : IUserAccessRevoker
 {
@@ -36,6 +37,9 @@ public sealed class UserAccessRevoker(
 
         // 2) Device-session rows (clean device list / GDPR scrub).
         await sessionService.RevokeAllSessionsAsync(userId, exceptSessionId: null, ct);
+        // Token revocation above already cut every OAuth grant; this removes the
+        // user-facing native app/device rows without repeating the sweep.
+        await clientSessionService.RevokeAllAsync(userId, revokeGrants: false, ct);
 
         // 3) Rotate the security stamp → existing auth cookies fail at the next
         //    SecurityStampValidator pass (<=5 min) and refresh grants fail the

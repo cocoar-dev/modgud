@@ -22,9 +22,9 @@ public partial class OAuthApplicationAggregate
     public Dictionary<string, object?> Properties { get; private set; } = new();
     /// <summary>
     /// n:m link to Applications. Empty = realm-wide / unassigned. One id =
-    /// typical app-scoped SPA. Many ids = a frontend that bundles multiple
-    /// resource servers (Keycloak-style <c>resource_access</c> in the
-    /// issued tokens).
+    /// typical app-scoped SPA. Many ids = a frontend entitled to scopes from
+    /// several Apps. Claim blocks remain keyed by the requested registered
+    /// OAuth API Audiences, not by these App ids.
     /// </summary>
     public List<Guid> AppIds { get; private set; } = [];
 

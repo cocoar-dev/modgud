@@ -6,6 +6,7 @@ using Modgud.Infrastructure.Realms;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using Modgud.Infrastructure.Audit;
 
 namespace Modgud.Api.Tests.Authorization;
 
@@ -38,7 +39,10 @@ public class SigningKeyRotationTests : IntegrationTestBase
     }
 
     private RealmKeyStore NewStore(TimeProvider clock) =>
-        new(Factory.Services.GetRequiredService<IDocumentStore>(), clock);
+        new(
+            Factory.Services.GetRequiredService<IDocumentStore>(),
+            clock,
+            Factory.Services.GetRequiredService<ISecurityAuditLog>());
 
     private static List<string?> Kids(IReadOnlyList<SecurityKey> keys) =>
         keys.Select(k => k.KeyId).ToList();

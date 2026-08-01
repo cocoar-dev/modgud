@@ -19,9 +19,9 @@ namespace Modgud.Infrastructure.Persistence.Tenancy;
 /// </list>
 ///
 /// <para>
-/// Reading <see cref="Current"/> with no active scope returns
-/// <see cref="TenantConstants.SystemTenantId"/> — the same fallback policy
-/// <c>TenantedSessionFactory</c> already uses for HttpContext-less paths.
+/// Reading <see cref="Current"/> with no active scope fails closed. Deployment-
+/// wide code must use <see cref="IGlobalStore"/>; realm code must enter its
+/// realm explicitly.
 /// </para>
 /// </summary>
 public static class TenantContext
@@ -29,9 +29,12 @@ public static class TenantContext
     private static readonly AsyncLocal<string?> _current = new();
 
     /// <summary>
-    /// Currently active tenant slug, or <c>"system"</c> if no scope has set one.
+    /// Currently active tenant slug. Throws when no realm context exists.
     /// </summary>
-    public static string Current => _current.Value ?? TenantConstants.SystemTenantId;
+    public static string Current => _current.Value
+        ?? throw new InvalidOperationException(
+            "No realm context is active. Use IGlobalStore for deployment-wide data " +
+            "or enter the intended realm explicitly with TenantContext.Enter(...).");
 
     /// <summary>
     /// Raw value — <see langword="null"/> when no scope has set a tenant.

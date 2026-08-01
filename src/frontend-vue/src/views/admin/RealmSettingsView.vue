@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import {
-  CoarCard,
+  CoarNotice,
   CoarTextInput,
   CoarFormField,
   CoarCheckbox,
-  CoarNote,
   CoarButton,
   CoarMultiSelect,
   CoarSelect,
   CoarTabGroup,
   CoarTab,
   CoarPopconfirm,
+  CoarDivider,
   useToast,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
@@ -31,13 +32,21 @@ import type {
   UpdateCimdSettingsDto,
   NativeGrantSettingsDto,
   UpdateNativeGrantSettingsDto,
+  BrowserSessionPolicyDto,
+  UpdateBrowserSessionPolicyDto,
+  ClientSessionPolicyDto,
+  UpdateClientSessionPolicyDto,
   AuthRateLimitsDto,
   UpdateAuthRateLimitsDto,
   DeletionSettingsDto,
   UpdateDeletionSettingsDto,
+  AuditSettingsDto,
+  UpdateAuditSettingsDto,
   RegistrationFieldsSettingsDto,
   UpdateRegistrationFieldsSettingsDto,
   FieldRequirement,
+  RealmSettingsDto,
+  UpdateRealmSettingsDto,
 } from '@/models/realmSettings'
 
 const { t, language } = useI18n()
@@ -55,8 +64,10 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.hasSubNav = true
 }), { immediate: true })
 
-type TabId = 'self-registration' | 'registration-fields' | 'dcr' | 'cimd' | 'native-grants' | 'auth-rate-limits' | 'deletion' | 'signing-keys' | 'pages'
-const activeTab = ref<TabId>('self-registration')
+type TabId = 'registration' | 'sessions' | 'oauth-capabilities' | 'security' | 'data-retention' | 'pages'
+type SavableTabId = Exclude<TabId, 'pages'>
+const activeTab = ref<TabId>('registration')
+const settingsContentRef = ref<HTMLElement | null>(null)
 
 const canRotateSigningKey = computed(() => authStore.hasPermission('realm-settings:write'))
 const rotating = ref(false)
@@ -108,7 +119,11 @@ async function setRealmPageActive(slug: string, value: string | null) {
   } catch (e: any) { pagesError.value = e?.message ?? String(e) } finally { pagesBusy.value = false }
 }
 
-watch(activeTab, (tab) => { if (tab === 'pages') loadRealmPages() })
+watch(activeTab, async (tab) => {
+  if (tab === 'pages') await loadRealmPages()
+  await nextTick()
+  if (settingsContentRef.value) settingsContentRef.value.scrollTop = 0
+})
 
 // ── Self-Registration form state ─────────────────────────────────────
 interface SelfRegFormState {
@@ -212,6 +227,20 @@ function nativeGrantsFromDto(d: NativeGrantSettingsDto): NativeGrantFormState {
   }
 }
 
+// ── Authoritative browser + native-client session policies ───────────
+const browserSessionsForm = ref<BrowserSessionPolicyDto>({
+  IdleLifetimeMinutes: 30 * 24 * 60,
+  AbsoluteLifetimeMinutes: 180 * 24 * 60,
+  AllowRememberMe: true,
+})
+const originalBrowserSessions = ref<BrowserSessionPolicyDto | null>(null)
+
+const clientSessionsForm = ref<ClientSessionPolicyDto>({
+  IdleLifetimeDays: 30,
+  AbsoluteLifetimeDays: 365,
+})
+const originalClientSessions = ref<ClientSessionPolicyDto | null>(null)
+
 // ── Auth rate-limit form state (per-IP ceilings, configurable per realm) ──
 type RateLimitPolicyKey =
   'NativeOtp' | 'MagicLink' | 'PasswordReset' | 'EmailOtp'
@@ -274,6 +303,12 @@ function emptyDeletion(): DeletionFormState {
 
 const deletionForm = ref<DeletionFormState>(emptyDeletion())
 const originalDeletion = ref<DeletionSettingsDto | null>(null)
+
+const auditForm = ref<AuditSettingsDto>({
+  VisibilityWindowDays: 90,
+  SecurityRetentionDays: 7,
+})
+const originalAudit = ref<AuditSettingsDto | null>(null)
 
 function deletionFromDto(d: DeletionSettingsDto): DeletionFormState {
   return {
@@ -352,10 +387,16 @@ onMounted(async () => {
     cimdForm.value = cimdFromDto(dto.Cimd)
     originalNativeGrants.value = dto.NativeGrants
     nativeGrantsForm.value = nativeGrantsFromDto(dto.NativeGrants)
+    originalBrowserSessions.value = dto.BrowserSessions
+    browserSessionsForm.value = { ...dto.BrowserSessions }
+    originalClientSessions.value = dto.ClientSessions
+    clientSessionsForm.value = { ...dto.ClientSessions }
     originalAuthRateLimits.value = dto.AuthRateLimits
     authRateLimitsForm.value = authRateLimitsFromDto(dto.AuthRateLimits)
     originalDeletion.value = dto.Deletion
     deletionForm.value = deletionFromDto(dto.Deletion)
+    originalAudit.value = dto.Audit
+    auditForm.value = { ...dto.Audit }
     originalRegFields.value = dto.RegistrationFields
     regFieldsForm.value = regFieldsFromDto(dto.RegistrationFields)
   } catch (e: any) {
@@ -454,6 +495,36 @@ function buildNativeGrantsPatch(): UpdateNativeGrantSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+function buildBrowserSessionsPatch(): UpdateBrowserSessionPolicyDto | undefined {
+  const orig = originalBrowserSessions.value
+  if (!orig) return undefined
+  const cur = browserSessionsForm.value
+  const patch: UpdateBrowserSessionPolicyDto = {}
+
+  if (cur.IdleLifetimeMinutes !== orig.IdleLifetimeMinutes)
+    patch.IdleLifetimeMinutes = cur.IdleLifetimeMinutes
+  if (cur.AbsoluteLifetimeMinutes !== orig.AbsoluteLifetimeMinutes)
+    patch.AbsoluteLifetimeMinutes = cur.AbsoluteLifetimeMinutes
+  if (cur.AllowRememberMe !== orig.AllowRememberMe)
+    patch.AllowRememberMe = cur.AllowRememberMe
+
+  return Object.keys(patch).length === 0 ? undefined : patch
+}
+
+function buildClientSessionsPatch(): UpdateClientSessionPolicyDto | undefined {
+  const orig = originalClientSessions.value
+  if (!orig) return undefined
+  const cur = clientSessionsForm.value
+  const patch: UpdateClientSessionPolicyDto = {}
+
+  if (cur.IdleLifetimeDays !== orig.IdleLifetimeDays)
+    patch.IdleLifetimeDays = cur.IdleLifetimeDays
+  if (cur.AbsoluteLifetimeDays !== orig.AbsoluteLifetimeDays)
+    patch.AbsoluteLifetimeDays = cur.AbsoluteLifetimeDays
+
+  return Object.keys(patch).length === 0 ? undefined : patch
+}
+
 function buildAuthRateLimitsPatch(): UpdateAuthRateLimitsDto | undefined {
   const orig = originalAuthRateLimits.value
   if (!orig) return undefined
@@ -484,6 +555,17 @@ function buildDeletionPatch(): UpdateDeletionSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+function buildAuditPatch(): UpdateAuditSettingsDto | undefined {
+  const orig = originalAudit.value
+  if (!orig) return undefined
+  const patch: UpdateAuditSettingsDto = {}
+  if (auditForm.value.VisibilityWindowDays !== orig.VisibilityWindowDays)
+    patch.VisibilityWindowDays = auditForm.value.VisibilityWindowDays
+  if (auditForm.value.SecurityRetentionDays !== orig.SecurityRetentionDays)
+    patch.SecurityRetentionDays = auditForm.value.SecurityRetentionDays
+  return Object.keys(patch).length === 0 ? undefined : patch
+}
+
 function buildRegFieldsPatch(): UpdateRegistrationFieldsSettingsDto | undefined {
   const orig = originalRegFields.value
   if (!orig) return undefined
@@ -497,55 +579,114 @@ function buildRegFieldsPatch(): UpdateRegistrationFieldsSettingsDto | undefined 
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
-async function save() {
-  const selfRegPatch = buildSelfRegPatch()
-  const dcrPatch = buildDcrPatch()
-  const cimdPatch = buildCimdPatch()
-  const nativeGrantsPatch = buildNativeGrantsPatch()
-  const authRateLimitsPatch = buildAuthRateLimitsPatch()
-  const deletionPatch = buildDeletionPatch()
-  const regFieldsPatch = buildRegFieldsPatch()
-  if (!selfRegPatch && !dcrPatch && !cimdPatch && !nativeGrantsPatch && !authRateLimitsPatch && !deletionPatch && !regFieldsPatch) {
-    savedFlash.value = true
-    setTimeout(() => { savedFlash.value = false }, 1200)
-    return
+function buildTabPayload(tab: SavableTabId): UpdateRealmSettingsDto {
+  const payload: UpdateRealmSettingsDto = {}
+  if (tab === 'registration') {
+    payload.SelfRegistration = buildSelfRegPatch()
+    payload.RegistrationFields = buildRegFieldsPatch()
+  } else if (tab === 'sessions') {
+    payload.BrowserSessions = buildBrowserSessionsPatch()
+    payload.ClientSessions = buildClientSessionsPatch()
+  } else if (tab === 'oauth-capabilities') {
+    payload.Dcr = buildDcrPatch()
+    payload.Cimd = buildCimdPatch()
+    payload.NativeGrants = buildNativeGrantsPatch()
+  } else if (tab === 'security') {
+    payload.AuthRateLimits = buildAuthRateLimitsPatch()
+  } else if (tab === 'data-retention') {
+    payload.Audit = buildAuditPatch()
+    payload.Deletion = buildDeletionPatch()
   }
-  saving.value = true
-  error.value = null
-  try {
-    const payload: {
-      SelfRegistration?: UpdateSelfRegistrationDto
-      Dcr?: UpdateDcrSettingsDto
-      Cimd?: UpdateCimdSettingsDto
-      NativeGrants?: UpdateNativeGrantSettingsDto
-      AuthRateLimits?: UpdateAuthRateLimitsDto
-      Deletion?: UpdateDeletionSettingsDto
-      RegistrationFields?: UpdateRegistrationFieldsSettingsDto
-    } = {}
-    if (selfRegPatch) payload.SelfRegistration = selfRegPatch
-    if (dcrPatch) payload.Dcr = dcrPatch
-    if (cimdPatch) payload.Cimd = cimdPatch
-    if (nativeGrantsPatch) payload.NativeGrants = nativeGrantsPatch
-    if (authRateLimitsPatch) payload.AuthRateLimits = authRateLimitsPatch
-    if (deletionPatch) payload.Deletion = deletionPatch
-    if (regFieldsPatch) payload.RegistrationFields = regFieldsPatch
-    const updated = await settingsStore.patch(payload)
+
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined),
+  ) as UpdateRealmSettingsDto
+}
+
+function syncSavedTab(tab: SavableTabId, updated: RealmSettingsDto) {
+  // Only reset the group that was actually saved. Drafts in other tabs stay
+  // untouched and retain their dirty marker instead of being silently lost.
+  if (tab === 'registration') {
     originalSelfReg.value = updated.SelfRegistration
     form.value = fromDto(updated.SelfRegistration)
+    originalRegFields.value = updated.RegistrationFields
+    regFieldsForm.value = regFieldsFromDto(updated.RegistrationFields)
+    editingSecret.value = false
+    secretInput.value = ''
+  } else if (tab === 'sessions') {
+    originalBrowserSessions.value = updated.BrowserSessions
+    browserSessionsForm.value = { ...updated.BrowserSessions }
+    originalClientSessions.value = updated.ClientSessions
+    clientSessionsForm.value = { ...updated.ClientSessions }
+  } else if (tab === 'oauth-capabilities') {
     originalDcr.value = updated.Dcr
     dcrForm.value = dcrFromDto(updated.Dcr)
     originalCimd.value = updated.Cimd
     cimdForm.value = cimdFromDto(updated.Cimd)
     originalNativeGrants.value = updated.NativeGrants
     nativeGrantsForm.value = nativeGrantsFromDto(updated.NativeGrants)
+  } else if (tab === 'security') {
     originalAuthRateLimits.value = updated.AuthRateLimits
     authRateLimitsForm.value = authRateLimitsFromDto(updated.AuthRateLimits)
+  } else if (tab === 'data-retention') {
+    originalAudit.value = updated.Audit
+    auditForm.value = { ...updated.Audit }
     originalDeletion.value = updated.Deletion
     deletionForm.value = deletionFromDto(updated.Deletion)
-    originalRegFields.value = updated.RegistrationFields
-    regFieldsForm.value = regFieldsFromDto(updated.RegistrationFields)
-    editingSecret.value = false
-    secretInput.value = ''
+  }
+}
+
+function isTabDirty(tab: SavableTabId): boolean {
+  return Object.keys(buildTabPayload(tab)).length > 0
+}
+
+const hasAnyDirty = computed(() =>
+  (['registration', 'sessions', 'oauth-capabilities', 'security', 'data-retention'] as SavableTabId[])
+    .some(isTabDirty),
+)
+
+const activeTabDirty = computed(() =>
+  activeTab.value !== 'pages' && isTabDirty(activeTab.value),
+)
+
+const deletionInvalid = computed(() =>
+  deletionForm.value.ReminderLeadDays >= deletionForm.value.GraceDays,
+)
+
+const activeTabValid = computed(() =>
+  activeTab.value !== 'data-retention' || !deletionInvalid.value,
+)
+
+const canSaveActive = computed(() =>
+  activeTab.value !== 'pages' && activeTabDirty.value && activeTabValid.value && !saving.value,
+)
+
+function beforeWindowUnload(event: BeforeUnloadEvent) {
+  if (!hasAnyDirty.value) return
+  event.preventDefault()
+}
+
+onMounted(() => window.addEventListener('beforeunload', beforeWindowUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeWindowUnload))
+
+onBeforeRouteLeave(() => {
+  if (!hasAnyDirty.value) return true
+  return confirm(t(
+    'admin.realmSettings.unsavedLeave',
+    {},
+    'There are unsaved realm settings. Leave the page and discard them?',
+  ))
+})
+
+async function save(tab: SavableTabId) {
+  const payload = buildTabPayload(tab)
+  if (Object.keys(payload).length === 0) return
+
+  saving.value = true
+  error.value = null
+  try {
+    const updated = await settingsStore.patch(payload)
+    syncSavedTab(tab, updated)
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1500)
   } catch (e: any) {
@@ -553,6 +694,11 @@ async function save() {
   } finally {
     saving.value = false
   }
+}
+
+function saveActiveTab() {
+  if (activeTab.value === 'pages') return
+  return save(activeTab.value)
 }
 
 async function rotateSigningKey() {
@@ -573,441 +719,640 @@ async function rotateSigningKey() {
 </script>
 
 <template>
-  <div class="flex flex-1 flex-col min-w-0 p-4 gap-3">
-    <CoarTabGroup v-model="activeTab" class="tab-bar">
-      <CoarTab id="self-registration">
-        {{ t('admin.realmSettings.tabs.selfRegistration', {}, 'Self-Registration') }}
-      </CoarTab>
-      <CoarTab id="registration-fields">
-        {{ t('admin.realmSettings.tabs.registrationFields', {}, 'Pflichtfelder') }}
-      </CoarTab>
-      <CoarTab id="dcr">
-        {{ t('admin.realmSettings.tabs.dcr', {}, 'Dynamic Client Registration') }}
-      </CoarTab>
-      <CoarTab id="cimd">
-        {{ t('admin.realmSettings.tabs.cimd', {}, 'Client ID Metadata Documents') }}
-      </CoarTab>
-      <CoarTab id="native-grants">
-        {{ t('admin.realmSettings.tabs.nativeGrants', {}, 'Native Passwordless Grants') }}
-      </CoarTab>
-      <CoarTab id="auth-rate-limits">
-        {{ t('admin.realmSettings.tabs.authRateLimits', {}, 'Rate Limits') }}
-      </CoarTab>
-      <CoarTab id="deletion">
-        {{ t('admin.realmSettings.tabs.deletion', {}, 'Account Deletion') }}
-      </CoarTab>
-      <CoarTab v-if="canRotateSigningKey" id="signing-keys">
-        {{ t('admin.realmSettings.tabs.signingKeys', {}, 'Signing Keys') }}
-      </CoarTab>
-      <CoarTab v-if="pageBuilderOn" id="pages">
-        {{ t('admin.realmSettings.tabs.pages', {}, 'Pages') }}
-      </CoarTab>
-    </CoarTabGroup>
+  <div class="realm-settings-page">
+    <div class="realm-settings-shell">
+      <CoarTabGroup v-model="activeTab" class="tab-bar">
+        <CoarTab id="registration">
+          <span class="tab-label">
+            {{ t('admin.realmSettings.tabs.registration', {}, 'Registration') }}
+            <span v-if="isTabDirty('registration')" class="dirty-dot" aria-hidden="true" />
+          </span>
+        </CoarTab>
+        <CoarTab id="sessions">
+          <span class="tab-label">
+            {{ t('admin.realmSettings.tabs.sessions', {}, 'Sessions') }}
+            <span v-if="isTabDirty('sessions')" class="dirty-dot" aria-hidden="true" />
+          </span>
+        </CoarTab>
+        <CoarTab id="oauth-capabilities">
+          <span class="tab-label">
+            {{ t('admin.realmSettings.tabs.oauthCapabilities', {}, 'OAuth & Clients') }}
+            <span v-if="isTabDirty('oauth-capabilities')" class="dirty-dot" aria-hidden="true" />
+          </span>
+        </CoarTab>
+        <CoarTab id="security">
+          <span class="tab-label">
+            {{ t('admin.realmSettings.tabs.security', {}, 'Security') }}
+            <span v-if="isTabDirty('security')" class="dirty-dot" aria-hidden="true" />
+          </span>
+        </CoarTab>
+        <CoarTab id="data-retention">
+          <span class="tab-label">
+            {{ t('admin.realmSettings.tabs.dataRetention', {}, 'Data & Retention') }}
+            <span v-if="isTabDirty('data-retention')" class="dirty-dot" aria-hidden="true" />
+          </span>
+        </CoarTab>
+        <CoarTab v-if="pageBuilderOn" id="pages">
+          {{ t('admin.realmSettings.tabs.pages', {}, 'Sign-in pages') }}
+        </CoarTab>
+      </CoarTabGroup>
 
-    <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
-    <CoarNote v-if="savedFlash" variant="success">
-      {{ t('admin.realmSettings.saved', {}, 'Saved.') }}
-    </CoarNote>
+      <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
+      <CoarNotice truncate v-if="savedFlash" variant="success">
+        {{ t('admin.realmSettings.saved', {}, 'Saved.') }}
+      </CoarNotice>
 
-    <div v-if="initialLoad" class="text-sm text-gray-400">
-      {{ t('common.loading', {}, 'Loading...') }}
-    </div>
+      <div v-if="initialLoad" class="text-sm text-gray-400">
+        {{ t('common.loading', {}, 'Loading...') }}
+      </div>
 
-    <CoarCard v-else-if="activeTab === 'self-registration'" class="p-4">
-      <div class="flex flex-col gap-3">
-        <p class="text-xs text-gray-500">
-          {{ t('admin.realmSettings.selfReg.hint', {}, 'When enabled, visitors can create an account themselves at /register. Default: disabled.') }}
-        </p>
+      <div v-else ref="settingsContentRef" class="settings-content">
+        <!-- Registration: self-service posture + identity field policy. -->
+        <template v-if="activeTab === 'registration'">
+          <section class="settings-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">{{ t('admin.realmSettings.sections.selfRegistration', {}, 'Self-Registration') }}</h2>
+            </CoarDivider>
+            <div class="section-intro">
+              <p>{{ t('admin.realmSettings.selfReg.hint', {}, 'When enabled, visitors can create an account themselves at /register. Default: disabled.') }}</p>
+              <CoarCheckbox
+                v-model="form.Enabled"
+                :label="t('common.active', {}, 'Active')" />
+            </div>
 
-        <CoarCheckbox
-          v-model="form.Enabled"
-          :label="t('admin.realmSettings.selfReg.enabled', {}, 'Enable self-registration')" />
+            <div v-if="form.Enabled" class="section-body">
+              <div class="inline-checks">
+                <CoarCheckbox
+                  v-model="form.RequireEmailVerification"
+                  :label="t('admin.realmSettings.selfReg.requireEmailVerification', {}, 'Require email verification')" />
+                <CoarCheckbox
+                  v-model="form.RequireAdminApproval"
+                  :label="t('admin.realmSettings.selfReg.requireAdminApproval', {}, 'Require admin approval')" />
+              </div>
 
-        <template v-if="form.Enabled">
-          <div class="flex flex-wrap gap-x-6 gap-y-2">
-            <CoarCheckbox
-              v-model="form.RequireEmailVerification"
-              :label="t('admin.realmSettings.selfReg.requireEmailVerification', {}, 'Require email verification')" />
-            <CoarCheckbox
-              v-model="form.RequireAdminApproval"
-              :label="t('admin.realmSettings.selfReg.requireAdminApproval', {}, 'Require admin approval')" />
-          </div>
+              <EditableStringList
+                v-model="form.AllowedEmailDomains"
+                appearance="compact-grid"
+                min-height="11rem"
+                :header-label="t('admin.realmSettings.selfReg.allowedDomains', {}, 'Allowed email domains (empty = all)')"
+                :header-hint="t('admin.realmSettings.selfReg.allowedDomainsHint', {}, 'Leave empty to allow every e-mail domain.')"
+                :add-label="t('admin.realmSettings.selfReg.addDomain', {}, 'Add domain')"
+                :placeholder="t('admin.realmSettings.selfReg.allowedDomains.placeholder', {}, 'example.com')" />
 
-          <CoarFormField :label="t('admin.realmSettings.selfReg.allowedDomains', {}, 'Allowed email domains (empty = all)')">
-            <EditableStringList
-              v-model="form.AllowedEmailDomains"
-              :placeholder="t('admin.realmSettings.selfReg.allowedDomains.placeholder', {}, 'example.com')" />
-          </CoarFormField>
+              <CoarFormField :label="t('admin.realmSettings.selfReg.defaultGroups', {}, 'Default groups (auto-membership after verification)')">
+                <CoarMultiSelect
+                  v-model="form.DefaultGroupIds"
+                  :options="groupOptions"
+                  searchable
+                  clearable
+                  :placeholder="t('admin.realmSettings.selfReg.defaultGroups.placeholder', {}, 'Select groups…')" />
+              </CoarFormField>
 
-          <CoarFormField :label="t('admin.realmSettings.selfReg.defaultGroups', {}, 'Default groups (auto-membership after verification)')">
-            <CoarMultiSelect
-              v-model="form.DefaultGroupIds"
-              :options="groupOptions"
-              searchable
-              clearable
-              :placeholder="t('admin.realmSettings.selfReg.defaultGroups.placeholder', {}, 'Select groups…')" />
-          </CoarFormField>
+              <div class="form-grid-2">
+                <CoarFormField :label="t('admin.realmSettings.selfReg.tosUrl', {}, 'Terms-of-Service URL')">
+                  <CoarTextInput v-model="form.TermsOfServiceUrl" clearable placeholder="https://…" />
+                </CoarFormField>
+                <CoarFormField :label="t('admin.realmSettings.selfReg.privacyUrl', {}, 'Privacy Policy URL')">
+                  <CoarTextInput v-model="form.PrivacyPolicyUrl" clearable placeholder="https://…" />
+                </CoarFormField>
+              </div>
 
-          <div class="grid grid-cols-2 gap-3">
-            <CoarFormField :label="t('admin.realmSettings.selfReg.tosUrl', {}, 'Terms-of-Service URL (shows required checkbox)')">
-              <CoarTextInput v-model="form.TermsOfServiceUrl" clearable placeholder="https://…" />
-            </CoarFormField>
-            <CoarFormField :label="t('admin.realmSettings.selfReg.privacyUrl', {}, 'Privacy Policy URL (footer link)')">
-              <CoarTextInput v-model="form.PrivacyPolicyUrl" clearable placeholder="https://…" />
-            </CoarFormField>
-          </div>
+              <CoarCheckbox
+                v-model="form.CaptchaEnabled"
+                :label="t('admin.realmSettings.selfReg.captchaEnabled', {}, 'Enable Cloudflare Turnstile captcha')" />
 
-          <CoarCheckbox
-            v-model="form.CaptchaEnabled"
-            :label="t('admin.realmSettings.selfReg.captchaEnabled', {}, 'Enable Cloudflare Turnstile captcha')" />
+              <div v-if="form.CaptchaEnabled" class="form-grid-2">
+                <CoarFormField :label="t('admin.realmSettings.selfReg.captchaSiteKey', {}, 'Captcha site key')">
+                  <CoarTextInput v-model="form.CaptchaSiteKey" clearable
+                    :placeholder="t('admin.realmSettings.selfReg.captchaSiteKey.placeholder', {}, 'Site key (public)')" />
+                </CoarFormField>
+                <CoarFormField :label="t('admin.realmSettings.selfReg.captchaSecret', {}, 'Captcha secret')">
+                  <div v-if="!editingSecret" class="secret-row">
+                    <span class="field-value-muted">
+                      {{ form.CaptchaSecretSet
+                        ? t('admin.realmSettings.selfReg.captchaSecret.set', {}, 'Set — overrides default')
+                        : t('admin.realmSettings.selfReg.captchaSecret.unset', {}, 'Not set — uses default') }}
+                    </span>
+                    <CoarButton size="s" variant="secondary" @click="() => { editingSecret = true; secretInput = '' }">
+                      {{ t('admin.realmSettings.selfReg.captchaSecret.replace', {}, 'Replace') }}
+                    </CoarButton>
+                  </div>
+                  <div v-else class="secret-row">
+                    <CoarTextInput v-model="secretInput" clearable
+                      :placeholder="t('admin.realmSettings.selfReg.captchaSecret.inputPlaceholder', {}, 'New secret (empty = clear/default)')" />
+                    <CoarButton size="s" variant="secondary" @click="() => { editingSecret = false; secretInput = '' }">
+                      {{ t('common.cancel', {}, 'Cancel') }}
+                    </CoarButton>
+                  </div>
+                </CoarFormField>
+              </div>
+            </div>
+          </section>
 
-          <template v-if="form.CaptchaEnabled">
-            <CoarFormField :label="t('admin.realmSettings.selfReg.captchaSiteKey', {}, 'Captcha site key (empty = Cocoar default)')">
-              <CoarTextInput v-model="form.CaptchaSiteKey" clearable
-                :placeholder="t('admin.realmSettings.selfReg.captchaSiteKey.placeholder', {}, 'Site key (public)')" />
-            </CoarFormField>
+          <section class="settings-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">{{ t('admin.realmSettings.sections.registrationFields', {}, 'Registration fields') }}</h2>
+            </CoarDivider>
+            <p class="section-description">
+              {{ t('admin.realmSettings.regFields.hint', {}, 'Which identity fields are required at account creation. E-mail is always required. Applications may override this policy.') }}
+            </p>
+            <div class="policy-grid">
+              <div class="policy-grid__header">
+                <span>{{ t('admin.realmSettings.field', {}, 'Field') }}</span>
+                <span>{{ t('admin.realmSettings.requirement', {}, 'Requirement') }}</span>
+              </div>
+              <div class="policy-grid__row">
+                <span>{{ t('admin.regFields.email', {}, 'E-Mail') }}</span>
+                <span class="fixed-policy">{{ t('admin.regFields.required', {}, 'Required') }}</span>
+              </div>
+              <div class="policy-grid__row">
+                <span>{{ t('admin.regFields.username', {}, 'Username') }}</span>
+                <CoarSelect v-model="regFieldsForm.Username" :options="requirementOptions" />
+              </div>
+              <div class="policy-grid__row">
+                <span>{{ t('admin.regFields.firstname', {}, 'First name') }}</span>
+                <CoarSelect v-model="regFieldsForm.Firstname" :options="requirementOptions" />
+              </div>
+              <div class="policy-grid__row">
+                <span>{{ t('admin.regFields.lastname', {}, 'Last name') }}</span>
+                <CoarSelect v-model="regFieldsForm.Lastname" :options="requirementOptions" />
+              </div>
+            </div>
+            <CoarNotice v-if="regFieldsForm.Username === 'Off'" variant="info">
+              {{ t('admin.regFields.usernameOffHint', {}, 'Username = e-mail (no separate field).') }}
+            </CoarNotice>
+          </section>
+        </template>
 
-            <CoarFormField :label="t('admin.realmSettings.selfReg.captchaSecret', {}, 'Captcha secret')">
-              <div v-if="!editingSecret" class="flex items-center gap-2">
-                <span class="text-sm text-gray-600">
-                  <template v-if="form.CaptchaSecretSet">
-                    ••••• {{ t('admin.realmSettings.selfReg.captchaSecret.set', {}, '(set — overrides default)') }}
-                  </template>
-                  <template v-else>
-                    {{ t('admin.realmSettings.selfReg.captchaSecret.unset', {}, '(not set — uses Cocoar default)') }}
-                  </template>
-                </span>
-                <CoarButton size="s" variant="secondary" @click="() => { editingSecret = true; secretInput = '' }">
-                  {{ t('admin.realmSettings.selfReg.captchaSecret.replace', {}, 'Replace') }}
+        <!-- Session defaults. -->
+        <template v-else-if="activeTab === 'sessions'">
+          <section class="settings-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">{{ t('admin.realmSettings.sessions.browser.title', {}, 'Browser and SSO sessions') }}</h2>
+            </CoarDivider>
+            <p class="section-description">{{ t('admin.realmSettings.sessions.browser.hint', {}, 'These sessions back the signed application cookie. Idle lifetime slides while the browser is used; absolute lifetime never slides.') }}</p>
+            <div class="form-grid-2">
+              <CoarFormField :label="t('admin.realmSettings.sessions.browser.idle', {}, 'Idle lifetime (minutes)')">
+                <CoarTextInput :model-value="String(browserSessionsForm.IdleLifetimeMinutes)"
+                  @update:model-value="(v) => (browserSessionsForm.IdleLifetimeMinutes = Math.max(5, parseInt(v) || 5))" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.realmSettings.sessions.browser.absolute', {}, 'Absolute lifetime (minutes)')">
+                <CoarTextInput :model-value="String(browserSessionsForm.AbsoluteLifetimeMinutes)"
+                  @update:model-value="(v) => (browserSessionsForm.AbsoluteLifetimeMinutes = Math.max(5, parseInt(v) || 5))" />
+              </CoarFormField>
+            </div>
+            <CoarCheckbox v-model="browserSessionsForm.AllowRememberMe"
+              :label="t('admin.realmSettings.sessions.browser.remember', {}, 'Allow persistent remember-me cookies')" />
+          </section>
+
+          <section class="settings-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">{{ t('admin.realmSettings.sessions.client.title', {}, 'Native app and OAuth client sessions') }}</h2>
+            </CoarDivider>
+            <p class="section-description">{{ t('admin.realmSettings.sessions.client.hint', {}, 'Realm default for refresh-token-backed sessions. Applications and individual OAuth clients may override it.') }}</p>
+            <div class="form-grid-2">
+              <CoarFormField :label="t('admin.realmSettings.sessions.client.idle', {}, 'Idle lifetime (days)')">
+                <CoarTextInput :model-value="String(clientSessionsForm.IdleLifetimeDays)"
+                  @update:model-value="(v) => (clientSessionsForm.IdleLifetimeDays = Math.min(3650, Math.max(1, parseInt(v) || 1)))" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.realmSettings.sessions.client.absolute', {}, 'Absolute lifetime (days)')">
+                <CoarTextInput :model-value="String(clientSessionsForm.AbsoluteLifetimeDays)"
+                  @update:model-value="(v) => (clientSessionsForm.AbsoluteLifetimeDays = Math.min(3650, Math.max(1, parseInt(v) || 1)))" />
+              </CoarFormField>
+            </div>
+          </section>
+        </template>
+
+        <!-- Advanced OAuth client onboarding and native grants. -->
+        <template v-else-if="activeTab === 'oauth-capabilities'">
+          <section class="settings-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">{{ t('admin.realmSettings.sections.dcr', {}, 'Dynamic Client Registration') }}</h2>
+            </CoarDivider>
+            <div class="section-intro">
+              <p>{{ t('admin.realmSettings.dcr.hint', {}, 'Allow software to register public PKCE clients through RFC 7591.') }}</p>
+              <CoarCheckbox v-model="dcrForm.Enabled" :label="t('common.active', {}, 'Active')" />
+            </div>
+            <CoarNotice truncate v-if="dcrForm.Enabled" variant="info">
+              {{ t('admin.realmSettings.dcr.tripleOptInWarningShort', {}, 'Triple opt-in required before DCR clients can mint usable tokens.') }}
+              <template #details>{{ t('admin.realmSettings.dcr.tripleOptInWarning', {}, 'APIs and scopes must explicitly allow dynamically registered clients.') }}</template>
+            </CoarNotice>
+            <div v-if="dcrForm.Enabled" class="section-body">
+              <div class="form-grid-2">
+                <CoarFormField :label="t('admin.realmSettings.dcr.accessTokenMinutes', {}, 'Access-token lifetime (minutes)')">
+                  <CoarTextInput :model-value="String(dcrForm.AccessTokenLifetimeMinutes)" @update:model-value="(v) => (dcrForm.AccessTokenLifetimeMinutes = Math.max(1, parseInt(v) || 15))" />
+                </CoarFormField>
+                <CoarFormField :label="t('admin.realmSettings.dcr.refreshTokenDays', {}, 'Refresh-token lifetime (days)')">
+                  <CoarTextInput :model-value="String(dcrForm.RefreshTokenLifetimeDays)" @update:model-value="(v) => (dcrForm.RefreshTokenLifetimeDays = Math.max(1, parseInt(v) || 7))" />
+                </CoarFormField>
+              </div>
+              <div class="form-grid-3">
+                <CoarFormField :label="t('admin.realmSettings.dcr.gcTtlDays', {}, 'Remove after inactivity (days)')">
+                  <CoarTextInput :model-value="String(dcrForm.GcTtlDays)" @update:model-value="(v) => (dcrForm.GcTtlDays = Math.max(1, parseInt(v) || 90))" />
+                </CoarFormField>
+                <CoarFormField :label="t('admin.realmSettings.dcr.rateLimitIp', {}, 'Per source IP / hour')">
+                  <CoarTextInput :model-value="String(dcrForm.PerIpRateLimitPerHour)" @update:model-value="(v) => (dcrForm.PerIpRateLimitPerHour = Math.max(1, parseInt(v) || 5))" />
+                </CoarFormField>
+                <CoarFormField :label="t('admin.realmSettings.dcr.rateLimitRealm', {}, 'Per realm / day')">
+                  <CoarTextInput :model-value="String(dcrForm.PerRealmRateLimitPerDay)" @update:model-value="(v) => (dcrForm.PerRealmRateLimitPerDay = Math.max(1, parseInt(v) || 100))" />
+                </CoarFormField>
+              </div>
+              <EditableStringList
+                v-model="dcrForm.ReservedNames"
+                appearance="compact-grid"
+                min-height="11rem"
+                :header-label="t('admin.realmSettings.dcr.reservedNames', {}, 'Reserved client names')"
+                :header-hint="t('admin.realmSettings.dcr.reservedNames.help', {}, 'Blocks impersonating client names using normalized substring matching.')"
+                :add-label="t('admin.realmSettings.dcr.addReservedName', {}, 'Add name')"
+                :placeholder="t('admin.realmSettings.dcr.reservedNames.placeholder', {}, 'Cocoar')" />
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">{{ t('admin.realmSettings.sections.cimd', {}, 'Client-ID Metadata Documents (CIMD)') }}</h2>
+            </CoarDivider>
+            <div class="section-intro">
+              <p>{{ t('admin.realmSettings.cimd.hint', {}, 'Resolve HTTPS client IDs as metadata documents and treat them as public PKCE clients.') }}</p>
+              <CoarCheckbox v-model="cimdForm.Enabled" :label="t('common.active', {}, 'Active')" />
+            </div>
+            <CoarNotice truncate v-if="cimdForm.Enabled" variant="info">
+              {{ t('admin.realmSettings.cimd.optInWarningShort', {}, 'Opt-in required, and the server fetches the client metadata URL.') }}
+              <template #details>{{ t('admin.realmSettings.cimd.optInWarning', {}, 'Enable only when outbound network access is trusted.') }}</template>
+            </CoarNotice>
+            <div v-if="cimdForm.Enabled" class="form-grid-2 section-body">
+              <CoarFormField :label="t('admin.realmSettings.cimd.accessTokenMinutes', {}, 'Access-token lifetime (minutes)')">
+                <CoarTextInput :model-value="String(cimdForm.AccessTokenLifetimeMinutes)" @update:model-value="(v) => (cimdForm.AccessTokenLifetimeMinutes = Math.max(1, parseInt(v) || 15))" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.realmSettings.cimd.refreshTokenDays', {}, 'Refresh-token lifetime (days)')">
+                <CoarTextInput :model-value="String(cimdForm.RefreshTokenLifetimeDays)" @update:model-value="(v) => (cimdForm.RefreshTokenLifetimeDays = Math.max(1, parseInt(v) || 7))" />
+              </CoarFormField>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">{{ t('admin.realmSettings.sections.nativeGrants', {}, 'Native passwordless grants') }}</h2>
+            </CoarDivider>
+            <div class="section-intro">
+              <p>{{ t('admin.realmSettings.nativeGrants.hint', {}, 'Allow native apps to exchange passwordless proofs without a browser redirect.') }}</p>
+              <CoarCheckbox v-model="nativeGrantsForm.Enabled" :label="t('common.active', {}, 'Active')" />
+            </div>
+            <CoarNotice truncate v-if="nativeGrantsForm.Enabled" variant="info">
+              {{ t('admin.realmSettings.nativeGrants.optInWarningShort', {}, 'Per-client opt-in is still required.') }}
+              <template #details>{{ t('admin.realmSettings.nativeGrants.optInWarning', {}, 'Each OAuth client must explicitly allow the corresponding grant type.') }}</template>
+            </CoarNotice>
+            <div v-if="nativeGrantsForm.Enabled" class="form-grid-2 section-body">
+              <CoarFormField :label="t('admin.realmSettings.nativeGrants.accessTokenMinutes', {}, 'Access-token lifetime (minutes)')">
+                <CoarTextInput :model-value="String(nativeGrantsForm.AccessTokenLifetimeMinutes)" @update:model-value="(v) => (nativeGrantsForm.AccessTokenLifetimeMinutes = Math.max(1, parseInt(v) || 15))" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.realmSettings.nativeGrants.refreshTokenDays', {}, 'Refresh-token lifetime (days)')">
+                <CoarTextInput :model-value="String(nativeGrantsForm.RefreshTokenLifetimeDays)" @update:model-value="(v) => (nativeGrantsForm.RefreshTokenLifetimeDays = Math.max(1, parseInt(v) || 14))" />
+              </CoarFormField>
+            </div>
+          </section>
+        </template>
+
+        <!-- Security posture and key material. -->
+        <template v-else-if="activeTab === 'security'">
+          <section class="settings-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">{{ t('admin.realmSettings.sections.rateLimits', {}, 'Authentication rate limits') }}</h2>
+            </CoarDivider>
+            <p class="section-description">{{ t('admin.realmSettings.authRateLimits.hint', {}, 'Per-IP request ceilings for this realm authentication endpoints.') }}</p>
+            <div class="rate-limit-grid">
+              <div class="rate-limit-grid__header">
+                <span>{{ t('admin.realmSettings.authRateLimits.flow', {}, 'Flow') }}</span>
+                <span>{{ t('admin.realmSettings.authRateLimits.permitLimit', {}, 'Max. requests') }}</span>
+                <span>{{ t('admin.realmSettings.authRateLimits.windowMinutes', {}, 'Window (minutes)') }}</span>
+              </div>
+              <div v-for="p in rateLimitPolicies" :key="p.key" class="rate-limit-grid__row">
+                <span>{{ t(p.labelKey, {}, p.fallback) }}</span>
+                <CoarTextInput class="compact-number" :model-value="String(authRateLimitsForm[p.key].PermitLimit)"
+                  :aria-label="`${t(p.labelKey, {}, p.fallback)} – ${t('admin.realmSettings.authRateLimits.permitLimit', {}, 'Max. requests')}`"
+                  @update:model-value="(v) => (authRateLimitsForm[p.key].PermitLimit = Math.max(1, parseInt(v) || 1))" />
+                <CoarTextInput class="compact-number" :model-value="String(authRateLimitsForm[p.key].WindowMinutes)"
+                  :aria-label="`${t(p.labelKey, {}, p.fallback)} – ${t('admin.realmSettings.authRateLimits.windowMinutes', {}, 'Window (minutes)')}`"
+                  @update:model-value="(v) => (authRateLimitsForm[p.key].WindowMinutes = Math.max(1, parseInt(v) || 1))" />
+              </div>
+            </div>
+          </section>
+
+          <section v-if="canRotateSigningKey" class="settings-section danger-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">{{ t('admin.realmSettings.sections.signingKeys', {}, 'Signing keys') }}</h2>
+            </CoarDivider>
+            <p class="section-description">{{ t('admin.realmSettings.signingKeys.hint', {}, 'This realm signs access and ID tokens with its own RSA key.') }}</p>
+            <CoarNotice truncate variant="warning">
+              {{ t('admin.realmSettings.signingKeys.warningShort', {}, 'Rotate keys only with good reason — cached JWKS may briefly reject new tokens.') }}
+              <template #details>{{ t('admin.realmSettings.signingKeys.warning', {}, 'Resource servers may briefly reject tokens while refreshing cached JWKS.') }}</template>
+            </CoarNotice>
+            <div class="danger-action">
+              <CoarPopconfirm
+                :title="t('admin.realmSettings.signingKeys.rotateConfirmTitle', {}, 'Rotate signing key?')"
+                :message="t('admin.realmSettings.signingKeys.rotateConfirmMessage', {}, 'A fresh key becomes active immediately. This cannot be undone.')"
+                @confirmed="rotateSigningKey">
+                <CoarButton :loading="rotating" variant="danger" icon-start="rotate-ccw">
+                  {{ t('admin.realmSettings.signingKeys.rotateButton', {}, 'Rotate signing key') }}
                 </CoarButton>
+              </CoarPopconfirm>
+            </div>
+          </section>
+        </template>
+
+        <!-- Realm-owned data visibility, retention and account deletion. -->
+        <template v-else-if="activeTab === 'data-retention'">
+          <section class="settings-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">{{ t('admin.realmSettings.sections.auditRetention', {}, 'Protocol retention') }}</h2>
+            </CoarDivider>
+            <CoarNotice truncate variant="info">
+              {{ t('admin.realmSettings.audit.hintShort', {}, 'Security events are hard-deleted after the configured retention.') }}
+              <template #details>{{ t('admin.realmSettings.audit.hint', {}, 'Security-event retention deletes rows; audit visibility only hides older history.') }}</template>
+            </CoarNotice>
+            <div class="form-grid-2">
+              <CoarFormField
+                :label="t('admin.realmSettings.audit.securityRetentionDays', {}, 'Security-event retention (days)')"
+                :hint="t('admin.realmSettings.audit.securityRetentionHelp', {}, 'Allowed range: 1–365 days.')">
+                <CoarTextInput :model-value="String(auditForm.SecurityRetentionDays)"
+                  @update:model-value="(v) => (auditForm.SecurityRetentionDays = Math.min(365, Math.max(1, parseInt(v) || 7)))" />
+              </CoarFormField>
+              <CoarFormField
+                :label="t('admin.realmSettings.audit.visibilityWindowDays', {}, 'Audit-history visibility (days)')"
+                :hint="t('admin.realmSettings.audit.visibilityHelp', {}, 'Hides older event-sourced audit rows without deleting aggregate history.')">
+                <CoarTextInput :model-value="String(auditForm.VisibilityWindowDays)"
+                  @update:model-value="(v) => (auditForm.VisibilityWindowDays = Math.max(1, parseInt(v) || 90))" />
+              </CoarFormField>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">{{ t('admin.realmSettings.sections.accountDeletion', {}, 'Account deletion') }}</h2>
+            </CoarDivider>
+            <p class="section-description">{{ t('admin.realmSettings.deletion.hint', {}, 'Controls self-service grace periods and the administrator recycle bin.') }}</p>
+            <div class="form-grid-2">
+              <CoarFormField :label="t('admin.realmSettings.deletion.graceDays', {}, 'Self-service grace period (days)')">
+                <CoarTextInput :model-value="String(deletionForm.GraceDays)" @update:model-value="(v) => (deletionForm.GraceDays = Math.max(1, parseInt(v) || 30))" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.realmSettings.deletion.reminderLeadDays', {}, 'Reminder lead time (days)')"
+                :error="deletionInvalid ? t('admin.realmSettings.deletion.reminderTooLong', {}, 'Reminder lead time must be shorter than the grace period.') : ''">
+                <CoarTextInput :model-value="String(deletionForm.ReminderLeadDays)" @update:model-value="(v) => (deletionForm.ReminderLeadDays = Math.max(0, parseInt(v) || 0))" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.realmSettings.deletion.adminRetentionDays', {}, 'Administrator recycle-bin retention (days)')">
+                <CoarTextInput :model-value="String(deletionForm.AdminRetentionDays)" @update:model-value="(v) => (deletionForm.AdminRetentionDays = Math.max(0, parseInt(v) || 30))" />
+              </CoarFormField>
+              <div class="checkbox-field">
+                <CoarCheckbox v-model="deletionForm.AutoPurgeEnabled"
+                  :label="t('admin.realmSettings.deletion.autoPurge', {}, 'Auto-purge recycle bin after retention')" />
               </div>
-              <div v-else class="flex flex-col gap-1">
-                <div class="flex items-center gap-2">
-                  <CoarTextInput v-model="secretInput" clearable
-                    :placeholder="t('admin.realmSettings.selfReg.captchaSecret.inputPlaceholder', {}, 'New secret (empty = clear/default)')" />
-                  <CoarButton size="s" variant="secondary"
-                    @click="() => { editingSecret = false; secretInput = '' }">
-                    {{ t('common.cancel', {}, 'Cancel') }}
-                  </CoarButton>
-                </div>
-                <p class="text-xs text-gray-500">
-                  {{ t('admin.realmSettings.selfReg.captchaSecret.help', {}, 'Applied on save. Empty + save = clear secret (revert to Cocoar default).') }}
-                </p>
-              </div>
-            </CoarFormField>
-          </template>
+            </div>
+            <CoarNotice v-if="!deletionForm.AutoPurgeEnabled" variant="info">
+              {{ t('admin.realmSettings.deletion.autoPurgeOff', {}, 'Auto-purge is off — accounts remain until an administrator force-deletes them.') }}
+            </CoarNotice>
+          </section>
         </template>
 
-        <div class="flex justify-end mt-2">
-          <CoarButton :loading="saving" @click="save">
-            {{ t('common.save', {}, 'Save') }}
-          </CoarButton>
-        </div>
-      </div>
-    </CoarCard>
-
-    <CoarCard v-else-if="activeTab === 'registration-fields'" class="p-4">
-      <div class="flex flex-col gap-3">
-        <p class="text-xs text-gray-500">
-          {{ t('admin.realmSettings.regFields.hint', {}, 'Which identity fields are required at account creation (admin creation, self-registration, native passwordless registration). Email is always required. Overridable per application.') }}
-        </p>
-
-        <CoarFormField :label="t('admin.regFields.email', {}, 'E-Mail')">
-          <CoarTextInput :model-value="t('admin.regFields.required', {}, 'Required')" disabled />
-        </CoarFormField>
-        <div class="field-enum">
-          <CoarFormField :label="t('admin.regFields.username', {}, 'Benutzername')">
-            <CoarSelect v-model="regFieldsForm.Username" :options="requirementOptions" />
-          </CoarFormField>
-        </div>
-        <div class="field-enum">
-          <CoarFormField :label="t('admin.regFields.firstname', {}, 'Vorname')">
-            <CoarSelect v-model="regFieldsForm.Firstname" :options="requirementOptions" />
-          </CoarFormField>
-        </div>
-        <div class="field-enum">
-          <CoarFormField :label="t('admin.regFields.lastname', {}, 'Nachname')">
-            <CoarSelect v-model="regFieldsForm.Lastname" :options="requirementOptions" />
-          </CoarFormField>
-        </div>
-
-        <CoarNote v-if="regFieldsForm.Username === 'Off'" variant="info">
-          {{ t('admin.regFields.usernameOffHint', {}, 'Benutzername = E-Mail (kein separates Feld).') }}
-        </CoarNote>
-
-        <div class="flex justify-end mt-2">
-          <CoarButton :loading="saving" @click="save">
-            {{ t('common.save', {}, 'Save') }}
-          </CoarButton>
-        </div>
-      </div>
-    </CoarCard>
-
-    <CoarCard v-else-if="activeTab === 'dcr'" class="p-4">
-      <div class="flex flex-col gap-3">
-        <p class="text-xs text-gray-500">
-          {{ t('admin.realmSettings.dcr.hint', {}, 'When enabled, AI agents and other software can register OAuth clients themselves at POST /connect/register (RFC 7591). Public PKCE clients only, no client_secret issued. Off by default.') }}
-        </p>
-
-        <CoarCheckbox
-          v-model="dcrForm.Enabled"
-          :label="t('admin.realmSettings.dcr.enabled', {}, 'Enable Dynamic Client Registration')" />
-
-        <CoarNote v-if="dcrForm.Enabled" variant="info">
-          {{ t('admin.realmSettings.dcr.tripleOptInWarning', {}, 'Triple opt-in: clients registered here can only request access tokens for OAuth APIs with AllowDynamicRegistration enabled AND scopes with AllowDynamicRegistrationClients enabled. Until you opt in at least one API and one scope, DCR clients cannot mint usable tokens.') }}
-        </CoarNote>
-
-        <template v-if="dcrForm.Enabled">
-          <div class="grid grid-cols-2 gap-3">
-            <CoarFormField :label="t('admin.realmSettings.dcr.accessTokenMinutes', {}, 'Access token lifetime (minutes)')">
-              <CoarTextInput
-                :model-value="String(dcrForm.AccessTokenLifetimeMinutes)"
-                @update:model-value="(v) => (dcrForm.AccessTokenLifetimeMinutes = Math.max(1, parseInt(v) || 15))" />
-            </CoarFormField>
-            <CoarFormField :label="t('admin.realmSettings.dcr.refreshTokenDays', {}, 'Refresh token lifetime (days)')">
-              <CoarTextInput
-                :model-value="String(dcrForm.RefreshTokenLifetimeDays)"
-                @update:model-value="(v) => (dcrForm.RefreshTokenLifetimeDays = Math.max(1, parseInt(v) || 7))" />
-            </CoarFormField>
-          </div>
-
-          <div class="grid grid-cols-3 gap-3">
-            <CoarFormField :label="t('admin.realmSettings.dcr.gcTtlDays', {}, 'Garbage-collect after unused (days)')">
-              <CoarTextInput
-                :model-value="String(dcrForm.GcTtlDays)"
-                @update:model-value="(v) => (dcrForm.GcTtlDays = Math.max(1, parseInt(v) || 90))" />
-            </CoarFormField>
-            <CoarFormField :label="t('admin.realmSettings.dcr.rateLimitIp', {}, 'Rate limit per source IP (per hour)')">
-              <CoarTextInput
-                :model-value="String(dcrForm.PerIpRateLimitPerHour)"
-                @update:model-value="(v) => (dcrForm.PerIpRateLimitPerHour = Math.max(1, parseInt(v) || 5))" />
-            </CoarFormField>
-            <CoarFormField :label="t('admin.realmSettings.dcr.rateLimitRealm', {}, 'Rate limit per realm (per day)')">
-              <CoarTextInput
-                :model-value="String(dcrForm.PerRealmRateLimitPerDay)"
-                @update:model-value="(v) => (dcrForm.PerRealmRateLimitPerDay = Math.max(1, parseInt(v) || 100))" />
-            </CoarFormField>
-          </div>
-
-          <CoarFormField :label="t('admin.realmSettings.dcr.reservedNames', {}, 'Reserved client names (substring match, NFKC + case-insensitive)')">
-            <EditableStringList
-              v-model="dcrForm.ReservedNames"
-              :placeholder="t('admin.realmSettings.dcr.reservedNames.placeholder', {}, 'Cocoar')" />
-            <template #footer>
-              <p class="text-xs text-gray-500">
-                {{ t('admin.realmSettings.dcr.reservedNames.help', {}, 'Block client_name impersonation. Anything containing one of these strings is rejected at registration. Each entry is NFKC-normalised + lower-cased before comparison.') }}
-              </p>
-            </template>
-          </CoarFormField>
+        <!-- Page selections save immediately; variants are authored elsewhere. -->
+        <template v-else-if="activeTab === 'pages'">
+          <section class="settings-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">{{ t('admin.realmSettings.sections.pages', {}, 'Active sign-in pages') }}</h2>
+            </CoarDivider>
+            <p class="section-description">{{ t('admin.realmSettings.pages.hint', {}, 'Choose which authentication page is live for this realm. Changes are applied immediately.') }}</p>
+            <CoarNotice v-if="pagesError" variant="error">{{ pagesError }}</CoarNotice>
+            <div class="form-grid-2">
+              <CoarFormField v-for="m in PAGE_SLOT_META" :key="m.slug" :label="m.label">
+                <CoarSelect
+                  :model-value="pageSlotOf(m.slug).ActiveVariantId ?? PAGE_BUILT_IN"
+                  :options="pageActiveOptions(pageSlotOf(m.slug))"
+                  :disabled="pagesBusy"
+                  @update:model-value="(v: string | null) => setRealmPageActive(m.slug, v)" />
+              </CoarFormField>
+            </div>
+          </section>
         </template>
 
-        <div class="flex justify-end mt-2">
-          <CoarButton :loading="saving" @click="save">
-            {{ t('common.save', {}, 'Save') }}
+        <div v-if="activeTab !== 'pages'" class="save-bar">
+          <span :class="activeTabDirty ? 'save-status save-status--dirty' : 'save-status'">
+            {{ activeTabDirty
+              ? t('admin.realmSettings.unsaved', {}, 'Unsaved changes in this area.')
+              : t('admin.realmSettings.noUnsaved', {}, 'No unsaved changes.') }}
+          </span>
+          <CoarButton :loading="saving" :disabled="!canSaveActive" @click="saveActiveTab">
+            {{ t('admin.realmSettings.saveArea', {}, 'Save area') }}
           </CoarButton>
         </div>
       </div>
-    </CoarCard>
-
-    <CoarCard v-else-if="activeTab === 'cimd'" class="p-4">
-      <div class="flex flex-col gap-3">
-        <p class="text-xs text-gray-500">
-          {{ t('admin.realmSettings.cimd.hint', {}, 'When enabled, a client whose client_id is an https URL (a Client ID Metadata Document, the MCP-preferred path) is resolved on demand: the server fetches + validates the document and treats it as a public PKCE client — no registration request, no client_secret, identity bound to the URL’s domain. Off by default.') }}
-        </p>
-
-        <CoarCheckbox
-          v-model="cimdForm.Enabled"
-          :label="t('admin.realmSettings.cimd.enabled', {}, 'Enable Client ID Metadata Documents')" />
-
-        <CoarNote v-if="cimdForm.Enabled" variant="info">
-          {{ t('admin.realmSettings.cimd.optInWarning', {}, 'Like DCR, a CIMD client can only request access tokens for OAuth APIs with AllowDynamicRegistration enabled and scopes the metadata document declares. Until you opt in at least one API, CIMD clients cannot mint usable tokens. The server fetches the client’s metadata URL — only enable this if you trust the realm’s outbound network egress.') }}
-        </CoarNote>
-
-        <template v-if="cimdForm.Enabled">
-          <div class="grid grid-cols-2 gap-3">
-            <CoarFormField :label="t('admin.realmSettings.cimd.accessTokenMinutes', {}, 'Access token lifetime (minutes)')">
-              <CoarTextInput
-                :model-value="String(cimdForm.AccessTokenLifetimeMinutes)"
-                @update:model-value="(v) => (cimdForm.AccessTokenLifetimeMinutes = Math.max(1, parseInt(v) || 15))" />
-            </CoarFormField>
-            <CoarFormField :label="t('admin.realmSettings.cimd.refreshTokenDays', {}, 'Refresh token lifetime (days)')">
-              <CoarTextInput
-                :model-value="String(cimdForm.RefreshTokenLifetimeDays)"
-                @update:model-value="(v) => (cimdForm.RefreshTokenLifetimeDays = Math.max(1, parseInt(v) || 7))" />
-            </CoarFormField>
-          </div>
-        </template>
-
-        <div class="flex justify-end mt-2">
-          <CoarButton :loading="saving" @click="save">
-            {{ t('common.save', {}, 'Save') }}
-          </CoarButton>
-        </div>
-      </div>
-    </CoarCard>
-
-    <CoarCard v-else-if="activeTab === 'native-grants'" class="p-4">
-      <div class="flex flex-col gap-3">
-        <p class="text-xs text-gray-500">
-          {{ t('admin.realmSettings.nativeGrants.hint', {}, 'When enabled, native apps can exchange a passwordless proof directly at POST /connect/token for tokens — no browser redirect, no cookie. Three grants: urn:cocoar:otp (email one-time code), urn:cocoar:magic (magic-link token), urn:cocoar:passkey (WebAuthn assertion). Off by default.') }}
-        </p>
-
-        <CoarCheckbox
-          v-model="nativeGrantsForm.Enabled"
-          :label="t('admin.realmSettings.nativeGrants.enabled', {}, 'Enable native passwordless grants')" />
-
-        <CoarNote v-if="nativeGrantsForm.Enabled" variant="info">
-          {{ t('admin.realmSettings.nativeGrants.optInWarning', {}, 'Per-client opt-in still required: a client can only use a native grant once it carries the matching grant-type permission (gt:urn:cocoar:otp / :magic / :passkey), enabled on the client’s Grants tab. Flipping this realm toggle is necessary but not sufficient. Only catalog clients qualify — DCR/CIMD clients are excluded.') }}
-        </CoarNote>
-
-        <template v-if="nativeGrantsForm.Enabled">
-          <div class="grid grid-cols-2 gap-3">
-            <CoarFormField :label="t('admin.realmSettings.nativeGrants.accessTokenMinutes', {}, 'Access token lifetime (minutes)')">
-              <CoarTextInput
-                :model-value="String(nativeGrantsForm.AccessTokenLifetimeMinutes)"
-                @update:model-value="(v) => (nativeGrantsForm.AccessTokenLifetimeMinutes = Math.max(1, parseInt(v) || 15))" />
-            </CoarFormField>
-            <CoarFormField :label="t('admin.realmSettings.nativeGrants.refreshTokenDays', {}, 'Refresh token lifetime (days)')">
-              <CoarTextInput
-                :model-value="String(nativeGrantsForm.RefreshTokenLifetimeDays)"
-                @update:model-value="(v) => (nativeGrantsForm.RefreshTokenLifetimeDays = Math.max(1, parseInt(v) || 14))" />
-            </CoarFormField>
-          </div>
-        </template>
-
-        <div class="flex justify-end mt-2">
-          <CoarButton :loading="saving" @click="save">
-            {{ t('common.save', {}, 'Save') }}
-          </CoarButton>
-        </div>
-      </div>
-    </CoarCard>
-
-    <CoarCard v-else-if="activeTab === 'auth-rate-limits'" class="p-4">
-      <div class="flex flex-col gap-3">
-        <p class="text-xs text-gray-500">
-          {{ t('admin.realmSettings.authRateLimits.hint', {}, 'Per-IP request ceilings for this realm’s auth endpoints: at most PermitLimit requests per Window (minutes) from one source IP. The defaults are the secure production posture — raise them only for test realms, dev, or legitimately bursty consumers; lower them to tighten. Each value applies per realm.') }}
-        </p>
-
-        <div
-          v-for="p in rateLimitPolicies"
-          :key="p.key"
-          class="grid grid-cols-[1fr_auto_auto] items-end gap-3">
-          <div class="text-sm self-center">{{ t(p.labelKey, {}, p.fallback) }}</div>
-          <CoarFormField :label="t('admin.realmSettings.authRateLimits.permitLimit', {}, 'Max requests')">
-            <CoarTextInput
-              class="w-28"
-              :model-value="String(authRateLimitsForm[p.key].PermitLimit)"
-              @update:model-value="(v) => (authRateLimitsForm[p.key].PermitLimit = Math.max(1, parseInt(v) || 1))" />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.realmSettings.authRateLimits.windowMinutes', {}, 'Window (minutes)')">
-            <CoarTextInput
-              class="w-28"
-              :model-value="String(authRateLimitsForm[p.key].WindowMinutes)"
-              @update:model-value="(v) => (authRateLimitsForm[p.key].WindowMinutes = Math.max(1, parseInt(v) || 1))" />
-          </CoarFormField>
-        </div>
-
-        <div class="flex justify-end mt-2">
-          <CoarButton :loading="saving" @click="save">
-            {{ t('common.save', {}, 'Save') }}
-          </CoarButton>
-        </div>
-      </div>
-    </CoarCard>
-
-    <CoarCard v-else-if="activeTab === 'deletion'" class="p-4">
-      <div class="flex flex-col gap-3">
-        <p class="text-xs text-gray-500">
-          {{ t('admin.realmSettings.deletion.hint', {}, 'Controls the account-deletion lifecycle for this realm. Self-service deletions get a grace window the user can cancel during; admin deletions go to a recycle bin that is auto-purged after retention.') }}
-        </p>
-
-        <div class="grid grid-cols-2 gap-3">
-          <CoarFormField :label="t('admin.realmSettings.deletion.graceDays', {}, 'Self-service grace period (days)')">
-            <CoarTextInput
-              :model-value="String(deletionForm.GraceDays)"
-              @update:model-value="(v) => (deletionForm.GraceDays = Math.max(1, parseInt(v) || 30))" />
-          </CoarFormField>
-          <CoarFormField :label="t('admin.realmSettings.deletion.reminderLeadDays', {}, 'Reminder lead time (days before deadline)')">
-            <CoarTextInput
-              :model-value="String(deletionForm.ReminderLeadDays)"
-              @update:model-value="(v) => (deletionForm.ReminderLeadDays = Math.max(0, parseInt(v) || 0))" />
-          </CoarFormField>
-        </div>
-
-        <CoarNote v-if="deletionForm.ReminderLeadDays >= deletionForm.GraceDays" variant="warning">
-          {{ t('admin.realmSettings.deletion.reminderTooLong', {}, 'Reminder lead time must be shorter than the grace period, otherwise the reminder never fires.') }}
-        </CoarNote>
-
-        <div class="grid grid-cols-2 gap-3">
-          <CoarFormField :label="t('admin.realmSettings.deletion.adminRetentionDays', {}, 'Admin recycle-bin retention (days)')">
-            <CoarTextInput
-              :model-value="String(deletionForm.AdminRetentionDays)"
-              @update:model-value="(v) => (deletionForm.AdminRetentionDays = Math.max(0, parseInt(v) || 30))" />
-          </CoarFormField>
-          <div class="flex items-end">
-            <CoarCheckbox
-              v-model="deletionForm.AutoPurgeEnabled"
-              :label="t('admin.realmSettings.deletion.autoPurge', {}, 'Auto-purge recycle bin after retention')" />
-          </div>
-        </div>
-
-        <CoarNote v-if="!deletionForm.AutoPurgeEnabled" variant="info">
-          {{ t('admin.realmSettings.deletion.autoPurgeOff', {}, 'Auto-purge is off — admin-binned accounts are kept until an admin force-deletes them manually.') }}
-        </CoarNote>
-
-        <div class="flex justify-end mt-2">
-          <CoarButton :loading="saving" @click="save">
-            {{ t('common.save', {}, 'Save') }}
-          </CoarButton>
-        </div>
-      </div>
-    </CoarCard>
-
-    <CoarCard v-else-if="activeTab === 'signing-keys'" class="p-4">
-      <div class="flex flex-col gap-3">
-        <p class="text-xs text-gray-500">
-          {{ t('admin.realmSettings.signingKeys.hint', {}, 'This realm signs its OpenIddict access and id tokens with a per-realm RSA key. Rotating generates a fresh key for new tokens; the previous key is retired but kept in the JWKS for a 30-day overlap so tokens already issued stay valid. Expired retired keys are purged automatically.') }}
-        </p>
-
-        <CoarNote variant="warning">
-          {{ t('admin.realmSettings.signingKeys.warning', {}, 'Rotate only when you have reason to (suspected key exposure, scheduled hygiene). Resource servers that cache the JWKS aggressively may briefly reject new tokens until they refresh.') }}
-        </CoarNote>
-
-        <div class="flex justify-end mt-2">
-          <CoarPopconfirm
-            :title="t('admin.realmSettings.signingKeys.rotateConfirmTitle', {}, 'Rotate signing key?')"
-            :message="t('admin.realmSettings.signingKeys.rotateConfirmMessage', {}, 'A fresh key becomes active immediately. The current key is retired into the 30-day overlap window. This cannot be undone.')"
-            @confirmed="rotateSigningKey">
-            <CoarButton :loading="rotating" variant="danger" icon-start="rotate-ccw">
-              {{ t('admin.realmSettings.signingKeys.rotateButton', {}, 'Rotate signing key') }}
-            </CoarButton>
-          </CoarPopconfirm>
-        </div>
-      </div>
-    </CoarCard>
-
-    <CoarCard v-else-if="activeTab === 'pages'" class="p-4">
-      <div class="flex flex-col gap-3">
-        <p class="text-xs text-gray-500">
-          {{ t('admin.realmSettings.pages.hint', {}, 'Choose which authentication page is live for this realm. "Built-in" renders the fixed default. Variants are authored in Platform → Pages.') }}
-        </p>
-        <CoarNote v-if="pagesError" variant="error">{{ pagesError }}</CoarNote>
-
-        <CoarFormField v-for="m in PAGE_SLOT_META" :key="m.slug" :label="m.label">
-          <CoarSelect
-            :model-value="pageSlotOf(m.slug).ActiveVariantId ?? PAGE_BUILT_IN"
-            :options="pageActiveOptions(pageSlotOf(m.slug))"
-            :disabled="pagesBusy"
-            @update:model-value="(v: string | null) => setRealmPageActive(m.slug, v)" />
-        </CoarFormField>
-      </div>
-    </CoarCard>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.realm-settings-page {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 1rem;
+}
+
+.realm-settings-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  max-width: 72rem;
+  overflow: hidden;
+  gap: 0.75rem;
+}
+
 .tab-bar {
-  border-bottom: 1px solid var(--coar-border-neutral-secondary, #e5e7eb);
+  border-bottom: 1px solid var(--coar-border-neutral-subtle, #e5e7eb);
+  min-width: 0;
+}
+
+.tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.dirty-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--coar-background-semantic-warning, #d97706);
+}
+
+.settings-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  gap: 1.25rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+  scrollbar-gutter: stable;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.section-title {
+  margin: 0;
+  color: var(--coar-text-neutral-secondary, #525e76);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.section-description,
+.section-intro p {
+  margin: 0;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.section-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 1.5rem;
+}
+
+.section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.inline-checks,
+.secret-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+}
+
+.secret-row > :first-child {
+  flex: 1;
+}
+
+.field-value-muted {
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  font-size: 0.85rem;
+}
+
+.form-grid-2,
+.form-grid-3 {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.form-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.form-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.policy-grid,
+.rate-limit-grid {
+  overflow: hidden;
+  border: 1px solid var(--coar-border-neutral-subtle, #e5e7eb);
+  border-radius: var(--coar-radius-m, 4px);
+}
+
+.policy-grid__header,
+.policy-grid__row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(12rem, 20rem);
+  align-items: center;
+  gap: 1rem;
+  min-height: 3rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.rate-limit-grid__header,
+.rate-limit-grid__row {
+  display: grid;
+  grid-template-columns: minmax(18rem, 1fr) 9rem 10rem;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3rem;
+  padding: 0.4rem 0.75rem;
+}
+
+.policy-grid__header,
+.rate-limit-grid__header {
+  color: var(--coar-text-neutral-secondary, #525e76);
+  background: var(--coar-background-neutral-secondary, #f8fafc);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.policy-grid__row + .policy-grid__row,
+.rate-limit-grid__row + .rate-limit-grid__row {
+  border-top: 1px solid var(--coar-border-neutral-subtle, #e5e7eb);
+}
+
+.policy-grid__row,
+.rate-limit-grid__row {
+  font-size: 0.85rem;
+}
+
+.fixed-policy {
+  color: var(--coar-text-neutral-secondary, #525e76);
+  font-weight: 600;
+}
+
+.compact-number { width: 100%; }
+
+.checkbox-field {
+  display: flex;
+  align-items: end;
+  padding-bottom: 0.6rem;
+}
+
+.danger-section {
+  margin-top: 0.25rem;
+}
+
+.danger-action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.save-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: auto;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--coar-border-neutral-subtle, #e5e7eb);
+  background: var(--coar-background-neutral-primary, #fff);
+}
+
+.save-status {
+  color: var(--coar-text-neutral-tertiary, #6b7280);
+  font-size: 0.78rem;
+}
+
+.save-status--dirty {
+  color: var(--coar-text-semantic-warning, #b45309);
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .form-grid-2,
+  .form-grid-3 { grid-template-columns: 1fr; }
+  .rate-limit-grid__header,
+  .rate-limit-grid__row { grid-template-columns: minmax(10rem, 1fr) 7rem 8rem; }
 }
 </style>

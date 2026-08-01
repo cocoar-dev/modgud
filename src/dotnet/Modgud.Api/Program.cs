@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.AspNetCore.SignalR;
 using Serilog;
 using Serilog.Sinks.OpenTelemetry;
 using Serilog.Sinks.SystemConsole.Themes;
@@ -36,6 +37,7 @@ using Modgud.Api.Features.Principals;
 using Modgud.Api.Features.Roles;
 using Modgud.Api.Features.Shared;
 using Modgud.Api.Features.Users;
+using Modgud.Api.Features.Installation;
 using Modgud.Api.Helper;
 using Modgud.Domain.Common;
 using AuthRateLimitPolicy = Modgud.Domain.Realms.AuthRateLimitPolicy;
@@ -245,7 +247,13 @@ try
 
     });
 
-    builder.Services.AddSignalR()
+    builder.Services.AddSingleton<Modgud.Authentication.Sessions.IBrowserSessionConnectionRegistry,
+        Modgud.Authentication.Sessions.BrowserSessionConnectionRegistry>();
+    builder.Services.AddSingleton<Modgud.Api.Realtime.BrowserSessionHubFilter>();
+    builder.Services.AddSignalR(options =>
+        {
+            options.AddFilter<Modgud.Api.Realtime.BrowserSessionHubFilter>();
+        })
         .AddJsonProtocol(options =>
         {
             options.PayloadSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
@@ -341,6 +349,11 @@ try
                 if (!newIdentity.HasClaim(claim.Type, claim.Value))
                     newIdentity.AddClaim(new Claim(claim.Type, claim.Value));
 
+            foreach (var claim in current.FindAll(
+                         Modgud.Authentication.Sessions.SessionClaimTypes.BrowserSessionId))
+                if (!newIdentity.HasClaim(claim.Type, claim.Value))
+                    newIdentity.AddClaim(new Claim(claim.Type, claim.Value));
+
             return Task.CompletedTask;
         };
     });
@@ -348,6 +361,7 @@ try
     builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
         .AddCookie(IdentityConstants.ApplicationScheme, options =>
         {
+            options.EventsType = typeof(Modgud.Authentication.Sessions.BrowserSessionCookieEvents);
             options.Cookie.HttpOnly = true;
             // COOKIE-01: Lax (was Strict). Strict prevents the browser from sending
             // the cookie on top-level navigations from third-party origins — which
@@ -370,37 +384,9 @@ try
             options.CookieManager = new Modgud.Api.Cookies.TenantApexCookieManager();
             options.ExpireTimeSpan = TimeSpan.FromDays(30); // Max lifetime for persistent (RememberMe) cookies
             options.SlidingExpiration = true;
-            // SESSION-01 — re-validate the user's security stamp on every
-            // request (with a small per-request cache configured via
-            // SecurityStampValidatorOptions.ValidationInterval). When the
-            // stamp on disk no longer matches the cookie's stamp, the
-            // cookie is rejected and the user must re-authenticate.
-            options.Events.OnValidatePrincipal = SecurityStampValidator.ValidatePrincipalAsync;
-            options.Events.OnRedirectToLogin = ctx =>
-            {
-                // /api/* is the SPA's data plane — surface 401 so the
-                // SPA can decide where to navigate. Everything else
-                // (including /connect/authorize for inbound OAuth flows
-                // from third-party clients) needs a real 302 redirect
-                // so the browser actually lands on the login page.
-                if (ctx.Request.Path.StartsWithSegments("/api"))
-                {
-                    ctx.Response.StatusCode = 401;
-                    return Task.CompletedTask;
-                }
-                ctx.Response.Redirect(ctx.RedirectUri);
-                return Task.CompletedTask;
-            };
-            options.Events.OnRedirectToAccessDenied = ctx =>
-            {
-                if (ctx.Request.Path.StartsWithSegments("/api"))
-                {
-                    ctx.Response.StatusCode = 403;
-                    return Task.CompletedTask;
-                }
-                ctx.Response.Redirect(ctx.RedirectUri);
-                return Task.CompletedTask;
-            };
+            // BrowserSessionCookieEvents performs authoritative session
+            // validation, delegates security-stamp validation and preserves
+            // the API-specific 401/403 redirect behavior.
             // Login/access-denied paths — the SPA handles these client-side
             // (Vue Router routes for /login + /access-denied), but they need
             // to be valid URLs so the redirect emitted above resolves to the
@@ -648,9 +634,10 @@ try
     // by RecoveryCli `bootstrap-admin` and the future invite-mode endpoint.
     builder.Services.AddScoped<Modgud.Authentication.Setup.IRealmAdminBootstrapper,
         Modgud.Authentication.Setup.RealmAdminBootstrapper>();
+    builder.Services.AddScoped<InstallationCompletionService>();
 
     // C15b — One-shot Pending-Admin-Invite (issued by CLI without --password,
-    // by RealmProvisioning's InitialAdmin path, or by the resend endpoint;
+    // optionally together with realm creation, or by the admin-invite endpoint;
     // consumed by POST /api/account/bootstrap-admin).
     builder.Services.AddScoped<Modgud.Authentication.Setup.IPendingAdminInviteService,
         Modgud.Authentication.Setup.PendingAdminInviteService>();
@@ -743,6 +730,12 @@ try
         Modgud.Authentication.Sessions.DeviceInfoService>();
     builder.Services.AddScoped<Modgud.Authentication.Sessions.ISessionService,
         Modgud.Authentication.Sessions.SessionService>();
+    builder.Services.AddScoped<Modgud.Authentication.Sessions.BrowserSessionCookieEvents>();
+    builder.Services.AddScoped<Modgud.Authentication.Sessions.ClientSessionService>();
+    builder.Services.AddScoped<Modgud.Authentication.Sessions.IClientSessionService>(sp =>
+        sp.GetRequiredService<Modgud.Authentication.Sessions.ClientSessionService>());
+    builder.Services.AddScoped<Modgud.Infrastructure.OpenIddict.IRefreshTokenReuseObserver>(sp =>
+        sp.GetRequiredService<Modgud.Authentication.Sessions.ClientSessionService>());
     builder.Services.AddScoped<Modgud.Authentication.Gdpr.IGdprService,
         Modgud.Authentication.Gdpr.GdprService>();
 
@@ -950,52 +943,68 @@ try
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
     });
 
-    // Streamless security/ops audit store (logging/audit redesign Track A, Phase 3).
-    // Typed best-effort sink (bounded channel) + background writer to the system DB.
-    // Replaced the legacy "Auth:"-message-prefix Serilog sink (AuthLogSink +
-    // AuthLogPersistenceService, now deleted). The realm is captured from
-    // TenantContext.Current at emit; the retention prune is a Quartz job (below).
+    // Structured best-effort security-event sink. Realm events are routed to the
+    // owning physical realm DB; PII-free deployment events go to the Global Store.
     builder.Services.AddSingleton<Modgud.Infrastructure.Audit.SecurityAuditLog>();
     builder.Services.AddSingleton<Modgud.Infrastructure.Audit.ISecurityAuditLog>(
         sp => sp.GetRequiredService<Modgud.Infrastructure.Audit.SecurityAuditLog>());
     builder.Services.AddHostedService<Modgud.Infrastructure.Audit.SecurityAuditWriter>();
 
-    // Quartz-based scheduling framework + the system jobs we host. The DCR
-    // garbage collector was a hand-rolled BackgroundService before Phase 1A;
-    // now it runs as a Quartz job so admins can see runs, override the cron,
-    // and trigger manually from /admin/jobs.
+    // Quartz-based scheduling framework. Realm jobs get one independent
+    // Quartz job + trigger per realm; deployment-wide jobs are registered once
+    // and are visible only from the current Control-Plane realm.
     builder.Services.AddScheduling();
-    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob>(
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob>(
         key: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.Description,
         getParameterSchema: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.GetParameterSchema);
-    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.DcrGcJob>(
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.DcrGcJob>(
         key: Modgud.Api.Features.Admin.Jobs.DcrGcJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.DcrGcJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.DcrGcJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.DcrGcJob.Description);
-    builder.Services.AddSystemJob<Modgud.Api.Features.Inbox.InboxRetentionJob>(
+    builder.Services.AddRealmJob<Modgud.Api.Features.Inbox.InboxRetentionJob>(
         key: Modgud.Api.Features.Inbox.InboxRetentionJob.Key,
         name: Modgud.Api.Features.Inbox.InboxRetentionJob.Name,
         defaultCron: Modgud.Api.Features.Inbox.InboxRetentionJob.DefaultCron,
         description: Modgud.Api.Features.Inbox.InboxRetentionJob.Description);
-    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob>(
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob>(
         key: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.Description);
-    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob>(
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.SessionPruneJob>(
+        key: Modgud.Api.Features.Admin.Jobs.SessionPruneJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.SessionPruneJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.SessionPruneJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.SessionPruneJob.Description);
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob>(
         key: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.DefaultCron,
-        description: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Description);
-    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob>(
+        description: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Description,
+        // Soft-delete keeps the tenant DB and its private key material. This
+        // realm-owned hygiene therefore continues while the realm is inactive.
+        runWhenRealmInactive: true);
+    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.SystemJobRunHistoryRetentionJob>(
+        key: Modgud.Api.Features.Admin.Jobs.SystemJobRunHistoryRetentionJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.SystemJobRunHistoryRetentionJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.SystemJobRunHistoryRetentionJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.SystemJobRunHistoryRetentionJob.Description,
+        getParameterSchema: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.GetParameterSchema);
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob>(
         key: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.SecurityAuditPruneJob.Description);
+    builder.Services.AddSystemJob<Modgud.Api.Features.Admin.Jobs.PlatformAuditPruneJob>(
+        key: Modgud.Api.Features.Admin.Jobs.PlatformAuditPruneJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.PlatformAuditPruneJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.PlatformAuditPruneJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.PlatformAuditPruneJob.Description,
+        getParameterSchema: Modgud.Api.Features.Admin.Jobs.PlatformAuditPruneJob.GetParameterSchema);
 
     // Inbox — per-recipient notifications with SignalR live push. Both
     // services are scoped (tenant-aware IDocumentSession). The InboxHub
@@ -1160,8 +1169,48 @@ try
 
     app.AddLogging();
 
+    // Static SPA files are deployment assets, not realm data. Serve them before
+    // tenant resolution so the first-installation UI can load while zero realms
+    // exist. The fallback endpoint registered here is executed by the
+    // realm-independent branch below for /install.
+    app.UseSpaUI();
 
     app.UseRouting();
+
+    // A fresh deployment intentionally has no realm. Keep every normal route
+    // closed until the shell-authorized installation API creates the first one.
+    app.UseMiddleware<InstallationGateMiddleware>();
+
+    // The installation API must be able to run before a realm -- and therefore
+    // before realm-scoped cookies, DataProtection keys and Marten sessions --
+    // exist. Give it a terminal branch that only runs endpoint routing and the
+    // endpoint rate limiter. Normal realm/auth middleware can never be resolved
+    // from this branch.
+    app.MapWhen(
+        context =>
+            context.Request.Path.StartsWithSegments("/api/install", StringComparison.OrdinalIgnoreCase)
+            || context.Request.Path.StartsWithSegments("/install", StringComparison.OrdinalIgnoreCase)
+            || context.Request.Path.StartsWithSegments("/health", StringComparison.OrdinalIgnoreCase)
+            || context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase)
+            || context.Request.Path.StartsWithSegments("/swagger", StringComparison.OrdinalIgnoreCase)
+            || context.Request.Path.StartsWithSegments("/assets", StringComparison.OrdinalIgnoreCase)
+            || context.Request.Path.StartsWithSegments("/favicon", StringComparison.OrdinalIgnoreCase)
+            || context.Request.Path.StartsWithSegments("/_framework", StringComparison.OrdinalIgnoreCase),
+        realmIndependentBranch =>
+        {
+            realmIndependentBranch.UseRateLimiter();
+            realmIndependentBranch.Run(async context =>
+            {
+                var endpoint = context.GetEndpoint();
+                if (endpoint?.RequestDelegate is null)
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
+
+                await endpoint.RequestDelegate(context);
+            });
+        });
 
     // Resolve tenant from the Host header BEFORE auth runs so the
     // TenantedSessionFactory sees the correct tenant for every Marten session
@@ -1210,6 +1259,7 @@ try
     // must keep /metrics off the public internet — bind via reverse-proxy
     // ACL or localhost-only listener.
     app.MapModgudObservability(observabilitySettings);
+    app.MapInstallationEndpoints();
 
 
     // OpenIddict OAuth/OIDC endpoints (/connect/authorize, /token, /userinfo, /logout, /consent).
@@ -1296,8 +1346,6 @@ try
 
     app.MapHARRRController<UIHub>("/signalr/ui");
 
-    app.UseSpaUI();
-
     // ResourceRegistry is now instance-based and configured via AddModgudAuthorization
     // in AddInfrastructure — no static init required.
 
@@ -1307,139 +1355,65 @@ try
         Modgud.Infrastructure.Events.ProjectionSideEffects.Enabled = true);
 
     // ────────────────────────────────────────────────────────────────────────
-    //  Multi-tenant bootstrap (must run BEFORE app.Run() so the daemon and any
-    //  hosted services see a fully provisioned master + system tenant)
-    //
-    //  Order matters:
-    //   1. Make sure BOTH the master DB and the system tenant's own DB
-    //      ({master}_system) physically exist (raw SQL — Marten cannot
-    //      `CREATE DATABASE` on a connection that already targets it).
-    //   2. Apply Marten storage to the master DB so `realms.mt_tenant_databases`
-    //      is created — required before any tenant can be registered.
-    //   3. Register the "system" tenant pointing at its OWN DB {master}_system
-    //      (NOT the master DB). The master DB stays pure control-plane infra
-    //      (tenant registry + global Realm store + Wolverine durability), so the
-    //      system realm is an equal, deletable peer and the control plane can be
-    //      transferred off it. "system" is also the fallback tenant when no
-    //      HttpContext is available (background/hosted services, CLI) and during
-    //      single-realm dev boots.
-    //   4. Apply schema again so the system tenant gets all per-tenant tables
-    //      inside {master}_system.
-    //   5. Ensure the system Realm document exists in IGlobalStore.
-    //   6. Warm the realm cache so middleware never blocks on first request.
+    //  Multi-tenant bootstrap. A fresh deployment intentionally has ZERO
+    //  realms. Only the master database + Global Store are prepared here; the
+    //  shell-authorized installation flow provisions the first ordinary realm.
+    //  Existing realms are schema-applied and idempotently seeded on every boot.
     // ────────────────────────────────────────────────────────────────────────
     var mainCs = conf.DbSettings.ConnectionString;
     var bootstrapBuilder = new NpgsqlConnectionStringBuilder(mainCs);
     var baseDbName = bootstrapBuilder.Database
         ?? throw new InvalidOperationException("DbSettings.ConnectionString is missing 'Database='");
 
-    // The system tenant gets its OWN physical database `{master}_system`,
-    // following the same `{master}_{slug}` convention every realm uses. The
-    // master DB is then pure control-plane infrastructure (tenant registry +
-    // global Realm store + Wolverine durability), never tenant content.
-    var systemDbName = $"{baseDbName}_{TenantConstants.SystemTenantId}";
-    var systemCs = new NpgsqlConnectionStringBuilder(mainCs) { Database = systemDbName }.ConnectionString;
-
     bootstrapBuilder.Database = "postgres";
     await using (var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString))
     {
         await bootstrapConn.OpenAsync();
-        // Create the master DB and the system tenant's DB if missing. Both names
-        // originate from the operator-supplied connection string (parsed by
-        // NpgsqlConnectionStringBuilder), never from an HTTP request path; the
-        // quoted-identifier escaping below is defense-in-depth (CA2100).
-        foreach (var dbName in new[] { baseDbName, systemDbName })
+        await using var checkCmd = new NpgsqlCommand(
+            "SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
+        checkCmd.Parameters.AddWithValue("@dbName", baseDbName);
+        if (await checkCmd.ExecuteScalarAsync() is null)
         {
-            await using var checkCmd = new NpgsqlCommand(
-                "SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
-            checkCmd.Parameters.AddWithValue("@dbName", dbName);
-            if (await checkCmd.ExecuteScalarAsync() is not null) continue;
-
-            var quotedName = "\"" + dbName.Replace("\"", "\"\"") + "\"";
+            var quotedName = "\"" + baseDbName.Replace("\"", "\"\"") + "\"";
 #pragma warning disable CA2100
             await using var createCmd = new NpgsqlCommand(
                 $"CREATE DATABASE {quotedName}", bootstrapConn);
 #pragma warning restore CA2100
             await createCmd.ExecuteNonQueryAsync();
-            Log.Information("Created database {DbName}", dbName);
+            Log.Information("Created master database {DbName}", baseDbName);
         }
     }
 
-    // Apply master-table tenancy schema (creates realms.mt_tenant_databases etc.)
+    // The primary store owns the tenant registry and all registered realm DBs.
+    // The Global Store owns deployment-wide state, including the realm registry
+    // and first-installation challenges.
     var store = app.Services.GetRequiredService<Marten.IDocumentStore>();
-    var tenancy = (MasterTableTenancy)store.Options.Tenancy;
     await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
+    var globalStore = app.Services.GetRequiredService<IGlobalStore>();
+    await globalStore.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
 
-    // Fail-closed upgrade guard. On a pre-split deployment the "system" tenant
-    // was registered against the MASTER DB, where all its data physically lived.
-    // Silently re-pointing it to a fresh {master}_system below would strand that
-    // data (and invalidate signing/DataProtection keys → all live cookies). If
-    // the registry already has a "system" row pointing anywhere other than
-    // {master}_system, refuse to boot until the operator relocates the data (see
-    // the "Upgrading across the system-DB split" runbook) or recreates it.
-    await using (var registryConn = new NpgsqlConnection(mainCs))
-    {
-        await registryConn.OpenAsync();
-        await using var tableCmd = new NpgsqlCommand(
-            "SELECT to_regclass('realms.mt_tenant_databases')::text", registryConn);
-        if (await tableCmd.ExecuteScalarAsync() is not (null or DBNull))
-        {
-            await using var rowCmd = new NpgsqlCommand(
-                "SELECT connection_string FROM realms.mt_tenant_databases WHERE tenant_id = @id", registryConn);
-            rowCmd.Parameters.AddWithValue("@id", TenantConstants.SystemTenantId);
-            if (await rowCmd.ExecuteScalarAsync() is string existingSystemCs)
-            {
-                var existingDb = new NpgsqlConnectionStringBuilder(existingSystemCs).Database;
-                if (!string.Equals(existingDb, systemDbName, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidOperationException(
-                        $"Refusing to boot: the 'system' tenant is registered against database '{existingDb}', but this version expects its own '{systemDbName}' database (the master/system DB split). " +
-                        "Relocate the system realm's data before first boot — see the 'Upgrading across the system-DB split' runbook in docs/operate/realms.md — " +
-                        "or, if this deployment's data is disposable, drop the databases and let a fresh boot provision the new layout.");
-                }
-            }
-        }
-    }
-
-    // Register the "system" tenant pointing at its OWN DB {master}_system (NOT
-    // the master DB). MasterTableTenancy has no "default tenant" concept — every
-    // session needs a tenant id; "system" is the fallback when no HttpContext is
-    // available (background/hosted services, CLI).
-    await tenancy.AddDatabaseRecordAsync(TenantConstants.SystemTenantId, systemCs);
-
-    // Apply schema again now that the system tenant is registered — this
-    // materializes the per-tenant documents/events/projections inside the
-    // system tenant's own database ({master}_system).
-    await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
-
-    // Ensure the system Realm document exists in the global store
     using (var realmScope = app.Services.CreateScope())
     {
         var realmService = realmScope.ServiceProvider.GetRequiredService<IRealmProvisioningService>();
-        await realmService.EnsureSystemRealmExistsAsync();
+        var configuredRealms = (await realmService.GetAllRealmsAsync())
+            .Where(r => r.IsActive)
+            .OrderBy(r => r.CreatedAt)
+            .ToList();
+        var startupLogger = realmScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-        // Seed default OAuth scopes + Internal login provider into the system tenant DB.
-        // Idempotent — re-running on later boots is a no-op.
-        await Modgud.Infrastructure.OAuth.OAuthRealmSeeder.SeedAsync(
-            realmScope.ServiceProvider,
-            TenantConstants.SystemTenantId,
-            realmScope.ServiceProvider.GetRequiredService<ILogger<Program>>());
-        await realmScope.ServiceProvider
-            .GetRequiredService<Modgud.Application.Services.ILoginProviderRealmSeeder>()
-            .SeedAsync(
-                TenantConstants.SystemTenantId,
-                realmScope.ServiceProvider.GetRequiredService<ILogger<Program>>());
-
-        // Seed the system apps into the system tenant DB so app-scoped
-        // permissions can resolve before the first realm creation.
-        // The system realm is always the Control Plane (see
-        // EnsureSystemRealmExistsAsync), so the control-plane app is
-        // seeded here too. Idempotent.
-        await Modgud.Infrastructure.Authorization.AppRealmSeeder.SeedAsync(
-            realmScope.ServiceProvider,
-            TenantConstants.SystemTenantId,
-            isControlPlane: true,
-            realmScope.ServiceProvider.GetRequiredService<ILogger<Program>>());
+        foreach (var realm in configuredRealms)
+        {
+            await Modgud.Infrastructure.OAuth.OAuthRealmSeeder.SeedAsync(
+                realmScope.ServiceProvider, realm.Slug, startupLogger);
+            await realmScope.ServiceProvider
+                .GetRequiredService<Modgud.Application.Services.ILoginProviderRealmSeeder>()
+                .SeedAsync(realm.Slug, startupLogger);
+            await Modgud.Infrastructure.Authorization.AppRealmSeeder.SeedAsync(
+                realmScope.ServiceProvider,
+                realm.Slug,
+                isControlPlane: realm.IsControlPlane,
+                startupLogger);
+        }
 
         // Warm the realm cache (used by RealmMiddleware for fast Host → tenant resolution)
         var realmCache = realmScope.ServiceProvider.GetRequiredService<IRealmCache>();
@@ -1453,55 +1427,48 @@ try
         // is then under 15ms forever.
         //
         // We touch every shape the admin SPA hits during normal navigation
-        // here, against the system tenant. Marten caches LINQ→SQL per
+        // here, against the first active tenant. Marten caches LINQ→SQL per
         // DocumentStore, not per tenant — so warming with one tenant is
         // enough for all tenants. Costs: ~2-3s extra at boot, then no
         // user-visible cliff for the rest of the host's lifetime.
         try
         {
-            // IGlobalStore — realm-admin queries
+            // IGlobalStore — realm-admin queries.
             await realmService.GetAllRealmsAsync();
-            await realmService.GetRealmBySlugAsync(TenantConstants.SystemTenantId);
-
-            // Tenant-scoped queries — open one IDocumentSession against the
-            // system tenant and touch every read-shape the admin endpoints
-            // use. Tiny ToList() against the persisted documents — even on
-            // an empty tenant it's enough to compile the shape.
-            using (TenantContext.Enter(TenantConstants.SystemTenantId))
-            await using (var session = realmScope.ServiceProvider
-                .GetRequiredService<Marten.IDocumentStore>().QuerySession(TenantConstants.SystemTenantId))
+            var warmupRealm = configuredRealms.FirstOrDefault();
+            if (warmupRealm is not null)
             {
-                await session.Query<Modgud.Authentication.Domain.ApplicationUser>()
-                    .Where(u => !u.IsDeleted).Take(1).ToListAsync();
-                // UserView is the read model the /api/user list endpoint queries —
-                // distinct from ApplicationUser, separate Marten LINQ shape.
-                await session.Query<Modgud.Infrastructure.Persistence.Marten.Projections.Users.UserView>()
-                    .Where(u => !u.IsDeleted).OrderBy(u => u.UserName).Take(1).ToListAsync();
-                // Principal polymorphism — Person + Group share a discriminator.
-                // /api/account/me's permission BFS walks this projection.
-                await session.Query<Modgud.Authorization.Principals.Principal>()
-                    .Where(p => !p.IsDeleted).Take(1).ToListAsync();
-                await session.Query<Modgud.Authorization.Roles.PermissionRole>()
-                    .Where(r => !r.IsDeleted).Take(1).ToListAsync();
-                await session.Query<Modgud.Authorization.Principals.Group>()
-                    .Where(g => !g.IsDeleted).Take(1).ToListAsync();
-                await session.Query<Modgud.Authentication.Domain.LoginProviders.LoginProvider>()
-                    .Where(p => !p.IsDeleted).Take(1).ToListAsync();
-                await session.Query<Modgud.Infrastructure.Audit.SecurityAuditEntry>()
-                    .OrderByDescending(l => l.Timestamp).Take(1).ToListAsync();
-                await session.Query<Modgud.Authentication.Domain.UserChangeRequest>()
-                    .Take(1).ToListAsync();
-            }
+                await realmService.GetRealmBySlugAsync(warmupRealm.Slug);
+                using (TenantContext.Enter(warmupRealm.Slug))
+                await using (var session = realmScope.ServiceProvider
+                    .GetRequiredService<Marten.IDocumentStore>().QuerySession(warmupRealm.Slug))
+                {
+                    await session.Query<Modgud.Authentication.Domain.ApplicationUser>()
+                        .Where(u => !u.IsDeleted).Take(1).ToListAsync();
+                    await session.Query<Modgud.Infrastructure.Persistence.Marten.Projections.Users.UserView>()
+                        .Where(u => !u.IsDeleted).OrderBy(u => u.UserName).Take(1).ToListAsync();
+                    await session.Query<Modgud.Authorization.Principals.Principal>()
+                        .Where(p => !p.IsDeleted).Take(1).ToListAsync();
+                    await session.Query<Modgud.Authorization.Roles.PermissionRole>()
+                        .Where(r => !r.IsDeleted).Take(1).ToListAsync();
+                    await session.Query<Modgud.Authorization.Principals.Group>()
+                        .Where(g => !g.IsDeleted).Take(1).ToListAsync();
+                    await session.Query<Modgud.Authentication.Domain.LoginProviders.LoginProvider>()
+                        .Where(p => !p.IsDeleted).Take(1).ToListAsync();
+                    await session.Query<Modgud.Infrastructure.Audit.RealmSecurityAuditEvent>()
+                        .OrderByDescending(l => l.Timestamp).Take(1).ToListAsync();
+                    await session.Query<Modgud.Authentication.Domain.UserChangeRequest>()
+                        .Take(1).ToListAsync();
+                }
 
-            // OAuthAdminService — separate read paths for clients/scopes/apis.
-            // Each goes through OpenIddict-Marten stores which have their own
-            // LINQ shapes; touching the service methods compiles them.
-            var oauthAdmin = realmScope.ServiceProvider.GetRequiredService<Modgud.Application.Services.OAuthAdminService>();
-            using (TenantContext.Enter(TenantConstants.SystemTenantId))
-            {
-                await oauthAdmin.GetClientsAsync(new Modgud.Application.DTOs.OAuth.PaginationRequest { PageSize = 1 });
-                await oauthAdmin.GetScopesAsync();
-                await oauthAdmin.GetApisAsync(new Modgud.Application.DTOs.OAuth.PaginationRequest { PageSize = 1 });
+                var oauthAdmin = realmScope.ServiceProvider
+                    .GetRequiredService<Modgud.Application.Services.OAuthAdminService>();
+                using (TenantContext.Enter(warmupRealm.Slug))
+                {
+                    await oauthAdmin.GetClientsAsync(new Modgud.Application.DTOs.OAuth.PaginationRequest { PageSize = 1 });
+                    await oauthAdmin.GetScopesAsync();
+                    await oauthAdmin.GetApisAsync(new Modgud.Application.DTOs.OAuth.PaginationRequest { PageSize = 1 });
+                }
             }
         }
         catch (Exception ex)
@@ -1511,21 +1478,13 @@ try
             Log.Warning(ex, "Marten LINQ warmup failed (non-fatal).");
         }
 
-        // No Control-Plane hostname validation needed: the gate reads the
-        // stored `Realm.IsControlPlane` flag (transferable; stamped on the
-        // system realm at first boot) off `tenant.IsControlPlane` at request
-        // time. The DB data is the single source of truth — there's no ENV var
-        // to keep in sync, no chicken-and-egg between operator config and
-        // seeded realm Domains.
-        //
-        // Operators add their public hostname(s) to the system realm's
-        // Domains via the Recovery CLI:
-        //   recover realm-add-domain --slug system --domain auth.example.com
+        if (configuredRealms.Count == 0)
+            Log.Information("No realm exists yet; Modgud is waiting for first installation.");
     }
 
     // Headless command dispatch — run a recovery command instead of starting
-    // Kestrel. Two ways in, both run AFTER the full bootstrap block above so the
-    // command sees a provisioned master + system tenant:
+    // Kestrel. Two ways in, both run AFTER the master/global bootstrap above;
+    // realm-scoped commands additionally require an existing realm:
     //   1. CLI args:  dotnet Modgud.Api.dll recover <command> [args...]
     //                 → runs the command, returns its exit code (process exits).
     //   2. STARTUP_COMMAND env var (Portainer/Compose-friendly, no entrypoint
@@ -1547,12 +1506,12 @@ try
         var exitCode = await Modgud.Authentication.Api.Admin.RecoveryCli.RunAsync(
             app.Services, cliArgs[1..], conf, app.Environment);
 
-        // This path never starts the host, so the SecurityAuditWriter background
-        // drain never runs — flush the recovery CLI's enqueued security-audit
-        // records to the system DB synchronously before the process exits, or the
-        // break-glass forensic trail would be lost.
+        // This path never starts the hosted writer, so route the queued realm and
+        // platform records synchronously before the process exits.
         await app.Services.GetRequiredService<Modgud.Infrastructure.Audit.SecurityAuditLog>()
-            .FlushAsync(app.Services.GetRequiredService<Marten.IDocumentStore>());
+            .FlushAsync(
+                app.Services.GetRequiredService<Marten.IDocumentStore>(),
+                app.Services.GetRequiredService<Modgud.Infrastructure.Persistence.Tenancy.IGlobalStore>());
 
         if (fromEnv)
         {

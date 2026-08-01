@@ -212,17 +212,16 @@ public class SamlSpCertificateService
         }
 
         _session.Store(doc);
-        await _session.SaveChangesAsync(ct);
-
-        _securityAudit.Record(new SecurityAuditRecord
+        _securityAudit.StoreRequired(_session, new SecurityAuditRecord
         {
             EventType = AuditEvents.SamlCertRotated,
-            Realm = realmSlug,
-            Level = "Info",
-            Status = "rotated",
-            Reason = $"thumbprint {doc.ActiveCertThumbprint}, notAfter {doc.ActiveCertNotAfter:o}",
-            Message = $"Rotated SAML SP cert — new thumbprint {doc.ActiveCertThumbprint}, valid until {doc.ActiveCertNotAfter:o}",
+            RealmSlug = realmSlug,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "rotate",
+            KeyId = doc.ActiveCertThumbprint,
+            EffectiveAt = doc.ActiveCertNotAfter,
         });
+        await _session.SaveChangesAsync(ct);
 
         return newCert;
     }
@@ -284,17 +283,16 @@ public class SamlSpCertificateService
         };
 
         _session.Store(doc);
-        await _session.SaveChangesAsync(ct);
-
-        _securityAudit.Record(new SecurityAuditRecord
+        _securityAudit.StoreRequired(_session, new SecurityAuditRecord
         {
             EventType = AuditEvents.SamlCertRotated,
-            Realm = realmSlug,
-            Level = "Info",
-            Status = "generated",
-            Reason = $"initial cert, thumbprint {doc.ActiveCertThumbprint}",
-            Message = $"Generated initial SAML SP cert — thumbprint {doc.ActiveCertThumbprint}, valid until {doc.ActiveCertNotAfter:o}",
+            RealmSlug = realmSlug,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "generate-initial",
+            KeyId = doc.ActiveCertThumbprint,
+            EffectiveAt = doc.ActiveCertNotAfter,
         });
+        await _session.SaveChangesAsync(ct);
 
         return doc;
     }

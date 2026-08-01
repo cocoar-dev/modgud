@@ -75,7 +75,6 @@ public static class AccountEndpoints
             IAuthSettings appSettings,
             IDocumentSession docSession,
             IQuerySession session,
-            ISessionService sessionService,
             ISecurityAuditLog securityAudit,
             HttpContext context) =>
         {
@@ -108,15 +107,17 @@ public static class AccountEndpoints
                 // by latency. Burn an equivalent hash verify before the 401.
                 PasswordTimingSafety.EqualizeFailure(userManager.PasswordHasher, request.Password);
 
-                securityAudit.Record(new SecurityAuditRecord
+                securityAudit.RecordAbuse(new SecurityAuditRecord
                 {
                     EventType = AuditEvents.LoginFailedUnknownUser,
-                    Level = "Warning",
-                    Actor = LogPiiMasking.MaskUsername(request.UserName),
-                    Ip = ip,
-                    Status = "rejected",
-                    Reason = "user not found or inactive",
-                    Message = $"Login failed for {LogPiiMasking.MaskUsername(request.UserName)} — user not found or inactive",
+                    Severity = AuditSeverity.Warning,
+                    ActorKind = AuditActorKind.AnonymousIdentifier,
+                    TargetSubjectId = user?.Id,
+                    UnknownIdentifier = user is null ? request.UserName : null,
+                    IpAddress = ip,
+                    AuthenticationMethod = ModgudMeters.LoginMethod.Password,
+                    OutcomeCode = AuditOutcomes.Rejected,
+                    ReasonCode = user is null ? "user-not-found" : "user-inactive",
                 });
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Failure);
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
@@ -137,15 +138,15 @@ public static class AccountEndpoints
                 if (realmSettings?.SelfRegistration?.RequireEmailVerification == true && !user.EmailConfirmed)
                 {
                     await signInManager.SignOutAsync();
-                    securityAudit.Record(new SecurityAuditRecord
+                    securityAudit.RecordAbuse(new SecurityAuditRecord
                     {
                         EventType = AuditEvents.LoginFailed,
-                        Level = "Warning",
-                        Actor = LogPiiMasking.MaskUsername(request.UserName),
-                        Ip = ip,
-                        Status = "rejected",
-                        Reason = "email not verified",
-                        Message = $"Login blocked for {LogPiiMasking.MaskUsername(request.UserName)} — email not verified (realm requires verification)",
+                        Severity = AuditSeverity.Warning,
+                        TargetSubjectId = user.Id,
+                        IpAddress = ip,
+                        AuthenticationMethod = ModgudMeters.LoginMethod.Password,
+                        OutcomeCode = AuditOutcomes.Rejected,
+                        ReasonCode = "email-not-verified",
                     });
                     ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Failure);
                     return Results.Json(new
@@ -161,15 +162,12 @@ public static class AccountEndpoints
                 Log.Information("Login successful. UserId={UserId} IP={IP}", user.Id, ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Success);
 
-                // Track per-user device session (best-effort).
-                await SessionTracker.RecordLoginAsync(sessionService, context, user.Id);
-
                 // Audit marker on the user's stream (Phase 1): the "when + by what
-                // method" of a successful login. No IP on the event — IP/device live
-                // in the Sessions feature (RecordLoginAsync above). Erasable with the
-                // user. Best-effort: PasswordSignInAsync has already issued the auth
-                // cookie, so a failed marker write must NOT turn a successful login
-                // into a 500 — log and continue (mirrors SessionTracker's contract).
+                // method" of a successful login. No IP on the event — the authoritative
+                // browser session created by the cookie event owns IP/device metadata.
+                // Erasable with the user. Best-effort: PasswordSignInAsync has already
+                // issued the auth cookie, so a failed marker write must NOT turn a
+                // successful login into a 500 — log and continue.
                 try
                 {
                     docSession.Events.Append(user.Id, new Modgud.Authentication.Events.UserLoggedInEvent(
@@ -262,23 +260,49 @@ public static class AccountEndpoints
         group.MapPost("logout", [Authorize] async (
             HttpContext context,
             SignInManager<ApplicationUser> signInManager,
+            IQuerySession session,
             LogoutRequest? request) =>
         {
             // Capture the provider the session came from BEFORE signing out —
-            // we'll use it to build the IdP-side logout URL for the client.
-            var externalLoginProviderId = context.User.FindFirst("modgud.external.loginProviderId")?.Value;
+            // an upstream logout exists only for OIDC. SAML is SP-initiated
+            // login only in v1 and has no Single Logout endpoint.
+            var externalLoginProviderIdRaw =
+                context.User.FindFirst("modgud.external.loginProviderId")?.Value;
+            var endIdpSession = request?.EndIdpSession ?? true;
+            LoginProvider? externalLoginProvider = null;
+
+            if (endIdpSession
+                && Guid.TryParse(externalLoginProviderIdRaw, out var externalLoginProviderId))
+            {
+                try
+                {
+                    externalLoginProvider =
+                        await session.LoadAsync<LoginProvider>(externalLoginProviderId);
+                }
+                catch (Exception ex)
+                {
+                    // Upstream logout is optional. A provider lookup failure
+                    // must never prevent the authoritative local logout.
+                    Log.Warning(
+                        ex,
+                        "Could not resolve external login provider {LoginProviderId} during logout; continuing with local logout",
+                        externalLoginProviderId);
+                }
+            }
 
             await signInManager.SignOutAsync();
 
-            // Only hand back the RP-initiated logout URL if the caller wants
-            // to end the IdP session too. Default (no body) keeps the existing
-            // "end everything" behavior for backwards compatibility.
-            var endIdpSession = request?.EndIdpSession ?? true;
-            string? externalLogoutUrl = null;
-            if (endIdpSession && !string.IsNullOrWhiteSpace(externalLoginProviderId))
-            {
-                externalLogoutUrl = $"/api/account/external-logout/{externalLoginProviderId}";
-            }
+            // Disabled/deleted providers no longer have a registered OIDC
+            // scheme, so they intentionally degrade to local logout too.
+            var externalLogoutUrl =
+                externalLoginProvider is
+                {
+                    Type: LoginProviderType.Oidc,
+                    Enabled: true,
+                    IsDeleted: false,
+                }
+                    ? $"/api/account/external-logout/{externalLoginProvider.Id}"
+                    : null;
 
             return Results.Ok(new { Message = "Logout successful", ExternalLogoutUrl = externalLogoutUrl });
         })
@@ -350,7 +374,6 @@ public static class AccountEndpoints
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             IUserAccessRevoker accessRevoker,
-            ISessionService sessionService,
             IAuthSettings appSettings) =>
         {
             if (appSettings.AuthenticationMinimumLevel >= 2)
@@ -374,15 +397,14 @@ public static class AccountEndpoints
             // session — not merely rely on the <=5-min security-stamp window. Kill
             // everything, then refresh the CURRENT session (reload the user first so
             // it carries the freshly-rotated stamp) so the password-changer stays
-            // signed in here, and re-record its device row so the session list stays
-            // accurate.
+            // signed in here. BrowserSessionCookieEvents creates the replacement
+            // authoritative row as part of the refreshed cookie.
             await accessRevoker.RevokeAllAccessAsync(
                 user.Id, AccessRevocationReason.ForceSignOut, context.RequestAborted);
             var refreshed = await userManager.FindByIdAsync(user.Id.ToString());
             if (refreshed is not null)
             {
                 await signInManager.RefreshSignInAsync(refreshed);
-                await SessionTracker.RecordLoginAsync(sessionService, context, refreshed.Id);
             }
 
             Log.Information("Password changed; other sessions revoked. UserId={UserId} IP={IP}", user.Id, ip);

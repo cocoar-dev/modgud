@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Modgud.Infrastructure.Persistence.Tenancy;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.DataProtection;
 
 namespace Modgud.Infrastructure.Persistence.DataProtection;
@@ -25,10 +26,14 @@ public sealed class TenantedDataProtectionProvider : IDataProtectionProvider
 {
     private readonly ConcurrentDictionary<string, IDataProtectionProvider> _byTenant = new();
     private readonly Func<string, IDataProtectionProvider> _factory;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public TenantedDataProtectionProvider(Func<string, IDataProtectionProvider> factory)
+    public TenantedDataProtectionProvider(
+        Func<string, IDataProtectionProvider> factory,
+        IHttpContextAccessor httpContextAccessor)
     {
         _factory = factory;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public IDataProtector CreateProtector(string purpose)
@@ -39,6 +44,25 @@ public sealed class TenantedDataProtectionProvider : IDataProtectionProvider
 
     internal IDataProtectionProvider GetTenantProvider(string tenantId)
         => _byTenant.GetOrAdd(tenantId, _factory);
+
+    internal string ResolveTenantId()
+    {
+        var ambient = TenantContext.CurrentOrNull;
+        if (!string.IsNullOrWhiteSpace(ambient))
+            return ambient;
+
+        // Response OnStarting callbacks can run after RealmMiddleware's
+        // AsyncLocal scope has unwound (notably under TestServer). The resolved
+        // realm remains pinned to HttpContext.Items for the request lifetime.
+        var requestTenant = _httpContextAccessor.HttpContext?
+            .Items[TenantConstants.HttpContextTenantIdKey] as string;
+        if (!string.IsNullOrWhiteSpace(requestTenant))
+            return requestTenant;
+
+        throw new InvalidOperationException(
+            "No realm context is active for DataProtection. Realm-independent " +
+            "paths must not create tenant cookies or session state.");
+    }
 }
 
 /// <summary>
@@ -74,7 +98,7 @@ public sealed class TenantedDataProtector : IDataProtector
 
     private IDataProtector Resolve()
     {
-        var tenant = TenantContext.Current;
+        var tenant = _root.ResolveTenantId();
         var provider = _root.GetTenantProvider(tenant);
         IDataProtector protector = provider.CreateProtector(_purposes[0]);
         for (var i = 1; i < _purposes.Length; i++)

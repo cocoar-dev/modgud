@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import {
+  CoarNotice,
   CoarCard,
   CoarTextInput,
   CoarFormField,
-  CoarNote,
   CoarButton,
   useDialog,
 } from '@cocoar/vue-ui'
@@ -159,10 +159,10 @@ async function save() {
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4 gap-3">
-    <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
-    <CoarNote v-if="savedFlash" variant="success">
+    <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
+    <CoarNotice truncate v-if="savedFlash" variant="success">
       {{ t('admin.realmSettings.saved', {}, 'Saved.') }}
-    </CoarNote>
+    </CoarNotice>
 
     <div v-if="initialLoad" class="text-sm text-gray-400">
       {{ t('common.loading', {}, 'Loading...') }}

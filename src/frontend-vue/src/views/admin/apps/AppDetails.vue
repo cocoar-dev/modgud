@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTextInput, CoarFormField, CoarNote, CoarButton, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
+import { CoarNotice, CoarTextInput, CoarFormField, CoarButton, CoarIcon, CoarTabGroup, CoarTab, vTooltip } from '@cocoar/vue-ui'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
@@ -66,6 +66,9 @@ const newCatalogUid = () => `catalog-${Date.now()}-${catalogUidCounter++}`
 const catalog = ref<CatalogRow[]>([])
 
 const SEGMENT_REGEX = /^[a-z0-9-]+$/
+// Mirrors AppSlugRules on the backend: 3–63 chars, starts with a lowercase
+// letter, ends with a lowercase letter/digit, middle may also contain hyphens.
+const APP_SLUG_REGEX = /^[a-z][a-z0-9-]{1,61}[a-z0-9]$/
 
 interface FormState {
   Slug: string
@@ -247,12 +250,21 @@ const modalTitle = computed(() =>
 )
 const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.Slug)
 
+const slugInvalid = computed(() => isCreate.value && !APP_SLUG_REGEX.test(form.value.Slug.trim()))
+const displayNameInvalid = computed(() => !form.value.DisplayName.trim())
+const slugError = computed(() => slugInvalid.value
+  ? t('admin.apps.validation.slug', {}, 'Enter a valid slug (3–63 lowercase letters, digits or hyphens).')
+  : '')
+const displayNameError = computed(() => displayNameInvalid.value
+  ? t('admin.apps.validation.displayName', {}, 'Display name is required.')
+  : '')
+
 const footerButton = computed(() => ({
   visible: true,
   text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: loading.value
-    || !form.value.DisplayName.trim()
-    || (isCreate.value && !form.value.Slug.trim())
+    || displayNameInvalid.value
+    || slugInvalid.value
     || hasInvalidSegments.value
     || hasIncompleteRows.value
     || duplicateKeys.value.size > 0,
@@ -338,6 +350,29 @@ async function save() {
 <template>
   <ModalLayout :close="close" :title="modalTitle" :sub-title="modalSubtitle" icon="layout-grid"
     :footer-button="footerButton" :readonly="isSystem" width="56rem">
+    <!--
+      Both statements describe the whole modal, and they are mutually
+      exclusive — so exactly one banner, pinned under the header. The header's
+      "read-only" tag names the STATE; the banner gives the REASON and says
+      what the surface is still good for.
+    -->
+    <template #banner>
+      <CoarNotice placement="banner" v-if="isCreate" variant="info"
+        :label="t('admin.apps.createBannerLabel', {}, 'New app')">
+        {{ t('admin.apps.createHint', {}, 'A new app registers itself for permission resolution. The slug is immutable after creation.') }}
+      </CoarNotice>
+      <!-- System-managed entities all say this the same way, through the same
+           two strings — see LoginProviderDetails. Deliberately `info`, not
+           `warning`: read-only is a fact, not a hazard. Nothing can go wrong
+           here (fields are disabled, the backend rejects anyway), and warning
+           colours only keep their force if they stay reserved for things that
+           can actually bite. -->
+      <CoarNotice placement="banner" v-else-if="isSystem" variant="info"
+        :label="t('common.systemManagedLabel', {}, 'System')">
+        {{ t('common.systemManaged', {}, 'Cannot be changed.') }}
+      </CoarNotice>
+    </template>
+
     <div v-if="loading && !dto && !isCreate" class="flex flex-1 items-center justify-center p-8">
       <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>
     </div>
@@ -345,30 +380,42 @@ async function save() {
       <CoarTabGroup v-model="activeTab" class="tab-bar">
         <CoarTab id="general">{{ t('admin.apps.tabs.general', {}, 'General') }}</CoarTab>
         <CoarTab id="catalog">{{ t('admin.apps.tabs.catalog', {}, 'Permission-Catalog') }}</CoarTab>
-        <CoarTab v-if="!isSystem" id="settings">{{ t('admin.apps.tabs.settings', {}, 'Settings') }}</CoarTab>
+        <CoarTab
+          v-if="!isSystem"
+          id="settings"
+          v-tooltip="{
+            content: t('admin.appSettings.hint', {}, 'These settings override the realm defaults only for this app. A disabled section inherits from the realm.'),
+            placement: 'top',
+          }"
+        >
+          <span class="settings-tab-label">
+            {{ t('admin.apps.tabs.settings', {}, 'Settings') }}
+            <span class="settings-tab-info" aria-hidden="true">
+              <CoarIcon name="info" size="s" aria-hidden="true" />
+            </span>
+          </span>
+        </CoarTab>
       </CoarTabGroup>
-
-      <CoarNote v-if="isCreate" variant="info">
-        {{ t('admin.apps.createHint', {}, 'A new app registers itself for permission resolution. The slug is immutable after creation.') }}
-      </CoarNote>
-      <CoarNote v-else-if="isSystem" variant="warning">
-        {{ t('admin.apps.systemHint', {}, 'This is a system app of the IdP. Slug, display name, and permission catalog are hardcoded in the backend — the catalog here is read-only and for inspection only. Changing the strings would break the RequiresPermission calls in the backend.') }}
-      </CoarNote>
 
       <!-- Tab: General -->
       <div v-show="activeTab === 'general'" class="tab-content">
         <div class="grid grid-cols-2 gap-3">
-          <CoarFormField :label="t('admin.apps.slug', {}, 'Slug (immutable)')">
+          <CoarFormField :label="t('admin.apps.slug', {}, 'Slug')" :required="isCreate"
+            :error="slugError"
+            :hint="t('admin.apps.slug.hint', {}, 'Permanent URL and API identifier in kebab-case.\n\nExample: acme-portal\nImmutable after creation.')">
             <CoarTextInput v-model="form.Slug" :disabled="!isCreate || isSystem" clearable
               :placeholder="t('admin.apps.slugPlaceholder', {}, 'kebab-case-slug')" />
           </CoarFormField>
-          <CoarFormField :label="t('admin.apps.displayName', {}, 'Display Name')">
+          <CoarFormField :label="t('admin.apps.displayName', {}, 'Display name')" required
+            :error="displayNameError"
+            :hint="t('admin.apps.displayName.hint', {}, 'Human-readable name shown in lists and selectors.')">
             <CoarTextInput v-model="form.DisplayName" :disabled="isSystem" clearable />
           </CoarFormField>
         </div>
 
-        <CoarFormField :label="t('common.description', {}, 'Description')">
-          <CoarTextInput v-model="form.Description" :disabled="isSystem" clearable />
+        <CoarFormField :label="t('common.description', {}, 'Description')"
+          :hint="t('admin.apps.description.hint', {}, 'Optional note about the product or system represented by this application.')">
+          <CoarTextInput v-model="form.Description" :disabled="isSystem" clearable :rows="3" />
         </CoarFormField>
       </div>
 
@@ -380,9 +427,12 @@ async function save() {
             : t('admin.apps.permissionsHint', {}, 'Resource and action each need 1+ lowercase letters/digits/hyphens. Ids stay stable across renames — role grants and RS subsets follow automatically.') }}
         </p>
 
-        <CoarNote v-if="renamedCount > 0 && !isSystem" variant="warning">
-          {{ t('admin.apps.renamedWarning', { count: renamedCount }, `${renamedCount} entry/entries were renamed. The string form changes (e.g. in UserInfo), but role grants and RS subsets follow automatically via the stable id.`) }}
-        </CoarNote>
+        <CoarNotice truncate v-if="renamedCount > 0 && !isSystem" variant="warning">
+          {{ t('admin.apps.renamedWarningShort', { count: renamedCount }, '{count} entry/entries renamed — string form changed, id stays stable.') }}
+          <template #details>
+            {{ t('admin.apps.renamedWarning', { count: renamedCount }, '{count} entry/entries were renamed. The string form changes (e.g. in UserInfo), but role grants and RS subsets follow automatically via the stable id.') }}
+          </template>
+        </CoarNotice>
 
         <div class="catalog-grid">
           <CoarDataGrid :builder="catalogBuilder" bordered>
@@ -411,7 +461,7 @@ async function save() {
           </span>
         </div>
 
-        <CoarNote v-if="catalogBlockers.length > 0" variant="error">
+        <CoarNotice v-if="catalogBlockers.length > 0" variant="error">
           <div class="font-semibold mb-1">
             {{ t('admin.apps.cat.blockedTitle', {}, 'These entries are still in use:') }}
           </div>
@@ -426,7 +476,7 @@ async function save() {
               </span>
             </li>
           </ul>
-        </CoarNote>
+        </CoarNotice>
       </div>
 
       <!-- Tab: Settings (ADR-0011 per-App override) — one App, one modal -->
@@ -439,7 +489,7 @@ async function save() {
         />
       </div>
 
-      <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+      <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
     </div>
   </ModalLayout>
 </template>
@@ -447,6 +497,19 @@ async function save() {
 <style scoped>
 .tab-bar {
   margin-bottom: 12px;
+}
+.settings-tab-label,
+.settings-tab-info {
+  display: inline-flex;
+  align-items: center;
+}
+.settings-tab-label {
+  gap: 0.35rem;
+}
+.settings-tab-info {
+  width: 1rem;
+  height: 1rem;
+  color: var(--coar-text-neutral-tertiary, #6b7280);
 }
 .tab-content {
   display: flex;

@@ -4,11 +4,11 @@ import { useHttpClient } from '@/composables/useHttpClient'
 import { useAuthStore } from '@/stores/auth.store'
 import { useI18n } from '@cocoar/vue-localization'
 import {
+  CoarNotice,
   CoarCard,
   CoarButton,
   CoarOtpInput,
   CoarFormField,
-  CoarNote,
   CoarIcon,
 } from '@cocoar/vue-ui'
 
@@ -179,7 +179,7 @@ function bufferToBase64Url(b: ArrayBuffer): string {
             <CoarOtpInput v-model="totpCode" type="numeric" :length="6" auto-focus @complete="verifyTotp" />
           </CoarFormField>
 
-          <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
 
           <CoarButton :disabled="!totpCode.trim()" :loading="submitting" full-width @click="verifyTotp">
             {{ t('auth.secureSetup.verify', {}, 'Verify & activate') }}
@@ -203,7 +203,7 @@ function bufferToBase64Url(b: ArrayBuffer): string {
         <p v-if="authStore.user?.Email" class="text-sm font-medium">{{ authStore.user.Email }}</p>
         <p v-else class="text-sm text-red-600">{{ t('auth.secureSetup.noEmail', {}, 'No email address configured. Contact your administrator.') }}</p>
 
-        <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+        <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
 
         <CoarButton :disabled="!authStore.user?.Email" :loading="emailOtpEnabling" full-width @click="enableEmailOtp">
           {{ t('auth.secureSetup.enableEmailOtp', {}, 'Activate email code') }}
@@ -224,7 +224,7 @@ function bufferToBase64Url(b: ArrayBuffer): string {
           {{ t('auth.secureSetup.passkeyDescription', {}, 'Use your fingerprint, face, or security key to sign in without a password.') }}
         </p>
 
-        <CoarNote v-if="error" variant="error">{{ error }}</CoarNote>
+        <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
 
         <CoarButton :loading="passkeyRegistering" full-width @click="registerPasskey">
           {{ t('auth.secureSetup.registerPasskey', {}, 'Register Passkey') }}
@@ -239,9 +239,9 @@ function bufferToBase64Url(b: ArrayBuffer): string {
 
     <!-- Method choice (3 cards) -->
     <template v-else>
-      <CoarNote v-if="inGrace && daysRemaining !== null" variant="warning">
+      <CoarNotice v-if="inGrace && daysRemaining !== null" variant="warning">
         {{ t('auth.secureSetup.graceWarning', { days: daysRemaining }, `You have ${daysRemaining} day(s) left to secure your account.`) }}
-      </CoarNote>
+      </CoarNotice>
 
       <CoarCard elevated class="cursor-pointer hover:ring-2 hover:ring-blue-300 transition" @click="startTotpSetup">
         <div class="p-4 flex items-center gap-4">

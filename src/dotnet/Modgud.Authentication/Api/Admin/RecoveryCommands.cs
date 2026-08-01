@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Modgud.Authentication;
 using Modgud.Authentication.Setup;
 using Modgud.Authorization.Apps;
@@ -13,6 +14,7 @@ using Modgud.Permissions;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
+using Modgud.Infrastructure.Installation;
 using Marten;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,6 +28,59 @@ namespace Modgud.Authentication.Api.Admin;
 // One class per Recovery-CLI command. The dispatcher in RecoveryCli resolves the
 // tenant, enters the TenantContext, opens a DI scope, and calls ExecuteAsync; each
 // command resolves only the services it needs from ctx.Services and writes through
+
+// ── install-link ──────────────────────────────────────────────────────────
+
+/// <summary>
+/// Issues the short-lived operator authorization used by both the browser
+/// installation wizard and automated CI installation.
+/// </summary>
+internal sealed class InstallLinkCommand : IRecoveryCommand
+{
+    public string Name => "install-link";
+    public bool RequiresRealm => false;
+
+    public async Task<int> ExecuteAsync(RecoveryCliContext ctx)
+    {
+        var baseUrl = ctx.Flag("--base-url");
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            return ctx.Fail("Usage: recover install-link --base-url <https://host> [--minutes 30] [--json]");
+
+        var minutesRaw = ctx.Flag("--minutes");
+        if (minutesRaw is not null
+            && (!int.TryParse(minutesRaw, out var parsed) || parsed is < 1 or > 1440))
+        {
+            return ctx.Fail("--minutes must be an integer between 1 and 1440.");
+        }
+
+        var minutes = minutesRaw is null ? 30 : int.Parse(minutesRaw);
+        var service = ctx.Services.GetRequiredService<IInstallationChallengeService>();
+        var result = await service.IssueAsync(baseUrl, TimeSpan.FromMinutes(minutes));
+        if (result.IsError)
+            return ctx.Fail($"{result.FirstError.Code}: {result.FirstError.Description}");
+
+        var issued = result.Value;
+        if (ctx.Args.Any(a => a.Equals("--json", StringComparison.OrdinalIgnoreCase)))
+        {
+            ctx.WriteLine(JsonSerializer.Serialize(new
+            {
+                token = issued.PlaintextToken,
+                installUrl = issued.InstallUrl,
+                expiresAt = issued.ExpiresAt,
+            }));
+            return 0;
+        }
+
+        ctx.WriteLine("✓ First-installation link issued:");
+        ctx.WriteLine($"  Expires: {issued.ExpiresAt:yyyy-MM-dd HH:mm:ss zzz}");
+        ctx.WriteLine();
+        ctx.WriteLine($"  Link:    {issued.InstallUrl}");
+        ctx.WriteLine();
+        ctx.WriteLine("The previous unconsumed installation link, if any, is now revoked.");
+        ctx.WriteLine("For CI, add --json and POST the token to /api/install/complete.");
+        return 0;
+    }
+}
 // ctx.Out / ctx.Error. The execution model is unchanged from the original
 // monolith (same in-process host boot, same real events) — this is internal
 // modularization only.
@@ -124,15 +179,17 @@ internal sealed class Reset2FaCommand : IRecoveryCommand
 
         await session.SaveChangesAsync();
 
-        securityAudit.Record(new SecurityAuditRecord
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
-            Level = "Warning",
-            Realm = ctx.RealmSlug,
-            Actor = user.Id.ToString(),
-            Status = "succeeded",
-            Reason = $"reset-2fa: UserId={user.Id} TOTP={wasTotpEnabled} EmailOtp={wasEmailOtpEnabled} PasskeysDeleted={passkeys.Count}",
-            Message = $"Recovery reset-2fa. UserId={user.Id} TOTP={wasTotpEnabled} EmailOtp={wasEmailOtpEnabled} PasskeysDeleted={passkeys.Count}",
+            Severity = AuditSeverity.Warning,
+            RealmSlug = ctx.RealmSlug,
+            ActorKind = AuditActorKind.System,
+            TargetSubjectId = user.Id,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "reset-2fa",
+            ReasonCode = $"totp:{wasTotpEnabled};email-otp:{wasEmailOtpEnabled}",
+            Count = passkeys.Count,
         });
 
         ctx.WriteLine($"✓ 2FA reset for {user.UserName}:");
@@ -197,15 +254,15 @@ internal sealed class SetEmailCommand : IRecoveryCommand
 
         await session.SaveChangesAsync();
 
-        securityAudit.Record(new SecurityAuditRecord
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
-            Level = "Warning",
-            Realm = ctx.RealmSlug,
-            Actor = user.Id.ToString(),
-            Status = "succeeded",
-            Reason = $"set-email: UserId={user.Id} Old={LogPiiMasking.MaskEmail(oldEmail)} New={LogPiiMasking.MaskEmail(newEmail)}",
-            Message = $"Recovery set-email. UserId={user.Id} Old={LogPiiMasking.MaskEmail(oldEmail)} New={LogPiiMasking.MaskEmail(newEmail)}",
+            Severity = AuditSeverity.Warning,
+            RealmSlug = ctx.RealmSlug,
+            ActorKind = AuditActorKind.System,
+            TargetSubjectId = user.Id,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "set-email",
         });
 
         ctx.WriteLine($"✓ Email updated for {user.UserName}:");
@@ -268,15 +325,16 @@ internal sealed class MagicLinkCommand : IRecoveryCommand
         var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, ctx.Env);
         var url = $"{appUrl}/magic-login?userId={user.Id}&token={Uri.EscapeDataString(token)}";
 
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
-            Level = "Warning",
-            Realm = ctx.RealmSlug,
-            Actor = user.Id.ToString(),
-            Status = "succeeded",
-            Reason = $"magic-link: UserId={user.Id} ExpiresAt={challenge.ExpiresAt:O}",
-            Message = $"Recovery magic-link generated. UserId={user.Id} ExpiresAt={challenge.ExpiresAt:O}",
+            Severity = AuditSeverity.Warning,
+            RealmSlug = ctx.RealmSlug,
+            ActorKind = AuditActorKind.System,
+            TargetSubjectId = user.Id,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "generate-magic-link",
+            EffectiveAt = challenge.ExpiresAt,
         });
 
         ctx.WriteLine($"✓ Magic link for {user.UserName} (expires in {expirationMinutes} min):");
@@ -293,8 +351,9 @@ internal sealed class MagicLinkCommand : IRecoveryCommand
 /// <summary>
 /// Rebuilds all Marten projections from event 0. Mirrors the admin rebuild
 /// endpoint but runs without auth — needed when a schema change leaves
-/// <c>mt_doc_principal</c> empty so no user can claim <c>app:admin</c> until the
-/// principal projection is replayed.
+/// <c>mt_doc_principal</c> empty so no user's App-scoped grants or
+/// <c>realm:admin</c> bypass can resolve until the principal projection is
+/// replayed.
 /// </summary>
 internal sealed class RebuildProjectionsCommand : IRecoveryCommand
 {
@@ -308,14 +367,14 @@ internal sealed class RebuildProjectionsCommand : IRecoveryCommand
 
         ctx.WriteLine("Rebuilding Marten projections...");
         var securityAudit = ctx.Services.GetRequiredService<ISecurityAuditLog>();
-        securityAudit.Record(new SecurityAuditRecord
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
-            Level = "Warning",
-            Realm = ctx.RealmSlug,
-            Status = "initiated",
-            Reason = "rebuild-projections",
-            Message = "Recovery rebuild-projections initiated",
+            Severity = AuditSeverity.Warning,
+            RealmSlug = ctx.RealmSlug,
+            ActorKind = AuditActorKind.System,
+            OutcomeCode = AuditOutcomes.Initiated,
+            OperationCode = "rebuild-projections",
         });
 
         // MasterTableTenancy disables Marten's default tenant, so the no-arg
@@ -331,14 +390,14 @@ internal sealed class RebuildProjectionsCommand : IRecoveryCommand
         await daemon.RebuildProjectionAsync<PermissionRoleProjection>(timeout, CancellationToken.None);
         ctx.WriteLine("  OK PermissionRoleProjection (mt_doc_permissionrole)");
 
-        securityAudit.Record(new SecurityAuditRecord
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
-            Level = "Warning",
-            Realm = ctx.RealmSlug,
-            Status = "succeeded",
-            Reason = "rebuild-projections",
-            Message = "Recovery rebuild-projections completed",
+            Severity = AuditSeverity.Warning,
+            RealmSlug = ctx.RealmSlug,
+            ActorKind = AuditActorKind.System,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "rebuild-projections",
         });
         return 0;
     }
@@ -382,29 +441,30 @@ internal sealed class BootstrapAdminCommand : IRecoveryCommand
         var securityAudit = ctx.Services.GetRequiredService<ISecurityAuditLog>();
         if (result.IsError)
         {
-            securityAudit.Record(new SecurityAuditRecord
+            await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
             {
                 EventType = AuditEvents.RecoveryCliInvoked,
-                Level = "Warning",
-                Realm = ctx.RealmSlug,
-                Actor = LogPiiMasking.MaskUsername(userName),
-                Status = "failed",
-                Reason = $"bootstrap-admin: UserName={LogPiiMasking.MaskUsername(userName)} Code={result.FirstError.Code} Detail={result.FirstError.Description}",
-                Message = $"Recovery bootstrap-admin failed. Realm={ctx.RealmSlug} UserName={LogPiiMasking.MaskUsername(userName)} Code={result.FirstError.Code} Detail={result.FirstError.Description}",
+                Severity = AuditSeverity.Warning,
+                RealmSlug = ctx.RealmSlug,
+                ActorKind = AuditActorKind.System,
+                UnknownIdentifier = userName,
+                OutcomeCode = AuditOutcomes.Failed,
+                OperationCode = "bootstrap-admin-direct",
+                ReasonCode = result.FirstError.Code,
             });
             return ctx.Fail($"{result.FirstError.Code}: {result.FirstError.Description}");
         }
 
         var admin = result.Value;
-        securityAudit.Record(new SecurityAuditRecord
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
-            Level = "Warning",
-            Realm = ctx.RealmSlug,
-            Actor = admin.UserId.ToString(),
-            Status = "succeeded",
-            Reason = $"bootstrap-admin: UserId={admin.UserId} Mode=Direct",
-            Message = $"Recovery bootstrap-admin succeeded. Realm={ctx.RealmSlug} UserId={admin.UserId} Mode=Direct",
+            Severity = AuditSeverity.Warning,
+            RealmSlug = ctx.RealmSlug,
+            ActorKind = AuditActorKind.System,
+            TargetSubjectId = admin.UserId,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "bootstrap-admin-direct",
         });
 
         ctx.WriteLine($"✓ Admin created in realm '{ctx.RealmSlug}':");
@@ -434,15 +494,16 @@ internal sealed class BootstrapAdminCommand : IRecoveryCommand
             issuedBy: null, // CLI invocation — no authenticated CP-admin
             realm);
 
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
-            Level = "Warning",
-            Realm = ctx.RealmSlug,
-            Actor = LogPiiMasking.MaskUsername(userName),
-            Status = "initiated",
-            Reason = $"bootstrap-admin invite: UserName={LogPiiMasking.MaskUsername(userName)} Email={LogPiiMasking.MaskEmail(email)} ExpiresAt={invite.ExpiresAt:O}",
-            Message = $"Recovery bootstrap-admin issued invite. Realm={ctx.RealmSlug} UserName={LogPiiMasking.MaskUsername(userName)} Email={LogPiiMasking.MaskEmail(email)} ExpiresAt={invite.ExpiresAt:O}",
+            Severity = AuditSeverity.Warning,
+            RealmSlug = ctx.RealmSlug,
+            ActorKind = AuditActorKind.System,
+            UnknownIdentifier = email,
+            OutcomeCode = AuditOutcomes.Initiated,
+            OperationCode = "bootstrap-admin-invite",
+            EffectiveAt = invite.ExpiresAt,
         });
 
         ctx.WriteLine($"✓ Bootstrap-invite issued for realm '{ctx.RealmSlug}':");
@@ -532,14 +593,17 @@ internal sealed class MigrateCcCredentialsCommand : IRecoveryCommand
 
         await session.SaveChangesAsync();
 
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
-            Level = "Warning",
-            Realm = ctx.RealmSlug,
-            Status = "succeeded",
-            Reason = $"migrate-cc-credentials: Migrated={migrated} SaCreated={saCreated} SaReused={saReused}",
-            Message = $"Recovery migrate-cc-credentials completed. Realm={ctx.RealmSlug} Migrated={migrated} SaCreated={saCreated} SaReused={saReused}",
+            Severity = AuditSeverity.Warning,
+            RealmSlug = ctx.RealmSlug,
+            ActorKind = AuditActorKind.System,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "migrate-cc-credentials",
+            Count = migrated,
+            RelatedCount = saCreated,
+            ReusedCount = saReused,
         });
 
         ctx.WriteLine();
@@ -630,14 +694,14 @@ internal sealed class RealmAddDomainCommand : IRecoveryCommand
 
         ctx.WriteLine($"✓ Added '{domain}' to realm '{slug}'. Now: [{string.Join(", ", realm.Domains)}]");
         ctx.PrintRestartHint();
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatformRequiredAsync(new PlatformAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
-            Level = "Warning",
-            Realm = slug,
-            Status = "succeeded",
-            Reason = $"realm-add-domain: Realm={slug} Domain={domain}",
-            Message = $"Recovery realm-add-domain — Realm={slug} Domain={domain}",
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "realm-add-domain",
+            Domain = domain,
         });
         return 0;
     }
@@ -686,14 +750,14 @@ internal sealed class RealmRemoveDomainCommand : IRecoveryCommand
 
         ctx.WriteLine($"✓ Removed '{domain}' from realm '{slug}'. Now: [{string.Join(", ", remaining)}]");
         ctx.PrintRestartHint();
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatformRequiredAsync(new PlatformAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
-            Level = "Warning",
-            Realm = slug,
-            Status = "succeeded",
-            Reason = $"realm-remove-domain: Realm={slug} Domain={domain}",
-            Message = $"Recovery realm-remove-domain — Realm={slug} Domain={domain}",
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "realm-remove-domain",
+            Domain = domain,
         });
         return 0;
     }
@@ -747,14 +811,15 @@ internal sealed class RealmSetPrimaryDomainCommand : IRecoveryCommand
         ctx.WriteLine("  affected users must re-register their passkeys (other login");
         ctx.WriteLine("  methods are unaffected).");
         ctx.PrintRestartHint();
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatformRequiredAsync(new PlatformAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
-            Level = "Warning",
-            Realm = slug,
-            Status = "succeeded",
-            Reason = $"realm-set-primary-domain: Realm={slug} Old={oldPrimary} New={domain} (passkeys invalidated)",
-            Message = $"Recovery realm-set-primary-domain — Realm={slug} Old={oldPrimary} New={domain}. WebAuthn RP changed; existing passkeys invalidated.",
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "realm-set-primary-domain",
+            Domain = domain,
+            PreviousDomain = oldPrimary,
         });
         return 0;
     }
@@ -801,14 +866,13 @@ internal sealed class ControlPlaneCommand : IRecoveryCommand
                 if (result.IsError)
                     return ctx.Fail($"{result.FirstError.Code}: {result.FirstError.Description}");
 
-                ctx.Services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+                await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatformRequiredAsync(new PlatformAuditRecord
                 {
                     EventType = AuditEvents.RecoveryCliInvoked,
-                    Level = "Warning",
-                    Realm = targetSlug,
-                    Status = "succeeded",
-                    Reason = $"control-plane transfer: Target={targetSlug}",
-                    Message = $"Recovery control-plane transfer. Target={targetSlug}",
+                    Severity = AuditSeverity.Warning,
+                    TargetRealmSlug = targetSlug,
+                    OutcomeCode = AuditOutcomes.Succeeded,
+                    OperationCode = "control-plane-transfer",
                 });
                 ctx.WriteLine($"✓ Control plane transferred to realm '{targetSlug}'.");
                 ctx.PrintRestartHint();
@@ -848,14 +912,13 @@ internal sealed class AdoptTenantCommand : IRecoveryCommand
         if (result.IsError)
             return ctx.Fail($"{result.FirstError.Code}: {result.FirstError.Description}");
 
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatformRequiredAsync(new PlatformAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
-            Level = "Warning",
-            Realm = slug,
-            Status = "succeeded",
-            Reason = $"adopt-tenant: Slug={slug}",
-            Message = $"Recovery adopt-tenant. Slug={slug}",
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "adopt-tenant",
         });
         ctx.WriteLine($"✓ Adopted existing database as realm '{slug}'.");
         ctx.WriteLine($"  Domains: {string.Join(", ", result.Value.Domains)}");
@@ -879,14 +942,15 @@ internal sealed class RotateSigningKeyCommand : IRecoveryCommand
         var creds = await keyStore.RotateAsync(ctx.RealmSlug);
         var kid = creds.Key.KeyId;
 
-        ctx.Services.GetRequiredService<ISecurityAuditLog>().Record(new SecurityAuditRecord
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
-            Level = "Warning",
-            Realm = ctx.RealmSlug,
-            Status = "rotated",
-            Reason = $"rotate-signing-key: Realm={ctx.RealmSlug} NewKid={kid}",
-            Message = $"Recovery rotate-signing-key. Realm={ctx.RealmSlug} NewKid={kid}",
+            Severity = AuditSeverity.Warning,
+            RealmSlug = ctx.RealmSlug,
+            ActorKind = AuditActorKind.System,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "rotate-signing-key",
+            KeyId = kid,
         });
         ctx.WriteLine($"  OK new active kid: {kid}");
         ctx.WriteLine("  Previous key retired into the 30-day verification overlap window.");

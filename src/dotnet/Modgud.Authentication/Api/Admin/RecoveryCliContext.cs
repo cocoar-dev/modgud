@@ -35,7 +35,7 @@ public sealed class RecoveryCliContext
     /// <summary>Full argv, with <c>Args[0]</c> the command name.</summary>
     public string[] Args { get; }
 
-    /// <summary>Resolved tenant slug (the global <c>--realm</c>, default <c>system</c>).</summary>
+    /// <summary>Resolved tenant slug, empty for deployment-wide commands.</summary>
     public string RealmSlug { get; }
 
     public IWebHostEnvironment Env { get; }

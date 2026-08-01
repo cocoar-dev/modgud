@@ -13,7 +13,7 @@ Images and packages from v0.6.0 and earlier predate the signing pipeline — the
 | Trivy scan gate | The image had no known fixable CRITICAL/HIGH vulnerabilities at publish time — each architecture is scanned separately, and a finding blocks the whole release | Enforced in CI (`cd-release.yml`), not a downloadable artifact |
 | cosign signature (keyless) | The image digest was signed by the release workflow itself, via its short-lived OIDC identity — there is no long-lived signing key that could leak | GHCR, next to the image; log entry in the public Rekor transparency log |
 | Build-provenance attestation (image) | Which repository, workflow, commit, and run built the image | GitHub attestation store + GHCR |
-| Build-provenance attestation (NuGet) | Same, for the `Modgud.Client.AspNetCore` package | GitHub attestation store |
+| Build-provenance attestation (NuGet) | Same, for the `Modgud.AspNetCore.ResourceServer` package | GitHub attestation store |
 | SPDX SBOMs (per arch) | The full component inventory of the image, one file per platform | GitHub release assets (`modgud-<version>-linux-<arch>.spdx.json`) |
 | BuildKit inline SBOM + provenance | Machine-readable equivalents embedded in the image manifest | GHCR, part of the multi-arch manifest list |
 
@@ -38,7 +38,7 @@ Both checks operate on the image digest, and every release tag (`:<version>`, `:
 ## Verify the NuGet package
 
 ```bash
-gh attestation verify Modgud.Client.AspNetCore.<version>.nupkg -R cocoar-dev/modgud
+gh attestation verify Modgud.AspNetCore.ResourceServer.<version>.nupkg -R cocoar-dev/modgud
 ```
 
 This proves the exact `.nupkg` you downloaded from nuget.org was produced by the release workflow in this repository, at the commit the attestation names.

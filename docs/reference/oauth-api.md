@@ -58,7 +58,7 @@ All under `/connect/...`, all realm-scoped via the domain:
 | `/connect/authorize` | `GET`/`POST` | Authorization endpoint (Code + PKCE). Also accepts a `request_uri` from `/connect/par`. |
 | `/connect/par` | `POST` | Pushed Authorization Request endpoint (RFC 9126). Back-channel; returns a one-time `request_uri`. |
 | `/connect/token` | `POST` | Token endpoint (code exchange, client credentials, refresh, device) |
-| `/connect/userinfo` | `GET`/`POST` | UserInfo endpoint (claims + per-Audience `resource_access`) |
+| `/connect/userinfo` | `GET`/`POST` | UserInfo endpoint (claims plus eligible per-Audience `resource_access`) |
 | `/connect/introspect` | `POST` | Token introspection |
 | `/connect/revoke` | `POST` | Token revocation |
 | `/connect/logout` | `GET`/`POST` | End-session endpoint (RP-initiated logout) |
@@ -211,7 +211,7 @@ Authorization: DPoP <access-token>
 DPoP: <proof-jwt-with-ath>
 ```
 
-The [.NET client library](../integrate/resource-server) enforces the binding on both token formats: a bound token presented as a plain `Bearer`, or with a proof whose key doesn't match `cnf.jkt`, is rejected.
+The [.NET resource-server library](../integrate/resource-server) enforces the binding on both token formats: a bound token presented as a plain `Bearer`, or with a proof whose key doesn't match `cnf.jkt`, is rejected.
 
 ### 3. Refresh tokens are bound too
 
@@ -309,15 +309,17 @@ GET /connect/userinfo
 Authorization: Bearer <access_token>
 ```
 
-Returns the claims for the bearer token, plus a `resource_access`
-block (Keycloak-style nesting) keyed per Audience:
+Returns the claims for the bearer token. It also returns the same
+Keycloak-shaped `resource_access` claim as the access-token principal
+when at least one token audience resolves to a registered OAuth API
+linked to an App and `roles` and/or `permissions` was granted:
 
 ```json
 {
   "sub":   "abc123…",
   "email": "alice@example.com",
   "resource_access": {
-    "billing": {
+    "billing-api": {
       "roles": ["Editor"],
       "permissions": ["invoice:read", "invoice:write"]
     }
@@ -325,12 +327,14 @@ block (Keycloak-style nesting) keyed per Audience:
 }
 ```
 
+- The key is the exact OAuth API Audience, not its linked App slug.
 - `roles` is emitted when `scope=roles` was granted.
 - `permissions` is emitted when `scope=permissions` was granted,
-  **bypass-pre-expanded** and narrowed to the calling OAuthApi's
+  **bypass-pre-expanded** and narrowed to the matching OAuth API's
   `PermissionIds` subset.
-- One block per audience listed in `aud`; a microservice within a
-  multi-RS App sees only its declared subset.
+- Audiences that do not resolve to a registered OAuth API with a linked
+  App are skipped. If no eligible block remains, the whole claim is
+  absent.
 
 See [Apps and resource_access](../concepts/apps-and-resource-access)
 for the full emission story.
@@ -345,9 +349,11 @@ Content-Type: application/x-www-form-urlencoded
 token=<token>
 ```
 
-Returns `active: true/false` plus all the token's claims. Used by
-resource servers that hold **reference tokens** (server-side opaque)
-to validate them against the issuer.
+Returns `active: true/false` plus the token claims authorized for that
+introspection caller, including the same audience-keyed
+`resource_access` object when eligible. Used by resource servers that
+hold **reference tokens** (server-side opaque) to validate them
+against the issuer.
 
 ## Revocation
 

@@ -4,9 +4,9 @@ using Marten.Schema;
 namespace Modgud.Infrastructure.Scheduling;
 
 /// <summary>
-/// One execution record per job run. Written by <see cref="JobRunListener"/>
-/// after the job's <c>Execute</c> returns (success or fail). Append-only —
-/// admin UI shows the last N entries for each job key.
+/// One execution record per job run. Realm-job history lives in the owning
+/// tenant database; system-job history lives in the non-tenanted global store.
+/// Written by <see cref="JobRunListener"/> after <c>Execute</c> returns.
 /// </summary>
 [DocumentAlias("job_run_history")]
 public record JobRunHistoryEntry

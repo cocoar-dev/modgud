@@ -78,14 +78,16 @@ public sealed class DcrLastUsedTrackerHandler
 
         if (isFirstUse)
         {
-            _securityAudit.Record(new SecurityAuditRecord
+            _securityAudit.RecordTelemetry(new SecurityAuditRecord
             {
                 EventType = AuditEvents.DcrClientFirstUsed,
-                Level = "Info",
-                Actor = clientId,
-                Status = "first_used",
-                Reason = $"registeredAt {registeredAt ?? "(unknown)"}",
-                Message = $"DCR client {clientId} used for the first time",
+                ActorKind = AuditActorKind.OAuthClient,
+                OAuthClientId = clientId,
+                OutcomeCode = AuditOutcomes.Observed,
+                OperationCode = "first-use",
+                EffectiveAt = DateTimeOffset.TryParse(registeredAt, out var registeredAtValue)
+                    ? registeredAtValue
+                    : null,
             });
         }
     }

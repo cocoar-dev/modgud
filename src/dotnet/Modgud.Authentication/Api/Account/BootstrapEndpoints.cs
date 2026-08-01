@@ -43,7 +43,6 @@ public static class BootstrapEndpoints
             IPendingAdminInviteService inviteService,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
-            ISessionService sessionService,
             ISecurityAuditLog securityAudit) =>
         {
             var ip = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -51,14 +50,14 @@ public static class BootstrapEndpoints
             var result = await inviteService.ConsumeAsync(request.Token, request.Password);
             if (result.IsError)
             {
-                securityAudit.Record(new SecurityAuditRecord
+                securityAudit.RecordAbuse(new SecurityAuditRecord
                 {
                     EventType = AuditEvents.BootstrapInviteRejected,
-                    Level = "Warning",
-                    Ip = ip,
-                    Status = "rejected",
-                    Reason = "invalid or expired invite",
-                    Message = "Bootstrap invite consume rejected",
+                    Severity = AuditSeverity.Warning,
+                    ActorKind = AuditActorKind.AnonymousIdentifier,
+                    IpAddress = ip,
+                    OutcomeCode = AuditOutcomes.Rejected,
+                    ReasonCode = "invalid-or-expired-invite",
                 });
                 return Results.Problem(
                     statusCode: StatusCodes.Status400BadRequest,
@@ -74,7 +73,6 @@ public static class BootstrapEndpoints
             if (user is not null)
             {
                 await signInManager.SignInAsync(user, isPersistent: false);
-                await SessionTracker.RecordLoginAsync(sessionService, http, user.Id);
             }
 
             Serilog.Log.Warning(

@@ -84,7 +84,11 @@ public static class UsersEndpoints
                     // that marks Username=Required rejects a blank one.
                     createDto.UserName ?? "",
                     createDto.Password,
-                    createDto.EmailConfirmed);
+                    createDto.EmailConfirmed,
+                    createDto.IsActive,
+                    createDto.GroupIds,
+                    createDto.GracePeriodDaysOverride,
+                    createDto.TwoFactorExempt);
                 var result = await bus.InvokeAsync<ErrorOr.ErrorOr<UserDto>>(command);
                 return result.ToResult(dto =>
                 {

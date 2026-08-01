@@ -57,7 +57,6 @@ test.describe('§14 Realms', () => {
     // Response shape changed in C15c: {Realm: …, InitialAdminInvite: …}
     expect(body.Realm.Slug).toBe(slug)
     expect(body.Realm.IsActive).toBe(true)
-    expect(typeof body.Realm.NeedsSetup).toBe('boolean')
 
     // Bootstrap-invite is included so the CP-admin can copy/share the
     // magic-link in SMTP-less environments.

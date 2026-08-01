@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Modgud.Authentication.Applications;
+using Modgud.Authentication.Sessions;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
 using Modgud.Authorization.Apps;
@@ -275,6 +276,7 @@ public static class AuthorizationEndpoints
         SignInManager<ApplicationUser> signInManager,
         UserManager<ApplicationUser> userManager,
         IPermissionService permissionService,
+        IClientSessionService clientSessionService,
         CimdClientResolver cimdResolver,
         IEmailOtpService emailOtpService,
         RealmScopedFido2Factory fido2Factory,
@@ -364,7 +366,68 @@ public static class AuthorizationEndpoints
             var principal = await CreateClaimsPrincipalAsync(
                 user, request, scopeManager, originalScopes, userManager,
                 cookiePrincipal: result.Principal);
-            principal.SetAuthorizationId(result.Principal?.GetAuthorizationId());
+
+            var authorizationId = result.Principal?.GetAuthorizationId();
+            if (request.IsRefreshTokenGrantType())
+            {
+                var rawClientSessionId = result.Principal?
+                    .FindFirstValue(SessionClaimTypes.ClientSessionId);
+                if (!Guid.TryParse(rawClientSessionId, out var clientSessionId) ||
+                    string.IsNullOrEmpty(request.ClientId) ||
+                    await clientSessionService.ValidateAndTouchAsync(
+                        user.Id,
+                        clientSessionId,
+                        request.ClientId,
+                        authorizationId,
+                        httpContext.RequestAborted) is null)
+                {
+                    return ForbidInvalidGrant("The client session has expired or was revoked; please sign in again.");
+                }
+
+                principal.SetAuthorizationId(authorizationId);
+                principal.SetClaim(SessionClaimTypes.ClientSessionId, clientSessionId.ToString());
+            }
+            else if (principal.HasScope(Scopes.OfflineAccess))
+            {
+                var application = await applicationManager.FindByClientIdAsync(request.ClientId!)
+                    ?? throw new InvalidOperationException("The application cannot be found.");
+                var clientPk = await applicationManager.GetIdAsync(application) ?? string.Empty;
+                var sessionAuthorization = await authorizationManager.CreateAsync(
+                    principal: principal,
+                    subject: user.Id.ToString(),
+                    client: clientPk,
+                    type: AuthorizationTypes.AdHoc,
+                    scopes: principal.GetScopes());
+                authorizationId = await authorizationManager.GetIdAsync(sessionAuthorization)
+                    ?? throw new InvalidOperationException("The client-session authorization has no id.");
+                principal.SetAuthorizationId(authorizationId);
+
+                var clientSession = await clientSessionService.CreateAsync(
+                    new CreateClientSessionRequest(
+                        user.Id,
+                        request.ClientId!,
+                        clientPk,
+                        authorizationId,
+                        await applicationManager.GetDisplayNameAsync(application),
+                        httpContext.Connection.RemoteIpAddress?.ToString(),
+                        httpContext.Request.Headers.UserAgent.ToString()),
+                    httpContext.RequestAborted);
+                principal.SetClaim(SessionClaimTypes.ClientSessionId, clientSession.Id.ToString());
+            }
+            else
+            {
+                // No refresh token will be issued, so this is not a long-lived
+                // client/device session. Keep the authorization produced by the
+                // code/device flow and do not add an orphan ClientSession row.
+                principal.SetAuthorizationId(authorizationId);
+            }
+
+            if (principal.HasScope(Scopes.OfflineAccess))
+            {
+                var clientSessionPolicy = await clientSessionService.ResolvePolicyAsync(
+                    request.ClientId!, httpContext.RequestAborted);
+                principal.SetRefreshTokenLifetime(clientSessionPolicy.IdleLifetime);
+            }
 
             // Federation v1.1: bake the federated resource_access (durable ∪
             // session-derived) into the access token HERE, while the carrier is
@@ -473,7 +536,7 @@ public static class AuthorizationEndpoints
             return await ExchangeNativeOtpAsync(
                 request, httpContext, applicationSettingsResolver, session, userManager, signInManager, scopeManager,
                 applicationManager, authorizationManager, permissionService,
-                emailOtpService, httpContext.RequestAborted);
+                clientSessionService, emailOtpService, httpContext.RequestAborted);
         }
 
         if (string.Equals(request.GrantType, CocoarGrantTypes.Magic, StringComparison.Ordinal))
@@ -481,7 +544,7 @@ public static class AuthorizationEndpoints
             return await ExchangeNativeMagicAsync(
                 request, httpContext, applicationSettingsResolver, session, userManager, signInManager, scopeManager,
                 applicationManager, authorizationManager, permissionService,
-                httpContext.RequestAborted);
+                clientSessionService, httpContext.RequestAborted);
         }
 
         if (string.Equals(request.GrantType, CocoarGrantTypes.Passkey, StringComparison.Ordinal))
@@ -489,7 +552,7 @@ public static class AuthorizationEndpoints
             return await ExchangeNativePasskeyAsync(
                 request, httpContext, applicationSettingsResolver, session, userManager, signInManager, scopeManager,
                 applicationManager, authorizationManager, permissionService,
-                fido2Factory, rpIdResolver, httpContext.RequestAborted);
+                clientSessionService, fido2Factory, rpIdResolver, httpContext.RequestAborted);
         }
 
         throw new InvalidOperationException("The specified grant type is not supported.");
@@ -564,6 +627,8 @@ public static class AuthorizationEndpoints
         IOpenIddictAuthorizationManager authorizationManager,
         IDocumentSession session,
         IPermissionService permissionService,
+        IClientSessionService clientSessionService,
+        HttpContext httpContext,
         NativeGrantSettings nativeSettings)
     {
         // userManager (NOT a plain session load) so the security stamp is
@@ -574,26 +639,36 @@ public static class AuthorizationEndpoints
 
         await BakeFederatedResourceAccessAsync(principal, user.Id, request, session, permissionService);
 
-        // Find-or-create the permanent (subject, client) authorization so
-        // refresh, logout-all and revocation-by-authorization behave exactly like
-        // the authorization-code flow (mirrors AuthorizeAsync). Fail loud (like the
-        // code/refresh + client_credentials branches) rather than mint an
-        // authorization-less, non-revocable refresh chain — the client is
-        // guaranteed present here (OpenIddict's ValidateClientId + the per-client
-        // gt:urn:cocoar:* permission check both ran upstream).
+        // Each native device/login gets its own ad-hoc authorization. Consent is
+        // still represented by the permanent authorization created by the web
+        // flow; this authorization is solely the independently revocable token
+        // family root for one ClientSession.
         var application = await applicationManager.FindByClientIdAsync(request.ClientId!)
             ?? throw new InvalidOperationException("The application cannot be found.");
 
         var subject = user.Id.ToString();
         var clientPk = await applicationManager.GetIdAsync(application) ?? string.Empty;
-        var authorizations = await authorizationManager.FindAsync(
-            subject: subject, client: clientPk, status: Statuses.Valid,
-            type: AuthorizationTypes.Permanent, scopes: principal.GetScopes()).ToListAsync();
-        var authorization = authorizations.LastOrDefault()
-            ?? await authorizationManager.CreateAsync(
-                principal: principal, subject: subject, client: clientPk,
-                type: AuthorizationTypes.Permanent, scopes: principal.GetScopes());
-        principal.SetAuthorizationId(await authorizationManager.GetIdAsync(authorization));
+        var authorization = await authorizationManager.CreateAsync(
+            principal: principal, subject: subject, client: clientPk,
+            type: AuthorizationTypes.AdHoc, scopes: principal.GetScopes());
+        var authorizationId = await authorizationManager.GetIdAsync(authorization)
+            ?? throw new InvalidOperationException("The client-session authorization has no id.");
+        principal.SetAuthorizationId(authorizationId);
+
+        if (principal.HasScope(Scopes.OfflineAccess))
+        {
+            var clientSession = await clientSessionService.CreateAsync(
+                new CreateClientSessionRequest(
+                    user.Id,
+                    request.ClientId!,
+                    clientPk,
+                    authorizationId,
+                    await applicationManager.GetDisplayNameAsync(application),
+                    httpContext.Connection.RemoteIpAddress?.ToString(),
+                    httpContext.Request.Headers.UserAgent.ToString()),
+                httpContext.RequestAborted);
+            principal.SetClaim(SessionClaimTypes.ClientSessionId, clientSession.Id.ToString());
+        }
 
         // ADR-0010 — short JWT access TTL for native clients (per-realm tunable,
         // validated at write time). Clamp defensively so even a settings doc
@@ -602,8 +677,12 @@ public static class AuthorizationEndpoints
         // JWT access token. The refresh token stays a revocable reference token.
         principal.SetAccessTokenLifetime(
             ClampLifetime(nativeSettings.AccessTokenLifetime, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(60)));
-        principal.SetRefreshTokenLifetime(
-            ClampLifetime(nativeSettings.RefreshTokenLifetime, TimeSpan.FromDays(1), TimeSpan.FromDays(30)));
+        if (principal.HasScope(Scopes.OfflineAccess))
+        {
+            var clientSessionPolicy = await clientSessionService.ResolvePolicyAsync(
+                request.ClientId!, httpContext.RequestAborted);
+            principal.SetRefreshTokenLifetime(clientSessionPolicy.IdleLifetime);
+        }
 
         return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
@@ -642,6 +721,7 @@ public static class AuthorizationEndpoints
         IOpenIddictApplicationManager applicationManager,
         IOpenIddictAuthorizationManager authorizationManager,
         IPermissionService permissionService,
+        IClientSessionService clientSessionService,
         IEmailOtpService emailOtpService,
         CancellationToken ct)
     {
@@ -696,7 +776,8 @@ public static class AuthorizationEndpoints
 
         return await IssueNativeGrantAsync(
             user, request, scopeManager, userManager, applicationManager,
-            authorizationManager, session, permissionService, nativeSettings);
+            authorizationManager, session, permissionService, clientSessionService,
+            httpContext, nativeSettings);
     }
 
     /// <summary><c>urn:cocoar:magic</c> — verify a magic-link (user_id + token)
@@ -715,6 +796,7 @@ public static class AuthorizationEndpoints
         IOpenIddictApplicationManager applicationManager,
         IOpenIddictAuthorizationManager authorizationManager,
         IPermissionService permissionService,
+        IClientSessionService clientSessionService,
         CancellationToken ct)
     {
         var nativeSettings = await LoadNativeGrantSettingsAsync(settingsResolver, httpContext, request.ClientId, ct);
@@ -776,7 +858,8 @@ public static class AuthorizationEndpoints
 
         return await IssueNativeGrantAsync(
             user, request, scopeManager, userManager, applicationManager,
-            authorizationManager, session, permissionService, nativeSettings);
+            authorizationManager, session, permissionService, clientSessionService,
+            httpContext, nativeSettings);
     }
 
     /// <summary><c>urn:cocoar:passkey</c> — verify a WebAuthn assertion against a
@@ -797,6 +880,7 @@ public static class AuthorizationEndpoints
         IOpenIddictApplicationManager applicationManager,
         IOpenIddictAuthorizationManager authorizationManager,
         IPermissionService permissionService,
+        IClientSessionService clientSessionService,
         RealmScopedFido2Factory fido2Factory,
         RpIdResolver rpIdResolver,
         CancellationToken ct)
@@ -912,7 +996,8 @@ public static class AuthorizationEndpoints
         // (the begin endpoint requires UV), so we do not additionally demand totp_code.
         return await IssueNativeGrantAsync(
             user, request, scopeManager, userManager, applicationManager,
-            authorizationManager, session, permissionService, nativeSettings);
+            authorizationManager, session, permissionService, clientSessionService,
+            httpContext, nativeSettings);
     }
 
     private static async Task<IResult> UserinfoAsync(
@@ -1050,7 +1135,7 @@ public static class AuthorizationEndpoints
         // declared as its gating surface. Anything outside that subset is
         // not "this RS's business" and is excluded from the block. This
         // prevents permission strings from one microservice leaking into a
-        // sibling's UserInfo block when both belong to the same App but
+        // sibling's audience block when both belong to the same App but
         // declare disjoint subsets.
         //
         // Audience entries that don't resolve to a registered OAuthApi
@@ -1293,7 +1378,8 @@ public static class AuthorizationEndpoints
                 title: "id_token_hint required",
                 detail: "The end-session endpoint requires an id_token_hint per " +
                         "OpenID Connect RP-Initiated Logout 1.0. Use /api/account/logout " +
-                        "for IdP-internal logout (cookie-only).");
+                        "for Modgud application-session logout (with optional upstream " +
+                        "OIDC logout; SAML sessions end locally).");
         }
 
         // OpenIddict already validates the hint's signature (against the realm's
@@ -1873,6 +1959,7 @@ internal static class AuthorizationEndpointHelpers
                 yield break;
 
             case "AspNet.Identity.SecurityStamp":
+            case SessionClaimTypes.ClientSessionId:
                 yield break;
 
             // Federation v1 (hub boundary, decision D): the session-group carrier

@@ -104,7 +104,7 @@ on access.
 
 1. Admin → **Login Providers** → **Add provider.** A single modal
    opens — flavor picker in the header, all tabs (General, Connection,
-   User Update Script, Linking & Policies) visible.
+   Protocol & Security, User Update Script, Users & Trust) visible.
 2. **Flavor** (header dropdown): *OIDC · Microsoft Entra ID*. Switching
    flavor in this modal re-seeds the flavor-derived defaults (Scopes,
    default User Update Script, button icon) without touching what you've
@@ -114,15 +114,15 @@ on access.
    identifier (lowercase letters/digits/hyphens, 3-64 chars) that becomes
    part of the Redirect URI (`/signin-oidc/<slug>`). It is **immutable
    after create** — pick a stable name (e.g. `company-sso`); typing a
-   Display Name first lets Modgud suggest one. The Redirect URI field
-   appears AFTER first save.
+   Display Name first lets Modgud suggest one. As soon as the slug is
+   valid, the Redirect URI appears in the Connection tab — before save.
 4. **Connection** tab:
    - **Tenant ID** (Entra-specific): paste from Entra.
    - **Client ID**: from Entra.
    - **Scopes**: `openid profile email` (default is fine).
-   - **Initial Secret** (optional): paste the Entra client secret here
-     so it's set in one step. You can also skip this and rotate via the
-     Connection tab after Save — same audit-event shape either way.
+   - **Client Secret**: paste the Entra client secret here so the complete
+     provider can be created in one step. You can omit it while the provider
+     is disabled and add/rotate it later.
 5. **User Update Script** tab: default for Entra is
 
    ```js
@@ -138,13 +138,12 @@ on access.
    against a sample claims object — instant feedback on what comes out.
    After at least one successful login, **Last Login** loads the
    actual claims that came through last.
-6. **Create.** The provider is created **disabled** (security default;
-   enable explicitly after the smoke-test). The modal stays open and
-   transitions into Edit mode — the URL fragment updates to the new
-   provider id and the **Redirect URI** field now appears in the
-   General tab with a copy button next to it.
+6. Choose **Active** on the General tab only if Client ID, Client Secret
+   and the provider-specific connection fields are already complete.
+   **Create** saves the full provider atomically; otherwise leave it
+   disabled and enable it after the smoke-test.
 
-**Copy the Redirect URI** from the General tab — you'll paste it into
+**Copy the Redirect URI** from the Connection tab — you'll paste it into
 Entra next. Because the URI is built from your chosen slug (not a
 generated GUID), deleting and recreating the provider with the same slug
 keeps the **same** Redirect URI — no need to re-edit the Entra app.
@@ -188,7 +187,7 @@ toggle the **Auto-create unknown users** flag in the **Linking &
 Policies** tab. Unknown users get a 403 with a message explaining how to
 request access.
 
-### Linking OIDC to existing users
+### Linking external identities to existing users
 
 When a user is already signed in and visits **Profile → Linked accounts**,
 they can attach additional OIDC identities to their existing Modgud
@@ -197,6 +196,15 @@ user id) and survives email changes on either side.
 
 To deny self-service linking for a particular provider, untick **Allow
 linking** in the Linking & Policies tab.
+
+::: warning SAML self-service linking is limited in v1
+SAML assertions return through a cross-site POST to the ACS endpoint. The
+Modgud application cookie is `SameSite=Lax`, so it is not sent with that
+POST and Modgud cannot reliably bind the assertion to the already signed-in
+user who started the link flow. Use normal SAML sign-in with trusted-email
+linking or JIT resolution instead. See
+[SAML federation](./saml-federation#linking-a-saml-identity-to-an-existing-account).
+:::
 
 ### Multiple linked providers & profile precedence
 
@@ -214,7 +222,7 @@ The net effect: a user's display name / email stays stable no matter which linke
 
 ## Disabling without deleting
 
-For OIDC providers, toggle the **Enabled** flag in the detail dialog. The
+For OIDC and SAML providers, toggle the **Enabled** flag in the detail dialog. The
 button disappears from the login page; existing user-account links are
 preserved. Re-enabling brings the button back.
 

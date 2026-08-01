@@ -13,7 +13,7 @@ Full endpoint source in
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/account/login` | Login with username + password |
-| `POST` | `/api/account/logout` | Logout (cookie removed, session invalidated) |
+| `POST` | `/api/account/logout` | Remove the cookie and invalidate the browser session. `{ "EndIdpSession": true }` additionally returns an upstream logout URL only for a live OIDC provider; SAML ends locally. |
 | `GET` | `/api/account/self-registration-info` | Anonymous — public self-registration config the SPA reads before mounting `/register` |
 | `POST` | `/api/account/register` | Self-registration (when enabled per realm) |
 | `POST` | `/api/account/register/verify-email` | Anonymous — consume the registration email-verification token |
@@ -98,20 +98,23 @@ For native/mobile clients that can't hold a session cookie. These mint a code, o
 | `GET` | `/connect/passkey` | Bearer-authenticated — list the signed-in token subject's own passkeys |
 | `DELETE` | `/connect/passkey/{id}` | Bearer-authenticated — revoke one of the token subject's own passkeys |
 
-## External login (OIDC)
+## External login (OIDC and SAML)
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/account/external-logins` | List of active LoginProviders (no secrets) |
+| `GET` | `/api/account/external-logins` | List active OIDC and SAML LoginProviders (no secrets); `Kind` selects the correct entry point |
 | `GET` | `/api/account/external-login/{loginProviderId}/start?returnUrl=/` | Start OIDC flow |
 | `GET` | `/api/account/external-login/finish` | OIDC callback from the external IdP |
-| `GET` | `/api/account/external-logout/{loginProviderId}` | Single-logout signal back to the external IdP |
+| `GET` | `/api/account/external-logout/{loginProviderId}` | OIDC RP-initiated logout; non-OIDC or unavailable providers fall back to `/logged-out` |
+| `GET` | `/saml/{slug}/sp-metadata` | SAML Service Provider metadata |
+| `GET` | `/saml/{slug}/login?returnUrl=/` | Start an SP-initiated SAML login |
+| `POST` | `/saml/{slug}/acs` | Receive the correlated SAML response via HTTP-POST |
 
-### Login flow
+### OIDC login flow
 
 ```
 1. Frontend: GET /api/account/external-logins → shows provider buttons
-2. User clicks "Login with Acme SSO"
+2. User clicks an OIDC provider
 3. Browser: GET /api/account/external-login/{loginProviderId}/start?returnUrl=/
 4. Backend: ASP.NET Challenge with the dynamically registered OIDC scheme
 5. Browser: 302 → external IdP
@@ -122,15 +125,33 @@ For native/mobile clients that can't hold a session cookie. These mint a code, o
 9. Backend: 302 → returnUrl
 ```
 
+### SAML login flow
+
+```
+1. Frontend: GET /api/account/external-logins → sees Kind = Saml + Slug
+2. Browser: GET /saml/{slug}/login?returnUrl=/
+3. Backend: signed AuthnRequest → IdP via HTTP-Redirect
+4. IdP: form POST → /saml/{slug}/acs
+5. Backend: validate signature, conditions, audience and one-time InResponseTo
+6. ExternalLoginProcessor runs and issues the Modgud application cookie
+7. Backend: 302 → sanitized returnUrl
+```
+
+Modgud is SAML **SP-only** and accepts only responses to AuthnRequests it
+started. IdP-initiated SSO, SAML Single Logout and Artifact Binding are not
+supported in v1. See [SAML federation](../admin/saml-federation).
+
 ## Sessions
 
 These live under `/api/auth/...`, not `/api/account/...`.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/auth/sessions` | Active sessions |
-| `DELETE` | `/api/auth/sessions/{id}` | Revoke a session |
-| `DELETE` | `/api/auth/sessions` | Revoke all sessions except current ("logout everywhere") |
+| `GET` | `/api/auth/sessions` | Browser sessions plus native/OAuth client sessions |
+| `DELETE` | `/api/auth/sessions/{id}` | Revoke another browser session |
+| `DELETE` | `/api/auth/sessions/client/{id}` | Revoke one native/OAuth client session and its token family |
+| `DELETE` | `/api/auth/sessions/others` | Revoke every browser session except the current one |
+| `DELETE` | `/api/auth/sessions` | Sign out everywhere, including the current browser and all OAuth client sessions |
 
 ## GDPR / privacy
 
@@ -149,7 +170,7 @@ surface) because they're identity-lifecycle operations:
 
 There is no anonymous setup wizard. The first admin in any realm is
 created either through the recovery CLI (filesystem trust) or via a
-Control-Plane admin issuing an invite through the realm-create API.
+Control-Plane admin issuing an invitation for that realm.
 The single anonymous endpoint is the bootstrap-invite consumer:
 
 | Method | Path | Description |
@@ -160,12 +181,12 @@ The token comes from one of:
 
 - `dotnet Modgud.Api.dll recover bootstrap-admin --email <e>`
   (without `--password`) — see [Recovery CLI](../operate/recovery-cli)
-- `POST /api/admin/realms` with an `InitialAdmin` payload — see
+- `POST /api/admin/realms/{slug}/admin-invites` — see
   [Realm API](./realm-api)
-- `POST /api/admin/realms/{slug}/resend-bootstrap-invite` — re-issue a
-  fresh token for the same recipient
+- `POST /api/admin/realms` with an optional `InitialAdmin` payload for
+  backwards-compatible create-and-invite automation
 
-Token properties: SHA-256-hashed in the DB, 7-day TTL, single-use
+Token properties: SHA-256-hashed in the DB, 24-hour TTL, single-use
 (reuse → 400 `BootstrapInvite.TokenUsed`). Endpoint is rate-limited
 under the `bootstrap` policy (10 attempts per IP per 15 minutes).
 

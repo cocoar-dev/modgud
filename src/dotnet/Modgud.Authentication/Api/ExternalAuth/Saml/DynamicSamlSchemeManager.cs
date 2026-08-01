@@ -228,15 +228,17 @@ public class DynamicSamlSchemeManager(
         {
             var oldCount = existing.IdpMetadata?.SigningCertificatesBase64.Count ?? 0;
             var newCount = fresh.SigningCertificatesBase64.Count;
-            securityAudit.Record(new SecurityAuditRecord
+            await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
             {
-                EventType = AuditEvents.SamlMetadataRefreshed,
-                Realm = existing.RealmSlug,
-                Level = "Info",
-                Status = "cert_changed",
-                Reason = $"signing certs {oldCount}->{newCount}",
-                Message = $"SAML metadata refresh for provider {loginProviderId} changed signing certs ({oldCount} -> {newCount})",
-            });
+                EventType = AuditEvents.SamlSigningCertificatesChanged,
+                RealmSlug = existing.RealmSlug,
+                ActorKind = AuditActorKind.System,
+                LoginProviderId = loginProviderId,
+                OutcomeCode = AuditOutcomes.Completed,
+                OperationCode = "signing-certificates-changed",
+                Count = newCount,
+                RelatedCount = oldCount,
+            }, ct);
         }
 
         return true;

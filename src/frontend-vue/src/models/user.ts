@@ -29,8 +29,18 @@ export interface UserCreateDto {
   Acronym?: string
   Email?: string
   UserName: string
+  /** Initial password. Omitted = no password (magic link / passkey / external IdP only). */
+  Password?: string
   /** Admin opt-in to mark Identity EmailConfirmed at creation. */
   EmailConfirmed?: boolean
+  /** Whether the account can sign in. Omitted = active. */
+  IsActive?: boolean
+  /** Direct manual group memberships committed as part of user creation. */
+  GroupIds?: string[]
+  /** Per-user 2FA grace-period override. Empty = application default. */
+  GracePeriodDaysOverride?: number | null
+  /** Bypass the 2FA grace period and enforcement for this user. */
+  TwoFactorExempt?: boolean
 }
 
 export interface UserUpdateDto {

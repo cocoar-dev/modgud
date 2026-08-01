@@ -15,10 +15,13 @@ in a changelog that ages between releases.
 
 - Password + TOTP + Email OTP + Passkey (FIDO2/WebAuthn) + Magic Link,
   combinable per user
-- OIDC + SAML 2.0 federated login — Microsoft Entra ID, Google, GitHub,
-  ADFS, any OIDC/SAML IdP — with JIT user provisioning and a JavaScript
-  claim-mapping script; self-service account linking (Profile → Linked
-  accounts) + admin force-unlink, with re-link after disconnect
+- OIDC + SAML 2.0 federated login — Microsoft Entra ID and
+  standards-compatible OIDC/SAML IdPs — with JIT user provisioning and a
+  JavaScript claim-mapping script. OIDC supports self-service account linking
+  (Profile → Linked accounts); SAML linking currently resolves through the
+  normal sign-in/JIT or trusted-email path because the cross-site ACS POST
+  cannot carry the `SameSite=Lax` application cookie. Admin force-unlink and
+  re-link after disconnect are supported for both.
 - Configurable authentication levels (password-only, secure-login
   with 2FA enrolment, passwordless-only) with a grace-period workflow
   for migrating existing users
@@ -36,10 +39,11 @@ in a changelog that ages between releases.
 - Groups with manual or script-based ("Auto-Membership") membership,
   nested groups with cycle detection, per-group app activation via
   `BoundTo`
-- Per-Audience `resource_access` emission on `/connect/userinfo` with
-  bypass pre-expansion and per-RS subset narrowing — drop-in for
-  Keycloak-shaped client libraries; native via the
-  `Modgud.Client.AspNetCore` NuGet package
+- Per-Audience `resource_access` emission in JWT access tokens,
+  UserInfo and authorized introspection responses when the matching
+  audience and claim scopes are present, with bypass pre-expansion
+  and per-RS subset narrowing; native via the
+  `Modgud.AspNetCore.ResourceServer` NuGet package
 
 **OAuth 2.0 / OpenID Connect (OpenIddict 7)**
 

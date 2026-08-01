@@ -149,7 +149,12 @@ Two limits worth knowing, both because the targeted values have no machine-recog
 
 ### Failure modes
 
-The export is **best-effort and lossy by design**. It must never be load-bearing — the tenant audit (`/admin/audit`, `/admin/auth-log`) is a separate, durable pipeline and is unaffected whether export is on or off.
+The export is **best-effort and lossy by design**. It must never be load-bearing.
+The event-sourced tenant audit (`/admin/audit`) is a separate pipeline. The
+structured Security and Platform feeds are also independent of observability
+export and use their own per-event durability classes: transactional/synchronous
+for required changes and incidents, bounded aggregation for abuse signals, and
+best-effort only for reconstructable operations telemetry.
 
 | Situation | What happens | What to do |
 | --- | --- | --- |

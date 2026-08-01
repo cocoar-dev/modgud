@@ -32,7 +32,7 @@
     <ProjectReference Include="..\Modgud.Authorization\Modgud.Authorization.csproj" />
     <ProjectReference Include="..\Modgud.Authentication\Modgud.Authentication.csproj" />
     <ProjectReference Include="..\Modgud.Api\Modgud.Api.csproj" />
-    <ProjectReference Include="..\Modgud.Client.AspNetCore\Modgud.Client.AspNetCore.csproj" />
+    <ProjectReference Include="..\Modgud.AspNetCore.ResourceServer\Modgud.AspNetCore.ResourceServer.csproj" />
   </ItemGroup>
 
   <ItemGroup>

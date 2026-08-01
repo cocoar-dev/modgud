@@ -2,10 +2,9 @@
 // src/dotnet/Modgud.Application/DTOs/LoginProviders/LoginProviderDto.cs.
 // LoginProviderType is serialized as a string (JsonStringEnumConverter).
 //
-// Today only "Internal" (seeded, non-editable) and "Oidc" (admin-creatable) are
-// wired up; Saml/Ldap/Kerberos exist as enum values so the create endpoint can
-// reject them with a single TypeNotSupported error and the UI can flip the
-// "creatable" flag on once support lands.
+// Internal is seeded and non-editable. OIDC and SAML are admin-creatable and
+// have separate flavor/configuration surfaces. LDAP/Kerberos remain reserved
+// enum values and are rejected with TypeNotSupported.
 
 export type LoginProviderType = 'Internal' | 'Oidc' | 'Saml' | 'Ldap' | 'Kerberos'
 
@@ -73,6 +72,8 @@ export interface FlavorDto {
   DefaultScopes: string[]
   DefaultUserUpdateScript: string
   DefaultStoreRawClaims: boolean
+  /** Complete create-time flavor defaults, including SAML claim/AMR maps. */
+  DefaultFlavorData?: Record<string, unknown> | null
   ConfigSchema: FlavorConfigFieldDto[]
   /**
    * Protocol family — 'Oidc' or 'Saml'. The admin UI uses this to pick
@@ -115,6 +116,8 @@ export interface CreateLoginProviderRequest {
   AllowedEmailDomains?: string[] | null
   IconName?: string | null
   ButtonColorHex?: string | null
+  /** Plaintext is accepted only by create and encrypted before persistence. */
+  InitialClientSecret?: string | null
 }
 
 // PATCH semantics — every field optional. Omitted fields keep their current

@@ -4,6 +4,7 @@ using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Authentication.SelfRegistration.Captcha;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Audit;
 using ErrorOr;
 using Marten;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
@@ -26,7 +27,8 @@ public interface IRealmSettingsService
 
 public sealed class RealmSettingsService(
     IDocumentSession session,
-    CaptchaSecretStore captchaStore) : IRealmSettingsService
+    CaptchaSecretStore captchaStore,
+    ISecurityAuditLog? securityAudit = null) : IRealmSettingsService
 {
     public async Task<RealmSettingsDoc> LoadAsync(CancellationToken ct = default)
     {
@@ -52,6 +54,8 @@ public sealed class RealmSettingsService(
             Id = RealmSettingsDoc.SingletonId,
             CreatedAt = DateTimeOffset.UtcNow,
         };
+        var previousSecurityRetentionDays =
+            doc.Audit?.SecurityRetentionDays ?? AuditSettings.Defaults.SecurityRetentionDays;
 
         if (dto.SelfRegistration is not null)
         {
@@ -77,6 +81,20 @@ public sealed class RealmSettingsService(
             var native = ApplyNativeGrantsPatch(doc.NativeGrants, dto.NativeGrants);
             if (native.IsError) return native.FirstError;
             doc.NativeGrants = native.Value;
+        }
+
+        if (dto.BrowserSessions is not null)
+        {
+            var browserSessions = ApplyBrowserSessionPatch(doc.BrowserSessions, dto.BrowserSessions);
+            if (browserSessions.IsError) return browserSessions.FirstError;
+            doc.BrowserSessions = browserSessions.Value;
+        }
+
+        if (dto.ClientSessions is not null)
+        {
+            var clientSessions = ApplyClientSessionPatch(doc.ClientSessions, dto.ClientSessions);
+            if (clientSessions.IsError) return clientSessions.FirstError;
+            doc.ClientSessions = clientSessions.Value;
         }
 
         if (dto.AuthRateLimits is not null)
@@ -117,6 +135,24 @@ public sealed class RealmSettingsService(
         if (!isCreate) doc.UpdatedAt = DateTimeOffset.UtcNow;
 
         session.Store(doc);
+        if (doc.Audit?.SecurityRetentionDays is { } retentionDays
+            && retentionDays != previousSecurityRetentionDays)
+        {
+            if (securityAudit is null)
+            {
+                throw new InvalidOperationException(
+                    "Changing security retention requires an audit-capable RealmSettingsService.");
+            }
+
+            securityAudit.StoreRequired(session, new SecurityAuditRecord
+            {
+                EventType = AuditEvents.SecurityRetentionChanged,
+                Severity = AuditSeverity.Warning,
+                OutcomeCode = AuditOutcomes.Succeeded,
+                OperationCode = "change-retention",
+                RetentionDays = retentionDays,
+            });
+        }
         await session.SaveChangesAsync(ct);
 
         return ToDto(doc);
@@ -153,6 +189,8 @@ public sealed class RealmSettingsService(
         Dcr = MapDcrToDto(doc.Dcr),
         Cimd = MapCimdToDto(doc.Cimd),
         NativeGrants = MapNativeGrantsToDto(doc.NativeGrants),
+        BrowserSessions = MapBrowserSessionsToDto(doc.BrowserSessions),
+        ClientSessions = MapClientSessionsToDto(doc.ClientSessions),
         AuthRateLimits = MapAuthRateLimitsToDto(doc.AuthRateLimits),
         Branding = MapBrandingToDto(doc.Branding),
         RegistrationFields = MapRegistrationFieldsToDto(doc.RegistrationFields),
@@ -360,17 +398,28 @@ public sealed class RealmSettingsService(
     private static ErrorOr<AuditSettings> ApplyAuditPatch(AuditSettings? current, UpdateAuditSettingsDto patch)
     {
         var s = current ?? new AuditSettings();
-        var merged = s with { VisibilityWindowDays = patch.VisibilityWindowDays ?? s.VisibilityWindowDays };
+        var merged = s with
+        {
+            VisibilityWindowDays = patch.VisibilityWindowDays ?? s.VisibilityWindowDays,
+            SecurityRetentionDays = patch.SecurityRetentionDays ?? s.SecurityRetentionDays,
+        };
         if (merged.VisibilityWindowDays < 1)
             return Error.Validation("Audit.InvalidVisibilityWindowDays",
                 "VisibilityWindowDays must be at least 1.");
+        if (merged.SecurityRetentionDays is < 1 or > 365)
+            return Error.Validation("Audit.InvalidSecurityRetentionDays",
+                "SecurityRetentionDays must be between 1 and 365.");
         return merged;
     }
 
     internal static AuditSettingsDto MapAuditToDto(AuditSettings? s)
     {
         s ??= AuditSettings.Defaults;
-        return new AuditSettingsDto { VisibilityWindowDays = s.VisibilityWindowDays };
+        return new AuditSettingsDto
+        {
+            VisibilityWindowDays = s.VisibilityWindowDays,
+            SecurityRetentionDays = s.SecurityRetentionDays,
+        };
     }
 
     internal static DcrSettingsDto MapDcrToDto(DcrSettings? s)
@@ -507,6 +556,61 @@ public sealed class RealmSettingsService(
         return merged;
     }
 
+    private static ErrorOr<BrowserSessionPolicy> ApplyBrowserSessionPatch(
+        BrowserSessionPolicy? current,
+        UpdateBrowserSessionPolicyDto patch)
+    {
+        var policy = current ?? BrowserSessionPolicy.Defaults;
+        var merged = policy with
+        {
+            IdleLifetime = patch.IdleLifetimeMinutes is { } idle
+                ? TimeSpan.FromMinutes(idle)
+                : policy.IdleLifetime,
+            AbsoluteLifetime = patch.AbsoluteLifetimeMinutes is { } absolute
+                ? TimeSpan.FromMinutes(absolute)
+                : policy.AbsoluteLifetime,
+            AllowRememberMe = patch.AllowRememberMe ?? policy.AllowRememberMe,
+        };
+
+        if (merged.IdleLifetime < TimeSpan.FromMinutes(5) ||
+            merged.IdleLifetime > TimeSpan.FromDays(365))
+            return Error.Validation("BrowserSessions.InvalidIdleLifetime",
+                "IdleLifetimeMinutes must be between 5 minutes and 365 days.");
+        if (merged.AbsoluteLifetime < merged.IdleLifetime ||
+            merged.AbsoluteLifetime > TimeSpan.FromDays(3650))
+            return Error.Validation("BrowserSessions.InvalidAbsoluteLifetime",
+                "AbsoluteLifetimeMinutes must be at least the idle lifetime and no more than 3650 days.");
+
+        return merged;
+    }
+
+    private static ErrorOr<ClientSessionPolicy> ApplyClientSessionPatch(
+        ClientSessionPolicy? current,
+        UpdateClientSessionPolicyDto patch)
+    {
+        var policy = current ?? ClientSessionPolicy.Defaults;
+        var merged = policy with
+        {
+            IdleLifetime = patch.IdleLifetimeDays is { } idle
+                ? TimeSpan.FromDays(idle)
+                : policy.IdleLifetime,
+            AbsoluteLifetime = patch.AbsoluteLifetimeDays is { } absolute
+                ? TimeSpan.FromDays(absolute)
+                : policy.AbsoluteLifetime,
+        };
+
+        if (merged.IdleLifetime < TimeSpan.FromDays(1) ||
+            merged.IdleLifetime > TimeSpan.FromDays(3650))
+            return Error.Validation("ClientSessions.InvalidIdleLifetime",
+                "IdleLifetimeDays must be between 1 and 3650.");
+        if (merged.AbsoluteLifetime < merged.IdleLifetime ||
+            merged.AbsoluteLifetime > TimeSpan.FromDays(3650))
+            return Error.Validation("ClientSessions.InvalidAbsoluteLifetime",
+                "AbsoluteLifetimeDays must be at least the idle lifetime and no more than 3650.");
+
+        return merged;
+    }
+
     internal static NativeGrantSettingsDto MapNativeGrantsToDto(NativeGrantSettings? s)
     {
         // Source the never-configured display defaults from the domain record so
@@ -517,6 +621,27 @@ public sealed class RealmSettingsService(
             Enabled = s.Enabled,
             AccessTokenLifetimeMinutes = (int)s.AccessTokenLifetime.TotalMinutes,
             RefreshTokenLifetimeDays = (int)s.RefreshTokenLifetime.TotalDays,
+        };
+    }
+
+    internal static BrowserSessionPolicyDto MapBrowserSessionsToDto(BrowserSessionPolicy? policy)
+    {
+        policy ??= BrowserSessionPolicy.Defaults;
+        return new BrowserSessionPolicyDto
+        {
+            IdleLifetimeMinutes = checked((int)policy.IdleLifetime.TotalMinutes),
+            AbsoluteLifetimeMinutes = checked((int)policy.AbsoluteLifetime.TotalMinutes),
+            AllowRememberMe = policy.AllowRememberMe,
+        };
+    }
+
+    internal static ClientSessionPolicyDto MapClientSessionsToDto(ClientSessionPolicy? policy)
+    {
+        policy ??= ClientSessionPolicy.Defaults;
+        return new ClientSessionPolicyDto
+        {
+            IdleLifetimeDays = checked((int)policy.IdleLifetime.TotalDays),
+            AbsoluteLifetimeDays = checked((int)policy.AbsoluteLifetime.TotalDays),
         };
     }
 

@@ -9,7 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Modgud.Client.AspNetCore\Modgud.Client.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\Modgud.AspNetCore.ResourceServer\Modgud.AspNetCore.ResourceServer.csproj" />
   </ItemGroup>
 
 </Project>

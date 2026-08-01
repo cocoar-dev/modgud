@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Authorization.AspNetCore;
@@ -67,25 +66,11 @@ public static class RealmSettingsEndpoints
         // realm-settings:write permission as the rest of this surface.
         group.MapPost("rotate-signing-key", async (
             IRealmKeyStore keyStore,
-            ClaimsPrincipal user,
-            ISecurityAuditLog securityAudit,
             CancellationToken ct) =>
         {
             var slug = TenantContext.Current;
             var creds = await keyStore.RotateAsync(slug, ct);
             var kid = creds.Key.KeyId;
-
-            var userName = user.Identity?.Name ?? "(unknown)";
-            // Request context — leave Realm unset (ambient TenantContext is correct).
-            securityAudit.Record(new SecurityAuditRecord
-            {
-                EventType = AuditEvents.SigningKeyRotated,
-                Level = "Warning",
-                Actor = userName,
-                Status = "rotated",
-                Reason = $"kid {kid}",
-                Message = $"signing key rotated by {userName} — new kid {kid}",
-            });
 
             return Results.Ok(new RotateSigningKeyResponseDto(kid));
         })

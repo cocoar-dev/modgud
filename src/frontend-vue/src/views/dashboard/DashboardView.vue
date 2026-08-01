@@ -2,12 +2,12 @@
 import { computed, onMounted, watch, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@cocoar/vue-localization'
-import { CoarCard, CoarIcon, CoarSpinner, CoarNote, CoarTag } from '@cocoar/vue-ui'
+import { CoarNotice, CoarCard, CoarIcon, CoarSpinner, CoarTag } from '@cocoar/vue-ui'
 import { useUI } from '@/composables/useUI'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useAuthStore } from '@/stores/auth.store'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
-import type { SessionDto, SessionListDto } from '@/models/session'
+import type { ClientSessionDto, SessionDto, SessionListDto } from '@/models/session'
 import type { UserDto } from '@/models/user'
 import type { KpiTile } from './kpiTile'
 import KpiCard from './KpiCard.vue'
@@ -127,14 +127,16 @@ function goToProfileSecurity() {
 
 // ─── Aktive Sessions ──────────────────────────────────────────────────────
 const sessionsHttp = useHttpClient('/api/auth/sessions')
-const sessions = ref<SessionDto[]>([])
+const browserSessions = ref<SessionDto[]>([])
+const clientSessions = ref<ClientSessionDto[]>([])
 const sessionsLoading = ref(true)
 const sessionsError = ref(false)
 
 async function loadSessions() {
   try {
     const res = await sessionsHttp.get<SessionListDto>()
-    sessions.value = res.Sessions ?? []
+    browserSessions.value = res.Sessions ?? []
+    clientSessions.value = res.ClientSessions ?? []
   } catch {
     sessionsError.value = true
   } finally {
@@ -142,10 +144,21 @@ async function loadSessions() {
   }
 }
 
+type DashboardSession =
+  | (SessionDto & { Kind: 'Browser' })
+  | (ClientSessionDto & { Kind: 'Client' })
+
+const sessions = computed<DashboardSession[]>(() => [
+  ...browserSessions.value.map(s => ({ ...s, Kind: 'Browser' as const })),
+  ...clientSessions.value.map(s => ({ ...s, Kind: 'Client' as const })),
+].sort((a, b) => new Date(b.LastActiveAt).getTime() - new Date(a.LastActiveAt).getTime()))
 const topSessions = computed(() => sessions.value.slice(0, 3))
 const extraSessionCount = computed(() => Math.max(0, sessions.value.length - 3))
 
-function deviceLabel(s: SessionDto): string {
+function deviceLabel(s: DashboardSession): string {
+  if (s.Kind === 'Client')
+    return s.ClientDisplayName || s.ClientId
+
   // KPI-style "Browser auf Gerät" — the screenshot's row label uses
   // "Chrome auf Windows" rather than the older "Browser · OS" form.
   const browser = s.Browser || t('dashboard.sessions.unknownBrowser', {}, 'Browser')
@@ -496,9 +509,9 @@ onMounted(() => {
             <div v-if="sessionsLoading" class="list-card__loading">
               <CoarSpinner size="m" />
             </div>
-            <CoarNote v-else-if="sessionsError" variant="error">
+            <CoarNotice v-else-if="sessionsError" variant="error">
               {{ t('dashboard.errors.loadFailed', {}, 'Failed to load the data.') }}
-            </CoarNote>
+            </CoarNotice>
             <div v-else-if="sessions.length === 0" class="list-card__empty">
               {{ t('dashboard.sessions.none', {}, 'No sessions.') }}
             </div>
@@ -508,13 +521,16 @@ onMounted(() => {
                 :key="s.Id"
                 type="button"
                 class="list-row"
-                :class="{ 'list-row--strong': s.IsCurrent }"
+                :class="{ 'list-row--strong': s.Kind === 'Browser' && s.IsCurrent }"
                 @click="goToProfileSessions"
               >
                 <span class="list-row__label">{{ deviceLabel(s) }}</span>
                 <span class="list-row__meta">
-                  <CoarTag v-if="s.IsCurrent" variant="success" size="s">
+                  <CoarTag v-if="s.Kind === 'Browser' && s.IsCurrent" variant="success" size="s">
                     {{ t('dashboard.sessions.thisDevice', {}, 'This Device') }}
+                  </CoarTag>
+                  <CoarTag v-else-if="s.Kind === 'Client'" variant="neutral" size="s">
+                    {{ t('dashboard.sessions.app', {}, 'App') }}
                   </CoarTag>
                   <CoarTag variant="neutral" size="s">{{ relativeTime(s.LastActiveAt) }}</CoarTag>
                 </span>
@@ -555,9 +571,9 @@ onMounted(() => {
               <div v-if="authLogLoading" class="list-card__loading">
                 <CoarSpinner size="m" />
               </div>
-              <CoarNote v-else-if="authLogError" variant="error">
+              <CoarNotice v-else-if="authLogError" variant="error">
                 {{ t('dashboard.errors.loadFailed', {}, 'Failed to load the data.') }}
-              </CoarNote>
+              </CoarNotice>
               <div v-else-if="authLog.length === 0" class="list-card__empty">
                 {{ t('dashboard.systemActivity.none', {}, 'No events yet.') }}
               </div>
@@ -599,9 +615,9 @@ onMounted(() => {
               <div v-if="providersLoading" class="list-card__loading">
                 <CoarSpinner size="m" />
               </div>
-              <CoarNote v-else-if="providersError" variant="error">
+              <CoarNotice v-else-if="providersError" variant="error">
                 {{ t('dashboard.errors.loadFailed', {}, 'Failed to load the data.') }}
-              </CoarNote>
+              </CoarNotice>
               <div v-else-if="loginProviders.length === 0" class="list-card__empty">
                 {{ t('dashboard.loginProviderStatus.none', {}, 'No providers configured.') }}
               </div>

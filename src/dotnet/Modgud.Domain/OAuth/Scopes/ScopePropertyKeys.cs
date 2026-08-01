@@ -46,10 +46,12 @@ public static class StandardScopes
 
     /// <summary>
     /// Cocoar-specific scope that gates emission of the per-audience
-    /// <c>resource_access[…].permissions</c> array in UserInfo. Not part of
-    /// OIDC core; modelled after the same per-scope-per-claim opt-in pattern
-    /// that <see cref="Roles"/> uses for role names. Static-registered so it
-    /// appears in <c>scopes_supported</c> and is offered on the consent screen.
+    /// <c>resource_access[…].permissions</c> array on the access-token
+    /// principal, UserInfo and authorized introspection responses. Not part
+    /// of OIDC core; modelled after the same per-scope-per-claim opt-in
+    /// pattern that <see cref="Roles"/> uses for role names.
+    /// Static-registered so it appears in <c>scopes_supported</c> and is
+    /// offered on the consent screen.
     /// </summary>
     public const string Permissions = "permissions";
 

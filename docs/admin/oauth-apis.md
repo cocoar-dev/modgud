@@ -20,49 +20,52 @@ own API as an API).
 
 For most cases — a SaaS app that validates Modgud tokens — yes, you
 register an OAuth API for it. The registration is what lets Modgud
-emit a tailored `resource_access` block for this RS on
-`/connect/userinfo`. Specifically, it's required when:
+emit a tailored `resource_access[<audience>]` block for this resource
+server in JWT access tokens, UserInfo and authorized introspection
+responses. Specifically, it's required when:
 
 - You want **per-Audience permission narrowing** in `resource_access`
   blocks. The RS declares its `PermissionIds` subset of the App's
   catalog, and the IdP narrows each user's emission to that subset.
-- The API wants to **authenticate against the OAuth server itself**
-  (e.g. for token introspection)
-- You want **multi-secret support** (several parallel valid secrets,
-  e.g. for seamless rotation)
 - The API needs **explicit scope lists** for discovery
 
 ## Relationship to Applications
 
-Every OAuth API belongs to **exactly one [Application](./applications)**.
+An OAuth API normally belongs to **one [Application](./applications)**.
 A microservice architecture under one app — e.g. `acme-api`,
 `acme-search`, `acme-files` all linked to the App `acme` — works
 because permissions stay app-centric: each microservice gets its own
 `PermissionIds` subset of the same App catalog, and the IdP narrows
-its `resource_access[acme]` emission accordingly.
+the separate `resource_access["acme-api"]`,
+`resource_access["acme-search"]` and
+`resource_access["acme-files"]` blocks accordingly.
+
+An API can temporarily remain unassigned for legacy or standalone setups.
+Without an Application link, Modgud has no permission catalog to resolve and
+does not emit a `resource_access` block for that audience.
 
 ## Creating an API
 
-Administration → **OAuth → APIs** → **Create**.
+Administration → **OAuth & Federation → OAuth-APIs** → **Create**.
 
 ### Required fields
 
 - **Audience (aud)** — technical identifier (e.g. `acme-api`). Used in
   `aud` claims when the token is issued.
 - **Display Name** — UI label
-- **Application** — which App does this RS belong to? Required for
-  per-Audience subset narrowing.
+- **Application** — which App does this RS belong to? Recommended and required
+  for per-Audience permission emission.
 - **Description** — optional
 
 ### PermissionIds
 
 The subset of the linked App's catalog this RS gates on. Used by the
-IdP to narrow the `resource_access` block in UserInfo for this
-audience — sibling RSs under the same App don't see each other's
-permissions in the user's claims.
+IdP to narrow `resource_access[<this API's Audience>].permissions` —
+sibling resource servers under the same App get their own Audience
+keys and do not project each other's permissions.
 
-Default at creation: full catalog. Tighten to a strict subset for
-microservices that only need a slice.
+The selection starts empty. Pick only the catalog entries this resource server
+actually exposes.
 
 ### Scopes
 
@@ -134,8 +137,9 @@ Client whose **Client ID equals its own audience** (this API's name —
 the RFC 8707 `resource=` value already carried in the token's `aud`),
 and authenticates the introspection call with that client's own
 credentials (sent as form-body parameters, so a URL-shaped audience id
-works). The [.NET client library](/integrate/resource-server#reference-token-mode-opaque-tokens)
-does this for you via `AddModgudReferenceTokenClient`.
+works). The [.NET resource-server library](/integrate/resource-server#reference-token-mode)
+does this through `AddModgudResourceServer` with
+`TokenMode = ModgudTokenMode.OnlyReferenceToken`.
 
 ## Editing
 
@@ -150,7 +154,7 @@ immediately switch to the new app context.
 resource server, clone it. List → right-click → **Clone**. The Create
 wizard opens pre-filled — display name, description, scopes, user claims,
 the linked Application and its catalog subset are copied; only
-**Audience (aud)** is blank. API secrets are not copied; the copy starts with none.
+**Audience (aud)** is blank.
 
 ## Deleting
 
@@ -168,9 +172,10 @@ slug, link it to the App, and pick the catalog subset it gates on.
 
 Each microservice gets its own OAuth API entry with its own narrower
 `PermissionIds` subset of the App's catalog. All link to the same
-App. Per-Audience narrowing in UserInfo means a token used against
-microservice A only carries A's permission subset, not B's — even
-when both are under the same App.
+App. Per-Audience narrowing means each block contains only its API's
+permission subset. A multi-audience token may carry multiple blocks
+side-by-side, but each resource-server scheme projects only its
+configured Audience.
 
 ### Multi-tenant API
 

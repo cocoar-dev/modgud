@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Claims;
 using ErrorOr;
 using Modgud.Api.Features.Admin.Provisioning;
@@ -9,6 +10,7 @@ using Modgud.Authorization.Apps;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Services;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Observability;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
@@ -58,9 +60,28 @@ public static class RealmsEndpoints
             IRealmProvisioningService svc,
             IServiceProvider sp,
             HttpContext http,
+            ISecurityAuditLog securityAudit,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            if (dto.InitialAdmin is not null)
+            {
+                if (string.IsNullOrWhiteSpace(dto.InitialAdmin.UserName))
+                {
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status400BadRequest,
+                        title: "Realm.AdminInvite.UserNameRequired",
+                        detail: "InitialAdmin.UserName is required when InitialAdmin is provided.");
+                }
+                if (string.IsNullOrWhiteSpace(dto.InitialAdmin.Email) || !dto.InitialAdmin.Email.Contains('@'))
+                {
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status400BadRequest,
+                        title: "Realm.AdminInvite.EmailRequired",
+                        detail: "InitialAdmin.Email must be a valid address when InitialAdmin is provided.");
+                }
+            }
+
             var result = await svc.CreateRealmAsync(dto, ct);
             if (result.IsError) return result.ToResult();
 
@@ -70,9 +91,9 @@ public static class RealmsEndpoints
                 ? (http.User.FindFirstValue(ClaimTypes.Name) ?? http.User.Identity.Name)
                 : null;
 
-            // Issue the bootstrap-invite atomically with the realm. We hop
-            // into the new tenant's context so the IPendingAdminInviteService
-            // resolves a session against the just-provisioned tenant DB.
+            // Backwards-compatible API convenience: callers may still request
+            // an admin invite together with realm creation. The admin UI keeps
+            // this as a separate action and omits InitialAdmin entirely.
             // Living in the API layer (not Infrastructure) avoids the
             // Authentication ↔ Infrastructure circular reference.
             //
@@ -82,46 +103,63 @@ public static class RealmsEndpoints
             // this call 409s, and recovery is filesystem-CLI-only. Compensate
             // by rolling the realm back so the create is all-or-nothing from
             // the caller's view and a retry is clean.
-            IssuedInvite issued;
-            try
+            IssuedInvite? issued = null;
+            if (dto.InitialAdmin is not null)
             {
-                using var inviteScope = sp.CreateScope();
-                using (TenantContext.Enter(realm.Slug))
+                try
                 {
-                    var inviteService = inviteScope.ServiceProvider.GetRequiredService<IPendingAdminInviteService>();
-                    issued = await inviteService.IssueAsync(
-                        dto.InitialAdmin.UserName,
-                        dto.InitialAdmin.Email,
-                        dto.InitialAdmin.Firstname,
-                        dto.InitialAdmin.Lastname,
-                        issuedBy,
-                        realm,
-                        ct);
+                    using var inviteScope = sp.CreateScope();
+                    using (TenantContext.Enter(realm.Slug))
+                    {
+                        var inviteService = inviteScope.ServiceProvider.GetRequiredService<IPendingAdminInviteService>();
+                        issued = await inviteService.IssueAsync(
+                            dto.InitialAdmin.UserName,
+                            dto.InitialAdmin.Email,
+                            dto.InitialAdmin.Firstname,
+                            dto.InitialAdmin.Lastname,
+                            issuedBy,
+                            realm,
+                            ct);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    var log = loggerFactory.CreateLogger("Modgud.Api.Features.Admin.RealmsEndpoints");
+                    log.LogError(ex,
+                        "Admin-invite issuance failed for realm {Slug}; rolling back the partially-provisioned realm.",
+                        realm.Slug);
+
+                    await svc.RollbackProvisionedRealmAsync(realm.Slug, ct);
+                    await RecordControlPlaneRealmOperationAsync(
+                        securityAudit,
+                        http,
+                        realm.Slug,
+                        "provision-realm",
+                        AuditOutcomes.Failed,
+                        "admin-invite-failed",
+                        writeTargetRealm: false);
+
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status500InternalServerError,
+                        title: "Realm.Provisioning.InviteFailed",
+                        detail: $"Realm '{realm.Slug}' was provisioned but issuing the requested admin invite failed. "
+                              + "The partially-provisioned realm has been rolled back — it is safe to retry. "
+                              + "See the server logs / the realm error feed for the underlying cause.");
                 }
             }
-            catch (Exception ex)
-            {
-                var log = loggerFactory.CreateLogger("Modgud.Api.Features.Admin.RealmsEndpoints");
-                log.LogError(ex,
-                    "Bootstrap-invite issuance failed for realm {Slug}; rolling back the partially-provisioned realm.",
-                    realm.Slug);
 
-                await svc.RollbackProvisionedRealmAsync(realm.Slug, ct);
-
-                return Results.Problem(
-                    statusCode: StatusCodes.Status500InternalServerError,
-                    title: "Realm.Provisioning.InviteFailed",
-                    detail: $"Realm '{realm.Slug}' was provisioned but issuing the initial-admin invite failed. "
-                          + "The partially-provisioned realm has been rolled back — it is safe to retry. "
-                          + "See the server logs / the realm error feed for the underlying cause.");
-            }
+            await RecordControlPlaneRealmOperationAsync(
+                securityAudit,
+                http,
+                realm.Slug,
+                "provision-realm");
 
             return Results.Created(
                 $"{path}/admin/realms/{realm.Slug}",
                 new CreatedRealmDto
                 {
                     Realm = MapToDto(realm),
-                    InitialAdminInvite = new InitialAdminInviteDto
+                    InitialAdminInvite = issued is null ? null : new InitialAdminInviteDto
                     {
                         UserName = issued.UserName,
                         Email = issued.Email,
@@ -133,27 +171,34 @@ public static class RealmsEndpoints
         .WithName("Realms_Create")
         .RequiresPermission("realm:write", AppSlugs.ControlPlane);
 
-        // C15c — Resend bootstrap-invite. Re-uses the recipient identity
-        // from the most recent prior invite in the tenant DB (typically
-        // the one the realm was created with). The previous invite is
-        // revoked inside IssueAsync; the new token has a fresh 7-day
-        // expiry. Returns the magic-link URL just like Create does, for
-        // SMTP-less dev visibility.
-        group.MapPost("{slug}/resend-bootstrap-invite", async (
+        // A realm-admin invitation is independent from realm creation and can
+        // be issued at any time. IssueAsync revokes every previous open invite
+        // in this realm, so at most one link remains active.
+        group.MapPost("{slug}/admin-invites", async (
             string slug,
+            InitialAdminDto dto,
             IRealmProvisioningService svc,
             IServiceProvider sp,
             HttpContext http,
+            ISecurityAuditLog securityAudit,
             CancellationToken ct) =>
         {
             var realm = await svc.GetRealmBySlugAsync(slug, ct);
             if (realm is null) return Results.NotFound();
-            if (!realm.IsActive)
+
+            if (string.IsNullOrWhiteSpace(dto.UserName))
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status400BadRequest,
-                    title: "Realm.Inactive",
-                    detail: $"Realm '{slug}' is inactive.");
+                    title: "Realm.AdminInvite.UserNameRequired",
+                    detail: "UserName is required.");
+            }
+            if (string.IsNullOrWhiteSpace(dto.Email) || !dto.Email.Contains('@'))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Realm.AdminInvite.EmailRequired",
+                    detail: "A valid email address is required.");
             }
 
             var issuedBy = http.User.Identity?.IsAuthenticated == true
@@ -165,34 +210,35 @@ public static class RealmsEndpoints
             using (TenantContext.Enter(slug))
             {
                 var session = inviteScope.ServiceProvider.GetRequiredService<IDocumentSession>();
-                // Audit #32 — only an UNUSED invite may be resent. Without the
-                // UsedAt==null filter, resend returns the most recent invite even
-                // after it was consumed, re-arming a fresh 7-day realm:admin token
-                // (and a misleading "invite issued" audit entry) for an already-
-                // bootstrapped realm. With the filter a bootstrapped realm has no
-                // pending invite to resend → 404.
-                var lastInvite = await session.Query<PendingAdminInvite>()
-                    .Where(i => i.UsedAt == null)
-                    .OrderByDescending(i => i.CreatedAt)
-                    .FirstOrDefaultAsync(ct);
-                if (lastInvite is null)
+                var normalizedUserName = dto.UserName.Trim().ToUpperInvariant();
+                var normalizedEmail = dto.Email.Trim().ToUpperInvariant();
+                var targetExists = await session.Query<ApplicationUser>()
+                    .AnyAsync(u => !u.IsDeleted &&
+                        (u.NormalizedUserName == normalizedUserName || u.NormalizedEmail == normalizedEmail), ct);
+                if (targetExists)
                 {
                     return Results.Problem(
-                        statusCode: StatusCodes.Status404NotFound,
-                        title: "Realm.NoPriorInvite",
-                        detail: "No pending bootstrap-invite for this realm — there is no unused invite to resend (it may already be bootstrapped).");
+                        statusCode: StatusCodes.Status409Conflict,
+                        title: "Realm.AdminInvite.UserExists",
+                        detail: "A user with this username or email already exists in the realm.");
                 }
 
                 var inviteService = inviteScope.ServiceProvider.GetRequiredService<IPendingAdminInviteService>();
                 issued = await inviteService.IssueAsync(
-                    lastInvite.UserName,
-                    lastInvite.Email,
-                    lastInvite.Firstname,
-                    lastInvite.Lastname,
+                    dto.UserName,
+                    dto.Email,
+                    dto.Firstname,
+                    dto.Lastname,
                     issuedBy,
                     realm,
                     ct);
             }
+
+            await RecordControlPlaneRealmOperationAsync(
+                securityAudit,
+                http,
+                slug,
+                "issue-admin-invite");
 
             return Results.Ok(new InitialAdminInviteDto
             {
@@ -202,16 +248,26 @@ public static class RealmsEndpoints
                 MagicLinkUrl = issued.MagicLinkUrl,
             });
         })
-        .WithName("Realms_ResendBootstrapInvite")
+        .WithName("Realms_IssueAdminInvite")
         .RequiresPermission("realm:write", AppSlugs.ControlPlane);
 
         group.MapPatch("{slug}", async (
             string slug,
             UpdateRealmDto dto,
             IRealmProvisioningService svc,
+            HttpContext http,
+            ISecurityAuditLog securityAudit,
             CancellationToken ct) =>
         {
             var result = await svc.UpdateRealmAsync(slug, dto, ct);
+            if (!result.IsError)
+            {
+                await RecordControlPlaneRealmOperationAsync(
+                    securityAudit,
+                    http,
+                    slug,
+                    "update-realm");
+            }
             return result.ToResult(realm => Results.Ok(MapToDto(realm)));
         })
         .WithName("Realms_Update")
@@ -220,11 +276,26 @@ public static class RealmsEndpoints
         // ?hard=true escalates from the reversible soft-delete to the prod-safe hard
         // delete that DROPs the tenant database (HardDeleteRealmAsync). Default false keeps
         // the existing soft-delete behaviour. Hard-delete is refused for the control plane.
-        group.MapDelete("{slug}", async (string slug, IRealmProvisioningService svc, CancellationToken ct, bool hard = false) =>
+        group.MapDelete("{slug}", async (
+            string slug,
+            IRealmProvisioningService svc,
+            HttpContext http,
+            ISecurityAuditLog securityAudit,
+            CancellationToken ct,
+            bool hard = false) =>
         {
             var result = hard
                 ? await svc.HardDeleteRealmAsync(slug, ct)
                 : await svc.DeleteRealmAsync(slug, ct);
+            if (!result.IsError)
+            {
+                await RecordControlPlaneRealmOperationAsync(
+                    securityAudit,
+                    http,
+                    slug,
+                    hard ? "hard-delete-realm" : "deactivate-realm",
+                    writeTargetRealm: !hard);
+            }
             return result.IsError ? result.ToResult() : Results.NoContent();
         })
         .WithName("Realms_Delete")
@@ -237,11 +308,20 @@ public static class RealmsEndpoints
         // realm back (hard-delete). Returns the created slug + primary domain + the
         // plaintext secrets of any confidential clients (only available at create time).
         group.MapPost("import", async (
-            RealmManifest manifest, RealmManifestApplier applier, CancellationToken ct) =>
+            RealmManifest manifest,
+            RealmManifestApplier applier,
+            HttpContext http,
+            ISecurityAuditLog securityAudit,
+            CancellationToken ct) =>
         {
             var result = await applier.ImportNewRealmAsync(manifest, ct);
             if (result.IsError) return ManifestError(result.Errors);
             ModgudMeters.RecordRealmProvisioned();
+            await RecordControlPlaneRealmOperationAsync(
+                securityAudit,
+                http,
+                result.Value.Slug,
+                "import-realm");
             return Results.Created($"{path}/admin/realms/{result.Value.Slug}", result.Value);
         })
         .WithName("Realms_Import")
@@ -253,7 +333,13 @@ public static class RealmsEndpoints
         // ?prune=true makes it a full sync that also deletes the absent entities (k8s
         // apply --prune — infrastructure + every realm:admin path are protected, never pruned).
         group.MapPost("{slug}/apply", async (
-            string slug, RealmManifest manifest, RealmManifestApplier applier, CancellationToken ct, bool prune = false) =>
+            string slug,
+            RealmManifest manifest,
+            RealmManifestApplier applier,
+            HttpContext http,
+            ISecurityAuditLog securityAudit,
+            CancellationToken ct,
+            bool prune = false) =>
         {
             if (!string.Equals(slug, manifest.Realm.Slug, StringComparison.Ordinal))
                 return Results.BadRequest(new
@@ -263,6 +349,14 @@ public static class RealmsEndpoints
                 });
 
             var result = await applier.UpdateRealmAsync(manifest, prune, ct);
+            if (!result.IsError)
+            {
+                await RecordControlPlaneRealmOperationAsync(
+                    securityAudit,
+                    http,
+                    slug,
+                    prune ? "apply-manifest-prune" : "apply-manifest");
+            }
             return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("Realms_Apply")
@@ -308,6 +402,8 @@ public static class RealmsEndpoints
             string slug,
             IRealmProvisioningService svc,
             IServiceProvider sp,
+            HttpContext http,
+            ISecurityAuditLog securityAudit,
             CancellationToken ct) =>
         {
             var target = await svc.GetRealmBySlugAsync(slug, ct);
@@ -330,6 +426,14 @@ public static class RealmsEndpoints
             }
 
             var result = await svc.TransferControlPlaneAsync(slug, ct);
+            if (!result.IsError)
+            {
+                await RecordControlPlaneRealmOperationAsync(
+                    securityAudit,
+                    http,
+                    slug,
+                    "transfer-control-plane");
+            }
             return result.ToResult(realm => Results.Ok(MapToDto(realm)));
         })
         .WithName("Realms_TransferControlPlane")
@@ -369,6 +473,46 @@ public static class RealmsEndpoints
         }
     }
 
+    private static async Task RecordControlPlaneRealmOperationAsync(
+        ISecurityAuditLog securityAudit,
+        HttpContext http,
+        string targetRealmSlug,
+        string operationCode,
+        string outcomeCode = AuditOutcomes.Succeeded,
+        string? reasonCode = null,
+        bool writeTargetRealm = true)
+    {
+        var actorRealmSlug = TenantContext.Current;
+        var correlationId = Activity.Current?.TraceId.ToString() ?? http.TraceIdentifier;
+
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.ControlPlaneRealmOperation,
+            RealmSlug = actorRealmSlug,
+            TargetRealmSlug = targetRealmSlug,
+            OutcomeCode = outcomeCode,
+            ReasonCode = reasonCode,
+            OperationCode = operationCode,
+            CorrelationId = correlationId,
+        }, http.RequestAborted);
+
+        if (!writeTargetRealm ||
+            string.Equals(actorRealmSlug, targetRealmSlug, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.ControlPlaneRealmOperation,
+            RealmSlug = targetRealmSlug,
+            CaptureRequestContext = false,
+            ActorKind = AuditActorKind.ControlPlane,
+            OutcomeCode = outcomeCode,
+            ReasonCode = reasonCode,
+            OperationCode = operationCode,
+            CorrelationId = correlationId,
+        }, http.RequestAborted);
+    }
+
     // Renders a RealmManifestApplier ErrorOr error with the code in the body — the manifest
     // codes (Realm.AlreadyExists / Realm.NotFound / Manifest.*) are how a test-kit / caller
     // distinguishes outcomes, so don't collapse them through the shared ToResult.
@@ -396,7 +540,6 @@ public static class RealmsEndpoints
         PrimaryDomain = realm.PrimaryDomain,
         IsControlPlane = realm.IsControlPlane,
         IsActive = realm.IsActive,
-        NeedsSetup = false, // per-realm setup detection comes in a later etappe
         CreatedAt = realm.CreatedAt,
     };
 }

@@ -87,10 +87,12 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<LoginProviderDto>()
           : base
       }),
     (col) => col.field('Flavor').header('Flavor', 'admin.loginProviders.flavor').width(140),
-    (col) => col.field('Enabled').header('Active', 'admin.loginProviders.enabled').width(100)
-      .option('valueGetter', (p: any) => p.data?.Enabled
-        ? t('common.yes', {}, 'Ja')
-        : t('common.no', {}, 'Nein')),
+    (col) => col.tag('Enabled', {
+      variantMap: { active: 'success', inactive: 'neutral' },
+      i18nPrefix: 'common.statusTag.',
+    })
+      .header('Active', 'admin.loginProviders.enabled').width(110)
+      .option('valueGetter', (p: any) => p.data?.Enabled ? 'active' : 'inactive'),
     (col) => col.field('ClientId').header('Client ID', 'admin.loginProviders.clientId').flex(2),
     (col) => col.field('HasClientSecret').header('Secret', 'admin.loginProviders.hasSecret').width(100)
       .option('valueGetter', (p: any) => p.data?.HasClientSecret ? '••••••' : '—'),

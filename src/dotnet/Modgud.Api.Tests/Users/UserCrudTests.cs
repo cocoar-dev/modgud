@@ -38,6 +38,66 @@ public class UserCrudTests : IntegrationTestBase
         Assert.Equal("john.doe@test.com", result.Email);
     }
 
+    /// <summary>
+    /// A user created with IsActive=false must READ BACK as inactive. The read
+    /// model takes IsActive only from UserActivatedEvent / UserDeactivatedEvent
+    /// and UserView defaults it to true, so setting the flag on the
+    /// ApplicationUser document alone left the list query (and the admin grid)
+    /// reporting the user as active while the document said otherwise. This
+    /// asserts the projection, not just the create response.
+    /// </summary>
+    [Fact]
+    public async Task Create_InactiveUser_ReadsBackAsInactive()
+    {
+        var createDto = new UserCreateDto
+        {
+            Firstname = "Staged",
+            Lastname = "Starter",
+            Email = "staged.starter@test.com",
+            IsActive = false,
+        };
+
+        var response = await Client.PostAsJsonAsync("/api/user", createDto, JsonOptions, TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        var created = await response.ReadSuccessJsonAsync<UserDto>(JsonOptions);
+        Assert.False(created.IsActive);
+
+        // UserView is an async projection. The create response is intentionally
+        // optimistic (Status=Pending), so wait for the projection before
+        // asserting the read model instead of racing the daemon on slower CI
+        // runners.
+        await Factory.WaitForProjectionsAsync();
+
+        var readBack = await Client.GetAsync($"/api/user/{created.Id}", TestContext.Current.CancellationToken);
+        readBack.EnsureSuccessStatusCode();
+        var fetched = await readBack.ReadSuccessJsonAsync<UserDto>(JsonOptions);
+        Assert.False(fetched.IsActive);
+    }
+
+    /// <summary>
+    /// The create endpoint has always accepted an initial password; the admin
+    /// form now offers it, so a user can be created ready to sign in instead of
+    /// needing a second "set password" round-trip.
+    /// </summary>
+    [Fact]
+    public async Task Create_UserWithPassword_ReportsHasPassword()
+    {
+        var createDto = new UserCreateDto
+        {
+            Firstname = "With",
+            Lastname = "Password",
+            Email = "with.password@test.com",
+            Password = "ABC12abc!",
+        };
+
+        var response = await Client.PostAsJsonAsync("/api/user", createDto, JsonOptions, TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        var created = await response.ReadSuccessJsonAsync<UserDto>(JsonOptions);
+
+        Assert.True(created.HasPassword);
+        Assert.True(created.IsActive);
+    }
+
     [Fact]
     public async Task Get_AllUsers_ReturnsAllUsers()
     {

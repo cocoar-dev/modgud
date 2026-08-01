@@ -13,21 +13,28 @@ const { t } = useI18n()
 const { searchPlaceholder, applyListGridDefaults } = useGridLocale()
 const http = useHttpClient('/api/admin/auth-log')
 
-// Streamless security/ops store (logging/audit redesign Track A — the half with no
-// aggregate stream): unknown-actor login attempts, probes, rate-limits, policy
-// rejections, and operational actions. Cross-realm in the system DB; a tenant
-// realm-admin sees their own realm's tenant-visible rows, the control-plane realm
-// sees the full cross-realm log including platform-only operational rows.
+// Realm-owned structured security events. This endpoint reads the current
+// realm's physical database only, including when the current realm is the
+// Control Plane.
 interface SecurityLogEntry {
+  Id: string
   Timestamp: string
-  Realm: string | null
   Category: string
   EventType: string
-  Level: string
-  UserName: string | null
-  Ip: string | null
-  Status: string | null
-  Reason: string | null
+  Severity: string
+  ActorKind: string
+  Actor: string
+  Target: string | null
+  IpAddress: string | null
+  UserAgent: string | null
+  OAuthClientId: string | null
+  AuthenticationMethod: string | null
+  CorrelationId: string | null
+  OutcomeCode: string
+  ReasonCode: string | null
+  TargetRealmSlug: string | null
+  FirstObservedAt: string | null
+  LastObservedAt: string | null
   Message: string
 }
 
@@ -53,12 +60,6 @@ async function loadEntries() {
   finally { loading.value = false }
 }
 
-async function clearLog() {
-  // Clearing is itself audited (audit.log_cleared) on the server.
-  await http.delete()
-  entries.value = []
-}
-
 onMounted(() => {
   loadEntries()
   pollInterval = setInterval(loadEntries, 5_000)
@@ -77,22 +78,23 @@ const gridBuilder = applyListGridDefaults(CoarGridBuilder.create<SecurityLogEntr
   .rowDataRef(filteredEntries)
   .searchHighlight()
   .rowClassRules({
-    'security-log-warning': (p) => p.data?.Level === 'Warning',
-    'security-log-error': (p) => p.data?.Level === 'Error',
+    'security-log-warning': (p) => p.data?.Severity === 'Warning',
+    'security-log-error': (p) => p.data?.Severity === 'Error',
   })
   .columns([
     (col) => col.date('Timestamp', { includeTime: true }).header('Time', 'admin.securityLog.time').width(180),
     (col) => col.field('Category').header('Category', 'admin.securityLog.category').width(140),
     (col) => col.field('EventType').header('Event', 'admin.securityLog.event').width(220),
     (col) => col.field('Message').header('Detail', 'admin.securityLog.detail').flex(1),
-    (col) => col.field('UserName').header('Actor', 'admin.securityLog.actor').width(160),
-    (col) => col.field('Ip').header('IP', 'admin.securityLog.ip').width(140),
-    (col) => col.tag('Level', {
+    (col) => col.field('Actor').header('Actor', 'admin.securityLog.actor').width(170),
+    (col) => col.field('Target').header('Target', 'admin.securityLog.target').width(170),
+    (col) => col.field('TargetRealmSlug').header('Target realm', 'admin.platformLog.targetRealm').width(140),
+    (col) => col.field('IpAddress').header('IP', 'admin.securityLog.ip').width(140),
+    (col) => col.field('AuthenticationMethod').header('Method', 'admin.securityLog.method').width(110),
+    (col) => col.field('OAuthClientId').header('Client', 'admin.securityLog.client').width(160),
+    (col) => col.tag('Severity', {
       variantMap: { Info: 'neutral', Warning: 'warning', Error: 'error' },
     }).header('Level', 'admin.securityLog.level').width(100),
-    // Realm attribution — constant for a tenant admin (their own realm), varies
-    // for the control-plane (system) realm which sees the full cross-realm log.
-    (col) => col.field('Realm').header('Realm', 'admin.securityLog.realm').width(120),
   ])
 </script>
 
@@ -121,9 +123,6 @@ const gridBuilder = applyListGridDefaults(CoarGridBuilder.create<SecurityLogEntr
         </div>
         <CoarButton size="s" variant="ghost" @click="loadEntries">
           {{ t('admin.securityLog.refresh', {}, 'Refresh') }}
-        </CoarButton>
-        <CoarButton size="s" variant="ghost" @click="clearLog">
-          {{ t('admin.securityLog.clear', {}, 'Clear') }}
         </CoarButton>
       </template>
     </CoarDataGrid>

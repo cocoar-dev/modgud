@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Cocoar.Configuration.Testing;
 using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
@@ -19,6 +20,7 @@ namespace Modgud.Api.Tests.Infrastructure;
 public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
 {
     private readonly SharedPostgresFixture _fixture;
+    private readonly IDisposable _tenantContext;
 
     private const string DefaultPassword = "TestPass1234";
 
@@ -35,6 +37,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
 
         // Apply test configuration in constructor - this runs in the test's async context
         CocoarTestConfiguration.Apply(fixture.TestContext);
+        _tenantContext = TenantContext.Enter(TenantConstants.SystemTenantId);
     }
 
     public async ValueTask InitializeAsync()
@@ -134,6 +137,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
 
     public void Dispose()
     {
+        _tenantContext.Dispose();
         // Clear test configuration when test class is disposed
         CocoarTestConfiguration.Clear();
     }

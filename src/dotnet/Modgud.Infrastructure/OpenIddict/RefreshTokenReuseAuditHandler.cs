@@ -57,17 +57,20 @@ public sealed class RefreshTokenReuseAuditHandler
     private readonly IOpenIddictTokenManager _tokenManager;
     private readonly IOpenIddictApplicationManager _applicationManager;
     private readonly ISecurityAuditLog _securityAudit;
+    private readonly IEnumerable<IRefreshTokenReuseObserver> _observers;
     private readonly ILogger<RefreshTokenReuseAuditHandler> _logger;
 
     public RefreshTokenReuseAuditHandler(
         IOpenIddictTokenManager tokenManager,
         IOpenIddictApplicationManager applicationManager,
         ISecurityAuditLog securityAudit,
+        IEnumerable<IRefreshTokenReuseObserver> observers,
         ILogger<RefreshTokenReuseAuditHandler> logger)
     {
         _tokenManager = tokenManager;
         _applicationManager = applicationManager;
         _securityAudit = securityAudit;
+        _observers = observers;
         _logger = logger;
     }
 
@@ -123,14 +126,37 @@ public sealed class RefreshTokenReuseAuditHandler
             "Refresh token reuse detected for user {UserId}, client {ClientId}, authorization {AuthorizationId} — {FamilySize} token(s) about to be revoked",
             subject, clientId, authorizationId, familySize);
 
-        _securityAudit.Record(new SecurityAuditRecord
+        await _securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RefreshTokenReuseDetected,
-            Level = "Warning",
-            Actor = subject,
-            Status = "revoked",
-            Reason = $"clientId={clientId ?? "(unknown)"} authorizationId={authorizationId ?? "(unknown)"} revokedTokens={familySize}",
-            Message = $"Refresh token reuse detected for client '{clientId ?? "(unknown)"}' — revoking {familySize} token(s) and the parent authorization",
-        });
+            Severity = AuditSeverity.Warning,
+            ActorKind = AuditActorKind.User,
+            ActorSubjectId = Guid.TryParse(subject, out var subjectId) ? subjectId : null,
+            OAuthClientId = clientId,
+            AuthorizationId = authorizationId,
+            OutcomeCode = AuditOutcomes.Blocked,
+            OperationCode = "revoke-token-family",
+            Count = familySize,
+        }, context.CancellationToken);
+
+        // Keep higher-level session models in sync with OpenIddict's imminent
+        // token-family teardown. Observer failures must never interrupt the
+        // stock security response that runs immediately after this handler.
+        foreach (var observer in _observers)
+        {
+            try
+            {
+                await observer.OnReuseDetectedAsync(
+                    subject, clientId, authorizationId, context.CancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "refresh-token reuse observer {ObserverType} failed for authorization {AuthorizationId}",
+                    observer.GetType().Name,
+                    authorizationId);
+            }
+        }
     }
 }

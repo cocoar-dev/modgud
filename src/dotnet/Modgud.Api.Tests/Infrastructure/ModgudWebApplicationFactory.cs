@@ -24,6 +24,11 @@ using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
+using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Infrastructure.Realms;
+using Modgud.Infrastructure.Scheduling;
+using Marten.Storage;
+using Npgsql;
 
 namespace Modgud.Api.Tests.Infrastructure;
 
@@ -35,9 +40,12 @@ namespace Modgud.Api.Tests.Infrastructure;
 public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 {
     private IHost? _host;
+    private readonly bool _enableDirectScopeTenantFallback;
+    protected virtual bool ProvisionLegacySystemRealm => true;
 
     public ModgudWebApplicationFactory(SharedPostgresFixture fixture)
     {
+        _enableDirectScopeTenantFallback = true;
         // No configuration needed here - CocoarTestConfiguration.Apply()
         // was already called in the fixture
     }
@@ -49,6 +57,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     protected ModgudWebApplicationFactory()
     {
+        _enableDirectScopeTenantFallback = false;
     }
 
     /// <summary>
@@ -88,6 +97,19 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
         {
+            // Production deliberately refuses tenant-scoped sessions when no
+            // request or explicit TenantContext exists. Most legacy
+            // integration tests also arrange/assert through direct DI scopes,
+            // so give those scopes an explicit test tenant without restoring a
+            // production fallback. Real HTTP requests still replace this
+            // accessor's ambient context for the duration of the request.
+            if (_enableDirectScopeTenantFallback)
+            {
+                services.RemoveAll<IHttpContextAccessor>();
+                services.AddSingleton<IHttpContextAccessor>(
+                    new TestTenantHttpContextAccessor(TenantConstants.SystemTenantId));
+            }
+
             // .NET HostOptions.ShutdownTimeout defaults to 5 seconds. That's
             // not enough for Wolverine + Marten + Testcontainer to release
             // Postgres ownership cleanly during teardown — under load on the
@@ -160,6 +182,25 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         });
     }
 
+    private sealed class TestTenantHttpContextAccessor(string tenantId) : IHttpContextAccessor
+    {
+        private readonly AsyncLocal<HttpContext?> _current = new();
+        private readonly HttpContext _fallback = CreateFallbackContext(tenantId);
+
+        public HttpContext? HttpContext
+        {
+            get => _current.Value ?? _fallback;
+            set => _current.Value = value;
+        }
+
+        private static HttpContext CreateFallbackContext(string tenantId)
+        {
+            var context = new DefaultHttpContext();
+            context.Items[TenantConstants.HttpContextTenantIdKey] = tenantId;
+            return context;
+        }
+    }
+
     /// <summary>In-memory stand-in for the CIMD metadata endpoint. Returns the
     /// document registered for the exact request URL, or 404.</summary>
     private sealed class StubCimdHandler(
@@ -183,7 +224,65 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     protected override IHost CreateHost(IHostBuilder builder)
     {
         _host = base.CreateHost(builder);
+        if (ProvisionLegacySystemRealm)
+            ProvisionLegacyTestRealmAsync(_host.Services).GetAwaiter().GetResult();
         return _host;
+    }
+
+    /// <summary>
+    /// Most pre-installation integration tests historically use a tenant named
+    /// "system". Production no longer creates that realm implicitly, so the
+    /// test harness provisions it explicitly. Fresh-installation tests opt out
+    /// through <see cref="UninitializedModgudWebApplicationFactory"/>.
+    /// </summary>
+    private static async Task ProvisionLegacyTestRealmAsync(IServiceProvider services)
+    {
+        var masterCs = services.GetRequiredService<IMasterConnectionString>().Value;
+        var systemDbName =
+            $"{new NpgsqlConnectionStringBuilder(masterCs).Database}_{TenantConstants.SystemTenantId}";
+        var systemCs = new NpgsqlConnectionStringBuilder(masterCs)
+        {
+            Database = systemDbName,
+        }.ConnectionString;
+
+        var adminCs = new NpgsqlConnectionStringBuilder(masterCs) { Database = "postgres" };
+        await using (var connection = new NpgsqlConnection(adminCs.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var exists = new NpgsqlCommand(
+                "SELECT 1 FROM pg_database WHERE datname = @name", connection);
+            exists.Parameters.AddWithValue("name", systemDbName);
+            if (await exists.ExecuteScalarAsync() is null)
+            {
+                var quoted = "\"" + systemDbName.Replace("\"", "\"\"") + "\"";
+#pragma warning disable CA2100
+                await using var create = new NpgsqlCommand($"CREATE DATABASE {quoted}", connection);
+#pragma warning restore CA2100
+                await create.ExecuteNonQueryAsync();
+            }
+        }
+
+        var store = services.GetRequiredService<IDocumentStore>();
+        var tenancy = (MasterTableTenancy)store.Options.Tenancy;
+        await tenancy.AddDatabaseRecordAsync(TenantConstants.SystemTenantId, systemCs);
+        await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
+        await services.GetRequiredService<IRealmMessageStorageProvisioner>()
+            .EnsureProvisionedAsync(TenantConstants.SystemTenantId);
+
+        await using var scope = services.CreateAsyncScope();
+        var provisioning = scope.ServiceProvider.GetRequiredService<IRealmProvisioningService>();
+        await provisioning.EnsureSystemRealmExistsAsync();
+        await Modgud.Infrastructure.OAuth.OAuthRealmSeeder.SeedAsync(
+            scope.ServiceProvider, TenantConstants.SystemTenantId);
+        await scope.ServiceProvider
+            .GetRequiredService<Modgud.Application.Services.ILoginProviderRealmSeeder>()
+            .SeedAsync(TenantConstants.SystemTenantId);
+        await Modgud.Infrastructure.Authorization.AppRealmSeeder.SeedAsync(
+            scope.ServiceProvider,
+            TenantConstants.SystemTenantId,
+            isControlPlane: true);
+        await scope.ServiceProvider.GetRequiredService<IRealmCache>().InitializeAsync();
+        await scope.ServiceProvider.GetRequiredService<IRealmJobScheduleObserver>().ReconcileAsync();
     }
 
     /// <summary>
@@ -195,6 +294,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         string? acronym = "TU",
         string? email = null)
     {
+        using var tenant = TenantContext.Enter(TenantConstants.SystemTenantId);
         using var scope = Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 
@@ -252,6 +352,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         var userName = (acronym ?? $"{firstname[0]}{lastname[0]}").ToLowerInvariant();
 
         // Step 2: Apply identity setup event (sets UserName + IsActive on UserView)
+        using var tenant = TenantContext.Enter(TenantConstants.SystemTenantId);
         using var scope = Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
         session.Events.Append(userView.Id, new UserIdentitySetupEvent(userView.Id, userName, true));
@@ -341,6 +442,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         string? appSlug = null,
         bool isRealmAdmin = false)
     {
+        using var tenant = TenantContext.Enter(TenantConstants.SystemTenantId);
         var perms = permissions ?? [];
 
         using var scope = Services.CreateScope();
@@ -401,6 +503,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         string? description = null,
         List<string>? boundTo = null)
     {
+        using var tenant = TenantContext.Enter(TenantConstants.SystemTenantId);
         using var scope = Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
 
@@ -478,6 +581,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     public async Task<T?> GetDocumentAsync<T>(Guid id) where T : class
     {
+        using var tenant = TenantContext.Enter(TenantConstants.SystemTenantId);
         using var scope = Services.CreateScope();
         var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
         return await session.LoadAsync<T>(id, TestContext.Current.CancellationToken);
@@ -514,4 +618,13 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
             throw new AggregateException(
                 "Async-projection catch-up failed after Marten reset/append.", errors);
     }
+}
+
+/// <summary>
+/// Test host that exposes the real production cold-start state: master/global
+/// schemas exist, but the realm registry is empty.
+/// </summary>
+public sealed class UninitializedModgudWebApplicationFactory : ModgudWebApplicationFactory
+{
+    protected override bool ProvisionLegacySystemRealm => false;
 }

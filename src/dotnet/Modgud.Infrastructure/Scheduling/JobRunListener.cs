@@ -1,6 +1,7 @@
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using Quartz;
 
 namespace Modgud.Infrastructure.Scheduling;
@@ -11,11 +12,14 @@ namespace Modgud.Infrastructure.Scheduling;
 /// an optional per-run <c>ResultSummary</c> the job can publish via
 /// <c>context.Result = "...";</c>.
 ///
-/// Resolves a fresh DI scope each run so the IDocumentSession is short-lived
-/// and not entangled with whatever the job itself uses.
+/// Resolves a fresh DI scope inside the owning realm carried by the Quartz
+/// job detail. Realm history stays in that tenant DB; system history stays
+/// in the non-tenanted global store while notifications resolve in the current
+/// Control-Plane realm.
 /// </summary>
 public class JobRunListener(
     IServiceScopeFactory scopeFactory,
+    IGlobalStore globalStore,
     ILogger<JobRunListener> logger) : IJobListener
 {
     public string Name => nameof(JobRunListener);
@@ -39,6 +43,28 @@ public class JobRunListener(
         CancellationToken cancellationToken = default)
     {
         var key = context.JobDetail.Key.Name;
+        if (!context.JobDetail.JobDataMap.TryGetValue(
+                RealmJobScheduler.TenantSlugDataKey, out var rawTenant)
+            || rawTenant is not string tenantSlug
+            || string.IsNullOrWhiteSpace(tenantSlug))
+        {
+            logger.LogError(
+                "[Jobs] Cannot persist run history for {Key}: Quartz job has no owning realm",
+                context.JobDetail.Key);
+            return;
+        }
+
+        if (!context.JobDetail.JobDataMap.TryGetValue(
+                RealmJobScheduler.JobScopeDataKey, out var rawScope)
+            || rawScope is not string scopeName
+            || !Enum.TryParse<JobScope>(scopeName, out var jobScope))
+        {
+            logger.LogError(
+                "[Jobs] Cannot persist run history for {Key}: Quartz job has no valid ownership scope",
+                context.JobDetail.Key);
+            return;
+        }
+
         var startedAt = context.Get(StartTimeKey) as DateTime? ?? context.FireTimeUtc.UtcDateTime;
         var finishedAt = DateTime.UtcNow;
         var manual = context.MergedJobDataMap.TryGetValue(ManualTriggerKey, out var m) && m is true;
@@ -62,17 +88,29 @@ public class JobRunListener(
             TriggeredByUserId = triggeredBy,
         };
 
+        using var tenant = TenantContext.Enter(tenantSlug);
         using var scope = scopeFactory.CreateScope();
         try
         {
-            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-            session.Store(entry);
-            await session.SaveChangesAsync(cancellationToken);
+            if (jobScope == JobScope.System)
+            {
+                await using var systemSession = globalStore.LightweightSession();
+                systemSession.Store(entry);
+                await systemSession.SaveChangesAsync(cancellationToken);
+            }
+            else
+            {
+                var realmSession = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+                realmSession.Store(entry);
+                await realmSession.SaveChangesAsync(cancellationToken);
+            }
         }
         catch (Exception ex)
         {
             // Persisting history must never crash the listener — log and move on.
-            logger.LogWarning(ex, "[Jobs] Failed to persist run history for {Key}", key);
+            logger.LogWarning(ex,
+                "[Jobs] Failed to persist run history for {Key} in realm {Realm}",
+                key, tenantSlug);
         }
 
         // Inbox-side notify: failures → admins, manual completions → trigger user.
@@ -85,7 +123,9 @@ public class JobRunListener(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "[Jobs] Job-run notify failed for {Key}", key);
+            logger.LogWarning(ex,
+                "[Jobs] Job-run notify failed for {Key} in realm {Realm}",
+                key, tenantSlug);
         }
     }
 

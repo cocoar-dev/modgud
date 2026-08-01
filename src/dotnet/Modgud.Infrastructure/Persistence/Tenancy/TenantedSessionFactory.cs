@@ -10,12 +10,9 @@ namespace Modgud.Infrastructure.Persistence.Tenancy;
 /// opens a tenant-scoped session against that tenant's database.
 ///
 /// <para>
-/// When no <see cref="HttpContext"/> is available (background services, hosted
-/// services, tests without a request scope), it falls back to the
-/// <see cref="TenantConstants.SystemTenantId"/> tenant, which is registered
-/// against its own <c>{master}_system</c> database (the master DB itself is
-/// pure control-plane infrastructure and holds no tenant content). So
-/// single-tenant boots and infrastructure jobs work out of the box.
+/// When no realm context is available it fails closed. Deployment-wide work
+/// belongs in <see cref="IGlobalStore"/>; background realm work must enter the
+/// intended realm explicitly.
 /// </para>
 ///
 /// <para>
@@ -65,46 +62,16 @@ public sealed class TenantedSessionFactory : ISessionFactory, ITenantSessionFact
         if (explicitTenant is not null)
             return explicitTenant;
 
-        // No tenant resolved. Two very different situations land here:
-        //
-        //   • No HttpContext at all → a genuine background / hosted-service /
-        //     Wolverine-handler / CLI / test path. The system fallback is
-        //     load-bearing there (single-tenant boots and infra jobs depend on
-        //     it) and stays SILENT — this is by design.
-        //
-        //   • HttpContext present but no tenant → an in-flight HTTP request
-        //     reached a tenant-scoped session without a resolved realm. This is
-        //     the silent-fallback CLASS OF BUG ("I created it, got no error, and
-        //     it isn't where I expected"): RealmMiddleware resolves (or 404s)
-        //     every routed request, so this can only be a realm-agnostic
-        //     skip-path (/health, /openapi, …) — a path that must NEVER perform
-        //     a tenant-scoped write. Refuse writes loudly; warn on reads.
+        // No tenant resolved. Never guess a realm: doing so would make a
+        // Control-Plane transfer change where unrelated background data lands.
         var http = _httpContextAccessor.HttpContext;
-        if (http is not null)
-        {
-            if (forWrite)
-            {
-                _logger.LogError(
-                    "Refusing a tenant-scoped WRITE during HTTP request to {Path}: no realm was resolved "
-                    + "(neither TenantContext nor HttpContext.Items[\"{Key}\"] carried a tenant). Falling back "
-                    + "to the '{System}' tenant here would silently write to the wrong database. If this is a "
-                    + "legitimate cross-tenant or background path, enter the tenant explicitly with "
-                    + "TenantContext.Enter(...).",
-                    http.Request.Path, TenantConstants.HttpContextTenantIdKey, TenantConstants.SystemTenantId);
-
-                throw new InvalidOperationException(
-                    $"No realm/tenant resolved for the current HTTP request ({http.Request.Path}); refusing to "
-                    + $"open a tenant-scoped write session that would silently fall back to the "
-                    + $"'{TenantConstants.SystemTenantId}' tenant. Enter the intended tenant explicitly with "
-                    + "TenantContext.Enter(...) if this is a deliberate cross-tenant write.");
-            }
-
-            _logger.LogWarning(
-                "Tenant-scoped READ during HTTP request to {Path} with no resolved realm — falling back to the "
-                + "'{System}' tenant. Expected on realm-agnostic infra paths; unexpected on a routed endpoint.",
-                http.Request.Path, TenantConstants.SystemTenantId);
-        }
-
-        return TenantConstants.SystemTenantId;
+        var location = http is null ? "outside an HTTP request" : $"during HTTP request to {http.Request.Path}";
+        _logger.LogError(
+            "Refusing tenant-scoped {Access} {Location}: no realm was resolved. "
+            + "Use IGlobalStore for deployment-wide state or TenantContext.Enter(...) for realm state.",
+            forWrite ? "WRITE" : "READ", location);
+        throw new InvalidOperationException(
+            $"No realm/tenant resolved {location}; refusing to open a tenant-scoped " +
+            $"{(forWrite ? "write" : "read")} session.");
     }
 }

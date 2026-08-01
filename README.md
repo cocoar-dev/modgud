@@ -19,18 +19,22 @@ emission, full 2FA spectrum, GDPR self-service.
   database separation prevents query-level tenant mixing.
 - **Multi-app permission model** — Apps are first-class. Permissions
   are 2-segment (`<resource>:<action>`) inside an app's catalog. Two
-  bypass tiers, no more. Roles bind to one App, groups carry a
-  `BoundTo` activation list.
-- **Keycloak-style `resource_access` on UserInfo** — per-audience
-  blocks with bypass pre-expansion and per-RS subset narrowing. A
-  drop-in `IClaimsTransformation` library flattens the right block
-  into `ClaimTypes.Role` so `[Authorize(Roles = "...")]` works
-  without per-endpoint plumbing.
+  bypass tiers, no more. Application roles bind to one App; a pure
+  `realm:admin` role is the explicit realm-local exception. Groups
+  carry a `BoundTo` activation list.
+- **Keycloak-shaped `resource_access` authorization claims** — when a
+  token targets a registered OAuth API and requests `roles` and/or
+  `permissions`, Modgud emits a block keyed by that API's exact
+  audience, with bypass pre-expansion and per-RS subset narrowing.
+  `Modgud.AspNetCore.ResourceServer` projects only its configured
+  audience block into native role and permission claims.
 - **Full 2FA spectrum + WebAuthn** — TOTP, Email-OTP, FIDO2/Passkey,
   Magic Link, recovery codes. 2FA enforcement middleware with grace
   period and per-user override.
-- **OIDC federation** — Microsoft Entra ID, Google, any OIDC IdP.
-  JIT user provisioning + JavaScript claim-mapping (`UserUpdateScript`).
+- **OIDC and SAML 2.0 federation** — Microsoft Entra ID and
+  standards-compatible OIDC or SAML identity providers. Modgud consumes SAML
+  as an SP; it does not issue SAML assertions. JIT user provisioning +
+  JavaScript claim-mapping (`UserUpdateScript`).
 - **Dynamic Client Registration (RFC 7591)** with triple opt-in
   (realm master / per-API / per-scope), audience-target containment,
   full audit-event trail.
@@ -51,6 +55,7 @@ emission, full 2FA spectrum, GDPR self-service.
 |---|---|
 | [📘 Get Started](./docs/getting-started/) | What this is, requirements, first-time setup |
 | [⚡ Quickstart (Docker)](./docs/getting-started/quickstart.md) | From `docker compose up` to first login in 10 minutes |
+| [🧑‍💻 Developing locally](./docs/contribute/developing-locally.md) | Running from source: dev loop, `*.localhost` realms, recovery CLI, tests |
 | [🧠 Concepts](./docs/concepts/) | Realms, apps, permissions, OAuth, tokens — the mental model |
 | [🛠️ Operate](./docs/operate/) | Deployment, observability, recovery CLI, feature flags |
 | [👤 Administer](./docs/admin/) | Users, groups, roles, OAuth clients, login providers |
@@ -86,9 +91,16 @@ pnpm install
 pnpm dev
 ```
 
-First-time admin bootstrap via the recovery CLI — see
-[First-time setup](./docs/getting-started/first-time-setup.md) for
-the walkthrough.
+That is the short version. [Developing locally](./docs/contribute/developing-locally.md)
+is the full one and the page that is kept in sync with the code: the
+Postgres container, what the first boot actually does, reaching tenant
+realms at `*.localhost`, the recovery CLI, demo seed data, tests and
+Playwright.
+
+For the first admin you need the recovery CLI — that guide covers it, and
+[First-time setup](./docs/getting-started/first-time-setup.md) has the
+decision tree for the other bootstrap routes (invite mode, provisioning
+further realms).
 
 ## Contributing
 

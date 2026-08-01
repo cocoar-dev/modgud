@@ -1,10 +1,9 @@
-using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Quartz;
 using Quartz.Spi;
 using Modgud.Application.Scheduling;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Infrastructure.Scheduling;
 
@@ -12,11 +11,9 @@ public static class SchedulingDependencyInjection
 {
     /// <summary>
     /// Wire Quartz.NET with an in-memory job store, register the
-    /// <see cref="IJobsService"/> facade and the run-history listener. The
-    /// host that calls this is responsible for calling
-    /// <c>AddSystemJob&lt;TJob&gt;(...)</c> for each compiled job to register
-    /// it with <see cref="IJobRegistry"/>; everything is scheduled inside
-    /// a hosted bootstrap step.
+    /// <see cref="IJobsService"/> facade and the run-history listener. Hosts
+    /// register every compiled job explicitly as realm-owned or system-owned;
+    /// a hosted bootstrap materialises the corresponding Quartz instances.
     /// </summary>
     public static IServiceCollection AddScheduling(this IServiceCollection services)
     {
@@ -27,6 +24,9 @@ public static class SchedulingDependencyInjection
         // this binding (Modgud.Api does so in Program.cs).
         services.AddScoped<IJobRunNotifier, NoopJobRunNotifier>();
         services.AddSingleton<JobRunListener>();
+        services.AddSingleton<RealmJobScheduler>();
+        services.AddSingleton<IRealmJobScheduleObserver>(
+            sp => sp.GetRequiredService<RealmJobScheduler>());
 
         services.AddQuartz(q =>
         {
@@ -46,17 +46,39 @@ public static class SchedulingDependencyInjection
         // jobs can pull dependencies (e.g. IDocumentStore) from scope.
         services.AddSingleton<IJobFactory, MicrosoftDependencyInjectionJobFactory>();
 
-        // Boot step: after the host has started but before HTTP requests arrive,
-        // walk the JobRegistry, apply Marten JobConfig overrides, and schedule
-        // each job in Quartz. Also attach the JobRunListener at this point so
-        // it sees every subsequent execution.
+        // Boot step: after the host has started, reconcile every realm's
+        // independent schedule and the single Control-Plane system schedule.
         services.AddHostedService<SchedulingBootstrap>();
 
         return services;
     }
 
     /// <summary>
-    /// Register a compiled job type. Call once per job at startup.
+    /// Register a compiled job that gets one independent Quartz job and trigger
+    /// per realm.
+    /// </summary>
+    public static IServiceCollection AddRealmJob<TJob>(
+        this IServiceCollection services,
+        string key,
+        string name,
+        string defaultCron,
+        string? description = null,
+        Func<IReadOnlyList<JobParameterField>>? getParameterSchema = null,
+        bool runWhenRealmInactive = false)
+        where TJob : class, IJob
+        => AddJob<TJob>(
+            services,
+            key,
+            name,
+            defaultCron,
+            JobScope.Realm,
+            description,
+            getParameterSchema,
+            runWhenRealmInactive);
+
+    /// <summary>
+    /// Register one deployment-wide compiled job. It is scheduled once and is
+    /// visible/configurable only in the current Control-Plane realm.
     /// </summary>
     public static IServiceCollection AddSystemJob<TJob>(
         this IServiceCollection services,
@@ -66,8 +88,28 @@ public static class SchedulingDependencyInjection
         string? description = null,
         Func<IReadOnlyList<JobParameterField>>? getParameterSchema = null)
         where TJob : class, IJob
+        => AddJob<TJob>(
+            services,
+            key,
+            name,
+            defaultCron,
+            JobScope.System,
+            description,
+            getParameterSchema,
+            runWhenRealmInactive: false);
+
+    private static IServiceCollection AddJob<TJob>(
+        IServiceCollection services,
+        string key,
+        string name,
+        string defaultCron,
+        JobScope scope,
+        string? description,
+        Func<IReadOnlyList<JobParameterField>>? getParameterSchema,
+        bool runWhenRealmInactive)
+        where TJob : class, IJob
     {
-        services.AddTransient<TJob>();   // resolved by MicrosoftDependencyInjectionJobFactory
+        services.AddTransient<TJob>();
         services.AddSingleton(new JobRegistration
         {
             Key = key,
@@ -76,6 +118,8 @@ public static class SchedulingDependencyInjection
             DefaultCron = defaultCron,
             JobType = typeof(TJob),
             Kind = JobKind.System,
+            Scope = scope,
+            RunWhenRealmInactive = runWhenRealmInactive,
             GetParameterSchema = getParameterSchema,
         });
         return services;
@@ -84,97 +128,58 @@ public static class SchedulingDependencyInjection
 
 /// <summary>
 /// Quartz job factory backed by Microsoft.Extensions.DependencyInjection.
-/// Creates a scope per job execution so scoped services (IDocumentSession,
-/// IJobRunHistoryRetentionService) work correctly.
+/// Resolves the actual job only after entering the tenant carried by the
+/// Quartz job detail. This guarantees constructor-injected scoped services
+/// bind to the owning realm, even though there is no HTTP request.
 /// </summary>
 internal sealed class MicrosoftDependencyInjectionJobFactory(IServiceProvider rootProvider) : IJobFactory
 {
     public IJob NewJob(TriggerFiredBundle bundle, IScheduler scheduler)
     {
-        var scope = rootProvider.CreateScope();
-        var job = (IJob)scope.ServiceProvider.GetRequiredService(bundle.JobDetail.JobType);
-        // Attach the scope so we can dispose it when the job returns.
-        return new ScopedJobWrapper(job, scope);
+        if (!bundle.JobDetail.JobDataMap.TryGetValue(
+                RealmJobScheduler.TenantSlugDataKey, out var rawTenant)
+            || rawTenant is not string tenantSlug
+            || string.IsNullOrWhiteSpace(tenantSlug))
+        {
+            throw new InvalidOperationException(
+                $"Scheduled job '{bundle.JobDetail.Key}' has no owning realm.");
+        }
+
+        return new TenantScopedJob(rootProvider, bundle.JobDetail.JobType, tenantSlug);
     }
 
-    public void ReturnJob(IJob job)
-    {
-        if (job is ScopedJobWrapper wrapper) wrapper.Dispose();
-    }
+    public void ReturnJob(IJob job) { }
 
-    private sealed class ScopedJobWrapper(IJob inner, IServiceScope scope) : IJob, IDisposable
+    private sealed class TenantScopedJob(
+        IServiceProvider provider,
+        Type jobType,
+        string tenantSlug) : IJob
     {
-        public Task Execute(IJobExecutionContext context) => inner.Execute(context);
-        public void Dispose() => scope.Dispose();
+        public async Task Execute(IJobExecutionContext context)
+        {
+            using var tenant = TenantContext.Enter(tenantSlug);
+            using var scope = provider.CreateScope();
+            var inner = (IJob)scope.ServiceProvider.GetRequiredService(jobType);
+            await inner.Execute(context);
+        }
     }
 }
 
 /// <summary>
-/// Reads <see cref="JobRegistration"/> + <see cref="JobConfig"/> at startup,
-/// schedules each enabled job, and attaches the run-history listener to the
-/// scheduler. Idempotent — also handles re-registration on hot-reload of the
-/// host.
+/// Reconciles all realm/system job instances at startup and attaches the
+/// run-history listener.
 /// </summary>
 internal sealed class SchedulingBootstrap(
     ISchedulerFactory schedulerFactory,
-    IJobRegistry registry,
-    IServiceScopeFactory scopeFactory,
-    JobRunListener listener,
-    ILogger<SchedulingBootstrap> logger) : IHostedService
+    RealmJobScheduler jobScheduler,
+    JobRunListener listener) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        // Pull config overrides up-front so we only open one session.
-        Dictionary<string, JobConfig> configByKey;
-        using (var scope = scopeFactory.CreateScope())
-        {
-            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
-            var configs = await session.Query<JobConfig>().ToListAsync(cancellationToken);
-            configByKey = configs.ToDictionary(c => c.Key, StringComparer.OrdinalIgnoreCase);
-        }
-
         var scheduler = await schedulerFactory.GetScheduler(cancellationToken);
         scheduler.ListenerManager.AddJobListener(listener);
-
-        foreach (var reg in registry.All)
-        {
-            configByKey.TryGetValue(reg.Key, out var cfg);
-            try
-            {
-                await ApplyAsync(scheduler, reg, cfg, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "[Jobs] Failed to schedule {Key}", reg.Key);
-            }
-        }
+        await jobScheduler.ReconcileAsync(cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    private async Task ApplyAsync(IScheduler scheduler, JobRegistration reg, JobConfig? cfg, CancellationToken ct)
-    {
-        var jobKey = new JobKey(reg.Key);
-        var jobDetail = JobBuilder.Create(reg.JobType)
-            .WithIdentity(jobKey)
-            .WithDescription(reg.Description)
-            .StoreDurably()
-            .Build();
-        await scheduler.AddJob(jobDetail, replace: true, ct);
-
-        if (cfg is not null && !cfg.Enabled)
-        {
-            logger.LogInformation("[Jobs] {Key} is disabled — registered but unscheduled", reg.Key);
-            return;
-        }
-
-        var cron = cfg?.CronOverride ?? reg.DefaultCron;
-        var trigger = TriggerBuilder.Create()
-            .WithIdentity($"{reg.Key}-trigger")
-            .ForJob(jobKey)
-            .WithCronSchedule(cron)
-            .Build();
-        await scheduler.ScheduleJob(trigger, ct);
-        logger.LogInformation("[Jobs] Scheduled {Key} with cron '{Cron}'", reg.Key, cron);
-    }
 }

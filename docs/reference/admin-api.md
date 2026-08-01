@@ -236,14 +236,17 @@ app slug (`realm:read|write`), not under `modgud`. See
 
 ## Security log
 
-The security/audit log. Reads are filtered by `category`, `eventType`,
-and `limit` query parameters. Clearing the log is destructive and gated
-behind the `realm:admin` bypass.
+The Security log reads only the current realm's physical database. The
+Control-Plane-only Platform log reads PII-free deployment events from the
+Global Store. Both accept `category`, `eventType`, and `limit`.
 
 | Method | Path | Permission |
 |---|---|---|
 | `GET` | `/api/admin/auth-log?category=...&eventType=...&limit=...` | `auth-log:read` |
-| `DELETE` | `/api/admin/auth-log` | `realm:admin` |
+| `GET` | `/api/admin/platform-audit?category=...&eventType=...&limit=...` | `control-plane:platform-audit:read` |
+
+Neither surface has a clear/delete endpoint. Retention jobs delete only
+expired entries.
 
 ## App info
 

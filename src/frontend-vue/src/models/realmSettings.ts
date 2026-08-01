@@ -8,10 +8,13 @@ export interface RealmSettingsDto {
   Dcr: DcrSettingsDto
   Cimd: CimdSettingsDto
   NativeGrants: NativeGrantSettingsDto
+  BrowserSessions: BrowserSessionPolicyDto
+  ClientSessions: ClientSessionPolicyDto
   AuthRateLimits: AuthRateLimitsDto
   Branding: BrandingSettingsDto
   RegistrationFields: RegistrationFieldsSettingsDto
   Deletion: DeletionSettingsDto
+  Audit: AuditSettingsDto
   /** Page-builder schemas keyed by slug. Read-only here — writes use
    * the dedicated /api/admin/customization/pages/{slug} endpoints. */
   Pages: Record<string, string>
@@ -22,10 +25,35 @@ export interface UpdateRealmSettingsDto {
   Dcr?: UpdateDcrSettingsDto | null
   Cimd?: UpdateCimdSettingsDto | null
   NativeGrants?: UpdateNativeGrantSettingsDto | null
+  BrowserSessions?: UpdateBrowserSessionPolicyDto | null
+  ClientSessions?: UpdateClientSessionPolicyDto | null
   AuthRateLimits?: UpdateAuthRateLimitsDto | null
   Branding?: UpdateBrandingSettingsDto | null
   RegistrationFields?: UpdateRegistrationFieldsSettingsDto | null
   Deletion?: UpdateDeletionSettingsDto | null
+  Audit?: UpdateAuditSettingsDto | null
+}
+
+export interface BrowserSessionPolicyDto {
+  IdleLifetimeMinutes: number
+  AbsoluteLifetimeMinutes: number
+  AllowRememberMe: boolean
+}
+
+export interface UpdateBrowserSessionPolicyDto {
+  IdleLifetimeMinutes?: number
+  AbsoluteLifetimeMinutes?: number
+  AllowRememberMe?: boolean
+}
+
+export interface ClientSessionPolicyDto {
+  IdleLifetimeDays: number
+  AbsoluteLifetimeDays: number
+}
+
+export interface UpdateClientSessionPolicyDto {
+  IdleLifetimeDays?: number
+  AbsoluteLifetimeDays?: number
 }
 
 // Per-realm policy for which identity fields are required when an account is
@@ -61,6 +89,16 @@ export interface UpdateDeletionSettingsDto {
   ReminderLeadDays?: number
   AdminRetentionDays?: number
   AutoPurgeEnabled?: boolean
+}
+
+export interface AuditSettingsDto {
+  VisibilityWindowDays: number
+  SecurityRetentionDays: number
+}
+
+export interface UpdateAuditSettingsDto {
+  VisibilityWindowDays?: number
+  SecurityRetentionDays?: number
 }
 
 // Read shape for the Branding sub-section. LogoUrl/FaviconUrl are

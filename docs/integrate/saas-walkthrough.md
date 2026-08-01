@@ -2,7 +2,8 @@
 
 This page takes you from a freshly installed Modgud all the way to a
 working external app doing single-sign-on against Modgud and reading
-per-Audience permission claims out of `/connect/userinfo`.
+audience-keyed authorization claims from an access token, UserInfo or
+authorized introspection response.
 
 > **Audience:** realm admins and developers integrating a SaaS app.
 > Regular end-user onboarding is documented in
@@ -89,7 +90,7 @@ Navigate to **Administration → OAuth Clients**. Click **Create**. The Create m
 | Post-Logout Redirect URIs | `https://acme.dev.local/` | One per line |
 | Allowed Grant Types | `authorization_code` + `refresh_token` | For a web app pick `authorization_code` and `refresh_token`. There are no silent defaults — a client with no grant types cannot mint tokens. |
 | Allowed Scopes | `openid email profile roles permissions acme` | The OIDC scopes plus the resource-bearing `acme` scope you create in Station 3. Request `roles` to get the per-audience role list, `permissions` for the `<resource>:<action>` list. |
-| **Access Token Type** | `JWT` | **Required for local JWKS validation.** The default is `Reference` (opaque — the resource server would have to call `/connect/introspect` on every request). `AddJwtBearer` validates JWTs by signature, so choose **JWT** here. |
+| **Access Token Type** | `JWT` | **Required for the local JWKS-validation path in this walkthrough.** Modgud's token-format default is Reference (opaque and resolved via `/connect/introspect`); explicitly choose JWT here because the resource server below uses `OnlyJwt`. |
 
 Click **Create**. The client secret is shown — copy it and store it
 safely; you'll never see it again.
@@ -99,19 +100,21 @@ If your frontend is a pure SPA that talks to the IDP directly (PKCE, no server-s
 :::
 
 ::: info What does the apps choice change?
-On `/connect/userinfo` the access token's principal gets a
-`resource_access` block per linked app, with the user's app-specific
-roles (with `scope=roles`) and bypass-pre-expanded permissions narrowed
-to the calling OAuthApi's `PermissionIds` (with `scope=permissions`).
-The client may also only request scopes that belong to one of its apps
-(plus the standard OIDC scopes).
+The App selection controls which App-scoped scopes the client may
+request. It does not itself create claim blocks. Requested
+resource-bearing scopes create token audiences; each audience that
+resolves to a registered OAuth API gets
+`resource_access[<audience>]`, using that API's linked App for roles
+(`scope=roles`) and its `PermissionIds` subset for permissions
+(`scope=permissions`).
 :::
 
 ## Station 3: create the resource server
 
 The resource server is the identity Modgud uses to compute the
-per-Audience subset narrowing in `resource_access` UserInfo blocks.
-Each App needs at least one.
+per-Audience subset narrowing in `resource_access` blocks.
+Each App whose authorization data must reach a downstream API needs
+at least one OAuth API registration.
 
 Go to **Administration → OAuth → APIs** and click **Create**:
 
@@ -161,7 +164,8 @@ usually want more nuanced roles.
 | **App** | `acme` |
 | Permissions | `todo:read`, `todo:write` |
 
-Roles bind to one App via `AppId`; the `PermissionIds` reference
+Application roles bind to one App via `AppId`; a pure `realm:admin`
+role is the explicit realm-local exception. The `PermissionIds` reference
 specific catalog entries of that App. The same string `todo:read`
 in a different App's catalog is a different permission.
 
@@ -194,45 +198,31 @@ A complete, runnable version of everything below ships in the repo at `src/dotne
 ### Packages
 
 ```bash
-dotnet add package Modgud.Client.AspNetCore
-dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
+dotnet add package Modgud.AspNetCore.ResourceServer
 ```
 
 ### `Program.cs`
 
 ```csharp
 using System.Security.Claims;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Modgud.Client.AspNetCore;
+using Modgud.AspNetCore.ResourceServer;
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        // Authority is the realm's HOST ROOT — realms resolve by Host
-        // header, so the issuer has NO realm path. Never append "/system"
-        // or any "/<realm>" segment: a path-suffixed Authority makes the
-        // discovery fetch 404 and fails issuer validation.
-        options.Authority = "https://auth.example.com";
-        options.Audience  = "acme";   // matches the OAuthApi name / aud claim
-    });
+builder.Services.AddModgudResourceServer(options =>
+{
+    // Authority is the realm's HOST ROOT — realms resolve by Host
+    // header, so the issuer has NO realm path. Never append "/system"
+    // or any "/<realm>" segment: a path-suffixed Authority makes the
+    // discovery fetch 404 and fails issuer validation.
+    options.Authority = "https://auth.example.com";
+    options.Audience  = "acme";   // matches the OAuthApi name / aud claim
+    // TokenMode defaults to OnlyJwt.
+});
 
-// AddModgudClient (hooks JwtBearerEvents.OnTokenValidated) makes sure the
-// principal ends up with resource_access["acme"] — preferring the claim
-// already embedded in the JWT (the normal case for a JWT-typed client
-// like this one) and calling /connect/userinfo only as a fallback for
-// tokens that carry none — then registers the ClaimsTransformation that
-// flattens the block onto the principal:
+// The scheme projects the JWT's embedded audience block directly:
 //   - resource_access["acme"].roles       → ClaimTypes.Role
 //   - resource_access["acme"].permissions → "permission" claims
 // The IdP pre-expands bypass tiers (realm:admin, <resource>:admin) before
 // emission, so the RS only ever does exact-match — no evaluator on this side.
-// Do NOT set GetClaimsFromUserInfoEndpoint on AddJwtBearer; AddModgudClient
-// owns claim-sourcing (token first, UserInfo fallback).
-builder.Services.AddModgudClient(o =>
-{
-    o.Authority = "https://auth.example.com";
-    o.Audience  = "acme";   // must equal JwtBearerOptions.Audience above
-});
 
 builder.Services.AddAuthorization();
 ```
@@ -245,28 +235,28 @@ app.MapGet("/admin", () => "Admin only")
 ```
 
 `[Authorize(Roles = "Acme Editor")]` works the same way — the
-transformation surfaces `resource_access["acme"].roles` as
+authentication scheme projects `resource_access["acme"].roles` as
 `ClaimTypes.Role` claims.
 
 ### Granular permission check
 
-Gate endpoints with `.RequiresModgudPermission(...)` — the filter reads
-the flattened `permission` claims and does a straight exact-match:
+Gate endpoints with `.RequireModgudPermission(...)` — the authorization
+policy reads the flattened `permission` claims and does a straight
+exact-match:
 
 ```csharp
 app.MapPost("/todos", () => Results.Ok())
-   .RequireAuthorization()
-   .RequiresModgudPermission("todo:write");
+   .RequireModgudPermission("todo:write");
 ```
 
 If you need to read permissions imperatively, they live under
-`ModgudClaimsTransformation.PermissionClaimType`:
+`ModgudClaimTypes.Permission`:
 
 ```csharp
 app.MapGet("/whoami", (ClaimsPrincipal user) => Results.Ok(new
 {
     permissions = user
-        .FindAll(ModgudClaimsTransformation.PermissionClaimType)
+        .FindAll(ModgudClaimTypes.Permission)
         .Select(c => c.Value),
 })).RequireAuthorization();
 ```
@@ -286,11 +276,10 @@ common pitfalls) live in
 7. The resulting access token already carries `sub`, `email`, `name`,
    and `resource_access.acme.roles = ["Acme Editor"]` plus
    `resource_access.acme.permissions = ["todo:read", "todo:write"]` —
-   `AddModgudClient` reads that straight off the validated JWT
-   (`/connect/userinfo` would show the same block, but the library only
-   calls it as a fallback for tokens that don't carry the claim)
+   `AddModgudResourceServer` reads that straight off the validated JWT
+   without a UserInfo round-trip
 8. `[Authorize(Roles = "Acme Editor")]` lets you in, and
-   `.RequiresModgudPermission("todo:write")` passes — the resource
+   `.RequireModgudPermission("todo:write")` passes — the resource
    server validated the JWT against the realm's JWKS (because the client's
    Access Token Type is JWT) and matched the flattened `permission` claims
 
@@ -299,17 +288,18 @@ Made it through? **Done. First SaaS app integrated.**
 ## What comes next
 
 - **Multiple apps in one client:** a frontend that bundles two apps
-  assigns its OAuth client to both. The user's UserInfo response then
-  carries a `resource_access[<a>]` block and a
-  `resource_access[<b>]` block. Each backend reads its own block.
+  assigns its OAuth client to both, then requests resource-bearing
+  scopes targeting APIs in each App. The resulting principal can
+  carry one block per targeted API Audience. Each backend projects
+  its own block.
 - **Microservice apps:** several resource servers under one app —
   create more OAuth APIs in the **OAuth APIs** admin and link them
   all to the same App, each with its own narrower `PermissionIds`
   subset.
 - **External login providers:** under
-  [Login Providers](./login-providers) you configure Google /
-  Microsoft / EntraID. Modgud stays the central IDP but delegates
-  the login step.
+  [Login Providers](./login-providers) you configure Microsoft Entra ID and
+  standards-compatible OIDC or SAML providers. Modgud remains the OIDC
+  provider for your application but delegates the user-authentication step.
 - **Standing up a second, similar app:** right-click an existing App,
   Client, Scope, API, Role, or Group in its list and choose **Clone**
   to pre-fill a new one from it, instead of repeating all five
@@ -338,12 +328,13 @@ Made it through? **Done. First SaaS app integrated.**
   request.
 - **`scope=permissions` not requested.** Without it, the
   `permissions` array in the `resource_access` block is omitted — your
-  `RequiresModgudPermission(…)` check sees nothing. Same for `roles`
+  `RequireModgudPermission(…)` check sees nothing. Same for `roles`
   and the role list. Add the scope to the client's allowed-scopes list
   and to every authorization request.
-- **Access Token Type left as Reference.** `AddJwtBearer` can only
-  validate JWTs locally. A Reference (opaque) token has nothing to
-  validate by signature — switch the client to **JWT** (Station 2).
+- **Access Token Type set to Reference while the resource server uses
+  `OnlyJwt`.** A Reference token is opaque and has nothing to validate
+  by signature — switch the client to **JWT**, or configure
+  `AddModgudResourceServer` for reference-token introspection.
 - **Authority has a realm path.** `Authority` must be the host root
   (`https://auth.example.com`), never `…/system` or `…/<realm>`. Realms
   resolve by Host header; a path-suffixed Authority breaks discovery and

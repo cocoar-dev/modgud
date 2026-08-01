@@ -75,6 +75,12 @@ public record FlavorDto
     public required List<string> DefaultScopes { get; init; }
     public required string DefaultUserUpdateScript { get; init; }
     public required bool DefaultStoreRawClaims { get; init; }
+    /// <summary>
+    /// Complete flavor-derived initial configuration shown in the create
+    /// editor. SAML flavors use this for seeded attribute/AMR mappings and
+    /// protocol defaults so the admin sees the exact object before saving.
+    /// </summary>
+    public JsonElement? DefaultFlavorData { get; init; }
     public required List<FlavorConfigFieldDto> ConfigSchema { get; init; }
     /// <summary>
     /// Protocol family this flavor implements — <c>"Oidc"</c> or <c>"Saml"</c>.

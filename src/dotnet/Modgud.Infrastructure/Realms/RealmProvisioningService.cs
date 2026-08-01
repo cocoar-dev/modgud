@@ -5,6 +5,7 @@ using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Authorization;
 using Modgud.Infrastructure.OAuth;
 using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Infrastructure.Scheduling;
 using ErrorOr;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,6 +25,8 @@ public interface IRealmProvisioningService
     Task<List<Realm>> GetAllRealmsAsync(CancellationToken ct = default);
     Task<Realm?> GetRealmBySlugAsync(string slug, CancellationToken ct = default);
     Task<ErrorOr<Realm>> CreateRealmAsync(CreateRealmDto dto, CancellationToken ct = default);
+    Task<ErrorOr<Realm>> CreateInitialRealmAsync(CreateRealmDto dto, CancellationToken ct = default);
+    Task<ErrorOr<Realm>> ActivateInitialRealmAsync(string slug, CancellationToken ct = default);
     /// <summary>
     /// Patches a realm's structural metadata (DisplayName, Description,
     /// Domains, IsActive). Tenant-owned settings (self-registration etc.)
@@ -101,8 +104,10 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
     private readonly IDocumentStore _tenantedStore;
     private readonly IMasterConnectionString _masterCs;
     private readonly IRealmCache _realmCache;
+    private readonly IRealmMessageStorageProvisioner _messageStorageProvisioner;
     private readonly IServiceProvider _serviceProvider;
     private readonly ISecurityAuditLog _securityAudit;
+    private readonly IReadOnlyList<IRealmJobScheduleObserver> _jobScheduleObservers;
     private readonly ILogger<RealmProvisioningService> _logger;
 
     public RealmProvisioningService(
@@ -110,16 +115,20 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         IDocumentStore tenantedStore,
         IMasterConnectionString masterCs,
         IRealmCache realmCache,
+        IRealmMessageStorageProvisioner messageStorageProvisioner,
         IServiceProvider serviceProvider,
         ISecurityAuditLog securityAudit,
+        IEnumerable<IRealmJobScheduleObserver> jobScheduleObservers,
         ILogger<RealmProvisioningService> logger)
     {
         _globalStore = globalStore;
         _tenantedStore = tenantedStore;
         _masterCs = masterCs;
         _realmCache = realmCache;
+        _messageStorageProvisioner = messageStorageProvisioner;
         _serviceProvider = serviceProvider;
         _securityAudit = securityAudit;
+        _jobScheduleObservers = jobScheduleObservers.ToList();
         _logger = logger;
     }
 
@@ -139,7 +148,24 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             .FirstOrDefaultAsync(r => r.Slug == slug, ct);
     }
 
-    public async Task<ErrorOr<Realm>> CreateRealmAsync(CreateRealmDto dto, CancellationToken ct = default)
+    public Task<ErrorOr<Realm>> CreateRealmAsync(CreateRealmDto dto, CancellationToken ct = default) =>
+        CreateRealmCoreAsync(dto, isInitialControlPlane: false, activateImmediately: true, ct);
+
+    /// <summary>
+    /// Provisions the deployment's first realm. It is created inactive and
+    /// carries the initial Control-Plane flag; the installation coordinator
+    /// activates it only after the first realm administrator exists.
+    /// </summary>
+    public Task<ErrorOr<Realm>> CreateInitialRealmAsync(
+        CreateRealmDto dto,
+        CancellationToken ct = default) =>
+        CreateRealmCoreAsync(dto, isInitialControlPlane: true, activateImmediately: false, ct);
+
+    private async Task<ErrorOr<Realm>> CreateRealmCoreAsync(
+        CreateRealmDto dto,
+        bool isInitialControlPlane,
+        bool activateImmediately,
+        CancellationToken ct)
     {
         if (!RealmSlugRules.IsValidFormat(dto.Slug))
         {
@@ -151,22 +177,6 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         {
             return Error.Validation("Realm.ReservedSlug",
                 $"The slug '{dto.Slug}' is reserved and cannot be used.");
-        }
-
-        // C15c — InitialAdmin is mandatory: a realm without an admin path
-        // is unusable, and the only way to onboard the first admin
-        // post-creation is via Recovery-CLI (filesystem trust). Forcing
-        // an Email here prevents accidentally provisioning a tenant the
-        // recipient can't ever activate.
-        if (string.IsNullOrWhiteSpace(dto.InitialAdmin?.UserName))
-        {
-            return Error.Validation("Realm.InitialAdminUserNameRequired",
-                "InitialAdmin.UserName is required.");
-        }
-        if (string.IsNullOrWhiteSpace(dto.InitialAdmin.Email) || !dto.InitialAdmin.Email.Contains('@'))
-        {
-            return Error.Validation("Realm.InitialAdminEmailRequired",
-                "InitialAdmin.Email is required and must be a valid address.");
         }
 
         // Domains are mandatory: a realm with no domain can neither route
@@ -190,6 +200,13 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         }
 
         await using var session = _globalStore.LightweightSession();
+        if (isInitialControlPlane && await session.Query<Realm>().AnyAsync(ct))
+        {
+            return Error.Conflict(
+                "Installation.RealmAlreadyExists",
+                "The initial realm can only be provisioned while the deployment has no realms.");
+        }
+
         var existing = await session.Query<Realm>()
             .FirstOrDefaultAsync(r => r.Slug == dto.Slug, ct);
         if (existing is not null)
@@ -202,11 +219,8 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         var domainClash = await CheckDomainUniquenessAsync(session, dto.Domains, selfId: null, ct);
         if (domainClash is not null) return domainClash.Value;
 
-        // New realms are never the control plane: the IsControlPlane flag is
-        // stored and defaults to false, and there is no create-time switch to
-        // request it (CreateRealmDto carries none). The control-plane role is
-        // only moved via TransferControlPlaneAsync. The bootstrap realm is
-        // stamped once in EnsureSystemRealmExistsAsync.
+        // Ordinary realms never become Control Plane at creation. The sole
+        // exception is the installation-only path while the registry is empty.
 
         // Build the tenant database connection string
         var csBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value);
@@ -214,6 +228,14 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         var tenantDbName = $"{mainDbName}_{dto.Slug}";
         csBuilder.Database = tenantDbName;
         var tenantCs = csBuilder.ConnectionString;
+
+        await _securityAudit.RecordPlatformRequiredAsync(new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RealmProvisioned,
+            TargetRealmSlug = dto.Slug,
+            OutcomeCode = AuditOutcomes.Initiated,
+            OperationCode = "provision-realm",
+        }, ct);
 
         // Raw SQL: create the PostgreSQL database (DDL — cannot use Marten/parameters)
         var bootstrapBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value) { Database = "postgres" };
@@ -238,15 +260,6 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
 #pragma warning restore CA2100
                 await createDbCmd.ExecuteNonQueryAsync(ct);
                 _logger.LogInformation("Created database {DbName} for realm {Slug}", tenantDbName, dto.Slug);
-                _securityAudit.Record(new SecurityAuditRecord
-                {
-                    EventType = AuditEvents.RealmProvisioned,
-                    Level = "Info",
-                    Realm = dto.Slug,
-                    Status = "provisioned",
-                    Reason = $"database {tenantDbName}",
-                    Message = $"Created database {tenantDbName} for realm {dto.Slug}",
-                });
             }
         }
 
@@ -261,6 +274,11 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         await ApplyTenantSchemaResilientlyAsync(
             () => newTenantDb.ApplyAllConfiguredChangesToDatabaseAsync(), dto.Slug, ct);
 
+        // Marten tenants can be registered after Wolverine's startup resource
+        // scan. Provision the transactional inbox/outbox before any handler or
+        // event-forwarding path can use this realm.
+        await _messageStorageProvisioner.EnsureProvisionedAsync(dto.Slug);
+
         var realm = new Realm
         {
             Id = Guid.NewGuid(),
@@ -269,12 +287,19 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             Description = dto.Description,
             Domains = dto.Domains,
             PrimaryDomain = primaryDomain,
-            IsControlPlane = false,
-            IsActive = true,
+            IsControlPlane = isInitialControlPlane,
+            IsActive = activateImmediately && (dto.IsActive ?? true),
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
         session.Store(realm);
+        _securityAudit.StorePlatformRequired(session, new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RealmProvisioned,
+            TargetRealmSlug = dto.Slug,
+            OutcomeCode = AuditOutcomes.Completed,
+            OperationCode = "provision-realm",
+        });
         await session.SaveChangesAsync(ct);
 
         // Per-realm OAuth seeding — standard OIDC scopes land in the new tenant DB.
@@ -305,6 +330,42 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             ct);
 
         _realmCache.Invalidate();
+        if (realm.IsActive)
+            await ReconcileJobSchedulesAsync(ct);
+        return realm;
+    }
+
+    public async Task<ErrorOr<Realm>> ActivateInitialRealmAsync(
+        string slug,
+        CancellationToken ct = default)
+    {
+        await using var session = _globalStore.LightweightSession();
+        var realm = await session.Query<Realm>()
+            .FirstOrDefaultAsync(r => r.Slug == slug, ct);
+        if (realm is null)
+            return Error.NotFound("Realm.NotFound", $"Realm '{slug}' not found.");
+        if (!realm.IsControlPlane)
+            return Error.Validation(
+                "Installation.InitialRealmNotControlPlane",
+                "The initial realm must carry the Control-Plane flag before activation.");
+
+        var otherActive = await session.Query<Realm>()
+            .AnyAsync(r => r.Slug != slug && r.IsActive, ct);
+        if (otherActive)
+            return Error.Conflict(
+                "Installation.OtherRealmActive",
+                "Cannot activate an initial realm after another realm became active.");
+
+        if (!realm.IsActive)
+        {
+            realm.IsActive = true;
+            realm.UpdatedAt = DateTimeOffset.UtcNow;
+            session.Store(realm);
+            await session.SaveChangesAsync(ct);
+        }
+
+        _realmCache.Invalidate();
+        await ReconcileJobSchedulesAsync(ct);
         return realm;
     }
 
@@ -423,6 +484,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         await session.SaveChangesAsync(ct);
 
         _realmCache.Invalidate();
+        await ReconcileJobSchedulesAsync(ct);
         return realm;
     }
 
@@ -453,6 +515,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         await session.SaveChangesAsync(ct);
 
         _realmCache.Invalidate();
+        await ReconcileJobSchedulesAsync(ct);
         return true;
     }
 
@@ -477,6 +540,16 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         var csBuilder = new NpgsqlConnectionStringBuilder(_masterCs.Value);
         var mainDbName = csBuilder.Database!;
         var tenantDbName = $"{mainDbName}_{slug}";
+
+        await _securityAudit.RecordPlatformRequiredAsync(new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RealmProvisioned,
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Initiated,
+            OperationCode = "hard-delete",
+            ReasonCode = "operator-request",
+        }, ct);
 
         // 1. Hand the tenant back to Marten. RemoveTenantAsync evicts it from the
         //    tenancy's in-memory cache, disposes its Npgsql data source (gracefully
@@ -513,23 +586,23 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         // 3. Remove the global Realm record and invalidate the cache so middleware
         //    stops resolving the now-dropped realm.
         session.Delete(realm);
+        _securityAudit.StorePlatformRequired(session, new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RealmProvisioned,
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Completed,
+            OperationCode = "hard-delete",
+            ReasonCode = "operator-request",
+        });
         await session.SaveChangesAsync(ct);
         _realmCache.Invalidate();
+        await ReconcileJobSchedulesAsync(ct);
 
         _logger.LogWarning(
             "Hard-deleted realm {Slug}: dropped tenant database {DbName} and removed the global Realm record. " +
             "Irreversible — event streams, signing keys and the OpenIddict token store are gone.",
             slug, tenantDbName);
-
-        _securityAudit.Record(new SecurityAuditRecord
-        {
-            EventType = AuditEvents.RealmProvisioned,
-            Level = "Warning",
-            Realm = slug,
-            Status = "hard-deleted",
-            Reason = "operator hard-delete",
-            Message = $"Hard-deleted realm {slug} (tenant database {tenantDbName} dropped)",
-        });
 
         return true;
     }
@@ -544,36 +617,37 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         if (realm is null)
             return;
 
-        if (realm.IsControlPlane)
+        if (realm.IsControlPlane && realm.IsActive)
         {
-            // Provisioning never creates a control-plane realm, so this branch
-            // means something is badly wrong — refuse to hard-delete the
-            // deployment's administration anchor.
+            // An active Control Plane is the deployment's administration
+            // anchor. The installation path deliberately creates its first
+            // realm inactive, so that partial realm may be compensated safely.
             _logger.LogError(
                 "Refusing to roll back realm {Slug}: it holds the control-plane flag. " +
-                "Provisioning never creates a control-plane realm, so this indicates a logic error.",
+                "Only an inactive, partially installed initial realm may be rolled back.",
                 slug);
             return;
         }
 
         session.Delete(realm);
+        _securityAudit.StorePlatformRequired(session, new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RealmProvisioned,
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Completed,
+            OperationCode = "rollback-provisioning",
+            ReasonCode = "bootstrap-invite-failed",
+        });
         await session.SaveChangesAsync(ct);
 
         _realmCache.Invalidate();
+        await ReconcileJobSchedulesAsync(ct);
 
         _logger.LogWarning(
             "Rolled back partially-provisioned realm {Slug} after a post-create bootstrap failure. " +
             "The tenant database is left in place for idempotent reuse on retry.",
             slug);
-        _securityAudit.Record(new SecurityAuditRecord
-        {
-            EventType = AuditEvents.RealmProvisioned,
-            Level = "Warning",
-            Realm = slug,
-            Status = "rolled-back",
-            Reason = "bootstrap-invite issuance failed after realm creation",
-            Message = $"Rolled back partially-provisioned realm {slug} (tenant DB retained for retry)",
-        });
     }
 
     public async Task EnsureSystemRealmExistsAsync(CancellationToken ct = default)
@@ -703,6 +777,15 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         target.UpdatedAt = DateTimeOffset.UtcNow;
         session.Store(target);
 
+        _securityAudit.StorePlatformRequired(session, new PlatformAuditRecord
+        {
+            EventType = AuditEvents.ControlPlaneTransferred,
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = targetSlug,
+            OutcomeCode = AuditOutcomes.Completed,
+            OperationCode = "transfer",
+            Count = otherHolders.Count,
+        });
         await session.SaveChangesAsync(ct);
 
         // The flag move is committed. Invalidate the cache NOW (load-bearing —
@@ -731,19 +814,11 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
                 targetSlug);
         }
 
+        await ReconcileJobSchedulesAsync(ct);
+
         _logger.LogWarning(
             "Control plane transferred to realm {Slug} (cleared {Count} previous holder(s))",
             targetSlug, otherHolders.Count);
-        _securityAudit.Record(new SecurityAuditRecord
-        {
-            EventType = AuditEvents.ControlPlaneTransferred,
-            Level = "Warning",
-            Realm = targetSlug,
-            Status = "transferred",
-            Reason = $"to realm {targetSlug}, {otherHolders.Count} previous holder(s)",
-            Message = $"Control plane transferred to realm {targetSlug} (cleared {otherHolders.Count} previous holder(s))",
-        });
-
         return target;
     }
 
@@ -805,6 +880,14 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             }
         }
 
+        await _securityAudit.RecordPlatformRequiredAsync(new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RealmAdopted,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Initiated,
+            OperationCode = "adopt-database",
+        }, ct);
+
         // Register in Marten's tenant registry + apply schema idempotently
         // (existing data is preserved; this only adds missing tables/indexes).
         var tenancy = (Marten.Storage.MasterTableTenancy)_tenantedStore.Options.Tenancy;
@@ -812,6 +895,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         var adoptedDb = await tenancy.FindOrCreateDatabase(slug);
         await ApplyTenantSchemaResilientlyAsync(
             () => adoptedDb.ApplyAllConfiguredChangesToDatabaseAsync(), slug, ct);
+        await _messageStorageProvisioner.EnsureProvisionedAsync(slug);
 
         var realm = new Realm
         {
@@ -825,6 +909,13 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             CreatedAt = DateTimeOffset.UtcNow,
         };
         session.Store(realm);
+        _securityAudit.StorePlatformRequired(session, new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RealmAdopted,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Completed,
+            OperationCode = "adopt-database",
+        });
         await session.SaveChangesAsync(ct);
 
         // Idempotent catalog seeding — won't clobber existing rows in the
@@ -839,16 +930,28 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         await AppRealmSeeder.SeedAsync(_serviceProvider, slug, isControlPlane: false, _logger, ct);
 
         _realmCache.Invalidate();
+        await ReconcileJobSchedulesAsync(ct);
         _logger.LogInformation("Adopted existing database {DbName} as realm {Slug}", tenantDbName, slug);
-        _securityAudit.Record(new SecurityAuditRecord
-        {
-            EventType = AuditEvents.RealmAdopted,
-            Level = "Info",
-            Realm = slug,
-            Status = "adopted",
-            Reason = $"database {tenantDbName}",
-            Message = $"Adopted existing database {tenantDbName} as realm {slug}",
-        });
         return realm;
+    }
+
+    private async Task ReconcileJobSchedulesAsync(CancellationToken ct)
+    {
+        foreach (var observer in _jobScheduleObservers)
+        {
+            try
+            {
+                await observer.ReconcileAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                // Realm mutations are already committed at every call site.
+                // Scheduling is in-memory and self-heals on restart, so a
+                // reconcile failure must not turn a successful lifecycle
+                // operation into a misleading HTTP/CLI failure.
+                _logger.LogError(ex,
+                    "Realm lifecycle mutation committed, but Quartz schedules could not be reconciled");
+            }
+        }
     }
 }

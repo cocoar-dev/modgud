@@ -16,4 +16,21 @@ export interface SessionDto {
 
 export interface SessionListDto {
   Sessions: SessionDto[]
+  ClientSessions: ClientSessionDto[]
+}
+
+export interface ClientSessionDto {
+  Id: string
+  ClientId: string
+  ClientDisplayName?: string | null
+  IpAddress?: string | null
+  Browser?: string | null
+  BrowserVersion?: string | null
+  OperatingSystem?: string | null
+  OsVersion?: string | null
+  DeviceType?: string | null
+  CreatedAt: string
+  LastActiveAt: string
+  ExpiresAt: string
+  AbsoluteExpiresAt: string
 }

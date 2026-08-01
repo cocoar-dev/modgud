@@ -167,7 +167,6 @@ public static class MfaEndpoints
         group.MapPost("login", async (
             SignInManager<ApplicationUser> signInManager,
             MfaLoginRequest request,
-            ISessionService sessionService,
             HttpContext context) =>
         {
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -202,7 +201,6 @@ public static class MfaEndpoints
             if (result.Succeeded)
             {
                 if (twoFactorUser is not null)
-                    await SessionTracker.RecordLoginAsync(sessionService, context, twoFactorUser.Id);
 
                 Serilog.Log.Information("MFA login successful. IP={IP}", ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Mfa, ModgudMeters.LoginOutcome.Success);

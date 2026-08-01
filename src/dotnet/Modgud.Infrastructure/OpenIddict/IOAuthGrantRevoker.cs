@@ -41,4 +41,12 @@ public interface IOAuthGrantRevoker
     /// must invalidate exactly that client's outstanding M2M tokens — narrower than
     /// a by-subject revoke, which would also kill the SA's other credentials.</summary>
     Task<int> RevokeTokensByApplicationIdAsync(string applicationId, CancellationToken ct = default);
+
+    /// <summary>Revoke the token family attached to one authorization/client
+    /// session without affecting another device using the same OAuth client.</summary>
+    Task<int> RevokeTokensByAuthorizationIdAsync(string authorizationId, CancellationToken ct = default);
+
+    /// <summary>Revoke one authorization used as the server-side root of a
+    /// native client/device session.</summary>
+    Task<bool> RevokeAuthorizationByIdAsync(string authorizationId, CancellationToken ct = default);
 }

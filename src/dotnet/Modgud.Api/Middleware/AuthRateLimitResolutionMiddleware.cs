@@ -46,8 +46,14 @@ public sealed class AuthRateLimitResolutionMiddleware(RequestDelegate next, IHos
     {
         if (context.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>() is not null)
         {
-            var slug = context.Items[TenantConstants.HttpContextTenantIdKey] as string
-                       ?? TenantConstants.SystemTenantId;
+            var slug = context.Items[TenantConstants.HttpContextTenantIdKey] as string;
+            if (string.IsNullOrEmpty(slug))
+            {
+                // Installation/health routes have no realm. The limiter uses
+                // its shipped defaults without touching tenant settings.
+                await next(context);
+                return;
+            }
 
             if (!_cache.TryGetValue(slug, out var entry) || entry.Expires <= DateTimeOffset.UtcNow)
             {

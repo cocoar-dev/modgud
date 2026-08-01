@@ -1,11 +1,22 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CoarTextInput, CoarFormField, CoarCheckbox, CoarNote, CoarButton } from '@cocoar/vue-ui'
+import {
+  CoarNotice,
+  CoarTextInput,
+  CoarFormField,
+  CoarCheckbox,
+  CoarButton,
+  CoarDivider,
+  CoarIcon,
+  CoarTab,
+  CoarTabGroup,
+  vTooltip,
+} from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import RealmDomainsField from '@/components/RealmDomainsField.vue'
 import { useRealmStore } from '@/stores/realm.store'
-import type { RealmDto, InitialAdminInviteDto } from '@/models/realm'
+import type { RealmDto } from '@/models/realm'
 
 const { t } = useI18n()
 
@@ -20,6 +31,7 @@ const store = useRealmStore()
 const isCreate = computed(() => slug.value === 'create')
 const loading = ref(false)
 const error = ref<string | null>(null)
+const activeTab = ref<'general' | 'domains'>('general')
 
 interface FormState {
   Slug: string
@@ -28,10 +40,6 @@ interface FormState {
   Domains: string[]
   PrimaryDomain: string
   IsActive: boolean
-  InitialAdminUserName: string
-  InitialAdminEmail: string
-  InitialAdminFirstname: string
-  InitialAdminLastname: string
 }
 
 function emptyForm(): FormState {
@@ -42,22 +50,11 @@ function emptyForm(): FormState {
     Domains: [],
     PrimaryDomain: '',
     IsActive: true,
-    InitialAdminUserName: '',
-    InitialAdminEmail: '',
-    InitialAdminFirstname: '',
-    InitialAdminLastname: '',
   }
 }
 
 const form = ref<FormState>(emptyForm())
 const dto = ref<RealmDto | null>(null)
-
-// One-shot invite reveal after successful creation / resend. Cleared
-// when modal closes; the user has to copy the link before then if there
-// is no SMTP delivery (dev / air-gapped).
-const issuedInvite = ref<InitialAdminInviteDto | null>(null)
-const inviteSource = ref<'created' | 'resent' | null>(null)
-const linkCopied = ref(false)
 
 // Control-plane transfer: terminal state after a successful move (the current
 // host loses the realm-management surface, so we don't return to the form).
@@ -83,28 +80,21 @@ const modalTitle = computed(() =>
 )
 const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.Slug)
 
-// Visible inline email validation for the InitialAdmin field — mirrors the
-// silent gate that used to live in canSubmit, but now surfaces a message so
-// the user knows WHY the button is disabled (no type=email — CoarTextInput
-// has no type prop). Empty is not "invalid" (the required marker covers that);
-// only a non-empty, malformed value lights up red.
-const initialAdminEmailInvalid = computed(() => {
-  const v = form.value.InitialAdminEmail.trim()
-  return v.length > 0 && !v.includes('@')
-})
+const REALM_SLUG_REGEX = /^[a-z][a-z0-9-]{1,61}[a-z0-9]$/
+const slugError = computed(() => isCreate.value && !REALM_SLUG_REGEX.test(form.value.Slug.trim())
+  ? t('admin.realms.validation.slug', {}, 'Enter a valid slug (3–63 lowercase letters, digits or hyphens).')
+  : '')
+const displayNameError = computed(() => !form.value.DisplayName.trim()
+  ? t('admin.realms.validation.displayName', {}, 'Display name is required.')
+  : '')
+const domainsError = computed(() => form.value.Domains.length < 1
+  ? t('admin.realms.validation.domains', {}, 'Add at least one domain.')
+  : '')
 
 const canSubmit = computed(() => {
   if (loading.value) return false
-  if (!form.value.DisplayName.trim()) return false
-  // A realm must have at least one domain — it can't route or build outbound
-  // links otherwise. The backend rejects empty domains on both create and
-  // update (update can't clear them), so gate the button here too.
-  if (form.value.Domains.length < 1) return false
-  if (isCreate.value) {
-    if (!form.value.Slug.trim()) return false
-    if (!form.value.InitialAdminUserName.trim()) return false
-    if (!form.value.InitialAdminEmail.trim() || initialAdminEmailInvalid.value) return false
-  }
+  if (displayNameError.value || domainsError.value) return false
+  if (isCreate.value && slugError.value) return false
   return true
 })
 
@@ -117,7 +107,7 @@ const primaryChanged = computed(() =>
   form.value.PrimaryDomain !== dto.value.PrimaryDomain,
 )
 
-const footerButton = computed(() => (issuedInvite.value || transferResult.value)
+const footerButton = computed(() => transferResult.value
   ? {
       visible: true,
       text: t('common.close', {}, 'Close'),
@@ -152,23 +142,15 @@ async function save() {
   error.value = null
   try {
     if (isCreate.value) {
-      const result = await store.create({
+      await store.create({
         Slug: form.value.Slug.trim(),
         DisplayName: form.value.DisplayName.trim(),
         Description: form.value.Description.trim() || null,
         Domains: [...form.value.Domains],
         PrimaryDomain: form.value.PrimaryDomain.trim() || null,
-        InitialAdmin: {
-          UserName: form.value.InitialAdminUserName.trim(),
-          Email: form.value.InitialAdminEmail.trim(),
-          Firstname: form.value.InitialAdminFirstname.trim() || null,
-          Lastname: form.value.InitialAdminLastname.trim() || null,
-        },
+        IsActive: form.value.IsActive,
       })
-      // Show the bootstrap-invite reveal screen — the magic-link is
-      // only available right after creation; closing the modal loses it.
-      issuedInvite.value = result.InitialAdminInvite
-      inviteSource.value = 'created'
+      props.close()
     } else {
       await store.update(slug.value, {
         DisplayName: form.value.DisplayName.trim(),
@@ -179,20 +161,6 @@ async function save() {
       })
       props.close()
     }
-  } catch (e: any) {
-    error.value = e?.body?.detail ?? e?.body?.Message ?? e?.message ?? String(e)
-  } finally {
-    loading.value = false
-  }
-}
-
-async function resendInvite() {
-  loading.value = true
-  error.value = null
-  try {
-    const reissued = await store.resendBootstrapInvite(slug.value)
-    issuedInvite.value = reissued
-    inviteSource.value = 'resent'
   } catch (e: any) {
     error.value = e?.body?.detail ?? e?.body?.Message ?? e?.message ?? String(e)
   } finally {
@@ -221,16 +189,6 @@ async function transferControlPlane() {
   }
 }
 
-async function copyLink() {
-  if (!issuedInvite.value) return
-  try {
-    await navigator.clipboard.writeText(issuedInvite.value.MagicLinkUrl)
-    linkCopied.value = true
-    setTimeout(() => { linkCopied.value = false }, 1800)
-  } catch {
-    /* ignore — fallback is the visible link below */
-  }
-}
 </script>
 
 <template>
@@ -240,42 +198,17 @@ async function copyLink() {
       <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>
     </div>
 
-    <!-- Invite-reveal screen — replaces the form after successful create/resend. -->
-    <div v-else-if="issuedInvite" class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-      <CoarNote variant="success">
-        {{ inviteSource === 'resent'
-            ? t('admin.realms.inviteResentTitle', {}, 'Bootstrap invite reissued — the old token has been revoked.')
-            : t('admin.realms.inviteIssuedTitle', {}, 'Realm created — bootstrap invite issued.') }}
-      </CoarNote>
-      <CoarNote variant="warning">
-        {{ t('admin.realms.inviteIssuedHint', {}, 'This magic link URL is shown exactly once. If the email isn\'t delivered (e.g. local development without SMTP), copy it now — afterwards it\'s only available via "Resend".') }}
-      </CoarNote>
-      <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-        <span class="text-gray-500">{{ t('admin.realms.inviteUserName', {}, 'Benutzername') }}</span>
-        <span class="font-medium">{{ issuedInvite.UserName }}</span>
-        <span class="text-gray-500">{{ t('admin.realms.inviteEmail', {}, 'E-Mail') }}</span>
-        <span>{{ issuedInvite.Email }}</span>
-        <span class="text-gray-500">{{ t('admin.realms.inviteExpiresAt', {}, 'Valid until') }}</span>
-        <span>{{ new Date(issuedInvite.ExpiresAt).toLocaleString() }}</span>
-      </div>
-      <CoarFormField :label="t('admin.realms.inviteLink', {}, 'Magic-Link')">
-        <div class="flex gap-2">
-          <input :value="issuedInvite.MagicLinkUrl" readonly class="textarea !font-mono !text-xs" />
-          <CoarButton @click="copyLink">
-            {{ linkCopied ? t('common.copied', {}, 'Kopiert!') : t('common.copy', {}, 'Copy') }}
-          </CoarButton>
-        </div>
-      </CoarFormField>
-    </div>
-
     <!-- Control-plane transfer result — terminal state (this host is no longer the CP). -->
     <div v-else-if="transferResult" class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-      <CoarNote variant="success">
+      <CoarNotice variant="success">
         {{ t('admin.realms.transferDoneTitle', { slug: transferResult.Slug }, `Control plane moved to "${transferResult.Slug}".`) }}
-      </CoarNote>
-      <CoarNote variant="warning">
-        {{ t('admin.realms.transferDoneHint', {}, 'This host is no longer the control plane — realm management now lives on the target realm domain(s) below. Continue administration there.') }}
-      </CoarNote>
+      </CoarNotice>
+      <CoarNotice truncate variant="warning">
+        {{ t('admin.realms.transferDoneHintShort', {}, 'Control-plane administration now lives on the target realm\'s domain(s).') }}
+        <template #details>
+          {{ t('admin.realms.transferDoneHint', {}, 'This host is no longer the control plane — realm management now lives on the target realm domain(s) below. Continue administration there.') }}
+        </template>
+      </CoarNotice>
       <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
         <span class="text-gray-500">{{ t('admin.realms.displayName', {}, 'Display Name') }}</span>
         <span class="font-medium">{{ transferResult.DisplayName }}</span>
@@ -288,103 +221,76 @@ async function copyLink() {
 
     <!-- Edit/Create form -->
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-      <CoarNote v-if="isCreate" variant="info">
-        {{ t('admin.realms.createHint', {}, 'Creating it automatically provisions a dedicated database and seeds it with the default OAuth scopes.') }}
-      </CoarNote>
+      <CoarNotice truncate v-if="!isCreate && dto?.IsControlPlane" variant="info">
+        {{ t('admin.realms.isControlPlaneNoteShort', {}, 'This realm hosts cross-realm administration as the control plane.') }}
+        <template #details>
+          {{ t('admin.realms.isControlPlaneNote', {}, 'This realm is the control plane — it hosts cross-realm administration. To move the role, open the target realm and make it the control plane.') }}
+        </template>
+      </CoarNotice>
 
-      <div class="modal-form">
-        <!-- Section: Identity -->
+      <CoarNotice v-if="isCreate" variant="info">
+        {{ t('admin.realms.createHint', {}, 'Creating it automatically provisions a dedicated database and seeds it with the default OAuth scopes.') }}
+      </CoarNotice>
+
+      <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
+
+      <CoarTabGroup v-model="activeTab" class="tab-bar">
+        <CoarTab id="general">{{ t('admin.realms.tabs.general', {}, 'General') }}</CoarTab>
+        <CoarTab
+          id="domains"
+          v-tooltip="{
+            content: t('admin.realms.tabs.domainsHint', {}, 'At least one domain is required. The primary domain is used for links in e-mails and for passkeys.'),
+            placement: 'top',
+          }"
+        >
+          <span class="domains-tab-label">
+            {{ t('admin.realms.tabs.domains', {}, 'Domains') }}
+            <span class="domains-tab-info" aria-hidden="true">
+              <CoarIcon name="info" size="s" aria-hidden="true" />
+            </span>
+          </span>
+        </CoarTab>
+      </CoarTabGroup>
+
+      <!-- Tab: General -->
+      <div v-show="activeTab === 'general'" class="tab-content">
         <section class="form-section">
-          <h3 class="form-section-heading">{{ t('admin.realms.section.identity', {}, 'Identity') }}</h3>
+          <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+            <h3 class="section-divider__title">{{ t('admin.realms.section.identity', {}, 'Identity') }}</h3>
+          </CoarDivider>
           <div class="modal-form-grid">
-            <CoarFormField class="col-half" :label="t('admin.realms.slug', {}, 'Slug')" required>
+            <CoarFormField class="col-half" :label="t('admin.realms.slug', {}, 'Slug')" required
+              :error="slugError"
+              :hint="t('admin.realms.slug.hint', {}, 'Permanent URL / API identifier in kebab-case. Immutable after creation.')">
               <CoarTextInput v-model="form.Slug" :disabled="!isCreate" clearable
                 :placeholder="t('admin.realms.slugPlaceholder', {}, 'kebab-case-slug')" />
-              <p class="field-hint">{{ t('admin.realms.slug.hint', {}, 'Permanent URL / API identifier in kebab-case. Immutable after creation.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-half" :label="t('admin.realms.displayName', {}, 'Display name')" required>
+
+            <CoarFormField class="col-half realm-active-field" layout="inline" label-position="after"
+              :label="t('common.active', {}, 'Active')"
+              :hint="dto?.IsControlPlane
+                ? t('admin.realms.isActive.controlPlaneHint', {}, 'The Control-Plane realm cannot be deactivated.')
+                : t('admin.realms.isActive.hint', {}, 'Inactive realms cannot sign in and cannot become the control plane.')">
+              <CoarCheckbox v-model="form.IsActive" :disabled="dto?.IsControlPlane" />
+            </CoarFormField>
+
+            <CoarFormField class="col-full" :label="t('admin.realms.displayName', {}, 'Display name')" required
+              :error="displayNameError"
+              :hint="t('admin.realms.displayName.hint', {}, 'Human-friendly name shown in the realm switcher and headers.')">
               <CoarTextInput v-model="form.DisplayName" clearable />
-              <p class="field-hint">{{ t('admin.realms.displayName.hint', {}, 'Human-friendly name shown in the realm switcher and headers.') }}</p>
             </CoarFormField>
-            <CoarFormField class="col-full" :label="t('common.description', {}, 'Description')">
+            <CoarFormField class="col-full" :label="t('common.description', {}, 'Description')"
+              :hint="t('admin.realms.description.hint', {}, 'Optional note describing this realm\'s purpose.')">
               <CoarTextInput v-model="form.Description" clearable :rows="2" />
-              <p class="field-hint">{{ t('admin.realms.description.hint', {}, 'Optional note describing this realm\'s purpose.') }}</p>
-            </CoarFormField>
-            <CoarFormField class="col-full" :label="t('admin.realms.domains', {}, 'Domains')" required>
-              <RealmDomainsField
-                v-model:domains="form.Domains"
-                v-model:primary="form.PrimaryDomain"
-                :placeholder="t('admin.realms.domain.placeholder', {}, 'auth.example.com')" />
-              <p class="field-hint">
-                {{ t('admin.realms.primaryDomainHint', {}, 'The realm routes on any domain, but the one marked Primary is its canonical public host: all invite / magic-link / reset mails use it, and passkeys (WebAuthn) only work on it.') }}
-              </p>
-              <CoarNote v-if="primaryChanged" variant="warning" class="mt-2">
-                {{ t('admin.realms.primaryChangedWarning', {}, 'Changing the primary domain invalidates this realm\'s existing passkeys — they are bound to the previous host. Affected users must re-register their passkeys on the new primary domain.') }}
-              </CoarNote>
             </CoarFormField>
           </div>
         </section>
 
-        <!-- Section: InitialAdmin (create-only) -->
-        <section v-if="isCreate" class="form-section">
-          <h3 class="form-section-heading">{{ t('admin.realms.initialAdminTitle', {}, 'First Admin') }}</h3>
-          <div class="modal-form-grid">
-            <CoarFormField class="col-full">
-              <p class="field-hint">
-                {{ t('admin.realms.initialAdminHint', {}, 'Invited via magic link to activate — the recipient sets their own password. Required fields: username and email.') }}
-              </p>
-            </CoarFormField>
-            <CoarFormField class="col-half" :label="t('admin.realms.initialAdminUserName', {}, 'Benutzername')" required>
-              <CoarTextInput v-model="form.InitialAdminUserName" clearable placeholder="admin" />
-            </CoarFormField>
-            <CoarFormField class="col-half" :label="t('admin.realms.initialAdminEmail', {}, 'E-Mail')" required>
-              <CoarTextInput v-model="form.InitialAdminEmail" clearable placeholder="admin@example.com" />
-              <p v-if="initialAdminEmailInvalid" class="text-sm text-red-600">
-                {{ t('admin.realms.initialAdminEmailInvalid', {}, 'Please enter a valid email address.') }}
-              </p>
-            </CoarFormField>
-            <CoarFormField class="col-half" :label="t('admin.realms.initialAdminFirstname', {}, 'Vorname')">
-              <CoarTextInput v-model="form.InitialAdminFirstname" clearable />
-            </CoarFormField>
-            <CoarFormField class="col-half" :label="t('admin.realms.initialAdminLastname', {}, 'Nachname')">
-              <CoarTextInput v-model="form.InitialAdminLastname" clearable />
-            </CoarFormField>
-          </div>
-        </section>
-
-        <!-- Section: Status (edit-only) -->
-        <section v-if="!isCreate" class="form-section">
-          <h3 class="form-section-heading">{{ t('admin.realms.section.status', {}, 'Status') }}</h3>
-          <div class="modal-form-grid">
-            <CoarFormField class="col-full">
-              <CoarCheckbox v-model="form.IsActive" :label="t('common.active', {}, 'Active')" />
-              <p class="field-hint">{{ t('admin.realms.isActive.hint', {}, 'Inactive realms cannot sign in and cannot become the control plane.') }}</p>
-            </CoarFormField>
-          </div>
-        </section>
-      </div>
-
-      <!-- Resend (edit-only) -->
-      <div v-if="!isCreate" class="mt-2 border-t pt-3 flex items-center gap-3">
-        <span class="text-xs text-gray-500 flex-1">
-          {{ t('admin.realms.resendHint', {}, 'Reissue the bootstrap invite (e.g. if the token expired or the email was never delivered).') }}
-        </span>
-        <CoarButton variant="secondary" :loading="loading" @click="resendInvite">
-          {{ t('admin.realms.resendInvite', {}, 'Resend Invite') }}
-        </CoarButton>
-      </div>
-
-      <!-- Control plane (edit-only) -->
-      <div v-if="!isCreate && dto" class="mt-2 border-t pt-3 flex flex-col gap-2">
-        <h4 class="text-sm font-medium text-gray-700">
-          {{ t('admin.realms.controlPlaneTitle', {}, 'Control Plane') }}
-        </h4>
-
-        <CoarNote v-if="dto.IsControlPlane" variant="info">
-          {{ t('admin.realms.isControlPlaneNote', {}, 'This realm is the control plane — it hosts cross-realm administration. To move the role, open the target realm and make it the control plane.') }}
-        </CoarNote>
-
-        <template v-else>
+        <!-- Control plane transfer (edit-only, non-Control-Plane realms). -->
+        <section v-if="!isCreate && dto && !dto.IsControlPlane" class="form-section">
+          <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+            <h3 class="section-divider__title">{{ t('admin.realms.controlPlaneTitle', {}, 'Control Plane') }}</h3>
+          </CoarDivider>
           <p class="text-xs text-gray-500">
             {{ t('admin.realms.transferControlPlaneHint', {}, 'Make this realm the control plane. Cross-realm administration moves here and the current host loses the realm-management surface. The target realm admins (realm:admin) gain it automatically.') }}
           </p>
@@ -394,23 +300,76 @@ async function copyLink() {
               {{ t('admin.realms.transferControlPlane', {}, 'Make this realm the control plane') }}
             </CoarButton>
           </div>
-        </template>
+        </section>
       </div>
 
-      <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+      <!-- Tab: Domains -->
+      <div v-show="activeTab === 'domains'" class="tab-content domains-tab-content">
+        <RealmDomainsField
+          v-model:domains="form.Domains"
+          v-model:primary="form.PrimaryDomain"
+          :placeholder="t('admin.realms.domain.placeholder', {}, 'auth.example.com')" />
+        <p v-if="domainsError" class="domains-error">{{ domainsError }}</p>
+        <CoarNotice truncate v-if="primaryChanged" variant="warning">
+          {{ t('admin.realms.primaryChangedWarningShort', {}, 'Changing the primary domain invalidates existing passkeys for this realm.') }}
+          <template #details>
+            {{ t('admin.realms.primaryChangedWarning', {}, 'Changing the primary domain invalidates this realm\'s existing passkeys — they are bound to the previous host. Affected users must re-register their passkeys on the new primary domain.') }}
+          </template>
+        </CoarNotice>
+      </div>
     </div>
   </ModalLayout>
 </template>
 
 <style scoped>
-.textarea {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--coar-border-neutral-secondary, #d1d5db);
-  border-radius: var(--coar-radius-m, 4px);
-  background: var(--coar-background-neutral-primary, #fff);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8rem;
-  resize: vertical;
+.section-divider__title {
+  margin: 0;
+  color: var(--coar-text-neutral-secondary, #525e76);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.realm-active-field {
+  align-self: start;
+  padding-top: 1.65rem;
+}
+
+.tab-bar {
+  margin-bottom: 12px;
+}
+
+.domains-tab-label,
+.domains-tab-info {
+  display: inline-flex;
+  align-items: center;
+}
+
+.domains-tab-label {
+  gap: 0.35rem;
+}
+
+.domains-tab-info {
+  width: 1rem;
+  height: 1rem;
+  color: var(--coar-text-neutral-tertiary, #6b7280);
+}
+
+.tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.domains-tab-content {
+  flex: 1;
+}
+
+.domains-error {
+  margin: -4px 0 0;
+  color: var(--coar-text-semantic-danger, #dc2626);
+  font-size: 0.75rem;
 }
 </style>

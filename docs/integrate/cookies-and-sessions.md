@@ -34,14 +34,14 @@ Configured in `Program.cs`:
 | `HttpOnly` | `true` | XSS mitigation — JS can't read the cookie |
 | `SecurePolicy` | `SameAsRequest` | Cookie is marked `Secure` when the request itself is HTTPS (reflecting the real scheme behind a reverse proxy), so it's HTTPS-only in prod while still working over the plain-HTTP Vite dev proxy |
 | `SameSite` | `Lax` | Required for cross-site OIDC redirect-back navigations |
-| `ExpireTimeSpan` | 30 days | Max lifetime of persistent cookies |
-| `SlidingExpiration` | `true` | Refresh on active use |
+| `ExpireTimeSpan` | 30 days | Framework fallback; the realm's browser-session policy sets the effective ticket expiry |
+| `SlidingExpiration` | `true` | Refresh on active use, capped by the authoritative absolute lifetime |
 
 ## Cookies in detail
 
 | Cookie | SameSite | Purpose | Lifetime |
 |---|---|---|---|
-| `Modgud.Auth` | `Lax` | Main session (app cookie) | 30 days (or session-only with `RememberMe=false`) |
+| `Modgud.Auth` | `Lax` | Main browser/SSO session | Realm policy: 30-day idle / 180-day absolute by default; session-only when not persistent |
 | `Modgud.2FA` | `Strict` | UserId holder between password step and 2FA step | 5 min |
 | `Modgud.2FA.Remember` | `Strict` | "Remember this browser, skip 2FA" — Identity.TwoFactorRememberMe scheme | Identity default (30 days) |
 | `Modgud.External` | `Lax` | OIDC callback holder | 10 min |
@@ -92,38 +92,57 @@ style domains.
 
 ## Session tracking
 
-In parallel with the auth cookie, modgud maintains a `UserSession`
-Marten document per active login. This enables session-management
-features (list sessions, revoke individually, log out everywhere) that
-a cookie alone can't provide.
+The auth cookie carries a signed `modgud.session_id` claim bound to one
+authoritative, realm-local `UserSession` document. Every authenticated
+request verifies that the row still exists, belongs to the cookie subject
+and has not expired. Deleting it therefore rejects the cookie on its next
+request; it is not merely an activity log.
 
-### Session cookie
+### Browser-session binding
 
-The `Modgud.Session` cookie (HttpOnly, Secure in prod) correlates the
-browser with the `UserSession` document. On logout, the document is
-deleted and the cookie is cleared.
+The browser-session ID lives inside the encrypted `Modgud.Auth` ticket.
+`Modgud.Session` is unrelated ASP.NET session state used for short-lived
+passkey ceremony data. On normal logout, only the current `UserSession`
+row is deleted and the auth cookie is cleared.
 
 ### UserSession document
 
 | Field | Source | Purpose |
 |---|---|---|
 | `UserId` | Auth system | Link |
-| `SessionId` | Random GUID | Correlation with cookie |
+| `Id` | UUIDv7/GUID | Correlation claim inside `Modgud.Auth` |
 | `IpAddress` | `HttpContext.Connection.RemoteIpAddress` (proxy-aware via `ForwardedHeaders`) | Audit |
 | `Browser`, `BrowserVersion` | UAParser | UI display |
 | `OperatingSystem`, `OsVersion` | UAParser | UI display |
 | `DeviceType` | UAParser | Desktop/Mobile/Tablet |
-| `CreatedAt`, `LastActiveAt`, `ExpiresAt` | UTC | TTL + UI |
+| `CreatedAt`, `LastActiveAt`, `ExpiresAt`, `AbsoluteExpiresAt` | UTC | Sliding idle window, hard limit and UI |
 
-`SessionTracker` updates `LastActiveAt` on every authenticated request,
-throttled (e.g. at most once per minute per session).
+Validation updates `LastActiveAt` and the idle expiry at most once every
+five minutes. Activity can never extend `AbsoluteExpiresAt`. Open SignalR
+connections are bound to the same session and are aborted on targeted
+revocation on the current node; hub invocations also revalidate the row.
+
+### Native/OAuth client sessions
+
+Native apps do not use the browser cookie. A refresh-token-capable login
+(`offline_access`) creates a separate `ClientSession`, binds its ID into
+the protected refresh token and roots that device's token family in a
+unique OpenIddict authorization. Each refresh verifies and touches this
+row. Revoking the row revokes exactly that device's tokens and
+authorization.
+
+Policy resolution is OAuth client → Application → Realm. Defaults are
+30 days idle and 365 days absolute; values up to 3650 days are supported.
+Access-token lifetime remains independent and short.
 
 ### Self-service endpoints
 
 ```http
 GET    /api/auth/sessions
 DELETE /api/auth/sessions/{id}
-DELETE /api/auth/sessions          # all except current
+DELETE /api/auth/sessions/client/{id}
+DELETE /api/auth/sessions/others   # browser sessions except current
+DELETE /api/auth/sessions          # current + all browser/client sessions
 ```
 
 ### Admin variants
@@ -140,10 +159,10 @@ security-relevant events (password change, 2FA toggle) the stamp is
 invalidated; on the next cookie validation the cookie is rejected and
 the user is logged out.
 
-Modgud uses that plus the `UserSession` documents:
-"Log out everywhere" clears all `UserSession`s + invalidates the
-security stamp → all of the user's cookies are rejected on the next
-validation.
+Modgud uses that together with both session document types. “Sign out
+everywhere” clears all `UserSession` and `ClientSession` rows, revokes
+OAuth tokens, invalidates the security stamp and clears the acting
+cookie. Every browser and native app must authenticate again.
 
 ## Security summary
 
@@ -153,5 +172,5 @@ validation.
 | Man-in-the-middle | `Secure` (prod) |
 | CSRF | `SameSite=Lax` on the main cookie + `Strict` on 2FA/Session step cookies + `CsrfDefenseMiddleware` on mutating endpoints |
 | Cross-realm leakage | Realm domain → own cookie domain |
-| Forced logout | Security stamp + delete UserSession document |
+| Forced logout | Per-request authoritative browser-session check + security stamp + OAuth client-session/token revocation |
 | Account lockout | 5 failed logins → 1 min lockout (DoS limit) |

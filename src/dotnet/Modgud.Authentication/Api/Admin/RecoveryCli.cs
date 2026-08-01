@@ -31,6 +31,7 @@ public static class RecoveryCli
     // command up by name and asks it whether it needs realm resolution.
     private static readonly IReadOnlyList<IRecoveryCommand> AllCommands =
     [
+        new InstallLinkCommand(),
         new ListCommand(),
         new Reset2FaCommand(),
         new SetEmailCommand(),
@@ -79,23 +80,19 @@ public static class RecoveryCli
             return 1;
         }
 
-        // Resolve the global --realm for tenant-scoped commands. It defaults to
-        // "system", but a misspelled --realm must fail with a clear message (not
-        // a deep Marten "tenant not found" crash once it enters a non-existent
-        // tenant), and an implicit default is announced when more than one realm
-        // exists so the operator never silently acts on the wrong tenant — the
-        // same silent-tenant class the HTTP path was hardened against. The global
-        // realm-management commands (RequiresRealm == false) carry their own
-        // --slug and are not validated here.
+        // Resolve --realm only for tenant-scoped commands. With one active realm
+        // it is unambiguous and may be omitted; with zero or multiple realms the
+        // operator must either install first or name the target explicitly.
         var explicitRealm = ParseFlag(args, "--realm");
-        var realmSlug = explicitRealm ?? TenantConstants.SystemTenantId;
+        var realmSlug = "";
         if (command.RequiresRealm)
         {
-            var realmError = await ResolveRealmAsync(services, explicitRealm, realmSlug, errorWriter);
-            if (realmError is not null) return realmError.Value;
+            var resolved = await ResolveRealmAsync(services, explicitRealm, errorWriter);
+            if (resolved.ErrorCode is not null) return resolved.ErrorCode.Value;
+            realmSlug = resolved.RealmSlug!;
         }
 
-        using var _tenant = TenantContext.Enter(realmSlug);
+        using var tenant = command.RequiresRealm ? TenantContext.Enter(realmSlug) : null;
         await using var scope = services.CreateAsyncScope();
 
         var ctx = new RecoveryCliContext(scope.ServiceProvider, args, realmSlug, env, outWriter, errorWriter);
@@ -112,6 +109,10 @@ public static class RecoveryCli
               dotnet Modgud.Api.dll recover <command> [args...] [--realm <slug>]
 
             Commands:
+              install-link                   Issue a single-use first-installation URL (30 min default).
+                  --base-url <url>           Required public URL, e.g. https://auth.example.com.
+                  [--minutes <1..1440>]      Optional lifetime in minutes.
+                  [--json]                   Machine-readable token/URL output for CI automation.
               list                           List all users (UserName · Email · Active · 2FA · Passkeys).
               reset-2fa <username>           Disable TOTP + Email-OTP + delete all Passkeys for user.
               set-email <username> <email>   Update the user's email address (appends UserUpdatedEvent
@@ -128,8 +129,7 @@ public static class RecoveryCli
                                              the standard SA-managed mutation guard kicks
                                              in. Idempotent — already-linked clients are
                                              skipped; existing legacy.* SAs are re-used.
-                                             Optional --realm flag scopes to one tenant
-                                             (defaults to "system").
+                                             Optional --realm flag scopes to one tenant.
               bootstrap-admin                Create the first admin in a realm. Two modes:
                   --email <email>            Email — required in both modes.
                   [--username <username>]    Username — defaults to the local-part of the email.
@@ -140,11 +140,9 @@ public static class RecoveryCli
                                              Without --password, an Invite-Mode magic link is
                                              generated and printed (and emailed if SMTP is set).
               realm-list                     List every active realm with its slug + domains.
-                                             Useful as a first probe after a fresh deploy to see
-                                             the system realm's seeded localhost domains.
+                                             Useful to inspect the configured realm hosts.
               realm-add-domain               Add a domain to an active realm's Domains list.
-                  --slug <slug>              Required. Typically "system" for the first
-                                             production-hostname add after deploy.
+                  --slug <slug>              Required.
                   --domain <hostname>        Required. The Host-header that should route to
                                              this realm. Stored verbatim, case-insensitive
                                              match at request time.
@@ -173,15 +171,15 @@ public static class RecoveryCli
               rotate-signing-key             Rotate the realm's OpenIddict signing key. Generates a
                                              fresh RSA keypair and retires the previous active key
                                              into a 30-day verification overlap window so in-flight
-                                             tokens stay valid. Honors --realm (defaults to "system").
+                                             tokens stay valid. Honors --realm.
               help                           Show this message.
 
             Global flag:
-              --realm <slug>                 Tenant slug to act in. Defaults to "system". Applies to
+              --realm <slug>                 Tenant slug to act in. Optional only when exactly one
+                                             active realm exists. Applies to
                                              tenant-scoped commands (bootstrap-admin, list, reset-2fa,
-                                             …). A misspelled --realm fails fast with a clear error;
-                                             an omitted --realm is announced when more than one realm
-                                             exists. The realm-* / control-plane / adopt-tenant commands
+                                             …). A misspelled --realm fails fast with a clear error.
+                                             The realm-* / control-plane / adopt-tenant commands
                                              carry their own --slug and ignore it.
 
             Exit codes: 0 on success, non-zero on any failure (validation error,
@@ -221,13 +219,11 @@ public static class RecoveryCli
     /// non-null exit code to short-circuit <see cref="RunAsync"/> when the named
     /// realm doesn't exist — a misspelled <c>--realm</c> must fail loudly with a
     /// clear message instead of entering a tenant that doesn't exist (which would
-    /// surface as a deep Marten error). Announces the implicit <c>system</c>
-    /// default only when more than one active realm exists, so single-tenant
-    /// operators aren't nagged but a multi-realm operator can never silently act
-    /// on the wrong tenant.
+    /// surface as a deep Marten error). A sole active realm is unambiguous;
+    /// zero or multiple active realms require installation or an explicit target.
     /// </summary>
-    private static async Task<int?> ResolveRealmAsync(
-        IServiceProvider services, string? explicitRealm, string realmSlug, TextWriter errorWriter)
+    private static async Task<(int? ErrorCode, string? RealmSlug)> ResolveRealmAsync(
+        IServiceProvider services, string? explicitRealm, TextWriter errorWriter)
     {
         var globalStore = services.GetRequiredService<IGlobalStore>();
         await using var globalSession = globalStore.QuerySession();
@@ -235,24 +231,31 @@ public static class RecoveryCli
             .Where(r => r.IsActive)
             .ToListAsync();
 
-        // Case-sensitive match: the tenant registry is keyed by the exact slug,
-        // so "System" is genuinely not a realm and must error rather than enter a
-        // tenant that doesn't exist.
-        if (!activeRealms.Any(r => string.Equals(r.Slug, realmSlug, StringComparison.Ordinal)))
+        if (explicitRealm is null)
         {
-            errorWriter.WriteLine(explicitRealm is not null
-                ? $"error: Realm '{realmSlug}' not found. Run 'recover realm-list' to see available realms."
-                : $"error: The '{realmSlug}' realm does not exist yet — has the deployment been bootstrapped? Run 'recover realm-list'.");
-            return 1;
+            if (activeRealms.Count == 0)
+            {
+                errorWriter.WriteLine(
+                    "error: No realm exists yet. Run 'recover install-link --base-url <url>' first.");
+                return (1, null);
+            }
+            if (activeRealms.Count > 1)
+            {
+                errorWriter.WriteLine(
+                    $"error: {activeRealms.Count} active realms exist; pass --realm <slug> explicitly.");
+                return (1, null);
+            }
+            return (null, activeRealms[0].Slug);
         }
 
-        if (explicitRealm is null && activeRealms.Count > 1)
+        // Case-sensitive match: the tenant registry is keyed by the exact slug.
+        if (!activeRealms.Any(r => string.Equals(r.Slug, explicitRealm, StringComparison.Ordinal)))
         {
             errorWriter.WriteLine(
-                $"note: no --realm specified; acting on the '{realmSlug}' realm " +
-                $"({activeRealms.Count} active realms exist — pass --realm <slug> to target another).");
+                $"error: Realm '{explicitRealm}' not found. Run 'recover realm-list' to see available realms.");
+            return (1, null);
         }
 
-        return null;
+        return (null, explicitRealm);
     }
 }

@@ -41,7 +41,7 @@ This page is one aggregated, honest view of Modgud's OAuth 2.0 / OpenID Connect 
 | DCR / CIMD abuse | Both off by default, gated per realm + API + scope; CIMD's outbound fetch is SSRF-hardened; accepted residual risks (brand impersonation, targeted phishing via redirect URI) are documented rather than hidden. | [Dynamic Client Registration](/admin/dynamic-client-registration), [Client ID Metadata Documents](/admin/client-id-metadata-documents) |
 | Membership scripts | Auto-membership predicates run through a sandboxed TypeScript-to-LINQ translator, tested against an adversarial suite covering resource exhaustion, native-host escape, type confusion, cross-tenant probing, injection, and information disclosure. | [Automated tests](/contribute/testing/automated-tests) |
 | Tenant isolation | Realm boundaries are physical database separation, not a query filter. | [Realms](./realms) |
-| Operational security | Per-realm rate-limit ceilings on auth endpoints, a 7-day security log for threat signals, and a separate GDPR-aware audit trail for admin/config changes. | [Auth Log](/admin/auth-log) |
+| Operational security | Per-realm rate-limit ceilings, realm-owned structured security events with configurable 1–365 day retention (7-day default), and a separate event-sourced audit history. | [Auth Log](/admin/auth-log) |
 
 ## Verification
 

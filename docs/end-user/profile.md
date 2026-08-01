@@ -36,7 +36,12 @@ Sign-in methods and recovery state:
 
 ### Sessions
 
-A list of your active sessions across all devices, with:
+Two separate lists:
+
+- **Browser and SSO sessions** backed by the Modgud application cookie
+- **Signed-in apps and devices** backed by OAuth refresh tokens, such as an iOS app
+
+Both show:
 
 - Device + browser (best-effort detection)
 - IP address
@@ -44,8 +49,10 @@ A list of your active sessions across all devices, with:
 
 Actions:
 
-- **End this session** on a single one
-- **End all other sessions** — keeps the current one, signs you out everywhere else. Useful if you suspect somebody else has your credentials.
+- **End this session/app** on a single entry. The current browser uses normal
+  **Sign out** instead of targeted deletion.
+- **Sign out everywhere** — ends the current browser, every other browser and
+  every native/OAuth client session. Every device must authenticate again.
 
 ### Privacy
 

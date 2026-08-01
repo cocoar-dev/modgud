@@ -129,6 +129,15 @@ public static class DcrRegistrationEndpoints
                 sourceIp,
                 settings.AccessTokenLifetime,
                 settings.RefreshTokenLifetime),
+            transaction => securityAudit.StoreRequired(transaction, new SecurityAuditRecord
+            {
+                EventType = AuditEvents.DcrClientRegistered,
+                ActorKind = AuditActorKind.OAuthClient,
+                OAuthClientId = normalized.ClientId,
+                IpAddress = sourceIp,
+                OutcomeCode = AuditOutcomes.Succeeded,
+                OperationCode = "register",
+            }),
             ct);
         if (createResult.IsError)
         {
@@ -159,16 +168,6 @@ public static class DcrRegistrationEndpoints
         // store, so without this push the grid stays stale until a manual reload.
         dispatcher.DispatchCreatedEvent("OAuthClient", created, session.TenantId);
 
-        securityAudit.Record(new SecurityAuditRecord
-        {
-            EventType = AuditEvents.DcrClientRegistered,
-            Level = "Info",
-            Actor = created.DisplayName,
-            Ip = sourceIp,
-            Status = "registered",
-            Reason = $"clientId {created.ClientId}",
-            Message = $"DCR client registered: {created.DisplayName ?? "(none)"} ({created.ClientId})",
-        });
         ModgudMeters.RecordDcrRegistration(ModgudMeters.DcrOutcome.Success);
 
         // ───────── Response ─────────
@@ -222,27 +221,28 @@ public static class DcrRegistrationEndpoints
 
     private static void LogRejected(ISecurityAuditLog securityAudit, string ip, string? clientName, DcrRejectionReason reason)
     {
-        securityAudit.Record(new SecurityAuditRecord
+        securityAudit.RecordAbuse(new SecurityAuditRecord
         {
             EventType = AuditEvents.DcrRegistrationRejected,
-            Level = "Warning",
-            Ip = ip,
-            Status = "rejected",
-            Reason = $"{reason} clientName={clientName ?? "(none)"}",
-            Message = $"DCR registration rejected: {reason}",
+            Severity = AuditSeverity.Warning,
+            ActorKind = AuditActorKind.OAuthClient,
+            IpAddress = ip,
+            OutcomeCode = AuditOutcomes.Rejected,
+            ReasonCode = reason.ToString(),
         });
     }
 
     private static void LogRateLimit(ISecurityAuditLog securityAudit, string ip, DcrRejectionReason reason)
     {
-        securityAudit.Record(new SecurityAuditRecord
+        securityAudit.RecordAbuse(new SecurityAuditRecord
         {
             EventType = AuditEvents.RateLimitTriggered,
-            Level = "Warning",
-            Ip = ip,
-            Status = "rate_limited",
-            Reason = reason.ToString(),
-            Message = $"DCR rate limit triggered: {reason}",
+            Severity = AuditSeverity.Warning,
+            ActorKind = AuditActorKind.AnonymousIdentifier,
+            IpAddress = ip,
+            OutcomeCode = AuditOutcomes.Blocked,
+            ReasonCode = reason.ToString(),
+            OperationCode = "dcr-rate-limit",
         });
     }
 }
