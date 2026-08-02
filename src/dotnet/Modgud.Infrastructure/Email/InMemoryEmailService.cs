@@ -24,7 +24,7 @@ public class InMemoryEmailService : IEmailService
 
     public async Task SendEmailAsync(string to, string subject, string htmlBody, CancellationToken ct = default)
     {
-        _emails.Enqueue(new SentEmail(to, subject, htmlBody, DateTimeOffset.UtcNow));
+        _emails.Enqueue(new SentEmail(to, subject, htmlBody, DateTimeOffset.UtcNow, EmailTemplateStore.ToPlainText(htmlBody)));
         LogEmail(to, subject, htmlBody);
 
         if (_inner is not null)
@@ -34,9 +34,9 @@ public class InMemoryEmailService : IEmailService
     public async Task SendTemplatedEmailAsync(string to, EmailTemplate template, Dictionary<string, string> model, CancellationToken ct = default)
     {
         // Always store the rendered version for dev inspection
-        var (subject, htmlBody) = EmailTemplateStore.Render(template, model);
-        _emails.Enqueue(new SentEmail(to, subject, htmlBody, DateTimeOffset.UtcNow));
-        LogEmail(to, subject, htmlBody);
+        var rendered = EmailTemplateStore.RenderMessage(template, model);
+        _emails.Enqueue(new SentEmail(to, rendered.Subject, rendered.HtmlBody, DateTimeOffset.UtcNow, rendered.TextBody));
+        LogEmail(to, rendered.Subject, rendered.HtmlBody);
 
         if (_inner is not null)
             await TryInnerAsync(() => _inner.SendTemplatedEmailAsync(to, template, model, ct));
@@ -45,13 +45,13 @@ public class InMemoryEmailService : IEmailService
     public async Task SendTemplatedEmailAsync(IReadOnlyList<string> recipients, EmailTemplate template, Dictionary<string, string> model, CancellationToken ct = default)
     {
         if (recipients is null || recipients.Count == 0) return;
-        var (subject, htmlBody) = EmailTemplateStore.Render(template, model);
+        var rendered = EmailTemplateStore.RenderMessage(template, model);
         // Store one SentEmail per recipient so GetLastEmailTo(address) still works in tests.
         foreach (var addr in recipients)
         {
             if (string.IsNullOrWhiteSpace(addr)) continue;
-            _emails.Enqueue(new SentEmail(addr, subject, htmlBody, DateTimeOffset.UtcNow));
-            LogEmail(addr, subject, htmlBody);
+            _emails.Enqueue(new SentEmail(addr, rendered.Subject, rendered.HtmlBody, DateTimeOffset.UtcNow, rendered.TextBody));
+            LogEmail(addr, rendered.Subject, rendered.HtmlBody);
         }
 
         if (_inner is not null)
@@ -92,4 +92,4 @@ public class InMemoryEmailService : IEmailService
     public void Clear() => _emails.Clear();
 }
 
-public record SentEmail(string To, string Subject, string HtmlBody, DateTimeOffset SentAt);
+public record SentEmail(string To, string Subject, string HtmlBody, DateTimeOffset SentAt, string? TextBody = null);

@@ -10,6 +10,7 @@ import {
   type PageNode,
 } from '@cocoar/vue-page-builder'
 import { useAppConfigStore } from '@/stores/appconfig.store'
+import AuthBrand from '@/components/auth/AuthBrand.vue'
 import { createAuthPageConfig } from '@/page-builder/authPageConfig'
 import { LOGIN_PAGE_RUNTIME_KEY } from '@/page-builder/loginPageRuntime'
 
@@ -76,11 +77,7 @@ async function toggleLanguage() {
 
     <div v-else class="flex min-h-screen items-center justify-center p-4">
       <div class="w-full max-w-sm text-center">
-        <img
-          :src="branding.LogoUrl ?? '/idp-logo.svg'"
-          :alt="branding.ProductName ?? 'Modgud'"
-          class="mx-auto mb-6 h-16 w-auto"
-        />
+        <AuthBrand class="mb-6" spacing="compact" />
         <CoarCard elevated class="space-y-4">
           <h1 class="text-2xl font-bold tracking-tight text-surface-800">
             {{ t('logout.signedOut', {}, 'Signed out') }}

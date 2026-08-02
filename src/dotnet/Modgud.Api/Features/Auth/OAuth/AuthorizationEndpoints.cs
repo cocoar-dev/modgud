@@ -890,6 +890,9 @@ public static class AuthorizationEndpoints
             return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled for this realm.");
         if (string.IsNullOrEmpty(request.ClientId))
             return ForbidNativeGrant(Errors.InvalidClient, "client_id is required.");
+        if ((await settingsResolver.ResolveForRequestAsync(httpContext, request.ClientId, ct))
+            .LoginExperience?.InternalLoginEnabled == false)
+            return ForbidNativeGrant(Errors.AccessDenied, "Internal login is disabled for this application.");
 
         var ceremonyRaw = (string?)request.GetParameter("ceremony_id");
         var assertionJson = (string?)request.GetParameter("assertion");

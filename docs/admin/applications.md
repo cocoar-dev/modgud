@@ -140,7 +140,8 @@ re-inherits the realm.
 | --- | --- |
 | **Origin** | The App's own subdomain (e.g. `acme.cocoar.app`), which must be a child of the realm's primary domain. Setting it routes that host to this App and serves the branded login there; clearing it falls back to the tenant URL. The OIDC issuer stays the tenant's (anchored to the realm primary domain) — a subdomain is not its own issuer. |
 | **Branding** | Product name, primary colour, logo/favicon — the look of the login + consent UI when reached via this App. |
-| **Email branding** | The product name used in this App's outbound emails (OTP, magic link, ...) instead of the realm default. |
+| **Email branding** | Product name, sender display name, validated reply-to address, optional subject prefix, preheader and footer used in this App's outbound emails (OTP, magic link, reset, verification, ...). The actual sender address remains deployment-controlled; logo and button colour follow effective App branding. See [Transactional email](../platform/email-customization). |
+| **Login methods** | Enable/disable internal password/passkey and magic-link entry points, and select/order the external OIDC/SAML providers exposed to this App. The allow-list is enforced by the public list and protocol start endpoints, not only hidden in the SPA. An explicit empty provider list disables all external providers. |
 | **Self-registration** | Per-app override of the realm self-registration policy (allowed email domains, admin approval, default groups, ToS/privacy URLs) plus the **posture** (see below). Captcha stays realm-level. |
 | **Registration fields** | Per-app override of which identity fields (username / first / last name) are required when an account is created — each one inheriting the realm by default. See [Registration fields](#registration-fields) below. |
 | **Client sessions** | Idle and absolute lifetime defaults for refresh-token-backed native/OAuth sessions belonging to this App. Each field inherits the realm unless overridden; an individual OAuth client can override the App again. |
@@ -213,6 +214,10 @@ App's clients render exactly the inputs it requires. When an App requires a
 field, **its native clients must collect and send it** (`FirstName` / `LastName`
 on the native OTP / register calls) — otherwise registration fails. Email is
 always required and is never configurable.
+
+### Cleanup and reset semantics
+
+Turning off the Origin override sends an explicit clear and removes the global host→Application route. Deleting an unreferenced Application also removes its settings document and every hostname pointing at it before the App is tombstoned. Existing permission-reference delete blocks still apply.
 
 ### What stays realm-only
 

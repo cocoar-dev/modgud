@@ -8,6 +8,9 @@ using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.Applications;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
+using Modgud.Domain.Applications;
+using Modgud.Domain.Assets;
+using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Persistence.Tenancy;
 
@@ -147,6 +150,144 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
         var second = await PutSettingsAsync(new ShortGuid(app2.Id).ToString(),
             new ApplicationSettingsDto { Origin = new ApplicationOriginDto { Subdomain = host } }, ct);
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+    }
+
+    [Fact]
+    public async Task Clearing_Origin_Removes_The_Global_Route()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await SeedAppAsync("as-origin-clear");
+        var appShort = new ShortGuid(app.Id).ToString();
+        var host = $"as-origin-clear.{await SystemPrimaryDomainAsync()}";
+
+        (await PutSettingsAsync(appShort,
+            new ApplicationSettingsDto { Origin = new ApplicationOriginDto { Subdomain = host } }, ct))
+            .EnsureSuccessStatusCode();
+        (await PutSettingsAsync(appShort,
+            new ApplicationSettingsDto { Origin = new ApplicationOriginDto { Subdomain = null } }, ct))
+            .EnsureSuccessStatusCode();
+
+        Assert.Null((await GetAppAsync(appShort, ct)).Settings!.Origin);
+        var globalStore = Factory.Services.GetRequiredService<IGlobalStore>();
+        await using var gs = globalStore.QuerySession();
+        var realm = await gs.Query<Realm>().FirstAsync(r => r.Slug == "system", ct);
+        Assert.DoesNotContain(host, realm.ApplicationDomains.Keys);
+    }
+
+    [Fact]
+    public async Task Delete_Removes_Settings_And_Global_Route()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await SeedAppAsync("as-delete-cleanup");
+        var appShort = new ShortGuid(app.Id).ToString();
+        var host = $"as-delete-cleanup.{await SystemPrimaryDomainAsync()}";
+
+        (await PutSettingsAsync(appShort, new ApplicationSettingsDto
+        {
+            Origin = new ApplicationOriginDto { Subdomain = host },
+            Branding = new ApplicationBrandingDto { ProductName = "Temporary" },
+        }, ct)).EnsureSuccessStatusCode();
+
+        var response = await Client.DeleteAsync($"/api/app/{appShort}", ct);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        await using (var tenant = GetTenantedSession())
+            Assert.Null(await tenant.LoadAsync<ApplicationSettings>(app.Id, ct));
+
+        var globalStore = Factory.Services.GetRequiredService<IGlobalStore>();
+        await using var gs = globalStore.QuerySession();
+        var realm = await gs.Query<Realm>().FirstAsync(r => r.Slug == "system", ct);
+        Assert.DoesNotContain(host, realm.ApplicationDomains.Keys);
+    }
+
+    [Fact]
+    public async Task Branding_Rejects_An_Unknown_Asset()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await SeedAppAsync("as-missing-asset");
+        var response = await PutSettingsAsync(new ShortGuid(app.Id).ToString(),
+            new ApplicationSettingsDto
+            {
+                Branding = new ApplicationBrandingDto
+                {
+                    LogoAssetId = ShortGuid.Encode(Guid.NewGuid()),
+                },
+            }, ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("Application.AssetNotFound", await response.Content.ReadAsStringAsync(ct));
+    }
+
+    [Fact]
+    public async Task Login_Experience_Roundtrips_Provider_Order_And_Explicit_Empty_List()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await SeedAppAsync("as-login-experience");
+        var first = new LoginProvider
+        {
+            Id = Guid.NewGuid(), Type = LoginProviderType.Oidc, Slug = "first-idp",
+            DisplayName = "First", Enabled = true, CreatedAt = DateTimeOffset.UtcNow,
+        };
+        var second = new LoginProvider
+        {
+            Id = Guid.NewGuid(), Type = LoginProviderType.Saml, Slug = "second-idp",
+            DisplayName = "Second", Enabled = true, CreatedAt = DateTimeOffset.UtcNow,
+        };
+        await using (var session = GetTenantedDocumentSession())
+        {
+            session.Store(first, second);
+            await session.SaveChangesAsync(ct);
+        }
+
+        var ids = new[] { ShortGuid.Encode(second.Id), ShortGuid.Encode(first.Id) };
+        (await PutSettingsAsync(ShortGuid.Encode(app.Id), new ApplicationSettingsDto
+        {
+            LoginExperience = new ApplicationLoginExperienceDto
+            {
+                InternalLoginEnabled = false,
+                MagicLinkEnabled = false,
+                LoginProviderIds = ids,
+            },
+        }, ct)).EnsureSuccessStatusCode();
+
+        var got = (await GetAppAsync(ShortGuid.Encode(app.Id), ct)).Settings!.LoginExperience!;
+        Assert.False(got.InternalLoginEnabled);
+        Assert.False(got.MagicLinkEnabled);
+        Assert.Equal(ids, got.LoginProviderIds);
+
+        (await PutSettingsAsync(ShortGuid.Encode(app.Id), new ApplicationSettingsDto
+        {
+            LoginExperience = new ApplicationLoginExperienceDto { LoginProviderIds = [] },
+        }, ct)).EnsureSuccessStatusCode();
+        Assert.Empty((await GetAppAsync(ShortGuid.Encode(app.Id), ct)).Settings!
+            .LoginExperience!.LoginProviderIds!);
+    }
+
+    [Fact]
+    public async Task Asset_Delete_Is_Blocked_By_Application_Branding_Reference()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await SeedAppAsync("as-asset-reference");
+        var asset = new Asset
+        {
+            Id = Guid.NewGuid(), FileName = "logo.png", ContentType = "image/png",
+            Data = [1, 2, 3], SizeBytes = 3, Sha256 = "test", UploadedAt = DateTimeOffset.UtcNow,
+        };
+        await using (var session = GetTenantedDocumentSession())
+        {
+            session.Store(asset);
+            await session.SaveChangesAsync(ct);
+        }
+
+        (await PutSettingsAsync(ShortGuid.Encode(app.Id), new ApplicationSettingsDto
+        {
+            Branding = new ApplicationBrandingDto { LogoAssetId = ShortGuid.Encode(asset.Id) },
+        }, ct)).EnsureSuccessStatusCode();
+
+        var response = await Client.DeleteAsync($"/api/admin/assets/{ShortGuid.Encode(asset.Id)}", ct);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains($"application:{ShortGuid.Encode(app.Id)}.branding.logo",
+            await response.Content.ReadAsStringAsync(ct));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import { isSameOriginPath } from '@/composables/useLoginRedirect'
+import AuthBrand from '@/components/auth/AuthBrand.vue'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import {
   CoarNotice,
@@ -131,8 +132,11 @@ function resetTurnstile() {
 
 onMounted(async () => {
   try {
-    appConfig.load() // idempotent; ensures the field policy is available
-    info.value = await accountHttp.addPath('self-registration-info').get<SelfRegistrationInfoDto>()
+    const redirect = isSameOriginPath(route.query.redirect) ? route.query.redirect : '/'
+    await appConfig.loadForLogin(redirect)
+    info.value = await accountHttp.addPath('self-registration-info')
+      .setQueryParameter('returnUrl', redirect)
+      .get<SelfRegistrationInfoDto>()
     if (!info.value.Enabled) {
       // Forward ?redirect= so a pending continuation (e.g. a client app's
       // /connect/authorize flow) survives the bounce back to the login page.
@@ -213,10 +217,7 @@ async function handleSubmit() {
     </button>
     <div class="w-full max-w-sm">
       <div class="mb-8 text-center">
-        <img src="/idp-logo.svg" alt="Modgud" class="mx-auto mb-1 h-16 w-auto" />
-        <h1 class="text-2xl font-bold tracking-tight text-surface-800">
-          Modgud
-        </h1>
+        <AuthBrand spacing="compact" />
         <p class="mt-2 text-sm text-surface-500">
           {{ t('auth.register.subtitle', {}, 'Create an account.') }}
         </p>

@@ -114,13 +114,12 @@ public static class EmailVerificationEndpoints
             await emailService.SendTemplatedEmailAsync(
                 user.Email,
                 EmailTemplate.EmailVerification,
-                new Dictionary<string, string>
+                await emailBranding.ApplyAsync(new Dictionary<string, string>
                 {
-                    ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                     ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                     ["ActionUrl"] = verifyUrl,
                     ["ExpirationHours"] = EmailVerificationChallenge.ExpirationHours.ToString(),
-                });
+                }, ct: ct), ct);
 
             return Results.Ok(new { Message = genericMessage });
         })

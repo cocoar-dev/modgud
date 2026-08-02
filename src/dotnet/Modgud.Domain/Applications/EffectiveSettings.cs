@@ -42,6 +42,7 @@ public sealed record EffectiveSettings
 
     public ApplicationOrigin? Origin { get; init; }
     public ApplicationEmailBranding? EmailBranding { get; init; }
+    public ApplicationLoginExperience? LoginExperience { get; init; }
 
     /// <summary>No Application in context: effective settings == the realm
     /// settings, section-for-section. The zero-behaviour path.</summary>
@@ -59,7 +60,8 @@ public sealed record EffectiveSettings
         Pages = ResolveRealmActivePages(realm),
         SelfRegPosture = null,
         Origin = null,
-        EmailBranding = null,
+        EmailBranding = MergeEmailBranding(realm.EmailBranding, null),
+        LoginExperience = null,
     };
 
     /// <summary>An Application is in context: merge its (sparse) overrides
@@ -89,7 +91,8 @@ public sealed record EffectiveSettings
         // New per-App facets:
         SelfRegPosture = app.SelfRegistration?.Posture ?? Applications.SelfRegPosture.JitOnOtp,
         Origin = app.Origin,
-        EmailBranding = app.EmailBranding,
+        EmailBranding = MergeEmailBranding(realm.EmailBranding, app.EmailBranding),
+        LoginExperience = app.LoginExperience,
     };
 
     // App override absent → realm passthrough (incl. null). Present → each
@@ -104,6 +107,22 @@ public sealed record EffectiveSettings
             LogoAssetId = app.LogoAssetId ?? b.LogoAssetId,
             FaviconAssetId = app.FaviconAssetId ?? b.FaviconAssetId,
             PrimaryColor = app.PrimaryColor ?? b.PrimaryColor,
+        };
+    }
+
+    private static ApplicationEmailBranding? MergeEmailBranding(
+        Modgud.Domain.RealmSettings.EmailBrandingSettings? realm,
+        ApplicationEmailBranding? app)
+    {
+        if (realm is null && app is null) return null;
+        return new ApplicationEmailBranding
+        {
+            ProductName = app?.ProductName ?? realm?.ProductName,
+            SubjectPrefix = app?.SubjectPrefix ?? realm?.SubjectPrefix,
+            Preheader = app?.Preheader ?? realm?.Preheader,
+            FooterText = app?.FooterText ?? realm?.FooterText,
+            FromName = app?.FromName ?? realm?.FromName,
+            ReplyTo = app?.ReplyTo ?? realm?.ReplyTo,
         };
     }
 

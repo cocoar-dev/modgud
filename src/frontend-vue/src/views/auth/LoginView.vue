@@ -3,6 +3,7 @@ import { ref, computed, onMounted, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
+import AuthBrand from '@/components/auth/AuthBrand.vue'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
 import { useLoginRedirect } from '@/composables/useLoginRedirect'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
@@ -73,7 +74,8 @@ const error = ref('')
 const externalLogins = ref<ExternalLoginDto[]>([])
 async function loadExternalLogins() {
   try {
-    const res = await fetch('/api/account/external-logins')
+    const returnUrl = redirectTarget.value
+    const res = await fetch(`/api/account/external-logins?returnUrl=${encodeURIComponent(returnUrl)}`)
     if (res.ok) externalLogins.value = await res.json()
   } catch { /* ignore — login page works without external buttons */ }
 }
@@ -83,7 +85,7 @@ async function loadExternalLogins() {
 const selfRegistrationEnabled = ref(false)
 async function loadSelfRegistrationInfo() {
   try {
-    const res = await fetch('/api/account/self-registration-info')
+    const res = await fetch(`/api/account/self-registration-info?returnUrl=${encodeURIComponent(redirectTarget.value)}`)
     if (!res.ok) return
     const info = await res.json()
     selfRegistrationEnabled.value = !!info?.Enabled
@@ -112,25 +114,25 @@ loadExternalLogins()
 // finish-endpoint redirects there when something rejects (unknown subject,
 // email conflict, script failure, etc.). Translate the code into a friendly
 // message and show it in the same banner as the regular form errors.
-const idpErrorMessages: Record<string, string> = {
-  'Idp.NotEnabled': t('auth.idp.notEnabled', {}, 'This identity provider is not available.'),
-  'Idp.InvalidToken': t('auth.idp.invalidToken', {}, 'The identity provider did not return a valid response.'),
-  'Idp.Unlinked': t('auth.idp.unlinked', {}, 'This external identity has been disconnected. Contact your administrator.'),
-  'Idp.LinkedToOtherUser': t('auth.idp.linkedToOther', {}, 'This identity is already linked to a different Modgud account.'),
-  'Idp.UserMissing': t('auth.idp.userMissing', {}, 'The linked user no longer exists. Please contact your administrator.'),
-  'Idp.EmailNotAllowed': t('auth.idp.emailNotAllowed', {}, 'Your email domain is not allowed for this provider.'),
-  'Idp.EmailRequired': t('auth.idp.emailRequired', {}, 'The identity provider did not return an email. Cannot create a new account.'),
-  'Idp.EmailConflict': t('auth.idp.emailConflict', {}, 'A Modgud account with this email already exists. Please contact your administrator.'),
-  'Idp.NoUserAndAutoCreateOff': t('auth.idp.noUser', {}, 'No Modgud account is linked to this identity and auto-creation is disabled.'),
-  'Idp.JitCreationFailed': t('auth.idp.jitFailed', {}, 'Could not create a new user account.'),
-  'Idp.UserUpdateFailed': t('auth.idp.updateFailed', {}, 'Failed to update the user record from the identity provider.'),
-  'oidc:Correlation failed.': t('auth.idp.correlationFailed', {}, 'Login session expired. Please try again.'),
-}
-
 const rawError = route.query.error as string | undefined
-if (rawError) {
-  error.value = idpErrorMessages[rawError]
-    ?? t('auth.idp.genericError', { code: rawError }, 'Login via identity provider failed ({code}).')
+function resolveIdpError(code: string): string {
+  const app = branding.value.ProductName || 'Modgud'
+  const messages: Record<string, string> = {
+    'Idp.NotEnabled': t('auth.idp.notEnabled', {}, 'This identity provider is not available.'),
+    'Idp.InvalidToken': t('auth.idp.invalidToken', {}, 'The identity provider did not return a valid response.'),
+    'Idp.Unlinked': t('auth.idp.unlinked', {}, 'This external identity has been disconnected. Contact your administrator.'),
+    'Idp.LinkedToOtherUser': t('auth.idp.linkedToOtherBranded', { app }, 'This identity is already linked to a different {app} account.'),
+    'Idp.UserMissing': t('auth.idp.userMissing', {}, 'The linked user no longer exists. Please contact your administrator.'),
+    'Idp.EmailNotAllowed': t('auth.idp.emailNotAllowed', {}, 'Your email domain is not allowed for this provider.'),
+    'Idp.EmailRequired': t('auth.idp.emailRequired', {}, 'The identity provider did not return an email. Cannot create a new account.'),
+    'Idp.EmailConflict': t('auth.idp.emailConflictBranded', { app }, 'A {app} account with this email already exists. Please contact your administrator.'),
+    'Idp.NoUserAndAutoCreateOff': t('auth.idp.noUserBranded', { app }, 'No {app} account is linked to this identity and auto-creation is disabled.'),
+    'Idp.JitCreationFailed': t('auth.idp.jitFailed', {}, 'Could not create a new user account.'),
+    'Idp.UserUpdateFailed': t('auth.idp.updateFailed', {}, 'Failed to update the user record from the identity provider.'),
+    'oidc:Correlation failed.': t('auth.idp.correlationFailed', {}, 'Login session expired. Please try again.'),
+  }
+  return messages[code]
+    ?? t('auth.idp.genericError', { code }, 'Login via identity provider failed ({code}).')
 }
 
 // Flow steps
@@ -163,6 +165,7 @@ onMounted(async () => {
     // unavailable. The fixed login below remains the emergency-safe fallback.
     customLoginSchema.value = null
   } finally {
+    if (rawError) error.value = resolveIdpError(rawError)
     loginPageReady.value = true
   }
 })
@@ -180,7 +183,7 @@ function loginErrorMessage(e: unknown): string {
 
 async function performCredentialLogin(name: string, secret: string, remember: boolean) {
   try {
-    const result = await authStore.login(name.trim(), secret, remember)
+    const result = await authStore.login(name.trim(), secret, remember, redirectTarget.value)
     if (result?.RequiresSecureSetup) {
       secureSetupInGrace.value = result.GracePeriod === true
       secureSetupDueAt.value = result.SecureSetupDueAt ?? null
@@ -379,7 +382,7 @@ async function handlePasskeyLogin(reportToRenderer = false) {
   passkeyLoading.value = true
   error.value = ''
   try {
-    const serverOptions = await passkeyHttp.addPath('login-options').post<any>({})
+    const serverOptions = await passkeyHttp.addPath('login-options').post<any>({ ReturnUrl: redirectTarget.value })
 
     const publicKey: PublicKeyCredentialRequestOptions = {
       challenge: base64UrlToBuffer(serverOptions.challenge),
@@ -475,13 +478,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
       <div class="w-full max-w-sm">
       <!-- Logo + Title -->
       <div class="mb-8 text-center">
-        <img :src="branding.LogoUrl ?? '/idp-logo.svg'" :alt="branding.ProductName ?? 'Modgud'" class="mx-auto mb-1 h-16 w-auto" />
-        <h1 v-if="branding.ProductName" class="text-2xl font-bold tracking-tight text-surface-800">
-          {{ branding.ProductName }}
-        </h1>
-        <h1 v-else class="text-2xl font-bold tracking-tight text-surface-800">
-          Modgud
-        </h1>
+        <AuthBrand spacing="compact" />
         <p class="mt-2 text-sm text-surface-500">
           <template v-if="step === 'credentials'">{{ t('auth.login.subtitle', {}, 'Sign in to continue.') }}</template>
           <template v-else-if="step === 'mfa-choice'">{{ t('auth.mfa.chooseMethod', {}, 'Choose a verification method.') }}</template>
@@ -506,7 +503,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
         <!-- Step 1: Username + Password (or passwordless alternatives) -->
         <form v-if="step === 'credentials'" class="space-y-4" @submit.prevent="handleLogin">
           <!-- Password login (hidden at Level 2) -->
-          <template v-if="!isPasswordless()">
+          <template v-if="appConfig.config.InternalLoginEnabled && !isPasswordless()">
             <CoarFormField :label="t('auth.login.username', {}, 'Username')">
               <CoarTextInput
                 v-model="userName"
@@ -540,21 +537,22 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
           </template>
 
           <!-- Passwordless notice (Level 2) -->
-          <CoarNotice v-if="isPasswordless()" variant="info">
+          <CoarNotice v-if="appConfig.config.InternalLoginEnabled && isPasswordless()" variant="info">
             {{ t('auth.login.passwordlessMode', {}, 'This application uses passwordless login.') }}
           </CoarNotice>
 
-          <CoarNotice v-if="isPasswordless() && error" variant="error">{{ error }}</CoarNotice>
+          <CoarNotice v-if="appConfig.config.InternalLoginEnabled && isPasswordless() && error" variant="error">{{ error }}</CoarNotice>
 
           <!-- Divider -->
           <div class="flex items-center gap-3 text-surface-400 text-xs">
             <div class="flex-1 border-t border-surface-200"></div>
-            <template v-if="!isPasswordless()">{{ t('common.or', {}, 'or') }}</template>
+            <template v-if="appConfig.config.InternalLoginEnabled">{{ t('common.or', {}, 'or') }}</template>
             <div class="flex-1 border-t border-surface-200"></div>
           </div>
 
           <!-- Passkey login (always available) -->
           <CoarButton
+            v-if="appConfig.config.InternalLoginEnabled"
             type="button"
             variant="secondary"
             :loading="passkeyLoading"
@@ -590,7 +588,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
 
           <!-- Detours forward ?redirect= so the pending continuation (e.g. a
                client app's /connect/authorize flow) survives the side trip. -->
-          <RouterLink v-if="!isPasswordless()" :to="{ path: '/forgot-password', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
+          <RouterLink v-if="appConfig.config.InternalLoginEnabled && !isPasswordless()" :to="{ path: '/forgot-password', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.login.forgotPassword', {}, 'Forgot password?') }}
           </RouterLink>
 

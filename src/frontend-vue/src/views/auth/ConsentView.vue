@@ -15,6 +15,7 @@ import type {
   ConsentDecision,
   ConsentResult,
 } from '@/models/consent'
+import AuthBrand from '@/components/auth/AuthBrand.vue'
 
 const { t, language } = useI18n()
 const localization = useLocalization()!
@@ -214,10 +215,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
     </button>
     <div class="w-full max-w-md">
       <div class="mb-8 text-center">
-        <img src="/idp-logo.svg" alt="Modgud" class="mx-auto mb-1 h-16 w-auto" />
-        <h1 class="text-2xl font-bold tracking-tight text-surface-800">
-          Modgud
-        </h1>
+        <AuthBrand spacing="compact" />
       </div>
 
       <CoarCard elevated>

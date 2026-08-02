@@ -20,6 +20,7 @@ public record RealmSettingsDto
     public ClientSessionPolicyDto ClientSessions { get; init; } = new();
     public AuthRateLimitsDto AuthRateLimits { get; init; } = new();
     public BrandingSettingsDto Branding { get; init; } = new();
+    public EmailBrandingSettingsDto EmailBranding { get; init; } = new();
     public RegistrationFieldsSettingsDto RegistrationFields { get; init; } = new();
     public DeletionSettingsDto Deletion { get; init; } = new();
     public AuditSettingsDto Audit { get; init; } = new();
@@ -43,6 +44,7 @@ public record UpdateRealmSettingsDto
     public UpdateClientSessionPolicyDto? ClientSessions { get; init; }
     public UpdateAuthRateLimitsDto? AuthRateLimits { get; init; }
     public UpdateBrandingSettingsDto? Branding { get; init; }
+    public UpdateEmailBrandingSettingsDto? EmailBranding { get; init; }
     public UpdateRegistrationFieldsSettingsDto? RegistrationFields { get; init; }
     public UpdateDeletionSettingsDto? Deletion { get; init; }
     public UpdateAuditSettingsDto? Audit { get; init; }

@@ -39,20 +39,28 @@ export interface RegistrationFieldsConfig {
   Lastname: FieldRequirement
 }
 
+export interface LegalConfig {
+  TermsOfServiceUrl: string | null
+  PrivacyPolicyUrl: string | null
+}
+
 export interface AppConfig {
   AuthenticationMinimumLevel: number  // 0=None, 1=SecureLogin, 2=Passwordless
+  InternalLoginEnabled: boolean
   MagicLinkSelfService: boolean
   TwoFactorGracePeriodDays: number
   IsControlPlane: boolean              // true ⇔ the realm hosting this SPA is the Control Plane
   Branding: BrandingConfig
   Features: FeatureFlags
   RegistrationFields: RegistrationFieldsConfig
+  Legal: LegalConfig
   /** Effective PageBuilder schemas for the current Host/OAuth client context. */
   Pages: Record<string, string>
 }
 
 const defaults: AppConfig = {
   AuthenticationMinimumLevel: 1,
+  InternalLoginEnabled: true,
   MagicLinkSelfService: true,
   TwoFactorGracePeriodDays: 14,
   IsControlPlane: false,
@@ -72,6 +80,10 @@ const defaults: AppConfig = {
     Firstname: 'Optional',
     Lastname: 'Optional',
   },
+  Legal: {
+    TermsOfServiceUrl: null,
+    PrivacyPolicyUrl: null,
+  },
   Pages: {},
 }
 
@@ -85,22 +97,23 @@ const defaults: AppConfig = {
  * via the store directly — DOM-side this function only handles globals.
  */
 function applyBranding(branding: BrandingConfig): void {
+  document.documentElement.style.removeProperty('--coar-color-primary')
   if (branding.PrimaryColor) {
     document.documentElement.style.setProperty('--coar-color-primary', branding.PrimaryColor)
   }
 
-  if (branding.ProductName) {
-    document.title = branding.ProductName
-  }
+  document.title = branding.ProductName || 'Modgud'
 
+  let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
   if (branding.FaviconUrl) {
-    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
     if (!link) {
       link = document.createElement('link')
       link.rel = 'icon'
       document.head.appendChild(link)
     }
     link.href = branding.FaviconUrl
+  } else if (link) {
+    link.href = '/favicon.ico'
   }
 }
 
@@ -122,11 +135,22 @@ export const useAppConfigStore = defineStore('appConfig', () => {
           Branding: { ...defaults.Branding, ...(result.Branding ?? {}) },
           Features: { ...defaults.Features, ...(result.Features ?? {}) },
           RegistrationFields: { ...defaults.RegistrationFields, ...(result.RegistrationFields ?? {}) },
+          Legal: { ...defaults.Legal, ...(result.Legal ?? {}) },
           Pages: { ...(result.Pages ?? {}) },
         }
         applyBranding(config.value.Branding)
       }
-    } catch { /* use defaults */ }
+    } catch {
+      config.value = {
+        ...defaults,
+        Branding: { ...defaults.Branding },
+        Features: { ...defaults.Features },
+        RegistrationFields: { ...defaults.RegistrationFields },
+        Legal: { ...defaults.Legal },
+        Pages: {},
+      }
+      applyBranding(config.value.Branding)
+    }
     finally { loaded.value = true }
   }
 

@@ -79,6 +79,18 @@ export interface ApplicationBrandingSettingsDto {
 
 export interface ApplicationEmailBrandingDto {
   ProductName?: string | null
+  SubjectPrefix?: string | null
+  Preheader?: string | null
+  FooterText?: string | null
+  FromName?: string | null
+  ReplyTo?: string | null
+}
+
+export interface ApplicationLoginExperienceDto {
+  InternalLoginEnabled?: boolean | null
+  MagicLinkEnabled?: boolean | null
+  /** Ordered external-provider ShortGuid allow-list. Empty disables all. */
+  LoginProviderIds?: string[] | null
 }
 
 export interface ApplicationSelfRegistrationOverrideDto {
@@ -123,6 +135,7 @@ export interface ApplicationSettingsDto {
   Origin?: ApplicationOriginDto | null
   Branding?: ApplicationBrandingSettingsDto | null
   EmailBranding?: ApplicationEmailBrandingDto | null
+  LoginExperience?: ApplicationLoginExperienceDto | null
   SelfRegistration?: ApplicationSelfRegistrationOverrideDto | null
   NativeGrants?: ApplicationGrantOverrideDto | null
   ClientSessions?: ApplicationClientSessionsDto | null

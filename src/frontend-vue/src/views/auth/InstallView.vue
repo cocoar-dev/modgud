@@ -10,6 +10,7 @@ import {
   CoarPasswordInput,
   CoarTextInput,
 } from '@cocoar/vue-ui'
+import AuthBrand from '@/components/auth/AuthBrand.vue'
 
 interface CompleteResponse {
   RealmSlug: string
@@ -122,14 +123,9 @@ function goToLogin() {
   <div class="min-h-screen bg-surface-50 px-4 py-10">
     <div class="mx-auto w-full max-w-3xl">
       <div class="mb-8 text-center">
-        <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#525e76]/10 text-[#525e76]">
-          <span class="text-2xl font-bold">M</span>
-        </div>
-        <h1 class="text-2xl font-bold tracking-tight text-surface-800">
-          Modgud installieren
-        </h1>
+        <AuthBrand spacing="compact" />
         <p class="mt-2 text-sm text-surface-500">
-          Erster Realm und erster Administrator
+          Installation · Erster Realm und erster Administrator
         </p>
       </div>
 

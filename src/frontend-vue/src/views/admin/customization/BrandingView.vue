@@ -13,10 +13,13 @@ import { useUI } from '@/composables/useUI'
 import { useRealmSettingsStore } from '@/stores/realmSettings.store'
 import AssetPicker from '@/components/AssetPicker.vue'
 import ColorField from '@/components/ColorField.vue'
+import BrandingPreview from '@/components/BrandingPreview.vue'
 import type { AssetDto } from '@/models/assets'
 import type {
   BrandingSettingsDto,
   UpdateBrandingSettingsDto,
+  EmailBrandingSettingsDto,
+  UpdateEmailBrandingSettingsDto,
 } from '@/models/realmSettings'
 
 const { t, language } = useI18n()
@@ -38,6 +41,12 @@ interface BrandingFormState {
   FaviconAssetId: string
   FaviconUrl: string
   PrimaryColor: string
+  EmailProductName: string
+  EmailSubjectPrefix: string
+  EmailPreheader: string
+  EmailFooterText: string
+  EmailFromName: string
+  EmailReplyTo: string
 }
 
 function empty(): BrandingFormState {
@@ -48,10 +57,16 @@ function empty(): BrandingFormState {
     FaviconAssetId: '',
     FaviconUrl: '',
     PrimaryColor: '',
+    EmailProductName: '',
+    EmailSubjectPrefix: '',
+    EmailPreheader: '',
+    EmailFooterText: '',
+    EmailFromName: '',
+    EmailReplyTo: '',
   }
 }
 
-function fromDto(b: BrandingSettingsDto): BrandingFormState {
+function fromDto(b: BrandingSettingsDto, email?: EmailBrandingSettingsDto): BrandingFormState {
   return {
     ProductName: b.ProductName ?? '',
     LogoAssetId: b.LogoAssetId ?? '',
@@ -59,11 +74,18 @@ function fromDto(b: BrandingSettingsDto): BrandingFormState {
     FaviconAssetId: b.FaviconAssetId ?? '',
     FaviconUrl: b.FaviconUrl ?? '',
     PrimaryColor: b.PrimaryColor ?? '',
+    EmailProductName: email?.ProductName ?? '',
+    EmailSubjectPrefix: email?.SubjectPrefix ?? '',
+    EmailPreheader: email?.Preheader ?? '',
+    EmailFooterText: email?.FooterText ?? '',
+    EmailFromName: email?.FromName ?? '',
+    EmailReplyTo: email?.ReplyTo ?? '',
   }
 }
 
 const form = ref<BrandingFormState>(empty())
 const original = ref<BrandingSettingsDto | null>(null)
+const originalEmail = ref<EmailBrandingSettingsDto | null>(null)
 const initialLoad = ref(true)
 const saving = ref(false)
 const error = ref<string | null>(null)
@@ -108,7 +130,8 @@ onMounted(async () => {
   try {
     const dto = await settingsStore.load()
     original.value = dto.Branding
-    form.value = fromDto(dto.Branding)
+    originalEmail.value = dto.EmailBranding
+    form.value = fromDto(dto.Branding, dto.EmailBranding)
   } catch (e: any) {
     error.value = e?.body?.detail ?? e?.message ?? String(e)
   } finally {
@@ -134,9 +157,29 @@ function buildPatch(): UpdateBrandingSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+function buildEmailPatch(): UpdateEmailBrandingSettingsDto | undefined {
+  const orig = originalEmail.value
+  if (!orig) return undefined
+  const patch: UpdateEmailBrandingSettingsDto = {}
+  const fields = [
+    ['ProductName', 'EmailProductName'],
+    ['SubjectPrefix', 'EmailSubjectPrefix'],
+    ['Preheader', 'EmailPreheader'],
+    ['FooterText', 'EmailFooterText'],
+    ['FromName', 'EmailFromName'],
+    ['ReplyTo', 'EmailReplyTo'],
+  ] as const
+  for (const [key, formKey] of fields) {
+    const value = form.value[formKey].trim()
+    if (value !== (orig[key] ?? '')) patch[key] = value
+  }
+  return Object.keys(patch).length ? patch : undefined
+}
+
 async function save() {
   const patch = buildPatch()
-  if (!patch) {
+  const emailPatch = buildEmailPatch()
+  if (!patch && !emailPatch) {
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1200)
     return
@@ -144,9 +187,10 @@ async function save() {
   saving.value = true
   error.value = null
   try {
-    const updated = await settingsStore.patch({ Branding: patch })
+    const updated = await settingsStore.patch({ Branding: patch, EmailBranding: emailPatch })
     original.value = updated.Branding
-    form.value = fromDto(updated.Branding)
+    originalEmail.value = updated.EmailBranding
+    form.value = fromDto(updated.Branding, updated.EmailBranding)
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1500)
   } catch (e: any) {
@@ -216,6 +260,39 @@ async function save() {
             {{ t('common.save', {}, 'Save') }}
           </CoarButton>
         </div>
+
+        <div class="border-t border-surface-200 pt-4">
+          <h3 class="mb-3 font-semibold">{{ t('admin.customization.email.title', {}, 'Transactional email') }}</h3>
+          <div class="grid grid-cols-2 gap-3">
+            <CoarFormField :label="t('admin.appSettings.email.fromName', {}, 'Sender display name')">
+              <CoarTextInput v-model="form.EmailFromName" clearable />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.appSettings.email.replyTo', {}, 'Reply-to address')">
+              <CoarTextInput v-model="form.EmailReplyTo" type="email" clearable />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.appSettings.email.productName', {}, 'Product name in email')">
+              <CoarTextInput v-model="form.EmailProductName" clearable />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.appSettings.email.subjectPrefix', {}, 'Subject prefix')">
+              <CoarTextInput v-model="form.EmailSubjectPrefix" clearable />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.appSettings.email.preheader', {}, 'Preheader text')">
+              <CoarTextInput v-model="form.EmailPreheader" clearable />
+            </CoarFormField>
+            <CoarFormField :label="t('admin.appSettings.email.footer', {}, 'Footer text')">
+              <CoarTextInput v-model="form.EmailFooterText" clearable />
+            </CoarFormField>
+          </div>
+        </div>
+
+        <BrandingPreview
+          :product-name="form.ProductName"
+          :logo-url="form.LogoUrl"
+          :primary-color="form.PrimaryColor"
+          :email-product-name="form.EmailProductName"
+          :email-subject-prefix="form.EmailSubjectPrefix"
+          :email-preheader="form.EmailPreheader"
+          :email-footer-text="form.EmailFooterText" />
       </div>
     </CoarCard>
   </div>

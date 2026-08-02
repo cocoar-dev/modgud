@@ -15,12 +15,13 @@ using Modgud.Authentication.Sessions;
 using Modgud.Infrastructure.Observability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Modgud.Authentication.Applications;
 
 namespace Modgud.Authentication.Api.Account;
 
 public static class PasskeyEndpoints
 {
-    public record PasskeyLoginOptionsRequest(string? UserName = null);
+    public record PasskeyLoginOptionsRequest(string? UserName = null, string? ReturnUrl = null);
     public record PasskeyDisplayDto(string Id, string DisplayName, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt);
 
     private const string RegistrationCacheKey = "fido2.attestationOptions";
@@ -261,10 +262,19 @@ public static class PasskeyEndpoints
             HttpContext context,
             RealmScopedFido2Factory fido2Factory,
             RpIdResolver rpIdResolver,
+            IApplicationSettingsResolver settingsResolver,
             IDocumentSession session,
             PasskeyLoginOptionsRequest? request,
             CancellationToken ct) =>
         {
+            var clientId = Api.ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request?.ReturnUrl);
+            if ((await settingsResolver.ResolveForRequestAsync(context, clientId, ct))
+                .LoginExperience?.InternalLoginEnabled == false)
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "LoginExperience.InternalDisabled",
+                    detail: "Internal login is disabled for this application.");
+
             var fido2 = await fido2Factory.CreateAsync(ct);
 
             List<PublicKeyCredentialDescriptor>? allowedCredentials = null;
@@ -326,7 +336,7 @@ public static class PasskeyEndpoints
                 // Realm-scoped web login: no per-client binding, and the RP ID is
                 // pinned so an admin editing the setting mid-ceremony can't cause a
                 // begin/redeem drift (same rationale as the native flow).
-                ClientId = null,
+                ClientId = clientId,
                 RpId = await rpIdResolver.GetPrimaryDomainAsync(ct),
                 ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(PasskeyCeremony.ExpirationMinutes),
                 CreatedAt = DateTimeOffset.UtcNow,
@@ -364,6 +374,7 @@ public static class PasskeyEndpoints
             IDocumentSession session,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
+            IApplicationSettingsResolver settingsResolver,
             JsonElement body,
             CancellationToken ct) =>
         {
@@ -383,6 +394,13 @@ public static class PasskeyEndpoints
             var ceremony = await session.LoadAsync<PasskeyCeremony>(ceremonyId, ct);
             if (ceremony is null || ceremony.IsExpired || ceremony.IsConsumed)
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+
+            if ((await settingsResolver.ResolveForRequestAsync(context, ceremony.ClientId, ct))
+                .LoginExperience?.InternalLoginEnabled == false)
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "LoginExperience.InternalDisabled",
+                    detail: "Internal login is disabled for this application.");
 
             // Single-use: consume before verifying, via a version-checked Store of
             // ConsumedAt (Marten does not version-check deletes), so a captured

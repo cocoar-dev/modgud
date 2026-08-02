@@ -1,5 +1,6 @@
 using Modgud.Domain.Applications;
 using Modgud.Domain.Realms;
+using Modgud.Domain.RealmSettings;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Tests.Unit.Applications;
@@ -289,6 +290,39 @@ public class EffectiveSettingsTests
 
             Assert.Equal("amzettel.cocoar.app", eff.Origin!.Subdomain);
             Assert.Equal("amZettel", eff.EmailBranding!.ProductName);
+        }
+
+        [Fact]
+        public void Email_branding_merges_application_fields_over_realm_defaults()
+        {
+            var realm = Realm();
+            realm.EmailBranding = new EmailBrandingSettings
+            {
+                ProductName = "Realm Mail",
+                SubjectPrefix = "Realm",
+                Preheader = "Realm preheader",
+                FooterText = "Realm footer",
+                FromName = "Realm Sender",
+                ReplyTo = "realm@example.test",
+            };
+            var app = new ApplicationSettings
+            {
+                EmailBranding = new ApplicationEmailBranding
+                {
+                    ProductName = "App Mail",
+                    FooterText = "App footer",
+                    FromName = "App Sender",
+                },
+            };
+
+            var effective = EffectiveSettings.Merge(realm, app).EmailBranding!;
+
+            Assert.Equal("App Mail", effective.ProductName);
+            Assert.Equal("Realm", effective.SubjectPrefix);
+            Assert.Equal("Realm preheader", effective.Preheader);
+            Assert.Equal("App footer", effective.FooterText);
+            Assert.Equal("App Sender", effective.FromName);
+            Assert.Equal("realm@example.test", effective.ReplyTo);
         }
 
         // ─────────────── ADR-0001: variants + activation ───────────────

@@ -34,18 +34,6 @@ public static class NativePasskeyEndpoints
             RpIdResolver rpIdResolver,
             CancellationToken ct) =>
         {
-            // Per-(App⊕realm) master gate (default OFF), ADR-0011. Host-time: the
-            // App (if any) comes from the request Host (an Application subdomain).
-            // A null section reads as disabled. Gating here (not just at the token
-            // grant) avoids issuing useless ceremony docs when native passwordless
-            // is not enabled.
-            var settings = await settingsResolver.ResolveForRequestAsync(context, clientId: null, ct);
-            if (settings.NativeGrants is null || !settings.NativeGrants.Enabled)
-                return Results.Problem(
-                    statusCode: StatusCodes.Status400BadRequest,
-                    title: "NativeGrants.Disabled",
-                    detail: "Native passkey sign-in is not enabled for this realm.");
-
             // ADR-0009 per-client RP-ID: an optional client_id (the requesting app)
             // selects its admin-set RP ID; absent ⇒ realm-scoped (PrimaryDomain).
             // Read as a form field so existing no-body callers keep working. The
@@ -59,6 +47,20 @@ public static class NativePasskeyEndpoints
                 var raw = form["client_id"].ToString();
                 if (!string.IsNullOrWhiteSpace(raw)) clientId = raw;
             }
+
+            // Resolve only after parsing client_id: on the canonical realm host the
+            // OAuth client is the signal that selects the Application override.
+            var settings = await settingsResolver.ResolveForRequestAsync(context, clientId, ct);
+            if (settings.NativeGrants is null || !settings.NativeGrants.Enabled)
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "NativeGrants.Disabled",
+                    detail: "Native passkey sign-in is not enabled for this realm.");
+            if (settings.LoginExperience?.InternalLoginEnabled == false)
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "LoginExperience.InternalDisabled",
+                    detail: "Internal login is disabled for this application.");
 
             var rpId = await rpIdResolver.ResolveAsync(session, clientId, ct);
 

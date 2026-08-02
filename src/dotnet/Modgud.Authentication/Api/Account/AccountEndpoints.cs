@@ -11,6 +11,7 @@ using Modgud.Authentication.Domain.LoginProviders;
 using BuildingBlocks.Helper;
 using Modgud.Authentication.Identity;
 using Modgud.Authentication.Sessions;
+using Modgud.Authentication.Applications;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Services;
 using Modgud.Infrastructure.Audit;
@@ -21,7 +22,11 @@ namespace Modgud.Authentication.Api.Account;
 
 public static class AccountEndpoints
 {
-    public record LoginRequest(string UserName, string Password, bool RememberMe = false);
+    public record LoginRequest(
+        string UserName,
+        string Password,
+        bool RememberMe = false,
+        string? ReturnUrl = null);
 
     public record LogoutRequest(bool EndIdpSession = true);
 
@@ -73,6 +78,7 @@ public static class AccountEndpoints
             SignInManager<ApplicationUser> signInManager,
             UserManager<ApplicationUser> userManager,
             IAuthSettings appSettings,
+            IApplicationSettingsResolver applicationSettings,
             IDocumentSession docSession,
             IQuerySession session,
             ISecurityAuditLog securityAudit,
@@ -89,6 +95,10 @@ public static class AccountEndpoints
             // Level 2 (Passwordless): password login disabled entirely
             if (appSettings.AuthenticationMinimumLevel >= 2)
                 return Results.Json(new { Message = "Password login is disabled" }, statusCode: 403);
+            var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl);
+            if ((await applicationSettings.ResolveForRequestAsync(context, clientId, context.RequestAborted))
+                .LoginExperience?.InternalLoginEnabled == false)
+                return Results.Json(new { Message = "Internal login is disabled for this application" }, statusCode: 403);
 
             // Try to find user by UserName first, then by Email
             var user = await userManager.FindByNameAsync(request.UserName);

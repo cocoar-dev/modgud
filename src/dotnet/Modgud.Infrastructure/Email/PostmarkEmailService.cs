@@ -32,6 +32,7 @@ public class PostmarkEmailService : IEmailService
             To = to,
             Subject = subject,
             HtmlBody = htmlBody,
+            TextBody = EmailTemplateStore.ToPlainText(htmlBody),
             MessageStream = options.MessageStream,
         };
 
@@ -51,9 +52,10 @@ public class PostmarkEmailService : IEmailService
         if (options.TemplateIds.TryGetValue(template, out var templateId))
         {
             var client = new PostmarkClient(options.ServerToken);
-            var from = string.IsNullOrEmpty(options.FromName)
+            var fromName = model.GetValueOrDefault("FromName") ?? options.FromName;
+            var from = string.IsNullOrEmpty(fromName)
                 ? options.FromAddress
-                : $"{options.FromName} <{options.FromAddress}>";
+                : $"{fromName} <{options.FromAddress}>";
 
             var message = new TemplatedPostmarkMessage
             {
@@ -61,6 +63,7 @@ public class PostmarkEmailService : IEmailService
                 To = to,
                 TemplateId = templateId,
                 TemplateModel = model,
+                ReplyTo = model.GetValueOrDefault("ReplyTo"),
                 MessageStream = options.MessageStream,
             };
 
@@ -74,8 +77,8 @@ public class PostmarkEmailService : IEmailService
         }
         else
         {
-            var (subject, htmlBody) = EmailTemplateStore.Render(template, model);
-            await SendEmailAsync(to, subject, htmlBody, ct);
+            var rendered = EmailTemplateStore.RenderMessage(template, model);
+            await SendRenderedAsync(to, rendered, ct);
         }
     }
 
@@ -92,15 +95,17 @@ public class PostmarkEmailService : IEmailService
         if (options.TemplateIds.TryGetValue(template, out var templateId))
         {
             var client = new PostmarkClient(options.ServerToken);
-            var from = string.IsNullOrEmpty(options.FromName)
+            var fromName = model.GetValueOrDefault("FromName") ?? options.FromName;
+            var from = string.IsNullOrEmpty(fromName)
                 ? options.FromAddress
-                : $"{options.FromName} <{options.FromAddress}>";
+                : $"{fromName} <{options.FromAddress}>";
             var message = new TemplatedPostmarkMessage
             {
                 From = from,
                 To = toHeader,
                 TemplateId = templateId,
                 TemplateModel = model,
+                ReplyTo = model.GetValueOrDefault("ReplyTo"),
                 MessageStream = options.MessageStream,
             };
             var response = await client.SendEmailWithTemplateAsync(message);
@@ -109,9 +114,31 @@ public class PostmarkEmailService : IEmailService
         }
         else
         {
-            var (subject, htmlBody) = EmailTemplateStore.Render(template, model);
-            await SendEmailAsync(toHeader, subject, htmlBody, ct);
+            var rendered = EmailTemplateStore.RenderMessage(template, model);
+            await SendRenderedAsync(toHeader, rendered, ct);
         }
+    }
+
+    private async Task SendRenderedAsync(string to, RenderedEmail rendered, CancellationToken ct)
+    {
+        var options = _optionsFactory();
+        var client = new PostmarkClient(options.ServerToken);
+        var fromName = rendered.FromName ?? options.FromName;
+        var from = string.IsNullOrEmpty(fromName)
+            ? options.FromAddress
+            : $"{fromName} <{options.FromAddress}>";
+        var response = await client.SendMessageAsync(new PostmarkMessage
+        {
+            From = from,
+            To = to,
+            Subject = rendered.Subject,
+            HtmlBody = rendered.HtmlBody,
+            TextBody = rendered.TextBody,
+            ReplyTo = rendered.ReplyTo,
+            MessageStream = options.MessageStream,
+        });
+        if (response.Status != PostmarkStatus.Success)
+            throw new InvalidOperationException($"Postmark email failed: {response.Status} — {response.Message}");
     }
 }
 

@@ -45,6 +45,11 @@ public class ApplicationSettings
     /// deployment email branding. Consumed in Phase 6.</summary>
     public ApplicationEmailBranding? EmailBranding { get; set; }
 
+    /// <summary>Controls the fixed login experience for this Application.
+    /// A null section inherits the realm-wide behaviour (all enabled methods).
+    /// A non-null provider list is ordered and acts as an allow-list.</summary>
+    public ApplicationLoginExperience? LoginExperience { get; set; }
+
     /// <summary>Per-Application self-registration facet: the
     /// <see cref="SelfRegPosture"/> plus per-field overrides of the realm
     /// <see cref="SelfRegistrationSettings"/> policy (captcha stays realm-level).
@@ -122,6 +127,18 @@ public record ApplicationEmailBranding
     /// <summary>Product name used in email subjects / bodies. Null = inherit
     /// the realm branding product name (or the "Modgud" default).</summary>
     public string? ProductName { get; init; }
+    public string? SubjectPrefix { get; init; }
+    public string? Preheader { get; init; }
+    public string? FooterText { get; init; }
+    public string? FromName { get; init; }
+    public string? ReplyTo { get; init; }
+}
+
+public record ApplicationLoginExperience
+{
+    public bool? InternalLoginEnabled { get; init; }
+    public bool? MagicLinkEnabled { get; init; }
+    public List<Guid>? LoginProviderIds { get; init; }
 }
 
 /// <summary>Per-Application self-registration overrides: the posture plus

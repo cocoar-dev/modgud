@@ -73,13 +73,12 @@ public static class PasswordResetEndpoints
                 await emailService.SendTemplatedEmailAsync(
                     user.Email,
                     EmailTemplate.PasswordReset,
-                    new Dictionary<string, string>
+                    await emailBranding.ApplyAsync(new Dictionary<string, string>
                     {
-                        ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                         ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                         ["ActionUrl"] = resetUrl,
                         ["ExpirationMinutes"] = "1440",
-                    });
+                    }, ct: ct), ct);
             }
 
             // Always return OK — never reveal if user/email exists

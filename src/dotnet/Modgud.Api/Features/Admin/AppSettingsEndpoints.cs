@@ -47,10 +47,13 @@ public static class AppSettingsEndpoints
                 // Off/Optional/Required requirement. Default (never configured) = all
                 // three Optional (today's lenient behaviour).
                 var registrationFields = effective.RegistrationFields ?? RegistrationFieldsSettings.Defaults;
+                var loginExperience = effective.LoginExperience;
                 return Results.Ok(new
                 {
                     settings.AuthenticationMinimumLevel,
-                    settings.MagicLinkSelfService,
+                    InternalLoginEnabled = loginExperience?.InternalLoginEnabled ?? true,
+                    MagicLinkSelfService = settings.MagicLinkSelfService
+                        && (loginExperience?.MagicLinkEnabled ?? true),
                     settings.TwoFactorGracePeriodDays,
                     IsControlPlane = tenant?.IsControlPlane ?? false,
                     Branding = new
@@ -81,6 +84,11 @@ public static class AppSettingsEndpoints
                         Firstname = registrationFields.Firstname.ToString(),
                         Lastname = registrationFields.Lastname.ToString(),
                     },
+                    Legal = new
+                    {
+                        TermsOfServiceUrl = SafeLegalUrl(effective.SelfRegistration?.TermsOfServiceUrl),
+                        PrivacyPolicyUrl = SafeLegalUrl(effective.SelfRegistration?.PrivacyPolicyUrl),
+                    },
                 });
             })
         .WithName("AppInfo")
@@ -110,4 +118,10 @@ public static class AppSettingsEndpoints
         var clientId = clientIds[0];
         return string.IsNullOrWhiteSpace(clientId) ? null : clientId;
     }
+
+    private static string? SafeLegalUrl(string? value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+            ? uri.ToString()
+            : null;
 }

@@ -2,16 +2,21 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   CoarNotice,
-  CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect,
+  CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarButton, useDialog,
   CoarTabGroup, CoarTab, CoarMultiSelect,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import EditableStringList from '@/components/EditableStringList.vue'
 import { useGroupStore } from '@/stores/group.store'
+import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useRealmSettingsStore } from '@/stores/realmSettings.store'
 import { useAppPagesApi, type AppSlotDto } from '@/composables/usePagesApi'
 import type { ApplicationSettingsDto } from '@/models/application'
+import AssetPicker from '@/components/AssetPicker.vue'
+import ColorField from '@/components/ColorField.vue'
+import type { AssetDto } from '@/models/assets'
+import BrandingPreview from '@/components/BrandingPreview.vue'
 
 // ADR-0011 per-App settings override sections, extracted from the old standalone
 // ApplicationSettingsModal so the single App modal (AppDetails) can carry them as a
@@ -19,6 +24,7 @@ import type { ApplicationSettingsDto } from '@/models/application'
 // `modelValue` prop (the App's current Settings) and read it back via the exposed
 // `build()` — the exact same override/inherit shape the per-App settings doc uses.
 const { t } = useI18n()
+const dialog = useDialog()
 const props = defineProps<{
   modelValue?: ApplicationSettingsDto | null
   applicationId?: string
@@ -26,17 +32,24 @@ const props = defineProps<{
 }>()
 
 const groupStore = useGroupStore()
+const loginProviderStore = useLoginProviderStore()
 const appConfig = useAppConfigStore()
 const activeTab = ref<'origin' | 'registration' | 'sessions' | 'grants' | 'oauth' | 'pages'>('origin')
 
 const groupOptions = ref<{ value: string; label: string }[]>([])
+const loginProviderOptions = ref<{ value: string; label: string }[]>([])
 
 // Per-section "override" toggle (on → this App overrides the realm; off → inherit).
 // Numbers are kept as strings (empty = inherit that field).
 const f = reactive({
   origin: { override: false, subdomain: '' },
-  branding: { override: false, productName: '', primaryColor: '' },
-  emailBranding: { override: false, productName: '' },
+  branding: {
+    override: false, productName: '', primaryColor: '',
+    logoAssetId: null as string | null, logoUrl: null as string | null,
+    faviconAssetId: null as string | null, faviconUrl: null as string | null,
+  },
+  emailBranding: { override: false, productName: '', subjectPrefix: '', preheader: '', footerText: '', fromName: '', replyTo: '' },
+  loginExperience: { override: false, internal: true, magicLink: true, providerIds: [] as string[] },
   selfReg: {
     override: false,
     posture: '' as '' | 'Off' | 'JitOnOtp' | 'ExplicitEndpoint' | 'InviteCode',
@@ -101,7 +114,19 @@ const inh = computed(() => {
       productName: r?.Branding?.ProductName ?? '',
       primaryColor: r?.Branding?.PrimaryColor ?? '',
     },
-    emailBranding: { productName: '' },
+    emailBranding: {
+      productName: r?.EmailBranding?.ProductName ?? r?.Branding?.ProductName ?? '',
+      subjectPrefix: r?.EmailBranding?.SubjectPrefix ?? '',
+      preheader: r?.EmailBranding?.Preheader ?? '',
+      footerText: r?.EmailBranding?.FooterText ?? '',
+      fromName: r?.EmailBranding?.FromName ?? '',
+      replyTo: r?.EmailBranding?.ReplyTo ?? '',
+    },
+    loginExperience: {
+      internal: true,
+      magicLink: appConfig.config.MagicLinkSelfService,
+      providerIds: loginProviderOptions.value.map((p) => p.value),
+    },
     selfReg: {
       posture: '',
       enabled: r?.SelfRegistration?.Enabled ?? false,
@@ -160,7 +185,13 @@ function fieldBind(section: string, field: string): any {
 function resetForm() {
   f.origin.override = false; f.origin.subdomain = ''
   f.branding.override = false; f.branding.productName = ''; f.branding.primaryColor = ''
+  f.branding.logoAssetId = null; f.branding.faviconAssetId = null
+  f.branding.logoUrl = null; f.branding.faviconUrl = null
   f.emailBranding.override = false; f.emailBranding.productName = ''
+  f.emailBranding.subjectPrefix = ''; f.emailBranding.preheader = ''; f.emailBranding.footerText = ''
+  f.emailBranding.fromName = ''; f.emailBranding.replyTo = ''
+  f.loginExperience.override = false; f.loginExperience.internal = true
+  f.loginExperience.magicLink = true; f.loginExperience.providerIds = []
   f.selfReg.override = false; f.selfReg.posture = ''; f.selfReg.enabled = false
   f.selfReg.requireEmailVerification = true; f.selfReg.requireAdminApproval = false
   f.selfReg.allowedEmailDomains = []; f.selfReg.defaultGroupIds = []
@@ -182,10 +213,25 @@ function populate(s?: ApplicationSettingsDto | null) {
     f.branding.override = true
     f.branding.productName = s.Branding.ProductName ?? ''
     f.branding.primaryColor = s.Branding.PrimaryColor ?? ''
+    f.branding.logoAssetId = s.Branding.LogoAssetId ?? null
+    f.branding.faviconAssetId = s.Branding.FaviconAssetId ?? null
+    f.branding.logoUrl = s.Branding.LogoUrl ?? null
+    f.branding.faviconUrl = s.Branding.FaviconUrl ?? null
   }
   if (s.EmailBranding) {
     f.emailBranding.override = true
     f.emailBranding.productName = s.EmailBranding.ProductName ?? ''
+    f.emailBranding.subjectPrefix = s.EmailBranding.SubjectPrefix ?? ''
+    f.emailBranding.preheader = s.EmailBranding.Preheader ?? ''
+    f.emailBranding.footerText = s.EmailBranding.FooterText ?? ''
+    f.emailBranding.fromName = s.EmailBranding.FromName ?? ''
+    f.emailBranding.replyTo = s.EmailBranding.ReplyTo ?? ''
+  }
+  if (s.LoginExperience) {
+    f.loginExperience.override = true
+    f.loginExperience.internal = s.LoginExperience.InternalLoginEnabled ?? true
+    f.loginExperience.magicLink = s.LoginExperience.MagicLinkEnabled ?? true
+    f.loginExperience.providerIds = s.LoginExperience.LoginProviderIds ?? []
   }
   if (s.SelfRegistration) {
     const sr = s.SelfRegistration
@@ -234,18 +280,107 @@ function populate(s?: ApplicationSettingsDto | null) {
   }
 }
 
+const orderedLoginProviders = computed(() => f.loginExperience.providerIds.map((id) => ({
+  id,
+  label: loginProviderOptions.value.find((option) => option.value === id)?.label ?? id,
+})))
+
+function moveLoginProvider(index: number, delta: -1 | 1) {
+  if (!f.loginExperience.override) return
+  const target = index + delta
+  if (target < 0 || target >= f.loginExperience.providerIds.length) return
+  const reordered = [...f.loginExperience.providerIds]
+  ;[reordered[index], reordered[target]] = [reordered[target]!, reordered[index]!]
+  f.loginExperience.providerIds = reordered
+}
+
+async function pickBrandAsset(kind: 'logo' | 'favicon') {
+  if (!f.branding.override) return
+  const currentId = kind === 'logo' ? f.branding.logoAssetId : f.branding.faviconAssetId
+  const picker = dialog.open<AssetDto>(AssetPicker, {
+    title: kind === 'logo'
+      ? t('admin.customization.branding.pickLogo', {}, 'Select logo')
+      : t('admin.customization.branding.pickFavicon', {}, 'Select favicon'),
+    size: 'l',
+  }, { selectedId: currentId })
+  const selected = await picker.result
+  if (!selected) return
+  if (kind === 'logo') {
+    f.branding.logoAssetId = selected.Id
+    f.branding.logoUrl = selected.Url
+  } else {
+    f.branding.faviconAssetId = selected.Id
+    f.branding.faviconUrl = selected.Url
+  }
+}
+
+function clearBrandAsset(kind: 'logo' | 'favicon') {
+  if (kind === 'logo') {
+    f.branding.logoAssetId = null
+    f.branding.logoUrl = null
+  } else {
+    f.branding.faviconAssetId = null
+    f.branding.faviconUrl = null
+  }
+}
+
+const effectiveLogoUrl = computed(() => f.branding.override
+  ? f.branding.logoUrl || realmSettingsStore.settings?.Branding?.LogoUrl || null
+  : realmSettingsStore.settings?.Branding?.LogoUrl ?? null)
+const effectiveFaviconUrl = computed(() => f.branding.override
+  ? f.branding.faviconUrl || realmSettingsStore.settings?.Branding?.FaviconUrl || null
+  : realmSettingsStore.settings?.Branding?.FaviconUrl ?? null)
+const effectiveProductName = computed(() => f.branding.override
+  ? f.branding.productName.trim() || realmSettingsStore.settings?.Branding?.ProductName || ''
+  : realmSettingsStore.settings?.Branding?.ProductName ?? '')
+const effectivePrimaryColor = computed(() => f.branding.override
+  ? f.branding.primaryColor.trim() || realmSettingsStore.settings?.Branding?.PrimaryColor || ''
+  : realmSettingsStore.settings?.Branding?.PrimaryColor ?? '')
+const realmEmail = computed(() => realmSettingsStore.settings?.EmailBranding)
+const effectiveEmailProductName = computed(() => f.emailBranding.override
+  ? f.emailBranding.productName.trim() || realmEmail.value?.ProductName || effectiveProductName.value
+  : realmEmail.value?.ProductName || effectiveProductName.value)
+const effectiveEmailSubjectPrefix = computed(() => f.emailBranding.override
+  ? f.emailBranding.subjectPrefix.trim() || realmEmail.value?.SubjectPrefix || ''
+  : realmEmail.value?.SubjectPrefix || '')
+const effectiveEmailPreheader = computed(() => f.emailBranding.override
+  ? f.emailBranding.preheader.trim() || realmEmail.value?.Preheader || ''
+  : realmEmail.value?.Preheader || '')
+const effectiveEmailFooterText = computed(() => f.emailBranding.override
+  ? f.emailBranding.footerText.trim() || realmEmail.value?.FooterText || ''
+  : realmEmail.value?.FooterText || '')
+
 /** Build the override DTO as the COMPLETE desired state (the App PUT is a replace):
  * an overridden section sends its values, a non-overridden section sends `null` so the
- * backend clears that override (→ inherit the realm). Origin sends null when off
- * (sparse — toggling a subdomain off doesn't clear an existing route in this view). */
+ * backend clears that override (→ inherit the realm). Origin always sends a
+ * section so turning the toggle off explicitly removes any existing route. */
 function build(): ApplicationSettingsDto {
   return {
-    Origin: f.origin.override ? { Subdomain: f.origin.subdomain.trim() || null } : null,
+    Origin: { Subdomain: f.origin.override ? (f.origin.subdomain.trim() || null) : null },
     Branding: f.branding.override
-      ? { ProductName: f.branding.productName.trim() || null, PrimaryColor: f.branding.primaryColor.trim() || null }
+      ? {
+          ProductName: f.branding.productName.trim() || null,
+          PrimaryColor: f.branding.primaryColor.trim() || null,
+          LogoAssetId: f.branding.logoAssetId,
+          FaviconAssetId: f.branding.faviconAssetId,
+        }
       : null,
     EmailBranding: f.emailBranding.override
-      ? { ProductName: f.emailBranding.productName.trim() || null }
+      ? {
+          ProductName: f.emailBranding.productName.trim() || null,
+          SubjectPrefix: f.emailBranding.subjectPrefix.trim() || null,
+          Preheader: f.emailBranding.preheader.trim() || null,
+          FooterText: f.emailBranding.footerText.trim() || null,
+          FromName: f.emailBranding.fromName.trim() || null,
+          ReplyTo: f.emailBranding.replyTo.trim() || null,
+        }
+      : null,
+    LoginExperience: f.loginExperience.override
+      ? {
+          InternalLoginEnabled: f.loginExperience.internal,
+          MagicLinkEnabled: f.loginExperience.magicLink,
+          LoginProviderIds: f.loginExperience.providerIds,
+        }
       : null,
     SelfRegistration: f.selfReg.override
       ? {
@@ -290,8 +425,11 @@ function build(): ApplicationSettingsDto {
 
 watch(() => props.modelValue, (s) => populate(s), { immediate: true })
 onMounted(async () => {
-  await groupStore.initialize()
+  await Promise.all([groupStore.initialize(), loginProviderStore.loadAll()])
   groupOptions.value = groupStore.groups.map((g) => ({ value: g.Id, label: g.Name }))
+  loginProviderOptions.value = loginProviderStore.providers
+    .filter((p) => !p.IsBuiltIn && p.Enabled && (p.Type === 'Oidc' || p.Type === 'Saml'))
+    .map((p) => ({ value: p.Id, label: p.DisplayName }))
   if (!realmSettingsStore.loaded) await realmSettingsStore.load()
 })
 
@@ -386,13 +524,92 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         <CoarTextInput v-bind="fieldBind('branding', 'productName')" clearable />
       </CoarFormField>
       <CoarFormField :label="t('admin.appSettings.branding.primaryColor', {}, 'Primary Color (CSS)')">
-        <CoarTextInput v-bind="fieldBind('branding', 'primaryColor')" clearable placeholder="#1077be" />
+        <ColorField v-bind="fieldBind('branding', 'primaryColor')" placeholder="#1077be" />
       </CoarFormField>
+      <div class="grid grid-cols-2 gap-3">
+        <CoarFormField :label="t('admin.customization.branding.logo', {}, 'Logo')">
+          <div class="flex items-center gap-2">
+            <div class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded border border-surface-200 bg-surface-50">
+              <img v-if="effectiveLogoUrl" :src="effectiveLogoUrl" alt="" class="max-h-full max-w-full object-contain" />
+              <span v-else class="text-xs text-surface-400">—</span>
+            </div>
+            <CoarButton size="s" variant="ghost" :disabled="!f.branding.override" @click="pickBrandAsset('logo')">
+              {{ t('admin.customization.branding.pick', {}, 'Browse…') }}
+            </CoarButton>
+            <CoarButton v-if="f.branding.override && f.branding.logoAssetId" size="s" variant="ghost" @click="clearBrandAsset('logo')">
+              {{ t('common.clear', {}, 'Clear') }}
+            </CoarButton>
+          </div>
+        </CoarFormField>
+        <CoarFormField :label="t('admin.customization.branding.favicon', {}, 'Favicon')">
+          <div class="flex items-center gap-2">
+            <div class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded border border-surface-200 bg-surface-50">
+              <img v-if="effectiveFaviconUrl" :src="effectiveFaviconUrl" alt="" class="max-h-full max-w-full object-contain" />
+              <span v-else class="text-xs text-surface-400">—</span>
+            </div>
+            <CoarButton size="s" variant="ghost" :disabled="!f.branding.override" @click="pickBrandAsset('favicon')">
+              {{ t('admin.customization.branding.pick', {}, 'Browse…') }}
+            </CoarButton>
+            <CoarButton v-if="f.branding.override && f.branding.faviconAssetId" size="s" variant="ghost" @click="clearBrandAsset('favicon')">
+              {{ t('common.clear', {}, 'Clear') }}
+            </CoarButton>
+          </div>
+        </CoarFormField>
+      </div>
 
       <CoarCheckbox v-model="f.emailBranding.override" :label="t('admin.appSettings.email.override', {}, 'Custom Email Branding')" />
+      <div class="grid grid-cols-2 gap-3">
+        <CoarFormField :label="t('admin.appSettings.email.fromName', {}, 'Sender display name')">
+          <CoarTextInput v-bind="fieldBind('emailBranding', 'fromName')" clearable />
+        </CoarFormField>
+        <CoarFormField :label="t('admin.appSettings.email.replyTo', {}, 'Reply-to address')">
+          <CoarTextInput v-bind="fieldBind('emailBranding', 'replyTo')" type="email" clearable />
+        </CoarFormField>
+      </div>
       <CoarFormField :label="t('admin.appSettings.email.productName', {}, 'Produktname in E-Mails')">
         <CoarTextInput v-bind="fieldBind('emailBranding', 'productName')" clearable />
       </CoarFormField>
+      <CoarFormField :label="t('admin.appSettings.email.subjectPrefix', {}, 'Subject prefix')">
+        <CoarTextInput v-bind="fieldBind('emailBranding', 'subjectPrefix')" clearable placeholder="My App" />
+      </CoarFormField>
+      <CoarFormField :label="t('admin.appSettings.email.preheader', {}, 'Preheader text')">
+        <CoarTextInput v-bind="fieldBind('emailBranding', 'preheader')" clearable />
+      </CoarFormField>
+      <CoarFormField :label="t('admin.appSettings.email.footer', {}, 'Footer text')">
+        <CoarTextInput v-bind="fieldBind('emailBranding', 'footerText')" clearable />
+      </CoarFormField>
+
+      <CoarCheckbox v-model="f.loginExperience.override" :label="t('admin.appSettings.login.override', {}, 'Custom login methods')" />
+      <CoarCheckbox v-bind="fieldBind('loginExperience', 'internal')" :label="t('admin.appSettings.login.internal', {}, 'Username/password and passkeys')" />
+      <CoarCheckbox v-bind="fieldBind('loginExperience', 'magicLink')" :label="t('admin.appSettings.login.magicLink', {}, 'Magic-link sign-in')" />
+      <CoarFormField
+        :label="t('admin.appSettings.login.providers', {}, 'External identity providers (selection order = button order)')"
+        :hint="t('admin.appSettings.login.providersHint', {}, 'An empty selection disables external sign-in for this application.')">
+        <CoarMultiSelect v-bind="fieldBind('loginExperience', 'providerIds')" :options="loginProviderOptions" searchable clearable />
+        <div v-if="orderedLoginProviders.length" class="provider-order">
+          <div v-for="(provider, index) in orderedLoginProviders" :key="provider.id" class="provider-order-row">
+            <span>{{ index + 1 }}. {{ provider.label }}</span>
+            <span class="provider-order-actions">
+              <CoarButton size="s" variant="ghost" :disabled="!f.loginExperience.override || index === 0" @click="moveLoginProvider(index, -1)">↑</CoarButton>
+              <CoarButton size="s" variant="ghost" :disabled="!f.loginExperience.override || index === orderedLoginProviders.length - 1" @click="moveLoginProvider(index, 1)">↓</CoarButton>
+            </span>
+          </div>
+        </div>
+      </CoarFormField>
+      <CoarNotice
+        v-if="f.loginExperience.override && !f.loginExperience.internal && !f.loginExperience.magicLink && f.loginExperience.providerIds.length === 0"
+        variant="warning">
+        {{ t('admin.appSettings.login.noneWarning', {}, 'No sign-in method remains enabled for this application.') }}
+      </CoarNotice>
+
+      <BrandingPreview
+        :product-name="effectiveProductName"
+        :email-product-name="effectiveEmailProductName"
+        :email-subject-prefix="effectiveEmailSubjectPrefix"
+        :email-preheader="effectiveEmailPreheader"
+        :email-footer-text="effectiveEmailFooterText"
+        :logo-url="effectiveLogoUrl"
+        :primary-color="effectivePrimaryColor" />
     </div>
 
     <!-- Registration -->
@@ -597,4 +814,16 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 .app-variant-active { border-color: var(--coar-text-accent-primary, #4f46e5); }
 .app-variant-name { font-size: 0.85rem; font-weight: 500; }
 .app-variant-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.provider-order { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.provider-order-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--coar-border-neutral-secondary);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+.provider-order-actions { display: flex; gap: 2px; }
 </style>

@@ -89,8 +89,13 @@ export const useAuthStore = defineStore('auth', () => {
    * Login with username and password.
    * Returns MfaMethods if 2FA is needed, otherwise completes login.
    */
-  async function login(userName: string, password: string, rememberMe: boolean = false): Promise<LoginResponse | void> {
-    const result = await http.addPath('login').post<LoginResponse>({ UserName: userName, Password: password, RememberMe: rememberMe })
+  async function login(userName: string, password: string, rememberMe: boolean = false, returnUrl?: string): Promise<LoginResponse | void> {
+    const result = await http.addPath('login').post<LoginResponse>({
+      UserName: userName,
+      Password: password,
+      RememberMe: rememberMe,
+      ReturnUrl: returnUrl ?? null,
+    })
     if (result?.RequiresMfa) {
       // Partial sign-in only (TwoFactorUserId cookie) — /api/account/me would 401.
       // Caller (LoginView) shows the MFA-choice/code step; fetchMe runs after mfaLogin succeeds.

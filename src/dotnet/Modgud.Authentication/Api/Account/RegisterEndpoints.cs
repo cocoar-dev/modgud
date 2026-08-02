@@ -37,11 +37,11 @@ public static class RegisterEndpoints
             HttpContext http,
             Modgud.Authentication.Applications.IApplicationSettingsResolver settingsResolver,
             ITurnstileSecretResolver resolver,
+            string? returnUrl,
             CancellationToken ct) =>
         {
-            // ADR-0011 — effective (App ⊕ realm) self-registration, Host-resolved:
-            // on an Application subdomain the SPA gets the App's self-reg posture.
-            var settings = (await settingsResolver.ResolveForRequestAsync(http, clientId: null, ct)).SelfRegistration;
+            var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(returnUrl);
+            var settings = (await settingsResolver.ResolveForRequestAsync(http, clientId, ct)).SelfRegistration;
 
             // Anti-enumeration: always return SOMETHING. A drive-by can't
             // tell whether a realm has self-reg disabled or just isn't

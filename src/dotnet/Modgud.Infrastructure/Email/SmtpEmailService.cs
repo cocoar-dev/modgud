@@ -26,7 +26,11 @@ public class SmtpEmailService : IEmailService
         message.From.Add(new MailboxAddress(options.FromName, options.FromAddress));
         message.To.Add(MailboxAddress.Parse(to));
         message.Subject = subject;
-        message.Body = new TextPart("html") { Text = htmlBody };
+        message.Body = new BodyBuilder
+        {
+            HtmlBody = htmlBody,
+            TextBody = EmailTemplateStore.ToPlainText(htmlBody),
+        }.ToMessageBody();
 
         using var client = new SmtpClient();
         await client.ConnectAsync(options.Host, options.Port, options.UseSsl, ct);
@@ -44,8 +48,7 @@ public class SmtpEmailService : IEmailService
 
     public Task SendTemplatedEmailAsync(string to, EmailTemplate template, Dictionary<string, string> model, CancellationToken ct = default)
     {
-        var (subject, htmlBody) = EmailTemplateStore.Render(template, model);
-        return SendEmailAsync(to, subject, htmlBody, ct);
+        return SendRenderedAsync(to, EmailTemplateStore.RenderMessage(template, model), ct);
     }
 
     public async Task SendTemplatedEmailAsync(IReadOnlyList<string> recipients, EmailTemplate template, Dictionary<string, string> model, CancellationToken ct = default)
@@ -53,19 +56,42 @@ public class SmtpEmailService : IEmailService
         if (recipients is null || recipients.Count == 0) return;
 
         var options = _optionsFactory();
-        var (subject, htmlBody) = EmailTemplateStore.Render(template, model);
+        var rendered = EmailTemplateStore.RenderMessage(template, model);
 
         var message = new MimeMessage();
-        message.From.Add(new MailboxAddress(options.FromName, options.FromAddress));
+        message.From.Add(new MailboxAddress(rendered.FromName ?? options.FromName, options.FromAddress));
         foreach (var addr in recipients)
         {
             if (!string.IsNullOrWhiteSpace(addr))
                 message.To.Add(MailboxAddress.Parse(addr));
         }
         if (message.To.Count == 0) return;
+        if (rendered.ReplyTo is not null) message.ReplyTo.Add(MailboxAddress.Parse(rendered.ReplyTo));
 
-        message.Subject = subject;
-        message.Body = new TextPart("html") { Text = htmlBody };
+        message.Subject = rendered.Subject;
+        message.Body = new BodyBuilder { HtmlBody = rendered.HtmlBody, TextBody = rendered.TextBody }.ToMessageBody();
+
+        using var client = new SmtpClient();
+        await client.ConnectAsync(options.Host, options.Port, options.UseSsl, ct);
+        if (!string.IsNullOrEmpty(options.UserName))
+        {
+            if (options.Password is null)
+                throw new InvalidOperationException("SMTP Password must be configured when UserName is set.");
+            await client.AuthenticateAsync(options.UserName, options.Password, ct);
+        }
+        await client.SendAsync(message, ct);
+        await client.DisconnectAsync(true, ct);
+    }
+
+    private async Task SendRenderedAsync(string to, RenderedEmail rendered, CancellationToken ct)
+    {
+        var options = _optionsFactory();
+        var message = new MimeMessage();
+        message.From.Add(new MailboxAddress(rendered.FromName ?? options.FromName, options.FromAddress));
+        message.To.Add(MailboxAddress.Parse(to));
+        if (rendered.ReplyTo is not null) message.ReplyTo.Add(MailboxAddress.Parse(rendered.ReplyTo));
+        message.Subject = rendered.Subject;
+        message.Body = new BodyBuilder { HtmlBody = rendered.HtmlBody, TextBody = rendered.TextBody }.ToMessageBody();
 
         using var client = new SmtpClient();
         await client.ConnectAsync(options.Host, options.Port, options.UseSsl, ct);

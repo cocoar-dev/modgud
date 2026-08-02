@@ -36,6 +36,7 @@ public static class MagicLinkEndpoints
             IDocumentSession session,
             IEmailService emailService,
             Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
+            Modgud.Authentication.Applications.IApplicationSettingsResolver applicationSettings,
             IMagicLinkConfiguration config,
             IRealmProvisioningService realmSvc,
             IAuthSettings appSettings,
@@ -46,7 +47,10 @@ public static class MagicLinkEndpoints
             const string genericMessage = "If your email is registered, you will receive a login link.";
 
             // Check both platform config AND in-app settings
-            if (!config.Enabled || !appSettings.MagicLinkSelfService)
+            var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl);
+            var experience = await applicationSettings.ResolveForRequestAsync(context, clientId, ct);
+            if (!config.Enabled || !appSettings.MagicLinkSelfService
+                || experience.LoginExperience?.MagicLinkEnabled == false)
             {
                 await AntiTimingDelayAsync();
                 return Results.Ok(new { Message = genericMessage });
@@ -143,13 +147,12 @@ public static class MagicLinkEndpoints
             await emailService.SendTemplatedEmailAsync(
                 user.Email!,
                 EmailTemplate.MagicLink,
-                new Dictionary<string, string>
+                await emailBranding.ApplyAsync(new Dictionary<string, string>
                 {
-                    ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                     ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                     ["ActionUrl"] = magicUrl,
                     ["ExpirationMinutes"] = config.ExpirationMinutes.ToString(),
-                });
+                }, clientId: clientId, ct: ct), ct);
 
             // Anti-timing: the success path does real work (DB writes + email send)
             // but used to skip the jitter every failure branch applies — so a

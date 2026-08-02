@@ -4,6 +4,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import { CoarButton, CoarIcon } from '@cocoar/vue-ui'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useAuthStore } from '@/stores/auth.store'
+import { useAppConfigStore } from '@/stores/appconfig.store'
 
 const { t } = useI18n()
 
@@ -12,9 +13,11 @@ const props = defineProps<{
 }>()
 
 const authStore = useAuthStore()
+const appConfig = useAppConfigStore()
 const submitting = ref(false)
 
 const idpName = computed(() => authStore.user?.IdpDisplayName ?? 'IdP')
+const productName = computed(() => appConfig.config.Branding.ProductName || 'Modgud')
 
 async function logoutLocalOnly() {
   if (submitting.value) return
@@ -70,7 +73,7 @@ async function logoutEverywhere() {
           <CoarIcon name="door-open" size="m" class="logout-choice-icon" />
           <div class="flex flex-col text-left">
             <span class="font-semibold">
-              {{ t('logout.localOnly', {}, 'Only from Modgud') }}
+              {{ t('logout.localOnlyBranded', { app: productName }, 'Only from {app}') }}
             </span>
             <span class="text-xs opacity-70">
               {{ t('logout.localOnlyHint', { idp: idpName }, 'Your {idp} session stays active') }}

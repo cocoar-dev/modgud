@@ -138,13 +138,12 @@ public class EmailOtpService(
         await emailService.SendTemplatedEmailAsync(
             user.Email!,
             EmailTemplate.EmailOtp,
-            new Dictionary<string, string>
+            await emailBranding.ApplyAsync(new Dictionary<string, string>
             {
-                ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                 ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                 ["Code"] = code,
                 ["ExpirationMinutes"] = config.ExpirationMinutes.ToString(),
-            },
+            }, ct: ct),
             ct);
 
         return true;

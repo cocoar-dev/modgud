@@ -13,6 +13,7 @@ public record ApplicationSettingsDto
     public ApplicationOriginDto? Origin { get; init; }
     public ApplicationBrandingDto? Branding { get; init; }
     public ApplicationEmailBrandingDto? EmailBranding { get; init; }
+    public ApplicationLoginExperienceDto? LoginExperience { get; init; }
     public ApplicationSelfRegistrationDto? SelfRegistration { get; init; }
     public ApplicationNativeGrantsDto? NativeGrants { get; init; }
     public ApplicationClientSessionsDto? ClientSessions { get; init; }
@@ -43,6 +44,20 @@ public record ApplicationBrandingDto
 public record ApplicationEmailBrandingDto
 {
     public string? ProductName { get; init; }
+    public string? SubjectPrefix { get; init; }
+    public string? Preheader { get; init; }
+    public string? FooterText { get; init; }
+    public string? FromName { get; init; }
+    public string? ReplyTo { get; init; }
+}
+
+public record ApplicationLoginExperienceDto
+{
+    public bool? InternalLoginEnabled { get; init; }
+    public bool? MagicLinkEnabled { get; init; }
+    /// <summary>Ordered ShortGuid allow-list. Null means every enabled external
+    /// provider; an empty array intentionally disables every external provider.</summary>
+    public string[]? LoginProviderIds { get; init; }
 }
 
 public record ApplicationSelfRegistrationDto

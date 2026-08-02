@@ -238,6 +238,7 @@ export const baseConfig = {
           text: 'Customization',
           items: [
             { text: 'Branding', link: '/platform/branding' },
+            { text: 'Transactional email', link: '/platform/email-customization' },
             { text: 'Asset Library', link: '/platform/assets' },
             { text: 'Pages (Beta)', link: '/platform/pages' },
           ],

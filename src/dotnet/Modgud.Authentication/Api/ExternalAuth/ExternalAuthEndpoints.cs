@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Infrastructure.Observability;
+using Modgud.Authentication.Applications;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Modgud.Authentication.Api.ExternalAuth;
 
@@ -14,12 +16,24 @@ public static class ExternalAuthEndpoints
         // enabled, non-deleted OIDC and SAML providers. Internal is rendered by
         // the built-in form; LDAP/Kerberos remain unsupported and stay hidden.
         endpoints.MapGet($"{path}/account/external-logins",
-            async ([FromServices] IQuerySession session, CancellationToken ct) =>
+            async (HttpContext http,
+                   string? returnUrl,
+                   [FromServices] IQuerySession session,
+                   [FromServices] IApplicationSettingsResolver settingsResolver,
+                   CancellationToken ct) =>
             {
                 var providers = await session.Query<LoginProvider>()
                     .Where(c => !c.IsDeleted && c.Enabled
                         && (c.Type == LoginProviderType.Oidc || c.Type == LoginProviderType.Saml))
                     .ToListAsync(ct);
+
+                var experience = (await settingsResolver.ResolveForRequestAsync(
+                    http, ExtractAuthorizeClientId(returnUrl), ct)).LoginExperience;
+                if (experience?.LoginProviderIds is { } allowed)
+                {
+                    var byId = providers.ToDictionary(p => p.Id);
+                    providers = allowed.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+                }
 
                 // Kind tells the login page which entry-point to build:
                 //   Oidc → /api/account/external-login/{id}/start  (challenge)
@@ -42,10 +56,17 @@ public static class ExternalAuthEndpoints
                    string? returnUrl,
                    HttpContext http,
                    [FromServices] IQuerySession session,
+                   [FromServices] IApplicationSettingsResolver settingsResolver,
                    CancellationToken ct) =>
             {
                 var config = await session.LoadAsync<LoginProvider>(loginProviderId, ct);
                 if (config is null || config.IsDeleted || !config.Enabled)
+                    return Results.NotFound();
+
+                var allowed = (await settingsResolver.ResolveForRequestAsync(
+                        http, ExtractAuthorizeClientId(returnUrl), ct))
+                    .LoginExperience?.LoginProviderIds;
+                if (allowed is not null && !allowed.Contains(loginProviderId))
                     return Results.NotFound();
 
                 // This route is the OIDC entry point. SAML has its own
@@ -184,6 +205,21 @@ public static class ExternalAuthEndpoints
                     : "/";
                 return Results.Redirect(returnUrl);
             }).AllowAnonymous();
+    }
+
+    internal static string? ExtractAuthorizeClientId(string? returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl) || returnUrl.Length > 8192
+            || returnUrl.IndexOfAny(['\r', '\n', '\0', '\\']) >= 0)
+            return null;
+        var queryStart = returnUrl.IndexOf('?');
+        if (queryStart <= 0
+            || !string.Equals(returnUrl[..queryStart], "/connect/authorize", StringComparison.OrdinalIgnoreCase))
+            return null;
+        var query = QueryHelpers.ParseQuery(returnUrl[queryStart..]);
+        return query.TryGetValue("client_id", out var ids) && ids.Count == 1
+            ? ids[0]
+            : null;
     }
 
     public record ExternalLoginDto(

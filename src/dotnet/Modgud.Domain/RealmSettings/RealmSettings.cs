@@ -81,6 +81,10 @@ public class RealmSettings
     /// before the user authenticates.</summary>
     public BrandingSettings? Branding { get; set; }
 
+    /// <summary>Realm defaults for transactional-email copy. Null fields fall
+    /// back to Branding and the built-in DE/EN template copy.</summary>
+    public EmailBrandingSettings? EmailBranding { get; set; }
+
     /// <summary>Per-realm policy for which identity fields (username, given
     /// name, family name) are required when a user account is created. Email is
     /// always required and is not represented here. Null = never configured;
