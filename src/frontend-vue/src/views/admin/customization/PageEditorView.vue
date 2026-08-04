@@ -5,6 +5,7 @@ import { CoarPageBuilder, normalizePageSchema, type PageNode } from '@cocoar/vue
 import { CoarNotice, CoarButton, CoarTextInput, CoarFormField, useDialog } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
+import { useAppConfigStore } from '@/stores/appconfig.store'
 import AssetPicker from '@/components/AssetPicker.vue'
 import type { AssetDto } from '@/models/assets'
 import {
@@ -14,6 +15,7 @@ import {
   createDefaultAuthPageSchema,
   type AuthPageSlot,
 } from '@/page-builder/authPageConfig'
+import { createAuthRuntimeContext } from '@/page-builder/authPageContext'
 import {
   useRealmPagesApi,
   type PageVariantRevision,
@@ -26,6 +28,7 @@ const route = useRoute()
 const router = useRouter()
 const dialog = useDialog()
 const api = useRealmPagesApi()
+const appConfig = useAppConfigStore()
 
 const slug = computed(() => (route.params.slug as string) ?? '')
 const slot = computed<AuthPageSlot>(() =>
@@ -41,6 +44,24 @@ const pageConfig = computed(() => createAuthPageConfig(slot.value, authPageLocal
   const result = await ref$.result
   return result?.Id ?? null
 }))
+
+const previewState = computed(() => ({
+  login: 'credentials',
+  'password-forgot': 'form',
+  logout: 'complete',
+  consent: 'prompt',
+})[slot.value])
+
+// "Host values" in CoarPageBuilder means the consumer-supplied preview
+// contract. Keep it representative of the current realm while request-bound
+// arrays (external providers / consent scopes) remain available as explicit
+// Empty, Typical and Overflow fixtures from the auth preset.
+const previewContext = computed(() => createAuthRuntimeContext({
+  config: appConfig.config,
+  viewState: previewState.value,
+}))
+
+const previewFallbackSchema = computed(() => createDefaultAuthPageSchema(slot.value))
 
 const labelBySlot: Record<string, string> = {
   login: t('admin.customization.pages.login.title', {}, 'Login'),
@@ -236,6 +257,10 @@ watch([slot, variantId], load, { immediate: true })
       v-model="schema"
       :config="pageConfig"
       authoring-mode="code"
+      :preview-context="previewContext"
+      :preview-state="previewState"
+      :preview-locale="authPageLocale(language)"
+      :preview-fallback-schema="previewFallbackSchema"
       class="builder"
     />
   </div>
