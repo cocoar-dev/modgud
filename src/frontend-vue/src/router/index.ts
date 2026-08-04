@@ -6,14 +6,13 @@ import { MODAL_MD, MODAL_LG, MODAL_LIST_FORM } from './modal-sizes'
 
 /**
  * Per-route gate for routes that depend on the page-builder feature
- * flag. AppConfig has already loaded by the time the user navigates
- * into /admin/* (the global beforeEach in this file ensures
- * authStore.fetchMe runs first, and the layout root awaits the
- * appConfig load). When the flag is off we redirect to the visible
+ * flag. Deep links can reach this guard before the layout has mounted,
+ * so the guard loads AppConfig itself. When the flag is off we redirect to the visible
  * Branding sibling so deep-links don't dead-end on a blank screen.
  */
-const pageBuilderFeatureGate: NavigationGuard = () => {
+const pageBuilderFeatureGate: NavigationGuard = async () => {
   const appConfig = useAppConfigStore()
+  await appConfig.load()
   if (!appConfig.config.Features.PageBuilder) {
     return { path: '/platform/customization/branding', replace: true }
   }

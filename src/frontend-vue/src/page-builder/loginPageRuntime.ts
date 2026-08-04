@@ -1,5 +1,5 @@
 import type { ComputedRef, InjectionKey, Ref } from 'vue'
-import { inject } from 'vue'
+import { computed, inject, ref } from 'vue'
 import type { BrandingConfig } from '@/stores/appconfig.store'
 
 export interface ExternalLoginDto {
@@ -22,7 +22,17 @@ export const LOGIN_PAGE_RUNTIME_KEY: InjectionKey<LoginPageRuntimeContext>
   = Symbol.for('modgud.login-page-runtime') as InjectionKey<LoginPageRuntimeContext>
 
 export function useLoginPageRuntime(): LoginPageRuntimeContext {
-  const context = inject(LOGIN_PAGE_RUNTIME_KEY)
-  if (!context) throw new Error('Login PageBuilder element rendered outside LoginView.')
-  return context
+  // CoarPageBuilder renders custom elements inside its own editor preview,
+  // outside LoginView. Neutral fallback data keeps those elements previewable
+  // without granting the editor any real login actions.
+  return inject(LOGIN_PAGE_RUNTIME_KEY, {
+    branding: computed(() => ({
+      ProductName: null,
+      LogoUrl: null,
+      FaviconUrl: null,
+      PrimaryColor: null,
+    })),
+    externalLogins: ref([]),
+    startExternalLogin: () => {},
+  })
 }
