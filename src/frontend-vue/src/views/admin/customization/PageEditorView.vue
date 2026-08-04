@@ -231,7 +231,13 @@ watch([slot, variantId], load, { immediate: true })
     </CoarNotice>
 
     <div v-if="loading" class="text-sm text-gray-400">{{ t('common.loading', {}, 'Loading…') }}</div>
-    <CoarPageBuilder v-else v-model="schema" :config="pageConfig" class="builder" />
+    <CoarPageBuilder
+      v-else
+      v-model="schema"
+      :config="pageConfig"
+      authoring-mode="code"
+      class="builder"
+    />
   </div>
 </template>
 

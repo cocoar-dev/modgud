@@ -34,6 +34,7 @@ const { pageCodeValues, onRuntimeChange, runPageAction } = useAuthPageCodeRuntim
 
 <template>
   <CoarPageRenderer
+    class="auth-runtime-page-renderer"
     :schema="schema"
     :config="config"
     :actions="actions"
@@ -46,3 +47,16 @@ const { pageCodeValues, onRuntimeChange, runPageAction } = useAuthPageCodeRuntim
     @runtime-change="onRuntimeChange"
   />
 </template>
+
+<style scoped>
+/*
+ * Auth page documents use min-height: 100%, while the generic renderer is
+ * intentionally content-sized. Give this full-page consumer a definite
+ * containing block so the document fills the viewport and can still grow
+ * beyond it when a small screen needs scrolling.
+ */
+.auth-runtime-page-renderer {
+  height: 100vh;
+  height: 100dvh;
+}
+</style>
