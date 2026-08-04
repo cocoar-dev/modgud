@@ -275,6 +275,11 @@ public sealed record EffectiveSettings
     {
         if (activeId is null || variants is null) return null; // built-in
         var v = variants.FirstOrDefault(x => x.Id == activeId);
-        return string.IsNullOrWhiteSpace(v?.Schema) ? null : v!.Schema;
+        if (v is null) return null;
+        // PublishedSchema was introduced after the original variant model.
+        // Falling back to Schema keeps already-active legacy documents live;
+        // every subsequent edit snapshots/publishes them through the new gate.
+        var live = v.PublishedSchema ?? v.Schema;
+        return string.IsNullOrWhiteSpace(live) ? null : live;
     }
 }

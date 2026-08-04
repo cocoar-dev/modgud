@@ -2,8 +2,9 @@ namespace Modgud.Domain.Realms;
 
 /// <summary>
 /// A single named PageBuilder variant for a page slot (ADR-0001). The
-/// <see cref="Schema"/> is opaque JSON — the SPA's <c>@cocoar/vue-page-builder</c>
-/// renderer is the schema-shape authority; the backend only stores + serves it.
+/// <see cref="Schema"/> is the editable draft. Authentication surfaces only
+/// consume <see cref="PublishedSchema"/>, so saving an active variant cannot
+/// accidentally change the live login experience.
 /// </summary>
 public class PageVariant
 {
@@ -18,8 +19,25 @@ public class PageVariant
     /// <summary>Serialized <c>PageNode</c> tree as JSON.</summary>
     public string Schema { get; set; } = default!;
 
+    /// <summary>Last server-validated document promoted to authentication
+    /// surfaces. Null means the variant has never been published.</summary>
+    public string? PublishedSchema { get; set; }
+
+    public int PublishedRevision { get; set; }
+    public DateTimeOffset? PublishedAt { get; set; }
+    public List<PageVariantRevision> Revisions { get; set; } = new();
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
+}
+
+public class PageVariantRevision
+{
+    public int Number { get; set; }
+    public string Schema { get; set; } = default!;
+    public DateTimeOffset PublishedAt { get; set; }
+    public string? PublishedBy { get; set; }
+    public int? RollbackOfRevision { get; set; }
 }
 
 /// <summary>

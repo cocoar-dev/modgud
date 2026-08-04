@@ -28,8 +28,9 @@ const SLOT_LABELS: Record<string, string> = {
   login: t('admin.customization.pages.login.title', {}, 'Login'),
   logout: t('admin.customization.pages.logout.title', {}, 'Logout'),
   'password-forgot': t('admin.customization.pages.passwordForgot.title', {}, 'Forgot password'),
+  consent: t('admin.customization.pages.consent.title', {}, 'Consent'),
 }
-const CREATABLE_SLOTS = ['login', 'logout', 'password-forgot']
+const CREATABLE_SLOTS = ['login', 'logout', 'password-forgot', 'consent']
 
 interface VariantRow {
   Id: string
@@ -40,6 +41,8 @@ interface VariantRow {
   UsedByApps: string[]
   UsedByCount: number
   UpdatedAt: string | null
+  PublishStatus: string
+  PublishedRevision: number
 }
 
 const rows = ref<VariantRow[]>([])
@@ -61,6 +64,10 @@ async function reload() {
         UsedByApps: v.UsedByApps,
         UsedByCount: v.UsedByApps.length + (v.RealmActive ? 1 : 0),
         UpdatedAt: v.UpdatedAt,
+        PublishStatus: v.IsPublished
+          ? v.HasUnpublishedChanges ? 'Draft changed' : `Published r${v.PublishedRevision}`
+          : 'Not published',
+        PublishedRevision: v.PublishedRevision,
       })))
   } catch (e: any) { error.value = e?.message ?? String(e) }
 }
@@ -123,6 +130,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<VariantRow>(), { op
     (col: any) => col.field('SlugLabel').header('Type', 'admin.customization.pages.type').width(180),
     (col: any) => col.field('UsedByCount').header('Used By', 'admin.customization.pages.usedBy').width(140)
       .option('tooltipValueGetter', (p: any) => p.data ? usedByTooltip(p.data) : ''),
+    (col: any) => col.field('PublishStatus').header('Status', 'common.status').width(160),
     (col: any) => col.field('UpdatedAt').header('Updated', 'common.updated').width(200)
       .option('valueGetter', (p: any) => fmtDate(p.data?.UpdatedAt)),
   ])

@@ -13,13 +13,18 @@ import {
   CoarFormField,
 } from '@cocoar/vue-ui'
 import {
-  CoarPageRenderer,
   normalizePageSchema,
   type ActionHandler,
   type ActionValues,
   type PageNode,
 } from '@cocoar/vue-page-builder'
-import { createAuthPageConfig } from '@/page-builder/authPageConfig'
+import {
+  authPageLocale,
+  createAuthPageConfig,
+  createDefaultAuthPageSchema,
+} from '@/page-builder/authPageConfig'
+import { createAuthRuntimeContext } from '@/page-builder/authPageContext'
+import AuthRuntimePageRenderer from '@/page-builder/AuthRuntimePageRenderer.vue'
 import { LOGIN_PAGE_RUNTIME_KEY } from '@/page-builder/loginPageRuntime'
 import AuthBrand from '@/components/auth/AuthBrand.vue'
 
@@ -54,10 +59,28 @@ const submitting = ref(false)
 const sent = ref(false)
 const error = ref('')
 
-const forgotPageConfig = createAuthPageConfig('password-forgot')
+const forgotPageConfig = computed(() => createAuthPageConfig('password-forgot', authPageLocale(language.value)))
+const forgotFallbackSchema = computed(() => createDefaultAuthPageSchema('password-forgot'))
 const customForgotSchema = ref<PageNode | null>(null)
 const forgotPageReady = ref(false)
 
+const forgotViewState = computed(() => isPasswordless.value
+  ? 'passwordless-unavailable'
+  : sent.value
+    ? 'accepted'
+    : submitting.value
+      ? 'submitting'
+      : error.value
+        ? 'error'
+        : 'form')
+const forgotRuntimeContext = computed(() => createAuthRuntimeContext({
+  config: appConfig.config,
+  viewState: forgotViewState.value,
+  feedbackMessage: sent.value
+    ? t('auth.forgotPassword.sent', {}, 'If an account exists, a message has been sent.')
+    : error.value,
+  feedbackSuccess: sent.value,
+}))
 onMounted(async () => {
   try {
     await appConfig.loadForLogin(redirectTarget.value)
@@ -66,7 +89,7 @@ onMounted(async () => {
     if (!stored) return
     customForgotSchema.value = normalizePageSchema(
       JSON.parse(stored),
-      { elements: forgotPageConfig.elements },
+      { elements: forgotPageConfig.value.elements },
     ).schema
   } catch {
     customForgotSchema.value = null
@@ -124,6 +147,12 @@ const customForgotActions: Record<string, ActionHandler> = {
     await requestReset(userName.value)
   },
   'auth:back-to-login': () => router.push({ path: '/login', query: { redirect: route.query.redirect } }),
+  'legal:terms': () => {
+    if (appConfig.config.Legal.TermsOfServiceUrl) window.location.assign(appConfig.config.Legal.TermsOfServiceUrl)
+  },
+  'legal:privacy': () => {
+    if (appConfig.config.Legal.PrivacyPolicyUrl) window.location.assign(appConfig.config.Legal.PrivacyPolicyUrl)
+  },
 }
 </script>
 
@@ -140,11 +169,16 @@ const customForgotActions: Record<string, ActionHandler> = {
       {{ t('common.loading', {}, 'Loading…') }}
     </div>
 
-    <CoarPageRenderer
+    <AuthRuntimePageRenderer
       v-else-if="customForgotSchema && !isPasswordless && !sent"
+      page-id="auth-password-forgot"
       :schema="customForgotSchema"
       :config="forgotPageConfig"
       :actions="customForgotActions"
+      :fallback-schema="forgotFallbackSchema"
+      :runtime-context="forgotRuntimeContext"
+      :view-state="forgotViewState"
+      :locale="authPageLocale(language)"
     />
 
     <div v-else class="flex min-h-screen items-center justify-center p-4">

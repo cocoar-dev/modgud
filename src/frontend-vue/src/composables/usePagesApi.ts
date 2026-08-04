@@ -7,6 +7,10 @@ export interface PageVariantSummary {
   Name: string
   CreatedAt: string
   UpdatedAt: string | null
+  PublishedAt: string | null
+  PublishedRevision: number
+  IsPublished: boolean
+  HasUnpublishedChanges: boolean
   RealmActive: boolean
   UsedByApps: string[]
 }
@@ -15,6 +19,18 @@ export interface PageVariantFull {
   Id: string
   Name: string
   Schema: string
+  PublishedRevision: number
+  PublishedAt: string | null
+  IsPublished: boolean
+  HasUnpublishedChanges: boolean
+  Revisions: PageVariantRevision[]
+}
+
+export interface PageVariantRevision {
+  Number: number
+  PublishedAt: string
+  PublishedBy: string | null
+  RollbackOfRevision: number | null
 }
 
 export interface RealmSlotDto {
@@ -68,6 +84,14 @@ export function useRealmPagesApi() {
       ok<{ Id: string; Name: string }>(await fetch(`${base}/${enc(slug)}/variants`, jsonInit('POST', body))),
     updateVariant: async (slug: string, id: string, body: VariantPayload) =>
       ok<{ Id: string; Name: string }>(await fetch(`${base}/${enc(slug)}/variants/${enc(id)}`, jsonInit('PUT', body))),
+    publishVariant: async (slug: string, id: string) =>
+      ok<{ Id: string; PublishedRevision: number; PublishedAt: string }>(
+        await fetch(`${base}/${enc(slug)}/variants/${enc(id)}/publish`, { method: 'POST', ...acceptJson }),
+      ),
+    rollbackVariant: async (slug: string, id: string, revision: number) =>
+      ok<{ Id: string; PublishedRevision: number; PublishedAt: string }>(
+        await fetch(`${base}/${enc(slug)}/variants/${enc(id)}/rollback/${revision}`, { method: 'POST', ...acceptJson }),
+      ),
     deleteVariant: async (slug: string, id: string) =>
       okEmpty(await fetch(`${base}/${enc(slug)}/variants/${enc(id)}`, { method: 'DELETE', ...acceptJson })),
     setActive: async (slug: string, activeVariantId: string | null) =>

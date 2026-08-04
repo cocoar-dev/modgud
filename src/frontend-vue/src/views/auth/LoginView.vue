@@ -19,13 +19,18 @@ import {
 } from '@cocoar/vue-ui'
 import SecureSetupModal from './SecureSetupModal.vue'
 import {
-  CoarPageRenderer,
   normalizePageSchema,
   type ActionHandler,
   type ActionValues,
   type PageNode,
 } from '@cocoar/vue-page-builder'
-import { createAuthPageConfig } from '@/page-builder/authPageConfig'
+import {
+  authPageLocale,
+  createAuthPageConfig,
+  createDefaultAuthPageSchema,
+} from '@/page-builder/authPageConfig'
+import { createAuthRuntimeContext } from '@/page-builder/authPageContext'
+import AuthRuntimePageRenderer from '@/page-builder/AuthRuntimePageRenderer.vue'
 import {
   LOGIN_PAGE_RUNTIME_KEY,
   type ExternalLoginDto,
@@ -145,20 +150,36 @@ const magicLinkSent = ref(false)
 // Grace period state (populated from login response when RequiresSecureSetup)
 const secureSetupInGrace = ref(false)
 const secureSetupDueAt = ref<string | null>(null)
+const passkeyLoading = ref(false)
 
 const isPasswordless = () => appConfig.config.AuthenticationMinimumLevel >= 2
 
-const loginPageConfig = createAuthPageConfig('login')
+const loginPageConfig = computed(() => createAuthPageConfig('login', authPageLocale(language.value)))
+const loginFallbackSchema = computed(() => createDefaultAuthPageSchema('login'))
 const customLoginSchema = ref<PageNode | null>(null)
 const loginPageReady = ref(false)
 
+const loginViewState = computed(() => error.value
+  ? 'error'
+  : submitting.value || passkeyLoading.value
+    ? 'submitting'
+    : step.value === 'credentials'
+      ? 'credentials'
+      : 'mfa-continuation')
+const loginRuntimeContext = computed(() => createAuthRuntimeContext({
+  config: appConfig.config,
+  externalProviders: externalLogins.value,
+  registrationEnabled: selfRegistrationEnabled.value,
+  viewState: loginViewState.value,
+  feedbackMessage: error.value,
+}))
 onMounted(async () => {
   try {
     await appConfig.loadForLogin(redirectTarget.value)
     if (!appConfig.config.Features.PageBuilder || route.query.safemode === '1') return
     const stored = appConfig.config.Pages.login
     if (!stored) return
-    const normalized = normalizePageSchema(JSON.parse(stored), { elements: loginPageConfig.elements })
+    const normalized = normalizePageSchema(JSON.parse(stored), { elements: loginPageConfig.value.elements })
     customLoginSchema.value = normalized.schema
   } catch {
     // A broken or unreachable customization must never make authentication
@@ -256,6 +277,20 @@ const customLoginActions: Record<string, ActionHandler> = {
       throw new Error(t('auth.registration.notAvailable', {}, 'Registration is not available.'))
     }
     return router.push({ path: '/register', query: { redirect: route.query.redirect } })
+  },
+  'auth:external-provider': (values) => {
+    const providerId = values.providerId
+    const provider = typeof providerId === 'string'
+      ? externalLogins.value.find(item => item.Id === providerId)
+      : undefined
+    if (!provider) throw new Error(t('auth.idp.notEnabled', {}, 'This identity provider is not available.'))
+    startExternalLogin(provider)
+  },
+  'legal:terms': () => {
+    if (appConfig.config.Legal.TermsOfServiceUrl) window.location.assign(appConfig.config.Legal.TermsOfServiceUrl)
+  },
+  'legal:privacy': () => {
+    if (appConfig.config.Legal.PrivacyPolicyUrl) window.location.assign(appConfig.config.Legal.PrivacyPolicyUrl)
   },
 }
 
@@ -376,7 +411,6 @@ async function onSecureSetupLogout() {
 
 // ── Passkey Login ──
 const passkeyHttp = useHttpClient('/api/account/passkey')
-const passkeyLoading = ref(false)
 
 async function handlePasskeyLogin(reportToRenderer = false) {
   passkeyLoading.value = true
@@ -467,10 +501,15 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
 
     <template v-else-if="step === 'credentials' && customLoginSchema && !isPasswordless()">
       <CoarNotice v-if="error" variant="error" class="custom-login-error">{{ error }}</CoarNotice>
-      <CoarPageRenderer
+      <AuthRuntimePageRenderer
+        page-id="auth-login"
         :schema="customLoginSchema"
         :config="loginPageConfig"
         :actions="customLoginActions"
+        :fallback-schema="loginFallbackSchema"
+        :runtime-context="loginRuntimeContext"
+        :view-state="loginViewState"
+        :locale="authPageLocale(language)"
       />
     </template>
 

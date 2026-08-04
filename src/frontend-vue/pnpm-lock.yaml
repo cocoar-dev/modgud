@@ -18,22 +18,22 @@ importers:
         version: 4.3.2
       '@cocoar/vue-data-grid':
         specifier: 2.18.0
-        version: 2.18.0(@cocoar/vue-localization@2.18.0(vue@3.5.39(typescript@6.0.3)))(@cocoar/vue-ui@2.18.0(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3)))(@js-temporal/polyfill@0.5.1)(vue@3.5.39(typescript@6.0.3))
+        version: 2.18.0(@cocoar-dev/vue-localization@2.18.0-alpha.9(vue@3.5.39(typescript@6.0.3)))(@cocoar-dev/vue-ui@2.18.0-alpha.9(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3)))(@js-temporal/polyfill@0.5.1)(vue@3.5.39(typescript@6.0.3))
       '@cocoar/vue-fragment-parser':
         specifier: 2.18.0
-        version: 2.18.0(@cocoar/vue-ui@2.18.0(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3)))(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))
+        version: 2.18.0(@cocoar-dev/vue-ui@2.18.0-alpha.9(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3)))(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))
       '@cocoar/vue-localization':
-        specifier: 2.18.0
-        version: 2.18.0(vue@3.5.39(typescript@6.0.3))
+        specifier: npm:@cocoar-dev/vue-localization@2.18.0-alpha.9
+        version: '@cocoar-dev/vue-localization@2.18.0-alpha.9(vue@3.5.39(typescript@6.0.3))'
       '@cocoar/vue-page-builder':
-        specifier: 2.18.0
-        version: 2.18.0(@cocoar/vue-localization@2.18.0(vue@3.5.39(typescript@6.0.3)))(@cocoar/vue-ui@2.18.0(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))
+        specifier: npm:@cocoar-dev/vue-page-builder@2.18.0-alpha.9
+        version: '@cocoar-dev/vue-page-builder@2.18.0-alpha.9(@cocoar-dev/vue-localization@2.18.0-alpha.9(vue@3.5.39(typescript@6.0.3)))(@cocoar-dev/vue-script-editor@2.18.0-alpha.9(monaco-editor@0.55.1)(vue@3.5.39(typescript@6.0.3)))(@cocoar-dev/vue-ui@2.18.0-alpha.9(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3)))(monaco-editor@0.55.1)(vue@3.5.39(typescript@6.0.3))'
       '@cocoar/vue-script-editor':
-        specifier: 2.18.0
-        version: 2.18.0(monaco-editor@0.55.1)(vue@3.5.39(typescript@6.0.3))
+        specifier: npm:@cocoar-dev/vue-script-editor@2.18.0-alpha.9
+        version: '@cocoar-dev/vue-script-editor@2.18.0-alpha.9(monaco-editor@0.55.1)(vue@3.5.39(typescript@6.0.3))'
       '@cocoar/vue-ui':
-        specifier: 2.18.0
-        version: 2.18.0(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))
+        specifier: npm:@cocoar-dev/vue-ui@2.18.0-alpha.9
+        version: '@cocoar-dev/vue-ui@2.18.0-alpha.9(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))'
       monaco-editor:
         specifier: ^0.55.1
         version: 0.55.1
@@ -112,6 +112,32 @@ packages:
     resolution: {integrity: sha512-p7/ABylAYlexb31wtRdIfH9L9A0Z2T/9H6zAqzqndkY2PLkvNNc580wGhp/gGKN4Sp9sQvSkhc6Oga8/O+wTyw==}
     engines: {node: ^22.18.0 || >=24.11.0}
 
+  '@cocoar-dev/vue-localization@2.18.0-alpha.9':
+    resolution: {integrity: sha512-rzdX/TXlZDtYvM7fUFOGzwSFPmHk2jXgxi9FO+XGSVrVxRtOyfLCMWEf0J74iiyrEkNvUteLM6iLCJ0xNfV1yg==, tarball: https://npm.pkg.github.com/download/@cocoar-dev/vue-localization/2.18.0-alpha.9/e8a9567c47400b7ce9753d29727b126a19b582b1}
+    peerDependencies:
+      vue: ^3.5.0
+
+  '@cocoar-dev/vue-page-builder@2.18.0-alpha.9':
+    resolution: {integrity: sha512-j+E+oBL0m+jivqxoHQOAN+i6gp3ZQ32GXJW7Lwhbqmt6b31NKzHLyoOQRG9d/RHwWNDSgzaWb7ACZ1dbIowecw==, tarball: https://npm.pkg.github.com/download/@cocoar-dev/vue-page-builder/2.18.0-alpha.9/52a7342fbb7702b8eeab54be072a7f2be7e0c41f}
+    peerDependencies:
+      '@cocoar/vue-localization': 2.18.0-alpha.9
+      '@cocoar/vue-script-editor': 2.18.0-alpha.9
+      '@cocoar/vue-ui': 2.18.0-alpha.9
+      monaco-editor: ^0.55.1
+      vue: ^3.5.0
+
+  '@cocoar-dev/vue-script-editor@2.18.0-alpha.9':
+    resolution: {integrity: sha512-b3QtLymnyaeYn88MN3qqSCZjOEVj9WlfJVwYPUGVd1gdaCqXYVwpVs8OmphXwpVC0JvD30zv70i7AlBOaeV7bQ==, tarball: https://npm.pkg.github.com/download/@cocoar-dev/vue-script-editor/2.18.0-alpha.9/af84bc117f45eb052e998970cf30beb9a461aec5}
+    peerDependencies:
+      monaco-editor: ^0.55.1
+      vue: ^3.5.0
+
+  '@cocoar-dev/vue-ui@2.18.0-alpha.9':
+    resolution: {integrity: sha512-6WhMaB+kTCe49wD2GDqQRb4sWViwk2qx7k3wnr5bgzbVa3Ifh9+rRiJzemXfzuQYoFe7gshA3Dz30wgJaXJhoA==, tarball: https://npm.pkg.github.com/download/@cocoar-dev/vue-ui/2.18.0-alpha.9/fbe058a559b066f49d9a9f354399fd7add2228b5}
+    peerDependencies:
+      vue: ^3.5.0
+      vue-router: ^4.5.0 || ^5.0.0
+
   '@cocoar/signalarrr@4.3.2':
     resolution: {integrity: sha512-j9NpkWW0c0ZHqgAN6euJlOf0K+TJxGbqH0+/+/vIPQJ5PgMHSGmTshiATx2lyMKkWsgjNss9hAglRYUumQbDFw==}
 
@@ -135,33 +161,6 @@ packages:
       vue-router:
         optional: true
 
-  '@cocoar/vue-localization@2.18.0':
-    resolution: {integrity: sha512-b5hl1xENl2AkkwByhemJDsWuhyqapHHgxInMHF9xUALSSyt+bevrYSqHzVX15aSV2qBK1YutTYy46gFK4irwzw==}
-    peerDependencies:
-      vue: ^3.5.0
-
-  '@cocoar/vue-page-builder@2.18.0':
-    resolution: {integrity: sha512-rfJs9CE9ga434ChvHRiTQS7xI96gVv/U7eUbkpuZ1gdx1Q4o36uPSDmtmU86ur/xK26iPwhNpoQUyTMP95XJJg==}
-    peerDependencies:
-      '@cocoar/vue-localization': 2.18.0
-      '@cocoar/vue-ui': 2.18.0
-      vue: ^3.5.0
-
-  '@cocoar/vue-script-editor@2.18.0':
-    resolution: {integrity: sha512-xKNmaayzrTpXZPr3eWXz3AirDUiKxmjwMzXnuepbmYOP5lT/OcviF6LRdU+z8Iylv/G/ldUuDZccTTRLu0MSOw==}
-    peerDependencies:
-      monaco-editor: ^0.55.1
-      vue: ^3.5.0
-
-  '@cocoar/vue-ui@2.18.0':
-    resolution: {integrity: sha512-2O1BVNxUnsg847SSmi6mySjm87bH+mXzem0ARcywSX406tNHHBcNekV0cBnn+BbNDBtr4v7yWwr+a/snYCTgEA==}
-    peerDependencies:
-      vue: ^3.5.0
-      vue-router: ^4.5.0 || ^5.0.0
-    peerDependenciesMeta:
-      vue-router:
-        optional: true
-
   '@emnapi/core@1.11.1':
     resolution: {integrity: sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ==}
 
@@ -170,6 +169,15 @@ packages:
 
   '@emnapi/wasi-threads@1.2.2':
     resolution: {integrity: sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA==}
+
+  '@endo/cache-map@1.1.0':
+    resolution: {integrity: sha512-owFGshs/97PDw9oguZqU/px8Lv1d0KjAUtDUiPwKHNXRVUE/jyettEbRoTbNJR1OaI8biMn6bHr9kVJsOh6dXw==}
+
+  '@endo/env-options@1.1.11':
+    resolution: {integrity: sha512-p9OnAPsdqoX4YJsE98e3NBVhIr2iW9gNZxHhAI2/Ul5TdRfoOViItzHzTqrgUVopw6XxA1u1uS6CykLMDUxarA==}
+
+  '@endo/immutable-arraybuffer@1.1.2':
+    resolution: {integrity: sha512-u+NaYB2aqEugQ3u7w3c5QNkPogf8q/xGgsPaqdY6pUiGWtYiTiFspKFcha6+oeZhWXWQ23rf0KrUq0kfuzqYyQ==}
 
   '@fontsource/cascadia-code@5.2.3':
     resolution: {integrity: sha512-jnKfdZ+0UL25XUqYV7iq9gDlaUMWXxZNA7KnYzO4v8De6jBJmTkLHxDXs+1iZwl/8w7eKlDrTJWcyalOHdE2eg==}
@@ -877,6 +885,9 @@ packages:
   scule@1.3.0:
     resolution: {integrity: sha512-6FtHJEvt+pVMIB9IBY+IcCJ6Z5f1iQnytgyfKMhDKgmzYG+TeH/wx1y3l27rshSbLiSanrR9ffZDrEsmjlQF2g==}
 
+  ses@2.2.0:
+    resolution: {integrity: sha512-mXZfO9O2bhE9E3INX5Dbqq+eo1Dj6Yeo+r7jas7GYTXRS6fzcZFYf0UbSHcXO7xJuPbhztBskSuSqJLMMoYMVQ==}
+
   set-cookie-parser@2.7.2:
     resolution: {integrity: sha512-oeM1lpU/UvhTxw+g3cIfxXHyJRc/uidd3yK1P242gzHds0udQBYzs3y8j4gCCW+ZJ7ad0yctld8RYO+bdurlvw==}
 
@@ -1080,51 +1091,28 @@ snapshots:
       '@babel/helper-string-parser': 8.0.0-rc.6
       '@babel/helper-validator-identifier': 8.0.0-rc.6
 
-  '@cocoar/signalarrr@4.3.2':
+  '@cocoar-dev/vue-localization@2.18.0-alpha.9(vue@3.5.39(typescript@6.0.3))':
     dependencies:
-      '@microsoft/signalr': 10.0.0
-      '@microsoft/signalr-protocol-msgpack': 10.0.0
-    transitivePeerDependencies:
-      - bufferutil
-      - encoding
-      - utf-8-validate
+      vue: 3.5.39(typescript@6.0.3)
 
-  '@cocoar/vue-data-grid@2.18.0(@cocoar/vue-localization@2.18.0(vue@3.5.39(typescript@6.0.3)))(@cocoar/vue-ui@2.18.0(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3)))(@js-temporal/polyfill@0.5.1)(vue@3.5.39(typescript@6.0.3))':
+  '@cocoar-dev/vue-page-builder@2.18.0-alpha.9(@cocoar-dev/vue-localization@2.18.0-alpha.9(vue@3.5.39(typescript@6.0.3)))(@cocoar-dev/vue-script-editor@2.18.0-alpha.9(monaco-editor@0.55.1)(vue@3.5.39(typescript@6.0.3)))(@cocoar-dev/vue-ui@2.18.0-alpha.9(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3)))(monaco-editor@0.55.1)(vue@3.5.39(typescript@6.0.3))':
     dependencies:
-      '@cocoar/vue-localization': 2.18.0(vue@3.5.39(typescript@6.0.3))
-      '@cocoar/vue-ui': 2.18.0(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))
+      '@cocoar/vue-localization': '@cocoar-dev/vue-localization@2.18.0-alpha.9(vue@3.5.39(typescript@6.0.3))'
+      '@cocoar/vue-script-editor': '@cocoar-dev/vue-script-editor@2.18.0-alpha.9(monaco-editor@0.55.1)(vue@3.5.39(typescript@6.0.3))'
+      '@cocoar/vue-ui': '@cocoar-dev/vue-ui@2.18.0-alpha.9(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))'
       '@js-temporal/polyfill': 0.5.1
-      ag-grid-community: 35.0.0
-      ag-grid-vue3: 35.0.0(vue@3.5.39(typescript@6.0.3))
+      monaco-editor: 0.55.1
+      ses: 2.2.0
       vue: 3.5.39(typescript@6.0.3)
 
-  '@cocoar/vue-fragment-parser@2.18.0(@cocoar/vue-ui@2.18.0(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3)))(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))':
-    dependencies:
-      path-to-regexp: 8.4.2
-      vue: 3.5.39(typescript@6.0.3)
-    optionalDependencies:
-      '@cocoar/vue-ui': 2.18.0(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))
-      vue-router: 5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3))
-
-  '@cocoar/vue-localization@2.18.0(vue@3.5.39(typescript@6.0.3))':
-    dependencies:
-      vue: 3.5.39(typescript@6.0.3)
-
-  '@cocoar/vue-page-builder@2.18.0(@cocoar/vue-localization@2.18.0(vue@3.5.39(typescript@6.0.3)))(@cocoar/vue-ui@2.18.0(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))':
-    dependencies:
-      '@cocoar/vue-localization': 2.18.0(vue@3.5.39(typescript@6.0.3))
-      '@cocoar/vue-ui': 2.18.0(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))
-      '@js-temporal/polyfill': 0.5.1
-      vue: 3.5.39(typescript@6.0.3)
-
-  '@cocoar/vue-script-editor@2.18.0(monaco-editor@0.55.1)(vue@3.5.39(typescript@6.0.3))':
+  '@cocoar-dev/vue-script-editor@2.18.0-alpha.9(monaco-editor@0.55.1)(vue@3.5.39(typescript@6.0.3))':
     dependencies:
       monaco-editor: 0.55.1
       vue: 3.5.39(typescript@6.0.3)
 
-  '@cocoar/vue-ui@2.18.0(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))':
+  '@cocoar-dev/vue-ui@2.18.0-alpha.9(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))':
     dependencies:
-      '@cocoar/vue-localization': 2.18.0(vue@3.5.39(typescript@6.0.3))
+      '@cocoar/vue-localization': '@cocoar-dev/vue-localization@2.18.0-alpha.9(vue@3.5.39(typescript@6.0.3))'
       '@fontsource/cascadia-code': 5.2.3
       '@fontsource/inter': 5.2.8
       '@fontsource/poppins': 5.2.7
@@ -1134,7 +1122,32 @@ snapshots:
       '@maskito/vue': 5.2.2(@maskito/core@5.2.2)(vue@3.5.39(typescript@6.0.3))
       prismjs: 1.30.0
       vue: 3.5.39(typescript@6.0.3)
+      vue-router: 5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3))
+
+  '@cocoar/signalarrr@4.3.2':
+    dependencies:
+      '@microsoft/signalr': 10.0.0
+      '@microsoft/signalr-protocol-msgpack': 10.0.0
+    transitivePeerDependencies:
+      - bufferutil
+      - encoding
+      - utf-8-validate
+
+  '@cocoar/vue-data-grid@2.18.0(@cocoar-dev/vue-localization@2.18.0-alpha.9(vue@3.5.39(typescript@6.0.3)))(@cocoar-dev/vue-ui@2.18.0-alpha.9(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3)))(@js-temporal/polyfill@0.5.1)(vue@3.5.39(typescript@6.0.3))':
+    dependencies:
+      '@cocoar/vue-localization': '@cocoar-dev/vue-localization@2.18.0-alpha.9(vue@3.5.39(typescript@6.0.3))'
+      '@cocoar/vue-ui': '@cocoar-dev/vue-ui@2.18.0-alpha.9(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))'
+      '@js-temporal/polyfill': 0.5.1
+      ag-grid-community: 35.0.0
+      ag-grid-vue3: 35.0.0(vue@3.5.39(typescript@6.0.3))
+      vue: 3.5.39(typescript@6.0.3)
+
+  '@cocoar/vue-fragment-parser@2.18.0(@cocoar-dev/vue-ui@2.18.0-alpha.9(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3)))(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))':
+    dependencies:
+      path-to-regexp: 8.4.2
+      vue: 3.5.39(typescript@6.0.3)
     optionalDependencies:
+      '@cocoar/vue-ui': '@cocoar-dev/vue-ui@2.18.0-alpha.9(vue-router@5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))'
       vue-router: 5.1.0(@vue/compiler-sfc@3.5.39)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vite@8.1.2(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3))
 
   '@emnapi/core@1.11.1':
@@ -1152,6 +1165,12 @@ snapshots:
     dependencies:
       tslib: 2.8.1
     optional: true
+
+  '@endo/cache-map@1.1.0': {}
+
+  '@endo/env-options@1.1.11': {}
+
+  '@endo/immutable-arraybuffer@1.1.2': {}
 
   '@fontsource/cascadia-code@5.2.3': {}
 
@@ -1828,6 +1847,12 @@ snapshots:
       '@rolldown/binding-win32-x64-msvc': 1.1.3
 
   scule@1.3.0: {}
+
+  ses@2.2.0:
+    dependencies:
+      '@endo/cache-map': 1.1.0
+      '@endo/env-options': 1.1.11
+      '@endo/immutable-arraybuffer': 1.1.2
 
   set-cookie-parser@2.7.2: {}
 

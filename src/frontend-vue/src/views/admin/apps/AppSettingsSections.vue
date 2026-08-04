@@ -440,6 +440,7 @@ const PAGE_SLOT_META = [
   { slug: 'login', label: t('admin.customization.pages.login.title', {}, 'Login') },
   { slug: 'password-forgot', label: t('admin.customization.pages.passwordForgot.title', {}, 'Forgot password') },
   { slug: 'logout', label: t('admin.customization.pages.logout.title', {}, 'Logout') },
+  { slug: 'consent', label: t('admin.customization.pages.consent.title', {}, 'Consent') },
 ]
 const APP_BUILT_IN = '__builtin__'
 const appSlots = reactive<Record<string, AppSlotDto>>({})

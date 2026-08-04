@@ -72,10 +72,23 @@ public sealed class SecurityHeadersMiddleware
     private static bool IsInAppDocsPath(PathString path)
         => path.StartsWithSegments("/docs");
 
-    private static string BuildContentSecurityPolicy(bool isDevelopment, PathString path)
+    // The tenant-authored Page Code runtime is isolated in this one SES
+    // module worker. Lockdown needs dynamic evaluation inside that worker,
+    // while the document/main application must remain on strict 'self'.
+    private static bool IsPageScriptRuntimeWorker(PathString path)
+    {
+        if (!path.StartsWithSegments("/assets", out var remainder)) return false;
+        var file = remainder.Value?.TrimStart('/');
+        return file is not null
+            && file.StartsWith("pageScriptRuntime.worker-", StringComparison.Ordinal)
+            && file.EndsWith(".js", StringComparison.Ordinal);
+    }
+
+    public static string BuildContentSecurityPolicy(bool isDevelopment, PathString path)
     {
         var isOidc = IsOidcServerPath(path);
         var isDocs = IsInAppDocsPath(path);
+        var isPageRuntimeWorker = IsPageScriptRuntimeWorker(path);
 
         // Vite's dev server uses HMR over websockets and eval-style helpers
         // — relax script-src in Development with 'unsafe-eval'. Production
@@ -86,7 +99,9 @@ public sealed class SecurityHeadersMiddleware
         // relaxation.
         var scriptSrc = isDevelopment
             ? "'self' 'unsafe-inline' 'unsafe-eval'"
-            : (isOidc || isDocs) ? "'self' 'unsafe-inline'" : "'self'";
+            : isPageRuntimeWorker
+                ? "'self' 'unsafe-eval'"
+                : (isOidc || isDocs) ? "'self' 'unsafe-inline'" : "'self'";
 
         var connectSrc = isDevelopment
             ? "'self' ws: wss:"

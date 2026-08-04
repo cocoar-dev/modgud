@@ -22,7 +22,7 @@ const pageBuilderFeatureGate: NavigationGuard = () => {
 
 const authPageSlotGate: NavigationGuard = (to) => {
   const slug = typeof to.params.slug === 'string' ? to.params.slug : ''
-  return ['login', 'logout', 'password-forgot'].includes(slug)
+  return ['login', 'logout', 'password-forgot', 'consent'].includes(slug)
     ? true
     : { path: '/platform/customization/pages', replace: true }
 }
