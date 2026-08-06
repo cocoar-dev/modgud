@@ -171,6 +171,9 @@ function schemaContains(node: PageNode, id: string): boolean {
 const customSchemaRendersHostError = computed(() => customLoginSchema.value
   ? schemaContains(customLoginSchema.value, 'login-context-error')
   : false)
+const customSchemaRendersLanguageSwitcher = computed(() => customLoginSchema.value
+  ? schemaContains(customLoginSchema.value, 'login-language-switcher')
+  : false)
 
 // A renderer regression must not take authentication down. Vue render/setup
 // failures immediately unmount the custom branch and reveal the hardcoded
@@ -277,6 +280,7 @@ function requiredString(values: ActionValues, name: string): string {
 }
 
 const customLoginActions: Record<string, ActionHandler> = {
+  'auth:toggle-language': toggleLanguage,
   'auth:login': async (values) => {
     error.value = ''
     userName.value = requiredString(values, 'username')
@@ -513,6 +517,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
 <template>
   <div class="min-h-screen bg-surface-50 relative">
     <button
+      v-if="step !== 'credentials' || !customSchemaRendersLanguageSwitcher"
       class="absolute z-10 top-4 right-4 text-xs text-surface-400 hover:text-surface-600 transition"
       @click="toggleLanguage"
     >

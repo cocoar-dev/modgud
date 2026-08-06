@@ -70,6 +70,13 @@ function patchElementStyle(node: PageNode | undefined, patch: Partial<NodeStyle>
   }
 }
 
+function patchElementProps(node: ElementNode, patch: Record<string, unknown>): void {
+  node.props = { ...(node.props ?? {}), ...patch }
+  for (const [key, value] of Object.entries(patch)) {
+    node.elementCode = setElementQuickProperty(node.elementCode, `props.${key}`, value)
+  }
+}
+
 /** Align the generic auth preset with Modgud's fixed LoginView contract. */
 function alignLoginTemplate(schema: PageRootNode): void {
   schema.style = {
@@ -77,8 +84,76 @@ function alignLoginTemplate(schema: PageRootNode): void {
     minHeight: '100%',
     padding: '16px',
     surface: 'default',
+    justify: 'space-between',
   }
   schema.responsive = undefined
+
+  const languageSwitcher: ElementNode = {
+    id: 'login-language-switcher',
+    type: 'link',
+    name: 'loginLanguageSwitcher',
+    props: {},
+  }
+  patchElementProps(languageSwitcher, {
+    label: {
+      source: 'translation',
+      key: 'page.languageSwitcher.label',
+      fallback: 'EN',
+    },
+    action: 'auth:toggle-language',
+  })
+  patchElementStyle(languageSwitcher, {
+    foreground: 'tertiary',
+    fontSize: 'caption',
+    lineHeight: 'tight',
+    size: 'fit',
+  })
+
+  const languageZone: ElementNode = {
+    id: 'login-language-zone',
+    type: 'stack',
+    name: 'loginLanguageZone',
+    props: { direction: 'row' },
+    children: [languageSwitcher],
+  }
+  patchElementStyle(languageZone, {
+    align: 'center',
+    height: '14.4px',
+    justify: 'end',
+    size: 'fill',
+  })
+
+  // Balance the switcher at the bottom so the auth frame remains exactly
+  // centered without relying on absolute positioning or overlay behavior.
+  const languageBalance: ElementNode = {
+    id: 'login-language-balance',
+    type: 'stack',
+    name: 'loginLanguageBalance',
+    props: { direction: 'column' },
+    children: [],
+  }
+  patchElementStyle(languageBalance, {
+    height: '14.4px',
+    size: 'fixed',
+    width: '1px',
+  })
+
+  schema.children = [
+    languageZone,
+    ...(schema.children ?? []),
+    languageBalance,
+  ]
+  schema.translations = {
+    ...(schema.translations ?? {}),
+    de: {
+      ...(schema.translations?.de ?? {}),
+      'page.languageSwitcher.label': 'EN',
+    },
+    en: {
+      ...(schema.translations?.en ?? {}),
+      'page.languageSwitcher.label': 'DE',
+    },
+  }
 
   patchElementStyle(findNode(schema, 'auth-frame'), { gap: '32px' })
   patchElementStyle(findNode(schema, 'login-subtitle'), {
@@ -221,6 +296,15 @@ export function createAuthPageConfig(
     // Fixtures are a host-owned acceptance contract. Exercise every auth data
     // shape at both a desktop breakpoint and Modgud's narrow mobile viewport.
     previewFixtures,
+    availableActions: [
+      ...(preset.availableActions ?? []),
+      ...(slot === 'login'
+        ? [{
+            id: 'auth:toggle-language',
+            label: locale === 'de' ? 'Sprache wechseln' : 'Switch language',
+          }]
+        : []),
+    ],
     allowedElements: [
       ...(preset.allowedElements ?? []),
       'modgud-brand-header',
