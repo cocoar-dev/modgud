@@ -89,7 +89,7 @@ const defaults: AppConfig = {
 
 /**
  * Applies per-realm branding to the document at SPA boot. Sets
- * --coar-color-primary CSS variable, document title prefix, and rewrites
+ * Cocoar's accent CSS variable, document title prefix, and rewrites
  * the favicon link element. Falls back silently when a branding field is
  * null — the design-system defaults stay in effect.
  *
@@ -97,8 +97,12 @@ const defaults: AppConfig = {
  * via the store directly — DOM-side this function only handles globals.
  */
 function applyBranding(branding: BrandingConfig): void {
+  document.documentElement.style.removeProperty('--coar-accent')
   document.documentElement.style.removeProperty('--coar-color-primary')
   if (branding.PrimaryColor) {
+    // Cocoar derives its complete accessible accent palette from this base hue.
+    document.documentElement.style.setProperty('--coar-accent', branding.PrimaryColor)
+    // Keep the original Modgud variable for host styles outside Cocoar Vue UI.
     document.documentElement.style.setProperty('--coar-color-primary', branding.PrimaryColor)
   }
 

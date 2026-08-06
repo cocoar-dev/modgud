@@ -5,6 +5,7 @@ export function createAuthRuntimeContext(options: {
   config: AppConfig
   externalProviders?: ExternalLoginDto[]
   registrationEnabled?: boolean
+  loginEmail?: string
   viewState: string
   feedbackMessage?: string
   feedbackSuccess?: boolean
@@ -21,6 +22,7 @@ export function createAuthRuntimeContext(options: {
       passwordless: config.AuthenticationMinimumLevel >= 2,
       magicLinkEnabled: config.MagicLinkSelfService,
       registrationEnabled: options.registrationEnabled === true,
+      loginEmail: options.loginEmail ?? '',
       externalProviders: (options.externalProviders ?? []).map(provider => ({
         id: provider.Id,
         name: provider.DisplayName,

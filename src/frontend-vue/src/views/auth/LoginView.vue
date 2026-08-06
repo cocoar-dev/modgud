@@ -141,9 +141,10 @@ function resolveIdpError(code: string): string {
 }
 
 // Flow steps
-const step = ref<'credentials' | 'mfa-choice' | 'totp' | 'email-otp' | 'magic-link' | 'secure-setup'>('credentials')
+const step = ref<'credentials' | 'primary-otp' | 'mfa-choice' | 'totp' | 'email-otp' | 'magic-link' | 'secure-setup'>('credentials')
 const mfaMethods = ref<string[]>([])
 const emailOtpSent = ref(false)
+const primaryOtpEmail = ref('')
 const magicLinkEmail = ref('')
 const magicLinkSent = ref(false)
 
@@ -180,15 +181,17 @@ const customSchemaRendersLanguageSwitcher = computed(() => customLoginSchema.val
 // LoginView. `?safemode=1` remains the manual escape hatch for visual/runtime
 // regressions that do not throw an exception.
 onErrorCaptured((exception, _instance, info) => {
-  if (!customLoginSchema.value || step.value !== 'credentials') return
+  if (!customLoginSchema.value || !['credentials', 'primary-otp'].includes(step.value)) return
   console.error('[auth-page] Custom login failed; using fixed fallback.', exception, info)
   customLoginSchema.value = null
   return false
 })
 
-const loginViewState = computed(() => error.value
-  ? 'error'
-  : submitting.value || passkeyLoading.value
+const loginViewState = computed(() => step.value === 'primary-otp'
+  ? 'login-code'
+  : error.value
+    ? 'error'
+    : submitting.value || passkeyLoading.value
     ? 'submitting'
     : step.value === 'credentials'
       ? 'credentials'
@@ -197,6 +200,7 @@ const loginRuntimeContext = computed(() => createAuthRuntimeContext({
   config: appConfig.config,
   externalProviders: externalLogins.value,
   registrationEnabled: selfRegistrationEnabled.value,
+  loginEmail: primaryOtpEmail.value,
   viewState: loginViewState.value,
   feedbackMessage: error.value,
 }))
@@ -280,7 +284,15 @@ function requiredString(values: ActionValues, name: string): string {
 }
 
 const customLoginActions: Record<string, ActionHandler> = {
-  'auth:toggle-language': toggleLanguage,
+  'auth:toggle-language': async (values) => {
+    const requested = values.language
+    if (requested === 'de' || requested === 'en') {
+      await localization.setLanguage(requested)
+      localStorage.setItem('language', requested)
+      return
+    }
+    await toggleLanguage()
+  },
   'auth:login': async (values) => {
     error.value = ''
     userName.value = requiredString(values, 'username')
@@ -292,6 +304,37 @@ const customLoginActions: Record<string, ActionHandler> = {
     error.value = ''
     rememberMe.value = values.rememberMe === true
     await handlePasskeyLogin(true)
+  },
+  'auth:request-login-code': async (values) => {
+    error.value = ''
+    primaryOtpEmail.value = requiredString(values, 'email').trim()
+    await authStore.requestPasswordlessOtp(primaryOtpEmail.value, redirectTarget.value)
+    step.value = 'primary-otp'
+  },
+  'auth:verify-login-code': async (values) => {
+    error.value = ''
+    const code = requiredString(values, 'otpCode').replace(/[\s-]/g, '')
+    try {
+      await authStore.passwordlessOtpLogin(primaryOtpEmail.value, code, false, redirectTarget.value)
+      finishLogin()
+    } catch (e) {
+      if (e instanceof HttpClientError) {
+        throw new Error(errorDetail(e) ?? t('auth.mfa.invalidCode', {}, 'Invalid code. Please try again.'))
+      }
+      throw new Error(t('common.connectionError', {}, 'Connection to server failed.'))
+    }
+  },
+  'auth:resend-login-code': async () => {
+    if (!primaryOtpEmail.value) {
+      step.value = 'credentials'
+      return
+    }
+    await authStore.requestPasswordlessOtp(primaryOtpEmail.value, redirectTarget.value)
+  },
+  'auth:back-to-email': () => {
+    step.value = 'credentials'
+    primaryOtpEmail.value = ''
+    error.value = ''
   },
   'auth:magic-link': () => {
     if (!appConfig.config.MagicLinkSelfService) {
@@ -517,7 +560,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
 <template>
   <div class="min-h-screen bg-surface-50 relative">
     <button
-      v-if="step !== 'credentials' || !customSchemaRendersLanguageSwitcher"
+      v-if="!['credentials', 'primary-otp'].includes(step) || !customSchemaRendersLanguageSwitcher"
       class="absolute z-10 top-4 right-4 text-xs text-surface-400 hover:text-surface-600 transition"
       @click="toggleLanguage"
     >
@@ -528,7 +571,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
       {{ t('common.loading', {}, 'Loading…') }}
     </div>
 
-    <template v-else-if="step === 'credentials' && customLoginSchema">
+    <template v-else-if="['credentials', 'primary-otp'].includes(step) && customLoginSchema">
       <CoarNotice v-if="error && !customSchemaRendersHostError" variant="error" class="custom-login-error">{{ error }}</CoarNotice>
       <AuthRuntimePageRenderer
         page-id="auth-login"

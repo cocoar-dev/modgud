@@ -299,14 +299,62 @@ export function createAuthPageConfig(
     availableActions: [
       ...(preset.availableActions ?? []),
       ...(slot === 'login'
-        ? [{
-            id: 'auth:toggle-language',
-            label: locale === 'de' ? 'Sprache wechseln' : 'Switch language',
-          }]
+        ? [
+            {
+              id: 'auth:toggle-language',
+              label: locale === 'de' ? 'Sprache wechseln' : 'Switch language',
+            },
+            {
+              id: 'auth:request-login-code',
+              label: locale === 'de' ? 'Anmeldecode senden' : 'Send login code',
+            },
+            {
+              id: 'auth:verify-login-code',
+              label: locale === 'de' ? 'Anmeldecode prüfen' : 'Verify login code',
+            },
+            {
+              id: 'auth:resend-login-code',
+              label: locale === 'de' ? 'Anmeldecode erneut senden' : 'Resend login code',
+            },
+            {
+              id: 'auth:back-to-email',
+              label: locale === 'de' ? 'Zurück zur E-Mail' : 'Back to email',
+            },
+          ]
         : []),
     ],
+    fields: slot === 'login'
+      ? [
+          ...(preset.fields ?? []),
+          {
+            name: 'email',
+            valueType: 'string',
+            label: locale === 'de' ? 'E-Mail' : 'Email',
+            defaultElement: 'text-input',
+          },
+          {
+            name: 'otpCode',
+            valueType: 'string',
+            label: locale === 'de' ? '6-stelliger Code' : '6-digit code',
+            defaultElement: 'otp-input',
+          },
+        ]
+      : preset.fields,
+    contextFields: slot === 'login'
+      ? [
+          ...(preset.contextFields ?? []),
+          { path: 'auth.loginEmail', type: 'string' },
+        ]
+      : preset.contextFields,
+    availableStates: slot === 'login'
+      ? [
+          ...(preset.availableStates ?? []),
+          { id: 'login-code', label: locale === 'de' ? 'Anmeldecode' : 'Login code' },
+        ]
+      : preset.availableStates,
     allowedElements: [
       ...(preset.allowedElements ?? []),
+      ...(slot === 'login' ? ['otp-input' as const] : []),
       'modgud-brand-header',
       'modgud-external-logins',
     ],

@@ -23,6 +23,27 @@ public class PageDocumentValidatorTests
     }
 
     [Fact]
+    public void Login_AcceptsHostedOtpAndPageOwnedLanguageActions()
+    {
+        const string schema = """
+        {
+          "id":"auth-page","type":"page","schemaVersion":4,
+          "children":[
+            {"id":"email","type":"text-input","name":"email","props":{}},
+            {"id":"send","type":"button","props":{"action":"auth:request-login-code"}},
+            {"id":"code","type":"otp-input","name":"otpCode","props":{}},
+            {"id":"verify","type":"button","props":{"action":"auth:verify-login-code"}},
+            {"id":"resend","type":"button","props":{"action":"auth:resend-login-code"}},
+            {"id":"back","type":"button","props":{"action":"auth:back-to-email"}},
+            {"id":"language","type":"button","props":{"action":"auth:toggle-language"}}
+          ]
+        }
+        """;
+
+        Assert.True(PageDocumentValidator.Validate("login", schema, out var error), error);
+    }
+
+    [Fact]
     public void RejectsDisallowedHostAction()
     {
         const string schema = """

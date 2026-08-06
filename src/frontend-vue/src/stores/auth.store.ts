@@ -17,6 +17,7 @@ interface UserHubEvent {
 export const useAuthStore = defineStore('auth', () => {
   const http = useHttpClient('/api/account')
   const emailOtpHttp = useHttpClient('/api/account/email-otp')
+  const passwordlessOtpHttp = useHttpClient('/api/account/passwordless-otp')
   const magicLinkHttp = useHttpClient('/api/account/magic-link')
   const signalr = useSignalR()
 
@@ -135,6 +136,30 @@ export const useAuthStore = defineStore('auth', () => {
     await fetchMe()
   }
 
+  /** Request a primary-factor login code for the hosted browser flow. */
+  async function requestPasswordlessOtp(email: string, returnUrl?: string): Promise<void> {
+    await passwordlessOtpHttp.addPath('request').post({
+      Email: email,
+      ReturnUrl: returnUrl ?? null,
+    })
+  }
+
+  /** Redeem a primary-factor login code into the normal Modgud auth cookie. */
+  async function passwordlessOtpLogin(
+    email: string,
+    code: string,
+    rememberMe: boolean = false,
+    returnUrl?: string,
+  ): Promise<void> {
+    await passwordlessOtpHttp.addPath('login').post({
+      Email: email,
+      Code: code,
+      RememberMe: rememberMe,
+      ReturnUrl: returnUrl ?? null,
+    })
+    await fetchMe()
+  }
+
   /**
    * Get Email OTP status for current user (profile page).
    */
@@ -223,6 +248,8 @@ export const useAuthStore = defineStore('auth', () => {
     mfaLogin,
     requestEmailOtp,
     emailOtpLogin,
+    requestPasswordlessOtp,
+    passwordlessOtpLogin,
     getEmailOtpStatus,
     enableEmailOtp,
     disableEmailOtp,

@@ -21,7 +21,7 @@ public static class PageDocumentValidator
     [
         "page", "stack", "repeat", "card", "section", "divider", "spacer",
         "heading", "paragraph", "note", "feedback", "text-input",
-        "password-input", "checkbox", "button", "link", "image",
+        "password-input", "otp-input", "checkbox", "button", "link", "image",
         "modgud-brand-header", "modgud-external-logins",
     ];
 
@@ -30,6 +30,8 @@ public static class PageDocumentValidator
         ["login"] =
         [
             "auth:login", "auth:passkey", "auth:magic-link",
+            "auth:request-login-code", "auth:verify-login-code",
+            "auth:resend-login-code", "auth:back-to-email", "auth:toggle-language",
             "auth:forgot-password", "auth:register", "auth:external-provider",
             "legal:terms", "legal:privacy",
         ],
