@@ -7,6 +7,7 @@ import {
   type EmptyProps,
   type PageConfig,
   type PageNode,
+  type PageRootNode,
 } from '@cocoar/vue-page-builder'
 import BrandHeaderElement from '@/components/page-builder/BrandHeaderElement.vue'
 import BrandHeaderPreview from '@/components/page-builder/BrandHeaderPreview.vue'
@@ -76,6 +77,19 @@ export function createAuthPageConfig(
  */
 export function createDefaultAuthPageSchema(slot: AuthPageSlot): PageNode {
   const schema = createAuthPageDocument(slot)
+
+  // Keep viewport ownership in the page document itself. This makes the
+  // built-in template behave identically in the editor preview and in the
+  // auth host, while still letting administrators change the page shell via
+  // Root Page Code without replacing the layout.
+  if (schema.type === 'page') {
+    (schema as PageRootNode).rootCode = `definePageRoot({
+  compute(page) {
+    page.style.minHeight = '100dvh'
+    page.style.width = '100%'
+  },
+})`
+  }
 
   const walk = (node: PageNode) => {
     if (node.type === 'stack' && node.id.endsWith('-brand-zone') && 'children' in node) {

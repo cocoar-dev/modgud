@@ -16,6 +16,7 @@ import {
   type AuthPageSlot,
 } from '@/page-builder/authPageConfig'
 import { createAuthRuntimeContext } from '@/page-builder/authPageContext'
+import { authRuntimeHost } from '@/page-builder/authPageCodeRuntime'
 import {
   useRealmPagesApi,
   type PageVariantRevision,
@@ -62,6 +63,7 @@ const previewContext = computed(() => createAuthRuntimeContext({
 }))
 
 const previewFallbackSchema = computed(() => createDefaultAuthPageSchema(slot.value))
+const previewRuntimePageId = computed(() => `modgud-auth-editor:${slot.value}:${variantId.value}`)
 
 const labelBySlot: Record<string, string> = {
   login: t('admin.customization.pages.login.title', {}, 'Login'),
@@ -261,6 +263,8 @@ watch([slot, variantId], load, { immediate: true })
       :preview-state="previewState"
       :preview-locale="authPageLocale(language)"
       :preview-fallback-schema="previewFallbackSchema"
+      :preview-runtime-host="authRuntimeHost"
+      :preview-runtime-page-id="previewRuntimePageId"
       class="builder"
     />
   </div>

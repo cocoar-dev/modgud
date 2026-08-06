@@ -4,15 +4,11 @@ import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
-  // The PageBuilder ships its SES worker as a Vite `?worker&url` import.
-  // Rolldown's Windows dependency optimizer treats the query as part of the
-  // filename, so let Vite transform this package as source instead of
-  // pre-bundling it. Production builds are unaffected.
+  // Alpha.10 exposes the SES worker as an isolated package subpath. Keep only
+  // that entry outside Vite's Windows dependency optimizer; the PageBuilder
+  // package and its Temporal dependency can now be pre-bundled normally.
   optimizeDeps: {
-    exclude: ['@cocoar/vue-page-builder'],
-    // Its Temporal polyfill is still a regular dependency and needs
-    // pre-bundling so the CommonJS `jsbi` dependency gets ESM interop.
-    include: ['@cocoar/vue-page-builder > @js-temporal/polyfill'],
+    exclude: ['@cocoar/vue-page-builder/runtime-worker'],
   },
   build: {
     target: 'esnext',

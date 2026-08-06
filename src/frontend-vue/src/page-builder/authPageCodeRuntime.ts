@@ -9,7 +9,7 @@ import {
 // One host catalog for the whole security domain. Auth page documents receive
 // no ambient network/storage capabilities; all privileged effects remain
 // explicit CoarPageRenderer host actions owned by the corresponding view.
-const authRuntimeHost = definePageRuntimeHost({})
+export const authRuntimeHost = definePageRuntimeHost({})
 
 export function useAuthPageCodeRuntime(options: {
   pageId: string
