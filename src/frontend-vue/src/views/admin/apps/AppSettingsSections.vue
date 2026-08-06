@@ -48,6 +48,11 @@ const f = reactive({
     logoAssetId: null as string | null, logoUrl: null as string | null,
     faviconAssetId: null as string | null, faviconUrl: null as string | null,
   },
+  pageTheme: {
+    override: false,
+    accentColor: '', errorColor: '',
+    buttonRadius: '', inputRadius: '', cardRadius: '',
+  },
   emailBranding: { override: false, productName: '', subjectPrefix: '', preheader: '', footerText: '', fromName: '', replyTo: '' },
   loginExperience: { override: false, internal: true, magicLink: true, providerIds: [] as string[] },
   selfReg: {
@@ -113,6 +118,12 @@ const inh = computed(() => {
     branding: {
       productName: r?.Branding?.ProductName ?? '',
       primaryColor: r?.Branding?.PrimaryColor ?? '',
+    },
+    // Application-only by design: there is no realm theme to inherit. Empty
+    // values leave the matching Cocoar UI token at its library default.
+    pageTheme: {
+      accentColor: '', errorColor: '',
+      buttonRadius: '', inputRadius: '', cardRadius: '',
     },
     emailBranding: {
       productName: r?.EmailBranding?.ProductName ?? r?.Branding?.ProductName ?? '',
@@ -187,6 +198,8 @@ function resetForm() {
   f.branding.override = false; f.branding.productName = ''; f.branding.primaryColor = ''
   f.branding.logoAssetId = null; f.branding.faviconAssetId = null
   f.branding.logoUrl = null; f.branding.faviconUrl = null
+  f.pageTheme.override = false; f.pageTheme.accentColor = ''; f.pageTheme.errorColor = ''
+  f.pageTheme.buttonRadius = ''; f.pageTheme.inputRadius = ''; f.pageTheme.cardRadius = ''
   f.emailBranding.override = false; f.emailBranding.productName = ''
   f.emailBranding.subjectPrefix = ''; f.emailBranding.preheader = ''; f.emailBranding.footerText = ''
   f.emailBranding.fromName = ''; f.emailBranding.replyTo = ''
@@ -217,6 +230,14 @@ function populate(s?: ApplicationSettingsDto | null) {
     f.branding.faviconAssetId = s.Branding.FaviconAssetId ?? null
     f.branding.logoUrl = s.Branding.LogoUrl ?? null
     f.branding.faviconUrl = s.Branding.FaviconUrl ?? null
+  }
+  if (s.PageTheme) {
+    f.pageTheme.override = true
+    f.pageTheme.accentColor = s.PageTheme.AccentColor ?? ''
+    f.pageTheme.errorColor = s.PageTheme.ErrorColor ?? ''
+    f.pageTheme.buttonRadius = numStr(s.PageTheme.ButtonRadiusPx)
+    f.pageTheme.inputRadius = numStr(s.PageTheme.InputRadiusPx)
+    f.pageTheme.cardRadius = numStr(s.PageTheme.CardRadiusPx)
   }
   if (s.EmailBranding) {
     f.emailBranding.override = true
@@ -363,6 +384,15 @@ function build(): ApplicationSettingsDto {
           PrimaryColor: f.branding.primaryColor.trim() || null,
           LogoAssetId: f.branding.logoAssetId,
           FaviconAssetId: f.branding.faviconAssetId,
+        }
+      : null,
+    PageTheme: f.pageTheme.override
+      ? {
+          AccentColor: f.pageTheme.accentColor.trim() || null,
+          ErrorColor: f.pageTheme.errorColor.trim() || null,
+          ButtonRadiusPx: parseNum(f.pageTheme.buttonRadius),
+          InputRadiusPx: parseNum(f.pageTheme.inputRadius),
+          CardRadiusPx: parseNum(f.pageTheme.cardRadius),
         }
       : null,
     EmailBranding: f.emailBranding.override
@@ -557,6 +587,35 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
           </div>
         </CoarFormField>
       </div>
+
+      <CoarCheckbox
+        v-if="appConfig.config.Features.PageBuilder"
+        v-model="f.pageTheme.override"
+        :label="t('admin.appSettings.pageTheme.override', {}, 'Custom page theme')" />
+      <template v-if="appConfig.config.Features.PageBuilder">
+        <CoarNotice variant="info">
+          {{ t('admin.appSettings.pageTheme.scope', {}, 'These tokens apply only inside this application’s custom pages. Built-in pages and the Modgud administration UI are never affected.') }}
+        </CoarNotice>
+        <div class="grid grid-cols-2 gap-3">
+          <CoarFormField :label="t('admin.appSettings.pageTheme.accentColor', {}, 'Accent color')">
+            <ColorField v-bind="fieldBind('pageTheme', 'accentColor')" placeholder="#10b981" />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.appSettings.pageTheme.errorColor', {}, 'Error color')">
+            <ColorField v-bind="fieldBind('pageTheme', 'errorColor')" placeholder="#e5484d" />
+          </CoarFormField>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <CoarFormField :label="t('admin.appSettings.pageTheme.buttonRadius', {}, 'Button radius (px)')">
+            <CoarTextInput v-bind="fieldBind('pageTheme', 'buttonRadius')" type="number" min="0" max="999" clearable />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.appSettings.pageTheme.inputRadius', {}, 'Input radius (px)')">
+            <CoarTextInput v-bind="fieldBind('pageTheme', 'inputRadius')" type="number" min="0" max="999" clearable />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.appSettings.pageTheme.cardRadius', {}, 'Card radius (px)')">
+            <CoarTextInput v-bind="fieldBind('pageTheme', 'cardRadius')" type="number" min="0" max="999" clearable />
+          </CoarFormField>
+        </div>
+      </template>
 
       <CoarCheckbox v-model="f.emailBranding.override" :label="t('admin.appSettings.email.override', {}, 'Custom Email Branding')" />
       <div class="grid grid-cols-2 gap-3">

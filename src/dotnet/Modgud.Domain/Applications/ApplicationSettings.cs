@@ -41,6 +41,11 @@ public class ApplicationSettings
     /// realm branding wholesale.</summary>
     public BrandingSettings? Branding { get; set; }
 
+    /// <summary>Safe Cocoar token overrides scoped by the SPA to custom
+    /// PageBuilder pages for this Application. Unlike Branding this has no
+    /// realm fallback and must never affect built-in auth views or Modgud UI.</summary>
+    public ApplicationPageTheme? PageTheme { get; set; }
+
     /// <summary>Per-Application email branding. Null = inherit the realm /
     /// deployment email branding. Consumed in Phase 6.</summary>
     public ApplicationEmailBranding? EmailBranding { get; set; }
@@ -116,6 +121,15 @@ public record ApplicationOrigin
     /// <summary>The Application's fully-qualified subdomain host (e.g.
     /// <c>amzettel.cocoar.app</c>). Null = no own origin.</summary>
     public string? Subdomain { get; init; }
+}
+
+public record ApplicationPageTheme
+{
+    public string? AccentColor { get; init; }
+    public string? ErrorColor { get; init; }
+    public int? ButtonRadiusPx { get; init; }
+    public int? InputRadiusPx { get; init; }
+    public int? CardRadiusPx { get; init; }
 }
 
 /// <summary>Per-Application email branding overrides. The deployment-level

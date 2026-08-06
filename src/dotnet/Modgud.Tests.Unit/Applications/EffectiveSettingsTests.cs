@@ -70,6 +70,7 @@ public class EffectiveSettingsTests
             Assert.Null(eff.SelfRegPosture); // no Application → legacy realm-only registration
             Assert.Null(eff.Origin);
             Assert.Null(eff.EmailBranding);
+            Assert.Null(eff.PageTheme);
         }
 
         [Fact]
@@ -278,18 +279,25 @@ public class EffectiveSettingsTests
         }
 
         [Fact]
-        public void Origin_and_email_branding_pass_through_from_application()
+        public void Application_only_presentation_facets_pass_through_from_application()
         {
             var app = new ApplicationSettings
             {
                 Origin = new ApplicationOrigin { Subdomain = "amzettel.cocoar.app" },
                 EmailBranding = new ApplicationEmailBranding { ProductName = "amZettel" },
+                PageTheme = new ApplicationPageTheme
+                {
+                    AccentColor = "#10b981",
+                    ButtonRadiusPx = 999,
+                },
             };
 
             var eff = EffectiveSettings.Merge(Realm(), app);
 
             Assert.Equal("amzettel.cocoar.app", eff.Origin!.Subdomain);
             Assert.Equal("amZettel", eff.EmailBranding!.ProductName);
+            Assert.Equal("#10b981", eff.PageTheme!.AccentColor);
+            Assert.Equal(999, eff.PageTheme.ButtonRadiusPx);
         }
 
         [Fact]

@@ -12,6 +12,7 @@ public record ApplicationSettingsDto
 {
     public ApplicationOriginDto? Origin { get; init; }
     public ApplicationBrandingDto? Branding { get; init; }
+    public ApplicationPageThemeDto? PageTheme { get; init; }
     public ApplicationEmailBrandingDto? EmailBranding { get; init; }
     public ApplicationLoginExperienceDto? LoginExperience { get; init; }
     public ApplicationSelfRegistrationDto? SelfRegistration { get; init; }
@@ -39,6 +40,19 @@ public record ApplicationBrandingDto
     public string? LogoUrl { get; init; }      // read-only (derived)
     public string? FaviconAssetId { get; init; }
     public string? FaviconUrl { get; init; }    // read-only (derived)
+}
+
+/// <summary>
+/// Safe Cocoar token overrides for Application-selected custom pages. These
+/// values are never applied to Modgud chrome or built-in auth views.
+/// </summary>
+public record ApplicationPageThemeDto
+{
+    public string? AccentColor { get; init; }
+    public string? ErrorColor { get; init; }
+    public int? ButtonRadiusPx { get; init; }
+    public int? InputRadiusPx { get; init; }
+    public int? CardRadiusPx { get; init; }
 }
 
 public record ApplicationEmailBrandingDto

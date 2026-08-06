@@ -41,6 +41,7 @@ public sealed record EffectiveSettings
     public SelfRegPosture? SelfRegPosture { get; init; }
 
     public ApplicationOrigin? Origin { get; init; }
+    public ApplicationPageTheme? PageTheme { get; init; }
     public ApplicationEmailBranding? EmailBranding { get; init; }
     public ApplicationLoginExperience? LoginExperience { get; init; }
 
@@ -60,6 +61,7 @@ public sealed record EffectiveSettings
         Pages = ResolveRealmActivePages(realm),
         SelfRegPosture = null,
         Origin = null,
+        PageTheme = null,
         EmailBranding = MergeEmailBranding(realm.EmailBranding, null),
         LoginExperience = null,
     };
@@ -91,6 +93,7 @@ public sealed record EffectiveSettings
         // New per-App facets:
         SelfRegPosture = app.SelfRegistration?.Posture ?? Applications.SelfRegPosture.JitOnOtp,
         Origin = app.Origin,
+        PageTheme = app.PageTheme,
         EmailBranding = MergeEmailBranding(realm.EmailBranding, app.EmailBranding),
         LoginExperience = app.LoginExperience,
     };

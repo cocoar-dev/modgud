@@ -15,6 +15,15 @@ export interface BrandingConfig {
   PrimaryColor: string | null
 }
 
+/** Application-only Cocoar tokens, inherited solely by mounted custom pages. */
+export interface PageThemeConfig {
+  AccentColor: string | null
+  ErrorColor: string | null
+  ButtonRadiusPx: number | null
+  InputRadiusPx: number | null
+  CardRadiusPx: number | null
+}
+
 /**
  * Operator-level feature toggles. System-wide (set in configuration.json /
  * ENV), not per-tenant. Source of truth is the backend AppSettings.Features
@@ -51,6 +60,7 @@ export interface AppConfig {
   TwoFactorGracePeriodDays: number
   IsControlPlane: boolean              // true ⇔ the realm hosting this SPA is the Control Plane
   Branding: BrandingConfig
+  PageTheme: PageThemeConfig | null
   Features: FeatureFlags
   RegistrationFields: RegistrationFieldsConfig
   Legal: LegalConfig
@@ -70,6 +80,7 @@ const defaults: AppConfig = {
     FaviconUrl: null,
     PrimaryColor: null,
   },
+  PageTheme: null,
   Features: {
     PageBuilder: false,
   },
@@ -128,6 +139,7 @@ export const useAppConfigStore = defineStore('appConfig', () => {
           ...defaults,
           ...result,
           Branding: { ...defaults.Branding, ...(result.Branding ?? {}) },
+          PageTheme: result.PageTheme ? { ...result.PageTheme } : null,
           Features: { ...defaults.Features, ...(result.Features ?? {}) },
           RegistrationFields: { ...defaults.RegistrationFields, ...(result.RegistrationFields ?? {}) },
           Legal: { ...defaults.Legal, ...(result.Legal ?? {}) },
@@ -139,6 +151,7 @@ export const useAppConfigStore = defineStore('appConfig', () => {
       config.value = {
         ...defaults,
         Branding: { ...defaults.Branding },
+        PageTheme: null,
         Features: { ...defaults.Features },
         RegistrationFields: { ...defaults.RegistrationFields },
         Legal: { ...defaults.Legal },

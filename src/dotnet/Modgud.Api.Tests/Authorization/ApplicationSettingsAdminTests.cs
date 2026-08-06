@@ -85,6 +85,14 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
             Dcr = new ApplicationDcrDto { Enabled = true },
             Cimd = new ApplicationCimdDto { Enabled = true },
             Branding = new ApplicationBrandingDto { ProductName = "Admin Test App" },
+            PageTheme = new ApplicationPageThemeDto
+            {
+                AccentColor = "#10b981",
+                ErrorColor = "#e5484d",
+                ButtonRadiusPx = 999,
+                InputRadiusPx = 14,
+                CardRadiusPx = 20,
+            },
             RegistrationFields = new ApplicationRegistrationFieldsDto { Firstname = "Required", Lastname = "Off" },
             Origin = new ApplicationOriginDto { Subdomain = host },
         };
@@ -101,6 +109,11 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
         Assert.True(got.Dcr!.Enabled);
         Assert.True(got.Cimd!.Enabled);
         Assert.Equal("Admin Test App", got.Branding!.ProductName);
+        Assert.Equal("#10b981", got.PageTheme!.AccentColor);
+        Assert.Equal("#e5484d", got.PageTheme.ErrorColor);
+        Assert.Equal(999, got.PageTheme.ButtonRadiusPx);
+        Assert.Equal(14, got.PageTheme.InputRadiusPx);
+        Assert.Equal(20, got.PageTheme.CardRadiusPx);
         Assert.Equal("Required", got.RegistrationFields!.Firstname);
         Assert.Equal("Off", got.RegistrationFields.Lastname);
         Assert.Null(got.RegistrationFields.Username); // not patched → inherits (null override)
@@ -133,6 +146,13 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
         // Out-of-bounds token lifetime.
         Assert.Equal(HttpStatusCode.BadRequest, (await PutSettingsAsync(appShort,
             new ApplicationSettingsDto { NativeGrants = new ApplicationNativeGrantsDto { AccessTokenLifetimeMinutes = 9999 } }, ct)).StatusCode);
+
+        // Page theme values are allowlisted CSS colors and bounded radii, never
+        // arbitrary style declarations.
+        Assert.Equal(HttpStatusCode.BadRequest, (await PutSettingsAsync(appShort,
+            new ApplicationSettingsDto { PageTheme = new ApplicationPageThemeDto { AccentColor = "url(javascript:alert(1))" } }, ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await PutSettingsAsync(appShort,
+            new ApplicationSettingsDto { PageTheme = new ApplicationPageThemeDto { ButtonRadiusPx = 1000 } }, ct)).StatusCode);
     }
 
     [Fact]

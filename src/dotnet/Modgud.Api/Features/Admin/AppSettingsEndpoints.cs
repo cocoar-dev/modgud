@@ -70,6 +70,17 @@ public static class AppSettingsEndpoints
                             : null,
                         PrimaryColor = branding?.PrimaryColor,
                     },
+                    // Application-only design tokens. The SPA scopes these to
+                    // its mounted custom-page wrapper; built-in pages never
+                    // inherit them.
+                    PageTheme = effective.PageTheme is null ? null : new
+                    {
+                        effective.PageTheme.AccentColor,
+                        effective.PageTheme.ErrorColor,
+                        effective.PageTheme.ButtonRadiusPx,
+                        effective.PageTheme.InputRadiusPx,
+                        effective.PageTheme.CardRadiusPx,
+                    },
                     Features = new
                     {
                         settings.Features.PageBuilder,

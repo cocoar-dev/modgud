@@ -77,6 +77,14 @@ export interface ApplicationBrandingSettingsDto {
   FaviconUrl?: string | null // read-only
 }
 
+export interface ApplicationPageThemeDto {
+  AccentColor?: string | null
+  ErrorColor?: string | null
+  ButtonRadiusPx?: number | null
+  InputRadiusPx?: number | null
+  CardRadiusPx?: number | null
+}
+
 export interface ApplicationEmailBrandingDto {
   ProductName?: string | null
   SubjectPrefix?: string | null
@@ -134,6 +142,7 @@ export interface ApplicationRegistrationFieldsOverrideDto {
 export interface ApplicationSettingsDto {
   Origin?: ApplicationOriginDto | null
   Branding?: ApplicationBrandingSettingsDto | null
+  PageTheme?: ApplicationPageThemeDto | null
   EmailBranding?: ApplicationEmailBrandingDto | null
   LoginExperience?: ApplicationLoginExperienceDto | null
   SelfRegistration?: ApplicationSelfRegistrationOverrideDto | null

@@ -131,6 +131,13 @@ public sealed class ApplicationSettingsService(
             doc.Branding = r.Value;
         }
 
+        if (dto.PageTheme is not null)
+        {
+            var r = MapPageTheme(dto.PageTheme);
+            if (r.IsError) return r.FirstError;
+            doc.PageTheme = r.Value;
+        }
+
         if (dto.EmailBranding is not null)
         {
             var r = MapEmailBranding(dto.EmailBranding);
@@ -205,6 +212,9 @@ public sealed class ApplicationSettingsService(
 
         if (dto.Branding is null) doc.Branding = null;
         else { var r = await MapBrandingAsync(dto.Branding, ct); if (r.IsError) return r.FirstError; doc.Branding = r.Value; }
+
+        if (dto.PageTheme is null) doc.PageTheme = null;
+        else { var r = MapPageTheme(dto.PageTheme); if (r.IsError) return r.FirstError; doc.PageTheme = r.Value; }
 
         if (dto.EmailBranding is null) doc.EmailBranding = null;
         else { var r = MapEmailBranding(dto.EmailBranding); if (r.IsError) return r.FirstError; doc.EmailBranding = r.Value; }
@@ -441,6 +451,40 @@ public sealed class ApplicationSettingsService(
         };
     }
 
+    private static ErrorOr<ApplicationPageTheme?> MapPageTheme(ApplicationPageThemeDto d)
+    {
+        var accent = NullIfBlank(d.AccentColor);
+        var error = NullIfBlank(d.ErrorColor);
+        if (accent is not null && !CssColorRegex.IsMatch(accent))
+            return Error.Validation("Application.PageTheme.InvalidAccentColor", "AccentColor must be a valid CSS color.");
+        if (error is not null && !CssColorRegex.IsMatch(error))
+            return Error.Validation("Application.PageTheme.InvalidErrorColor", "ErrorColor must be a valid CSS color.");
+
+        foreach (var (name, value) in new[]
+                 {
+                     (nameof(d.ButtonRadiusPx), d.ButtonRadiusPx),
+                     (nameof(d.InputRadiusPx), d.InputRadiusPx),
+                     (nameof(d.CardRadiusPx), d.CardRadiusPx),
+                 })
+        {
+            if (value is < 0 or > 999)
+                return Error.Validation($"Application.PageTheme.Invalid{name}", $"{name} must be between 0 and 999.");
+        }
+
+        if (accent is null && error is null && d.ButtonRadiusPx is null
+            && d.InputRadiusPx is null && d.CardRadiusPx is null)
+            return (ApplicationPageTheme?)null;
+
+        return new ApplicationPageTheme
+        {
+            AccentColor = accent,
+            ErrorColor = error,
+            ButtonRadiusPx = d.ButtonRadiusPx,
+            InputRadiusPx = d.InputRadiusPx,
+            CardRadiusPx = d.CardRadiusPx,
+        };
+    }
+
     private async Task<ErrorOr<BrandingSettings>> MapBrandingAsync(
         ApplicationBrandingDto dto, CancellationToken ct)
     {
@@ -550,6 +594,14 @@ public sealed class ApplicationSettingsService(
                 LogoUrl = doc.Branding.LogoAssetId is { } lu ? $"/api/assets/{ShortGuid.Encode(lu)}" : null,
                 FaviconAssetId = doc.Branding.FaviconAssetId is { } f ? ShortGuid.Encode(f) : null,
                 FaviconUrl = doc.Branding.FaviconAssetId is { } fu ? $"/api/assets/{ShortGuid.Encode(fu)}" : null,
+            },
+            PageTheme = doc.PageTheme is null ? null : new ApplicationPageThemeDto
+            {
+                AccentColor = doc.PageTheme.AccentColor,
+                ErrorColor = doc.PageTheme.ErrorColor,
+                ButtonRadiusPx = doc.PageTheme.ButtonRadiusPx,
+                InputRadiusPx = doc.PageTheme.InputRadiusPx,
+                CardRadiusPx = doc.PageTheme.CardRadiusPx,
             },
             EmailBranding = doc.EmailBranding is null ? null
                 : new ApplicationEmailBrandingDto
