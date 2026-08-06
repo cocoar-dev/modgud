@@ -7,6 +7,7 @@ import {
   type EmptyProps,
   type PageConfig,
   type PageNode,
+  type PagePreviewFixture,
   type PageRootNode,
 } from '@cocoar/vue-page-builder'
 import BrandHeaderElement from '@/components/page-builder/BrandHeaderElement.vue'
@@ -56,8 +57,26 @@ export function createAuthPageConfig(
   pickAsset?: (currentId?: string) => Promise<string | null>,
 ): PageConfig {
   const preset = createPresetConfig(slot, locale)
+  const previewFixtures = (preset.previewFixtures ?? []).flatMap<PagePreviewFixture>((fixture) => [
+    {
+      ...fixture,
+      id: `${fixture.id}-desktop`,
+      label: `${fixture.label} · Desktop`,
+      viewport: 'desktop',
+    },
+    {
+      ...fixture,
+      id: `${fixture.id}-mobile`,
+      label: `${fixture.label} · Mobile`,
+      viewport: { width: 390, height: 844 },
+    },
+  ])
+
   return {
     ...preset,
+    // Fixtures are a host-owned acceptance contract. Exercise every auth data
+    // shape at both a desktop breakpoint and Modgud's narrow mobile viewport.
+    previewFixtures,
     allowedElements: [
       ...(preset.allowedElements ?? []),
       'modgud-brand-header',
