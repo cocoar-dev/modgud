@@ -88,24 +88,15 @@ const defaults: AppConfig = {
 }
 
 /**
- * Applies per-realm branding to the document at SPA boot. Sets
- * Cocoar's accent CSS variable, document title prefix, and rewrites
- * the favicon link element. Falls back silently when a branding field is
- * null — the design-system defaults stay in effect.
+ * Applies non-page presentation to the document at SPA boot: document title
+ * and favicon. Cocoar theme tokens deliberately do not belong on the document
+ * root: an Application theme must only inherit into its selected custom page,
+ * never into Modgud chrome or a built-in auth fallback.
  *
  * Logo + ProductName are read by views that render them (header / login)
  * via the store directly — DOM-side this function only handles globals.
  */
 function applyBranding(branding: BrandingConfig): void {
-  document.documentElement.style.removeProperty('--coar-accent')
-  document.documentElement.style.removeProperty('--coar-color-primary')
-  if (branding.PrimaryColor) {
-    // Cocoar derives its complete accessible accent palette from this base hue.
-    document.documentElement.style.setProperty('--coar-accent', branding.PrimaryColor)
-    // Keep the original Modgud variable for host styles outside Cocoar Vue UI.
-    document.documentElement.style.setProperty('--coar-color-primary', branding.PrimaryColor)
-  }
-
   document.title = branding.ProductName || 'Modgud'
 
   let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
