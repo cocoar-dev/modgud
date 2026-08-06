@@ -295,5 +295,6 @@ watch([slot, variantId], load, { immediate: true })
 .builder {
   flex: 1;
   min-height: 0;
+  --coar-shadow-small: var(--coar-card-shadow);
 }
 </style>

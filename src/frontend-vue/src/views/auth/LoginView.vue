@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, provide } from 'vue'
+import { ref, computed, onMounted, onErrorCaptured, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
@@ -158,6 +158,30 @@ const loginPageConfig = computed(() => createAuthPageConfig('login', authPageLoc
 const loginFallbackSchema = computed(() => createDefaultAuthPageSchema('login'))
 const customLoginSchema = ref<PageNode | null>(null)
 const loginPageReady = ref(false)
+
+function schemaContains(node: PageNode, id: string): boolean {
+  if (node.id === id) return true
+  return 'children' in node && Array.isArray(node.children)
+    ? node.children.some(child => schemaContains(child, id))
+    : false
+}
+
+// Schemas saved before the parity template still rely on the legacy fixed
+// notice above the renderer for callback/host errors.
+const customSchemaRendersHostError = computed(() => customLoginSchema.value
+  ? schemaContains(customLoginSchema.value, 'login-context-error')
+  : false)
+
+// A renderer regression must not take authentication down. Vue render/setup
+// failures immediately unmount the custom branch and reveal the hardcoded
+// LoginView. `?safemode=1` remains the manual escape hatch for visual/runtime
+// regressions that do not throw an exception.
+onErrorCaptured((exception, _instance, info) => {
+  if (!customLoginSchema.value || step.value !== 'credentials') return
+  console.error('[auth-page] Custom login failed; using fixed fallback.', exception, info)
+  customLoginSchema.value = null
+  return false
+})
 
 const loginViewState = computed(() => error.value
   ? 'error'
@@ -499,8 +523,8 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
       {{ t('common.loading', {}, 'Loading…') }}
     </div>
 
-    <template v-else-if="step === 'credentials' && customLoginSchema && !isPasswordless()">
-      <CoarNotice v-if="error" variant="error" class="custom-login-error">{{ error }}</CoarNotice>
+    <template v-else-if="step === 'credentials' && customLoginSchema">
+      <CoarNotice v-if="error && !customSchemaRendersHostError" variant="error" class="custom-login-error">{{ error }}</CoarNotice>
       <AuthRuntimePageRenderer
         page-id="auth-login"
         :schema="customLoginSchema"
@@ -543,7 +567,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
         <form v-if="step === 'credentials'" class="space-y-4" @submit.prevent="handleLogin">
           <!-- Password login (hidden at Level 2) -->
           <template v-if="appConfig.config.InternalLoginEnabled && !isPasswordless()">
-            <CoarFormField :label="t('auth.login.username', {}, 'Username')">
+            <CoarFormField required :label="t('auth.login.username', {}, 'Username')">
               <CoarTextInput
                 v-model="userName"
                 :placeholder="t('auth.login.username', {}, 'Username')"
@@ -552,7 +576,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
               />
             </CoarFormField>
 
-            <CoarFormField :label="t('auth.login.password', {}, 'Password')">
+            <CoarFormField required :label="t('auth.login.password', {}, 'Password')">
               <CoarPasswordInput
                 v-model="password"
                 :placeholder="t('auth.login.password', {}, 'Password')"

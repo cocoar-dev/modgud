@@ -58,5 +58,6 @@ const { pageCodeValues, onRuntimeChange, runPageAction } = useAuthPageCodeRuntim
 .auth-runtime-page-renderer {
   height: 100vh;
   height: 100dvh;
+  --coar-shadow-small: var(--coar-card-shadow);
 }
 </style>
