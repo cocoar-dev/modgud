@@ -26,7 +26,7 @@ public static class PageDocumentValidator
         "heading", "paragraph", "note", "feedback", "text-input",
         "password-input", "otp-input", "checkbox", "button", "link", "image",
         "visual-markup",
-        "modgud-brand-header", "modgud-external-logins",
+        "modgud-brand-header",
     ];
 
     private static readonly Dictionary<string, HashSet<string>> Actions = new(StringComparer.Ordinal)

@@ -21,7 +21,7 @@ public static class PageCompositionDocumentService
         "stack", "repeat", "card", "section", "divider", "spacer",
         "heading", "paragraph", "note", "feedback", "text-input",
         "password-input", "otp-input", "checkbox", "button", "link", "image",
-        "visual-markup", "modgud-brand-header", "modgud-external-logins",
+        "visual-markup", "modgud-brand-header",
     ];
 
     public static bool ValidateCompositionRoot(
