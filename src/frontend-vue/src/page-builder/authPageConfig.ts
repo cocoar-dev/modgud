@@ -17,7 +17,6 @@ import {
 import BrandHeaderElement from '@/components/page-builder/BrandHeaderElement.vue'
 import BrandHeaderPreview from '@/components/page-builder/BrandHeaderPreview.vue'
 import ExternalLoginsElement from '@/components/page-builder/ExternalLoginsElement.vue'
-import ExternalLoginsPreview from '@/components/page-builder/ExternalLoginsPreview.vue'
 import type { PageThemeConfig } from '@/stores/appconfig.store'
 import { createAuthVisualMarkupConfig } from './authVisualMarkup'
 
@@ -41,15 +40,11 @@ const modgudElements = {
     },
   }),
   // Kept for schema-v2 variants saved before the generic repeat element was
-  // introduced. New defaults use auth.externalProviders through `repeat`.
+  // introduced. Register only the runtime renderer so existing documents keep
+  // working without offering this opaque legacy element for new authoring.
+  // New defaults use auth.externalProviders through `repeat`.
   'modgud-external-logins': definePageElement<EmptyProps>({
     renderer: ExternalLoginsElement,
-    builder: {
-      label: { key: 'modgud.pageBuilder.externalLogins', fallback: 'External login providers' },
-      icon: 'log-in',
-      defaults: () => ({}),
-      preview: ExternalLoginsPreview,
-    },
   }),
 }
 
