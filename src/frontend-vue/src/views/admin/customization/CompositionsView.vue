@@ -103,7 +103,7 @@ onMounted(load)
 <template>
   <div class="compositions-page">
     <p class="hint">
-      {{ t('admin.customization.compositions.hint', {}, 'Create reusable building blocks here, then insert a pinned version into Login, Logout or another page.') }}
+      {{ t('admin.customization.compositions.hint', {}, 'Create reusable building blocks here. To use one, open a Page, select a container in the Outline and choose Compositions → Insert.') }}
     </p>
 
     <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
