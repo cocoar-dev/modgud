@@ -92,6 +92,8 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
                 ButtonRadiusPx = 999,
                 InputRadiusPx = 14,
                 CardRadiusPx = 20,
+                BodyFontFamily = "Instrument Sans Variable",
+                TitleFontFamily = "Fraunces Variable",
             },
             RegistrationFields = new ApplicationRegistrationFieldsDto { Firstname = "Required", Lastname = "Off" },
             Origin = new ApplicationOriginDto { Subdomain = host },
@@ -114,6 +116,8 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
         Assert.Equal(999, got.PageTheme.ButtonRadiusPx);
         Assert.Equal(14, got.PageTheme.InputRadiusPx);
         Assert.Equal(20, got.PageTheme.CardRadiusPx);
+        Assert.Equal("Instrument Sans Variable", got.PageTheme.BodyFontFamily);
+        Assert.Equal("Fraunces Variable", got.PageTheme.TitleFontFamily);
         Assert.Equal("Required", got.RegistrationFields!.Firstname);
         Assert.Equal("Off", got.RegistrationFields.Lastname);
         Assert.Null(got.RegistrationFields.Username); // not patched → inherits (null override)
@@ -153,6 +157,8 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
             new ApplicationSettingsDto { PageTheme = new ApplicationPageThemeDto { AccentColor = "url(javascript:alert(1))" } }, ct)).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await PutSettingsAsync(appShort,
             new ApplicationSettingsDto { PageTheme = new ApplicationPageThemeDto { ButtonRadiusPx = 1000 } }, ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await PutSettingsAsync(appShort,
+            new ApplicationSettingsDto { PageTheme = new ApplicationPageThemeDto { BodyFontFamily = "Instrument Sans; color: red" } }, ct)).StatusCode);
     }
 
     [Fact]

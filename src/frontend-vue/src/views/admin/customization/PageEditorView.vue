@@ -45,7 +45,7 @@ const pageConfig = computed(() => createAuthPageConfig(slot.value, authPageLocal
   }, { selectedId: currentId ?? null })
   const result = await ref$.result
   return result?.Id ?? null
-}))
+}, appConfig.config.PageTheme))
 
 const previewState = computed(() => ({
   login: 'credentials',

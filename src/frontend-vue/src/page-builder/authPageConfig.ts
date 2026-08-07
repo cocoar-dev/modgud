@@ -18,6 +18,8 @@ import BrandHeaderElement from '@/components/page-builder/BrandHeaderElement.vue
 import BrandHeaderPreview from '@/components/page-builder/BrandHeaderPreview.vue'
 import ExternalLoginsElement from '@/components/page-builder/ExternalLoginsElement.vue'
 import ExternalLoginsPreview from '@/components/page-builder/ExternalLoginsPreview.vue'
+import type { PageThemeConfig } from '@/stores/appconfig.store'
+import { createAuthVisualMarkupConfig } from './authVisualMarkup'
 
 export type { AuthPageLocale, AuthPageSlot }
 
@@ -286,6 +288,7 @@ export function createAuthPageConfig(
   slot: AuthPageSlot,
   locale: AuthPageLocale = 'en',
   pickAsset?: (currentId?: string) => Promise<string | null>,
+  pageTheme?: PageThemeConfig | null,
 ): PageConfig {
   const preset = createPresetConfig(slot, locale)
   const previewFixtures = (preset.previewFixtures ?? []).flatMap<PagePreviewFixture>((fixture) => [
@@ -377,6 +380,7 @@ export function createAuthPageConfig(
     elements: { ...(preset.elements ?? {}), ...modgudElements },
     assetResolver: (id: string) => `/api/assets/${encodeURIComponent(id)}`,
     pickAsset,
+    visualMarkup: createAuthVisualMarkupConfig(pageTheme ?? null),
   }
 }
 

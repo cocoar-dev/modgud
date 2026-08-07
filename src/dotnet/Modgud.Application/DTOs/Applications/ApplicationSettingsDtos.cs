@@ -53,6 +53,8 @@ public record ApplicationPageThemeDto
     public int? ButtonRadiusPx { get; init; }
     public int? InputRadiusPx { get; init; }
     public int? CardRadiusPx { get; init; }
+    public string? BodyFontFamily { get; init; }
+    public string? TitleFontFamily { get; init; }
 }
 
 public record ApplicationEmailBrandingDto

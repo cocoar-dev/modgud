@@ -155,7 +155,12 @@ const passkeyLoading = ref(false)
 
 const isPasswordless = () => appConfig.config.AuthenticationMinimumLevel >= 2
 
-const loginPageConfig = computed(() => createAuthPageConfig('login', authPageLocale(language.value)))
+const loginPageConfig = computed(() => createAuthPageConfig(
+  'login',
+  authPageLocale(language.value),
+  undefined,
+  appConfig.config.PageTheme,
+))
 const loginFallbackSchema = computed(() => createDefaultAuthPageSchema('login'))
 const customLoginSchema = ref<PageNode | null>(null)
 const loginPageReady = ref(false)

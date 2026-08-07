@@ -289,6 +289,8 @@ public class EffectiveSettingsTests
                 {
                     AccentColor = "#10b981",
                     ButtonRadiusPx = 999,
+                    BodyFontFamily = "Instrument Sans Variable",
+                    TitleFontFamily = "Fraunces Variable",
                 },
             };
 
@@ -298,6 +300,8 @@ public class EffectiveSettingsTests
             Assert.Equal("amZettel", eff.EmailBranding!.ProductName);
             Assert.Equal("#10b981", eff.PageTheme!.AccentColor);
             Assert.Equal(999, eff.PageTheme.ButtonRadiusPx);
+            Assert.Equal("Instrument Sans Variable", eff.PageTheme.BodyFontFamily);
+            Assert.Equal("Fraunces Variable", eff.PageTheme.TitleFontFamily);
         }
 
         [Fact]

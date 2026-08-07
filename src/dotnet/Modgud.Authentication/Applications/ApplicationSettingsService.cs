@@ -64,6 +64,12 @@ public sealed class ApplicationSettingsService(
         @"|[a-zA-Z]{3,30})$",
         RegexOptions.Compiled);
 
+    // A PageTheme selects one host-approved family by name. CSS fallback
+    // lists and function-like values are intentionally not accepted here.
+    private static readonly Regex FontFamilyRegex = new(
+        @"^[\p{L}\p{N} _.-]{1,120}$",
+        RegexOptions.Compiled);
+
     // Conservative hostname check (labels of a-z 0-9 hyphen, dot-separated).
     private static readonly Regex HostRegex = new(
         @"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$",
@@ -455,10 +461,16 @@ public sealed class ApplicationSettingsService(
     {
         var accent = NullIfBlank(d.AccentColor);
         var error = NullIfBlank(d.ErrorColor);
+        var bodyFont = NullIfBlank(d.BodyFontFamily);
+        var titleFont = NullIfBlank(d.TitleFontFamily);
         if (accent is not null && !CssColorRegex.IsMatch(accent))
             return Error.Validation("Application.PageTheme.InvalidAccentColor", "AccentColor must be a valid CSS color.");
         if (error is not null && !CssColorRegex.IsMatch(error))
             return Error.Validation("Application.PageTheme.InvalidErrorColor", "ErrorColor must be a valid CSS color.");
+        if (bodyFont is not null && !FontFamilyRegex.IsMatch(bodyFont))
+            return Error.Validation("Application.PageTheme.InvalidBodyFontFamily", "BodyFontFamily must name one approved font family.");
+        if (titleFont is not null && !FontFamilyRegex.IsMatch(titleFont))
+            return Error.Validation("Application.PageTheme.InvalidTitleFontFamily", "TitleFontFamily must name one approved font family.");
 
         foreach (var (name, value) in new[]
                  {
@@ -472,7 +484,8 @@ public sealed class ApplicationSettingsService(
         }
 
         if (accent is null && error is null && d.ButtonRadiusPx is null
-            && d.InputRadiusPx is null && d.CardRadiusPx is null)
+            && d.InputRadiusPx is null && d.CardRadiusPx is null
+            && bodyFont is null && titleFont is null)
             return (ApplicationPageTheme?)null;
 
         return new ApplicationPageTheme
@@ -482,6 +495,8 @@ public sealed class ApplicationSettingsService(
             ButtonRadiusPx = d.ButtonRadiusPx,
             InputRadiusPx = d.InputRadiusPx,
             CardRadiusPx = d.CardRadiusPx,
+            BodyFontFamily = bodyFont,
+            TitleFontFamily = titleFont,
         };
     }
 
@@ -602,6 +617,8 @@ public sealed class ApplicationSettingsService(
                 ButtonRadiusPx = doc.PageTheme.ButtonRadiusPx,
                 InputRadiusPx = doc.PageTheme.InputRadiusPx,
                 CardRadiusPx = doc.PageTheme.CardRadiusPx,
+                BodyFontFamily = doc.PageTheme.BodyFontFamily,
+                TitleFontFamily = doc.PageTheme.TitleFontFamily,
             },
             EmailBranding = doc.EmailBranding is null ? null
                 : new ApplicationEmailBrandingDto

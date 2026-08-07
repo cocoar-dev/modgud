@@ -13,6 +13,8 @@ public static class PageDocumentValidator
     private const int MaxNodes = 500;
     private const int MaxDepth = 30;
     private const int MaxCodeLength = 64 * 1024;
+    private const int MaxVisualHtmlLength = 100_000;
+    private const int MaxVisualCssLength = 50_000;
 
     private static readonly HashSet<string> Slots =
         ["login", "password-forgot", "logout", "consent"];
@@ -22,6 +24,7 @@ public static class PageDocumentValidator
         "page", "stack", "repeat", "card", "section", "divider", "spacer",
         "heading", "paragraph", "note", "feedback", "text-input",
         "password-input", "otp-input", "checkbox", "button", "link", "image",
+        "visual-markup",
         "modgud-brand-header", "modgud-external-logins",
     ];
 
@@ -130,6 +133,16 @@ public static class PageDocumentValidator
                         if (props.TryGetProperty("maxItems", out var maxItems)
                             && (!maxItems.TryGetInt32(out var max) || max is < 1 or > 100))
                         { validationError = $"Node '{id}' repeat maxItems must be between 1 and 100."; return false; }
+                    }
+                    if (type == "visual-markup")
+                    {
+                        if (!StringProperty(props, "html", out var html)
+                            || html.Length > MaxVisualHtmlLength)
+                        { validationError = $"Node '{id}' visual HTML is missing or exceeds {MaxVisualHtmlLength} characters."; return false; }
+                        if (props.TryGetProperty("css", out var css)
+                            && (css.ValueKind != JsonValueKind.String
+                                || css.GetString()!.Length > MaxVisualCssLength))
+                        { validationError = $"Node '{id}' visual CSS exceeds {MaxVisualCssLength} characters."; return false; }
                     }
                 }
 

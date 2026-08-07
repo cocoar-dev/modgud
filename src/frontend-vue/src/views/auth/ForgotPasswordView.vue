@@ -59,7 +59,12 @@ const submitting = ref(false)
 const sent = ref(false)
 const error = ref('')
 
-const forgotPageConfig = computed(() => createAuthPageConfig('password-forgot', authPageLocale(language.value)))
+const forgotPageConfig = computed(() => createAuthPageConfig(
+  'password-forgot',
+  authPageLocale(language.value),
+  undefined,
+  appConfig.config.PageTheme,
+))
 const forgotFallbackSchema = computed(() => createDefaultAuthPageSchema('password-forgot'))
 const customForgotSchema = ref<PageNode | null>(null)
 const forgotPageReady = ref(false)

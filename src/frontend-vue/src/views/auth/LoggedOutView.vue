@@ -32,7 +32,12 @@ provide(LOGIN_PAGE_RUNTIME_KEY, {
   startExternalLogin: () => {},
 })
 
-const pageConfig = computed(() => createAuthPageConfig('logout', authPageLocale(language.value)))
+const pageConfig = computed(() => createAuthPageConfig(
+  'logout',
+  authPageLocale(language.value),
+  undefined,
+  appConfig.config.PageTheme,
+))
 const fallbackSchema = computed(() => createDefaultAuthPageSchema('logout'))
 const schema = ref<PageNode | null>(null)
 const ready = ref(false)

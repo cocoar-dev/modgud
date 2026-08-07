@@ -80,6 +80,8 @@ public static class AppSettingsEndpoints
                         effective.PageTheme.ButtonRadiusPx,
                         effective.PageTheme.InputRadiusPx,
                         effective.PageTheme.CardRadiusPx,
+                        effective.PageTheme.BodyFontFamily,
+                        effective.PageTheme.TitleFontFamily,
                     },
                     Features = new
                     {

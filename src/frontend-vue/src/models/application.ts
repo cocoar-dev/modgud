@@ -83,6 +83,8 @@ export interface ApplicationPageThemeDto {
   ButtonRadiusPx?: number | null
   InputRadiusPx?: number | null
   CardRadiusPx?: number | null
+  BodyFontFamily?: string | null
+  TitleFontFamily?: string | null
 }
 
 export interface ApplicationEmailBrandingDto {

@@ -10,5 +10,7 @@ export function createAuthPageTheme(theme: PageThemeConfig | null): CoarTheme {
     buttonRadius: theme.ButtonRadiusPx ?? undefined,
     inputRadius: theme.InputRadiusPx ?? undefined,
     cardRadius: theme.CardRadiusPx ?? undefined,
+    bodyFontFamily: theme.BodyFontFamily ?? undefined,
+    titleFontFamily: theme.TitleFontFamily ?? undefined,
   }
 }

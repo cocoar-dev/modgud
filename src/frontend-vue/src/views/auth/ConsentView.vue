@@ -81,7 +81,12 @@ const model = ref<ConsentModel | null>(null)
 // the toggle is rendered disabled so the user cannot uncheck them.
 const approvedScopes = ref<Record<string, boolean>>({})
 
-const consentPageConfig = computed(() => createAuthPageConfig('consent', authPageLocale(language.value)))
+const consentPageConfig = computed(() => createAuthPageConfig(
+  'consent',
+  authPageLocale(language.value),
+  undefined,
+  appConfig.config.PageTheme,
+))
 const consentFallbackSchema = computed(() => createDefaultAuthPageSchema('consent'))
 const customConsentSchema = ref<PageNode | null>(null)
 const consentViewState = computed(() => submitting.value ? 'submitting' : phase.value)

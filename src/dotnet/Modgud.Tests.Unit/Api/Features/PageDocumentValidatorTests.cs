@@ -44,6 +44,44 @@ public class PageDocumentValidatorTests
     }
 
     [Fact]
+    public void Login_AcceptsBoundedDecorativeVisualMarkup()
+    {
+        const string schema = """
+        {
+          "id":"auth-page","type":"page","schemaVersion":4,
+          "children":[
+            {
+              "id":"brand-visual","type":"visual-markup","name":"brandVisual",
+              "props":{"html":"<div><svg viewBox=\"0 0 10 10\"><circle cx=\"5\" cy=\"5\" r=\"4\" /></svg></div>","css":"svg { animation: pulse 1s both; } @keyframes pulse { to { opacity: .5; } }"}
+            }
+          ]
+        }
+        """;
+
+        Assert.True(PageDocumentValidator.Validate("login", schema, out var error), error);
+    }
+
+    [Fact]
+    public void Login_RejectsOversizedDecorativeVisualMarkup()
+    {
+        const string template = """
+        {
+          "id":"auth-page","type":"page","schemaVersion":4,
+          "children":[
+            {"id":"brand-visual","type":"visual-markup","props":{"html":"__HTML__"}}
+          ]
+        }
+        """;
+        var schema = template.Replace(
+            "\"__HTML__\"",
+            System.Text.Json.JsonSerializer.Serialize(new string('x', 100_001)),
+            StringComparison.Ordinal);
+
+        Assert.False(PageDocumentValidator.Validate("login", schema, out var error));
+        Assert.Contains("visual HTML", error);
+    }
+
+    [Fact]
     public void RejectsDisallowedHostAction()
     {
         const string schema = """

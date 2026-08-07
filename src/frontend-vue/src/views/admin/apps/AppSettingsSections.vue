@@ -52,6 +52,7 @@ const f = reactive({
     override: false,
     accentColor: '', errorColor: '',
     buttonRadius: '', inputRadius: '', cardRadius: '',
+    bodyFontFamily: '', titleFontFamily: '',
   },
   emailBranding: { override: false, productName: '', subjectPrefix: '', preheader: '', footerText: '', fromName: '', replyTo: '' },
   loginExperience: { override: false, internal: true, magicLink: true, providerIds: [] as string[] },
@@ -124,6 +125,7 @@ const inh = computed(() => {
     pageTheme: {
       accentColor: '', errorColor: '',
       buttonRadius: '', inputRadius: '', cardRadius: '',
+      bodyFontFamily: '', titleFontFamily: '',
     },
     emailBranding: {
       productName: r?.EmailBranding?.ProductName ?? r?.Branding?.ProductName ?? '',
@@ -200,6 +202,7 @@ function resetForm() {
   f.branding.logoUrl = null; f.branding.faviconUrl = null
   f.pageTheme.override = false; f.pageTheme.accentColor = ''; f.pageTheme.errorColor = ''
   f.pageTheme.buttonRadius = ''; f.pageTheme.inputRadius = ''; f.pageTheme.cardRadius = ''
+  f.pageTheme.bodyFontFamily = ''; f.pageTheme.titleFontFamily = ''
   f.emailBranding.override = false; f.emailBranding.productName = ''
   f.emailBranding.subjectPrefix = ''; f.emailBranding.preheader = ''; f.emailBranding.footerText = ''
   f.emailBranding.fromName = ''; f.emailBranding.replyTo = ''
@@ -238,6 +241,8 @@ function populate(s?: ApplicationSettingsDto | null) {
     f.pageTheme.buttonRadius = numStr(s.PageTheme.ButtonRadiusPx)
     f.pageTheme.inputRadius = numStr(s.PageTheme.InputRadiusPx)
     f.pageTheme.cardRadius = numStr(s.PageTheme.CardRadiusPx)
+    f.pageTheme.bodyFontFamily = s.PageTheme.BodyFontFamily ?? ''
+    f.pageTheme.titleFontFamily = s.PageTheme.TitleFontFamily ?? ''
   }
   if (s.EmailBranding) {
     f.emailBranding.override = true
@@ -393,6 +398,8 @@ function build(): ApplicationSettingsDto {
           ButtonRadiusPx: parseNum(f.pageTheme.buttonRadius),
           InputRadiusPx: parseNum(f.pageTheme.inputRadius),
           CardRadiusPx: parseNum(f.pageTheme.cardRadius),
+          BodyFontFamily: f.pageTheme.bodyFontFamily.trim() || null,
+          TitleFontFamily: f.pageTheme.titleFontFamily.trim() || null,
         }
       : null,
     EmailBranding: f.emailBranding.override
@@ -613,6 +620,14 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
           </CoarFormField>
           <CoarFormField :label="t('admin.appSettings.pageTheme.cardRadius', {}, 'Card radius (px)')">
             <CoarTextInput v-bind="fieldBind('pageTheme', 'cardRadius')" type="number" min="0" max="999" clearable />
+          </CoarFormField>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <CoarFormField :label="t('admin.appSettings.pageTheme.bodyFontFamily', {}, 'Body font family')">
+            <CoarTextInput v-bind="fieldBind('pageTheme', 'bodyFontFamily')" placeholder="Instrument Sans Variable" clearable />
+          </CoarFormField>
+          <CoarFormField :label="t('admin.appSettings.pageTheme.titleFontFamily', {}, 'Title font family')">
+            <CoarTextInput v-bind="fieldBind('pageTheme', 'titleFontFamily')" placeholder="Instrument Sans Variable" clearable />
           </CoarFormField>
         </div>
       </template>
