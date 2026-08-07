@@ -129,6 +129,31 @@ public static class RealmFido2
     }
 
     /// <summary>
+    /// True when a WebAuthn origin is the exact origin of the current HTTP request.
+    /// Hosted web ceremonies are same-origin, so accepting the browser-presented
+    /// origin must not silently widen the verifier to a different RP subdomain or
+    /// port. Forwarded-header middleware has already normalized the request scheme
+    /// and host before the endpoint calls this helper.
+    /// </summary>
+    public static bool IsOriginForRequest(string? origin, string? requestScheme, HostString requestHost)
+    {
+        if (string.IsNullOrWhiteSpace(origin) || string.IsNullOrWhiteSpace(requestScheme) || !requestHost.HasValue)
+            return false;
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)) return false;
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return false;
+        if (uri.AbsolutePath != "/" || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment)
+            || !string.IsNullOrEmpty(uri.UserInfo))
+            return false;
+
+        var expectedPort = requestHost.Port
+            ?? (string.Equals(requestScheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? 443 : 80);
+
+        return string.Equals(uri.Scheme, requestScheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(uri.Host, requestHost.Host, StringComparison.OrdinalIgnoreCase)
+            && uri.Port == expectedPort;
+    }
+
+    /// <summary>
     /// Extracts the WebAuthn <c>origin</c> from a clientDataJSON byte payload (the
     /// value Fido2NetLib already base64url-decoded onto the raw response). Returns
     /// <c>null</c> on any malformed input — the caller then simply passes no extra

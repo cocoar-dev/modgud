@@ -378,8 +378,6 @@ public static class PasskeyEndpoints
             JsonElement body,
             CancellationToken ct) =>
         {
-            var fido2 = await fido2Factory.CreateAsync(ct);
-
             // The cookie carries only the ceremony id; the authoritative options
             // come from the server-side record. Delete MUST repeat the Path the
             // cookie was set with — a pathless Delete does not match it and the
@@ -436,6 +434,31 @@ public static class PasskeyEndpoints
             // changing PrimaryDomain mid-ceremony can't cause a begin/redeem drift.
             var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
             var ceremonyRpId = ceremony.RpId ?? primaryDomain;
+
+            // The browser may run the hosted login on an application subdomain
+            // (for example amzettel.auth.example.com) while the realm RP ID is
+            // the parent domain (auth.example.com). WebAuthn permits exactly
+            // that relationship, but Fido2NetLib still requires the fully
+            // qualified signed origin in its allow-list. Mirror the native
+            // passkey grant, with an additional same-origin requirement for the
+            // hosted web flow: the signed origin must exactly match this request,
+            // then RealmFido2 verifies that it equals or is below the pinned RP
+            // ID. Foreign, cross-port and malformed origins remain rejected.
+            string[]? presentedOrigins = null;
+            try
+            {
+                var assertion = JsonSerializer.Deserialize<AuthenticatorAssertionRawResponse>(
+                    body.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (RealmFido2.TryGetClientDataOrigin(assertion?.Response?.ClientDataJson) is { } origin
+                    && RealmFido2.IsOriginForRequest(origin, context.Request.Scheme, context.Request.Host))
+                    presentedOrigins = [origin];
+            }
+            catch (JsonException) { /* leave null — the shared verifier fails closed below */ }
+
+            var fido2 = await fido2Factory.CreateAsync(
+                ct,
+                rpIdOverride: ceremonyRpId,
+                additionalOrigins: presentedOrigins);
             var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(
                 fido2, options, body.GetRawText(), session, ceremonyRpId, ceremonyRpId, ct);
             if (storedCredential is null)

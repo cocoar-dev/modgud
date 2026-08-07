@@ -58,6 +58,18 @@ public class RealmFido2Tests
         Assert.Null(RealmFido2.TryGetClientDataOrigin(Encoding.UTF8.GetBytes("{\"type\":\"webauthn.create\"}")));
     }
 
+    // ── IsOriginForRequest — hosted web ceremonies stay same-origin ──────────────
+
+    [Theory]
+    [InlineData("http://amzettel.auth-dev.localhost:4310", "http", "amzettel.auth-dev.localhost:4310", true)]
+    [InlineData("https://amzettel.example.com", "https", "amzettel.example.com", true)]
+    [InlineData("http://other.auth-dev.localhost:4310", "http", "amzettel.auth-dev.localhost:4310", false)]
+    [InlineData("http://amzettel.auth-dev.localhost:4300", "http", "amzettel.auth-dev.localhost:4310", false)]
+    [InlineData("https://amzettel.example.com/path", "https", "amzettel.example.com", false)]
+    public void IsOriginForRequest_RequiresExactSchemeHostAndPort(
+        string origin, string scheme, string host, bool expected)
+        => Assert.Equal(expected, RealmFido2.IsOriginForRequest(origin, scheme, new(host)));
+
     // ── BuildConfiguration — the end of the wiring ───────────────────────────────
 
     [Fact]
