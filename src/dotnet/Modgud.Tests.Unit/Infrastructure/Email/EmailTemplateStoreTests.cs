@@ -168,6 +168,7 @@ public class EmailTemplateStoreTests
             Assert.Equal("Acme — Sign-in link", rendered.Subject);
             Assert.Contains("Sign in now", rendered.HtmlBody);
             Assert.Contains("bgcolor=\"#123456\"", rendered.HtmlBody);
+            Assert.Contains("font-weight:700;color:#123456", rendered.HtmlBody);
             Assert.Contains("https://cdn.example.test/logo.png", rendered.HtmlBody);
             Assert.Contains("Hello Alice", rendered.TextBody);
             Assert.DoesNotContain("<", rendered.TextBody);

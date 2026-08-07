@@ -323,7 +323,10 @@ public partial class EmailTemplateStore
             && (logoUri.Scheme == Uri.UriSchemeHttps || logoUri.Scheme == Uri.UriSchemeHttp)
             ? $"<img src=\"{HtmlEncoder.Default.Encode(logoUri.ToString())}\" alt=\"{appName}\" style=\"display:block;max-width:180px;max-height:64px;margin:0 auto 12px;\">"
             : string.Empty;
-        var header = $"<div style=\"text-align:center;margin:0 0 28px;\">{logoHtml}<div style=\"font-size:22px;font-weight:700;color:#222;\">{appName}</div></div>";
+        // Keep the application identity visible even in templates without an
+        // action button (notably OTP): every branded email now carries the
+        // configured primary color in its header, not only button-based mails.
+        var header = $"<div style=\"text-align:center;margin:0 0 28px;\">{logoHtml}<div style=\"font-size:22px;font-weight:700;color:{color};\">{appName}</div></div>";
         if (model.TryGetValue("Preheader", out var preheader) && !string.IsNullOrWhiteSpace(preheader))
             header = $"<div style=\"display:none;max-height:0;overflow:hidden;opacity:0\">{HtmlEncoder.Default.Encode(preheader)}</div>" + header;
         var bodyEnd = html.IndexOf('>', html.IndexOf("<body", StringComparison.OrdinalIgnoreCase));
