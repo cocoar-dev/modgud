@@ -120,6 +120,11 @@ public class RealmSettings
     /// is null, renders the SPA's built-in hardcoded view.</summary>
     public Dictionary<string, RealmPageSlot>? PageSlots { get; set; }
 
+    /// <summary>Reusable, immutable-versioned PageBuilder subtrees owned by
+    /// this realm. Page drafts only embed materialized, pinned instances;
+    /// published runtime pages contain no composition metadata.</summary>
+    public List<PageComposition>? PageCompositions { get; set; }
+
     /// <summary>Lazily migrate the legacy single-schema <see cref="Pages"/>
     /// dictionary into <see cref="PageSlots"/> (ADR-0001). Idempotent and
     /// side-effect-only-when-needed: does nothing once migrated. Each legacy

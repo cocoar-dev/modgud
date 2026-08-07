@@ -9,7 +9,8 @@ namespace Modgud.Api.Features.Admin;
 /// </summary>
 public static class PageDocumentValidator
 {
-    private const int CurrentSchemaVersion = 4;
+    private const int MinimumSchemaVersion = 4;
+    private const int CurrentSchemaVersion = 5;
     private const int MaxNodes = 500;
     private const int MaxDepth = 30;
     private const int MaxCodeLength = 64 * 1024;
@@ -77,9 +78,9 @@ public static class PageDocumentValidator
             }
             if (!root.TryGetProperty("schemaVersion", out var version)
                 || !version.TryGetInt32(out var schemaVersion)
-                || schemaVersion != CurrentSchemaVersion)
+                || schemaVersion is < MinimumSchemaVersion or > CurrentSchemaVersion)
             {
-                error = $"Page schemaVersion must be {CurrentSchemaVersion}.";
+                error = $"Page schemaVersion must be between {MinimumSchemaVersion} and {CurrentSchemaVersion}.";
                 return false;
             }
 

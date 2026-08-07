@@ -23,6 +23,18 @@ public class PageDocumentValidatorTests
     }
 
     [Fact]
+    public void Login_AcceptsCompositionAuthoringSchemaV5AfterCompilation()
+    {
+        const string schema = """
+        {"id":"p","type":"page","schemaVersion":5,"children":[
+          {"id":"heading","type":"heading","name":"heading","props":{"text":"Hello"}}
+        ]}
+        """;
+
+        Assert.True(PageDocumentValidator.Validate("login", schema, out var error), error);
+    }
+
+    [Fact]
     public void Login_AcceptsHostedOtpAndPageOwnedLanguageActions()
     {
         const string schema = """

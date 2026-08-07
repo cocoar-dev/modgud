@@ -38,6 +38,12 @@ const groups = computed<SubNavGroup[]>(() => [
         visible: authStore.hasPermission('realm-settings:read') && !!appConfig.config.Features.PageBuilder,
       } satisfies SubNavItem,
       {
+        label: t('admin.customization.compositions.title', {}, 'Compositions'),
+        icon: 'copy',
+        to: '/platform/customization/compositions',
+        visible: authStore.hasPermission('realm-settings:read') && !!appConfig.config.Features.PageBuilder,
+      } satisfies SubNavItem,
+      {
         label: t('admin.assets.title', {}, 'Asset Library'),
         icon: 'image',
         to: '/platform/customization/assets',

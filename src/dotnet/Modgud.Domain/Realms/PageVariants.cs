@@ -23,6 +23,11 @@ public class PageVariant
     /// surfaces. Null means the variant has never been published.</summary>
     public string? PublishedSchema { get; set; }
 
+    /// <summary>Exact authoring document that produced
+    /// <see cref="PublishedSchema"/>. It retains pinned composition metadata
+    /// for draft comparison and rollback while the runtime schema is compiled.</summary>
+    public string? PublishedAuthoringSchema { get; set; }
+
     public int PublishedRevision { get; set; }
     public DateTimeOffset? PublishedAt { get; set; }
     public List<PageVariantRevision> Revisions { get; set; } = new();

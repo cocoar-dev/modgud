@@ -467,6 +467,16 @@ const routes = [
               beforeEnter: [pageBuilderFeatureGate, authPageSlotGate],
             },
             {
+              path: 'customization/compositions',
+              component: () => import('@/views/admin/customization/CompositionsView.vue'),
+              beforeEnter: pageBuilderFeatureGate,
+            },
+            {
+              path: 'customization/compositions/:compositionId',
+              component: () => import('@/views/admin/customization/CompositionEditorView.vue'),
+              beforeEnter: pageBuilderFeatureGate,
+            },
+            {
               path: 'customization/assets',
               component: () => import('@/views/admin/assets/AssetsView.vue'),
             },

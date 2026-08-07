@@ -118,7 +118,7 @@ public static class CustomizationPagesEndpoints
                 variant.PublishedRevision,
                 variant.PublishedAt,
                 IsPublished = variant.PublishedSchema is not null,
-                HasUnpublishedChanges = variant.PublishedSchema != variant.Schema,
+                HasUnpublishedChanges = (variant.PublishedAuthoringSchema ?? variant.PublishedSchema) != variant.Schema,
                 Revisions = (variant.Revisions ?? new List<PageVariantRevision>())
                     .OrderByDescending(r => r.Number)
                     .Select(r => new { r.Number, r.PublishedAt, r.PublishedBy, r.RollbackOfRevision })
@@ -187,7 +187,10 @@ public static class CustomizationPagesEndpoints
             // live schema before replacing its draft.
             if (slot!.ActiveVariantId == variantId && variant.PublishedSchema is null)
             {
-                PublishDraft(variant, publishedBy: null);
+                if (!PageCompositionDocumentService.ValidateAndCompilePage(
+                        slug, variant.Schema, doc?.PageCompositions ?? [], out var legacyRuntime, out var legacyError))
+                    return Results.BadRequest(new { Message = legacyError });
+                PublishDraft(variant, legacyRuntime, publishedBy: null);
             }
 
             variant.Name = body.Name!.Trim();
@@ -219,10 +222,11 @@ public static class CustomizationPagesEndpoints
             doc?.MigratePagesToSlots();
             var variant = doc?.PageSlots?.GetValueOrDefault(slug)?.Variants.FirstOrDefault(v => v.Id == variantId);
             if (variant is null) return Results.NotFound();
-            if (!PageDocumentValidator.Validate(slug, variant.Schema, out var validationError))
+            if (!PageCompositionDocumentService.ValidateAndCompilePage(
+                    slug, variant.Schema, doc?.PageCompositions ?? [], out var runtimeSchema, out var validationError))
                 return Results.BadRequest(new { Message = validationError });
 
-            PublishDraft(variant, http.User.Identity?.Name);
+            PublishDraft(variant, runtimeSchema, http.User.Identity?.Name);
             doc!.UpdatedAt = DateTimeOffset.UtcNow;
             session.Store(doc);
             await session.SaveChangesAsync(ct);
@@ -251,11 +255,12 @@ public static class CustomizationPagesEndpoints
             if (variant is null) return Results.NotFound();
             var target = variant.Revisions?.FirstOrDefault(r => r.Number == revision);
             if (target is null) return Results.NotFound();
-            if (!PageDocumentValidator.Validate(slug, target.Schema, out var validationError))
+            if (!PageCompositionDocumentService.ValidateAndCompilePage(
+                    slug, target.Schema, doc?.PageCompositions ?? [], out var runtimeSchema, out var validationError))
                 return Results.BadRequest(new { Message = validationError });
 
             variant.Schema = target.Schema;
-            PublishDraft(variant, http.User.Identity?.Name, rollbackOfRevision: revision);
+            PublishDraft(variant, runtimeSchema, http.User.Identity?.Name, rollbackOfRevision: revision);
             variant.UpdatedAt = DateTimeOffset.UtcNow;
             doc!.UpdatedAt = DateTimeOffset.UtcNow;
             session.Store(doc);
@@ -316,9 +321,10 @@ public static class CustomizationPagesEndpoints
                 var variant = slot.Variants.FirstOrDefault(v => v.Id == body.ActiveVariantId);
                 if (variant is null)
                     return Results.BadRequest(new { Message = "No such variant for this slot." });
-                if (!PageDocumentValidator.Validate(slug, variant.Schema, out var validationError))
+                if (!PageCompositionDocumentService.ValidateAndCompilePage(
+                        slug, variant.Schema, doc.PageCompositions ?? [], out var runtimeSchema, out var validationError))
                     return Results.BadRequest(new { Message = validationError });
-                PublishDraft(variant, publishedBy: null);
+                PublishDraft(variant, runtimeSchema, publishedBy: null);
             }
 
             slot.ActiveVariantId = body.ActiveVariantId;
@@ -484,7 +490,7 @@ public static class CustomizationPagesEndpoints
             v.PublishedAt,
             v.PublishedRevision,
             IsPublished = v.PublishedSchema is not null,
-            HasUnpublishedChanges = v.PublishedSchema != v.Schema,
+            HasUnpublishedChanges = (v.PublishedAuthoringSchema ?? v.PublishedSchema) != v.Schema,
             RealmActive = realmActiveId == v.Id,
             UsedByApps = apps.ToArray(),
         };
@@ -504,16 +510,20 @@ public static class CustomizationPagesEndpoints
 
     private static void PublishDraft(
         PageVariant variant,
+        string runtimeSchema,
         string? publishedBy,
         int? rollbackOfRevision = null)
     {
-        if (rollbackOfRevision is null && variant.PublishedSchema == variant.Schema) return;
+        if (rollbackOfRevision is null
+            && (variant.PublishedAuthoringSchema ?? variant.PublishedSchema) == variant.Schema)
+            return;
         variant.Revisions ??= new List<PageVariantRevision>();
         var now = DateTimeOffset.UtcNow;
         var number = Math.Max(
             variant.PublishedRevision,
             variant.Revisions.Count == 0 ? 0 : variant.Revisions.Max(r => r.Number)) + 1;
-        variant.PublishedSchema = variant.Schema;
+        variant.PublishedSchema = runtimeSchema;
+        variant.PublishedAuthoringSchema = variant.Schema;
         variant.PublishedRevision = number;
         variant.PublishedAt = now;
         variant.Revisions.Add(new PageVariantRevision

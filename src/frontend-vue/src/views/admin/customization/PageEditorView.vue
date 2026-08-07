@@ -23,6 +23,7 @@ import {
   type PageVariantRevision,
   type VariantPayload,
 } from '@/composables/usePagesApi'
+import { usePageCompositionsApi } from '@/composables/usePageCompositionsApi'
 
 const { t, language } = useI18n()
 const ui = useUI()
@@ -30,6 +31,7 @@ const route = useRoute()
 const router = useRouter()
 const dialog = useDialog()
 const api = useRealmPagesApi()
+const { repository: compositionRepository } = usePageCompositionsApi()
 const appConfig = useAppConfigStore()
 
 const slug = computed(() => (route.params.slug as string) ?? '')
@@ -260,6 +262,8 @@ watch([slot, variantId], load, { immediate: true })
       v-else
       v-model="schema"
       :config="pageConfig"
+      :composition-repository="compositionRepository"
+      composition-management="consume"
       authoring-mode="code"
       :preview-context="previewContext"
       :preview-state="previewState"
