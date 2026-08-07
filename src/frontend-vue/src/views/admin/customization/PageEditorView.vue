@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { CoarPageBuilder, normalizePageSchema, type PageNode } from '@cocoar/vue-page-builder'
+import {
+  CoarPageBuilder,
+  normalizePageSchema,
+  type PageCompositionReference,
+  type PageNode,
+} from '@cocoar/vue-page-builder'
 import { CoarNotice, CoarButton, CoarTextInput, CoarFormField, useDialog } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
@@ -210,6 +215,13 @@ function back() {
   router.push('/platform/customization/pages')
 }
 
+function openCompositionEditor(reference: PageCompositionReference) {
+  router.push({
+    path: `/platform/customization/compositions/${encodeURIComponent(reference.id)}`,
+    query: { version: reference.version },
+  })
+}
+
 watch([slot, variantId], load, { immediate: true })
 </script>
 
@@ -273,6 +285,7 @@ watch([slot, variantId], load, { immediate: true })
       :preview-fallback-schema="previewFallbackSchema"
       :preview-runtime-host="authRuntimeHost"
       :preview-runtime-page-id="previewRuntimePageId"
+      @open-composition="openCompositionEditor"
       class="builder"
     />
   </div>

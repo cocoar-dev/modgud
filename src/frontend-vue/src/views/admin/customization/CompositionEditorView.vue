@@ -34,6 +34,9 @@ const { repository } = usePageCompositionsApi()
 
 const compositionId = computed(() => String(route.params.compositionId ?? 'new'))
 const isNew = computed(() => compositionId.value === 'new')
+const requestedVersion = computed(() => typeof route.query.version === 'string'
+  ? route.query.version
+  : undefined)
 const previewSlot = ref<AuthPageSlot>('login')
 const name = ref('')
 const baseVersion = ref<string | null>(null)
@@ -164,7 +167,7 @@ async function loadSelectedVersion() {
   if (selectedVersion.value) await load(selectedVersion.value)
 }
 
-watch(compositionId, () => load(), { immediate: true })
+watch([compositionId, requestedVersion], () => load(requestedVersion.value), { immediate: true })
 </script>
 
 <template>
