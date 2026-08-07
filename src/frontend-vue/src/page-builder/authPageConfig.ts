@@ -12,6 +12,7 @@ import {
   type PageNode,
   type PagePreviewFixture,
   type PageRootNode,
+  type PageStylePreset,
 } from '@cocoar/vue-page-builder'
 import BrandHeaderElement from '@/components/page-builder/BrandHeaderElement.vue'
 import BrandHeaderPreview from '@/components/page-builder/BrandHeaderPreview.vue'
@@ -49,6 +50,17 @@ const modgudElements = {
     },
   }),
 }
+
+// Host-owned, deployment-time CSS affordances. Documents persist only the
+// allowlisted id; both Builder preview and runtime receive this same config.
+const authPageStylePresets: PageStylePreset[] = [
+  {
+    id: 'amzettel-auth-visual-panel',
+    label: 'amZettel · Auth visual panel',
+    className: 'auth-preset-amzettel-visual-panel',
+    allowedOn: ['page', 'stack'],
+  },
+]
 
 function findNode(root: PageNode, id: string): PageNode | undefined {
   if (root.id === id) return root
@@ -293,6 +305,10 @@ export function createAuthPageConfig(
 
   return {
     ...preset,
+    stylePresets: [
+      ...(preset.stylePresets ?? []),
+      ...authPageStylePresets,
+    ],
     // Fixtures are a host-owned acceptance contract. Exercise every auth data
     // shape at both a desktop breakpoint and Modgud's narrow mobile viewport.
     previewFixtures,
