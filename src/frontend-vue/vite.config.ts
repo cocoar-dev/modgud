@@ -25,6 +25,16 @@ export default defineConfig({
   },
   server: {
     port: 4300,
+    // Bind IPv4 explicitly. Node otherwise picks ::1 only, which a reverse
+    // proxy configured for 127.0.0.1:4300 cannot reach (connection refused →
+    // 502). Browsers reaching localhost:4300 are unaffected.
+    host: '127.0.0.1',
+    // Vite rejects requests whose Host header it does not recognise. Allow the
+    // whole .localhost TLD so the dev server can also be reached through a
+    // local reverse proxy (e.g. https://auth-dev.localhost) instead of only
+    // via localhost:4300 — a real hostname with a certificate is what WebAuthn,
+    // Secure cookies and OIDC redirect_uris want.
+    allowedHosts: ['.localhost'],
     proxy: {
       // changeOrigin: false — keep the browser's original Host header (e.g.
       // `acme.localhost:4300`) when proxying. Required for multi-realm dev
