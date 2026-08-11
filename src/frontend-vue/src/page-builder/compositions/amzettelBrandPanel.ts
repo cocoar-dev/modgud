@@ -62,7 +62,11 @@ body {
    logo/product-name zone rather than sitting next to it. */
 .wordmark {
   margin: 0;
-  font-size: clamp(2.6rem, 4.5vw, 3.4rem);
+  /* Inside the sealed iframe, vw resolves against the iframe — this pane, not
+     the viewport. The panel is 44% wide, so the viewport-relative 4.5vw the
+     original design used is ~10vw here. Without this the wordmark collapses
+     onto its clamp minimum and reads far too small next to the form. */
+  font-size: clamp(2.6rem, 10vw, 3.4rem);
   display: inline-flex;
   align-items: baseline;
   letter-spacing: -.02em;

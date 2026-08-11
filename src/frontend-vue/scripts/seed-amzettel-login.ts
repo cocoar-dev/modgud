@@ -56,7 +56,21 @@ let definition = existing.find(c => c.Name === AMZETTEL_BRAND_PANEL.name)
 if (definition) {
   // The list returns summaries; fetch the full definition for its root.
   definition = await api(`/api/admin/customization/compositions/${definition.Id}`)
-  console.log(`Composition vorhanden: ${definition.Id} v${definition.Version}`)
+
+  // Published versions are immutable, so a changed panel is a new version
+  // rather than an edit. Pages stay pinned to the version they materialized
+  // until their author updates them — which is why the variant below is
+  // rewritten against whatever version we end up with.
+  const unchanged = JSON.stringify(definition.Root) === JSON.stringify(AMZETTEL_BRAND_PANEL.root)
+  if (unchanged) {
+    console.log(`Composition unverändert: ${definition.Id} v${definition.Version}`)
+  } else {
+    definition = await api(`/api/admin/customization/compositions/${definition.Id}/versions`, {
+      method: 'POST',
+      body: JSON.stringify({ BaseVersion: String(definition.Version), Root: AMZETTEL_BRAND_PANEL.root }),
+    })
+    console.log(`Composition-Version veröffentlicht: ${definition.Id} v${definition.Version}`)
+  }
 } else {
   definition = await api('/api/admin/customization/compositions', {
     method: 'POST',
