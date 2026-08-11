@@ -136,4 +136,70 @@ public class PageDocumentValidatorTests
 
         Assert.True(PageDocumentValidator.Validate("consent", schema, out var error), error);
     }
+
+    [Fact]
+    public void Consent_AcceptsSchemaV6WithRenamedRepeatContextPath()
+    {
+        // Page Builder 3.0 stamps documents as 6 and renames repeat.props.source
+        // to contextPath. Without both changes the builder's own output is
+        // rejected by this validator.
+        const string schema = """
+        {"id":"p","type":"page","schemaVersion":6,"children":[
+          {"id":"consent-card","type":"card","props":{},"children":[
+            {"id":"unverified-client-warning","type":"note","props":{}},
+            {"id":"scopes","type":"repeat","props":{"contextPath":"consent.requestedScopes","maxItems":100},"children":[
+              {"id":"scope","type":"checkbox","name":"$selection","props":{}}
+            ]},
+            {"id":"allow","type":"button","props":{"action":"auth:consent-allow"}}
+          ]}
+        ]}
+        """;
+
+        Assert.True(PageDocumentValidator.Validate("consent", schema, out var error), error);
+    }
+
+    [Fact]
+    public void Login_StillAcceptsPreRenameRepeatSource()
+    {
+        // MinimumSchemaVersion is unchanged, so documents stored before the
+        // rename must keep validating.
+        const string schema = """
+        {"id":"p","type":"page","schemaVersion":5,"children":[
+          {"id":"providers","type":"repeat","props":{"source":"auth.externalProviders"},"children":[
+            {"id":"provider","type":"button","props":{"action":"auth:external-provider"}}
+          ]}
+        ]}
+        """;
+
+        Assert.True(PageDocumentValidator.Validate("login", schema, out var error), error);
+    }
+
+    [Fact]
+    public void Login_RejectsDisallowedRepeatContextPath()
+    {
+        // The allowlist must still bite through the new spelling.
+        const string schema = """
+        {"id":"p","type":"page","schemaVersion":6,"children":[
+          {"id":"providers","type":"repeat","props":{"contextPath":"auth.secrets"},"children":[
+            {"id":"provider","type":"button","props":{"action":"auth:external-provider"}}
+          ]}
+        ]}
+        """;
+
+        Assert.False(PageDocumentValidator.Validate("login", schema, out var error));
+        Assert.Contains("repeat source", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Login_RejectsSchemaVersionAboveCurrent()
+    {
+        const string schema = """
+        {"id":"p","type":"page","schemaVersion":7,"children":[
+          {"id":"heading","type":"heading","name":"heading","props":{"text":"Hello"}}
+        ]}
+        """;
+
+        Assert.False(PageDocumentValidator.Validate("login", schema, out var error));
+        Assert.Contains("schemaVersion", error, StringComparison.Ordinal);
+    }
 }

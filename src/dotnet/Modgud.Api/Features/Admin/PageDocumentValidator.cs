@@ -10,7 +10,14 @@ namespace Modgud.Api.Features.Admin;
 public static class PageDocumentValidator
 {
     private const int MinimumSchemaVersion = 4;
-    private const int CurrentSchemaVersion = 5;
+
+    /// <summary>
+    /// Page Builder 3.0 stamps saved documents as 6. The only document change is
+    /// <c>repeat.props.source</c> → <c>repeat.props.contextPath</c>, which the
+    /// package migrates on every ingest path — so a stored v4/v5 document still
+    /// opens, and both spellings can arrive here (see the repeat check below).
+    /// </summary>
+    private const int CurrentSchemaVersion = 6;
     private const int MaxNodes = 500;
     private const int MaxDepth = 30;
     private const int MaxCodeLength = 64 * 1024;
@@ -126,8 +133,15 @@ public static class PageDocumentValidator
                     { validationError = $"Node '{id}' references disallowed action '{action}'."; return false; }
                     if (type == "repeat")
                     {
-                        if (!StringProperty(props, "source", out var source)
-                            || (slug == "login" && source != "auth.externalProviders")
+                        // schemaVersion 6 renamed this to contextPath. Accept the new
+                        // spelling first and fall back to the old one, mirroring the
+                        // package's own migration: it skips when the new key is already
+                        // present. Documents authored before the rename are still
+                        // submittable because MinimumSchemaVersion is unchanged.
+                        if (!StringProperty(props, "contextPath", out var source)
+                            && !StringProperty(props, "source", out source))
+                        { validationError = $"Node '{id}' references a disallowed repeat source."; return false; }
+                        if ((slug == "login" && source != "auth.externalProviders")
                             || (slug == "consent" && source != "consent.requestedScopes")
                             || (slug is not "login" and not "consent"))
                         { validationError = $"Node '{id}' references a disallowed repeat source."; return false; }
