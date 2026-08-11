@@ -172,13 +172,30 @@ function schemaContains(node: PageNode, id: string): boolean {
     : false
 }
 
+/**
+ * Whether the document wires an element to a host action.
+ *
+ * Matching on the action rather than on a node id is what makes this work for a
+ * realm that authored its own page: the action ids are the published contract
+ * (they are allow-listed in the PageConfig and handled here), while node ids are
+ * the author's to choose. Keying off `login-language-switcher` meant any page
+ * that named its switcher differently got a second one drawn by the host.
+ */
+function schemaWiresAction(node: PageNode, action: string): boolean {
+  const props = (node as { props?: Record<string, unknown> }).props
+  if (props?.action === action) return true
+  return 'children' in node && Array.isArray(node.children)
+    ? node.children.some(child => schemaWiresAction(child, action))
+    : false
+}
+
 // Schemas saved before the parity template still rely on the legacy fixed
 // notice above the renderer for callback/host errors.
 const customSchemaRendersHostError = computed(() => customLoginSchema.value
   ? schemaContains(customLoginSchema.value, 'login-context-error')
   : false)
 const customSchemaRendersLanguageSwitcher = computed(() => customLoginSchema.value
-  ? schemaContains(customLoginSchema.value, 'login-language-switcher')
+  ? schemaWiresAction(customLoginSchema.value, 'auth:toggle-language')
   : false)
 
 // A renderer regression must not take authentication down. Vue render/setup
