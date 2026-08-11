@@ -105,7 +105,7 @@ function loadDefinition(definition: PageCompositionDefinition) {
   name.value = definition.name
   baseVersion.value = definition.version
   selectedVersion.value = definition.version
-  schema.value = normalizePageSchema(workspace(definition.root), { elements: pageConfig.value.elements }).schema
+  schema.value = normalizePageSchema(workspace(definition.root), { elements: pageConfig.value.elementTypes }).schema
 }
 
 async function load(version?: string) {
@@ -213,7 +213,6 @@ watch([compositionId, requestedVersion], () => load(requestedVersion.value), { i
       composition-management="consume"
       authoring-mode="code"
       :preview-context="previewContext"
-      :preview-state="previewState"
       :preview-locale="authPageLocale(language)"
       :preview-theme="previewTheme"
       preview-theme-mode="auto"

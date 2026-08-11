@@ -21,7 +21,7 @@ export function createAuthVisualMarkupConfig(theme: PageThemeConfig | null): Pag
       {
         id: 'instrument-sans-variable',
         family: 'Instrument Sans Variable',
-        source: instrumentSansDataUrl,
+        src: instrumentSansDataUrl,
         format: 'woff2',
         weight: '100 900',
         style: 'normal',
@@ -30,7 +30,7 @@ export function createAuthVisualMarkupConfig(theme: PageThemeConfig | null): Pag
       {
         id: 'fraunces-variable-italic',
         family: 'Fraunces Variable',
-        source: frauncesItalicDataUrl,
+        src: frauncesItalicDataUrl,
         format: 'woff2',
         weight: '100 900',
         style: 'italic',

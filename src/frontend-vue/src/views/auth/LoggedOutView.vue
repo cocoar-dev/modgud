@@ -61,7 +61,7 @@ onMounted(async () => {
     if (!appConfig.config.Features.PageBuilder || route.query.safemode === '1') return
     const stored = appConfig.config.Pages.logout
     if (!stored) return
-    schema.value = normalizePageSchema(JSON.parse(stored), { elements: pageConfig.value.elements }).schema
+    schema.value = normalizePageSchema(JSON.parse(stored), { elements: pageConfig.value.elementTypes }).schema
   } catch {
     schema.value = null
   } finally {
@@ -97,7 +97,6 @@ async function toggleLanguage() {
       :actions="actions"
       :fallback-schema="fallbackSchema"
       :runtime-context="runtimeContext"
-      view-state="complete"
       :locale="authPageLocale(language)"
     />
 

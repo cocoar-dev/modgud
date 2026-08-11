@@ -1,0 +1,548 @@
+{
+  "id": "auth-page",
+  "type": "page",
+  "schemaVersion": 6,
+  "enterSubmits": false,
+  "style": {
+    "justify": "center",
+    "align": "center",
+    "padding": "12px",
+    "surface": "subtle"
+  },
+  "responsive": {
+    "phone": {
+      "padding": "16px"
+    }
+  },
+  "children": [
+    {
+      "id": "consent-frame",
+      "type": "stack",
+      "props": {
+        "direction": "column"
+      },
+      "style": {
+        "size": "fill",
+        "maxWidth": "448px",
+        "gap": "20px",
+        "align": "stretch"
+      },
+      "responsive": {
+        "tablet": {
+          "gap": "32px"
+        }
+      },
+      "children": [
+        {
+          "id": "consent-brand-zone",
+          "type": "stack",
+          "props": {
+            "direction": "column"
+          },
+          "style": {
+            "gap": "8px",
+            "align": "center"
+          },
+          "children": [
+            {
+              "id": "consent-modgud-brand",
+              "type": "modgud-brand-header",
+              "name": "consentModgudBrand",
+              "props": {}
+            },
+            {
+              "id": "consent-legal",
+              "type": "stack",
+              "props": {
+                "direction": "row"
+              },
+              "style": {
+                "gap": "12px",
+                "align": "center",
+                "fontSize": "caption"
+              },
+              "visibleWhen": {
+                "source": "context",
+                "path": "branding.showLegal",
+                "operator": "equals",
+                "value": true
+              },
+              "children": [
+                {
+                  "id": "consent-terms",
+                  "type": "link",
+                  "props": {
+                    "label": "Terms",
+                    "action": "legal:terms"
+                  },
+                  "name": "consentTerms",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = \"Terms\"; // @locked @quick:props.label @value:%22Terms%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                },
+                {
+                  "id": "consent-privacy",
+                  "type": "link",
+                  "props": {
+                    "label": "Privacy",
+                    "action": "legal:privacy"
+                  },
+                  "name": "consentPrivacy",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = \"Privacy\"; // @locked @quick:props.label @value:%22Privacy%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                }
+              ],
+              "name": "consentLegal",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.align = \"center\"; // @locked @quick:style.align @value:%22center%22\n    element.style.fontSize = \"caption\"; // @locked @quick:style.fontSize @value:%22caption%22\n    element.style.gap = \"12px\"; // @locked @quick:style.gap @value:%2212px%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            }
+          ],
+          "name": "consentBrandZone",
+          "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.align = \"center\"; // @locked @quick:style.align @value:%22center%22\n    element.style.gap = \"8px\"; // @locked @quick:style.gap @value:%228px%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+        },
+        {
+          "id": "consent-loading-state",
+          "type": "note",
+          "props": {
+            "variant": "info",
+            "text": {
+              "source": "translation",
+              "key": "page.consentLoadingState.text",
+              "fallback": "Loading authorization request…"
+            }
+          },
+          "visibleWhen": {
+            "source": "context",
+            "operator": "equals",
+            "value": "loading",
+            "path": "runtime.viewState"
+          },
+          "name": "consentLoadingState",
+          "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.consentLoadingState.text\", undefined, \"Loading authorization request…\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.consentLoadingState.text%22%2C%22fallback%22%3A%22Loading%20authorization%20request%E2%80%A6%22%7D\n    element.props.variant = \"info\"; // @locked @quick:props.variant @value:%22info%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = page.context.runtime?.viewState !== 'loading';\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+        },
+        {
+          "id": "consent-denied-state",
+          "type": "note",
+          "props": {
+            "variant": "info",
+            "text": {
+              "source": "translation",
+              "key": "page.consentDeniedState.text",
+              "fallback": "The request was denied."
+            }
+          },
+          "visibleWhen": {
+            "source": "context",
+            "operator": "equals",
+            "value": "denied",
+            "path": "runtime.viewState"
+          },
+          "name": "consentDeniedState",
+          "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.consentDeniedState.text\", undefined, \"The request was denied.\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.consentDeniedState.text%22%2C%22fallback%22%3A%22The%20request%20was%20denied.%22%7D\n    element.props.variant = \"info\"; // @locked @quick:props.variant @value:%22info%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = page.context.runtime?.viewState !== 'denied';\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+        },
+        {
+          "id": "consent-expired-state",
+          "type": "note",
+          "props": {
+            "variant": "warning",
+            "text": {
+              "source": "translation",
+              "key": "page.consentExpiredState.text",
+              "fallback": "This authorization request expired or was already used."
+            }
+          },
+          "visibleWhen": {
+            "source": "context",
+            "operator": "equals",
+            "value": "expired",
+            "path": "runtime.viewState"
+          },
+          "name": "consentExpiredState",
+          "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.consentExpiredState.text\", undefined, \"This authorization request expired or was already used.\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.consentExpiredState.text%22%2C%22fallback%22%3A%22This%20authorization%20request%20expired%20or%20was%20already%20used.%22%7D\n    element.props.variant = \"warning\"; // @locked @quick:props.variant @value:%22warning%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = page.context.runtime?.viewState !== 'expired';\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+        },
+        {
+          "id": "consent-forbidden-state",
+          "type": "note",
+          "props": {
+            "variant": "error",
+            "text": {
+              "source": "translation",
+              "key": "page.consentForbiddenState.text",
+              "fallback": "This request does not belong to your session."
+            }
+          },
+          "visibleWhen": {
+            "source": "context",
+            "operator": "equals",
+            "value": "forbidden",
+            "path": "runtime.viewState"
+          },
+          "name": "consentForbiddenState",
+          "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.consentForbiddenState.text\", undefined, \"This request does not belong to your session.\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.consentForbiddenState.text%22%2C%22fallback%22%3A%22This%20request%20does%20not%20belong%20to%20your%20session.%22%7D\n    element.props.variant = \"error\"; // @locked @quick:props.variant @value:%22error%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = page.context.runtime?.viewState !== 'forbidden';\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+        },
+        {
+          "id": "consent-card",
+          "type": "card",
+          "props": {},
+          "style": {
+            "gap": "16px",
+            "elevation": "medium",
+            "radius": "large"
+          },
+          "visibleWhen": {
+            "any": [
+              {
+                "source": "context",
+                "operator": "equals",
+                "value": "prompt",
+                "path": "runtime.viewState"
+              },
+              {
+                "source": "context",
+                "operator": "equals",
+                "value": "submitting",
+                "path": "runtime.viewState"
+              },
+              {
+                "source": "context",
+                "operator": "equals",
+                "value": "error",
+                "path": "runtime.viewState"
+              }
+            ]
+          },
+          "children": [
+            {
+              "id": "consent-title",
+              "type": "heading",
+              "props": {
+                "text": "",
+                "level": 2
+              },
+              "bindings": {
+                "text": {
+                  "template": {
+                    "source": "translation",
+                    "key": "page.consentTitle.text",
+                    "fallback": "Authorise “{client}”"
+                  },
+                  "placeholders": {
+                    "client": {
+                      "source": "context",
+                      "path": "consent.clientName",
+                      "fallback": "Application"
+                    }
+                  }
+                }
+              },
+              "style": {
+                "alignSelf": "center",
+                "textAlign": "center",
+                "fontSize": "large"
+              },
+              "name": "consentTitle",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = \"\"; // @locked @quick:props.text @value:%22%22\n    element.style.alignSelf = \"center\"; // @locked @quick:style.alignSelf @value:%22center%22\n    element.style.fontSize = \"large\"; // @locked @quick:style.fontSize @value:%22large%22\n    element.style.textAlign = \"center\"; // @locked @quick:style.textAlign @value:%22center%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "consent-subtitle",
+              "type": "paragraph",
+              "props": {
+                "text": {
+                  "source": "translation",
+                  "key": "page.consentSubtitle.text",
+                  "fallback": "Review the access this app is asking for."
+                }
+              },
+              "style": {
+                "alignSelf": "center",
+                "textAlign": "center"
+              },
+              "name": "consentSubtitle",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.consentSubtitle.text\", undefined, \"Review the access this app is asking for.\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.consentSubtitle.text%22%2C%22fallback%22%3A%22Review%20the%20access%20this%20app%20is%20asking%20for.%22%7D\n    element.style.alignSelf = \"center\"; // @locked @quick:style.alignSelf @value:%22center%22\n    element.style.textAlign = \"center\"; // @locked @quick:style.textAlign @value:%22center%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "consent-identity",
+              "type": "paragraph",
+              "props": {
+                "text": ""
+              },
+              "bindings": {
+                "text": {
+                  "template": {
+                    "source": "translation",
+                    "key": "page.consentIdentity.text",
+                    "fallback": "App identity: {hostname}"
+                  },
+                  "placeholders": {
+                    "hostname": {
+                      "source": "context",
+                      "path": "consent.clientHostname"
+                    }
+                  }
+                }
+              },
+              "style": {
+                "alignSelf": "center",
+                "textAlign": "center",
+                "fontSize": "small",
+                "fontWeight": "semibold"
+              },
+              "name": "consentIdentity",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = \"\"; // @locked @quick:props.text @value:%22%22\n    element.style.alignSelf = \"center\"; // @locked @quick:style.alignSelf @value:%22center%22\n    element.style.fontSize = \"small\"; // @locked @quick:style.fontSize @value:%22small%22\n    element.style.fontWeight = \"semibold\"; // @locked @quick:style.fontWeight @value:%22semibold%22\n    element.style.textAlign = \"center\"; // @locked @quick:style.textAlign @value:%22center%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "unverified-client-warning",
+              "type": "note",
+              "props": {
+                "variant": "warning",
+                "text": ""
+              },
+              "bindings": {
+                "text": {
+                  "template": {
+                    "source": "translation",
+                    "key": "page.unverifiedClientWarning.text",
+                    "fallback": "This app is identified by the domain {hostname}. Only authorise it if you trust this domain."
+                  },
+                  "placeholders": {
+                    "hostname": {
+                      "source": "context",
+                      "path": "consent.clientHostname"
+                    }
+                  }
+                }
+              },
+              "visibleWhen": {
+                "source": "context",
+                "path": "consent.isDynamicallyRegistered",
+                "operator": "equals",
+                "value": true
+              },
+              "name": "unverifiedClientWarning",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = \"\"; // @locked @quick:props.text @value:%22%22\n    element.props.variant = \"warning\"; // @locked @quick:props.variant @value:%22warning%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "consent-scopes",
+              "type": "repeat",
+              "props": {
+                "keyPath": "name",
+                "itemAlias": "scope",
+                "maxItems": 100,
+                "emptyText": "No permissions requested.",
+                "selection": {
+                  "name": "approvedScopes",
+                  "valuePath": "name",
+                  "requiredPath": "required",
+                  "defaultSelection": "all"
+                },
+                "contextPath": "consent.requestedScopes"
+              },
+              "style": {
+                "gap": "8px"
+              },
+              "children": [
+                {
+                  "id": "scope-row",
+                  "type": "stack",
+                  "props": {
+                    "direction": "column"
+                  },
+                  "style": {
+                    "gap": "4px",
+                    "padding": "10px 12px",
+                    "borderTone": "neutral",
+                    "borderWidth": "1px",
+                    "radius": "medium",
+                    "surface": "default",
+                    "minWidth": "0"
+                  },
+                  "children": [
+                    {
+                      "id": "scope-checkbox",
+                      "type": "checkbox",
+                      "name": "$selection",
+                      "props": {
+                        "label": ""
+                      },
+                      "bindings": {
+                        "label": {
+                          "source": "item",
+                          "path": "displayName"
+                        }
+                      },
+                      "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = \"\"; // @locked @quick:props.label @value:%22%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                    },
+                    {
+                      "id": "scope-description",
+                      "type": "paragraph",
+                      "props": {
+                        "text": ""
+                      },
+                      "bindings": {
+                        "text": {
+                          "source": "item",
+                          "path": "description",
+                          "fallback": ""
+                        }
+                      },
+                      "style": {
+                        "fontSize": "caption"
+                      },
+                      "name": "scopeDescription",
+                      "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = \"\"; // @locked @quick:props.text @value:%22%22\n    element.style.fontSize = \"caption\"; // @locked @quick:style.fontSize @value:%22caption%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                    },
+                    {
+                      "id": "scope-required",
+                      "type": "paragraph",
+                      "props": {
+                        "text": {
+                          "source": "translation",
+                          "key": "page.scopeRequired.text",
+                          "fallback": "Required"
+                        }
+                      },
+                      "visibleWhen": {
+                        "source": "item",
+                        "path": "required",
+                        "operator": "equals",
+                        "value": true
+                      },
+                      "style": {
+                        "fontSize": "caption",
+                        "foreground": "tertiary"
+                      },
+                      "name": "scopeRequired",
+                      "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.scopeRequired.text\", undefined, \"Required\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.scopeRequired.text%22%2C%22fallback%22%3A%22Required%22%7D\n    element.style.fontSize = \"caption\"; // @locked @quick:style.fontSize @value:%22caption%22\n    element.style.foreground = \"tertiary\"; // @locked @quick:style.foreground @value:%22tertiary%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                    }
+                  ],
+                  "name": "scopeRow",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.borderTone = \"neutral\"; // @locked @quick:style.borderTone @value:%22neutral%22\n    element.style.borderWidth = \"1px\"; // @locked @quick:style.borderWidth @value:%221px%22\n    element.style.gap = \"4px\"; // @locked @quick:style.gap @value:%224px%22\n    element.style.minWidth = \"0\"; // @locked @quick:style.minWidth @value:%220%22\n    element.style.padding = \"10px 12px\"; // @locked @quick:style.padding @value:%2210px%2012px%22\n    element.style.radius = \"medium\"; // @locked @quick:style.radius @value:%22medium%22\n    element.style.surface = \"default\"; // @locked @quick:style.surface @value:%22default%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                }
+              ],
+              "name": "consentScopes",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.gap = \"8px\"; // @locked @quick:style.gap @value:%228px%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "consent-action-error",
+              "type": "feedback",
+              "props": {
+                "kind": "form-error"
+              },
+              "name": "consentActionError"
+            },
+            {
+              "id": "consent-success",
+              "type": "feedback",
+              "props": {
+                "kind": "success",
+                "text": ""
+              },
+              "bindings": {
+                "text": {
+                  "source": "context",
+                  "path": "feedback.message",
+                  "fallback": ""
+                }
+              },
+              "visibleWhen": {
+                "source": "context",
+                "path": "feedback.success",
+                "operator": "equals",
+                "value": true
+              },
+              "name": "consentSuccess",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = \"\"; // @locked @quick:props.text @value:%22%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "consent-actions",
+              "type": "stack",
+              "props": {
+                "direction": "column"
+              },
+              "style": {
+                "gap": "8px"
+              },
+              "responsive": {
+                "phone": {
+                  "direction": "row"
+                }
+              },
+              "children": [
+                {
+                  "id": "consent-deny",
+                  "type": "button",
+                  "props": {
+                    "label": {
+                      "source": "translation",
+                      "key": "page.consentDeny.label",
+                      "fallback": "Deny"
+                    },
+                    "action": "auth:consent-deny",
+                    "variant": "secondary",
+                    "actionValues": {
+                      "approvedScopes": []
+                    }
+                  },
+                  "style": {
+                    "size": "fill"
+                  },
+                  "name": "consentDeny",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = i18n.text(\"page.consentDeny.label\", undefined, \"Deny\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.consentDeny.label%22%2C%22fallback%22%3A%22Deny%22%7D\n    element.props.variant = \"secondary\"; // @locked @quick:props.variant @value:%22secondary%22\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.props.disabled = page.form.submitting;\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                },
+                {
+                  "id": "consent-allow",
+                  "type": "button",
+                  "props": {
+                    "label": {
+                      "source": "translation",
+                      "key": "page.consentAllow.label",
+                      "fallback": "Allow"
+                    },
+                    "action": "auth:consent-allow"
+                  },
+                  "style": {
+                    "size": "fill"
+                  },
+                  "name": "consentAllow",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = i18n.text(\"page.consentAllow.label\", undefined, \"Allow\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.consentAllow.label%22%2C%22fallback%22%3A%22Allow%22%7D\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.props.disabled = page.form.submitting;\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                }
+              ],
+              "name": "consentActions",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.gap = \"8px\"; // @locked @quick:style.gap @value:%228px%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            }
+          ],
+          "name": "consentCard",
+          "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.elevation = \"medium\"; // @locked @quick:style.elevation @value:%22medium%22\n    element.style.gap = \"16px\"; // @locked @quick:style.gap @value:%2216px%22\n    element.style.radius = \"large\"; // @locked @quick:style.radius @value:%22large%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = !['prompt', 'submitting', 'error'].includes(page.context.runtime?.viewState);\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+        }
+      ],
+      "name": "consentFrame",
+      "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.align = \"stretch\"; // @locked @quick:style.align @value:%22stretch%22\n    element.style.gap = \"20px\"; // @locked @quick:style.gap @value:%2220px%22\n    element.style.maxWidth = \"448px\"; // @locked @quick:style.maxWidth @value:%22448px%22\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+    }
+  ],
+  "stateCode": "definePageState({\n  interactionCount: 0,\n})",
+  "translations": {
+    "de": {
+      "page.consentLoadingState.text": "Autorisierungsanfrage wird geladen …",
+      "page.consentDeniedState.text": "Die Anfrage wurde abgelehnt.",
+      "page.consentExpiredState.text": "Diese Autorisierungsanfrage ist abgelaufen oder wurde bereits verwendet.",
+      "page.consentForbiddenState.text": "Diese Anfrage gehört nicht zu Ihrer Sitzung.",
+      "page.consentTitle.text": "„{client}“ autorisieren",
+      "page.consentSubtitle.text": "Prüfen Sie, auf welche Daten diese Anwendung zugreifen möchte.",
+      "page.consentIdentity.text": "App-Identität: {hostname}",
+      "page.unverifiedClientWarning.text": "Diese App wird durch die Domain {hostname} identifiziert. Autorisieren Sie sie nur, wenn Sie dieser Domain vertrauen.",
+      "page.scopeRequired.text": "Erforderlich",
+      "page.consentDeny.label": "Ablehnen",
+      "page.consentAllow.label": "Zulassen"
+    },
+    "en": {
+      "page.consentLoadingState.text": "Loading authorization request…",
+      "page.consentDeniedState.text": "The request was denied.",
+      "page.consentExpiredState.text": "This authorization request expired or was already used.",
+      "page.consentForbiddenState.text": "This request does not belong to your session.",
+      "page.consentTitle.text": "Authorise “{client}”",
+      "page.consentSubtitle.text": "Review the access this app is asking for.",
+      "page.consentIdentity.text": "App identity: {hostname}",
+      "page.unverifiedClientWarning.text": "This app is identified by the domain {hostname}. Only authorise it if you trust this domain.",
+      "page.scopeRequired.text": "Required",
+      "page.consentDeny.label": "Deny",
+      "page.consentAllow.label": "Allow"
+    }
+  },
+  "rootCode": "definePageRoot({\n  compute(page) {\n    page.style.padding = '16px'\n    \n  },\n})"
+}

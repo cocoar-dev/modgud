@@ -1,0 +1,215 @@
+{
+  "id": "auth-page",
+  "type": "page",
+  "schemaVersion": 6,
+  "enterSubmits": false,
+  "style": {
+    "justify": "center",
+    "align": "center",
+    "padding": "12px",
+    "surface": "subtle"
+  },
+  "responsive": {
+    "phone": {
+      "padding": "16px"
+    }
+  },
+  "children": [
+    {
+      "id": "logout-frame",
+      "type": "stack",
+      "props": {
+        "direction": "column"
+      },
+      "style": {
+        "size": "fill",
+        "maxWidth": "384px",
+        "gap": "20px",
+        "align": "stretch"
+      },
+      "responsive": {
+        "tablet": {
+          "gap": "32px"
+        }
+      },
+      "children": [
+        {
+          "id": "logout-brand-zone",
+          "type": "stack",
+          "props": {
+            "direction": "column"
+          },
+          "style": {
+            "gap": "8px",
+            "align": "center"
+          },
+          "children": [
+            {
+              "id": "logout-modgud-brand",
+              "type": "modgud-brand-header",
+              "name": "logoutModgudBrand",
+              "props": {}
+            },
+            {
+              "id": "logout-legal",
+              "type": "stack",
+              "props": {
+                "direction": "row"
+              },
+              "style": {
+                "gap": "12px",
+                "align": "center",
+                "fontSize": "caption"
+              },
+              "visibleWhen": {
+                "source": "context",
+                "path": "branding.showLegal",
+                "operator": "equals",
+                "value": true
+              },
+              "children": [
+                {
+                  "id": "logout-terms",
+                  "type": "link",
+                  "props": {
+                    "label": "Terms",
+                    "action": "legal:terms"
+                  },
+                  "name": "logoutTerms",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = \"Terms\"; // @locked @quick:props.label @value:%22Terms%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                },
+                {
+                  "id": "logout-privacy",
+                  "type": "link",
+                  "props": {
+                    "label": "Privacy",
+                    "action": "legal:privacy"
+                  },
+                  "name": "logoutPrivacy",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = \"Privacy\"; // @locked @quick:props.label @value:%22Privacy%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                }
+              ],
+              "name": "logoutLegal",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.align = \"center\"; // @locked @quick:style.align @value:%22center%22\n    element.style.fontSize = \"caption\"; // @locked @quick:style.fontSize @value:%22caption%22\n    element.style.gap = \"12px\"; // @locked @quick:style.gap @value:%2212px%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            }
+          ],
+          "name": "logoutBrandZone",
+          "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.align = \"center\"; // @locked @quick:style.align @value:%22center%22\n    element.style.gap = \"8px\"; // @locked @quick:style.gap @value:%228px%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+        },
+        {
+          "id": "logout-card",
+          "type": "card",
+          "props": {},
+          "style": {
+            "gap": "16px",
+            "align": "center",
+            "elevation": "medium",
+            "radius": "large",
+            "textAlign": "center"
+          },
+          "children": [
+            {
+              "id": "logout-title",
+              "type": "heading",
+              "props": {
+                "text": {
+                  "source": "translation",
+                  "key": "page.logoutTitle.text",
+                  "fallback": "Signed out"
+                },
+                "level": 1
+              },
+              "style": {
+                "alignSelf": "center"
+              },
+              "name": "logoutTitle",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.logoutTitle.text\", undefined, \"Signed out\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.logoutTitle.text%22%2C%22fallback%22%3A%22Signed%20out%22%7D\n    element.style.alignSelf = \"center\"; // @locked @quick:style.alignSelf @value:%22center%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "logout-copy",
+              "type": "paragraph",
+              "props": {
+                "text": {
+                  "source": "translation",
+                  "key": "page.logoutCopy.text",
+                  "fallback": "Your session has ended safely."
+                }
+              },
+              "style": {
+                "alignSelf": "center"
+              },
+              "name": "logoutCopy",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.logoutCopy.text\", undefined, \"Your session has ended safely.\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.logoutCopy.text%22%2C%22fallback%22%3A%22Your%20session%20has%20ended%20safely.%22%7D\n    element.style.alignSelf = \"center\"; // @locked @quick:style.alignSelf @value:%22center%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "logout-action-error",
+              "type": "feedback",
+              "props": {
+                "kind": "form-error"
+              },
+              "name": "logoutActionError"
+            },
+            {
+              "id": "logout-success",
+              "type": "feedback",
+              "props": {
+                "kind": "success",
+                "text": ""
+              },
+              "bindings": {
+                "text": {
+                  "source": "context",
+                  "path": "feedback.message",
+                  "fallback": ""
+                }
+              },
+              "visibleWhen": {
+                "source": "context",
+                "path": "feedback.success",
+                "operator": "equals",
+                "value": true
+              },
+              "name": "logoutSuccess",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = \"\"; // @locked @quick:props.text @value:%22%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "logout-login",
+              "type": "button",
+              "props": {
+                "label": {
+                  "source": "translation",
+                  "key": "page.logoutLogin.label",
+                  "fallback": "Sign in again"
+                },
+                "action": "auth:back-to-login"
+              },
+              "style": {
+                "size": "fill"
+              },
+              "name": "logoutLogin",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = i18n.text(\"page.logoutLogin.label\", undefined, \"Sign in again\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.logoutLogin.label%22%2C%22fallback%22%3A%22Sign%20in%20again%22%7D\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            }
+          ],
+          "name": "logoutCard",
+          "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.align = \"center\"; // @locked @quick:style.align @value:%22center%22\n    element.style.elevation = \"medium\"; // @locked @quick:style.elevation @value:%22medium%22\n    element.style.gap = \"16px\"; // @locked @quick:style.gap @value:%2216px%22\n    element.style.radius = \"large\"; // @locked @quick:style.radius @value:%22large%22\n    element.style.textAlign = \"center\"; // @locked @quick:style.textAlign @value:%22center%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+        }
+      ],
+      "name": "logoutFrame",
+      "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.align = \"stretch\"; // @locked @quick:style.align @value:%22stretch%22\n    element.style.gap = \"20px\"; // @locked @quick:style.gap @value:%2220px%22\n    element.style.maxWidth = \"384px\"; // @locked @quick:style.maxWidth @value:%22384px%22\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+    }
+  ],
+  "stateCode": "definePageState({\n  interactionCount: 0,\n})",
+  "translations": {
+    "de": {
+      "page.logoutTitle.text": "Abgemeldet",
+      "page.logoutCopy.text": "Ihre Sitzung wurde sicher beendet.",
+      "page.logoutLogin.label": "Erneut anmelden"
+    },
+    "en": {
+      "page.logoutTitle.text": "Signed out",
+      "page.logoutCopy.text": "Your session has ended safely.",
+      "page.logoutLogin.label": "Sign in again"
+    }
+  },
+  "rootCode": "definePageRoot({\n  compute(page) {\n    page.style.padding = '16px'\n    \n  },\n})"
+}

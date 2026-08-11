@@ -215,7 +215,7 @@ onMounted(async () => {
     if (!appConfig.config.Features.PageBuilder || route.query.safemode === '1') return
     const stored = appConfig.config.Pages.login
     if (!stored) return
-    const normalized = normalizePageSchema(JSON.parse(stored), { elements: loginPageConfig.value.elements })
+    const normalized = normalizePageSchema(JSON.parse(stored), { elements: loginPageConfig.value.elementTypes })
     customLoginSchema.value = normalized.schema
   } catch {
     // A broken or unreachable customization must never make authentication
@@ -585,7 +585,6 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
         :actions="customLoginActions"
         :fallback-schema="loginFallbackSchema"
         :runtime-context="loginRuntimeContext"
-        :view-state="loginViewState"
         :locale="authPageLocale(language)"
       />
     </template>

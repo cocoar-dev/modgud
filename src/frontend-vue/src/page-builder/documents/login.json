@@ -1,0 +1,743 @@
+{
+  "id": "auth-page",
+  "type": "page",
+  "schemaVersion": 6,
+  "enterSubmits": true,
+  "style": {
+    "justify": "space-between",
+    "align": "center",
+    "padding": "16px",
+    "surface": "default"
+  },
+  "children": [
+    {
+      "id": "login-language-zone",
+      "type": "stack",
+      "name": "loginLanguageZone",
+      "props": {
+        "direction": "row"
+      },
+      "children": [
+        {
+          "id": "login-language-switcher",
+          "type": "link",
+          "name": "loginLanguageSwitcher",
+          "props": {
+            "label": {
+              "source": "translation",
+              "key": "page.languageSwitcher.label",
+              "fallback": "EN"
+            },
+            "action": "auth:toggle-language"
+          },
+          "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.action = \"auth:toggle-language\"; // @locked @quick:props.action @value:%22auth%3Atoggle-language%22\n    element.props.label = i18n.text(\"page.languageSwitcher.label\", undefined, \"EN\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.languageSwitcher.label%22%2C%22fallback%22%3A%22EN%22%7D\n    element.style.fontSize = \"caption\"; // @locked @quick:style.fontSize @value:%22caption%22\n    element.style.foreground = \"tertiary\"; // @locked @quick:style.foreground @value:%22tertiary%22\n    element.style.lineHeight = \"tight\"; // @locked @quick:style.lineHeight @value:%22tight%22\n    element.style.size = \"fit\"; // @locked @quick:style.size @value:%22fit%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked",
+          "style": {
+            "foreground": "tertiary",
+            "fontSize": "caption",
+            "lineHeight": "tight",
+            "size": "fit"
+          }
+        }
+      ],
+      "style": {
+        "align": "center",
+        "height": "14.4px",
+        "justify": "end",
+        "size": "fill"
+      },
+      "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.align = \"center\"; // @locked @quick:style.align @value:%22center%22\n    element.style.height = \"14.4px\"; // @locked @quick:style.height @value:%2214.4px%22\n    element.style.justify = \"end\"; // @locked @quick:style.justify @value:%22end%22\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+    },
+    {
+      "id": "auth-frame",
+      "type": "stack",
+      "props": {
+        "direction": "column"
+      },
+      "style": {
+        "size": "fill",
+        "maxWidth": "384px",
+        "gap": "32px",
+        "align": "stretch"
+      },
+      "responsive": {
+        "tablet": {
+          "gap": "32px"
+        }
+      },
+      "children": [
+        {
+          "id": "login-brand-zone",
+          "type": "stack",
+          "props": {
+            "direction": "column"
+          },
+          "style": {
+            "gap": "8px",
+            "align": "center"
+          },
+          "children": [
+            {
+              "id": "login-modgud-brand",
+              "type": "modgud-brand-header",
+              "name": "loginModgudBrand",
+              "props": {}
+            },
+            {
+              "id": "login-legal",
+              "type": "stack",
+              "props": {
+                "direction": "row"
+              },
+              "style": {
+                "gap": "12px",
+                "align": "center",
+                "fontSize": "caption"
+              },
+              "visibleWhen": {
+                "source": "context",
+                "path": "branding.showLegal",
+                "operator": "equals",
+                "value": true
+              },
+              "children": [
+                {
+                  "id": "login-terms",
+                  "type": "link",
+                  "props": {
+                    "label": "Terms",
+                    "action": "legal:terms"
+                  },
+                  "name": "loginTerms",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = \"Terms\"; // @locked @quick:props.label @value:%22Terms%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                },
+                {
+                  "id": "login-privacy",
+                  "type": "link",
+                  "props": {
+                    "label": "Privacy",
+                    "action": "legal:privacy"
+                  },
+                  "name": "loginPrivacy",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = \"Privacy\"; // @locked @quick:props.label @value:%22Privacy%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                }
+              ],
+              "name": "loginLegal",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.align = \"center\"; // @locked @quick:style.align @value:%22center%22\n    element.style.fontSize = \"caption\"; // @locked @quick:style.fontSize @value:%22caption%22\n    element.style.gap = \"12px\"; // @locked @quick:style.gap @value:%2212px%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "login-subtitle",
+              "type": "paragraph",
+              "props": {
+                "text": {
+                  "source": "translation",
+                  "key": "page.loginSubtitle.text",
+                  "fallback": "Sign in to continue."
+                }
+              },
+              "style": {
+                "alignSelf": "center",
+                "textAlign": "center",
+                "foreground": "primary",
+                "fontSize": "small",
+                "lineHeight": "normal"
+              },
+              "name": "loginSubtitle",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.loginSubtitle.text\", undefined, \"Sign in to continue.\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.loginSubtitle.text%22%2C%22fallback%22%3A%22Sign%20in%20to%20continue.%22%7D\n    element.style.alignSelf = \"center\"; // @locked @quick:style.alignSelf @value:%22center%22\n    element.style.fontSize = \"small\"; // @locked @quick:style.fontSize @value:%22small%22\n    element.style.foreground = \"primary\"; // @locked @quick:style.foreground @value:%22primary%22\n    element.style.lineHeight = \"normal\"; // @locked @quick:style.lineHeight @value:%22normal%22\n    element.style.textAlign = \"center\"; // @locked @quick:style.textAlign @value:%22center%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            }
+          ],
+          "name": "loginBrandZone",
+          "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.align = \"center\"; // @locked @quick:style.align @value:%22center%22\n    element.style.gap = \"8px\"; // @locked @quick:style.gap @value:%228px%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+        },
+        {
+          "id": "login-card",
+          "type": "card",
+          "props": {},
+          "style": {
+            "gap": "16px",
+            "elevation": "small"
+          },
+          "children": [
+            {
+              "id": "magic-link-sent",
+              "type": "note",
+              "props": {
+                "variant": "success",
+                "text": {
+                  "source": "translation",
+                  "key": "page.magicLinkSent.text",
+                  "fallback": "The login link has been sent."
+                }
+              },
+              "visibleWhen": {
+                "source": "context",
+                "operator": "equals",
+                "value": "magic-link-sent",
+                "path": "runtime.viewState"
+              },
+              "name": "magicLinkSent",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.magicLinkSent.text\", undefined, \"The login link has been sent.\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.magicLinkSent.text%22%2C%22fallback%22%3A%22The%20login%20link%20has%20been%20sent.%22%7D\n    element.props.variant = \"success\"; // @locked @quick:props.variant @value:%22success%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = page.context.runtime?.viewState !== 'magic-link-sent';\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "mfa-continuation",
+              "type": "note",
+              "props": {
+                "variant": "info",
+                "text": {
+                  "source": "translation",
+                  "key": "page.mfaContinuation.text",
+                  "fallback": "Continue with your second authentication factor."
+                }
+              },
+              "visibleWhen": {
+                "source": "context",
+                "operator": "equals",
+                "value": "mfa-continuation",
+                "path": "runtime.viewState"
+              },
+              "name": "mfaContinuation",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.mfaContinuation.text\", undefined, \"Continue with your second authentication factor.\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.mfaContinuation.text%22%2C%22fallback%22%3A%22Continue%20with%20your%20second%20authentication%20factor.%22%7D\n    element.props.variant = \"info\"; // @locked @quick:props.variant @value:%22info%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = page.context.runtime?.viewState !== 'mfa-continuation';\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "credentials",
+              "type": "stack",
+              "props": {
+                "direction": "column"
+              },
+              "style": {
+                "gap": "16px"
+              },
+              "visibleWhen": {
+                "all": [
+                  {
+                    "source": "context",
+                    "path": "auth.internalLoginEnabled",
+                    "operator": "equals",
+                    "value": true
+                  },
+                  {
+                    "source": "context",
+                    "path": "auth.passwordless",
+                    "operator": "equals",
+                    "value": false
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "id": "username",
+                  "type": "text-input",
+                  "name": "username",
+                  "props": {
+                    "label": {
+                      "source": "translation",
+                      "key": "page.username.label",
+                      "fallback": "Username"
+                    },
+                    "placeholder": {
+                      "source": "translation",
+                      "key": "page.username.placeholder",
+                      "fallback": "Username"
+                    }
+                  },
+                  "validation": {
+                    "required": true
+                  },
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = i18n.text(\"page.username.label\", undefined, \"Username\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.username.label%22%2C%22fallback%22%3A%22Username%22%7D\n    element.props.placeholder = i18n.text(\"page.username.placeholder\", undefined, \"Username\"); // @locked @quick:props.placeholder @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.username.placeholder%22%2C%22fallback%22%3A%22Username%22%7D\n    element.validation = { ...(element.validation || {}), required: true }; // @locked @quick:validation.required @value:true\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                },
+                {
+                  "id": "password",
+                  "type": "password-input",
+                  "name": "password",
+                  "props": {
+                    "label": {
+                      "source": "translation",
+                      "key": "page.password.label",
+                      "fallback": "Password"
+                    },
+                    "placeholder": {
+                      "source": "translation",
+                      "key": "page.password.placeholder",
+                      "fallback": "Password"
+                    }
+                  },
+                  "validation": {
+                    "required": true
+                  },
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = i18n.text(\"page.password.label\", undefined, \"Password\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.password.label%22%2C%22fallback%22%3A%22Password%22%7D\n    element.props.placeholder = i18n.text(\"page.password.placeholder\", undefined, \"Password\"); // @locked @quick:props.placeholder @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.password.placeholder%22%2C%22fallback%22%3A%22Password%22%7D\n    element.validation = { ...(element.validation || {}), required: true }; // @locked @quick:validation.required @value:true\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                },
+                {
+                  "id": "remember",
+                  "type": "checkbox",
+                  "name": "rememberMe",
+                  "defaultValue": false,
+                  "props": {
+                    "label": {
+                      "source": "translation",
+                      "key": "page.rememberMe.label",
+                      "fallback": "Stay signed in"
+                    }
+                  },
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = i18n.text(\"page.rememberMe.label\", undefined, \"Stay signed in\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.rememberMe.label%22%2C%22fallback%22%3A%22Stay%20signed%20in%22%7D\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                },
+                {
+                  "id": "login-context-error",
+                  "type": "note",
+                  "name": "loginContextError",
+                  "props": {
+                    "variant": "error",
+                    "text": ""
+                  },
+                  "bindings": {
+                    "text": {
+                      "source": "context",
+                      "path": "feedback.message"
+                    }
+                  },
+                  "visibleWhen": {
+                    "source": "context",
+                    "path": "feedback.message",
+                    "operator": "isNotEmpty"
+                  }
+                },
+                {
+                  "id": "login-action-error",
+                  "type": "feedback",
+                  "props": {
+                    "kind": "form-error"
+                  },
+                  "name": "loginActionError"
+                },
+                {
+                  "id": "login-success",
+                  "type": "feedback",
+                  "props": {
+                    "kind": "success",
+                    "text": ""
+                  },
+                  "bindings": {
+                    "text": {
+                      "source": "context",
+                      "path": "feedback.message",
+                      "fallback": ""
+                    }
+                  },
+                  "visibleWhen": {
+                    "source": "context",
+                    "path": "feedback.success",
+                    "operator": "equals",
+                    "value": true
+                  },
+                  "name": "loginSuccess",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = \"\"; // @locked @quick:props.text @value:%22%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                },
+                {
+                  "id": "submit",
+                  "type": "button",
+                  "props": {
+                    "label": {
+                      "source": "translation",
+                      "key": "page.submit.label",
+                      "fallback": "Sign in"
+                    },
+                    "action": "auth:login",
+                    "validates": true,
+                    "default": true
+                  },
+                  "style": {
+                    "size": "fill"
+                  },
+                  "name": "submit",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = i18n.text(\"page.submit.label\", undefined, \"Sign in\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.submit.label%22%2C%22fallback%22%3A%22Sign%20in%22%7D\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.props.disabled = !page.fields.username?.trim() || !page.fields.password || !page.form.valid || page.form.submitting;\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                }
+              ],
+              "name": "credentials",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.gap = \"16px\"; // @locked @quick:style.gap @value:%2216px%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = !(page.context.auth?.internalLoginEnabled && !page.context.auth?.passwordless);\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "passwordless-info",
+              "type": "note",
+              "props": {
+                "variant": "info",
+                "text": {
+                  "source": "translation",
+                  "key": "page.passwordlessInfo.text",
+                  "fallback": "This application uses passwordless login."
+                }
+              },
+              "visibleWhen": {
+                "all": [
+                  {
+                    "source": "context",
+                    "path": "auth.internalLoginEnabled",
+                    "operator": "equals",
+                    "value": true
+                  },
+                  {
+                    "source": "context",
+                    "path": "auth.passwordless",
+                    "operator": "equals",
+                    "value": true
+                  }
+                ]
+              },
+              "name": "passwordlessInfo",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.passwordlessInfo.text\", undefined, \"This application uses passwordless login.\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.passwordlessInfo.text%22%2C%22fallback%22%3A%22This%20application%20uses%20passwordless%20login.%22%7D\n    element.props.variant = \"info\"; // @locked @quick:props.variant @value:%22info%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = !(page.context.auth?.internalLoginEnabled && page.context.auth?.passwordless);\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "login-alternative-context-error",
+              "type": "note",
+              "name": "loginAlternativeContextError",
+              "props": {
+                "variant": "error",
+                "text": ""
+              },
+              "bindings": {
+                "text": {
+                  "source": "context",
+                  "path": "feedback.message"
+                }
+              },
+              "visibleWhen": {
+                "all": [
+                  {
+                    "source": "context",
+                    "path": "feedback.message",
+                    "operator": "isNotEmpty"
+                  },
+                  {
+                    "any": [
+                      {
+                        "source": "context",
+                        "path": "auth.passwordless",
+                        "operator": "equals",
+                        "value": true
+                      },
+                      {
+                        "source": "context",
+                        "path": "auth.internalLoginEnabled",
+                        "operator": "equals",
+                        "value": false
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "id": "login-alternative-action-error",
+              "type": "feedback",
+              "name": "loginAlternativeActionError",
+              "props": {
+                "kind": "form-error"
+              },
+              "visibleWhen": {
+                "any": [
+                  {
+                    "source": "context",
+                    "path": "auth.passwordless",
+                    "operator": "equals",
+                    "value": true
+                  },
+                  {
+                    "source": "context",
+                    "path": "auth.internalLoginEnabled",
+                    "operator": "equals",
+                    "value": false
+                  }
+                ]
+              }
+            },
+            {
+              "id": "alternative-divider",
+              "type": "stack",
+              "props": {
+                "direction": "row"
+              },
+              "style": {
+                "gap": "12px",
+                "align": "center"
+              },
+              "children": [
+                {
+                  "id": "divider-left",
+                  "type": "divider",
+                  "props": {},
+                  "style": {
+                    "size": "fill"
+                  },
+                  "name": "dividerLeft",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                },
+                {
+                  "id": "divider-label",
+                  "type": "paragraph",
+                  "props": {
+                    "text": {
+                      "source": "translation",
+                      "key": "page.dividerLabel.text",
+                      "fallback": "or"
+                    }
+                  },
+                  "name": "dividerLabel",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.dividerLabel.text\", undefined, \"or\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.dividerLabel.text%22%2C%22fallback%22%3A%22or%22%7D\n    element.style.fontSize = \"caption\"; // @locked @quick:style.fontSize @value:%22caption%22\n    element.style.foreground = \"primary\"; // @locked @quick:style.foreground @value:%22primary%22\n    element.style.lineHeight = \"tight\"; // @locked @quick:style.lineHeight @value:%22tight%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked",
+                  "style": {
+                    "foreground": "primary",
+                    "fontSize": "caption",
+                    "lineHeight": "tight"
+                  },
+                  "visibleWhen": {
+                    "source": "context",
+                    "path": "auth.internalLoginEnabled",
+                    "operator": "equals",
+                    "value": true
+                  }
+                },
+                {
+                  "id": "divider-right",
+                  "type": "divider",
+                  "props": {},
+                  "style": {
+                    "size": "fill"
+                  },
+                  "name": "dividerRight",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                }
+              ],
+              "name": "alternativeDivider",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.align = \"center\"; // @locked @quick:style.align @value:%22center%22\n    element.style.gap = \"12px\"; // @locked @quick:style.gap @value:%2212px%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "passkey",
+              "type": "button",
+              "props": {
+                "label": {
+                  "source": "translation",
+                  "key": "page.passkey.label",
+                  "fallback": "Sign in with Passkey"
+                },
+                "action": "auth:passkey",
+                "variant": "secondary"
+              },
+              "style": {
+                "size": "fill"
+              },
+              "visibleWhen": {
+                "source": "context",
+                "path": "auth.internalLoginEnabled",
+                "operator": "equals",
+                "value": true
+              },
+              "name": "passkey",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = i18n.text(\"page.passkey.label\", undefined, \"Sign in with Passkey\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.passkey.label%22%2C%22fallback%22%3A%22Sign%20in%20with%20Passkey%22%7D\n    element.props.variant = \"secondary\"; // @locked @quick:props.variant @value:%22secondary%22\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = !page.context.auth?.internalLoginEnabled;\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "magic-link",
+              "type": "button",
+              "props": {
+                "label": {
+                  "source": "translation",
+                  "key": "page.magicLink.label",
+                  "fallback": "Login link via email"
+                },
+                "action": "auth:magic-link",
+                "variant": "secondary"
+              },
+              "style": {
+                "size": "fill"
+              },
+              "visibleWhen": {
+                "source": "context",
+                "path": "auth.magicLinkEnabled",
+                "operator": "equals",
+                "value": true
+              },
+              "name": "magicLink",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = i18n.text(\"page.magicLink.label\", undefined, \"Login link via email\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.magicLink.label%22%2C%22fallback%22%3A%22Login%20link%20via%20email%22%7D\n    element.props.variant = \"secondary\"; // @locked @quick:props.variant @value:%22secondary%22\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = !page.context.auth?.magicLinkEnabled;\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "providers",
+              "type": "repeat",
+              "props": {
+                "keyPath": "id",
+                "itemAlias": "provider",
+                "emptyText": "",
+                "contextPath": "auth.externalProviders"
+              },
+              "style": {
+                "gap": "16px"
+              },
+              "children": [
+                {
+                  "id": "provider-button",
+                  "type": "button",
+                  "props": {
+                    "label": "Sign in with",
+                    "action": "auth:external-provider",
+                    "variant": "secondary",
+                    "actionValueField": "providerId"
+                  },
+                  "bindings": {
+                    "label": {
+                      "template": {
+                        "source": "translation",
+                        "key": "page.providerButton.label",
+                        "fallback": "Sign in with {name}"
+                      },
+                      "placeholders": {
+                        "name": {
+                          "source": "item",
+                          "path": "name"
+                        }
+                      }
+                    },
+                    "actionValue": {
+                      "source": "item",
+                      "path": "id"
+                    }
+                  },
+                  "style": {
+                    "size": "fill"
+                  },
+                  "name": "providerButton",
+                  "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = \"Sign in with\"; // @locked @quick:props.label @value:%22Sign%20in%20with%22\n    element.props.variant = \"secondary\"; // @locked @quick:props.variant @value:%22secondary%22\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+                }
+              ],
+              "name": "providers",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.gap = \"16px\"; // @locked @quick:style.gap @value:%2216px%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked",
+              "visibleWhen": {
+                "source": "context",
+                "path": "auth.externalProviders",
+                "operator": "isNotEmpty"
+              }
+            },
+            {
+              "id": "forgot-link",
+              "type": "link",
+              "props": {
+                "label": {
+                  "source": "translation",
+                  "key": "page.forgotLink.label",
+                  "fallback": "Forgot password?"
+                },
+                "action": "auth:forgot-password"
+              },
+              "style": {
+                "alignSelf": "center",
+                "foreground": "primary",
+                "fontSize": "small",
+                "lineHeight": "normal",
+                "size": "fill"
+              },
+              "visibleWhen": {
+                "all": [
+                  {
+                    "source": "context",
+                    "path": "auth.internalLoginEnabled",
+                    "operator": "equals",
+                    "value": true
+                  },
+                  {
+                    "source": "context",
+                    "path": "auth.passwordless",
+                    "operator": "equals",
+                    "value": false
+                  }
+                ]
+              },
+              "name": "forgotLink",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = i18n.text(\"page.forgotLink.label\", undefined, \"Forgot password?\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.forgotLink.label%22%2C%22fallback%22%3A%22Forgot%20password%3F%22%7D\n    element.style.alignSelf = \"center\"; // @locked @quick:style.alignSelf @value:%22center%22\n    element.style.fontSize = \"small\"; // @locked @quick:style.fontSize @value:%22small%22\n    element.style.foreground = \"primary\"; // @locked @quick:style.foreground @value:%22primary%22\n    element.style.lineHeight = \"normal\"; // @locked @quick:style.lineHeight @value:%22normal%22\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = !(page.context.auth?.internalLoginEnabled && !page.context.auth?.passwordless);\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            },
+            {
+              "id": "register-link",
+              "type": "link",
+              "props": {
+                "label": {
+                  "source": "translation",
+                  "key": "page.registerLink.label",
+                  "fallback": "No account yet? Register →"
+                },
+                "action": "auth:register"
+              },
+              "style": {
+                "alignSelf": "center",
+                "foreground": "primary",
+                "fontSize": "small",
+                "lineHeight": "normal",
+                "size": "fill"
+              },
+              "visibleWhen": {
+                "source": "context",
+                "path": "auth.registrationEnabled",
+                "operator": "equals",
+                "value": true
+              },
+              "name": "registerLink",
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = i18n.text(\"page.registerLink.label\", undefined, \"No account yet? Register →\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.registerLink.label%22%2C%22fallback%22%3A%22No%20account%20yet%3F%20Register%20%E2%86%92%22%7D\n    element.style.alignSelf = \"center\"; // @locked @quick:style.alignSelf @value:%22center%22\n    element.style.fontSize = \"small\"; // @locked @quick:style.fontSize @value:%22small%22\n    element.style.foreground = \"primary\"; // @locked @quick:style.foreground @value:%22primary%22\n    element.style.lineHeight = \"normal\"; // @locked @quick:style.lineHeight @value:%22normal%22\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = !page.context.auth?.registrationEnabled;\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+            }
+          ],
+          "name": "loginCard",
+          "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.elevation = \"small\"; // @locked @quick:style.elevation @value:%22small%22\n    element.style.gap = \"16px\"; // @locked @quick:style.gap @value:%2216px%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+        }
+      ],
+      "name": "authFrame",
+      "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.align = \"stretch\"; // @locked @quick:style.align @value:%22stretch%22\n    element.style.gap = \"32px\"; // @locked @quick:style.gap @value:%2232px%22\n    element.style.maxWidth = \"384px\"; // @locked @quick:style.maxWidth @value:%22384px%22\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+    },
+    {
+      "id": "login-language-balance",
+      "type": "stack",
+      "name": "loginLanguageBalance",
+      "props": {
+        "direction": "column"
+      },
+      "children": [],
+      "style": {
+        "height": "14.4px",
+        "size": "fixed",
+        "width": "1px"
+      },
+      "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.style.height = \"14.4px\"; // @locked @quick:style.height @value:%2214.4px%22\n    element.style.size = \"fixed\"; // @locked @quick:style.size @value:%22fixed%22\n    element.style.width = \"1px\"; // @locked @quick:style.width @value:%221px%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+    }
+  ],
+  "stateCode": "definePageState({\n  interactionCount: 0,\n})",
+  "translations": {
+    "de": {
+      "page.loginSubtitle.text": "Melden Sie sich an, um fortzufahren.",
+      "page.magicLinkSent.text": "Der Anmelde-Link wurde gesendet.",
+      "page.mfaContinuation.text": "Fahren Sie mit dem zweiten Faktor fort.",
+      "page.username.label": "Benutzername",
+      "page.username.placeholder": "Benutzername",
+      "page.password.label": "Passwort",
+      "page.password.placeholder": "Passwort",
+      "page.rememberMe.label": "Angemeldet bleiben",
+      "page.submit.label": "Anmelden",
+      "page.passwordlessInfo.text": "Diese Anwendung verwendet eine passwortlose Anmeldung.",
+      "page.dividerLabel.text": "oder",
+      "page.passkey.label": "Mit Passkey anmelden",
+      "page.magicLink.label": "Anmelde-Link per E-Mail",
+      "page.providerButton.label": "Anmelden mit {name}",
+      "page.forgotLink.label": "Passwort vergessen?",
+      "page.registerLink.label": "Noch kein Konto? Registrieren →",
+      "page.languageSwitcher.label": "EN"
+    },
+    "en": {
+      "page.loginSubtitle.text": "Sign in to continue.",
+      "page.magicLinkSent.text": "The login link has been sent.",
+      "page.mfaContinuation.text": "Continue with your second authentication factor.",
+      "page.username.label": "Username",
+      "page.username.placeholder": "Username",
+      "page.password.label": "Password",
+      "page.password.placeholder": "Password",
+      "page.rememberMe.label": "Stay signed in",
+      "page.submit.label": "Sign in",
+      "page.passwordlessInfo.text": "This application uses passwordless login.",
+      "page.dividerLabel.text": "or",
+      "page.passkey.label": "Sign in with Passkey",
+      "page.magicLink.label": "Login link via email",
+      "page.providerButton.label": "Sign in with {name}",
+      "page.forgotLink.label": "Forgot password?",
+      "page.registerLink.label": "No account yet? Register →",
+      "page.languageSwitcher.label": "DE"
+    }
+  },
+  "rootCode": "definePageRoot({\n  compute(page) {\n    page.style.padding = '16px'\n    page.style.surface = 'default'\n  },\n})"
+}

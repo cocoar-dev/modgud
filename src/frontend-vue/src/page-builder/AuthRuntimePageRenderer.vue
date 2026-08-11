@@ -3,10 +3,10 @@ import { computed } from 'vue'
 import {
   CoarPageRenderer,
   type ActionHandler,
-  type AuthPageLocale,
   type PageConfig,
   type PageNode,
 } from '@cocoar/vue-page-builder'
+import type { AuthPageLocale } from './authPageSlots'
 import { CoarThemeScope } from '@cocoar/vue-ui'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useAuthPageCodeRuntime } from './authPageCodeRuntime'
@@ -18,8 +18,10 @@ const props = defineProps<{
   config: PageConfig
   actions: Record<string, ActionHandler>
   fallbackSchema: PageNode
+  // The view state travels inside runtimeContext as runtime.viewState.
+  // CoarPageRenderer's separate viewState prop was removed in 3.0 as a second
+  // mechanism for what the context already carried.
   runtimeContext: Record<string, unknown>
-  viewState: string
   locale: AuthPageLocale
 }>()
 
@@ -51,7 +53,6 @@ const { pageCodeValues, onRuntimeChange, runPageAction } = useAuthPageCodeRuntim
       :actions="actions"
       :fallback-schema="fallbackSchema"
       :runtime-context="runtimeContext"
-      :view-state="viewState"
       :locale="locale"
       :page-code-values="pageCodeValues"
       :on-action="runPageAction"

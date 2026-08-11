@@ -62,9 +62,9 @@ const previewState = computed(() => ({
 })[slot.value])
 
 // "Host values" in CoarPageBuilder means the consumer-supplied preview
-// contract. Keep it representative of the current realm while request-bound
-// arrays (external providers / consent scopes) remain available as explicit
-// Empty, Typical and Overflow fixtures from the auth preset.
+// contract. Keep it representative of the current realm. It also carries
+// runtime.viewState, which is how the preview knows which screen to show now
+// that the separate previewState prop is gone.
 const previewContext = computed(() => createAuthRuntimeContext({
   config: appConfig.config,
   viewState: previewState.value,
@@ -122,7 +122,7 @@ async function load() {
     try {
       schema.value = normalizePageSchema(
         JSON.parse(variant.Schema),
-        { elements: pageConfig.value.elements },
+        { elements: pageConfig.value.elementTypes },
       ).schema
     } catch (e: any) {
       error.value = `Stored schema is invalid JSON: ${e?.message ?? e}`
@@ -278,7 +278,6 @@ watch([slot, variantId], load, { immediate: true })
       composition-management="consume"
       authoring-mode="code"
       :preview-context="previewContext"
-      :preview-state="previewState"
       :preview-locale="authPageLocale(language)"
       :preview-theme="previewTheme"
       preview-theme-mode="auto"

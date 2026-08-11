@@ -114,7 +114,7 @@ function loadConsentSchema() {
   try {
     customConsentSchema.value = normalizePageSchema(
       JSON.parse(stored),
-      { elements: consentPageConfig.value.elements },
+      { elements: consentPageConfig.value.elementTypes },
     ).schema
   } catch {
     customConsentSchema.value = null
@@ -313,7 +313,6 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
       :actions="customConsentActions"
       :fallback-schema="consentFallbackSchema"
       :runtime-context="consentRuntimeContext"
-      :view-state="consentViewState"
       :locale="authPageLocale(language)"
     />
 

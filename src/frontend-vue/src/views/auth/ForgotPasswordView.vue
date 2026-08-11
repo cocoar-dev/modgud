@@ -94,7 +94,7 @@ onMounted(async () => {
     if (!stored) return
     customForgotSchema.value = normalizePageSchema(
       JSON.parse(stored),
-      { elements: forgotPageConfig.value.elements },
+      { elements: forgotPageConfig.value.elementTypes },
     ).schema
   } catch {
     customForgotSchema.value = null
@@ -182,7 +182,6 @@ const customForgotActions: Record<string, ActionHandler> = {
       :actions="customForgotActions"
       :fallback-schema="forgotFallbackSchema"
       :runtime-context="forgotRuntimeContext"
-      :view-state="forgotViewState"
       :locale="authPageLocale(language)"
     />
 
