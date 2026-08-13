@@ -98,6 +98,7 @@ public static class OpenIddictExtensions
         // redirects). 5s overall timeout; the handler adds a 5s connect
         // timeout + per-resolve 5 KB body cap.
         services.AddScoped<Cimd.CimdClientResolver>();
+        services.AddScoped<ITokenMintClientTypeResolver, TokenMintClientTypeResolver>();
         services.AddHttpClient(Cimd.CimdClientResolver.HttpClientName, client =>
             {
                 client.Timeout = TimeSpan.FromSeconds(5);
@@ -179,15 +180,16 @@ public static class OpenIddictExtensions
                     opts.CodeChallengeMethods.Remove(CodeChallengeMethods.Plain);
                 });
 
-                // OAUTH-10 — make refresh-token reuse detection strict. With a
-                // non-zero leeway window, a refresh token's redeemed-then-
-                // presented event in that window doesn't reject. Zero means
-                // any second presentation after the first redemption fires
-                // invalid_grant via OpenIddict's own stock
-                // Protection.ValidateTokenEntry handler, which also revokes
-                // the whole token family; RefreshTokenReuseAuditHandler
-                // records the security-audit event just before that runs.
-                options.SetRefreshTokenReuseLeeway(TimeSpan.Zero);
+                // OAUTH-10 — preserve replay detection while tolerating the
+                // unavoidable response-loss window of rolling refresh tokens.
+                // OpenIddict marks the old token Redeemed before the response is
+                // written; a 500, disconnect, or process loss after that point
+                // leaves a legitimate client with only the old token. During
+                // this short window a retry may mint another replacement. Once
+                // it expires, the stock ValidateTokenEntry handler rejects the
+                // redeemed token and revokes its authorization's token family;
+                // RefreshTokenReuseAuditHandler records that real replay first.
+                options.SetRefreshTokenReuseLeeway(TimeSpan.FromSeconds(30));
                 options.AllowClientCredentialsFlow();
                 options.AllowDeviceAuthorizationFlow();
 

@@ -27,8 +27,11 @@ using Modgud.Authorization.Roles;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using Modgud.Infrastructure.Scheduling;
+using Modgud.Infrastructure.OpenIddict;
 using Marten.Storage;
 using Npgsql;
+using OpenIddict.Abstractions;
+using OpenIddict.Server;
 
 namespace Modgud.Api.Tests.Infrastructure;
 
@@ -41,7 +44,12 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 {
     private IHost? _host;
     private readonly bool _enableDirectScopeTenantFallback;
+    private readonly TokenPipelineFaultInjector _tokenPipelineFaults = new();
+    private readonly AdjustableTestTimeProvider _timeProvider = new();
     protected virtual bool ProvisionLegacySystemRealm => true;
+
+    public TokenPipelineFaultInjector TokenPipelineFaults => _tokenPipelineFaults;
+    public AdjustableTestTimeProvider TimeProvider => _timeProvider;
 
     public ModgudWebApplicationFactory(SharedPostgresFixture fixture)
     {
@@ -97,6 +105,27 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
         {
+            // Deterministic clock for the refresh-token reuse boundary. It is
+            // reset before every integration test and can be advanced without
+            // sleeping, so the 30-second leeway has a fast, exact regression
+            // test through OpenIddict's real validation pipeline.
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(_timeProvider);
+            services.AddSingleton(_tokenPipelineFaults);
+
+            // Test-only fault seam for TokenMintMetricHandler. The production
+            // handler still runs; only its client-type classifier is replaced,
+            // allowing one exact OperationCanceledException to be injected.
+            services.RemoveAll<ITokenMintClientTypeResolver>();
+            services.AddScoped<ITokenMintClientTypeResolver>(_ =>
+                new FaultInjectingTokenMintClientTypeResolver(_tokenPipelineFaults));
+
+            // A second, independent fault fires after the metric handler in
+            // ApplyTokenResponse. It models any response lost after OpenIddict
+            // has redeemed the old refresh token and persisted the replacement.
+            services.AddOpenIddict().AddServer(options =>
+                options.AddEventHandler(LostTokenResponseHandler.Descriptor));
+
             // Production deliberately refuses tenant-scoped sessions when no
             // request or explicit TenantContext exists. Most legacy
             // integration tests also arrange/assert through direct DI scopes,
@@ -543,6 +572,9 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
                 "Test IHost is not available. Ensure CreateClient() was called before resetting Marten data.");
         }
 
+        _tokenPipelineFaults.Reset();
+        _timeProvider.Reset();
+
         await _host.ResetAllMartenDataAsync();
 
         // The singleton RealmKeyStore caches per-realm signing keys in memory for 60s
@@ -617,6 +649,96 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         if (errors.Count > 0)
             throw new AggregateException(
                 "Async-projection catch-up failed after Marten reset/append.", errors);
+    }
+}
+
+/// <summary>
+/// Arms one-shot failures in the two late token-response seams used by the
+/// refresh-token recovery integration tests.
+/// </summary>
+public sealed class TokenPipelineFaultInjector
+{
+    private int _failMetricResolution;
+    private int _loseRefreshResponse;
+
+    public void FailNextMetricResolution() => Interlocked.Exchange(ref _failMetricResolution, 1);
+    public void LoseNextRefreshResponse() => Interlocked.Exchange(ref _loseRefreshResponse, 1);
+
+    internal bool ConsumeMetricResolutionFailure() =>
+        Interlocked.Exchange(ref _failMetricResolution, 0) == 1;
+
+    internal bool ConsumeLostRefreshResponse() =>
+        Interlocked.Exchange(ref _loseRefreshResponse, 0) == 1;
+
+    internal void Reset()
+    {
+        Interlocked.Exchange(ref _failMetricResolution, 0);
+        Interlocked.Exchange(ref _loseRefreshResponse, 0);
+    }
+}
+
+public sealed class AdjustableTestTimeProvider : TimeProvider
+{
+    private readonly object _sync = new();
+    private DateTimeOffset _utcNow = DateTimeOffset.UtcNow;
+
+    public override DateTimeOffset GetUtcNow()
+    {
+        lock (_sync) return _utcNow;
+    }
+
+    public void Advance(TimeSpan value)
+    {
+        lock (_sync) _utcNow = _utcNow.Add(value);
+    }
+
+    internal void Reset()
+    {
+        lock (_sync) _utcNow = DateTimeOffset.UtcNow;
+    }
+}
+
+internal sealed class FaultInjectingTokenMintClientTypeResolver(TokenPipelineFaultInjector faults)
+    : ITokenMintClientTypeResolver
+{
+    public ValueTask<string> ResolveAsync(string? clientId, CancellationToken cancellationToken)
+    {
+        if (faults.ConsumeMetricResolutionFailure())
+            throw new OperationCanceledException("Injected token-metric lookup cancellation.");
+
+        return ValueTask.FromResult("public");
+    }
+}
+
+internal sealed class LostTokenResponseHandler
+    : IOpenIddictServerHandler<OpenIddictServerEvents.ApplyTokenResponseContext>
+{
+    public static OpenIddictServerHandlerDescriptor Descriptor { get; }
+        = OpenIddictServerHandlerDescriptor
+            .CreateBuilder<OpenIddictServerEvents.ApplyTokenResponseContext>()
+            .UseSingletonHandler<LostTokenResponseHandler>()
+            .SetOrder(TokenMintMetricHandler.Descriptor.Order + 1_000)
+            .SetType(OpenIddictServerHandlerType.Custom)
+            .Build();
+
+    private readonly TokenPipelineFaultInjector _faults;
+
+    public LostTokenResponseHandler(TokenPipelineFaultInjector faults)
+    {
+        _faults = faults;
+    }
+
+    public ValueTask HandleAsync(OpenIddictServerEvents.ApplyTokenResponseContext context)
+    {
+        if (context.Request?.IsRefreshTokenGrantType() is true &&
+            string.IsNullOrEmpty(context.Response.Error) &&
+            !string.IsNullOrEmpty(context.Response.AccessToken) &&
+            _faults.ConsumeLostRefreshResponse())
+        {
+            throw new OperationCanceledException("Injected loss after refresh-token redemption.");
+        }
+
+        return ValueTask.CompletedTask;
     }
 }
 
