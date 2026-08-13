@@ -21,6 +21,8 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <!-- Generic container builder for the OTel Collector in OtelLogsRedactionTests. -->
     <PackageReference Include="Testcontainers" />
+    <!-- Direct transitive-CVE pin for the SSH transport used by Testcontainers. -->
+    <PackageReference Include="SSH.NET" PrivateAssets="all" />
     <!-- Quartz.Extensions.Hosting is a transitive dep of Modgud.Infrastructure
          but its runtime assembly (Quartz.Extensions.DependencyInjection.dll)
          doesn't propagate to test bin output reliably (FrameworkReference
