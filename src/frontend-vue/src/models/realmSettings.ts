@@ -12,6 +12,7 @@ export interface RealmSettingsDto {
   ClientSessions: ClientSessionPolicyDto
   AuthRateLimits: AuthRateLimitsDto
   Branding: BrandingSettingsDto
+  EmailBranding: EmailBrandingSettingsDto
   RegistrationFields: RegistrationFieldsSettingsDto
   Deletion: DeletionSettingsDto
   Audit: AuditSettingsDto
@@ -29,6 +30,7 @@ export interface UpdateRealmSettingsDto {
   ClientSessions?: UpdateClientSessionPolicyDto | null
   AuthRateLimits?: UpdateAuthRateLimitsDto | null
   Branding?: UpdateBrandingSettingsDto | null
+  EmailBranding?: UpdateEmailBrandingSettingsDto | null
   RegistrationFields?: UpdateRegistrationFieldsSettingsDto | null
   Deletion?: UpdateDeletionSettingsDto | null
   Audit?: UpdateAuditSettingsDto | null
@@ -123,6 +125,17 @@ export interface UpdateBrandingSettingsDto {
   FaviconAssetId?: string | null
   PrimaryColor?: string | null
 }
+
+export interface EmailBrandingSettingsDto {
+  ProductName?: string | null
+  SubjectPrefix?: string | null
+  Preheader?: string | null
+  FooterText?: string | null
+  FromName?: string | null
+  ReplyTo?: string | null
+}
+
+export interface UpdateEmailBrandingSettingsDto extends EmailBrandingSettingsDto {}
 
 // Read shape. CaptchaSecretSet is the only signal the SPA gets about the
 // per-realm secret — the plaintext never crosses the wire.

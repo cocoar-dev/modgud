@@ -77,11 +77,19 @@ public static class SamlEndpoints
     private static async Task<IResult> LoginAsync(
         string slug,
         string? returnUrl,
+        HttpContext http,
         [FromServices] DynamicSamlSchemeManager manager,
         [FromServices] SamlLoginFlow flow,
+        [FromServices] Modgud.Authentication.Applications.IApplicationSettingsResolver settingsResolver,
         CancellationToken ct)
     {
         if (!manager.TryGetBySlug(TenantContext.Current, slug, out var provider) || provider is null)
+            return Results.NotFound();
+
+        var allowed = (await settingsResolver.ResolveForRequestAsync(
+                http, Modgud.Authentication.Api.ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(returnUrl), ct))
+            .LoginExperience?.LoginProviderIds;
+        if (allowed is not null && !allowed.Contains(provider.LoginProviderId))
             return Results.NotFound();
 
         return await flow.StartLoginAsync(provider, returnUrl, ct);

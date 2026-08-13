@@ -11,17 +11,19 @@ namespace Modgud.Api.Features.Admin;
 
 /// <summary>
 /// PageBuilder configuration (ADR-0001). The variant library is <b>realm-global</b>:
-/// each SPA page-slug (<c>login</c>, <c>logout</c>, <c>password-forgot</c>) owns a
+/// each SPA page-slug (<c>login</c>, <c>logout</c>, <c>password-forgot</c>,
+/// <c>consent</c>) owns a
 /// set of named <see cref="PageVariant"/>s on the tenant <see cref="RealmSettings"/>.
 /// The realm picks which variant is active for itself; each Application only
 /// *selects* one of those realm variants (or inherits / built-in). Schemas are
-/// opaque JSON the <c>@cocoar/vue-page-builder</c> renderer interprets in the SPA.
+/// PageBuilder JSON document that is validated before it can be published.
 /// </summary>
 public static class CustomizationPagesEndpoints
 {
     private const int MaxSchemaBytes = 256 * 1024;
     private const int MaxVariantNameLength = 80;
     private const int MaxVariantsPerSlot = 50;
+    private const int MaxRevisionsPerVariant = 100;
 
     public static WebApplication MapCustomizationPagesEndpoints(this WebApplication app, string path)
     {
@@ -108,7 +110,20 @@ public static class CustomizationPagesEndpoints
 
             var variant = doc?.PageSlots?.GetValueOrDefault(slug)?.Variants.FirstOrDefault(v => v.Id == variantId);
             if (variant is null) return Results.NotFound();
-            return Results.Ok(new { variant.Id, variant.Name, variant.Schema });
+            return Results.Ok(new
+            {
+                variant.Id,
+                variant.Name,
+                variant.Schema,
+                variant.PublishedRevision,
+                variant.PublishedAt,
+                IsPublished = variant.PublishedSchema is not null,
+                HasUnpublishedChanges = (variant.PublishedAuthoringSchema ?? variant.PublishedSchema) != variant.Schema,
+                Revisions = (variant.Revisions ?? new List<PageVariantRevision>())
+                    .OrderByDescending(r => r.Number)
+                    .Select(r => new { r.Number, r.PublishedAt, r.PublishedBy, r.RollbackOfRevision })
+                    .ToArray(),
+            });
         })
         .RequiresPermission("realm-settings:read")
         .WithName("Admin_Customization_GetPageVariant");
@@ -164,8 +179,19 @@ public static class CustomizationPagesEndpoints
 
             var doc = await session.LoadAsync<RealmSettings>(RealmSettings.SingletonId, ct);
             doc?.MigratePagesToSlots();
-            var variant = doc?.PageSlots?.GetValueOrDefault(slug)?.Variants.FirstOrDefault(v => v.Id == variantId);
+            var slot = doc?.PageSlots?.GetValueOrDefault(slug);
+            var variant = slot?.Variants.FirstOrDefault(v => v.Id == variantId);
             if (variant is null) return Results.NotFound();
+
+            // First edit of an active legacy document snapshots the previous
+            // live schema before replacing its draft.
+            if (slot!.ActiveVariantId == variantId && variant.PublishedSchema is null)
+            {
+                if (!PageCompositionDocumentService.ValidateAndCompilePage(
+                        slug, variant.Schema, doc?.PageCompositions ?? [], out var legacyRuntime, out var legacyError))
+                    return Results.BadRequest(new { Message = legacyError });
+                PublishDraft(variant, legacyRuntime, publishedBy: null);
+            }
 
             variant.Name = body.Name!.Trim();
             variant.Schema = body.Schema!;
@@ -177,6 +203,72 @@ public static class CustomizationPagesEndpoints
         })
         .RequiresPermission("realm-settings:write")
         .WithName("Admin_Customization_UpdatePageVariant");
+
+        // POST /{slug}/variants/{variantId}/publish — validate the draft at
+        // the server boundary, append an immutable revision and atomically
+        // promote it. Existing realm/App selections then see the new revision.
+        group.MapPost("{slug}/variants/{variantId}/publish", async (
+            string slug,
+            string variantId,
+            HttpContext http,
+            AppSettings settings,
+            IDocumentSession session,
+            CancellationToken ct) =>
+        {
+            if (!settings.Features.PageBuilder) return Results.NotFound();
+            if (!IsValidSlug(slug)) return Results.BadRequest(new { Message = "Invalid slug." });
+
+            var doc = await session.LoadAsync<RealmSettings>(RealmSettings.SingletonId, ct);
+            doc?.MigratePagesToSlots();
+            var variant = doc?.PageSlots?.GetValueOrDefault(slug)?.Variants.FirstOrDefault(v => v.Id == variantId);
+            if (variant is null) return Results.NotFound();
+            if (!PageCompositionDocumentService.ValidateAndCompilePage(
+                    slug, variant.Schema, doc?.PageCompositions ?? [], out var runtimeSchema, out var validationError))
+                return Results.BadRequest(new { Message = validationError });
+
+            PublishDraft(variant, runtimeSchema, http.User.Identity?.Name);
+            doc!.UpdatedAt = DateTimeOffset.UtcNow;
+            session.Store(doc);
+            await session.SaveChangesAsync(ct);
+            return Results.Ok(new { variant.Id, variant.PublishedRevision, variant.PublishedAt });
+        })
+        .RequiresPermission("realm-settings:write")
+        .WithName("Admin_Customization_PublishPageVariant");
+
+        // POST /{slug}/variants/{variantId}/rollback/{revision} — rollback is
+        // itself a new auditable publication; history is never rewritten.
+        group.MapPost("{slug}/variants/{variantId}/rollback/{revision:int}", async (
+            string slug,
+            string variantId,
+            int revision,
+            HttpContext http,
+            AppSettings settings,
+            IDocumentSession session,
+            CancellationToken ct) =>
+        {
+            if (!settings.Features.PageBuilder) return Results.NotFound();
+            if (!IsValidSlug(slug)) return Results.BadRequest(new { Message = "Invalid slug." });
+
+            var doc = await session.LoadAsync<RealmSettings>(RealmSettings.SingletonId, ct);
+            doc?.MigratePagesToSlots();
+            var variant = doc?.PageSlots?.GetValueOrDefault(slug)?.Variants.FirstOrDefault(v => v.Id == variantId);
+            if (variant is null) return Results.NotFound();
+            var target = variant.Revisions?.FirstOrDefault(r => r.Number == revision);
+            if (target is null) return Results.NotFound();
+            if (!PageCompositionDocumentService.ValidateAndCompilePage(
+                    slug, target.Schema, doc?.PageCompositions ?? [], out var runtimeSchema, out var validationError))
+                return Results.BadRequest(new { Message = validationError });
+
+            variant.Schema = target.Schema;
+            PublishDraft(variant, runtimeSchema, http.User.Identity?.Name, rollbackOfRevision: revision);
+            variant.UpdatedAt = DateTimeOffset.UtcNow;
+            doc!.UpdatedAt = DateTimeOffset.UtcNow;
+            session.Store(doc);
+            await session.SaveChangesAsync(ct);
+            return Results.Ok(new { variant.Id, variant.PublishedRevision, variant.PublishedAt });
+        })
+        .RequiresPermission("realm-settings:write")
+        .WithName("Admin_Customization_RollbackPageVariant");
 
         // DELETE /{slug}/variants/{variantId} — remove a variant. Clears the
         // realm active pointer if it targeted this variant; Application selections
@@ -224,8 +316,16 @@ public static class CustomizationPagesEndpoints
             doc.PageSlots ??= new Dictionary<string, RealmPageSlot>(StringComparer.Ordinal);
             var slot = doc.PageSlots.TryGetValue(slug, out var s) ? s : (doc.PageSlots[slug] = new RealmPageSlot());
 
-            if (body.ActiveVariantId is not null && slot.Variants.All(v => v.Id != body.ActiveVariantId))
-                return Results.BadRequest(new { Message = "No such variant for this slot." });
+            if (body.ActiveVariantId is not null)
+            {
+                var variant = slot.Variants.FirstOrDefault(v => v.Id == body.ActiveVariantId);
+                if (variant is null)
+                    return Results.BadRequest(new { Message = "No such variant for this slot." });
+                if (!PageCompositionDocumentService.ValidateAndCompilePage(
+                        slug, variant.Schema, doc.PageCompositions ?? [], out var runtimeSchema, out var validationError))
+                    return Results.BadRequest(new { Message = validationError });
+                PublishDraft(variant, runtimeSchema, publishedBy: null);
+            }
 
             slot.ActiveVariantId = body.ActiveVariantId;
             doc.UpdatedAt = DateTimeOffset.UtcNow;
@@ -273,13 +373,17 @@ public static class CustomizationPagesEndpoints
                 .Select(slug =>
                 {
                     var appSlot = appDoc?.PageSlots?.GetValueOrDefault(slug);
-                    var realmVariants = realm?.PageSlots?.GetValueOrDefault(slug)?.Variants ?? new();
+                    var realmSlot = realm?.PageSlots?.GetValueOrDefault(slug);
+                    var realmVariants = realmSlot?.Variants ?? new();
                     return new
                     {
                         Slug = slug,
                         InheritActive = appSlot?.InheritActive ?? true,
                         ActiveVariantId = appSlot?.ActiveVariantId,
-                        AvailableVariants = realmVariants.Select(v => new { v.Id, v.Name }).ToArray(),
+                        AvailableVariants = realmVariants
+                            .Where(v => v.PublishedSchema is not null || realmSlot?.ActiveVariantId == v.Id)
+                            .Select(v => new { v.Id, v.Name })
+                            .ToArray(),
                     };
                 })
                 .ToArray();
@@ -308,7 +412,8 @@ public static class CustomizationPagesEndpoints
                 var realm = await session.LoadAsync<RealmSettings>(RealmSettings.SingletonId, ct);
                 realm?.MigratePagesToSlots();
                 var realmVariants = realm?.PageSlots?.GetValueOrDefault(slug)?.Variants;
-                if (realmVariants is null || realmVariants.All(v => v.Id != body.ActiveVariantId))
+                if (realmVariants is null || realmVariants.All(v =>
+                        v.Id != body.ActiveVariantId || v.PublishedSchema is null))
                     return Results.BadRequest(new { Message = "No such realm variant for this slot." });
             }
 
@@ -382,6 +487,10 @@ public static class CustomizationPagesEndpoints
             v.Name,
             v.CreatedAt,
             v.UpdatedAt,
+            v.PublishedAt,
+            v.PublishedRevision,
+            IsPublished = v.PublishedSchema is not null,
+            HasUnpublishedChanges = (v.PublishedAuthoringSchema ?? v.PublishedSchema) != v.Schema,
             RealmActive = realmActiveId == v.Id,
             UsedByApps = apps.ToArray(),
         };
@@ -397,6 +506,38 @@ public static class CustomizationPagesEndpoints
         catch (System.Text.Json.JsonException ex) { error = $"Schema is not valid JSON: {ex.Message}"; return false; }
         error = string.Empty;
         return true;
+    }
+
+    private static void PublishDraft(
+        PageVariant variant,
+        string runtimeSchema,
+        string? publishedBy,
+        int? rollbackOfRevision = null)
+    {
+        if (rollbackOfRevision is null
+            && (variant.PublishedAuthoringSchema ?? variant.PublishedSchema) == variant.Schema)
+            return;
+        variant.Revisions ??= new List<PageVariantRevision>();
+        var now = DateTimeOffset.UtcNow;
+        var number = Math.Max(
+            variant.PublishedRevision,
+            variant.Revisions.Count == 0 ? 0 : variant.Revisions.Max(r => r.Number)) + 1;
+        variant.PublishedSchema = runtimeSchema;
+        variant.PublishedAuthoringSchema = variant.Schema;
+        variant.PublishedRevision = number;
+        variant.PublishedAt = now;
+        variant.Revisions.Add(new PageVariantRevision
+        {
+            Number = number,
+            Schema = variant.Schema,
+            PublishedAt = now,
+            PublishedBy = publishedBy,
+            RollbackOfRevision = rollbackOfRevision,
+        });
+        if (variant.Revisions.Count > MaxRevisionsPerVariant)
+        {
+            variant.Revisions.RemoveRange(0, variant.Revisions.Count - MaxRevisionsPerVariant);
+        }
     }
 
     /// <summary>Allow lowercase ASCII + hyphens, length 1-32.</summary>

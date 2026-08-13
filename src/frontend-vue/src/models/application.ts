@@ -77,8 +77,30 @@ export interface ApplicationBrandingSettingsDto {
   FaviconUrl?: string | null // read-only
 }
 
+export interface ApplicationPageThemeDto {
+  AccentColor?: string | null
+  ErrorColor?: string | null
+  ButtonRadiusPx?: number | null
+  InputRadiusPx?: number | null
+  CardRadiusPx?: number | null
+  BodyFontFamily?: string | null
+  TitleFontFamily?: string | null
+}
+
 export interface ApplicationEmailBrandingDto {
   ProductName?: string | null
+  SubjectPrefix?: string | null
+  Preheader?: string | null
+  FooterText?: string | null
+  FromName?: string | null
+  ReplyTo?: string | null
+}
+
+export interface ApplicationLoginExperienceDto {
+  InternalLoginEnabled?: boolean | null
+  MagicLinkEnabled?: boolean | null
+  /** Ordered external-provider ShortGuid allow-list. Empty disables all. */
+  LoginProviderIds?: string[] | null
 }
 
 export interface ApplicationSelfRegistrationOverrideDto {
@@ -122,7 +144,9 @@ export interface ApplicationRegistrationFieldsOverrideDto {
 export interface ApplicationSettingsDto {
   Origin?: ApplicationOriginDto | null
   Branding?: ApplicationBrandingSettingsDto | null
+  PageTheme?: ApplicationPageThemeDto | null
   EmailBranding?: ApplicationEmailBrandingDto | null
+  LoginExperience?: ApplicationLoginExperienceDto | null
   SelfRegistration?: ApplicationSelfRegistrationOverrideDto | null
   NativeGrants?: ApplicationGrantOverrideDto | null
   ClientSessions?: ApplicationClientSessionsDto | null

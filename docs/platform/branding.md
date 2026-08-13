@@ -37,16 +37,18 @@ Each field has three save states: **leave the value** (don't touch the input), *
 | Surface | What it picks up |
 | --- | --- |
 | `/api/app-info` (anonymous, public) | All four fields, resolved as the *effective* branding for the request (realm branding merged with any per-Application override — see below). The endpoint resolves `LogoAssetId` / `FaviconAssetId` to public URLs (`/api/assets/{shortGuid}`) — anonymous callers never see the raw asset id. |
-| Login page (`/login`) | Product name + logo + primary color; favicon set at boot. |
+| Fixed authentication surfaces | Product name + logo + primary color on login, registration, forgot/reset password, magic-login, consent, device verification, logged-out and bootstrap screens; favicon set at boot. |
 | Admin shell | Same. The shell picks the values up from the same `appConfig` Pinia store. |
 | `document.title` | Product name as prefix. |
 | Browser tab icon | `<link rel="icon" href="…">` is rewritten in JS at boot. |
 
 ## Per-Application override
 
-A realm can host more than one Application (each with its own origin, login behaviour, and OAuth clients — see **Administration → Apps**). Each Application can optionally override the realm's product name and primary color on top of the realm-wide branding described above.
+A realm can host more than one Application (each with its own origin, login behaviour, and OAuth clients — see **Administration → Apps**). Each Application can optionally override all four branding fields on top of the realm-wide branding described above.
 
-The override lives on the Application record itself: open **Administration → Apps**, pick an Application, and switch to the **Origin & Branding** tab. A "custom branding" checkbox turns the override on; leaving it off means the Application simply inherits the realm branding. The logo and favicon are not currently overridable per Application — only product name and primary color.
+The override lives on the Application record itself: open **Administration → Apps**, pick an Application, and switch to the **Origin & Branding** tab. A "custom branding" checkbox turns the override on; leaving it off means the Application simply inherits the realm branding. Product name, primary colour, logo and favicon are independently nullable inside the override and fall back to the realm value.
+
+The editor shows a live fixed-layout login and email preview. This preview is intentionally independent from the experimental PageBuilder: most tenants can complete their branding without replacing page structure.
 
 For a realm with a single Application (the common case), the effective branding and the realm branding are identical, so this distinction doesn't come up.
 
@@ -55,7 +57,7 @@ For a realm with a single Application (the common case), the effective branding 
 The Branding sub-document stores `LogoAssetId` and `FaviconAssetId` — **not** URLs. That has two consequences:
 
 - **Cross-domain risk**: zero. A realm admin can only reference assets uploaded into their own realm's asset library. Pasting an `https://evil.example.com/cookie-stealer.svg` into branding is not possible — the picker only shows local assets.
-- **Delete-block**: the asset-library endpoint refuses to delete an asset that's referenced by the realm's branding. You get an HTTP 409 with the referencing field name; clear the branding field first, then delete the asset.
+- **Delete-block**: the asset-library endpoint refuses to delete an asset that's referenced by realm or Application branding. You get an HTTP 409 with the exact referencing field; clear it first, then delete the asset.
 
 ## What's stored where
 

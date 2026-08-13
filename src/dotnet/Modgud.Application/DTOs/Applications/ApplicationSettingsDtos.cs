@@ -12,7 +12,9 @@ public record ApplicationSettingsDto
 {
     public ApplicationOriginDto? Origin { get; init; }
     public ApplicationBrandingDto? Branding { get; init; }
+    public ApplicationPageThemeDto? PageTheme { get; init; }
     public ApplicationEmailBrandingDto? EmailBranding { get; init; }
+    public ApplicationLoginExperienceDto? LoginExperience { get; init; }
     public ApplicationSelfRegistrationDto? SelfRegistration { get; init; }
     public ApplicationNativeGrantsDto? NativeGrants { get; init; }
     public ApplicationClientSessionsDto? ClientSessions { get; init; }
@@ -40,9 +42,38 @@ public record ApplicationBrandingDto
     public string? FaviconUrl { get; init; }    // read-only (derived)
 }
 
+/// <summary>
+/// Safe Cocoar token overrides for Application-selected custom pages. These
+/// values are never applied to Modgud chrome or built-in auth views.
+/// </summary>
+public record ApplicationPageThemeDto
+{
+    public string? AccentColor { get; init; }
+    public string? ErrorColor { get; init; }
+    public int? ButtonRadiusPx { get; init; }
+    public int? InputRadiusPx { get; init; }
+    public int? CardRadiusPx { get; init; }
+    public string? BodyFontFamily { get; init; }
+    public string? TitleFontFamily { get; init; }
+}
+
 public record ApplicationEmailBrandingDto
 {
     public string? ProductName { get; init; }
+    public string? SubjectPrefix { get; init; }
+    public string? Preheader { get; init; }
+    public string? FooterText { get; init; }
+    public string? FromName { get; init; }
+    public string? ReplyTo { get; init; }
+}
+
+public record ApplicationLoginExperienceDto
+{
+    public bool? InternalLoginEnabled { get; init; }
+    public bool? MagicLinkEnabled { get; init; }
+    /// <summary>Ordered ShortGuid allow-list. Null means every enabled external
+    /// provider; an empty array intentionally disables every external provider.</summary>
+    public string[]? LoginProviderIds { get; init; }
 }
 
 public record ApplicationSelfRegistrationDto

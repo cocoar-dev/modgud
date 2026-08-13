@@ -260,6 +260,15 @@ public sealed class RealmManifestExporter(
             FaviconAssetId = s.Branding.FaviconAssetId,
             PrimaryColor = s.Branding.PrimaryColor,
         },
+        EmailBranding = new UpdateEmailBrandingSettingsDto
+        {
+            ProductName = s.EmailBranding.ProductName,
+            SubjectPrefix = s.EmailBranding.SubjectPrefix,
+            Preheader = s.EmailBranding.Preheader,
+            FooterText = s.EmailBranding.FooterText,
+            FromName = s.EmailBranding.FromName,
+            ReplyTo = s.EmailBranding.ReplyTo,
+        },
         RegistrationFields = new UpdateRegistrationFieldsSettingsDto
         {
             Username = s.RegistrationFields.Username,

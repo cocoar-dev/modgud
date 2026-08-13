@@ -19,7 +19,7 @@ const { branding } = useLoginPageRuntime()
 .brand-header {
   display: grid;
   justify-items: center;
-  gap: 0.35rem;
+  gap: 0.25rem;
   text-align: center;
 }
 
@@ -35,6 +35,7 @@ const { branding } = useLoginPageRuntime()
   color: var(--coar-text-neutral-primary);
   font-size: 1.5rem;
   font-weight: 700;
+  line-height: 2rem;
   letter-spacing: -0.02em;
 }
 </style>

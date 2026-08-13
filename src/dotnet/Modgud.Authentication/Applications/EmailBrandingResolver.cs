@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using BuildingBlocks.Helper;
 
 namespace Modgud.Authentication.Applications;
 
@@ -13,8 +14,30 @@ namespace Modgud.Authentication.Applications;
 /// </summary>
 public interface IEmailBrandingResolver
 {
+    Task<EmailBrandingContext> ResolveAsync(
+        Guid? applicationId = null,
+        string? clientId = null,
+        CancellationToken ct = default);
+
+    Task<Dictionary<string, string>> ApplyAsync(
+        Dictionary<string, string> model,
+        Guid? applicationId = null,
+        string? clientId = null,
+        CancellationToken ct = default);
+
     Task<string> ResolveProductNameAsync(CancellationToken ct = default);
 }
+
+public sealed record EmailBrandingContext(
+    string ProductName,
+    string? LogoUrl,
+    string PrimaryColor,
+    string Language,
+    string? SubjectPrefix,
+    string? Preheader,
+    string? FooterText,
+    string? FromName,
+    string? ReplyTo);
 
 public sealed class EmailBrandingResolver(
     IHttpContextAccessor httpContextAccessor,
@@ -22,15 +45,68 @@ public sealed class EmailBrandingResolver(
 {
     private const string Default = "Modgud";
 
-    public async Task<string> ResolveProductNameAsync(CancellationToken ct = default)
+    public async Task<EmailBrandingContext> ResolveAsync(
+        Guid? applicationId = null,
+        string? clientId = null,
+        CancellationToken ct = default)
     {
         var httpContext = httpContextAccessor.HttpContext;
-        if (httpContext is null)
-            return Default;
+        var effective = applicationId is { } explicitApp
+            ? await settingsResolver.ResolveAsync(explicitApp, ct)
+            : httpContext is not null
+                ? await settingsResolver.ResolveForRequestAsync(httpContext, clientId, ct)
+                : await settingsResolver.ResolveAsync(null, ct);
 
-        var effective = await settingsResolver.ResolveForRequestAsync(httpContext, clientId: null, ct);
-        return effective.EmailBranding?.ProductName
-               ?? effective.Branding?.ProductName
-               ?? Default;
+        var productName = effective.EmailBranding?.ProductName
+                          ?? effective.Branding?.ProductName
+                          ?? Default;
+        string? logoUrl = null;
+        if (effective.Branding?.LogoAssetId is { } logoId && httpContext is not null)
+        {
+            logoUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}/api/assets/{ShortGuid.Encode(logoId)}";
+        }
+
+        var language = httpContext?.Request.GetTypedHeaders().AcceptLanguage
+            .OrderByDescending(v => v.Quality ?? 1)
+            .Select(v => v.Value.Value)
+            .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?
+            .StartsWith("en", StringComparison.OrdinalIgnoreCase) == true
+            ? "en"
+            : "de";
+
+        return new EmailBrandingContext(
+            productName,
+            logoUrl,
+            effective.Branding?.PrimaryColor ?? "#525e76",
+            language,
+            effective.EmailBranding?.SubjectPrefix,
+            effective.EmailBranding?.Preheader,
+            effective.EmailBranding?.FooterText,
+            effective.EmailBranding?.FromName,
+            effective.EmailBranding?.ReplyTo);
+    }
+
+    public async Task<Dictionary<string, string>> ApplyAsync(
+        Dictionary<string, string> model,
+        Guid? applicationId = null,
+        string? clientId = null,
+        CancellationToken ct = default)
+    {
+        var branding = await ResolveAsync(applicationId, clientId, ct);
+        model["AppName"] = branding.ProductName;
+        model["PrimaryColor"] = branding.PrimaryColor;
+        model["Language"] = branding.Language;
+        if (branding.LogoUrl is not null) model["LogoUrl"] = branding.LogoUrl;
+        if (branding.SubjectPrefix is not null) model["SubjectPrefix"] = branding.SubjectPrefix;
+        if (branding.Preheader is not null) model["Preheader"] = branding.Preheader;
+        if (branding.FooterText is not null) model["FooterText"] = branding.FooterText;
+        if (branding.FromName is not null) model["FromName"] = branding.FromName;
+        if (branding.ReplyTo is not null) model["ReplyTo"] = branding.ReplyTo;
+        return model;
+    }
+
+    public async Task<string> ResolveProductNameAsync(CancellationToken ct = default)
+    {
+        return (await ResolveAsync(ct: ct)).ProductName;
     }
 }

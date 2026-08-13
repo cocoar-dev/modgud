@@ -17,6 +17,7 @@ interface UserHubEvent {
 export const useAuthStore = defineStore('auth', () => {
   const http = useHttpClient('/api/account')
   const emailOtpHttp = useHttpClient('/api/account/email-otp')
+  const passwordlessOtpHttp = useHttpClient('/api/account/passwordless-otp')
   const magicLinkHttp = useHttpClient('/api/account/magic-link')
   const signalr = useSignalR()
 
@@ -89,8 +90,13 @@ export const useAuthStore = defineStore('auth', () => {
    * Login with username and password.
    * Returns MfaMethods if 2FA is needed, otherwise completes login.
    */
-  async function login(userName: string, password: string, rememberMe: boolean = false): Promise<LoginResponse | void> {
-    const result = await http.addPath('login').post<LoginResponse>({ UserName: userName, Password: password, RememberMe: rememberMe })
+  async function login(userName: string, password: string, rememberMe: boolean = false, returnUrl?: string): Promise<LoginResponse | void> {
+    const result = await http.addPath('login').post<LoginResponse>({
+      UserName: userName,
+      Password: password,
+      RememberMe: rememberMe,
+      ReturnUrl: returnUrl ?? null,
+    })
     if (result?.RequiresMfa) {
       // Partial sign-in only (TwoFactorUserId cookie) — /api/account/me would 401.
       // Caller (LoginView) shows the MFA-choice/code step; fetchMe runs after mfaLogin succeeds.
@@ -127,6 +133,30 @@ export const useAuthStore = defineStore('auth', () => {
    */
   async function emailOtpLogin(code: string, rememberMe: boolean = false): Promise<void> {
     await emailOtpHttp.addPath('login').post({ Code: code, RememberMe: rememberMe })
+    await fetchMe()
+  }
+
+  /** Request a primary-factor login code for the hosted browser flow. */
+  async function requestPasswordlessOtp(email: string, returnUrl?: string): Promise<void> {
+    await passwordlessOtpHttp.addPath('request').post({
+      Email: email,
+      ReturnUrl: returnUrl ?? null,
+    })
+  }
+
+  /** Redeem a primary-factor login code into the normal Modgud auth cookie. */
+  async function passwordlessOtpLogin(
+    email: string,
+    code: string,
+    rememberMe: boolean = false,
+    returnUrl?: string,
+  ): Promise<void> {
+    await passwordlessOtpHttp.addPath('login').post({
+      Email: email,
+      Code: code,
+      RememberMe: rememberMe,
+      ReturnUrl: returnUrl ?? null,
+    })
     await fetchMe()
   }
 
@@ -218,6 +248,8 @@ export const useAuthStore = defineStore('auth', () => {
     mfaLogin,
     requestEmailOtp,
     emailOtpLogin,
+    requestPasswordlessOtp,
+    passwordlessOtpLogin,
     getEmailOtpStatus,
     enableEmailOtp,
     disableEmailOtp,

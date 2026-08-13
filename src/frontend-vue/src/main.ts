@@ -6,10 +6,12 @@ import { router } from './router'
 // Monaco workers — required before any editor mounts.
 // Must run before CoarScriptEditor (any instance of it) is loaded.
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
+import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
 import TsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
 self.MonacoEnvironment = {
   getWorker(_id, label) {
     if (label === 'typescript' || label === 'javascript') return new TsWorker()
+    if (label === 'json') return new JsonWorker()
     return new EditorWorker()
   },
 }

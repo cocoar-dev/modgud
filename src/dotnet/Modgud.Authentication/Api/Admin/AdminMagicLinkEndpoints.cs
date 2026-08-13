@@ -88,13 +88,12 @@ public static class AdminMagicLinkEndpoints
             await emailService.SendTemplatedEmailAsync(
                 user.Email,
                 EmailTemplate.MagicLink,
-                new Dictionary<string, string>
+                await emailBranding.ApplyAsync(new Dictionary<string, string>
                 {
-                    ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                     ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                     ["ActionUrl"] = magicUrl,
                     ["ExpirationMinutes"] = config.ExpirationMinutes.ToString(),
-                });
+                }, ct: ct), ct);
 
             Serilog.Log.Information("Admin: Magic link sent to {UserId} ({MaskedEmail})", user.Id, LogPiiMasking.MaskEmail(user.Email));
             return Results.Ok(new { Message = "Magic link sent" });

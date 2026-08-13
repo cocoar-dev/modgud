@@ -55,6 +55,15 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
         return pages.TryGetProperty(slug, out var s) ? s.GetString() : null;
     }
 
+    private async Task PublishRealmVariant(string slug, string id, CancellationToken ct)
+    {
+        var response = await Client.PostAsync(
+            $"/api/admin/customization/pages/{slug}/variants/{id}/publish",
+            content: null,
+            ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     // ── feature-flag gating ──
 
     [Fact]
@@ -107,7 +116,7 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
         var ct = TestContext.Current.CancellationToken;
         try
         {
-            var schema = "{\"type\":\"page\",\"children\":[{\"type\":\"heading\",\"level\":1}]}";
+            var schema = "{\"id\":\"page\",\"type\":\"page\",\"schemaVersion\":4,\"children\":[{\"id\":\"title\",\"type\":\"heading\",\"props\":{\"text\":\"Primary\",\"level\":1}}]}";
             var id = await SeedRealmActive("login", "Primary", schema, ct);
 
             // The variant round-trips with its schema.
@@ -150,6 +159,34 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task Saving_active_variant_keeps_published_revision_live_until_publish()
+    {
+        var settings = Factory.Services.GetRequiredService<AppSettings>();
+        settings.Features.PageBuilder = true;
+        var ct = TestContext.Current.CancellationToken;
+        try
+        {
+            const string published = "{\"id\":\"page\",\"type\":\"page\",\"schemaVersion\":4,\"children\":[{\"id\":\"v1\",\"type\":\"paragraph\",\"props\":{\"text\":\"Published\"}}]}";
+            const string draft = "{\"id\":\"page\",\"type\":\"page\",\"schemaVersion\":4,\"children\":[{\"id\":\"v2\",\"type\":\"paragraph\",\"props\":{\"text\":\"Draft\"}}]}";
+            var id = await SeedRealmActive("login", "Revisioned", published, ct);
+
+            var save = await Client.PutAsJsonAsync($"/api/admin/customization/pages/login/variants/{id}",
+                new { Name = "Revisioned", Schema = draft }, ct);
+            Assert.Equal(HttpStatusCode.OK, save.StatusCode);
+            Assert.Equal(published, await AppInfoActiveSchema("login", ct));
+
+            await PublishRealmVariant("login", id, ct);
+            Assert.Equal(draft, await AppInfoActiveSchema("login", ct));
+
+            using var variant = JsonDocument.Parse(await (await Client.GetAsync(
+                $"/api/admin/customization/pages/login/variants/{id}", ct)).Content.ReadAsStringAsync(ct));
+            Assert.Equal(2, variant.RootElement.GetProperty("PublishedRevision").GetInt32());
+            Assert.False(variant.RootElement.GetProperty("HasUnpublishedChanges").GetBoolean());
+        }
+        finally { settings.Features.PageBuilder = false; }
+    }
+
+    [Fact]
     public async Task Deactivating_reverts_to_builtin_without_deleting_the_variant()
     {
         var settings = Factory.Services.GetRequiredService<AppSettings>();
@@ -157,7 +194,7 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
         var ct = TestContext.Current.CancellationToken;
         try
         {
-            var schema = "{\"type\":\"page\",\"children\":[]}";
+            var schema = "{\"id\":\"page\",\"type\":\"page\",\"schemaVersion\":4,\"children\":[]}";
             var id = await SeedRealmActive("password-forgot", "V", schema, ct);
             Assert.Equal(schema, await AppInfoActiveSchema("password-forgot", ct));
 
@@ -237,8 +274,8 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
         var ct = TestContext.Current.CancellationToken;
         try
         {
-            const string realmSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[]}";
-            const string altSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[{\"id\":\"t\",\"type\":\"heading\",\"props\":{\"text\":\"Alt\"}}]}";
+            const string realmSchema = "{\"id\":\"page\",\"type\":\"page\",\"schemaVersion\":4,\"children\":[]}";
+            const string altSchema = "{\"id\":\"page\",\"type\":\"page\",\"schemaVersion\":4,\"children\":[{\"id\":\"t\",\"type\":\"heading\",\"props\":{\"text\":\"Alt\"}}]}";
 
             await SeedRealmActive("logout", "Realm", realmSchema, ct);
             // A second, non-active realm variant the App can pick.
@@ -246,6 +283,7 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
                 new { Name = "Alt", Schema = altSchema }, ct);
             using var altCreated = JsonDocument.Parse(await altPost.Content.ReadAsStringAsync(ct));
             var altId = altCreated.RootElement.GetProperty("Id").GetString();
+            await PublishRealmVariant("logout", altId!, ct);
 
             var slug = $"pb-{Guid.NewGuid():N}";
             var createdResponse = await Client.PostAsJsonAsync("/api/app",
@@ -337,14 +375,15 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
         var ct = TestContext.Current.CancellationToken;
         try
         {
-            const string realmSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[]}";
-            const string altSchema = "{\"type\":\"page\",\"schemaVersion\":2,\"children\":[{\"id\":\"a\",\"type\":\"paragraph\",\"props\":{\"text\":\"Alt login\"}}]}";
+            const string realmSchema = "{\"id\":\"page\",\"type\":\"page\",\"schemaVersion\":4,\"children\":[]}";
+            const string altSchema = "{\"id\":\"page\",\"type\":\"page\",\"schemaVersion\":4,\"children\":[{\"id\":\"a\",\"type\":\"paragraph\",\"props\":{\"text\":\"Alt login\"}}]}";
             await SeedRealmActive("login", "Realm", realmSchema, ct);
             // A second realm variant the App will select.
             var altPost = await Client.PostAsJsonAsync("/api/admin/customization/pages/login/variants",
                 new { Name = "Alt", Schema = altSchema }, ct);
             using var altCreated = JsonDocument.Parse(await altPost.Content.ReadAsStringAsync(ct));
             var altId = altCreated.RootElement.GetProperty("Id").GetString();
+            await PublishRealmVariant("login", altId!, ct);
 
             var appId = Guid.NewGuid();
             var clientId = $"page-client-{Guid.NewGuid():N}";

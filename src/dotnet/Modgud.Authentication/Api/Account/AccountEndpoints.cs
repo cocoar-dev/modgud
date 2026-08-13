@@ -11,17 +11,39 @@ using Modgud.Authentication.Domain.LoginProviders;
 using BuildingBlocks.Helper;
 using Modgud.Authentication.Identity;
 using Modgud.Authentication.Sessions;
+using Modgud.Authentication.Applications;
+using Modgud.Authentication.SelfRegistration;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Services;
+using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Observability;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Authentication.Api.Account;
 
 public static class AccountEndpoints
 {
-    public record LoginRequest(string UserName, string Password, bool RememberMe = false);
+    public record LoginRequest(
+        string UserName,
+        string Password,
+        bool RememberMe = false,
+        string? ReturnUrl = null);
+
+    public record PasswordlessOtpRequest(
+        string Email,
+        string? ReturnUrl = null,
+        string? FirstName = null,
+        string? LastName = null,
+        string? InviteCode = null);
+
+    public record PasswordlessOtpLoginRequest(
+        string Email,
+        string Code,
+        bool RememberMe = false,
+        string? ReturnUrl = null);
 
     public record LogoutRequest(bool EndIdpSession = true);
 
@@ -73,6 +95,7 @@ public static class AccountEndpoints
             SignInManager<ApplicationUser> signInManager,
             UserManager<ApplicationUser> userManager,
             IAuthSettings appSettings,
+            IApplicationSettingsResolver applicationSettings,
             IDocumentSession docSession,
             IQuerySession session,
             ISecurityAuditLog securityAudit,
@@ -89,6 +112,10 @@ public static class AccountEndpoints
             // Level 2 (Passwordless): password login disabled entirely
             if (appSettings.AuthenticationMinimumLevel >= 2)
                 return Results.Json(new { Message = "Password login is disabled" }, statusCode: 403);
+            var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl);
+            if ((await applicationSettings.ResolveForRequestAsync(context, clientId, context.RequestAborted))
+                .LoginExperience?.InternalLoginEnabled == false)
+                return Results.Json(new { Message = "Internal login is disabled for this application" }, statusCode: 403);
 
             // Try to find user by UserName first, then by Email
             var user = await userManager.FindByNameAsync(request.UserName);
@@ -256,6 +283,148 @@ public static class AccountEndpoints
         })
         .WithName("Account_Login")
         .AllowAnonymous();
+
+        // Primary e-mail OTP for hosted browser login. Unlike EmailOtpEndpoints,
+        // this is the first factor and therefore does not depend on a partial-2FA
+        // cookie. The pending /connect/authorize continuation supplies the OAuth
+        // client so App-specific NativeGrants, self-registration and presentation
+        // settings are resolved before any code is issued.
+        group.MapPost("passwordless-otp/request", async (
+            PasswordlessOtpRequest request,
+            HttpContext context,
+            IDocumentSession session,
+            IApplicationSettingsResolver settingsResolver,
+            IEmailOtpService emailOtpService,
+            IPasswordlessUserFactory passwordlessUserFactory,
+            IRegistrationInviteService inviteService,
+            UserManager<ApplicationUser> userManager,
+            CancellationToken ct) =>
+        {
+            const string genericMessage = "If your email is registered, you will receive a verification code.";
+            if (string.IsNullOrWhiteSpace(request?.Email))
+                return Results.Json(new { Message = "Email is required" }, statusCode: 400);
+
+            var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl);
+            var effective = await settingsResolver.ResolveForRequestAsync(context, clientId, ct);
+            if (effective.NativeGrants is null || !effective.NativeGrants.Enabled)
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "NativeGrants.Disabled",
+                    detail: "Passwordless sign-in is not enabled for this application.");
+            if (effective.LoginExperience?.InternalLoginEnabled == false)
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Login.InternalDisabled",
+                    detail: "Internal sign-in is disabled for this application.");
+
+            if (RegistrationFieldsPolicy.FirstMissingRequiredName(
+                    effective.RegistrationFields, request.FirstName, request.LastName) is { } missing)
+                return Results.BadRequest(new { Message = $"{missing} is required." });
+
+            var applicationId = context.GetApplicationId();
+            if (applicationId is null && !string.IsNullOrEmpty(clientId))
+            {
+                var client = await session.Query<OAuthApplicationState>()
+                    .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted, ct);
+                if (client is { AppIds.Count: 1 }) applicationId = client.AppIds[0];
+            }
+
+            await NativeOtpEndpoints.IssueOtpForRequestAsync(
+                request.Email, request.FirstName, request.LastName, request.InviteCode,
+                applicationId, effective.SelfRegPosture, session, userManager,
+                emailOtpService, passwordlessUserFactory, inviteService, ct);
+            await NativeOtpEndpoints.AntiTimingDelayAsync();
+            return Results.Ok(new { Message = genericMessage });
+        })
+        .WithName("Account_PasswordlessOtpRequest")
+        .AllowAnonymous()
+        .RequireRateLimiting("native-otp");
+
+        // Redeem the primary OTP into the normal Modgud browser cookie. Users
+        // with another configured second factor are rejected here instead of
+        // silently downgrading their account; the existing MFA continuation can
+        // be wired as a separate PageBuilder state when that use case is needed.
+        group.MapPost("passwordless-otp/login", async (
+            PasswordlessOtpLoginRequest request,
+            HttpContext context,
+            IDocumentSession session,
+            IApplicationSettingsResolver settingsResolver,
+            IEmailOtpService emailOtpService,
+            UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(request?.Email) || string.IsNullOrWhiteSpace(request.Code))
+                return Results.Json(new { Message = "Email and code are required" }, statusCode: 400);
+
+            var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl);
+            var effective = await settingsResolver.ResolveForRequestAsync(context, clientId, ct);
+            if (effective.NativeGrants is null || !effective.NativeGrants.Enabled)
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "NativeGrants.Disabled",
+                    detail: "Passwordless sign-in is not enabled for this application.");
+            if (effective.LoginExperience?.InternalLoginEnabled == false)
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Login.InternalDisabled",
+                    detail: "Internal sign-in is disabled for this application.");
+
+            async Task<IResult> InvalidCode()
+            {
+                ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.EmailOtp, ModgudMeters.LoginOutcome.Failure);
+                await NativeOtpEndpoints.AntiTimingDelayAsync();
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "PasswordlessOtp.InvalidCode",
+                    detail: "Invalid or expired code.");
+            }
+
+            var user = await userManager.FindByEmailAsync(request.Email);
+            if (user is null || !user.IsActive || user.IsDeleted)
+                return await InvalidCode();
+
+            var isPasswordlessRegistration = !user.EmailConfirmed && string.IsNullOrEmpty(user.PasswordHash);
+            if (!user.EmailConfirmed && !isPasswordlessRegistration)
+                return await InvalidCode();
+
+            var verify = await emailOtpService.VerifyOtpAsync(user.Id, request.Code, ct);
+            if (verify.IsError)
+                return await InvalidCode();
+
+            var secondFactors = await TwoFactorHelper.GetMethodsAsync(user, session);
+            if (secondFactors.Count > 0)
+            {
+                ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.EmailOtp, ModgudMeters.LoginOutcome.TwoFactorRequired);
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "PasswordlessOtp.AdditionalFactorRequired",
+                    detail: "This account requires an additional authentication factor.");
+            }
+
+            if (!user.EmailConfirmed)
+            {
+                // A valid registration OTP proves ownership of this address.
+                // Confirm it before CanSignInAsync, which may enforce confirmed
+                // e-mail and would otherwise reject every JIT-created account.
+                user.EmailConfirmed = true;
+                session.Store(user);
+                session.Events.Append(user.Id, new Modgud.Domain.Users.Events.UserUpdatedEvent(
+                    Id: user.Id, Firstname: default, Lastname: default, Acronym: default, Email: default));
+                await session.SaveChangesAsync(ct);
+            }
+
+            if (!await signInManager.CanSignInAsync(user))
+                return await InvalidCode();
+
+            await signInManager.SignInAsync(
+                user, isPersistent: request.RememberMe, authenticationMethod: ModgudMeters.LoginMethod.EmailOtp);
+            ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.EmailOtp, ModgudMeters.LoginOutcome.Success);
+            return Results.Ok(new { Message = "Login successful" });
+        })
+        .WithName("Account_PasswordlessOtpLogin")
+        .AllowAnonymous()
+        .RequireRateLimiting("email-otp");
 
         group.MapPost("logout", [Authorize] async (
             HttpContext context,

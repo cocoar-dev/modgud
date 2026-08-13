@@ -319,14 +319,14 @@ public static class AuthorizationEndpoints
         if (enabledScopeError is not null) return enabledScopeError;
 
         // OAUTH-10 — RFC 6749 §10.4 / OAuth 2.1 §4.13.2 refresh-token reuse
-        // detection. With SetRefreshTokenReuseLeeway(TimeSpan.Zero) (see
-        // OpenIddictExtensions), OpenIddict's own stock
+        // detection. Once the short SetRefreshTokenReuseLeeway window (see
+        // OpenIddictExtensions) has elapsed, OpenIddict's own stock
         // Protection.ValidateTokenEntry handler detects a redeemed-token
-        // replay and revokes the whole token family + parent authorization
-        // during authentication-middleware processing — before routing even
-        // reaches this delegate. Auditing (security event + warning log) is
-        // recorded by RefreshTokenReuseAuditHandler, which runs immediately
-        // before that stock handler.
+        // replay and revokes the whole token family during authentication-
+        // middleware processing — before routing even reaches this delegate.
+        // Auditing (security event + warning log) is recorded by
+        // RefreshTokenReuseAuditHandler, which mirrors the same leeway and runs
+        // immediately before that stock handler.
 
         if (request.IsAuthorizationCodeGrantType() || request.IsRefreshTokenGrantType() || request.IsDeviceCodeGrantType())
         {
@@ -890,6 +890,9 @@ public static class AuthorizationEndpoints
             return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled for this realm.");
         if (string.IsNullOrEmpty(request.ClientId))
             return ForbidNativeGrant(Errors.InvalidClient, "client_id is required.");
+        if ((await settingsResolver.ResolveForRequestAsync(httpContext, request.ClientId, ct))
+            .LoginExperience?.InternalLoginEnabled == false)
+            return ForbidNativeGrant(Errors.AccessDenied, "Internal login is disabled for this application.");
 
         var ceremonyRaw = (string?)request.GetParameter("ceremony_id");
         var assertionJson = (string?)request.GetParameter("assertion");

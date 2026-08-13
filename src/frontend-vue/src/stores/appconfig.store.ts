@@ -15,6 +15,17 @@ export interface BrandingConfig {
   PrimaryColor: string | null
 }
 
+/** Application-only Cocoar tokens, inherited solely by mounted custom pages. */
+export interface PageThemeConfig {
+  AccentColor: string | null
+  ErrorColor: string | null
+  ButtonRadiusPx: number | null
+  InputRadiusPx: number | null
+  CardRadiusPx: number | null
+  BodyFontFamily: string | null
+  TitleFontFamily: string | null
+}
+
 /**
  * Operator-level feature toggles. System-wide (set in configuration.json /
  * ENV), not per-tenant. Source of truth is the backend AppSettings.Features
@@ -39,20 +50,29 @@ export interface RegistrationFieldsConfig {
   Lastname: FieldRequirement
 }
 
+export interface LegalConfig {
+  TermsOfServiceUrl: string | null
+  PrivacyPolicyUrl: string | null
+}
+
 export interface AppConfig {
   AuthenticationMinimumLevel: number  // 0=None, 1=SecureLogin, 2=Passwordless
+  InternalLoginEnabled: boolean
   MagicLinkSelfService: boolean
   TwoFactorGracePeriodDays: number
   IsControlPlane: boolean              // true ⇔ the realm hosting this SPA is the Control Plane
   Branding: BrandingConfig
+  PageTheme: PageThemeConfig | null
   Features: FeatureFlags
   RegistrationFields: RegistrationFieldsConfig
+  Legal: LegalConfig
   /** Effective PageBuilder schemas for the current Host/OAuth client context. */
   Pages: Record<string, string>
 }
 
 const defaults: AppConfig = {
   AuthenticationMinimumLevel: 1,
+  InternalLoginEnabled: true,
   MagicLinkSelfService: true,
   TwoFactorGracePeriodDays: 14,
   IsControlPlane: false,
@@ -62,6 +82,7 @@ const defaults: AppConfig = {
     FaviconUrl: null,
     PrimaryColor: null,
   },
+  PageTheme: null,
   Features: {
     PageBuilder: false,
   },
@@ -72,35 +93,35 @@ const defaults: AppConfig = {
     Firstname: 'Optional',
     Lastname: 'Optional',
   },
+  Legal: {
+    TermsOfServiceUrl: null,
+    PrivacyPolicyUrl: null,
+  },
   Pages: {},
 }
 
 /**
- * Applies per-realm branding to the document at SPA boot. Sets
- * --coar-color-primary CSS variable, document title prefix, and rewrites
- * the favicon link element. Falls back silently when a branding field is
- * null — the design-system defaults stay in effect.
+ * Applies non-page presentation to the document at SPA boot: document title
+ * and favicon. Cocoar theme tokens deliberately do not belong on the document
+ * root: an Application theme must only inherit into its selected custom page,
+ * never into Modgud chrome or a built-in auth fallback.
  *
  * Logo + ProductName are read by views that render them (header / login)
  * via the store directly — DOM-side this function only handles globals.
  */
 function applyBranding(branding: BrandingConfig): void {
-  if (branding.PrimaryColor) {
-    document.documentElement.style.setProperty('--coar-color-primary', branding.PrimaryColor)
-  }
+  document.title = branding.ProductName || 'Modgud'
 
-  if (branding.ProductName) {
-    document.title = branding.ProductName
-  }
-
+  let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
   if (branding.FaviconUrl) {
-    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
     if (!link) {
       link = document.createElement('link')
       link.rel = 'icon'
       document.head.appendChild(link)
     }
     link.href = branding.FaviconUrl
+  } else if (link) {
+    link.href = '/favicon.ico'
   }
 }
 
@@ -120,13 +141,26 @@ export const useAppConfigStore = defineStore('appConfig', () => {
           ...defaults,
           ...result,
           Branding: { ...defaults.Branding, ...(result.Branding ?? {}) },
+          PageTheme: result.PageTheme ? { ...result.PageTheme } : null,
           Features: { ...defaults.Features, ...(result.Features ?? {}) },
           RegistrationFields: { ...defaults.RegistrationFields, ...(result.RegistrationFields ?? {}) },
+          Legal: { ...defaults.Legal, ...(result.Legal ?? {}) },
           Pages: { ...(result.Pages ?? {}) },
         }
         applyBranding(config.value.Branding)
       }
-    } catch { /* use defaults */ }
+    } catch {
+      config.value = {
+        ...defaults,
+        Branding: { ...defaults.Branding },
+        PageTheme: null,
+        Features: { ...defaults.Features },
+        RegistrationFields: { ...defaults.RegistrationFields },
+        Legal: { ...defaults.Legal },
+        Pages: {},
+      }
+      applyBranding(config.value.Branding)
+    }
     finally { loaded.value = true }
   }
 

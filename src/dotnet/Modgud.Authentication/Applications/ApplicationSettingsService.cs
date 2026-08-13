@@ -5,6 +5,8 @@ using Marten;
 using Modgud.Application.DTOs.Applications;
 using Modgud.Authorization.Apps;
 using Modgud.Domain.Applications;
+using Modgud.Domain.Assets;
+using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
@@ -41,6 +43,11 @@ public interface IApplicationSettingsService
     /// up-front — before committing anything. An empty/null subdomain (a clear) is always valid.
     /// </summary>
     Task<ErrorOr<Success>> ValidateOriginAsync(Guid applicationId, string? subdomain, CancellationToken ct = default);
+
+    /// <summary>Removes every global host route pointing at the Application.
+    /// Used by the canonical App delete path so a deleted App can never keep
+    /// owning a public hostname.</summary>
+    Task<ErrorOr<Success>> RemoveOriginRoutingAsync(Guid applicationId, CancellationToken ct = default);
 }
 
 public sealed class ApplicationSettingsService(
@@ -55,6 +62,12 @@ public sealed class ApplicationSettingsService(
         @"|hsl\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*\)" +
         @"|hsla\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*,\s*(0|1|0?\.\d+)\s*\)" +
         @"|[a-zA-Z]{3,30})$",
+        RegexOptions.Compiled);
+
+    // A PageTheme selects one host-approved family by name. CSS fallback
+    // lists and function-like values are intentionally not accepted here.
+    private static readonly Regex FontFamilyRegex = new(
+        @"^[\p{L}\p{N} _.-]{1,120}$",
         RegexOptions.Compiled);
 
     // Conservative hostname check (labels of a-z 0-9 hyphen, dot-separated).
@@ -119,16 +132,30 @@ public sealed class ApplicationSettingsService(
 
         if (dto.Branding is not null)
         {
-            var r = MapBranding(dto.Branding);
+            var r = await MapBrandingAsync(dto.Branding, ct);
             if (r.IsError) return r.FirstError;
             doc.Branding = r.Value;
         }
 
+        if (dto.PageTheme is not null)
+        {
+            var r = MapPageTheme(dto.PageTheme);
+            if (r.IsError) return r.FirstError;
+            doc.PageTheme = r.Value;
+        }
+
         if (dto.EmailBranding is not null)
         {
-            doc.EmailBranding = string.IsNullOrWhiteSpace(dto.EmailBranding.ProductName)
-                ? null
-                : new ApplicationEmailBranding { ProductName = dto.EmailBranding.ProductName!.Trim() };
+            var r = MapEmailBranding(dto.EmailBranding);
+            if (r.IsError) return r.FirstError;
+            doc.EmailBranding = r.Value;
+        }
+
+        if (dto.LoginExperience is not null)
+        {
+            var r = await MapLoginExperienceAsync(dto.LoginExperience, ct);
+            if (r.IsError) return r.FirstError;
+            doc.LoginExperience = r.Value;
         }
 
         if (dto.RegistrationFields is not null)
@@ -190,11 +217,16 @@ public sealed class ApplicationSettingsService(
         else { var r = MapCimd(dto.Cimd); if (r.IsError) return r.FirstError; doc.Cimd = r.Value; }
 
         if (dto.Branding is null) doc.Branding = null;
-        else { var r = MapBranding(dto.Branding); if (r.IsError) return r.FirstError; doc.Branding = r.Value; }
+        else { var r = await MapBrandingAsync(dto.Branding, ct); if (r.IsError) return r.FirstError; doc.Branding = r.Value; }
 
-        doc.EmailBranding = string.IsNullOrWhiteSpace(dto.EmailBranding?.ProductName)
-            ? null
-            : new ApplicationEmailBranding { ProductName = dto.EmailBranding.ProductName!.Trim() };
+        if (dto.PageTheme is null) doc.PageTheme = null;
+        else { var r = MapPageTheme(dto.PageTheme); if (r.IsError) return r.FirstError; doc.PageTheme = r.Value; }
+
+        if (dto.EmailBranding is null) doc.EmailBranding = null;
+        else { var r = MapEmailBranding(dto.EmailBranding); if (r.IsError) return r.FirstError; doc.EmailBranding = r.Value; }
+
+        if (dto.LoginExperience is null) doc.LoginExperience = null;
+        else { var r = await MapLoginExperienceAsync(dto.LoginExperience, ct); if (r.IsError) return r.FirstError; doc.LoginExperience = r.Value; }
 
         if (dto.RegistrationFields is null) doc.RegistrationFields = null;
         else { var r = MapRegistrationFields(dto.RegistrationFields); if (r.IsError) return r.FirstError; doc.RegistrationFields = r.Value; }
@@ -244,6 +276,13 @@ public sealed class ApplicationSettingsService(
         }
 
         return ErrorOr.Result.Success;
+    }
+
+    public async Task<ErrorOr<Success>> RemoveOriginRoutingAsync(
+        Guid applicationId, CancellationToken ct = default)
+    {
+        var result = await ApplyOriginAsync(applicationId, null, ct);
+        return result.IsError ? result.Errors : ErrorOr.Result.Success;
     }
 
     private async Task<ErrorOr<ApplicationOrigin?>> ApplyOriginAsync(
@@ -418,6 +457,129 @@ public sealed class ApplicationSettingsService(
         };
     }
 
+    private static ErrorOr<ApplicationPageTheme?> MapPageTheme(ApplicationPageThemeDto d)
+    {
+        var accent = NullIfBlank(d.AccentColor);
+        var error = NullIfBlank(d.ErrorColor);
+        var bodyFont = NullIfBlank(d.BodyFontFamily);
+        var titleFont = NullIfBlank(d.TitleFontFamily);
+        if (accent is not null && !CssColorRegex.IsMatch(accent))
+            return Error.Validation("Application.PageTheme.InvalidAccentColor", "AccentColor must be a valid CSS color.");
+        if (error is not null && !CssColorRegex.IsMatch(error))
+            return Error.Validation("Application.PageTheme.InvalidErrorColor", "ErrorColor must be a valid CSS color.");
+        if (bodyFont is not null && !FontFamilyRegex.IsMatch(bodyFont))
+            return Error.Validation("Application.PageTheme.InvalidBodyFontFamily", "BodyFontFamily must name one approved font family.");
+        if (titleFont is not null && !FontFamilyRegex.IsMatch(titleFont))
+            return Error.Validation("Application.PageTheme.InvalidTitleFontFamily", "TitleFontFamily must name one approved font family.");
+
+        foreach (var (name, value) in new[]
+                 {
+                     (nameof(d.ButtonRadiusPx), d.ButtonRadiusPx),
+                     (nameof(d.InputRadiusPx), d.InputRadiusPx),
+                     (nameof(d.CardRadiusPx), d.CardRadiusPx),
+                 })
+        {
+            if (value is < 0 or > 999)
+                return Error.Validation($"Application.PageTheme.Invalid{name}", $"{name} must be between 0 and 999.");
+        }
+
+        if (accent is null && error is null && d.ButtonRadiusPx is null
+            && d.InputRadiusPx is null && d.CardRadiusPx is null
+            && bodyFont is null && titleFont is null)
+            return (ApplicationPageTheme?)null;
+
+        return new ApplicationPageTheme
+        {
+            AccentColor = accent,
+            ErrorColor = error,
+            ButtonRadiusPx = d.ButtonRadiusPx,
+            InputRadiusPx = d.InputRadiusPx,
+            CardRadiusPx = d.CardRadiusPx,
+            BodyFontFamily = bodyFont,
+            TitleFontFamily = titleFont,
+        };
+    }
+
+    private async Task<ErrorOr<BrandingSettings>> MapBrandingAsync(
+        ApplicationBrandingDto dto, CancellationToken ct)
+    {
+        var mapped = MapBranding(dto);
+        if (mapped.IsError) return mapped.Errors;
+
+        var ids = new[] { mapped.Value.LogoAssetId, mapped.Value.FaviconAssetId }
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+        foreach (var id in ids)
+        {
+            if (await session.LoadAsync<Asset>(id, ct) is null)
+                return Error.Validation("Application.AssetNotFound",
+                    $"Branding asset '{ShortGuid.Encode(id)}' does not exist in this realm.");
+        }
+
+        return mapped.Value;
+    }
+
+    private async Task<ErrorOr<ApplicationLoginExperience>> MapLoginExperienceAsync(
+        ApplicationLoginExperienceDto dto, CancellationToken ct)
+    {
+        List<Guid>? ids = null;
+        if (dto.LoginProviderIds is not null)
+        {
+            ids = [];
+            foreach (var raw in dto.LoginProviderIds)
+            {
+                if (!ShortGuid.TryDecode(raw, out var id))
+                    return Error.Validation("Application.InvalidLoginProviderId",
+                        "Every LoginProviderId must be a ShortGuid.");
+                if (ids.Contains(id)) continue;
+                var provider = await session.LoadAsync<LoginProvider>(id, ct);
+                if (provider is null || provider.IsDeleted || provider.Type == LoginProviderType.Internal)
+                    return Error.Validation("Application.LoginProviderNotFound",
+                        $"External login provider '{raw}' does not exist in this realm.");
+                ids.Add(id);
+            }
+        }
+
+        return new ApplicationLoginExperience
+        {
+            InternalLoginEnabled = dto.InternalLoginEnabled,
+            MagicLinkEnabled = dto.MagicLinkEnabled,
+            LoginProviderIds = ids,
+        };
+    }
+
+    private static ErrorOr<ApplicationEmailBranding?> MapEmailBranding(ApplicationEmailBrandingDto dto)
+    {
+        var result = new ApplicationEmailBranding
+        {
+            ProductName = NullIfBlank(dto.ProductName),
+            SubjectPrefix = NullIfBlank(dto.SubjectPrefix),
+            Preheader = NullIfBlank(dto.Preheader),
+            FooterText = NullIfBlank(dto.FooterText),
+            FromName = NullIfBlank(dto.FromName),
+            ReplyTo = NullIfBlank(dto.ReplyTo),
+        };
+        if (result.ProductName?.Length > 100 || result.SubjectPrefix?.Length > 100)
+            return Error.Validation("Application.EmailBrandingTooLong",
+                "Email product name and subject prefix must be 100 characters or fewer.");
+        if (result.Preheader?.Length > 200 || result.FooterText?.Length > 500)
+            return Error.Validation("Application.EmailBrandingTooLong",
+                "Email preheader must be at most 200 and footer at most 500 characters.");
+        if (result.FromName?.Length > 100 || result.FromName?.IndexOfAny(['\r', '\n']) >= 0)
+            return Error.Validation("Application.EmailFromNameInvalid",
+                "Email sender display name must be at most 100 characters and contain no line breaks.");
+        if (result.ReplyTo is not null && !System.Net.Mail.MailAddress.TryCreate(result.ReplyTo, out _))
+            return Error.Validation("Application.EmailReplyToInvalid", "Email reply-to must be a valid address.");
+
+        return result.ProductName is null && result.SubjectPrefix is null
+               && result.Preheader is null && result.FooterText is null
+               && result.FromName is null && result.ReplyTo is null
+            ? (ApplicationEmailBranding?)null
+            : result;
+    }
+
     private static Error? LifetimeError(string section, int? accessMinutes, int? refreshDays)
     {
         if (accessMinutes is { } a && (a < 1 || a > 60))
@@ -448,8 +610,32 @@ public sealed class ApplicationSettingsService(
                 FaviconAssetId = doc.Branding.FaviconAssetId is { } f ? ShortGuid.Encode(f) : null,
                 FaviconUrl = doc.Branding.FaviconAssetId is { } fu ? $"/api/assets/{ShortGuid.Encode(fu)}" : null,
             },
+            PageTheme = doc.PageTheme is null ? null : new ApplicationPageThemeDto
+            {
+                AccentColor = doc.PageTheme.AccentColor,
+                ErrorColor = doc.PageTheme.ErrorColor,
+                ButtonRadiusPx = doc.PageTheme.ButtonRadiusPx,
+                InputRadiusPx = doc.PageTheme.InputRadiusPx,
+                CardRadiusPx = doc.PageTheme.CardRadiusPx,
+                BodyFontFamily = doc.PageTheme.BodyFontFamily,
+                TitleFontFamily = doc.PageTheme.TitleFontFamily,
+            },
             EmailBranding = doc.EmailBranding is null ? null
-                : new ApplicationEmailBrandingDto { ProductName = doc.EmailBranding.ProductName },
+                : new ApplicationEmailBrandingDto
+                {
+                    ProductName = doc.EmailBranding.ProductName,
+                    SubjectPrefix = doc.EmailBranding.SubjectPrefix,
+                    Preheader = doc.EmailBranding.Preheader,
+                    FooterText = doc.EmailBranding.FooterText,
+                    FromName = doc.EmailBranding.FromName,
+                    ReplyTo = doc.EmailBranding.ReplyTo,
+                },
+            LoginExperience = doc.LoginExperience is null ? null : new ApplicationLoginExperienceDto
+            {
+                InternalLoginEnabled = doc.LoginExperience.InternalLoginEnabled,
+                MagicLinkEnabled = doc.LoginExperience.MagicLinkEnabled,
+                LoginProviderIds = doc.LoginExperience.LoginProviderIds?.Select(ShortGuid.Encode).ToArray(),
+            },
             SelfRegistration = doc.SelfRegistration is null ? null : new ApplicationSelfRegistrationDto
             {
                 Posture = doc.SelfRegistration.Posture?.ToString(),

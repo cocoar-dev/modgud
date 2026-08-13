@@ -5,6 +5,7 @@ using Modgud.Application.Assets;
 using Modgud.Application.DTOs.Assets;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Domain.Assets;
+using Modgud.Domain.Applications;
 using Modgud.Domain.RealmSettings;
 using Marten;
 using Microsoft.AspNetCore.Http.Features;
@@ -175,9 +176,8 @@ public static class AssetsEndpoints
         return application;
     }
 
-    /// <summary>Realm-Settings is currently the only Branding-shaped consumer.
-    /// As more places start referencing assets (login providers, email
-    /// templates, page-builder), extend this list.</summary>
+    /// <summary>Returns every fixed-layout branding reference. PageBuilder
+    /// references remain separate until that feature is released.</summary>
     private static async Task<IReadOnlyList<string>> FindReferencesAsync(
         IQuerySession session, Guid assetId, CancellationToken ct)
     {
@@ -185,6 +185,16 @@ public static class AssetsEndpoints
         var refs = new List<string>();
         if (settings?.Branding?.LogoAssetId == assetId) refs.Add("branding.logo");
         if (settings?.Branding?.FaviconAssetId == assetId) refs.Add("branding.favicon");
+
+        var applicationSettings = await session.Query<ApplicationSettings>().ToListAsync(ct);
+        foreach (var app in applicationSettings)
+        {
+            var appId = ShortGuid.Encode(app.Id);
+            if (app.Branding?.LogoAssetId == assetId)
+                refs.Add($"application:{appId}.branding.logo");
+            if (app.Branding?.FaviconAssetId == assetId)
+                refs.Add($"application:{appId}.branding.favicon");
+        }
         return refs;
     }
 

@@ -15,12 +15,13 @@ using Modgud.Authentication.Sessions;
 using Modgud.Infrastructure.Observability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Modgud.Authentication.Applications;
 
 namespace Modgud.Authentication.Api.Account;
 
 public static class PasskeyEndpoints
 {
-    public record PasskeyLoginOptionsRequest(string? UserName = null);
+    public record PasskeyLoginOptionsRequest(string? UserName = null, string? ReturnUrl = null);
     public record PasskeyDisplayDto(string Id, string DisplayName, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt);
 
     private const string RegistrationCacheKey = "fido2.attestationOptions";
@@ -261,10 +262,19 @@ public static class PasskeyEndpoints
             HttpContext context,
             RealmScopedFido2Factory fido2Factory,
             RpIdResolver rpIdResolver,
+            IApplicationSettingsResolver settingsResolver,
             IDocumentSession session,
             PasskeyLoginOptionsRequest? request,
             CancellationToken ct) =>
         {
+            var clientId = Api.ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request?.ReturnUrl);
+            if ((await settingsResolver.ResolveForRequestAsync(context, clientId, ct))
+                .LoginExperience?.InternalLoginEnabled == false)
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "LoginExperience.InternalDisabled",
+                    detail: "Internal login is disabled for this application.");
+
             var fido2 = await fido2Factory.CreateAsync(ct);
 
             List<PublicKeyCredentialDescriptor>? allowedCredentials = null;
@@ -326,7 +336,7 @@ public static class PasskeyEndpoints
                 // Realm-scoped web login: no per-client binding, and the RP ID is
                 // pinned so an admin editing the setting mid-ceremony can't cause a
                 // begin/redeem drift (same rationale as the native flow).
-                ClientId = null,
+                ClientId = clientId,
                 RpId = await rpIdResolver.GetPrimaryDomainAsync(ct),
                 ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(PasskeyCeremony.ExpirationMinutes),
                 CreatedAt = DateTimeOffset.UtcNow,
@@ -364,11 +374,10 @@ public static class PasskeyEndpoints
             IDocumentSession session,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
+            IApplicationSettingsResolver settingsResolver,
             JsonElement body,
             CancellationToken ct) =>
         {
-            var fido2 = await fido2Factory.CreateAsync(ct);
-
             // The cookie carries only the ceremony id; the authoritative options
             // come from the server-side record. Delete MUST repeat the Path the
             // cookie was set with — a pathless Delete does not match it and the
@@ -383,6 +392,13 @@ public static class PasskeyEndpoints
             var ceremony = await session.LoadAsync<PasskeyCeremony>(ceremonyId, ct);
             if (ceremony is null || ceremony.IsExpired || ceremony.IsConsumed)
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+
+            if ((await settingsResolver.ResolveForRequestAsync(context, ceremony.ClientId, ct))
+                .LoginExperience?.InternalLoginEnabled == false)
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "LoginExperience.InternalDisabled",
+                    detail: "Internal login is disabled for this application.");
 
             // Single-use: consume before verifying, via a version-checked Store of
             // ConsumedAt (Marten does not version-check deletes), so a captured
@@ -418,6 +434,31 @@ public static class PasskeyEndpoints
             // changing PrimaryDomain mid-ceremony can't cause a begin/redeem drift.
             var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
             var ceremonyRpId = ceremony.RpId ?? primaryDomain;
+
+            // The browser may run the hosted login on an application subdomain
+            // (for example amzettel.auth.example.com) while the realm RP ID is
+            // the parent domain (auth.example.com). WebAuthn permits exactly
+            // that relationship, but Fido2NetLib still requires the fully
+            // qualified signed origin in its allow-list. Mirror the native
+            // passkey grant, with an additional same-origin requirement for the
+            // hosted web flow: the signed origin must exactly match this request,
+            // then RealmFido2 verifies that it equals or is below the pinned RP
+            // ID. Foreign, cross-port and malformed origins remain rejected.
+            string[]? presentedOrigins = null;
+            try
+            {
+                var assertion = JsonSerializer.Deserialize<AuthenticatorAssertionRawResponse>(
+                    body.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (RealmFido2.TryGetClientDataOrigin(assertion?.Response?.ClientDataJson) is { } origin
+                    && RealmFido2.IsOriginForRequest(origin, context.Request.Scheme, context.Request.Host))
+                    presentedOrigins = [origin];
+            }
+            catch (JsonException) { /* leave null — the shared verifier fails closed below */ }
+
+            var fido2 = await fido2Factory.CreateAsync(
+                ct,
+                rpIdOverride: ceremonyRpId,
+                additionalOrigins: presentedOrigins);
             var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(
                 fido2, options, body.GetRawText(), session, ceremonyRpId, ceremonyRpId, ct);
             if (storedCredential is null)

@@ -63,6 +63,8 @@ public sealed class SelfRegistrationService(
     IEmailService emailService,
     IHostEnvironment env,
     Modgud.Authentication.Applications.IApplicationSettingsResolver settingsResolver,
+    Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
+    Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor,
     ILogger<SelfRegistrationService> logger) : ISelfRegistrationService
 {
     // Single response shape — anti-enumeration. Don't leak whether an
@@ -83,7 +85,12 @@ public sealed class SelfRegistrationService(
         // ADR-0011 — effective (App ⊕ realm) self-registration: on an Application
         // subdomain the App's posture/policy overrides the realm's; on a plain
         // tenant host this is the realm setting unchanged.
-        var effective = await settingsResolver.ResolveForCurrentRequestAsync(ct);
+        var clientId = Modgud.Authentication.Api.ExternalAuth.ExternalAuthEndpoints
+            .ExtractAuthorizeClientId(dto.ReturnUrl);
+        var http = httpContextAccessor.HttpContext;
+        var effective = http is null
+            ? await settingsResolver.ResolveAsync(applicationId: null, ct)
+            : await settingsResolver.ResolveForRequestAsync(http, clientId, ct);
         var settings = effective.SelfRegistration;
         var registrationFields = effective.RegistrationFields ?? RegistrationFieldsSettings.Defaults;
         if (settings is null || !settings.Enabled)
@@ -220,7 +227,7 @@ public sealed class SelfRegistrationService(
         // flips it. We log so the admin sees why no email was sent.
         if (settings.RequireEmailVerification)
         {
-            await SendVerificationEmailAsync(appUser, realm, token, dto.ReturnUrl, ct);
+            await SendVerificationEmailAsync(appUser, realm, token, dto.ReturnUrl, clientId, ct);
         }
         else
         {
@@ -312,6 +319,7 @@ public sealed class SelfRegistrationService(
         Realm realm,
         string plaintextToken,
         string? returnUrl,
+        string? clientId,
         CancellationToken ct)
     {
         var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
@@ -333,13 +341,12 @@ public sealed class SelfRegistrationService(
             await emailService.SendTemplatedEmailAsync(
                 user.Email!,
                 EmailTemplate.EmailVerification,
-                new Dictionary<string, string>
+                await emailBranding.ApplyAsync(new Dictionary<string, string>
                 {
-                    ["AppName"] = realm.DisplayName,
                     ["DisplayName"] = displayName,
                     ["ActionUrl"] = url,
                     ["ExpirationHours"] = PendingSelfRegistration.DefaultExpirationHours.ToString(),
-                },
+                }, clientId: clientId, ct: ct),
                 ct);
         }
         catch (Exception ex)

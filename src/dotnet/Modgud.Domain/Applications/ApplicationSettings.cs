@@ -41,9 +41,19 @@ public class ApplicationSettings
     /// realm branding wholesale.</summary>
     public BrandingSettings? Branding { get; set; }
 
+    /// <summary>Safe Cocoar token overrides scoped by the SPA to custom
+    /// PageBuilder pages for this Application. Unlike Branding this has no
+    /// realm fallback and must never affect built-in auth views or Modgud UI.</summary>
+    public ApplicationPageTheme? PageTheme { get; set; }
+
     /// <summary>Per-Application email branding. Null = inherit the realm /
     /// deployment email branding. Consumed in Phase 6.</summary>
     public ApplicationEmailBranding? EmailBranding { get; set; }
+
+    /// <summary>Controls the fixed login experience for this Application.
+    /// A null section inherits the realm-wide behaviour (all enabled methods).
+    /// A non-null provider list is ordered and acts as an allow-list.</summary>
+    public ApplicationLoginExperience? LoginExperience { get; set; }
 
     /// <summary>Per-Application self-registration facet: the
     /// <see cref="SelfRegPosture"/> plus per-field overrides of the realm
@@ -113,6 +123,17 @@ public record ApplicationOrigin
     public string? Subdomain { get; init; }
 }
 
+public record ApplicationPageTheme
+{
+    public string? AccentColor { get; init; }
+    public string? ErrorColor { get; init; }
+    public int? ButtonRadiusPx { get; init; }
+    public int? InputRadiusPx { get; init; }
+    public int? CardRadiusPx { get; init; }
+    public string? BodyFontFamily { get; init; }
+    public string? TitleFontFamily { get; init; }
+}
+
 /// <summary>Per-Application email branding overrides. The deployment-level
 /// "from" address stays global (<c>EmailConfiguration</c>); only the
 /// in-template product name / display varies per Application. All fields
@@ -122,6 +143,18 @@ public record ApplicationEmailBranding
     /// <summary>Product name used in email subjects / bodies. Null = inherit
     /// the realm branding product name (or the "Modgud" default).</summary>
     public string? ProductName { get; init; }
+    public string? SubjectPrefix { get; init; }
+    public string? Preheader { get; init; }
+    public string? FooterText { get; init; }
+    public string? FromName { get; init; }
+    public string? ReplyTo { get; init; }
+}
+
+public record ApplicationLoginExperience
+{
+    public bool? InternalLoginEnabled { get; init; }
+    public bool? MagicLinkEnabled { get; init; }
+    public List<Guid>? LoginProviderIds { get; init; }
 }
 
 /// <summary>Per-Application self-registration overrides: the posture plus

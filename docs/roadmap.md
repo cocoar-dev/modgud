@@ -84,11 +84,12 @@ in a changelog that ages between releases.
 - Quartz-scheduled background jobs with admin surface — schedules,
   history, manual trigger
 - Operator inbox for notifications + per-kind retention policy
-- Per-realm branding — logo, favicon, primary color, product name
+- Per-realm and per-Application branding — logo, favicon, primary color, product name — consistently applied across every fixed auth surface
+- Application-specific login methods and ordered OIDC/SAML provider allow-lists, enforced at protocol entry points
+- Branded DE/EN transactional email with HTML + plain-text alternatives, safe variable escaping, Application-aware context and Mailpit-compatible development delivery
 - Asset library — BYTEA-backed store with SVG sanitisation and a
   2 MB cap, ETag-served via `/api/assets/{id}` (public)
-- Page-builder editor (Beta, feature-flagged) for login / logout /
-  forgot-password customisation
+- Page-builder editor/runtime (Beta, feature-flagged) for tenants that need to replace complete page structure; ordinary branding does not require it
 - Recovery CLI for break-glass admin operations (`bootstrap-admin`,
   `set-email`, `magic-link`, `reset-2fa`, `list`,
   `rebuild-projections`, `realm-add-domain`)
@@ -122,7 +123,6 @@ updates when something ships.
 - **Enterprise SSO — LDAP + Kerberos** — SAML 2.0 federation ships today (see [SAML federation](./admin/saml-federation)); the `LoginProvider` aggregate also reserves `Ldap` and `Kerberos` types for the handlers that come next.
 - **NodaTime migration** — move scheduled-event fields (deactivation dates, time-boxed group memberships, credential rotation, GDPR sweeps, password-expiry policies, maintenance windows) from UTC timestamps to a proper local-date-plus-timezone representation, so an admin-intended local time survives a DST rule change correctly.
 - **Login alerts + manual IP blacklist** — surface suspicious-login events to operators with an explicit allow/deny action, as a NAT-safer alternative to auto-rate-limiting that risks locking out legitimate users behind a shared IP.
-- **Page-builder runtime rendering** — the editor ships today (Beta, feature-flagged); rendering the custom pages at runtime is the next slice.
 
 ### Lower
 

@@ -16,8 +16,8 @@ namespace Modgud.Infrastructure.OpenIddict;
 /// entirely silent: no log, no audit trail.
 ///
 /// <para><b>Why here and not in <c>AuthorizationEndpoints.ExchangeAsync</c>.</b>
-/// <c>OpenIddictExtensions</c> configures <c>SetRefreshTokenReuseLeeway(TimeSpan.Zero)</c>,
-/// and with zero leeway OpenIddict's OWN stock
+/// <c>OpenIddictExtensions</c> configures a short refresh-token reuse leeway.
+/// Outside that window OpenIddict's OWN stock
 /// <see cref="Protection.ValidateTokenEntry"/> handler — part of the ASP.NET
 /// Core authentication-middleware pass that runs BEFORE routing reaches our
 /// minimal-API endpoint — rejects the request and revokes the whole token
@@ -97,6 +97,23 @@ public sealed class RefreshTokenReuseAuditHandler
 
         var status = await _tokenManager.GetStatusAsync(token);
         if (!string.Equals(status, Statuses.Redeemed, StringComparison.OrdinalIgnoreCase)) return;
+
+        // Mirror OpenIddict 7.6 Protection.ValidateTokenEntry.IsReusableAsync
+        // exactly. This observer runs immediately before the stock handler, so
+        // looking only at Status=Redeemed would misclassify a permitted retry
+        // inside the response-loss/concurrency window as an attack, emit a false
+        // audit event, and delete the ClientSession even though OpenIddict itself
+        // is about to accept the token.
+        if (context.Options.RefreshTokenReuseLeeway is { } leeway)
+        {
+            var redemptionDate = await _tokenManager.GetRedemptionDateAsync(
+                token, context.CancellationToken);
+            if (redemptionDate is null ||
+                context.Options.TimeProvider.GetUtcNow() < redemptionDate.Value + leeway)
+            {
+                return;
+            }
+        }
 
         var authorizationId = await _tokenManager.GetAuthorizationIdAsync(token) ?? context.AuthorizationId;
         var subject = context.Principal?.GetClaim(Claims.Subject) ?? await _tokenManager.GetSubjectAsync(token);

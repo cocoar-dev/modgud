@@ -10,6 +10,7 @@ import {
   CoarPasswordInput,
   CoarFormField,
 } from '@cocoar/vue-ui'
+import AuthBrand from '@/components/auth/AuthBrand.vue'
 
 // First-admin bootstrap form (C15b). Recipient lands here from the
 // magic-link in the bootstrap email (or printed on stdout by the CLI).
@@ -77,14 +78,7 @@ async function handleSubmit() {
     <div class="w-full max-w-sm">
       <!-- Logo -->
       <div class="mb-8 text-center">
-        <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#525e76]/10 text-[#525e76]">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-8 w-8">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 11l-3 3-2-2" />
-          </svg>
-        </div>
-        <h1 class="text-2xl font-bold tracking-tight text-surface-800">
-          Modgud
-        </h1>
+        <AuthBrand spacing="compact" />
         <p class="mt-2 text-sm text-surface-500">
           {{ t('auth.bootstrap.title', {}, 'Set up Admin Access') }}
         </p>

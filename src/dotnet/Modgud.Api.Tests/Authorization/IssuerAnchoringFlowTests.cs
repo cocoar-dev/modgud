@@ -82,6 +82,11 @@ public class IssuerAnchoringFlowTests : IntegrationTestBase
             Id = app.Id,
             CreatedAt = DateTimeOffset.UtcNow,
             Branding = new Modgud.Domain.Realms.BrandingSettings { ProductName = "amZettel" },
+            PageTheme = new ApplicationPageTheme
+            {
+                AccentColor = "#10b981",
+                ButtonRadiusPx = 999,
+            },
         });
         await MapApplicationDomainsAsync(("iss-brand.localhost", app.Id));
 
@@ -91,6 +96,8 @@ public class IssuerAnchoringFlowTests : IntegrationTestBase
         var json = await resp.Content.ReadFromJsonAsync<JsonElement>(ct);
 
         Assert.Equal("amZettel", json.GetProperty("Branding").GetProperty("ProductName").GetString());
+        Assert.Equal("#10b981", json.GetProperty("PageTheme").GetProperty("AccentColor").GetString());
+        Assert.Equal(999, json.GetProperty("PageTheme").GetProperty("ButtonRadiusPx").GetInt32());
     }
 
     [Fact]

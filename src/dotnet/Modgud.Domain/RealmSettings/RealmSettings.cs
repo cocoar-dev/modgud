@@ -81,6 +81,10 @@ public class RealmSettings
     /// before the user authenticates.</summary>
     public BrandingSettings? Branding { get; set; }
 
+    /// <summary>Realm defaults for transactional-email copy. Null fields fall
+    /// back to Branding and the built-in DE/EN template copy.</summary>
+    public EmailBrandingSettings? EmailBranding { get; set; }
+
     /// <summary>Per-realm policy for which identity fields (username, given
     /// name, family name) are required when a user account is created. Email is
     /// always required and is not represented here. Null = never configured;
@@ -115,6 +119,11 @@ public class RealmSettings
     /// missing slot, or a slot whose <see cref="RealmPageSlot.ActiveVariantId"/>
     /// is null, renders the SPA's built-in hardcoded view.</summary>
     public Dictionary<string, RealmPageSlot>? PageSlots { get; set; }
+
+    /// <summary>Reusable, immutable-versioned PageBuilder subtrees owned by
+    /// this realm. Page drafts only embed materialized, pinned instances;
+    /// published runtime pages contain no composition metadata.</summary>
+    public List<PageComposition>? PageCompositions { get; set; }
 
     /// <summary>Lazily migrate the legacy single-schema <see cref="Pages"/>
     /// dictionary into <see cref="PageSlots"/> (ADR-0001). Idempotent and

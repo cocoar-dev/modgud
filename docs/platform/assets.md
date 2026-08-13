@@ -56,11 +56,11 @@ Anonymous-readable is intentional — branding has to render before the user aut
 
 ## Delete protection
 
-The asset-library endpoint refuses to delete an asset that is **currently referenced** by the realm's branding. Hitting `DELETE /api/admin/assets/{id}` on a referenced asset returns HTTP 409 with the referencing field name in the error body. The SPA surfaces this as a clear error.
+The asset-library endpoint refuses to delete an asset that is **currently referenced** by realm or Application branding. Hitting `DELETE /api/admin/assets/{id}` on a referenced asset returns HTTP 409 with the exact referencing field in the error body (`branding.logo`, `branding.favicon`, or `application:{id}.branding.*`). The SPA surfaces this as a clear error. Branding writes also reject well-formed asset IDs that do not exist in the current realm.
 
 To delete a referenced asset:
 
-1. Open [Branding](./branding).
+1. Open realm [Branding](./branding), or the referencing Application's Settings tab.
 2. Clear the field that references the asset (Logo or Favicon).
 3. **Save** the branding form.
 4. Return to **Asset Library** and delete the asset.

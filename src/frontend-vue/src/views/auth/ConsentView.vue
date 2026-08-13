@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, provide, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
@@ -15,12 +15,36 @@ import type {
   ConsentDecision,
   ConsentResult,
 } from '@/models/consent'
+import AuthBrand from '@/components/auth/AuthBrand.vue'
+import { useAppConfigStore } from '@/stores/appconfig.store'
+import {
+  normalizePageSchema,
+  type ActionHandler,
+  type ActionValues,
+  type PageNode,
+} from '@cocoar/vue-page-builder'
+import {
+  authPageLocale,
+  createAuthPageConfig,
+  createDefaultAuthPageSchema,
+} from '@/page-builder/authPageConfig'
+import { createAuthRuntimeContext } from '@/page-builder/authPageContext'
+import AuthRuntimePageRenderer from '@/page-builder/AuthRuntimePageRenderer.vue'
+import { LOGIN_PAGE_RUNTIME_KEY } from '@/page-builder/loginPageRuntime'
 
 const { t, language } = useI18n()
 const localization = useLocalization()!
 const route = useRoute()
 const router = useRouter()
 const consentHttp = useHttpClient('/connect/consent')
+const appConfig = useAppConfigStore()
+const branding = computed(() => appConfig.config.Branding)
+
+provide(LOGIN_PAGE_RUNTIME_KEY, {
+  branding,
+  externalLogins: ref([]),
+  startExternalLogin: () => {},
+})
 
 async function toggleLanguage() {
   const next = language.value === 'de' ? 'en' : 'de'
@@ -28,7 +52,7 @@ async function toggleLanguage() {
   localStorage.setItem('language', next)
 }
 
-type Phase = 'loading' | 'prompt' | 'denied' | 'error'
+type Phase = 'loading' | 'prompt' | 'denied' | 'expired' | 'forbidden' | 'error'
 const phase = ref<Phase>('loading')
 const error = ref('')
 const submitting = ref(false)
@@ -56,6 +80,46 @@ const model = ref<ConsentModel | null>(null)
 // approval is keyed by scope-name; required scopes are pre-checked AND
 // the toggle is rendered disabled so the user cannot uncheck them.
 const approvedScopes = ref<Record<string, boolean>>({})
+
+const consentPageConfig = computed(() => createAuthPageConfig(
+  'consent',
+  authPageLocale(language.value),
+  undefined,
+  appConfig.config.PageTheme,
+))
+const consentFallbackSchema = computed(() => createDefaultAuthPageSchema('consent'))
+const customConsentSchema = ref<PageNode | null>(null)
+const consentViewState = computed(() => submitting.value ? 'submitting' : phase.value)
+const consentRuntimeContext = computed(() => createAuthRuntimeContext({
+  config: appConfig.config,
+  viewState: consentViewState.value,
+  feedbackMessage: error.value,
+  consent: {
+    clientName: model.value?.ClientName ?? '',
+    clientHostname: model.value?.ClientIdHostname ?? model.value?.ClientId ?? '',
+    isDynamicallyRegistered: model.value?.IsDynamicallyRegistered === true,
+    requestedScopes: (model.value?.RequestedScopes ?? []).map(scope => ({
+      name: scope.Name,
+      displayName: scopeLabel(scope.Name, scope.DisplayName),
+      description: scopeDescription(scope.Name, scope.Description) ?? '',
+      required: scope.Required,
+    })),
+  },
+}))
+function loadConsentSchema() {
+  customConsentSchema.value = null
+  if (!appConfig.config.Features.PageBuilder || route.query.safemode === '1') return
+  const stored = appConfig.config.Pages.consent
+  if (!stored) return
+  try {
+    customConsentSchema.value = normalizePageSchema(
+      JSON.parse(stored),
+      { elements: consentPageConfig.value.elementTypes },
+    ).schema
+  } catch {
+    customConsentSchema.value = null
+  }
+}
 
 // Some scopes have well-known display strings that we want to show
 // instead of the raw `Name`/`DisplayName`. The backend already serves
@@ -92,6 +156,8 @@ const standardScopeFallbacks: Record<string, { label: string; description: strin
 const ticket = computed(() => (route.query.ticket as string | undefined) ?? '')
 
 onMounted(async () => {
+  await appConfig.load()
+  loadConsentSchema()
   if (!ticket.value) {
     phase.value = 'error'
     error.value = t('consent.missingTicket', {}, 'Invalid consent link — no ticket.')
@@ -100,6 +166,10 @@ onMounted(async () => {
   try {
     const dto = await consentHttp.setQueryParameter('ticket', ticket.value).get<ConsentModel>()
     model.value = dto
+    // Resolve the effective App⊕realm page selection from the ticket's locked
+    // client id without exposing or rebuilding the original OAuth query.
+    await appConfig.loadForLogin(`/connect/authorize?client_id=${encodeURIComponent(dto.ClientId)}`)
+    loadConsentSchema()
     // Pre-check every scope by default — standard OAuth UX is
     // "approve everything that's asked", the user opts out.
     for (const scope of dto.RequestedScopes) {
@@ -115,16 +185,20 @@ onMounted(async () => {
           router.replace(`/login?redirect=${encodeURIComponent(route.fullPath)}`)
           return
         case 403:
+          phase.value = 'forbidden'
           error.value = t('consent.forbidden', {}, 'This consent ticket belongs to a different user. Please sign in with the correct account.')
           break
         case 404:
+          phase.value = 'expired'
           error.value = t('consent.notFound', {}, 'Consent request not found or expired. Please start the sign-in flow again from the app.')
           break
         case 409:
+          phase.value = 'expired'
           error.value = t('consent.alreadyUsed', {}, 'This consent request has already been completed. Please start over from the app.')
           retryUrl.value = readRetryUrl(e)
           break
         case 400:
+          phase.value = 'expired'
           error.value = t('consent.expired', {}, 'Consent request expired. Please start over from the app.')
           retryUrl.value = readRetryUrl(e)
           break
@@ -137,7 +211,7 @@ onMounted(async () => {
   }
 })
 
-async function submit(approved: boolean) {
+async function submit(approved: boolean, selectedScopes?: string[]) {
   if (!model.value || submitting.value) return
   submitting.value = true
   error.value = ''
@@ -147,7 +221,9 @@ async function submit(approved: boolean) {
       Approved: approved,
       ApprovedScopes: approved
         ? model.value.RequestedScopes
-            .filter((s) => approvedScopes.value[s.Name])
+            .filter((s) => s.Required || (selectedScopes
+              ? selectedScopes.includes(s.Name)
+              : approvedScopes.value[s.Name]))
             .map((s) => s.Name)
         : [],
     }
@@ -174,7 +250,7 @@ async function submit(approved: boolean) {
         ? t('consent.alreadyUsed', {}, 'This consent request has already been completed. Please start over from the app.')
         : t('consent.expired', {}, 'Consent request expired. Please start over from the app.')
       retryUrl.value = readRetryUrl(e)
-      phase.value = 'error'
+      phase.value = 'expired'
     } else if (e instanceof HttpClientError && (e.status === 404 || e.status === 403)) {
       // Ticket GC'd between the prompt and submit, or bound to a different
       // user — not retryable in place, so surface the error card instead of
@@ -182,7 +258,7 @@ async function submit(approved: boolean) {
       error.value = e.status === 404
         ? t('consent.notFound', {}, 'Consent request not found or expired. Please start the sign-in flow again from the app.')
         : t('consent.forbidden', {}, 'This consent ticket belongs to a different user. Please sign in with the correct account.')
-      phase.value = 'error'
+      phase.value = e.status === 403 ? 'forbidden' : 'expired'
     } else if (e instanceof HttpClientError) {
       error.value = t('consent.submitError', {}, 'Could not submit your decision. Please try again.')
     } else {
@@ -191,6 +267,22 @@ async function submit(approved: boolean) {
   } finally {
     submitting.value = false
   }
+}
+
+const customConsentActions: Record<string, ActionHandler> = {
+  'auth:consent-deny': () => submit(false, []),
+  'auth:consent-allow': (values: ActionValues) => submit(
+    true,
+    Array.isArray(values.approvedScopes)
+      ? values.approvedScopes.filter((value): value is string => typeof value === 'string')
+      : [],
+  ),
+  'legal:terms': () => {
+    if (appConfig.config.Legal.TermsOfServiceUrl) window.location.assign(appConfig.config.Legal.TermsOfServiceUrl)
+  },
+  'legal:privacy': () => {
+    if (appConfig.config.Legal.PrivacyPolicyUrl) window.location.assign(appConfig.config.Legal.PrivacyPolicyUrl)
+  },
 }
 
 function scopeLabel(name: string, fallback: string): string {
@@ -212,12 +304,21 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
     >
       {{ language === 'de' ? 'EN' : 'DE' }}
     </button>
-    <div class="w-full max-w-md">
+    <AuthRuntimePageRenderer
+      v-if="customConsentSchema"
+      page-id="auth-consent"
+      class="w-full min-h-screen"
+      :schema="customConsentSchema"
+      :config="consentPageConfig"
+      :actions="customConsentActions"
+      :fallback-schema="consentFallbackSchema"
+      :runtime-context="consentRuntimeContext"
+      :locale="authPageLocale(language)"
+    />
+
+    <div v-else class="w-full max-w-md">
       <div class="mb-8 text-center">
-        <img src="/idp-logo.svg" alt="Modgud" class="mx-auto mb-1 h-16 w-auto" />
-        <h1 class="text-2xl font-bold tracking-tight text-surface-800">
-          Modgud
-        </h1>
+        <AuthBrand spacing="compact" />
       </div>
 
       <CoarCard elevated>
@@ -228,7 +329,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
         </div>
 
         <!-- Error -->
-        <div v-else-if="phase === 'error'" class="space-y-4">
+        <div v-else-if="phase === 'error' || phase === 'expired' || phase === 'forbidden'" class="space-y-4">
           <CoarNotice variant="error">{{ error }}</CoarNotice>
           <!-- Expired/consumed tickets carry a retry URL — re-entering
                /connect/authorize mints a fresh ticket (or completes silently

@@ -83,6 +83,12 @@ See [Two-factor authentication](../../integrate/two-factor) for the supported me
 - [ ] Create a non-system app; reserved slugs (`realm`, `modgud`, `*`) are rejected **(automated)**
 - [ ] The App detail modal's Settings tab lets you override origin, branding, login posture, and native-grant policy for that app; an unset section falls back to the realm default instead of showing as overridden
 - [ ] Realm-wide defaults for the same settings live under **Admin → Realm settings** (`/admin/realm-settings`)
+- [ ] Realm and App logo/favicon/product colour appear consistently on login, register, forgot/reset, magic-login, consent, device and logged-out screens
+- [ ] Clearing an App origin removes its hostname route; deleting the App removes its settings and does not leave a routable hostname
+- [ ] An App can hide internal login, magic link and selected external providers; direct password/passkey/provider-start requests are rejected too
+- [ ] Reordering selected OIDC/SAML providers changes the public login-button order
+- [ ] Realm/App email preview reflects product name, subject prefix, preheader, footer, logo and button colour
+- [ ] Trigger OTP, magic-link, reset and verification mail through Mailpit (`:8025`): subject/HTML/plain-text and DE/EN output match the effective App context
 
 See [Applications](../../admin/applications) for the full settings list.
 

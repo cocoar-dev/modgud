@@ -109,13 +109,12 @@ public static class AdminChangeRequestEndpoints
             {
                 var changes = ProfileEndpoints.EnumerateProfileChanges(cr.Payload, user).ToList();
                 await emailService.SendTemplatedEmailAsync(user.Email, EmailTemplate.ChangeRequestApproved,
-                    new Dictionary<string, string>
+                    await emailBranding.ApplyAsync(new Dictionary<string, string>
                     {
-                        ["AppName"] = await emailBranding.ResolveProductNameAsync(),
                         ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                         ["Field"] = string.Join(", ", changes.Select(c => c.Field)),
                         ["NewValue"] = string.Join(" · ", changes.Select(c => $"{c.Field}: {c.NewValue ?? "—"}")),
-                    });
+                    }), context.RequestAborted);
             }
 
             // Inbox: notify the requester (always, independent of email opt-in — inbox is
@@ -168,14 +167,13 @@ public static class AdminChangeRequestEndpoints
             {
                 var changes = ProfileEndpoints.EnumerateProfileChanges(cr.Payload, targetUser).ToList();
                 await emailService.SendTemplatedEmailAsync(targetUser.Email, EmailTemplate.ChangeRequestRejected,
-                    new Dictionary<string, string>
+                    await emailBranding.ApplyAsync(new Dictionary<string, string>
                     {
-                        ["AppName"] = await emailBranding.ResolveProductNameAsync(),
                         ["DisplayName"] = targetUser.Firstname ?? targetUser.UserName ?? "",
                         ["Field"] = string.Join(", ", changes.Select(c => c.Field)),
                         ["NewValue"] = string.Join(" · ", changes.Select(c => $"{c.Field}: {c.NewValue ?? "—"}")),
                         ["ReviewerNote"] = cr.ReviewerNote ?? "—",
-                    });
+                    }), context.RequestAborted);
             }
 
             // Inbox: same shape as approval, plus the reviewer note so the user sees why.

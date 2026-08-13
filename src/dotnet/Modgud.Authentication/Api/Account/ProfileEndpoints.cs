@@ -190,13 +190,12 @@ public static class ProfileEndpoints
                 var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
                 var verifyUrl = $"{appUrl}/verify-email?id={new ShortGuid(request.Id)}&token={Uri.EscapeDataString(rawToken)}";
                 await emailService.SendTemplatedEmailAsync(pending.Email.Value!, EmailTemplate.EmailVerification,
-                    new Dictionary<string, string>
+                    await emailBranding.ApplyAsync(new Dictionary<string, string>
                     {
-                        ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                         ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                         ["ActionUrl"] = verifyUrl,
                         ["ExpirationHours"] = VerificationTokenLifetimeHours.ToString(),
-                    });
+                    }, ct: ct), ct);
             }
 
             // Inbox notification: fires only when this submit *transitions* the request
@@ -262,15 +261,14 @@ public static class ProfileEndpoints
                 var changes = EnumerateProfileChanges(cr.Payload, user).ToList();
                 await emailService.SendTemplatedEmailAsync(recipients,
                     EmailTemplate.AdminChangeRequestNotification,
-                    new Dictionary<string, string>
+                    await emailBranding.ApplyAsync(new Dictionary<string, string>
                     {
-                        ["AppName"] = await emailBranding.ResolveProductNameAsync(ct),
                         ["RequestingUser"] = $"{user.Firstname} {user.Lastname} ({user.UserName})".Trim(),
                         ["Field"] = string.Join(", ", changes.Select(c => c.Field)),
                         ["OldValue"] = string.Join(" · ", changes.Select(c => $"{c.Field}: {c.OldValue ?? "—"}")),
                         ["NewValue"] = string.Join(" · ", changes.Select(c => $"{c.Field}: {c.NewValue ?? "—"}")),
                         ["ActionUrl"] = $"{appUrl}/admin/change-requests",
-                    });
+                    }, ct: ct), ct);
             }
 
             // Inbox: notify admins that this request is now ready for review. The

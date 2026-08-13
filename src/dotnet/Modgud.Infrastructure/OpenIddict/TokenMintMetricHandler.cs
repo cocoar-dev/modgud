@@ -2,6 +2,7 @@ using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
 using Modgud.Infrastructure.Observability;
 using Marten;
+using Microsoft.Extensions.Logging;
 using OpenIddict.Server;
 
 namespace Modgud.Infrastructure.OpenIddict;
@@ -22,13 +23,15 @@ public sealed class TokenMintMetricHandler : IOpenIddictServerHandler<OpenIddict
             .SetType(OpenIddictServerHandlerType.Custom)
             .Build();
 
-    private readonly IQuerySession _querySession;
-    private readonly Cimd.CimdClientResolver _cimdResolver;
+    private readonly ITokenMintClientTypeResolver _clientTypeResolver;
+    private readonly ILogger<TokenMintMetricHandler> _logger;
 
-    public TokenMintMetricHandler(IQuerySession querySession, Cimd.CimdClientResolver cimdResolver)
+    public TokenMintMetricHandler(
+        ITokenMintClientTypeResolver clientTypeResolver,
+        ILogger<TokenMintMetricHandler> logger)
     {
-        _querySession = querySession;
-        _cimdResolver = cimdResolver;
+        _clientTypeResolver = clientTypeResolver;
+        _logger = logger;
     }
 
     public async ValueTask HandleAsync(OpenIddictServerEvents.ApplyTokenResponseContext context)
@@ -50,11 +53,49 @@ public sealed class TokenMintMetricHandler : IOpenIddictServerHandler<OpenIddict
             string.IsNullOrEmpty(context.Response.AccessToken))
             return;
 
-        var clientType = await ResolveClientTypeAsync(context.Request?.ClientId, context.CancellationToken);
-        ModgudMeters.RecordTokenMinted(grantType, clientType);
+        try
+        {
+            // This handler runs after a rolling refresh token has already been
+            // marked Redeemed. Observability is therefore strictly fail-open:
+            // use an independent token and swallow classifier/metric failures so
+            // request cancellation or a transient Marten/CIMD problem can never
+            // turn an already-committed token rotation into a lost 500 response.
+            var clientType = await _clientTypeResolver.ResolveAsync(
+                context.Request?.ClientId, CancellationToken.None);
+            ModgudMeters.RecordTokenMinted(grantType, clientType);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and
+                                   not StackOverflowException and
+                                   not AccessViolationException)
+        {
+            _logger.LogWarning(ex,
+                "Token-mint metric classification failed; the token response will still be returned");
+        }
+    }
+}
+
+/// <summary>
+/// Resolves the bounded client-type tag used by <see cref="TokenMintMetricHandler"/>.
+/// Kept behind a narrow seam so failure behaviour in the late token-response
+/// pipeline can be tested without replacing Marten itself.
+/// </summary>
+public interface ITokenMintClientTypeResolver
+{
+    ValueTask<string> ResolveAsync(string? clientId, CancellationToken cancellationToken);
+}
+
+internal sealed class TokenMintClientTypeResolver : ITokenMintClientTypeResolver
+{
+    private readonly IQuerySession _querySession;
+    private readonly Cimd.CimdClientResolver _cimdResolver;
+
+    public TokenMintClientTypeResolver(IQuerySession querySession, Cimd.CimdClientResolver cimdResolver)
+    {
+        _querySession = querySession;
+        _cimdResolver = cimdResolver;
     }
 
-    private async ValueTask<string> ResolveClientTypeAsync(string? clientId, CancellationToken cancellationToken)
+    public async ValueTask<string> ResolveAsync(string? clientId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(clientId)) return ModgudMeters.ClientType.Public;
 

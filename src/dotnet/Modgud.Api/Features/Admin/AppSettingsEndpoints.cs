@@ -47,10 +47,13 @@ public static class AppSettingsEndpoints
                 // Off/Optional/Required requirement. Default (never configured) = all
                 // three Optional (today's lenient behaviour).
                 var registrationFields = effective.RegistrationFields ?? RegistrationFieldsSettings.Defaults;
+                var loginExperience = effective.LoginExperience;
                 return Results.Ok(new
                 {
                     settings.AuthenticationMinimumLevel,
-                    settings.MagicLinkSelfService,
+                    InternalLoginEnabled = loginExperience?.InternalLoginEnabled ?? true,
+                    MagicLinkSelfService = settings.MagicLinkSelfService
+                        && (loginExperience?.MagicLinkEnabled ?? true),
                     settings.TwoFactorGracePeriodDays,
                     IsControlPlane = tenant?.IsControlPlane ?? false,
                     Branding = new
@@ -67,6 +70,19 @@ public static class AppSettingsEndpoints
                             : null,
                         PrimaryColor = branding?.PrimaryColor,
                     },
+                    // Application-only design tokens. The SPA scopes these to
+                    // its mounted custom-page wrapper; built-in pages never
+                    // inherit them.
+                    PageTheme = effective.PageTheme is null ? null : new
+                    {
+                        effective.PageTheme.AccentColor,
+                        effective.PageTheme.ErrorColor,
+                        effective.PageTheme.ButtonRadiusPx,
+                        effective.PageTheme.InputRadiusPx,
+                        effective.PageTheme.CardRadiusPx,
+                        effective.PageTheme.BodyFontFamily,
+                        effective.PageTheme.TitleFontFamily,
+                    },
                     Features = new
                     {
                         settings.Features.PageBuilder,
@@ -80,6 +96,11 @@ public static class AppSettingsEndpoints
                         Username = registrationFields.Username.ToString(),
                         Firstname = registrationFields.Firstname.ToString(),
                         Lastname = registrationFields.Lastname.ToString(),
+                    },
+                    Legal = new
+                    {
+                        TermsOfServiceUrl = SafeLegalUrl(effective.SelfRegistration?.TermsOfServiceUrl),
+                        PrivacyPolicyUrl = SafeLegalUrl(effective.SelfRegistration?.PrivacyPolicyUrl),
                     },
                 });
             })
@@ -110,4 +131,10 @@ public static class AppSettingsEndpoints
         var clientId = clientIds[0];
         return string.IsNullOrWhiteSpace(clientId) ? null : clientId;
     }
+
+    private static string? SafeLegalUrl(string? value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+            ? uri.ToString()
+            : null;
 }

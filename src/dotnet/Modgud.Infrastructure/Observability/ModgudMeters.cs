@@ -93,9 +93,9 @@ public static class ModgudMeters
 
     // Refresh-token rejection proxy. OpenIddict 7 doesn't expose a dedicated
     // event for reuse-detection specifically; we count invalid_grant on
-    // refresh_token, which under strict reuse-leeway=0 is dominated by reuse.
-    // Expired/revoked tokens contribute too, so unusual spikes (not a steady
-    // baseline) are the signal worth alerting on.
+    // refresh_token. Permitted retries inside the short response-loss leeway
+    // don't contribute. Expired/revoked tokens do, so unusual spikes (not a
+    // steady baseline) are the signal worth alerting on.
     private static readonly Counter<long> _refreshRejected = Meter.CreateCounter<long>(
         "modgud.token.refresh.rejected.total",
         unit: "{rejection}",

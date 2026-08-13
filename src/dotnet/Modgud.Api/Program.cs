@@ -1123,6 +1123,11 @@ try
         }
     });
 
+    // Must run after EVERY registration: AddTenantedDataProtection above already
+    // strips this, but OpenIddict's builder calls AddDataProtection() and the
+    // TryAddEnumerable puts the startup check back. See the method's remarks.
+    builder.Services.RemoveRootKeyRingStartupCheck();
+
     var app = builder.Build();
 
     //if (app.Environment.IsDevelopment())
@@ -1293,6 +1298,7 @@ try
     app.MapAdminObservabilityEndpoints("api");
     app.MapAssetsEndpoints("api");
     app.MapCustomizationPagesEndpoints("api");
+    app.MapCustomizationCompositionsEndpoints("api");
     Modgud.Api.Features.Admin.Jobs.JobsEndpoints.MapJobsEndpoints(app, "api");
     Modgud.Api.Features.Inbox.InboxEndpoints.MapInboxEndpoints(app, "api");
     Modgud.Api.Features.Inbox.InboxSettingsEndpoints.MapInboxSettingsEndpoints(app, "api");

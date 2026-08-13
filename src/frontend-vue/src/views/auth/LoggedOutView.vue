@@ -4,13 +4,19 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import { CoarButton, CoarCard } from '@cocoar/vue-ui'
 import {
-  CoarPageRenderer,
   normalizePageSchema,
   type ActionHandler,
   type PageNode,
 } from '@cocoar/vue-page-builder'
 import { useAppConfigStore } from '@/stores/appconfig.store'
-import { createAuthPageConfig } from '@/page-builder/authPageConfig'
+import AuthBrand from '@/components/auth/AuthBrand.vue'
+import {
+  authPageLocale,
+  createAuthPageConfig,
+  createDefaultAuthPageSchema,
+} from '@/page-builder/authPageConfig'
+import { createAuthRuntimeContext } from '@/page-builder/authPageContext'
+import AuthRuntimePageRenderer from '@/page-builder/AuthRuntimePageRenderer.vue'
 import { LOGIN_PAGE_RUNTIME_KEY } from '@/page-builder/loginPageRuntime'
 
 const { t, language } = useI18n()
@@ -26,11 +32,27 @@ provide(LOGIN_PAGE_RUNTIME_KEY, {
   startExternalLogin: () => {},
 })
 
-const pageConfig = createAuthPageConfig('logout')
+const pageConfig = computed(() => createAuthPageConfig(
+  'logout',
+  authPageLocale(language.value),
+  undefined,
+  appConfig.config.PageTheme,
+))
+const fallbackSchema = computed(() => createDefaultAuthPageSchema('logout'))
 const schema = ref<PageNode | null>(null)
 const ready = ref(false)
+const runtimeContext = computed(() => createAuthRuntimeContext({
+  config: appConfig.config,
+  viewState: 'complete',
+}))
 const actions: Record<string, ActionHandler> = {
   'auth:back-to-login': () => router.push('/login'),
+  'legal:terms': () => {
+    if (appConfig.config.Legal.TermsOfServiceUrl) window.location.assign(appConfig.config.Legal.TermsOfServiceUrl)
+  },
+  'legal:privacy': () => {
+    if (appConfig.config.Legal.PrivacyPolicyUrl) window.location.assign(appConfig.config.Legal.PrivacyPolicyUrl)
+  },
 }
 
 onMounted(async () => {
@@ -39,7 +61,7 @@ onMounted(async () => {
     if (!appConfig.config.Features.PageBuilder || route.query.safemode === '1') return
     const stored = appConfig.config.Pages.logout
     if (!stored) return
-    schema.value = normalizePageSchema(JSON.parse(stored), { elements: pageConfig.elements }).schema
+    schema.value = normalizePageSchema(JSON.parse(stored), { elements: pageConfig.value.elementTypes }).schema
   } catch {
     schema.value = null
   } finally {
@@ -67,20 +89,20 @@ async function toggleLanguage() {
       {{ t('common.loading', {}, 'Loading…') }}
     </div>
 
-    <CoarPageRenderer
+    <AuthRuntimePageRenderer
       v-else-if="schema"
+      page-id="auth-logout"
       :schema="schema"
       :config="pageConfig"
       :actions="actions"
+      :fallback-schema="fallbackSchema"
+      :runtime-context="runtimeContext"
+      :locale="authPageLocale(language)"
     />
 
     <div v-else class="flex min-h-screen items-center justify-center p-4">
       <div class="w-full max-w-sm text-center">
-        <img
-          :src="branding.LogoUrl ?? '/idp-logo.svg'"
-          :alt="branding.ProductName ?? 'Modgud'"
-          class="mx-auto mb-6 h-16 w-auto"
-        />
+        <AuthBrand class="mb-6" spacing="compact" />
         <CoarCard elevated class="space-y-4">
           <h1 class="text-2xl font-bold tracking-tight text-surface-800">
             {{ t('logout.signedOut', {}, 'Signed out') }}

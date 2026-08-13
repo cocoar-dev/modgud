@@ -41,7 +41,9 @@ public sealed record EffectiveSettings
     public SelfRegPosture? SelfRegPosture { get; init; }
 
     public ApplicationOrigin? Origin { get; init; }
+    public ApplicationPageTheme? PageTheme { get; init; }
     public ApplicationEmailBranding? EmailBranding { get; init; }
+    public ApplicationLoginExperience? LoginExperience { get; init; }
 
     /// <summary>No Application in context: effective settings == the realm
     /// settings, section-for-section. The zero-behaviour path.</summary>
@@ -59,7 +61,9 @@ public sealed record EffectiveSettings
         Pages = ResolveRealmActivePages(realm),
         SelfRegPosture = null,
         Origin = null,
-        EmailBranding = null,
+        PageTheme = null,
+        EmailBranding = MergeEmailBranding(realm.EmailBranding, null),
+        LoginExperience = null,
     };
 
     /// <summary>An Application is in context: merge its (sparse) overrides
@@ -89,7 +93,9 @@ public sealed record EffectiveSettings
         // New per-App facets:
         SelfRegPosture = app.SelfRegistration?.Posture ?? Applications.SelfRegPosture.JitOnOtp,
         Origin = app.Origin,
-        EmailBranding = app.EmailBranding,
+        PageTheme = app.PageTheme,
+        EmailBranding = MergeEmailBranding(realm.EmailBranding, app.EmailBranding),
+        LoginExperience = app.LoginExperience,
     };
 
     // App override absent → realm passthrough (incl. null). Present → each
@@ -104,6 +110,22 @@ public sealed record EffectiveSettings
             LogoAssetId = app.LogoAssetId ?? b.LogoAssetId,
             FaviconAssetId = app.FaviconAssetId ?? b.FaviconAssetId,
             PrimaryColor = app.PrimaryColor ?? b.PrimaryColor,
+        };
+    }
+
+    private static ApplicationEmailBranding? MergeEmailBranding(
+        Modgud.Domain.RealmSettings.EmailBrandingSettings? realm,
+        ApplicationEmailBranding? app)
+    {
+        if (realm is null && app is null) return null;
+        return new ApplicationEmailBranding
+        {
+            ProductName = app?.ProductName ?? realm?.ProductName,
+            SubjectPrefix = app?.SubjectPrefix ?? realm?.SubjectPrefix,
+            Preheader = app?.Preheader ?? realm?.Preheader,
+            FooterText = app?.FooterText ?? realm?.FooterText,
+            FromName = app?.FromName ?? realm?.FromName,
+            ReplyTo = app?.ReplyTo ?? realm?.ReplyTo,
         };
     }
 
@@ -256,6 +278,11 @@ public sealed record EffectiveSettings
     {
         if (activeId is null || variants is null) return null; // built-in
         var v = variants.FirstOrDefault(x => x.Id == activeId);
-        return string.IsNullOrWhiteSpace(v?.Schema) ? null : v!.Schema;
+        if (v is null) return null;
+        // PublishedSchema was introduced after the original variant model.
+        // Falling back to Schema keeps already-active legacy documents live;
+        // every subsequent edit snapshots/publishes them through the new gate.
+        var live = v.PublishedSchema ?? v.Schema;
+        return string.IsNullOrWhiteSpace(live) ? null : live;
     }
 }

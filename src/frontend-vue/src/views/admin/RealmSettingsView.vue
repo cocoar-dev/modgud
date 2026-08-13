@@ -81,6 +81,7 @@ const PAGE_SLOT_META = [
   { slug: 'login', label: t('admin.customization.pages.login.title', {}, 'Login') },
   { slug: 'logout', label: t('admin.customization.pages.logout.title', {}, 'Logout') },
   { slug: 'password-forgot', label: t('admin.customization.pages.passwordForgot.title', {}, 'Forgot password') },
+  { slug: 'consent', label: t('admin.customization.pages.consent.title', {}, 'Consent') },
 ]
 const pageSlots = ref<Record<string, RealmSlotDto>>({})
 const pagesError = ref<string | null>(null)

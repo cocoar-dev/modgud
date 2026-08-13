@@ -1,5 +1,6 @@
 using Modgud.Domain.Applications;
 using Modgud.Domain.Realms;
+using Modgud.Domain.RealmSettings;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Tests.Unit.Applications;
@@ -69,6 +70,7 @@ public class EffectiveSettingsTests
             Assert.Null(eff.SelfRegPosture); // no Application → legacy realm-only registration
             Assert.Null(eff.Origin);
             Assert.Null(eff.EmailBranding);
+            Assert.Null(eff.PageTheme);
         }
 
         [Fact]
@@ -277,18 +279,62 @@ public class EffectiveSettingsTests
         }
 
         [Fact]
-        public void Origin_and_email_branding_pass_through_from_application()
+        public void Application_only_presentation_facets_pass_through_from_application()
         {
             var app = new ApplicationSettings
             {
                 Origin = new ApplicationOrigin { Subdomain = "amzettel.cocoar.app" },
                 EmailBranding = new ApplicationEmailBranding { ProductName = "amZettel" },
+                PageTheme = new ApplicationPageTheme
+                {
+                    AccentColor = "#10b981",
+                    ButtonRadiusPx = 999,
+                    BodyFontFamily = "Instrument Sans Variable",
+                    TitleFontFamily = "Fraunces Variable",
+                },
             };
 
             var eff = EffectiveSettings.Merge(Realm(), app);
 
             Assert.Equal("amzettel.cocoar.app", eff.Origin!.Subdomain);
             Assert.Equal("amZettel", eff.EmailBranding!.ProductName);
+            Assert.Equal("#10b981", eff.PageTheme!.AccentColor);
+            Assert.Equal(999, eff.PageTheme.ButtonRadiusPx);
+            Assert.Equal("Instrument Sans Variable", eff.PageTheme.BodyFontFamily);
+            Assert.Equal("Fraunces Variable", eff.PageTheme.TitleFontFamily);
+        }
+
+        [Fact]
+        public void Email_branding_merges_application_fields_over_realm_defaults()
+        {
+            var realm = Realm();
+            realm.EmailBranding = new EmailBrandingSettings
+            {
+                ProductName = "Realm Mail",
+                SubjectPrefix = "Realm",
+                Preheader = "Realm preheader",
+                FooterText = "Realm footer",
+                FromName = "Realm Sender",
+                ReplyTo = "realm@example.test",
+            };
+            var app = new ApplicationSettings
+            {
+                EmailBranding = new ApplicationEmailBranding
+                {
+                    ProductName = "App Mail",
+                    FooterText = "App footer",
+                    FromName = "App Sender",
+                },
+            };
+
+            var effective = EffectiveSettings.Merge(realm, app).EmailBranding!;
+
+            Assert.Equal("App Mail", effective.ProductName);
+            Assert.Equal("Realm", effective.SubjectPrefix);
+            Assert.Equal("Realm preheader", effective.Preheader);
+            Assert.Equal("App footer", effective.FooterText);
+            Assert.Equal("App Sender", effective.FromName);
+            Assert.Equal("realm@example.test", effective.ReplyTo);
         }
 
         // ─────────────── ADR-0001: variants + activation ───────────────

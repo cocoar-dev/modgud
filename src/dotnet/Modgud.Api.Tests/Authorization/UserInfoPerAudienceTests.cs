@@ -215,15 +215,116 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
             $"resource_access['{alphaAudience}'] missing after refresh.\nBody:\n{body}");
     }
 
-    // Issue #124 — reuse of an already-redeemed refresh token (RFC 6749 §10.4) is
-    // OpenIddict's own SetRefreshTokenReuseLeeway(TimeSpan.Zero) compromise signal:
-    // its stock Protection.ValidateTokenEntry handler rejects the replay and revokes
-    // the whole authorization's token family itself (RefreshTokenReuseAuditHandler
-    // runs immediately before it in the same ValidateTokenContext pipeline). This was
-    // previously silent (no log, no audit trail); it must now land a
-    // security.refresh_token_reuse_detected row in the streamless audit store.
     [Fact]
-    public async Task RefreshToken_Reuse_RevokesChain_And_RecordsSecurityEvent()
+    public async Task TokenMetricFailure_AfterRedeem_DoesNotFailTheRefreshResponse()
+    {
+        var app = await CreateAppAsync("app-metric-failure", "Metric Failure",
+            permissions: [("policy", "read")]);
+        const string audience = "https://metric-failure.example.com";
+        const string scopeName = "metric-failure-api";
+        await CreateOAuthApiAsync(audience, app.Id);
+        await CreateScopeAsync(scopeName, [audience], app.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-metric-failure-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/metric-failure-callback";
+        await CreateOAuthClientAsync(
+            clientId, clientSecret, redirectUri, [app.Id],
+            ["openid", "offline_access", scopeName]);
+
+        await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Metric", lastname: "Failure", acronym: "mf",
+            email: "mf@test.com", password: "TestPass1234");
+
+        using var tokens = await DriveAuthCodeFlowForTokensAsync(
+            "mf", "TestPass1234", clientId, clientSecret, redirectUri,
+            $"openid offline_access {scopeName}", [audience]);
+        var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
+
+        Factory.TokenPipelineFaults.FailNextMetricResolution();
+        using var response = await PostRefreshTokenAsync(
+            refreshToken, clientId, clientSecret, [audience]);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(response.IsSuccessStatusCode,
+            $"A best-effort token metric failed the refresh response ({(int)response.StatusCode}): {body}");
+        using var refreshed = JsonDocument.Parse(body);
+        Assert.False(string.IsNullOrEmpty(
+            refreshed.RootElement.GetProperty("refresh_token").GetString()));
+    }
+
+    [Fact]
+    public async Task LostResponse_AfterRedeem_ImmediateRetrySucceedsWithoutReplayTeardown()
+    {
+        var app = await CreateAppAsync("app-lost-response", "Lost Response",
+            permissions: [("policy", "read")]);
+        const string audience = "https://lost-response.example.com";
+        const string scopeName = "lost-response-api";
+        await CreateOAuthApiAsync(audience, app.Id);
+        await CreateScopeAsync(scopeName, [audience], app.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-lost-response-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/lost-response-callback";
+        await CreateOAuthClientAsync(
+            clientId, clientSecret, redirectUri, [app.Id],
+            ["openid", "offline_access", scopeName]);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Lost", lastname: "Response", acronym: "lr",
+            email: "lr@test.com", password: "TestPass1234");
+
+        using var tokens = await DriveAuthCodeFlowForTokensAsync(
+            "lr", "TestPass1234", clientId, clientSecret, redirectUri,
+            $"openid offline_access {scopeName}", [audience]);
+        var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
+
+        Factory.TokenPipelineFaults.LoseNextRefreshResponse();
+        using (var lostResponse = await PostRefreshTokenAsync(
+                   refreshToken, clientId, clientSecret, [audience]))
+        {
+            Assert.Equal(HttpStatusCode.InternalServerError, lostResponse.StatusCode);
+        }
+
+        var consumed = await ReadRefreshTokenAsync(refreshToken);
+        Assert.Equal(OpenIddictConstants.Statuses.Redeemed, consumed.Status);
+        Assert.False(string.IsNullOrEmpty(consumed.AuthorizationId));
+
+        using var retry = await PostRefreshTokenAsync(
+            refreshToken, clientId, clientSecret, [audience]);
+        var retryBody = await retry.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(retry.IsSuccessStatusCode,
+            $"Retry inside the response-loss leeway failed ({(int)retry.StatusCode}): {retryBody}");
+
+        using var retriedTokens = JsonDocument.Parse(retryBody);
+        var retriedRefreshToken = retriedTokens.RootElement.GetProperty("refresh_token").GetString();
+        Assert.False(string.IsNullOrEmpty(retriedRefreshToken));
+
+        await using (var session = GetTenantedDocumentSession())
+        {
+            Assert.Single(await session.Query<ClientSession>()
+                .Where(x => x.UserId == user.Id && x.ClientId == clientId)
+                .ToListAsync(TestContext.Current.CancellationToken));
+
+            Assert.DoesNotContain(
+                await session.Query<RealmSecurityAuditEvent>()
+                    .Where(x => x.EventType == AuditEvents.RefreshTokenReuseDetected)
+                    .ToListAsync(TestContext.Current.CancellationToken),
+                x => x.AuthorizationId == consumed.AuthorizationId);
+        }
+
+        // The replacement returned by the retry is a normal, usable rolling
+        // refresh token, not merely a superficially successful response.
+        await RedeemRefreshTokenAsync(
+            retriedRefreshToken!, clientId, clientSecret, [audience]);
+    }
+
+    // Issue #124 — once the response-loss/concurrency leeway has elapsed,
+    // presenting a redeemed refresh token is the RFC 6749 §10.4 compromise
+    // signal. OpenIddict rejects it and revokes that authorization's token
+    // family; RefreshTokenReuseAuditHandler records the security event first.
+    [Fact]
+    public async Task RefreshToken_Reuse_AfterLeeway_RevokesChain_And_RecordsSecurityEvent()
     {
         var appAlpha = await CreateAppAsync("app-reuse", "App Reuse",
             permissions: [("policy", "read")]);
@@ -255,6 +356,11 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
 
         // First redemption is legitimate rotation — marks the token Redeemed.
         await RedeemRefreshTokenAsync(refreshToken, clientId, clientSecret, [alphaAudience]);
+
+        // No wall-clock sleep: backdate the real redeemed token entry beyond
+        // the configured 30-second reuse leeway. This keeps the application's
+        // shared TimeProvider untouched for unrelated integration tests.
+        await BackdateRefreshTokenRedemptionAsync(refreshToken, TimeSpan.FromSeconds(31));
 
         // Second redemption of the SAME (already-redeemed) token is the reuse signal.
         var replayClient = Factory.CreateClient();
@@ -291,6 +397,69 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         Assert.Equal(AuditOutcomes.Blocked, recorded.OutcomeCode);
         Assert.Equal(clientId, recorded.OAuthClientId);
         Assert.Equal(testUser.Id, recorded.ActorSubjectId);
+    }
+
+    [Fact]
+    public async Task RefreshToken_Replay_RevokesOnlyTheAffectedDeviceAuthorization()
+    {
+        var app = await CreateAppAsync("app-device-isolation", "Device Isolation",
+            permissions: [("policy", "read")]);
+        const string audience = "https://device-isolation.example.com";
+        const string scopeName = "device-isolation-api";
+        await CreateOAuthApiAsync(audience, app.Id);
+        await CreateScopeAsync(scopeName, [audience], app.Id);
+
+        var clientSecret = "TestClientSecret_" + Guid.NewGuid().ToString("N");
+        var clientId = "test-device-isolation-" + Guid.NewGuid().ToString("N");
+        const string redirectUri = "http://localhost/device-isolation-callback";
+        await CreateOAuthClientAsync(
+            clientId, clientSecret, redirectUri, [app.Id],
+            ["openid", "offline_access", scopeName]);
+
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Two", lastname: "Devices", acronym: "td",
+            email: "td@test.com", password: "TestPass1234");
+
+        using var deviceATokens = await DriveAuthCodeFlowForTokensAsync(
+            "td", "TestPass1234", clientId, clientSecret, redirectUri,
+            $"openid offline_access {scopeName}", [audience]);
+        using var deviceBTokens = await DriveAuthCodeFlowForTokensAsync(
+            "td", "TestPass1234", clientId, clientSecret, redirectUri,
+            $"openid offline_access {scopeName}", [audience]);
+        var deviceARefresh = deviceATokens.RootElement.GetProperty("refresh_token").GetString()!;
+        var deviceBRefresh = deviceBTokens.RootElement.GetProperty("refresh_token").GetString()!;
+
+        var deviceA = await ReadRefreshTokenAsync(deviceARefresh);
+        var deviceB = await ReadRefreshTokenAsync(deviceBRefresh);
+        Assert.NotEqual(deviceA.AuthorizationId, deviceB.AuthorizationId);
+
+        await using (var beforeReplay = GetTenantedDocumentSession())
+        {
+            Assert.Equal(2, (await beforeReplay.Query<ClientSession>()
+                .Where(x => x.UserId == user.Id && x.ClientId == clientId)
+                .ToListAsync(TestContext.Current.CancellationToken)).Count);
+        }
+
+        await RedeemRefreshTokenAsync(deviceARefresh, clientId, clientSecret, [audience]);
+        await BackdateRefreshTokenRedemptionAsync(deviceARefresh, TimeSpan.FromSeconds(31));
+
+        using (var replay = await PostRefreshTokenAsync(
+                   deviceARefresh, clientId, clientSecret, [audience]))
+        {
+            var replayBody = await replay.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+            Assert.False(replay.IsSuccessStatusCode, replayBody);
+            Assert.Contains("invalid_grant", replayBody);
+        }
+
+        // Device B's independently rooted authorization remains refreshable.
+        await RedeemRefreshTokenAsync(deviceBRefresh, clientId, clientSecret, [audience]);
+
+        await using var afterReplay = GetTenantedDocumentSession();
+        var surviving = await afterReplay.Query<ClientSession>()
+            .Where(x => x.UserId == user.Id && x.ClientId == clientId)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        var remaining = Assert.Single(surviving);
+        Assert.Equal(deviceB.AuthorizationId, remaining.AuthorizationId);
     }
 
     private async Task<RealmSecurityAuditEvent?> PollForRealmSecurityAuditEventAsync(
@@ -937,7 +1106,20 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
     private async Task<string> RedeemRefreshTokenAsync(
         string refreshToken, string clientId, string clientSecret, IReadOnlyList<string> resources)
     {
-        var tokenClient = Factory.CreateClient();
+        using var resp = await PostRefreshTokenAsync(
+            refreshToken, clientId, clientSecret, resources);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(resp.IsSuccessStatusCode,
+            $"refresh_token redemption failed ({(int)resp.StatusCode}): {body}");
+
+        using var json = JsonDocument.Parse(body);
+        return json.RootElement.GetProperty("access_token").GetString()!;
+    }
+
+    private async Task<HttpResponseMessage> PostRefreshTokenAsync(
+        string refreshToken, string clientId, string clientSecret, IReadOnlyList<string> resources)
+    {
+        using var tokenClient = Factory.CreateClient();
         var form = new List<KeyValuePair<string, string>>
         {
             new("grant_type", "refresh_token"),
@@ -948,14 +1130,37 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         foreach (var r in resources)
             form.Add(new KeyValuePair<string, string>("resource", r));
 
-        var resp = await tokenClient.PostAsync(
+        return await tokenClient.PostAsync(
             "/connect/token", new FormUrlEncodedContent(form), TestContext.Current.CancellationToken);
-        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
-        Assert.True(resp.IsSuccessStatusCode,
-            $"refresh_token redemption failed ({(int)resp.StatusCode}): {body}");
+    }
 
-        using var json = JsonDocument.Parse(body);
-        return json.RootElement.GetProperty("access_token").GetString()!;
+    private async Task<(string? Status, string? AuthorizationId)> ReadRefreshTokenAsync(string refreshToken)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictTokenManager>();
+        var token = await manager.FindByReferenceIdAsync(
+            refreshToken, TestContext.Current.CancellationToken)
+            ?? throw new Xunit.Sdk.XunitException("Refresh-token store entry was not found.");
+
+        return (
+            await manager.GetStatusAsync(token, TestContext.Current.CancellationToken),
+            await manager.GetAuthorizationIdAsync(token, TestContext.Current.CancellationToken));
+    }
+
+    private async Task BackdateRefreshTokenRedemptionAsync(string refreshToken, TimeSpan age)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictTokenManager>();
+        var token = await manager.FindByReferenceIdAsync(
+            refreshToken, TestContext.Current.CancellationToken)
+            ?? throw new Xunit.Sdk.XunitException("Refresh-token store entry was not found.");
+
+        var descriptor = new OpenIddictTokenDescriptor();
+        await manager.PopulateAsync(
+            descriptor, token, TestContext.Current.CancellationToken);
+        descriptor.RedemptionDate = DateTimeOffset.UtcNow.Subtract(age);
+        await manager.UpdateAsync(
+            token, descriptor, TestContext.Current.CancellationToken);
     }
 
     private static string GeneratePkceVerifier()

@@ -140,7 +140,7 @@ public static class NativeOtpEndpoints
     ///   account) → nothing (the web verification flow owns those).</item>
     /// </list>
     /// </summary>
-    private static async Task IssueOtpForRequestAsync(
+    internal static async Task IssueOtpForRequestAsync(
         string email,
         string? firstName,
         string? lastName,
@@ -264,7 +264,7 @@ public static class NativeOtpEndpoints
     /// jitter — Random.Shared is correct here (the real OTP secret uses CSPRNG
     /// in EmailOtpService).
     /// </summary>
-    private static async Task AntiTimingDelayAsync()
+    internal static async Task AntiTimingDelayAsync()
     {
 #pragma warning disable CA5394, SCS0005
         var delayMs = Random.Shared.Next(100, 300);

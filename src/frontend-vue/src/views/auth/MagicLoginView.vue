@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useLoginRedirect } from '@/composables/useLoginRedirect'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import { CoarNotice, CoarCard, CoarFormField, CoarOtpInput, CoarButton } from '@cocoar/vue-ui'
+import AuthBrand from '@/components/auth/AuthBrand.vue'
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -79,11 +80,7 @@ async function submitTotp() {
       {{ language === 'de' ? 'EN' : 'DE' }}
     </button>
     <div class="w-full max-w-sm text-center">
-      <div class="mb-8">
-        <h1 class="text-2xl font-bold tracking-tight text-surface-800">
-          Modgud
-        </h1>
-      </div>
+      <AuthBrand class="mb-8" spacing="compact" />
 
       <!-- Loading -->
       <div v-if="status === 'loading'" class="space-y-4">

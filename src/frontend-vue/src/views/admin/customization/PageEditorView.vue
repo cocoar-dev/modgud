@@ -1,19 +1,34 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { CoarPageBuilder, type PageNode } from '@cocoar/vue-page-builder'
+import {
+  CoarPageBuilder,
+  normalizePageSchema,
+  type PageCompositionReference,
+  type PageNode,
+} from '@cocoar/vue-page-builder'
 import { CoarNotice, CoarButton, CoarTextInput, CoarFormField, useDialog } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
+import { useAppConfigStore } from '@/stores/appconfig.store'
 import AssetPicker from '@/components/AssetPicker.vue'
 import type { AssetDto } from '@/models/assets'
 import {
   AUTH_PAGE_SLOTS,
+  authPageLocale,
   createAuthPageConfig,
   createDefaultAuthPageSchema,
   type AuthPageSlot,
 } from '@/page-builder/authPageConfig'
-import { useRealmPagesApi, type VariantPayload } from '@/composables/usePagesApi'
+import { createAuthRuntimeContext } from '@/page-builder/authPageContext'
+import { authRuntimeHost } from '@/page-builder/authPageCodeRuntime'
+import { createAuthPageTheme } from '@/page-builder/authPageTheme'
+import {
+  useRealmPagesApi,
+  type PageVariantRevision,
+  type VariantPayload,
+} from '@/composables/usePagesApi'
+import { usePageCompositionsApi } from '@/composables/usePageCompositionsApi'
 
 const { t, language } = useI18n()
 const ui = useUI()
@@ -21,6 +36,8 @@ const route = useRoute()
 const router = useRouter()
 const dialog = useDialog()
 const api = useRealmPagesApi()
+const { repository: compositionRepository } = usePageCompositionsApi()
+const appConfig = useAppConfigStore()
 
 const slug = computed(() => (route.params.slug as string) ?? '')
 const slot = computed<AuthPageSlot>(() =>
@@ -28,19 +45,40 @@ const slot = computed<AuthPageSlot>(() =>
 const variantId = computed(() => (route.params.variantId as string) ?? 'new')
 const isNew = computed(() => variantId.value === 'new')
 
-const pageConfig = computed(() => createAuthPageConfig(slot.value, async (currentId?: string) => {
+const pageConfig = computed(() => createAuthPageConfig(slot.value, authPageLocale(language.value), async (currentId?: string) => {
   const ref$ = dialog.open<AssetDto>(AssetPicker, {
     title: t('asset.picker.title', {}, 'Select an asset'),
     size: 'l',
   }, { selectedId: currentId ?? null })
   const result = await ref$.result
   return result?.Id ?? null
+}, appConfig.config.PageTheme))
+
+const previewState = computed(() => ({
+  login: 'credentials',
+  'password-forgot': 'form',
+  logout: 'complete',
+  consent: 'prompt',
+})[slot.value])
+
+// "Host values" in CoarPageBuilder means the consumer-supplied preview
+// contract. Keep it representative of the current realm. It also carries
+// runtime.viewState, which is how the preview knows which screen to show now
+// that the separate previewState prop is gone.
+const previewContext = computed(() => createAuthRuntimeContext({
+  config: appConfig.config,
+  viewState: previewState.value,
 }))
+
+const previewFallbackSchema = computed(() => createDefaultAuthPageSchema(slot.value))
+const previewRuntimePageId = computed(() => `modgud-auth-editor:${slot.value}:${variantId.value}`)
+const previewTheme = computed(() => createAuthPageTheme(appConfig.config.PageTheme))
 
 const labelBySlot: Record<string, string> = {
   login: t('admin.customization.pages.login.title', {}, 'Login'),
   logout: t('admin.customization.pages.logout.title', {}, 'Logout'),
   'password-forgot': t('admin.customization.pages.passwordForgot.title', {}, 'Forgot password'),
+  consent: t('admin.customization.pages.consent.title', {}, 'Consent'),
 }
 
 watch([language, slug], () => ui.set((ctx) => {
@@ -58,6 +96,12 @@ const saving = ref(false)
 const savedFlash = ref(false)
 const error = ref<string | null>(null)
 const resetHint = ref(false)
+const publishing = ref(false)
+const publishedRevision = ref(0)
+const publishedAt = ref<string | null>(null)
+const hasUnpublishedChanges = ref(false)
+const revisions = ref<PageVariantRevision[]>([])
+const rollbackRevision = ref<number | null>(null)
 
 async function load() {
   loading.value = true
@@ -67,16 +111,28 @@ async function load() {
     if (isNew.value) {
       name.value = ''
       schema.value = createDefaultAuthPageSchema(slot.value)
+      publishedRevision.value = 0
+      publishedAt.value = null
+      hasUnpublishedChanges.value = true
+      revisions.value = []
       return
     }
     const variant = await api.getVariant(slot.value, variantId.value)
     name.value = variant.Name
     try {
-      schema.value = JSON.parse(variant.Schema) as PageNode
+      schema.value = normalizePageSchema(
+        JSON.parse(variant.Schema),
+        { elements: pageConfig.value.elementTypes },
+      ).schema
     } catch (e: any) {
       error.value = `Stored schema is invalid JSON: ${e?.message ?? e}`
       schema.value = createDefaultAuthPageSchema(slot.value)
     }
+    publishedRevision.value = variant.PublishedRevision
+    publishedAt.value = variant.PublishedAt
+    hasUnpublishedChanges.value = variant.HasUnpublishedChanges
+    revisions.value = variant.Revisions
+    rollbackRevision.value = variant.Revisions[0]?.Number ?? null
   } catch (e: any) {
     error.value = e?.message ?? String(e)
   } finally {
@@ -101,12 +157,45 @@ async function save() {
       await router.replace(`/platform/customization/pages/${slot.value}/${created.Id}`)
     } else {
       await api.updateVariant(slot.value, variantId.value, payload)
+      hasUnpublishedChanges.value = true
       flashSaved()
     }
   } catch (e: any) {
     error.value = e?.message ?? String(e)
   } finally {
     saving.value = false
+  }
+}
+
+async function publish() {
+  if (isNew.value || publishing.value) return
+  publishing.value = true
+  error.value = null
+  try {
+    await save()
+    if (error.value) return
+    await api.publishVariant(slot.value, variantId.value)
+    await load()
+    flashSaved()
+  } catch (e: any) {
+    error.value = e?.message ?? String(e)
+  } finally {
+    publishing.value = false
+  }
+}
+
+async function rollback() {
+  if (isNew.value || rollbackRevision.value === null || publishing.value) return
+  publishing.value = true
+  error.value = null
+  try {
+    await api.rollbackVariant(slot.value, variantId.value, rollbackRevision.value)
+    await load()
+    flashSaved()
+  } catch (e: any) {
+    error.value = e?.message ?? String(e)
+  } finally {
+    publishing.value = false
   }
 }
 
@@ -126,6 +215,13 @@ function back() {
   router.push('/platform/customization/pages')
 }
 
+function openCompositionEditor(reference: PageCompositionReference) {
+  router.push({
+    path: `/platform/customization/compositions/${encodeURIComponent(reference.id)}`,
+    query: { version: reference.version },
+  })
+}
+
 watch([slot, variantId], load, { immediate: true })
 </script>
 
@@ -142,11 +238,26 @@ watch([slot, variantId], load, { immediate: true })
           :placeholder="t('admin.customization.pages.variantName', {}, 'Variant name')" />
       </CoarFormField>
       <div class="toolbar-spacer" />
+      <span v-if="!isNew" class="revision-status" :title="publishedAt ?? undefined">
+        {{ publishedRevision > 0 ? `Published r${publishedRevision}` : 'Not published' }}
+        <template v-if="hasUnpublishedChanges"> · Draft changed</template>
+      </span>
+      <select v-if="revisions.length" v-model.number="rollbackRevision" class="revision-select">
+        <option v-for="revision in revisions" :key="revision.Number" :value="revision.Number">
+          r{{ revision.Number }} · {{ new Date(revision.PublishedAt).toLocaleString() }}
+        </option>
+      </select>
+      <CoarButton v-if="revisions.length" size="s" variant="ghost" :disabled="publishing" @click="rollback">
+        {{ t('admin.customization.pages.rollback', {}, 'Rollback') }}
+      </CoarButton>
       <CoarButton size="s" variant="ghost" @click="loadDefaultTemplate">
         {{ t('admin.customization.pages.loadDefault', {}, 'Load built-in template') }}
       </CoarButton>
       <CoarButton size="s" :loading="saving" @click="save">
         {{ isNew ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save') }}
+      </CoarButton>
+      <CoarButton v-if="!isNew" size="s" :loading="publishing" @click="publish">
+        {{ t('admin.customization.pages.publish', {}, 'Save & publish') }}
       </CoarButton>
     </div>
 
@@ -159,7 +270,23 @@ watch([slot, variantId], load, { immediate: true })
     </CoarNotice>
 
     <div v-if="loading" class="text-sm text-gray-400">{{ t('common.loading', {}, 'Loading…') }}</div>
-    <CoarPageBuilder v-else v-model="schema" :config="pageConfig" class="builder" />
+    <CoarPageBuilder
+      v-else
+      v-model="schema"
+      :config="pageConfig"
+      :composition-repository="compositionRepository"
+      composition-management="consume"
+      authoring-mode="code"
+      :preview-context="previewContext"
+      :preview-locale="authPageLocale(language)"
+      :preview-theme="previewTheme"
+      preview-theme-mode="auto"
+      :preview-fallback-schema="previewFallbackSchema"
+      :preview-runtime-host="authRuntimeHost"
+      :preview-runtime-page-id="previewRuntimePageId"
+      @open-composition="openCompositionEditor"
+      class="builder"
+    />
   </div>
 </template>
 
@@ -182,9 +309,12 @@ watch([slot, variantId], load, { immediate: true })
 
 .name-field { margin: 0; min-width: 220px; }
 .toolbar-spacer { flex: 1; }
+.revision-status { color: var(--coar-text-neutral-secondary); font-size: 0.75rem; white-space: nowrap; }
+.revision-select { max-width: 190px; border: 1px solid var(--coar-border-neutral-secondary); border-radius: 0.35rem; padding: 0.3rem; background: var(--coar-background-neutral-primary); }
 
 .builder {
   flex: 1;
   min-height: 0;
+  --coar-shadow-small: var(--coar-card-shadow);
 }
 </style>

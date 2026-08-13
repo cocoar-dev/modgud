@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, provide } from 'vue'
+import { ref, computed, onMounted, onErrorCaptured, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
+import AuthBrand from '@/components/auth/AuthBrand.vue'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
 import { useLoginRedirect } from '@/composables/useLoginRedirect'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
@@ -18,13 +19,18 @@ import {
 } from '@cocoar/vue-ui'
 import SecureSetupModal from './SecureSetupModal.vue'
 import {
-  CoarPageRenderer,
   normalizePageSchema,
   type ActionHandler,
   type ActionValues,
   type PageNode,
 } from '@cocoar/vue-page-builder'
-import { createAuthPageConfig } from '@/page-builder/authPageConfig'
+import {
+  authPageLocale,
+  createAuthPageConfig,
+  createDefaultAuthPageSchema,
+} from '@/page-builder/authPageConfig'
+import { createAuthRuntimeContext } from '@/page-builder/authPageContext'
+import AuthRuntimePageRenderer from '@/page-builder/AuthRuntimePageRenderer.vue'
 import {
   LOGIN_PAGE_RUNTIME_KEY,
   type ExternalLoginDto,
@@ -73,7 +79,8 @@ const error = ref('')
 const externalLogins = ref<ExternalLoginDto[]>([])
 async function loadExternalLogins() {
   try {
-    const res = await fetch('/api/account/external-logins')
+    const returnUrl = redirectTarget.value
+    const res = await fetch(`/api/account/external-logins?returnUrl=${encodeURIComponent(returnUrl)}`)
     if (res.ok) externalLogins.value = await res.json()
   } catch { /* ignore — login page works without external buttons */ }
 }
@@ -83,7 +90,7 @@ async function loadExternalLogins() {
 const selfRegistrationEnabled = ref(false)
 async function loadSelfRegistrationInfo() {
   try {
-    const res = await fetch('/api/account/self-registration-info')
+    const res = await fetch(`/api/account/self-registration-info?returnUrl=${encodeURIComponent(redirectTarget.value)}`)
     if (!res.ok) return
     const info = await res.json()
     selfRegistrationEnabled.value = !!info?.Enabled
@@ -112,57 +119,127 @@ loadExternalLogins()
 // finish-endpoint redirects there when something rejects (unknown subject,
 // email conflict, script failure, etc.). Translate the code into a friendly
 // message and show it in the same banner as the regular form errors.
-const idpErrorMessages: Record<string, string> = {
-  'Idp.NotEnabled': t('auth.idp.notEnabled', {}, 'This identity provider is not available.'),
-  'Idp.InvalidToken': t('auth.idp.invalidToken', {}, 'The identity provider did not return a valid response.'),
-  'Idp.Unlinked': t('auth.idp.unlinked', {}, 'This external identity has been disconnected. Contact your administrator.'),
-  'Idp.LinkedToOtherUser': t('auth.idp.linkedToOther', {}, 'This identity is already linked to a different Modgud account.'),
-  'Idp.UserMissing': t('auth.idp.userMissing', {}, 'The linked user no longer exists. Please contact your administrator.'),
-  'Idp.EmailNotAllowed': t('auth.idp.emailNotAllowed', {}, 'Your email domain is not allowed for this provider.'),
-  'Idp.EmailRequired': t('auth.idp.emailRequired', {}, 'The identity provider did not return an email. Cannot create a new account.'),
-  'Idp.EmailConflict': t('auth.idp.emailConflict', {}, 'A Modgud account with this email already exists. Please contact your administrator.'),
-  'Idp.NoUserAndAutoCreateOff': t('auth.idp.noUser', {}, 'No Modgud account is linked to this identity and auto-creation is disabled.'),
-  'Idp.JitCreationFailed': t('auth.idp.jitFailed', {}, 'Could not create a new user account.'),
-  'Idp.UserUpdateFailed': t('auth.idp.updateFailed', {}, 'Failed to update the user record from the identity provider.'),
-  'oidc:Correlation failed.': t('auth.idp.correlationFailed', {}, 'Login session expired. Please try again.'),
-}
-
 const rawError = route.query.error as string | undefined
-if (rawError) {
-  error.value = idpErrorMessages[rawError]
-    ?? t('auth.idp.genericError', { code: rawError }, 'Login via identity provider failed ({code}).')
+function resolveIdpError(code: string): string {
+  const app = branding.value.ProductName || 'Modgud'
+  const messages: Record<string, string> = {
+    'Idp.NotEnabled': t('auth.idp.notEnabled', {}, 'This identity provider is not available.'),
+    'Idp.InvalidToken': t('auth.idp.invalidToken', {}, 'The identity provider did not return a valid response.'),
+    'Idp.Unlinked': t('auth.idp.unlinked', {}, 'This external identity has been disconnected. Contact your administrator.'),
+    'Idp.LinkedToOtherUser': t('auth.idp.linkedToOtherBranded', { app }, 'This identity is already linked to a different {app} account.'),
+    'Idp.UserMissing': t('auth.idp.userMissing', {}, 'The linked user no longer exists. Please contact your administrator.'),
+    'Idp.EmailNotAllowed': t('auth.idp.emailNotAllowed', {}, 'Your email domain is not allowed for this provider.'),
+    'Idp.EmailRequired': t('auth.idp.emailRequired', {}, 'The identity provider did not return an email. Cannot create a new account.'),
+    'Idp.EmailConflict': t('auth.idp.emailConflictBranded', { app }, 'A {app} account with this email already exists. Please contact your administrator.'),
+    'Idp.NoUserAndAutoCreateOff': t('auth.idp.noUserBranded', { app }, 'No {app} account is linked to this identity and auto-creation is disabled.'),
+    'Idp.JitCreationFailed': t('auth.idp.jitFailed', {}, 'Could not create a new user account.'),
+    'Idp.UserUpdateFailed': t('auth.idp.updateFailed', {}, 'Failed to update the user record from the identity provider.'),
+    'oidc:Correlation failed.': t('auth.idp.correlationFailed', {}, 'Login session expired. Please try again.'),
+  }
+  return messages[code]
+    ?? t('auth.idp.genericError', { code }, 'Login via identity provider failed ({code}).')
 }
 
 // Flow steps
-const step = ref<'credentials' | 'mfa-choice' | 'totp' | 'email-otp' | 'magic-link' | 'secure-setup'>('credentials')
+const step = ref<'credentials' | 'primary-otp' | 'mfa-choice' | 'totp' | 'email-otp' | 'magic-link' | 'secure-setup'>('credentials')
 const mfaMethods = ref<string[]>([])
 const emailOtpSent = ref(false)
+const primaryOtpEmail = ref('')
 const magicLinkEmail = ref('')
 const magicLinkSent = ref(false)
 
 // Grace period state (populated from login response when RequiresSecureSetup)
 const secureSetupInGrace = ref(false)
 const secureSetupDueAt = ref<string | null>(null)
+const passkeyLoading = ref(false)
 
 const isPasswordless = () => appConfig.config.AuthenticationMinimumLevel >= 2
 
-const loginPageConfig = createAuthPageConfig('login')
+const loginPageConfig = computed(() => createAuthPageConfig(
+  'login',
+  authPageLocale(language.value),
+  undefined,
+  appConfig.config.PageTheme,
+))
+const loginFallbackSchema = computed(() => createDefaultAuthPageSchema('login'))
 const customLoginSchema = ref<PageNode | null>(null)
 const loginPageReady = ref(false)
 
+function schemaContains(node: PageNode, id: string): boolean {
+  if (node.id === id) return true
+  return 'children' in node && Array.isArray(node.children)
+    ? node.children.some(child => schemaContains(child, id))
+    : false
+}
+
+/**
+ * Whether the document wires an element to a host action.
+ *
+ * Matching on the action rather than on a node id is what makes this work for a
+ * realm that authored its own page: the action ids are the published contract
+ * (they are allow-listed in the PageConfig and handled here), while node ids are
+ * the author's to choose. Keying off `login-language-switcher` meant any page
+ * that named its switcher differently got a second one drawn by the host.
+ */
+function schemaWiresAction(node: PageNode, action: string): boolean {
+  const props = (node as { props?: Record<string, unknown> }).props
+  if (props?.action === action) return true
+  return 'children' in node && Array.isArray(node.children)
+    ? node.children.some(child => schemaWiresAction(child, action))
+    : false
+}
+
+// Schemas saved before the parity template still rely on the legacy fixed
+// notice above the renderer for callback/host errors.
+const customSchemaRendersHostError = computed(() => customLoginSchema.value
+  ? schemaContains(customLoginSchema.value, 'login-context-error')
+  : false)
+const customSchemaRendersLanguageSwitcher = computed(() => customLoginSchema.value
+  ? schemaWiresAction(customLoginSchema.value, 'auth:toggle-language')
+  : false)
+
+// A renderer regression must not take authentication down. Vue render/setup
+// failures immediately unmount the custom branch and reveal the hardcoded
+// LoginView. `?safemode=1` remains the manual escape hatch for visual/runtime
+// regressions that do not throw an exception.
+onErrorCaptured((exception, _instance, info) => {
+  if (!customLoginSchema.value || !['credentials', 'primary-otp'].includes(step.value)) return
+  console.error('[auth-page] Custom login failed; using fixed fallback.', exception, info)
+  customLoginSchema.value = null
+  return false
+})
+
+const loginViewState = computed(() => step.value === 'primary-otp'
+  ? 'login-code'
+  : error.value
+    ? 'error'
+    : submitting.value || passkeyLoading.value
+    ? 'submitting'
+    : step.value === 'credentials'
+      ? 'credentials'
+      : 'mfa-continuation')
+const loginRuntimeContext = computed(() => createAuthRuntimeContext({
+  config: appConfig.config,
+  externalProviders: externalLogins.value,
+  registrationEnabled: selfRegistrationEnabled.value,
+  loginEmail: primaryOtpEmail.value,
+  viewState: loginViewState.value,
+  feedbackMessage: error.value,
+}))
 onMounted(async () => {
   try {
     await appConfig.loadForLogin(redirectTarget.value)
     if (!appConfig.config.Features.PageBuilder || route.query.safemode === '1') return
     const stored = appConfig.config.Pages.login
     if (!stored) return
-    const normalized = normalizePageSchema(JSON.parse(stored), { elements: loginPageConfig.elements })
+    const normalized = normalizePageSchema(JSON.parse(stored), { elements: loginPageConfig.value.elementTypes })
     customLoginSchema.value = normalized.schema
   } catch {
     // A broken or unreachable customization must never make authentication
     // unavailable. The fixed login below remains the emergency-safe fallback.
     customLoginSchema.value = null
   } finally {
+    if (rawError) error.value = resolveIdpError(rawError)
     loginPageReady.value = true
   }
 })
@@ -180,7 +257,7 @@ function loginErrorMessage(e: unknown): string {
 
 async function performCredentialLogin(name: string, secret: string, remember: boolean) {
   try {
-    const result = await authStore.login(name.trim(), secret, remember)
+    const result = await authStore.login(name.trim(), secret, remember, redirectTarget.value)
     if (result?.RequiresSecureSetup) {
       secureSetupInGrace.value = result.GracePeriod === true
       secureSetupDueAt.value = result.SecureSetupDueAt ?? null
@@ -229,6 +306,15 @@ function requiredString(values: ActionValues, name: string): string {
 }
 
 const customLoginActions: Record<string, ActionHandler> = {
+  'auth:toggle-language': async (values) => {
+    const requested = values.language
+    if (requested === 'de' || requested === 'en') {
+      await localization.setLanguage(requested)
+      localStorage.setItem('language', requested)
+      return
+    }
+    await toggleLanguage()
+  },
   'auth:login': async (values) => {
     error.value = ''
     userName.value = requiredString(values, 'username')
@@ -240,6 +326,37 @@ const customLoginActions: Record<string, ActionHandler> = {
     error.value = ''
     rememberMe.value = values.rememberMe === true
     await handlePasskeyLogin(true)
+  },
+  'auth:request-login-code': async (values) => {
+    error.value = ''
+    primaryOtpEmail.value = requiredString(values, 'email').trim()
+    await authStore.requestPasswordlessOtp(primaryOtpEmail.value, redirectTarget.value)
+    step.value = 'primary-otp'
+  },
+  'auth:verify-login-code': async (values) => {
+    error.value = ''
+    const code = requiredString(values, 'otpCode').replace(/[\s-]/g, '')
+    try {
+      await authStore.passwordlessOtpLogin(primaryOtpEmail.value, code, false, redirectTarget.value)
+      finishLogin()
+    } catch (e) {
+      if (e instanceof HttpClientError) {
+        throw new Error(errorDetail(e) ?? t('auth.mfa.invalidCode', {}, 'Invalid code. Please try again.'))
+      }
+      throw new Error(t('common.connectionError', {}, 'Connection to server failed.'))
+    }
+  },
+  'auth:resend-login-code': async () => {
+    if (!primaryOtpEmail.value) {
+      step.value = 'credentials'
+      return
+    }
+    await authStore.requestPasswordlessOtp(primaryOtpEmail.value, redirectTarget.value)
+  },
+  'auth:back-to-email': () => {
+    step.value = 'credentials'
+    primaryOtpEmail.value = ''
+    error.value = ''
   },
   'auth:magic-link': () => {
     if (!appConfig.config.MagicLinkSelfService) {
@@ -253,6 +370,20 @@ const customLoginActions: Record<string, ActionHandler> = {
       throw new Error(t('auth.registration.notAvailable', {}, 'Registration is not available.'))
     }
     return router.push({ path: '/register', query: { redirect: route.query.redirect } })
+  },
+  'auth:external-provider': (values) => {
+    const providerId = values.providerId
+    const provider = typeof providerId === 'string'
+      ? externalLogins.value.find(item => item.Id === providerId)
+      : undefined
+    if (!provider) throw new Error(t('auth.idp.notEnabled', {}, 'This identity provider is not available.'))
+    startExternalLogin(provider)
+  },
+  'legal:terms': () => {
+    if (appConfig.config.Legal.TermsOfServiceUrl) window.location.assign(appConfig.config.Legal.TermsOfServiceUrl)
+  },
+  'legal:privacy': () => {
+    if (appConfig.config.Legal.PrivacyPolicyUrl) window.location.assign(appConfig.config.Legal.PrivacyPolicyUrl)
   },
 }
 
@@ -373,13 +504,12 @@ async function onSecureSetupLogout() {
 
 // ── Passkey Login ──
 const passkeyHttp = useHttpClient('/api/account/passkey')
-const passkeyLoading = ref(false)
 
 async function handlePasskeyLogin(reportToRenderer = false) {
   passkeyLoading.value = true
   error.value = ''
   try {
-    const serverOptions = await passkeyHttp.addPath('login-options').post<any>({})
+    const serverOptions = await passkeyHttp.addPath('login-options').post<any>({ ReturnUrl: redirectTarget.value })
 
     const publicKey: PublicKeyCredentialRequestOptions = {
       challenge: base64UrlToBuffer(serverOptions.challenge),
@@ -452,6 +582,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
 <template>
   <div class="min-h-screen bg-surface-50 relative">
     <button
+      v-if="!['credentials', 'primary-otp'].includes(step) || !customSchemaRendersLanguageSwitcher"
       class="absolute z-10 top-4 right-4 text-xs text-surface-400 hover:text-surface-600 transition"
       @click="toggleLanguage"
     >
@@ -462,12 +593,16 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
       {{ t('common.loading', {}, 'Loading…') }}
     </div>
 
-    <template v-else-if="step === 'credentials' && customLoginSchema && !isPasswordless()">
-      <CoarNotice v-if="error" variant="error" class="custom-login-error">{{ error }}</CoarNotice>
-      <CoarPageRenderer
+    <template v-else-if="['credentials', 'primary-otp'].includes(step) && customLoginSchema">
+      <CoarNotice v-if="error && !customSchemaRendersHostError" variant="error" class="custom-login-error">{{ error }}</CoarNotice>
+      <AuthRuntimePageRenderer
+        page-id="auth-login"
         :schema="customLoginSchema"
         :config="loginPageConfig"
         :actions="customLoginActions"
+        :fallback-schema="loginFallbackSchema"
+        :runtime-context="loginRuntimeContext"
+        :locale="authPageLocale(language)"
       />
     </template>
 
@@ -475,13 +610,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
       <div class="w-full max-w-sm">
       <!-- Logo + Title -->
       <div class="mb-8 text-center">
-        <img :src="branding.LogoUrl ?? '/idp-logo.svg'" :alt="branding.ProductName ?? 'Modgud'" class="mx-auto mb-1 h-16 w-auto" />
-        <h1 v-if="branding.ProductName" class="text-2xl font-bold tracking-tight text-surface-800">
-          {{ branding.ProductName }}
-        </h1>
-        <h1 v-else class="text-2xl font-bold tracking-tight text-surface-800">
-          Modgud
-        </h1>
+        <AuthBrand spacing="compact" />
         <p class="mt-2 text-sm text-surface-500">
           <template v-if="step === 'credentials'">{{ t('auth.login.subtitle', {}, 'Sign in to continue.') }}</template>
           <template v-else-if="step === 'mfa-choice'">{{ t('auth.mfa.chooseMethod', {}, 'Choose a verification method.') }}</template>
@@ -506,8 +635,8 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
         <!-- Step 1: Username + Password (or passwordless alternatives) -->
         <form v-if="step === 'credentials'" class="space-y-4" @submit.prevent="handleLogin">
           <!-- Password login (hidden at Level 2) -->
-          <template v-if="!isPasswordless()">
-            <CoarFormField :label="t('auth.login.username', {}, 'Username')">
+          <template v-if="appConfig.config.InternalLoginEnabled && !isPasswordless()">
+            <CoarFormField required :label="t('auth.login.username', {}, 'Username')">
               <CoarTextInput
                 v-model="userName"
                 :placeholder="t('auth.login.username', {}, 'Username')"
@@ -516,7 +645,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
               />
             </CoarFormField>
 
-            <CoarFormField :label="t('auth.login.password', {}, 'Password')">
+            <CoarFormField required :label="t('auth.login.password', {}, 'Password')">
               <CoarPasswordInput
                 v-model="password"
                 :placeholder="t('auth.login.password', {}, 'Password')"
@@ -540,21 +669,22 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
           </template>
 
           <!-- Passwordless notice (Level 2) -->
-          <CoarNotice v-if="isPasswordless()" variant="info">
+          <CoarNotice v-if="appConfig.config.InternalLoginEnabled && isPasswordless()" variant="info">
             {{ t('auth.login.passwordlessMode', {}, 'This application uses passwordless login.') }}
           </CoarNotice>
 
-          <CoarNotice v-if="isPasswordless() && error" variant="error">{{ error }}</CoarNotice>
+          <CoarNotice v-if="appConfig.config.InternalLoginEnabled && isPasswordless() && error" variant="error">{{ error }}</CoarNotice>
 
           <!-- Divider -->
           <div class="flex items-center gap-3 text-surface-400 text-xs">
             <div class="flex-1 border-t border-surface-200"></div>
-            <template v-if="!isPasswordless()">{{ t('common.or', {}, 'or') }}</template>
+            <template v-if="appConfig.config.InternalLoginEnabled">{{ t('common.or', {}, 'or') }}</template>
             <div class="flex-1 border-t border-surface-200"></div>
           </div>
 
           <!-- Passkey login (always available) -->
           <CoarButton
+            v-if="appConfig.config.InternalLoginEnabled"
             type="button"
             variant="secondary"
             :loading="passkeyLoading"
@@ -590,7 +720,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
 
           <!-- Detours forward ?redirect= so the pending continuation (e.g. a
                client app's /connect/authorize flow) survives the side trip. -->
-          <RouterLink v-if="!isPasswordless()" :to="{ path: '/forgot-password', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
+          <RouterLink v-if="appConfig.config.InternalLoginEnabled && !isPasswordless()" :to="{ path: '/forgot-password', query: { redirect: route.query.redirect } }" class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.login.forgotPassword', {}, 'Forgot password?') }}
           </RouterLink>
 

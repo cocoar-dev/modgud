@@ -126,5 +126,54 @@ public class EmailTemplateStoreTests
             Assert.Contains("{{ActionUrl}}", body);
             Assert.Contains("{{ExpirationMinutes}}", body);
         }
+
+        [Fact]
+        public void Escapes_untrusted_model_values_and_strips_subject_newlines()
+        {
+            var rendered = EmailTemplateStore.RenderMessage(EmailTemplate.AdminChangeRequestNotification, new()
+            {
+                ["AppName"] = "Safe\r\nBcc: attacker@example.com",
+                ["Field"] = "<img src=x onerror=alert(1)>",
+                ["RequestingUser"] = "<script>alert(1)</script>",
+                ["OldValue"] = "old",
+                ["NewValue"] = "new",
+                ["ActionUrl"] = "https://example.test/review?a=1&b=2",
+            });
+
+            Assert.DoesNotContain('\r', rendered.Subject);
+            Assert.DoesNotContain('\n', rendered.Subject);
+            Assert.DoesNotContain("<script>", rendered.HtmlBody, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("<img src=x", rendered.HtmlBody, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("&lt;script&gt;", rendered.HtmlBody);
+            Assert.Contains("https://example.test/review?a=1&amp;b=2", rendered.HtmlBody);
+            Assert.Contains("attacker@example.com", rendered.TextBody);
+        }
+
+        [Fact]
+        public void Renders_english_and_branding_with_plain_text_alternative()
+        {
+            var rendered = EmailTemplateStore.RenderMessage(EmailTemplate.MagicLink, new()
+            {
+                ["Language"] = "en",
+                ["AppName"] = "Acme",
+                ["PrimaryColor"] = "#123456",
+                ["LogoUrl"] = "https://cdn.example.test/logo.png",
+                ["DisplayName"] = "Alice",
+                ["ActionUrl"] = "https://example.test/login",
+                ["ExpirationMinutes"] = "10",
+                ["FromName"] = "Acme Security",
+                ["ReplyTo"] = "support@example.test",
+            });
+
+            Assert.Equal("Acme — Sign-in link", rendered.Subject);
+            Assert.Contains("Sign in now", rendered.HtmlBody);
+            Assert.Contains("bgcolor=\"#123456\"", rendered.HtmlBody);
+            Assert.Contains("font-weight:700;color:#123456", rendered.HtmlBody);
+            Assert.Contains("https://cdn.example.test/logo.png", rendered.HtmlBody);
+            Assert.Contains("Hello Alice", rendered.TextBody);
+            Assert.DoesNotContain("<", rendered.TextBody);
+            Assert.Equal("Acme Security", rendered.FromName);
+            Assert.Equal("support@example.test", rendered.ReplyTo);
+        }
     }
 }

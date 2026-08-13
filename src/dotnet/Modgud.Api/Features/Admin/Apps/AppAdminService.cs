@@ -4,6 +4,7 @@ using Modgud.Application.DTOs.Applications;
 using Modgud.Authentication.Applications;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
+using Modgud.Domain.Applications;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Authorization.Roles;
 
@@ -216,6 +217,13 @@ public sealed class AppAdminService(IDocumentSession session, IApplicationSettin
                 });
         }
 
+        // The global host map lives outside the tenant transaction. Remove it first:
+        // a failed tenant commit then merely leaves a live App without its vanity host,
+        // whereas the opposite order could route traffic to a deleted App indefinitely.
+        var originRemoved = await settingsSvc.RemoveOriginRoutingAsync(id, ct);
+        if (originRemoved.IsError) return originRemoved.Errors;
+
+        session.Delete<ApplicationSettings>(id);
         session.Events.Append(id, new AppDeletedEvent(id));
         await session.SaveChangesAsync(ct);
         return Result.Success;

@@ -4,6 +4,7 @@ using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Authentication.SelfRegistration.Captcha;
 using Modgud.Domain.Realms;
+using Modgud.Domain.Assets;
 using Modgud.Infrastructure.Audit;
 using ErrorOr;
 using Marten;
@@ -106,9 +107,16 @@ public sealed class RealmSettingsService(
 
         if (dto.Branding is not null)
         {
-            var branding = ApplyBrandingPatch(doc.Branding, dto.Branding);
+            var branding = await ApplyBrandingPatchAsync(doc.Branding, dto.Branding, ct);
             if (branding.IsError) return branding.FirstError;
             doc.Branding = branding.Value;
+        }
+
+        if (dto.EmailBranding is not null)
+        {
+            var emailBranding = ApplyEmailBrandingPatch(doc.EmailBranding, dto.EmailBranding);
+            if (emailBranding.IsError) return emailBranding.FirstError;
+            doc.EmailBranding = emailBranding.Value;
         }
 
         if (dto.RegistrationFields is not null)
@@ -193,6 +201,7 @@ public sealed class RealmSettingsService(
         ClientSessions = MapClientSessionsToDto(doc.ClientSessions),
         AuthRateLimits = MapAuthRateLimitsToDto(doc.AuthRateLimits),
         Branding = MapBrandingToDto(doc.Branding),
+        EmailBranding = MapEmailBrandingToDto(doc.EmailBranding),
         RegistrationFields = MapRegistrationFieldsToDto(doc.RegistrationFields),
         Deletion = MapDeletionToDto(doc.Deletion),
         Audit = MapAuditToDto(doc.Audit),
@@ -231,11 +240,70 @@ public sealed class RealmSettingsService(
         };
     }
 
+    private async Task<ErrorOr<BrandingSettings>> ApplyBrandingPatchAsync(
+        BrandingSettings? current,
+        UpdateBrandingSettingsDto patch,
+        CancellationToken ct)
+    {
+        var merged = ApplyBrandingPatch(current, patch);
+        if (merged.IsError) return merged.Errors;
+
+        var ids = new[] { merged.Value.LogoAssetId, merged.Value.FaviconAssetId }
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+        foreach (var id in ids)
+        {
+            if (await session.LoadAsync<Asset>(id, ct) is null)
+                return Error.Validation("Branding.AssetNotFound",
+                    $"Branding asset '{ShortGuid.Encode(id)}' does not exist in this realm.");
+        }
+
+        return merged.Value;
+    }
+
     private static string? MergeBrandingField(string? current, string? patch) => patch switch
     {
         null => current,
         "" => null,
         var v => v,
+    };
+
+    private static ErrorOr<Modgud.Domain.RealmSettings.EmailBrandingSettings> ApplyEmailBrandingPatch(
+        Modgud.Domain.RealmSettings.EmailBrandingSettings? current,
+        UpdateEmailBrandingSettingsDto patch)
+    {
+        var result = (current ?? new Modgud.Domain.RealmSettings.EmailBrandingSettings()) with
+        {
+            ProductName = MergeBrandingField(current?.ProductName, patch.ProductName),
+            SubjectPrefix = MergeBrandingField(current?.SubjectPrefix, patch.SubjectPrefix),
+            Preheader = MergeBrandingField(current?.Preheader, patch.Preheader),
+            FooterText = MergeBrandingField(current?.FooterText, patch.FooterText),
+            FromName = MergeBrandingField(current?.FromName, patch.FromName),
+            ReplyTo = MergeBrandingField(current?.ReplyTo, patch.ReplyTo),
+        };
+        if (result.ProductName?.Length > 100 || result.SubjectPrefix?.Length > 100
+            || result.Preheader?.Length > 200 || result.FooterText?.Length > 500)
+            return Error.Validation("EmailBranding.ValueTooLong",
+                "Product/subject prefix max 100, preheader 200 and footer 500 characters.");
+        if (result.FromName?.Length > 100 || result.FromName?.IndexOfAny(['\r', '\n']) >= 0)
+            return Error.Validation("EmailBranding.FromNameInvalid",
+                "Sender display name must be at most 100 characters and contain no line breaks.");
+        if (result.ReplyTo is not null && !System.Net.Mail.MailAddress.TryCreate(result.ReplyTo, out _))
+            return Error.Validation("EmailBranding.ReplyToInvalid", "Reply-to must be a valid email address.");
+        return result;
+    }
+
+    private static EmailBrandingSettingsDto MapEmailBrandingToDto(
+        Modgud.Domain.RealmSettings.EmailBrandingSettings? settings) => new()
+    {
+        ProductName = settings?.ProductName,
+        SubjectPrefix = settings?.SubjectPrefix,
+        Preheader = settings?.Preheader,
+        FooterText = settings?.FooterText,
+        FromName = settings?.FromName,
+        ReplyTo = settings?.ReplyTo,
     };
 
     private static ErrorOr<Guid?> MergeAssetIdField(Guid? current, string? patch)
