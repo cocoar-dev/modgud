@@ -1192,28 +1192,20 @@ try
     // endpoint rate limiter. Normal realm/auth middleware can never be resolved
     // from this branch.
     app.MapWhen(
-        context =>
-            context.Request.Path.StartsWithSegments("/api/install", StringComparison.OrdinalIgnoreCase)
-            || context.Request.Path.StartsWithSegments("/install", StringComparison.OrdinalIgnoreCase)
-            || context.Request.Path.StartsWithSegments("/health", StringComparison.OrdinalIgnoreCase)
-            || context.Request.Path.StartsWithSegments("/openapi", StringComparison.OrdinalIgnoreCase)
-            || context.Request.Path.StartsWithSegments("/swagger", StringComparison.OrdinalIgnoreCase)
-            || context.Request.Path.StartsWithSegments("/assets", StringComparison.OrdinalIgnoreCase)
-            || context.Request.Path.StartsWithSegments("/favicon", StringComparison.OrdinalIgnoreCase)
-            || context.Request.Path.StartsWithSegments("/_framework", StringComparison.OrdinalIgnoreCase),
+        context => RealmIndependentPathPolicy.Matches(context.Request.Path),
         realmIndependentBranch =>
         {
             realmIndependentBranch.UseRateLimiter();
             realmIndependentBranch.Run(async context =>
             {
                 var endpoint = context.GetEndpoint();
-                if (endpoint?.RequestDelegate is null)
+                if (!RealmIndependentPathPolicy.CanExecute(endpoint, context.Request.Path))
                 {
                     context.Response.StatusCode = StatusCodes.Status404NotFound;
                     return;
                 }
 
-                await endpoint.RequestDelegate(context);
+                await endpoint!.RequestDelegate!(context);
             });
         });
 
