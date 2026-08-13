@@ -1,6 +1,7 @@
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Net.Http.Headers;
 using Modgud.Api.Helper;
+using Modgud.Api.Middleware;
 
 namespace Modgud.Api.ExtensionMethods;
 
@@ -39,8 +40,9 @@ public static class SpaExtensions
         });
 
         app.MapFallbackToFile("index.html", new StaticFileOptions
-        {
-            FileProvider = fileProvider
-        });
+            {
+                FileProvider = fileProvider
+            })
+            .WithMetadata(SpaFallbackEndpointMetadata.Instance);
     }
 }

@@ -23,27 +23,6 @@ public sealed class RealmMiddleware
     private readonly RequestDelegate _next;
     private readonly IRealmCache _realmCache;
 
-    // Paths that bypass realm resolution entirely. These are realm-agnostic
-    // infra endpoints (probes, API docs, framework assets).
-    //
-    // NOTE: /signalr is deliberately NOT here. SignalR is realm-scoped: the hub
-    // is [Authorize], and the auth cookie is encrypted with the realm's own
-    // DataProtection keys (TenantedDataProtectionProvider). Skipping realm
-    // resolution would leave the request without any tenant, so its cookie
-    // cannot be decrypted on /signalr/*/negotiate. The realm is host-resolvable
-    // here exactly like any other request, so we let it resolve normally.
-    private static readonly string[] SkipPaths =
-    [
-        "/health",
-        "/swagger",
-        "/openapi",
-        "/_framework",
-        "/api/install",
-        "/install",
-        "/assets",
-        "/favicon",
-    ];
-
     public RealmMiddleware(RequestDelegate next, IRealmCache realmCache)
     {
         _next = next;
@@ -52,9 +31,12 @@ public sealed class RealmMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var path = context.Request.Path.Value;
-
-        if (path is not null && SkipPaths.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+        // Keep this classification identical to Program's terminal branch.
+        // If realm resolution skips a path that the branch does not catch,
+        // tenant-scoped session/DataProtection would execute without a realm.
+        // /signalr deliberately does not match: it is realm-scoped so its auth
+        // cookie can be decrypted with the correct tenant's keys.
+        if (RealmIndependentPathPolicy.Matches(context.Request.Path))
         {
             await _next(context);
             return;

@@ -70,4 +70,75 @@ public class RealmMiddlewareTests
         Assert.Equal(StatusCodes.Status404NotFound, ctx.Response.StatusCode);
         Assert.False(nextCalled);
     }
+
+    [Theory]
+    [InlineData("/favicon.ico")]
+    [InlineData("/swagger.json")]
+    [InlineData("/swagger-ui.html")]
+    [InlineData("/healthz")]
+    [InlineData("/assets.backup")]
+    [InlineData("/install.php")]
+    [InlineData("/OPENAPI.json")]
+    public async Task Realm_independent_prefixes_skip_resolution(string path)
+    {
+        var nextCalled = false;
+        var mw = new RealmMiddleware(_ => { nextCalled = true; return Task.CompletedTask; }, new FakeRealmCache(null));
+        var ctx = Ctx("unregistered.example.com");
+        ctx.Request.Path = path;
+
+        await mw.InvokeAsync(ctx);
+
+        Assert.True(nextCalled);
+    }
+
+    [Theory]
+    [InlineData("/install")]
+    [InlineData("/install/step")]
+    public void Installation_routes_allow_the_realm_independent_spa_fallback(string path)
+    {
+        Assert.True(RealmIndependentPathPolicy.AllowsSpaFallback(path));
+    }
+
+    [Theory]
+    [InlineData("/install.php")]
+    [InlineData("/installer")]
+    [InlineData("/api/install/status")]
+    [InlineData("/healthz")]
+    public void Other_realm_independent_prefixes_reject_the_spa_fallback(string path)
+    {
+        Assert.False(RealmIndependentPathPolicy.AllowsSpaFallback(path));
+    }
+
+    [Theory]
+    [InlineData("/install", true)]
+    [InlineData("/install/step", true)]
+    [InlineData("/install.php", false)]
+    [InlineData("/healthz", false)]
+    [InlineData("/swagger-ui", false)]
+    public void Only_install_routes_can_execute_the_spa_fallback(string path, bool expected)
+    {
+        var endpoint = new Endpoint(
+            _ => Task.CompletedTask,
+            new EndpointMetadataCollection(SpaFallbackEndpointMetadata.Instance),
+            "SPA fallback");
+
+        Assert.Equal(expected, RealmIndependentPathPolicy.CanExecute(endpoint, path));
+    }
+
+    [Fact]
+    public void A_real_endpoint_remains_executable()
+    {
+        var endpoint = new Endpoint(
+            _ => Task.CompletedTask,
+            EndpointMetadataCollection.Empty,
+            "GET /health/live");
+
+        Assert.True(RealmIndependentPathPolicy.CanExecute(endpoint, "/health/live"));
+    }
+
+    [Fact]
+    public void A_missing_endpoint_is_not_executable()
+    {
+        Assert.False(RealmIndependentPathPolicy.CanExecute(null, "/favicon.ico"));
+    }
 }
