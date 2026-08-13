@@ -6,7 +6,8 @@
  * composition, materialize it into a login document, save that as a variant,
  * and activate it.
  *
- *   node --experimental-strip-types scripts/seed-amzettel-login.ts \
+ *   NODE_EXTRA_CA_CERTS=/path/to/caddy-root.crt \
+ *     node --experimental-strip-types scripts/seed-amzettel-login.ts \
  *     --base-url https://auth-dev.localhost --password '<admin password>'
  */
 import { AMZETTEL_BRAND_PANEL } from '../src/page-builder/compositions/amzettelBrandPanel.ts'
@@ -19,9 +20,6 @@ const baseUrl = (args.get('--base-url') ?? 'https://auth-dev.localhost').replace
 const userName = args.get('--username') ?? 'admin'
 const password = args.get('--password') ?? process.env.MODGUD_ADMIN_PASSWORD
 if (!password) throw new Error('Pass --password or set MODGUD_ADMIN_PASSWORD.')
-
-// The dev proxy serves Caddy's internal CA, which Node does not trust.
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 
 let cookie = ''
 
