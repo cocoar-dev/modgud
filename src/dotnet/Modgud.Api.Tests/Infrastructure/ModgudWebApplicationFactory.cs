@@ -45,11 +45,9 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     private IHost? _host;
     private readonly bool _enableDirectScopeTenantFallback;
     private readonly TokenPipelineFaultInjector _tokenPipelineFaults = new();
-    private readonly AdjustableTestTimeProvider _timeProvider = new();
     protected virtual bool ProvisionLegacySystemRealm => true;
 
     public TokenPipelineFaultInjector TokenPipelineFaults => _tokenPipelineFaults;
-    public AdjustableTestTimeProvider TimeProvider => _timeProvider;
 
     public ModgudWebApplicationFactory(SharedPostgresFixture fixture)
     {
@@ -105,12 +103,6 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
         {
-            // Deterministic clock for the refresh-token reuse boundary. It is
-            // reset before every integration test and can be advanced without
-            // sleeping, so the 30-second leeway has a fast, exact regression
-            // test through OpenIddict's real validation pipeline.
-            services.RemoveAll<TimeProvider>();
-            services.AddSingleton<TimeProvider>(_timeProvider);
             services.AddSingleton(_tokenPipelineFaults);
 
             // Test-only fault seam for TokenMintMetricHandler. The production
@@ -573,7 +565,6 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         }
 
         _tokenPipelineFaults.Reset();
-        _timeProvider.Reset();
 
         await _host.ResetAllMartenDataAsync();
 
@@ -674,27 +665,6 @@ public sealed class TokenPipelineFaultInjector
     {
         Interlocked.Exchange(ref _failMetricResolution, 0);
         Interlocked.Exchange(ref _loseRefreshResponse, 0);
-    }
-}
-
-public sealed class AdjustableTestTimeProvider : TimeProvider
-{
-    private readonly object _sync = new();
-    private DateTimeOffset _utcNow = DateTimeOffset.UtcNow;
-
-    public override DateTimeOffset GetUtcNow()
-    {
-        lock (_sync) return _utcNow;
-    }
-
-    public void Advance(TimeSpan value)
-    {
-        lock (_sync) _utcNow = _utcNow.Add(value);
-    }
-
-    internal void Reset()
-    {
-        lock (_sync) _utcNow = DateTimeOffset.UtcNow;
     }
 }
 

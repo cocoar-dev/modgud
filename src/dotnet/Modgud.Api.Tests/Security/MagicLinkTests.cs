@@ -116,7 +116,10 @@ public partial class MagicLinkTests : IntegrationTestBase
         var hrefMatch = MagicLinkHrefRegex().Match(htmlBody);
         if (!hrefMatch.Success) return (null, null);
 
-        var url = hrefMatch.Groups[1].Value;
+        // Browsers decode HTML entities in href attributes before navigating.
+        // Mirror that behavior so query separators rendered as &amp; are parsed
+        // as actual separators instead of becoming part of the parameter name.
+        var url = WebUtility.HtmlDecode(hrefMatch.Groups[1].Value);
         var uri = new Uri(url);
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
 

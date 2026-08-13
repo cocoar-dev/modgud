@@ -357,9 +357,10 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         // First redemption is legitimate rotation — marks the token Redeemed.
         await RedeemRefreshTokenAsync(refreshToken, clientId, clientSecret, [alphaAudience]);
 
-        // No wall-clock sleep: advance the exact TimeProvider consumed by
-        // OpenIddict beyond the configured 30-second reuse leeway.
-        Factory.TimeProvider.Advance(TimeSpan.FromSeconds(31));
+        // No wall-clock sleep: backdate the real redeemed token entry beyond
+        // the configured 30-second reuse leeway. This keeps the application's
+        // shared TimeProvider untouched for unrelated integration tests.
+        await BackdateRefreshTokenRedemptionAsync(refreshToken, TimeSpan.FromSeconds(31));
 
         // Second redemption of the SAME (already-redeemed) token is the reuse signal.
         var replayClient = Factory.CreateClient();
@@ -440,7 +441,7 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         }
 
         await RedeemRefreshTokenAsync(deviceARefresh, clientId, clientSecret, [audience]);
-        Factory.TimeProvider.Advance(TimeSpan.FromSeconds(31));
+        await BackdateRefreshTokenRedemptionAsync(deviceARefresh, TimeSpan.FromSeconds(31));
 
         using (var replay = await PostRefreshTokenAsync(
                    deviceARefresh, clientId, clientSecret, [audience]))
@@ -1144,6 +1145,22 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
         return (
             await manager.GetStatusAsync(token, TestContext.Current.CancellationToken),
             await manager.GetAuthorizationIdAsync(token, TestContext.Current.CancellationToken));
+    }
+
+    private async Task BackdateRefreshTokenRedemptionAsync(string refreshToken, TimeSpan age)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictTokenManager>();
+        var token = await manager.FindByReferenceIdAsync(
+            refreshToken, TestContext.Current.CancellationToken)
+            ?? throw new Xunit.Sdk.XunitException("Refresh-token store entry was not found.");
+
+        var descriptor = new OpenIddictTokenDescriptor();
+        await manager.PopulateAsync(
+            descriptor, token, TestContext.Current.CancellationToken);
+        descriptor.RedemptionDate = DateTimeOffset.UtcNow.Subtract(age);
+        await manager.UpdateAsync(
+            token, descriptor, TestContext.Current.CancellationToken);
     }
 
     private static string GeneratePkceVerifier()
