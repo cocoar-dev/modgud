@@ -84,8 +84,21 @@ To issue a credential:
 
 ### Rotate and delete
 
-- **Rotate secret** generates a fresh `client_secret`, invalidates the old one immediately, and surfaces the new one in the same one-time-display panel. Use it for periodic rotation or after suspected exposure.
-- **Delete** removes the OAuth client. Tokens issued before the delete remain valid until their natural expiry (Modgud does not currently revoke outstanding tokens at delete time); no new tokens can be minted.
+Both are real cut-offs: rotating or deleting a credential revokes that
+credential's outstanding tokens, scoped to exactly that OAuth client so the
+SA's *other* credentials keep working.
+
+- **Rotate secret** generates a fresh `client_secret`, invalidates the old one immediately, and surfaces the new one in the same one-time-display panel. Use it for periodic rotation or after suspected exposure. A bearer token does not re-check the secret, so rotation also revokes the tokens already minted with the old one.
+- **Delete** removes the OAuth client and revokes its outstanding tokens; no new tokens can be minted.
+
+::: warning One residual window
+Revocation flips the stored token to revoked, which cuts off reference tokens
+— the default — at the next validation. A credential that opts into
+`AccessTokenType.Jwt` receives self-validating access tokens with no stored
+document, so an already-issued JWT stays acceptable at the resource server
+until its (short) lifetime runs out. No *new* token can be minted either way.
+Keep the access-token lifetime short if you choose JWT.
+:::
 
 ### 1:N
 
