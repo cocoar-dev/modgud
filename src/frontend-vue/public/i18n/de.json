@@ -513,6 +513,30 @@
       "revokeTitle": "Terminal widerrufen?",
       "revokeConfirm": "Der Widerruf ist endgültig: das Gerät wird sofort abgeschnitten und braucht einen komplett neuen Slot (mit frischem Enrollment), um je zurückzukehren."
     },
+    "staffingSessions": {
+      "sectionTitle": "Staffing-Sessions",
+      "empty": "Noch keine Staffing-Sessions.",
+      "statusActive": "Aktiv",
+      "statusEnded": "Beendet",
+      "until": "bis spätestens",
+      "forceLockButton": "Sperren",
+      "forceLockTitle": "Session sperren?",
+      "forceLockConfirm": "Das Terminal wird sofort gesperrt und seine Tokens werden widerrufen; das Personal muss die Funktion mit einem neuen Passkey-Tap wieder aktivieren.",
+      "reason": {
+        "localLock": "Am Terminal gesperrt",
+        "remoteLock": "Von Admin gesperrt",
+        "replaced": "Durch neuen Tap ersetzt",
+        "expired": "Schichtende erreicht",
+        "functionDisabled": "Funktion deaktiviert",
+        "terminalDisabled": "Terminal deaktiviert",
+        "terminalRevoked": "Terminal widerrufen",
+        "userDisabled": "Benutzer deaktiviert",
+        "passkeyDeleted": "Passkey gelöscht",
+        "grantSuspended": "Berechtigung ausgesetzt",
+        "grantRevoked": "Berechtigung widerrufen",
+        "clientDisabled": "OAuth-Client deaktiviert"
+      }
+    },
     "serviceAccountCredentials": {
       "sectionTitle": "OAuth-Clients",
       "sectionHintShort": "Diesem Service Account zugeordnete OAuth-Clients.",
