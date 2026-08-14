@@ -69,7 +69,7 @@ Modgud.Authorization.Resources
    IResourceRegistry, ResourceRegistry               // declares "todo: read,create,..."
 
 Modgud.Authorization.Projections
-   PrincipalProjectionBase                           // group events → mt_doc_principal
+   GroupProjection                                   // group events → mt_doc_principal
    PermissionRoleProjection                          // role events → mt_doc_permissionrole
 ```
 
@@ -138,11 +138,11 @@ options.UseSystemTextJsonForSerialization(EnumStorage.AsString, configure: o => 
 options.UseModgudAuthorization();             // ← sub-class mapping + event aliases
 ```
 
-That's the entire wiring footprint. Person events (`UserCreatedEvent` etc.)
-are emitted by the `Modgud.Authentication` slice (the ASP.NET-Identity
-adapter `EventSourcedUserStore`) and bridged into the polymorphic
-`Principal` table via `AuthPrincipalProjection` (which extends
-`PrincipalProjectionBase`).
+That's the entire authorization wiring footprint. `GroupProjection` writes
+the concrete `Group` subtype into the polymorphic Principal table. Person
+events (`UserCreatedEvent` etc.) are emitted by the `Modgud.Authentication`
+slice (the ASP.NET-Identity adapter `EventSourcedUserStore`) and written by
+its separate `PersonProjection` into the same table.
 
 ---
 
@@ -195,31 +195,32 @@ Resources are pure naming convention — pick what makes sense.
 ### Step 4 — Wire your Person events to the projection
 
 The slice handles all group events and the polymorphic Principal table out
-of the box. Person events are app-specific:
+of the box. Person events are app-specific and should use a separate concrete
+subclass projection instead of inheriting projection convention methods:
 
 1. Define your events: `PersonCreatedEvent`, `PersonUpdatedEvent`,
    `PersonActivatedEvent`, etc. (Or copy Modgud's `UserCreatedEvent` etc.
    from `Modgud.Authentication` and adjust.)
-2. Subclass `PrincipalProjectionBase` and add `Create`/`Apply` for those events:
+2. Add a concrete `SingleStreamProjection<Person, Guid>` with `Create`/`Apply`
+   methods for those events:
    ```csharp
-   public class PrincipalProjection : PrincipalProjectionBase
+   public partial class PersonProjection : SingleStreamProjection<Person, Guid>
    {
-       public Principal Create(PersonCreatedEvent e) => new Person {
+       public Person Create(PersonCreatedEvent e) => new Person {
            Id = e.Id,
            AccountName = e.AccountName,
            // ... your fields ...
        };
 
-       public Principal Apply(PersonUpdatedEvent e, Principal current) {
-           if (current is not Person p) return current;
-           // ... mutate p ...
-           return p;
+       public Person Apply(PersonUpdatedEvent e, Person person) {
+           // ... mutate person ...
+           return person;
        }
    }
    ```
 3. Register inline:
    ```csharp
-   options.Projections.Add<PrincipalProjection>(ProjectionLifecycle.Inline);
+   options.Projections.Add<PersonProjection>(ProjectionLifecycle.Inline);
    ```
 4. Set stable `MapEventType` aliases for your Person events so future renames
    don't break the event store.

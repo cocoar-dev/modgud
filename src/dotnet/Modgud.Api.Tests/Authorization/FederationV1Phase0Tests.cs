@@ -57,7 +57,7 @@ public class FederationV1Phase0Tests : IntegrationTestBase
             ExternallyDrivable: true), ct);
 
         Assert.False(result.IsError);
-        // The handler returns the projected document — proves PrincipalProjectionBase
+        // The handler returns the projected document — proves GroupProjection
         // materializes the flag (the seam the original integration map omitted).
         Assert.True(result.Value.ExternallyDrivable);
     }

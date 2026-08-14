@@ -384,8 +384,11 @@ internal sealed class RebuildProjectionsCommand : IRecoveryCommand
         await daemon.RebuildProjectionAsync("ViewProjections", timeout, CancellationToken.None);
         ctx.WriteLine("  OK ViewProjections");
 
-        await daemon.RebuildProjectionAsync<ModgudPrincipalProjection>(timeout, CancellationToken.None);
-        ctx.WriteLine("  OK ModgudPrincipalProjection (mt_doc_principal)");
+        await daemon.RebuildProjectionAsync<PersonProjection>(timeout, CancellationToken.None);
+        ctx.WriteLine("  OK PersonProjection (mt_doc_principal/person)");
+
+        await daemon.RebuildProjectionAsync<GroupProjection>(timeout, CancellationToken.None);
+        ctx.WriteLine("  OK GroupProjection (mt_doc_principal/group)");
 
         await daemon.RebuildProjectionAsync<PermissionRoleProjection>(timeout, CancellationToken.None);
         ctx.WriteLine("  OK PermissionRoleProjection (mt_doc_permissionrole)");

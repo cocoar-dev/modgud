@@ -309,9 +309,10 @@ public static class MartenStoreOptionsExtensions
         options.Projections.Add<LoginProviderProjection>(ProjectionLifecycle.Inline);
         options.Projections.Add<ExternalIdentityLinkProjection>(ProjectionLifecycle.Inline);
 
-        // Unified principal projection — Person+Group doc, inline for synchronously-consistent
-        // permission checks + auto-membership eval.
-        options.Projections.Add<ModgudPrincipalProjection>(ProjectionLifecycle.Inline);
+        // Human principals are projected directly into the concrete Person subtype.
+        // GroupProjection is owned and registered by Modgud.Authorization; Marten's
+        // subclass mapping stores both in the shared Principal document table.
+        options.Projections.Add<PersonProjection>(ProjectionLifecycle.Inline);
 
         // View projections — composite async. Single stage now that the IdP-only
         // surface only has UserView; kept as a composite so adopters can append

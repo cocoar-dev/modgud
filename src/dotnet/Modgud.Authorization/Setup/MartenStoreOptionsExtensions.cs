@@ -43,6 +43,13 @@ public static class MartenStoreOptionsExtensions
         // BFS group-membership graph + the polymorphic /api/principal/lookup
         // see machine identities alongside humans without per-table joins.
         martenOpts.Schema.For<Principal>()
+            // Principal has always used the bigint revision written by its
+            // event projections. With separate concrete Person/Group projections,
+            // Marten 9.23 can otherwise infer Guid optimistic concurrency for the
+            // shared base table and generate an impossible bigint -> uuid ALTER on
+            // existing installations. Keep the projection revision explicit and
+            // backwards-compatible.
+            .UseNumericRevisions(true)
             .AddSubClass<Person>("person")
             .AddSubClass<Group>("group")
             .AddSubClass<ServiceAccount>("service-account");
@@ -60,9 +67,11 @@ public static class MartenStoreOptionsExtensions
             .Index(x => x.IsDeleted);
 
         // Inline projections — admin reads + slug-uniqueness checks need
-        // synchronous consistency.
+        // synchronous consistency. GroupProjection targets the concrete Group
+        // subtype directly; Marten stores it in the shared Principal hierarchy.
         martenOpts.Projections.Add<PermissionRoleProjection>(ProjectionLifecycle.Inline);
         martenOpts.Projections.Add<AppProjection>(ProjectionLifecycle.Inline);
+        martenOpts.Projections.Add<GroupProjection>(ProjectionLifecycle.Inline);
 
         // Stable event-type aliases. Marten resolves events through these, so the
         // .NET type FQN can change without breaking persisted streams.

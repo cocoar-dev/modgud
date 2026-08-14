@@ -141,8 +141,8 @@ public static class MartenConfiguration
         // and view projections rely on snapshot freshness — keep V8's `false`.
         options.Events.UseIdentityMapForAggregates = false;
 
-        // User profile events (kept here because the Authentication Principal projection
-        // bridges them into the unified Principal document table — see ModgudPrincipalProjection).
+        // User profile events (kept here because Authentication's PersonProjection
+        // writes them into the unified Principal document table).
         // Aliases are decoupled from CLR type names — safe to refactor namespaces.
         options.Events.MapEventType<UserCreatedEvent>("user_created");
         options.Events.MapEventType<UserUpdatedEvent>("user_updated");

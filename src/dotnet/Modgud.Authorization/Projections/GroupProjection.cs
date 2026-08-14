@@ -5,15 +5,13 @@ using Modgud.Authorization.Principals;
 namespace Modgud.Authorization.Projections;
 
 /// <summary>
-/// Inline projection that builds the polymorphic Principal table from group
-/// events (lib-owned). The consuming app subclasses this and adds Create/Apply
-/// methods for its own Person-side events (UserCreated, UserUpdated, etc.) —
-/// both Person and Group documents land in <c>mt_doc_principal</c>, distinguished
-/// by Marten's sub-class discriminator.
+/// Builds Group documents inline from group streams. Group is mapped as a
+/// concrete subclass of Principal, so Marten stores the result in the shared
+/// principal table while this projection remains independent from Person events.
 /// </summary>
-public abstract partial class PrincipalProjectionBase : SingleStreamProjection<Principal, Guid>
+public partial class GroupProjection : SingleStreamProjection<Group, Guid>
 {
-    public Principal Create(GroupCreatedEvent @event) => new Group
+    public Group Create(GroupCreatedEvent @event) => new()
     {
         Id = @event.Id,
         Name = @event.Name,
@@ -32,9 +30,8 @@ public abstract partial class PrincipalProjectionBase : SingleStreamProjection<P
         IsDeleted = false,
     };
 
-    public Principal Apply(GroupUpdatedEvent @event, Principal current)
+    public Group Apply(GroupUpdatedEvent @event, Group group)
     {
-        if (current is not Group group) return current;
         group.Name = @event.Name;
         group.Description = @event.Description;
         group.MemberIds = @event.MemberIds;
@@ -51,25 +48,23 @@ public abstract partial class PrincipalProjectionBase : SingleStreamProjection<P
         return group;
     }
 
-    public Principal Apply(GroupMembershipRecomputedEvent @event, Principal current)
+    public Group Apply(GroupMembershipRecomputedEvent @event, Group group)
     {
-        if (current is not Group group) return current;
         group.MemberIds = @event.MemberIds;
         group.MembershipLastError = null;
         return group;
     }
 
-    public Principal Apply(GroupMembershipRecomputeFailedEvent @event, Principal current)
+    public Group Apply(GroupMembershipRecomputeFailedEvent @event, Group group)
     {
-        if (current is not Group group) return current;
         group.MembershipLastError = @event.Error;
         return group;
     }
 
-    public Principal Apply(GroupDeletedEvent @event, Principal current)
+    public Group Apply(GroupDeletedEvent @event, Group group)
     {
-        current.IsDeleted = true;
-        current.IsActive = false;
-        return current;
+        group.IsDeleted = true;
+        group.IsActive = false;
+        return group;
     }
 }

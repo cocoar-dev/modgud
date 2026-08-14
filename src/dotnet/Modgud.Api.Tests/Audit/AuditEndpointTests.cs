@@ -37,10 +37,8 @@ public class AuditEndpointTests : IntegrationTestBase
             await session.SaveChangesAsync(ct);
         }
 
-        // Materialize the async projection (no live daemon in tests).
-        var store = Factory.Services.GetRequiredService<IDocumentStore>();
-        using (var daemon = await store.BuildProjectionDaemonAsync("system"))
-            await daemon.RebuildProjectionAsync<AuthAuditViewProjection>(TimeSpan.FromMinutes(2), ct);
+        // Materialize the async projection without racing the host's live daemon.
+        await Factory.RebuildProjectionAsync<AuthAuditViewProjection>(ct: ct);
 
         // Unfiltered → includes our login + password-change rows.
         var all = await Client.GetFromJsonAsync<List<AuditRowDto>>("/api/admin/audit?limit=500", JsonOptions, ct);

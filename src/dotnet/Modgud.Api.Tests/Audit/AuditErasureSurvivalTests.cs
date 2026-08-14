@@ -71,8 +71,6 @@ public class AuditErasureSurvivalTests : IntegrationTestBase
 
     private async Task RebuildAuthAuditAsync(CancellationToken ct)
     {
-        var store = Factory.Services.GetRequiredService<IDocumentStore>();
-        using var daemon = await store.BuildProjectionDaemonAsync("system");
-        await daemon.RebuildProjectionAsync<AuthAuditViewProjection>(TimeSpan.FromMinutes(2), ct);
+        await Factory.RebuildProjectionAsync<AuthAuditViewProjection>(ct: ct);
     }
 }

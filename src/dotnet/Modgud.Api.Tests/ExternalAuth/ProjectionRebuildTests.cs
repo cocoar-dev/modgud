@@ -10,6 +10,7 @@ using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Authorization.Membership;
 using Modgud.Authorization.Principals;
+using Modgud.Authorization.Projections;
 
 namespace Modgud.Api.Tests.ExternalAuth;
 
@@ -111,13 +112,9 @@ public class ProjectionRebuildTests : IntegrationTestBase
 
     private async Task RebuildAsync(CancellationToken ct)
     {
-        // MasterTableTenancy disables the default tenant — build the daemon for
-        // the "system" realm DB explicitly (mirrors RecoveryCli rebuild-projections).
-        var store = Factory.Services.GetRequiredService<IDocumentStore>();
-        using var daemon = await store.BuildProjectionDaemonAsync("system");
-        var timeout = TimeSpan.FromMinutes(2);
-        await daemon.RebuildProjectionAsync<ExternalIdentityLinkProjection>(timeout, ct);
-        await daemon.RebuildProjectionAsync<ModgudPrincipalProjection>(timeout, ct);
+        await Factory.RebuildProjectionAsync<ExternalIdentityLinkProjection>(ct: ct);
+        await Factory.RebuildProjectionAsync<PersonProjection>(ct: ct);
+        await Factory.RebuildProjectionAsync<GroupProjection>(ct: ct);
     }
 
     private async Task<Guid> SeedLinkAsync(Guid userId, Guid providerId, string issuer, string subject)
