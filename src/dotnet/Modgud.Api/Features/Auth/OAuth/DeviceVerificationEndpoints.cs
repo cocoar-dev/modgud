@@ -1,6 +1,13 @@
 using System.Security.Claims;
+using Modgud.Api.Features.Auth.FunctionTerminals;
 using Modgud.Authentication.Domain;
+using Modgud.Authorization.Apps;
+using Modgud.Authorization.Principals;
+using Modgud.Authorization.Services;
+using Modgud.Domain.FunctionTerminals;
+using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Device;
+using Modgud.Domain.OAuth.Storage;
 using Marten;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
@@ -68,7 +75,9 @@ public static class DeviceVerificationEndpoints
         IOpenIddictTokenManager tokenManager,
         IOpenIddictAuthorizationManager authorizationManager,
         UserManager<ApplicationUser> userManager,
-        IDocumentSession session)
+        IDocumentSession session,
+        AppSettings settings,
+        IPermissionService permissionService)
     {
         var request = httpContext.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("The OpenID Connect request cannot be retrieved.");
@@ -123,6 +132,27 @@ public static class DeviceVerificationEndpoints
                     new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
             }
 
+            // MG-FT-04 (plan §11.3/§11.4) — when the user code belongs to a
+            // terminal-managed client, this approval is a terminal ENROLLMENT,
+            // not a person consent: a different principal (the FUNCTION) gets
+            // bound to the device code. Dispatch before the person path so a
+            // terminal client can never mint a user-bound token.
+            var normalizedUserCode = NormalizeUserCode(request.UserCode);
+            var userCodeToken = normalizedUserCode.Length > 0
+                ? await tokenManager.FindByReferenceIdAsync(normalizedUserCode, httpContext.RequestAborted)
+                : null;
+            var terminalTarget = userCodeToken is not null
+                ? await LoadTerminalTargetAsync(
+                    await tokenManager.GetApplicationIdAsync(userCodeToken, httpContext.RequestAborted),
+                    session, httpContext.RequestAborted)
+                : null;
+            if (terminalTarget is not null)
+            {
+                return await ApproveTerminalEnrollmentAsync(
+                    user, terminalTarget, userCodeToken!, normalizedUserCode,
+                    settings, permissionService, session, tokenManager, httpContext.RequestAborted);
+            }
+
             // OpenIddict matches request.UserCode → the pending device code and
             // attaches this principal to it. The verification request itself
             // carries no scopes, so resolve the scopes the device originally
@@ -161,6 +191,7 @@ public static class DeviceVerificationEndpoints
 
     private static async Task<IResult> GetDeviceInfoAsync(
         Guid ticket,
+        AppSettings settings,
         IDocumentSession session,
         IOpenIddictTokenManager tokenManager,
         IOpenIddictAuthorizationManager authorizationManager,
@@ -179,7 +210,7 @@ public static class DeviceVerificationEndpoints
         }
 
         var resolved = await ResolveUserCodeAsync(
-            record.UserCode!, tokenManager, authorizationManager, applicationManager, scopeManager, cancellationToken);
+            record.UserCode!, settings, session, tokenManager, authorizationManager, applicationManager, scopeManager, cancellationToken);
         if (resolved is null)
         {
             // The code stored earlier no longer resolves (expired / already used).
@@ -191,6 +222,7 @@ public static class DeviceVerificationEndpoints
 
     private static async Task<IResult> SubmitCodeAsync(
         DeviceCodeSubmission submission,
+        AppSettings settings,
         IDocumentSession session,
         IOpenIddictTokenManager tokenManager,
         IOpenIddictAuthorizationManager authorizationManager,
@@ -216,7 +248,7 @@ public static class DeviceVerificationEndpoints
         }
 
         var resolved = await ResolveUserCodeAsync(
-            normalized, tokenManager, authorizationManager, applicationManager, scopeManager, cancellationToken);
+            normalized, settings, session, tokenManager, authorizationManager, applicationManager, scopeManager, cancellationToken);
         if (resolved is null)
         {
             return Results.Ok(new DeviceVerificationInfo { Ticket = record!.Id.ToString("N"), Status = "invalid_code" });
@@ -236,6 +268,8 @@ public static class DeviceVerificationEndpoints
     /// to a pending device authorization (unknown / expired / consumed).</summary>
     private static async Task<DeviceVerificationInfo?> ResolveUserCodeAsync(
         string userCode,
+        AppSettings settings,
+        IDocumentSession session,
         IOpenIddictTokenManager tokenManager,
         IOpenIddictAuthorizationManager authorizationManager,
         IOpenIddictApplicationManager applicationManager,
@@ -284,6 +318,38 @@ public static class DeviceVerificationEndpoints
             });
         }
 
+        // MG-FT-04 — a terminal-managed client gets the terminal consent
+        // rendering: which function, which slot, which device key. The person
+        // flow above stays byte-for-byte unchanged for everything else. When
+        // the client IS terminal-managed but the flag is off or the link is
+        // broken, the code reads as INVALID — never as a person consent, which
+        // could otherwise mint a user-bound token for a terminal client.
+        TerminalConsentInfo? terminalInfo = null;
+        var target = await LoadTerminalTargetAsync(clientId, session, cancellationToken);
+        if (target is not null)
+        {
+            if (!settings.Features.FunctionTerminals ||
+                target.Terminal is null || target.Function is null || target.Function.IsDeleted)
+            {
+                return null;
+            }
+
+            var binding = await session.Query<DeviceCodeDpopBinding>()
+                .Where(b => b.UserCodeHash == DeviceCodeDpopBindingKeyForVerification(userCode))
+                .FirstOrDefaultAsync(cancellationToken);
+
+            terminalInfo = new TerminalConsentInfo
+            {
+                FunctionName = target.Function.DisplayName,
+                TerminalName = target.Terminal.DisplayName,
+                Location = target.Terminal.Location,
+                ClientId = target.Terminal.ClientId,
+                DpopFingerprint = binding is { } b && b.ExpiresAt > DateTimeOffset.UtcNow
+                    ? TerminalEnrollmentPrincipal.Fingerprint(b.Jkt)
+                    : null,
+            };
+        }
+
         return new DeviceVerificationInfo
         {
             Ticket = string.Empty,
@@ -291,7 +357,138 @@ public static class DeviceVerificationEndpoints
             UserCode = NormalizeUserCode(userCode),
             ClientName = clientName,
             Scopes = scopeInfos,
+            Kind = terminalInfo is null ? "user" : "terminal",
+            Terminal = terminalInfo,
         };
+    }
+
+    /// <summary>Same normalization + hash the device-DPoP capture handler used
+    /// for <c>UserCodeHash</c> (SHA-256 hex over the normalized user code).</summary>
+    private static string DeviceCodeDpopBindingKeyForVerification(string userCode) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(NormalizeUserCode(userCode))));
+
+    /// <summary>Resolution of a user code's OAuth client to its terminal
+    /// enrollment target. Null = not a terminal-managed client → ordinary
+    /// person flow. Non-null with null <see cref="Terminal"/>/<see cref="Function"/>
+    /// = the client claims a terminal link that doesn't resolve — callers must
+    /// REFUSE, never fall back to the person flow.</summary>
+    private sealed record TerminalVerificationTarget(
+        TerminalEnrollment? Terminal,
+        FunctionPrincipal? Function);
+
+    private static async Task<TerminalVerificationTarget?> LoadTerminalTargetAsync(
+        string? applicationId,
+        IDocumentSession session,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(applicationId, out var appId)) return null;
+
+        var state = await session.LoadAsync<OAuthApplicationState>(appId, cancellationToken);
+        if (state is null || state.IsDeleted || state.ManagedTerminalEnrollmentId is not { } terminalId)
+            return null;
+
+        // §11.4 rule 4 — the client must belong to exactly this enrollment,
+        // verified in BOTH directions.
+        var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, cancellationToken);
+        if (terminal is null || terminal.OAuthApplicationId != appId)
+            return new TerminalVerificationTarget(null, null);
+
+        var function = await session.LoadAsync<FunctionPrincipal>(terminal.FunctionPrincipalId, cancellationToken);
+        return new TerminalVerificationTarget(terminal, function);
+    }
+
+    /// <summary>The terminal-enrollment approval (plan §11.4). Every check
+    /// failure is an <c>access_denied</c> Forbid — OpenIddict rejects the
+    /// device authorization, the device's poll fails, and the terminal needs a
+    /// fresh device-flow attempt. Check 1 (the admin holds an interactive,
+    /// cookie-authenticated session) is enforced by the caller before the POST
+    /// branch is ever reached; a dedicated step-up/re-auth prompt is a
+    /// hardening follow-up, not part of MG-FT-04.</summary>
+    private static async Task<IResult> ApproveTerminalEnrollmentAsync(
+        ApplicationUser admin,
+        TerminalVerificationTarget target,
+        object userCodeToken,
+        string normalizedUserCode,
+        AppSettings settings,
+        IPermissionService permissionService,
+        IDocumentSession session,
+        IOpenIddictTokenManager tokenManager,
+        CancellationToken cancellationToken)
+    {
+        static IResult Refuse(string description) => Results.Forbid(
+            new AuthenticationProperties(new Dictionary<string, string?>
+            {
+                [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.AccessDenied,
+                [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = description,
+            }),
+            new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+
+        // Feature gate — a terminal client whose flag was switched off after
+        // creation must not be enrollable (and never falls through to the
+        // person flow; the caller dispatched here on the client link alone).
+        if (!settings.Features.FunctionTerminals)
+            return Refuse("Function terminals are not enabled.");
+
+        // Check 4 — client ↔ terminal link intact (both directions).
+        if (target.Terminal is null || target.Function is null)
+            return Refuse("The OAuth client is not linked to a valid terminal slot.");
+
+        // Check 2 — the approving admin holds the enrollment permission.
+        if (!await permissionService.HasPermissionAsync(admin.Id, AppSlugs.Modgud, "function-terminal:enroll"))
+            return Refuse("You are not authorized to enroll function terminals.");
+
+        // Check 3 — only a Pending slot is enrollable; re-enrollment of an
+        // Active/Disabled/Revoked slot is always a fresh slot instead.
+        if (target.Terminal.Status != TerminalEnrollmentStatus.Pending)
+            return Refuse("The terminal slot is not pending enrollment.");
+
+        // Check 5 — function alive; check 6 — terminal use enabled on it.
+        if (target.Function.IsDeleted)
+            return Refuse("The function no longer exists.");
+        if (!target.Function.TerminalPolicy.Enabled)
+            return Refuse("Terminal use is disabled for this function.");
+
+        // Check 7 — the initial device request must have been DPoP-proofed:
+        // without a bound key there is nothing to pin the enrollment to.
+        var binding = await session.Query<DeviceCodeDpopBinding>()
+            .Where(b => b.UserCodeHash == DeviceCodeDpopBindingKeyForVerification(normalizedUserCode))
+            .FirstOrDefaultAsync(cancellationToken);
+        if (binding is null || binding.ExpiresAt <= DateTimeOffset.UtcNow)
+            return Refuse("The device request was not DPoP-bound; terminal enrollment requires a device key.");
+
+        // Check 8 — the user code still resolves to a redeemable device grant.
+        var status = await tokenManager.GetStatusAsync(userCodeToken, cancellationToken);
+        if (!string.Equals(status, Statuses.Valid, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(status, Statuses.Inactive, StringComparison.OrdinalIgnoreCase))
+        {
+            return Refuse("The user code is no longer valid.");
+        }
+
+        // Audit record of the approval — written as already consumed: the
+        // decision IS the consumption (single POST), the row exists so "who
+        // approved which slot when" survives independently of OpenIddict's
+        // token table.
+        var now = DateTimeOffset.UtcNow;
+        session.Store(new TerminalEnrollmentVerificationTicket
+        {
+            Id = Guid.CreateVersion7(),
+            ApprovingAdminUserId = admin.Id,
+            TerminalEnrollmentId = target.Terminal.Id,
+            UserCode = normalizedUserCode,
+            CreatedAt = now,
+            ExpiresAt = now.AddMinutes(10),
+            ConsumedAt = now,
+        });
+        await session.SaveChangesAsync(cancellationToken);
+
+        // OpenIddict binds this FUNCTION principal to the pending device code;
+        // the terminal's poll then reaches the token-endpoint enrollment
+        // exchange (§11.6) with token_use=terminal_enrollment.
+        return Results.SignIn(
+            TerminalEnrollmentPrincipal.Create(target.Function, target.Terminal),
+            properties: null,
+            OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
     /// <summary>Resolves the scope names the device originally requested, via the
@@ -381,6 +578,28 @@ public record DeviceVerificationInfo
 
     public string? ClientName { get; init; }
     public List<DeviceScopeInfo> Scopes { get; init; } = new();
+
+    /// <summary><c>user</c> = the ordinary person device flow; <c>terminal</c>
+    /// = a terminal-managed client asking for enrollment (MG-FT-04) — the SPA
+    /// renders the terminal consent instead of the scope consent.</summary>
+    public string Kind { get; init; } = "user";
+
+    /// <summary>Set when <see cref="Kind"/> is <c>terminal</c>.</summary>
+    public TerminalConsentInfo? Terminal { get; init; }
+}
+
+/// <summary>What the approving admin must see before registering a device as a
+/// terminal (plan §11.4): which function, which slot, and the key fingerprint
+/// of the device asking.</summary>
+public record TerminalConsentInfo
+{
+    public required string FunctionName { get; init; }
+    public required string TerminalName { get; init; }
+    public string? Location { get; init; }
+    public required string ClientId { get; init; }
+    /// <summary>Null when the device request carried no DPoP proof — approval
+    /// is refused in that case (rule 7).</summary>
+    public string? DpopFingerprint { get; init; }
 }
 
 public record DeviceScopeInfo

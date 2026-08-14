@@ -88,10 +88,12 @@ public static class OAuthMartenSetup
             .Index(x => x.ExpiresAt);
 
         // DPoP device-code binding ledger (MG-FT spike — RFC 9449 over RFC 8628):
-        // string id (SHA-256 of the device_code), ExpiresAt indexed for pruning.
+        // string id (SHA-256 of the device_code), ExpiresAt indexed for pruning,
+        // UserCodeHash indexed for the verification-side lookup (MG-FT-04).
         options.Schema.For<DeviceCodeDpopBinding>()
             .Identity(x => x.Id)
-            .Index(x => x.ExpiresAt);
+            .Index(x => x.ExpiresAt)
+            .Index(x => x.UserCodeHash);
 
         // Stable event-type aliases — copied verbatim from the legacy backend so
         // re-using a legacy DB would also work, and so renames are safe forever.

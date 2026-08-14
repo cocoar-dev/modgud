@@ -44,6 +44,12 @@ public static class FunctionTerminalsMartenSetup
 
         options.Projections.Add<TerminalEnrollmentProjection>(ProjectionLifecycle.Inline);
 
+        // Terminal-consent tickets — ephemeral single-use documents (like the
+        // passkey ceremonies), ExpiresAt indexed for opportunistic pruning.
+        options.Schema.For<TerminalEnrollmentVerificationTicket>()
+            .Identity(x => x.Id)
+            .Index(x => x.ExpiresAt);
+
         // Stable event-type aliases — keeps mt_events.type rename-proof.
         options.Events.MapEventType<FunctionActivationGrantIssued>("function_activation_grant_issued");
         options.Events.MapEventType<FunctionActivationGrantSuspended>("function_activation_grant_suspended");

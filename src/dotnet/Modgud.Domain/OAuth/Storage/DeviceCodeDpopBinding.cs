@@ -20,6 +20,13 @@ public sealed class DeviceCodeDpopBinding
     /// <summary>The bound DPoP key's JWK thumbprint (RFC 7638).</summary>
     public string Jkt { get; set; } = default!;
 
+    /// <summary>SHA-256 (uppercase hex) of the user_code minted alongside the
+    /// device code — lets the hosted verification step (which only ever sees
+    /// the user_code) look up the bound key, e.g. for the terminal-enrollment
+    /// consent's key-fingerprint display (MG-FT-04). Null on rows written
+    /// before this field existed.</summary>
+    public string? UserCodeHash { get; set; }
+
     /// <summary>When the underlying device code expires (and this row with it).</summary>
     public DateTimeOffset ExpiresAt { get; set; }
 }

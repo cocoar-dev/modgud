@@ -31,3 +31,12 @@ public static class FunctionPrincipalTypes
 {
     public const string Function = "function";
 }
+
+/// <summary>Terminal-control surface constants: the audience enrollment tokens
+/// are scoped to (plan §12.2 — deliberately NOT an AlertHub/business audience)
+/// and the marker scope carried alongside <c>offline_access</c>.</summary>
+public static class FunctionTerminalControl
+{
+    public const string Audience = "modgud-terminal-control";
+    public const string Scope = "modgud:terminal-control";
+}
