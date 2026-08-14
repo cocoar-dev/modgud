@@ -206,11 +206,11 @@ public static class OpenIddictExtensions
                 options.AllowCustomFlow(CocoarGrantTypes.Magic);
                 options.AllowCustomFlow(CocoarGrantTypes.Passkey);
 
-                // MG-FT-05 — the function-staffing grant (passkey tap on an
+                // MG-FT-05 — the staffing grant (passkey tap on an
                 // enrolled terminal opens a StaffingSession). Same double gate:
-                // the Features.FunctionTerminals flag in the dispatch branch,
+                // the Features.PositionTerminals flag in the dispatch branch,
                 // and the gt: permission only terminal-managed clients carry.
-                options.AllowCustomFlow(Modgud.Domain.FunctionTerminals.FunctionGrantTypes.StaffingSession);
+                options.AllowCustomFlow(Modgud.Domain.PositionTerminals.PositionGrantTypes.StaffingSession);
 
                 // Reference tokens by default; per-client opt-in to JWT via AccessTokenTypeHandler.
                 options.UseReferenceAccessTokens()

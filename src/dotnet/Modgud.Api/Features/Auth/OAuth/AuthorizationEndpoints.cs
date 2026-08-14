@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
-using Modgud.Api.Features.Auth.FunctionTerminals;
+using Modgud.Api.Features.Auth.PositionTerminals;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Sessions;
 using Modgud.Authentication.Domain;
@@ -9,8 +9,8 @@ using Modgud.Authentication.Identity;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Services;
-using Modgud.Domain.FunctionTerminals;
-using Modgud.Domain.FunctionTerminals.Contracts.V1;
+using Modgud.Domain.PositionTerminals;
+using Modgud.Domain.PositionTerminals.Contracts.V1;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Storage;
 using Modgud.Permissions;
@@ -344,21 +344,21 @@ public static class AuthorizationEndpoints
             var subject = result.Principal?.GetClaim(Claims.Subject);
             if (string.IsNullOrEmpty(subject)) return ForbidInvalidGrant("The token is no longer valid.");
 
-            // MG-FT-04/06 — function tokens carry a FUNCTION subject, not a
+            // MG-FT-04/06 — position tokens carry a POSITION subject, not a
             // person: dispatch before the user branch (the user lookup below
-            // could never resolve a function id). Enrollment chain → §11.6;
+            // could never resolve a position id). Enrollment chain → §11.6;
             // staffing chain → the §14 refresh.
-            var functionTokenUse = result.Principal?.GetClaim(FunctionTokenClaimTypes.TokenUse);
-            if (string.Equals(functionTokenUse, FunctionTokenUses.TerminalEnrollment, StringComparison.Ordinal))
+            var positionTokenUse = result.Principal?.GetClaim(PositionTokenClaimTypes.TokenUse);
+            if (string.Equals(positionTokenUse, PositionTokenUses.TerminalEnrollment, StringComparison.Ordinal))
             {
                 return await ExchangeTerminalEnrollmentAsync(
                     httpContext, request, result.Principal!, settings, session,
                     applicationManager, authorizationManager, grantRevoker, bus);
             }
 
-            if (string.Equals(functionTokenUse, FunctionTokenUses.StaffingSession, StringComparison.Ordinal))
+            if (string.Equals(positionTokenUse, PositionTokenUses.StaffingSession, StringComparison.Ordinal))
             {
-                return await ExchangeFunctionStaffingRefreshAsync(
+                return await ExchangeStaffingRefreshAsync(
                     httpContext, request, result.Principal!, settings, session,
                     userManager, signInManager, scopeManager, permissionService, grantRevoker, bus);
             }
@@ -585,10 +585,10 @@ public static class AuthorizationEndpoints
         }
 
         // MG-FT-05 — a passkey tap on an enrolled terminal opens a
-        // StaffingSession for the FUNCTION (plan §13).
-        if (string.Equals(request.GrantType, FunctionGrantTypes.StaffingSession, StringComparison.Ordinal))
+        // StaffingSession for the POSITION (plan §13).
+        if (string.Equals(request.GrantType, PositionGrantTypes.StaffingSession, StringComparison.Ordinal))
         {
-            return await ExchangeFunctionStaffingAsync(
+            return await ExchangeStaffingAsync(
                 request, httpContext, settings, session, userManager, signInManager,
                 scopeManager, applicationManager, authorizationManager, permissionService,
                 fido2Factory, rpIdResolver, grantRevoker, bus, httpContext.RequestAborted);
@@ -610,7 +610,7 @@ public static class AuthorizationEndpoints
 
     /// <summary>
     /// Token-endpoint dispatch for tokens with
-    /// <c>token_use = terminal_enrollment</c> — the FUNCTION-subject chain a
+    /// <c>token_use = terminal_enrollment</c> — the POSITION-subject chain a
     /// terminal lives on between enrollment and its first staffing ceremony.
     /// Two grants only:
     /// <list type="bullet">
@@ -621,7 +621,7 @@ public static class AuthorizationEndpoints
     ///   <item><description><c>refresh_token</c> — keeps the enrollment chain
     ///   alive across shifts; the plan only spells out the staffing refresh
     ///   (MG-FT-06), but without this branch the generic refresh path would
-    ///   try to load a USER by the function subject and kill the chain.
+    ///   try to load a USER by the position subject and kill the chain.
     ///   </description></item>
     /// </list>
     /// DPoP proof-of-possession is enforced upstream (device-code ledger
@@ -642,36 +642,36 @@ public static class AuthorizationEndpoints
         static IResult Refuse(string description) =>
             ForbidNativeGrant(Errors.InvalidGrant, description);
 
-        if (!settings.Features.FunctionTerminals)
-            return Refuse("Function terminals are not enabled.");
+        if (!settings.Features.PositionTerminals)
+            return Refuse("Position terminals are not enabled.");
 
         if (!request.IsDeviceCodeGrantType() && !request.IsRefreshTokenGrantType())
             return Refuse("The token is no longer valid.");
 
-        if (!Guid.TryParse(tokenPrincipal.GetClaim(Claims.Subject), out var functionId) ||
-            !Guid.TryParse(tokenPrincipal.GetClaim(FunctionTokenClaimTypes.TerminalId), out var terminalId))
+        if (!Guid.TryParse(tokenPrincipal.GetClaim(Claims.Subject), out var positionId) ||
+            !Guid.TryParse(tokenPrincipal.GetClaim(PositionTokenClaimTypes.TerminalId), out var terminalId))
         {
             return Refuse("The token is no longer valid.");
         }
 
         var ct = httpContext.RequestAborted;
-        var function = await session.LoadAsync<FunctionPrincipal>(functionId, ct);
-        if (function is null || function.IsDeleted)
-            return Refuse("The function no longer exists.");
-        if (!function.TerminalPolicy.Enabled)
-            return Refuse("Terminal use is disabled for this function.");
+        var position = await session.LoadAsync<PositionPrincipal>(positionId, ct);
+        if (position is null || position.IsDeleted)
+            return Refuse("The position no longer exists.");
+        if (!position.TerminalPolicy.Enabled)
+            return Refuse("Terminal use is disabled for this position.");
 
         if (request.IsRefreshTokenGrantType())
         {
             var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
-            if (terminal is null || terminal.FunctionPrincipalId != functionId)
+            if (terminal is null || terminal.PositionPrincipalId != positionId)
                 return Refuse("The token is no longer valid.");
             if (!string.Equals(request.ClientId, terminal.ClientId, StringComparison.Ordinal))
                 return Refuse("The client does not own this terminal slot.");
             if (terminal.Status != TerminalEnrollmentStatus.Active)
                 return Refuse("The terminal slot is no longer active.");
 
-            var refreshed = TerminalEnrollmentPrincipal.Create(function, terminal);
+            var refreshed = TerminalEnrollmentPrincipal.Create(position, terminal);
             refreshed.SetAuthorizationId(tokenPrincipal.GetAuthorizationId());
             return Results.SignIn(refreshed, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         }
@@ -681,7 +681,7 @@ public static class AuthorizationEndpoints
         // racing polls can never both enroll (the loser's SaveChanges throws).
         var stream = await session.Events.FetchForWriting<TerminalEnrollment>(terminalId, ct);
         var slot = stream.Aggregate;
-        if (slot is null || slot.FunctionPrincipalId != functionId)
+        if (slot is null || slot.PositionPrincipalId != positionId)
             return Refuse("The token is no longer valid.");
         if (!string.Equals(request.ClientId, slot.ClientId, StringComparison.Ordinal))
             return Refuse("The client does not own this terminal slot.");
@@ -719,7 +719,7 @@ public static class AuthorizationEndpoints
         if (!string.Equals(jkt, binding.Jkt, StringComparison.Ordinal))
             return Refuse("The DPoP proof key does not match the key this device code is bound to.");
 
-        var principal = TerminalEnrollmentPrincipal.Create(function, slot);
+        var principal = TerminalEnrollmentPrincipal.Create(position, slot);
 
         // Durable anchor of every token this terminal will ever hold in the
         // enrollment chain — revoking it (slot revoke, §13.4) cuts the device
@@ -732,7 +732,7 @@ public static class AuthorizationEndpoints
             ?? throw new InvalidOperationException("The application has no id.");
         var authorization = await authorizationManager.CreateAsync(
             principal: principal,
-            subject: function.Id.ToString(),
+            subject: position.Id.ToString(),
             client: clientPk,
             type: AuthorizationTypes.AdHoc,
             scopes: principal.GetScopes(),
@@ -753,8 +753,8 @@ public static class AuthorizationEndpoints
         }
 
         // MG-FT-09 (§17) — the slot went Pending → Active.
-        await bus.PublishAsync(new FunctionTerminalStatusChanged(
-            functionId, slot.Id, TerminalEnrollmentStatus.Active, DateTimeOffset.UtcNow));
+        await bus.PublishAsync(new PositionTerminalStatusChanged(
+            positionId, slot.Id, TerminalEnrollmentStatus.Active, DateTimeOffset.UtcNow));
 
         principal.SetAuthorizationId(authorizationId);
         return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
@@ -773,7 +773,7 @@ public static class AuthorizationEndpoints
     /// active session ends as ReplacedByNewActivation in the SAME commit and
     /// its authorization is revoked right after.
     /// </summary>
-    private static async Task<IResult> ExchangeFunctionStaffingAsync(
+    private static async Task<IResult> ExchangeStaffingAsync(
         OpenIddictRequest request,
         HttpContext httpContext,
         AppSettings settings,
@@ -793,11 +793,11 @@ public static class AuthorizationEndpoints
         static IResult Refuse(string description) =>
             ForbidNativeGrant(Errors.InvalidGrant, description);
 
-        if (!settings.Features.FunctionTerminals)
+        if (!settings.Features.PositionTerminals)
             return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled.");
 
         // §13.3 steps 1–3 — the redeeming client must be a terminal-managed
-        // client with an intact function/terminal link. (The fixed profile is
+        // client with an intact position/terminal link. (The fixed profile is
         // creation-enforced and admin-locked; DPoP is demanded unconditionally
         // below, which is stronger than re-reading the RequireDpop flag.)
         if (string.IsNullOrEmpty(request.ClientId))
@@ -806,14 +806,14 @@ public static class AuthorizationEndpoints
         var state = await session.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(x => x.ClientId == request.ClientId && !x.IsDeleted, ct);
         if (state?.ManagedTerminalEnrollmentId is not { } terminalId ||
-            state.LinkedFunctionPrincipalId is not { } functionId)
+            state.LinkedPositionPrincipalId is not { } positionId)
         {
-            return Refuse("The client is not a function-terminal client.");
+            return Refuse("The client is not a position-terminal client.");
         }
 
         var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
         if (terminal is null || terminal.OAuthApplicationId != state.Id ||
-            terminal.FunctionPrincipalId != functionId ||
+            terminal.PositionPrincipalId != positionId ||
             !string.Equals(terminal.ClientId, request.ClientId, StringComparison.Ordinal))
         {
             return Refuse("The client is not linked to a valid terminal slot.");
@@ -822,9 +822,9 @@ public static class AuthorizationEndpoints
         if (terminal.Status != TerminalEnrollmentStatus.Active || string.IsNullOrEmpty(terminal.DpopJkt))
             return Refuse("The terminal is not active.");
 
-        var function = await session.LoadAsync<FunctionPrincipal>(functionId, ct);
-        if (function is null || function.IsDeleted || !function.TerminalPolicy.Enabled)
-            return Refuse("Terminal use is disabled for this function.");
+        var position = await session.LoadAsync<PositionPrincipal>(positionId, ct);
+        if (position is null || position.IsDeleted || !position.TerminalPolicy.Enabled)
+            return Refuse("Terminal use is disabled for this position.");
 
         // Proof-of-possession for THIS request, validated in-endpoint (same
         // rationale as the enrollment exchange: the DPoP pipeline handlers run
@@ -843,7 +843,7 @@ public static class AuthorizationEndpoints
         if (!Guid.TryParse((string?)request.GetParameter("ceremony_id"), out var ceremonyId))
             return Refuse("Invalid or expired staffing ceremony.");
 
-        var ceremony = await session.LoadAsync<FunctionStaffingCeremony>(ceremonyId, ct);
+        var ceremony = await session.LoadAsync<StaffingCeremony>(ceremonyId, ct);
         if (ceremony is null || ceremony.IsExpired || ceremony.IsConsumed)
         {
             if (ceremony is { IsExpired: true })
@@ -856,7 +856,7 @@ public static class AuthorizationEndpoints
 
         if (!string.Equals(ceremony.ClientId, request.ClientId, StringComparison.Ordinal) ||
             ceremony.TerminalEnrollmentId != terminal.Id ||
-            ceremony.FunctionPrincipalId != functionId ||
+            ceremony.PositionPrincipalId != positionId ||
             !string.Equals(ceremony.DpopJkt, terminal.DpopJkt, StringComparison.Ordinal))
         {
             return Refuse("Invalid or expired staffing ceremony.");
@@ -922,27 +922,27 @@ public static class AuthorizationEndpoints
 
         // §13.3 steps 10–13 — the activating person: alive + allowed to sign
         // in, the passkey belongs to the ceremony RP-ID, and an ACTIVE grant
-        // authorizes them for this function (Suspended does not).
+        // authorizes them for this position (Suspended does not).
         var user = await userManager.FindByIdAsync(storedCredential.UserId.ToString());
         if (user is null || !await signInManager.CanSignInAsync(user) || !user.IsActive || user.IsDeleted)
             return Refuse("Passkey verification failed.");
         if (!string.Equals(storedCredential.RpId ?? primaryDomain, ceremony.RpId, StringComparison.OrdinalIgnoreCase))
             return Refuse("Passkey verification failed.");
 
-        var grant = (await session.Query<FunctionActivationGrant>()
-            .Where(g => g.FunctionPrincipalId == functionId && g.UserId == user.Id &&
-                        g.Status == FunctionActivationGrantStatus.Active)
+        var grant = (await session.Query<PositionGrant>()
+            .Where(g => g.PositionPrincipalId == positionId && g.UserId == user.Id &&
+                        g.Status == PositionGrantStatus.Active)
             .ToListAsync(ct)).FirstOrDefault();
         if (grant is null)
-            return Refuse("The user is not authorized to staff this function.");
+            return Refuse("The user is not authorized to staff this position.");
 
         // §13.3 step 16 — scopes: offline_access keeps the shift refreshable;
         // requested scopes passed the client/app restriction gates at the top
         // of ExchangeAsync. Audiences resolve from the granted scopes; the
-        // function's own roles + permissions are embedded per audience (§7.3).
+        // position's own roles + permissions are embedded per audience (§7.3).
         var now = DateTimeOffset.UtcNow;
         var sessionId = Guid.NewGuid();
-        var principal = FunctionStaffingPrincipal.Create(function, terminal, sessionId, now);
+        var principal = StaffingPrincipal.Create(position, terminal, sessionId, now);
 
         var scopes = request.GetScopes();
         if (!scopes.Contains(Scopes.OfflineAccess)) scopes = scopes.Add(Scopes.OfflineAccess);
@@ -951,7 +951,7 @@ public static class AuthorizationEndpoints
         principal.SetResources(resources);
 
         var resourceAccess = await BuildResourceAccessAsync(
-            functionId, resources, wantsRoles: true, wantsPermissions: true, session, permissionService);
+            positionId, resources, wantsRoles: true, wantsPermissions: true, session, permissionService);
         if (resourceAccess is not null)
         {
             principal.SetClaim("resource_access", JsonSerializer.SerializeToElement(resourceAccess));
@@ -959,9 +959,9 @@ public static class AuthorizationEndpoints
 
         // §7.4 — short access tokens; the refresh chain lives exactly as long
         // as the session's absolute end, which no refresh ever moves.
-        var sessionLifetime = function.TerminalPolicy.StaffingSessionLifetime;
-        if (sessionLifetime > function.TerminalPolicy.MaximumStaffingSessionLifetime)
-            sessionLifetime = function.TerminalPolicy.MaximumStaffingSessionLifetime;
+        var sessionLifetime = position.TerminalPolicy.StaffingSessionLifetime;
+        if (sessionLifetime > position.TerminalPolicy.MaximumStaffingSessionLifetime)
+            sessionLifetime = position.TerminalPolicy.MaximumStaffingSessionLifetime;
         var absoluteExpiresAt = now + sessionLifetime;
         principal.SetAccessTokenLifetime(TimeSpan.FromMinutes(10));
         principal.SetRefreshTokenLifetime(sessionLifetime);
@@ -998,7 +998,7 @@ public static class AuthorizationEndpoints
             ?? throw new InvalidOperationException("The application has no id.");
         var authorization = await authorizationManager.CreateAsync(
             principal: principal,
-            subject: function.Id.ToString(),
+            subject: position.Id.ToString(),
             client: clientPk,
             type: AuthorizationTypes.AdHoc,
             scopes: principal.GetScopes(),
@@ -1007,7 +1007,7 @@ public static class AuthorizationEndpoints
             ?? throw new InvalidOperationException("The staffing authorization has no id.");
 
         session.Events.StartStream<StaffingSession>(sessionId, new StaffingSessionStarted(
-            sessionId, functionId, terminal.Id,
+            sessionId, positionId, terminal.Id,
             user.Id, storedCredential.Id, grant.Id,
             terminal.DpopJkt!, authorizationId, now, absoluteExpiresAt));
         terminalStream.AppendOne(new TerminalStaffingSessionActivated(terminal.Id, sessionId, now));
@@ -1030,12 +1030,12 @@ public static class AuthorizationEndpoints
 
         // MG-FT-09 (§17) — consumer notifications: the new shift, and the end
         // of the one it replaced. No person data (§17.2).
-        await bus.PublishAsync(new FunctionStaffingSessionStarted(
-            functionId, terminal.Id, sessionId, now, absoluteExpiresAt));
+        await bus.PublishAsync(new PositionStaffingSessionStarted(
+            positionId, terminal.Id, sessionId, now, absoluteExpiresAt));
         if (superseded is not null)
         {
-            await bus.PublishAsync(new FunctionStaffingSessionEnded(
-                functionId, terminal.Id, superseded.Id,
+            await bus.PublishAsync(new PositionStaffingSessionEnded(
+                positionId, terminal.Id, superseded.Id,
                 StaffingSessionEndReason.ReplacedByNewActivation, now));
         }
 
@@ -1047,9 +1047,9 @@ public static class AuthorizationEndpoints
 
     /// <summary>
     /// The staffing-chain refresh (plan §14): re-validates the WHOLE trust
-    /// chain on every refresh (§14.3 — session, authorization, function,
+    /// chain on every refresh (§14.3 — session, authorization, position,
     /// terminal, client link, device key, activating user, passkey, grant)
-    /// and re-issues the function principal with the SAME
+    /// and re-issues the position principal with the SAME
     /// <c>staffing_session_id</c> and <c>auth_time</c> (§14.4) — no new
     /// WebAuthn ceremony, and the refresh lifetime is clamped to the
     /// session's absolute end, which never moves. A business session end
@@ -1057,7 +1057,7 @@ public static class AuthorizationEndpoints
     /// <c>staffing_required</c> (§14.5): the consumer must lock and demand a
     /// fresh tap, never silently retry.
     /// </summary>
-    private static async Task<IResult> ExchangeFunctionStaffingRefreshAsync(
+    private static async Task<IResult> ExchangeStaffingRefreshAsync(
         HttpContext httpContext,
         OpenIddictRequest request,
         ClaimsPrincipal tokenPrincipal,
@@ -1077,22 +1077,22 @@ public static class AuthorizationEndpoints
 
         var ct = httpContext.RequestAborted;
 
-        if (!settings.Features.FunctionTerminals)
-            return Refuse("Function terminals are not enabled.");
+        if (!settings.Features.PositionTerminals)
+            return Refuse("Position terminals are not enabled.");
         if (!request.IsRefreshTokenGrantType())
             return Refuse("The token is no longer valid.");
 
         // §14.3 checks 1–2 — the session behind the token, still active.
-        if (!Guid.TryParse(tokenPrincipal.GetClaim(Claims.Subject), out var functionId) ||
-            !Guid.TryParse(tokenPrincipal.GetClaim(FunctionTokenClaimTypes.TerminalId), out var terminalId) ||
-            !Guid.TryParse(tokenPrincipal.GetClaim(FunctionTokenClaimTypes.StaffingSessionId), out var sessionId))
+        if (!Guid.TryParse(tokenPrincipal.GetClaim(Claims.Subject), out var positionId) ||
+            !Guid.TryParse(tokenPrincipal.GetClaim(PositionTokenClaimTypes.TerminalId), out var terminalId) ||
+            !Guid.TryParse(tokenPrincipal.GetClaim(PositionTokenClaimTypes.StaffingSessionId), out var sessionId))
         {
             return Refuse("The token is no longer valid.");
         }
 
         var staffing = await session.LoadAsync<StaffingSession>(sessionId, ct);
         if (staffing is null ||
-            staffing.FunctionPrincipalId != functionId ||
+            staffing.PositionPrincipalId != positionId ||
             staffing.TerminalEnrollmentId != terminalId)
         {
             return Refuse("The token is no longer valid.");
@@ -1125,8 +1125,8 @@ public static class AuthorizationEndpoints
                 // session end will be (or was) handled there; still refuse.
             }
             await grantRevoker.RevokeAuthorizationByIdAsync(staffing.OAuthAuthorizationId, CancellationToken.None);
-            await bus.PublishAsync(new FunctionStaffingSessionEnded(
-                functionId, terminalId, staffing.Id, StaffingSessionEndReason.Expired, now));
+            await bus.PublishAsync(new PositionStaffingSessionEnded(
+                positionId, terminalId, staffing.Id, StaffingSessionEndReason.Expired, now));
             return RequireStaffing();
         }
 
@@ -1135,10 +1135,10 @@ public static class AuthorizationEndpoints
         if (!string.Equals(tokenPrincipal.GetAuthorizationId(), staffing.OAuthAuthorizationId, StringComparison.Ordinal))
             return Refuse("The token is no longer valid.");
 
-        // §14.3 checks 5–7 — function alive + terminal use on; slot Active
+        // §14.3 checks 5–7 — position alive + terminal use on; slot Active
         // and still owned by this session.
-        var function = await session.LoadAsync<FunctionPrincipal>(functionId, ct);
-        if (function is null || function.IsDeleted || !function.TerminalPolicy.Enabled)
+        var position = await session.LoadAsync<PositionPrincipal>(positionId, ct);
+        if (position is null || position.IsDeleted || !position.TerminalPolicy.Enabled)
             return RequireStaffing();
 
         var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
@@ -1152,7 +1152,7 @@ public static class AuthorizationEndpoints
             .FirstOrDefaultAsync(x => x.ClientId == request.ClientId && !x.IsDeleted, ct);
         if (state is null ||
             state.ManagedTerminalEnrollmentId != terminal.Id ||
-            state.LinkedFunctionPrincipalId != functionId ||
+            state.LinkedPositionPrincipalId != positionId ||
             terminal.OAuthApplicationId != state.Id ||
             !string.Equals(terminal.ClientId, request.ClientId, StringComparison.Ordinal))
         {
@@ -1182,8 +1182,8 @@ public static class AuthorizationEndpoints
             return RequireStaffing();
         if (await session.LoadAsync<StoredPasskeyCredential>(staffing.ActivatedByPasskeyCredentialId, ct) is null)
             return RequireStaffing();
-        var grant = await session.LoadAsync<FunctionActivationGrant>(staffing.FunctionActivationGrantId, ct);
-        if (grant is null || grant.Status != FunctionActivationGrantStatus.Active)
+        var grant = await session.LoadAsync<PositionGrant>(staffing.PositionGrantId, ct);
+        if (grant is null || grant.Status != PositionGrantStatus.Active)
             return RequireStaffing();
 
         // §14.3 check 13 + §14.4 — re-issue the SAME session identity with
@@ -1191,14 +1191,14 @@ public static class AuthorizationEndpoints
         var authTime = long.TryParse(tokenPrincipal.GetClaim(Claims.AuthenticationTime), out var unix)
             ? DateTimeOffset.FromUnixTimeSeconds(unix)
             : staffing.StartedAt;
-        var principal = FunctionStaffingPrincipal.Create(function, terminal, staffing.Id, authTime);
+        var principal = StaffingPrincipal.Create(position, terminal, staffing.Id, authTime);
 
         var scopes = tokenPrincipal.GetScopes();
         principal.SetScopes(scopes);
         var resources = await scopeManager.ListResourcesAsync(scopes, ct).ToListAsync(ct);
         principal.SetResources(resources);
         var resourceAccess = await BuildResourceAccessAsync(
-            functionId, resources, wantsRoles: true, wantsPermissions: true, session, permissionService);
+            positionId, resources, wantsRoles: true, wantsPermissions: true, session, permissionService);
         if (resourceAccess is not null)
         {
             principal.SetClaim("resource_access", JsonSerializer.SerializeToElement(resourceAccess));

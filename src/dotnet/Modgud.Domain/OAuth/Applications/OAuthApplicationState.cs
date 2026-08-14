@@ -45,7 +45,7 @@ public class OAuthApplicationState
     /// <summary>MG-FT-03 — set together with
     /// <see cref="ManagedTerminalEnrollmentId"/> on terminal-managed clients;
     /// mutually exclusive with <see cref="LinkedServiceAccountId"/>.</summary>
-    public Guid? LinkedFunctionPrincipalId { get; set; }
+    public Guid? LinkedPositionPrincipalId { get; set; }
 
     /// <summary>The terminal slot owning this client — a set value locks the
     /// client against the generic OAuth admin surface.</summary>

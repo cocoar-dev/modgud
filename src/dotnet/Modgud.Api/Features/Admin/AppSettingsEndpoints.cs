@@ -86,7 +86,7 @@ public static class AppSettingsEndpoints
                     Features = new
                     {
                         settings.Features.PageBuilder,
-                        settings.Features.FunctionTerminals,
+                        settings.Features.PositionTerminals,
                     },
                     Pages = settings.Features.PageBuilder
                         ? effective.Pages ?? new Dictionary<string, string>()

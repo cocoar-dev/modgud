@@ -76,10 +76,10 @@ public static class ServiceAccountsEndpoints
                     return Results.Conflict(new { Error = "ServiceAccount.AccountNameTaken",
                         Message = $"Account name '{normalised}' is already in use." });
 
-                // MG-FT-01 — function principals joined the shared namespace.
-                if (await session.Query<FunctionPrincipal>().AnyAsync(f => !f.IsDeleted && f.AccountName == normalised))
+                // MG-FT-01 — position principals joined the shared namespace.
+                if (await session.Query<PositionPrincipal>().AnyAsync(f => !f.IsDeleted && f.AccountName == normalised))
                     return Results.Conflict(new { Error = "ServiceAccount.AccountNameTaken",
-                        Message = $"Account name '{normalised}' is already used by a function." });
+                        Message = $"Account name '{normalised}' is already used by a position." });
 
                 // When an initial credential is supplied, delegate to the OAuth
                 // create path that already supports inline ServiceAccount
@@ -173,12 +173,12 @@ public static class ServiceAccountsEndpoints
                             return Results.Conflict(new { Error = "ServiceAccount.AccountNameTaken",
                                 Message = $"Account name '{normalised}' is already in use." });
 
-                        // MG-FT-01 — function principals joined the shared namespace.
-                        var functionTaken = await session.Query<FunctionPrincipal>()
+                        // MG-FT-01 — position principals joined the shared namespace.
+                        var positionTaken = await session.Query<PositionPrincipal>()
                             .AnyAsync(f => !f.IsDeleted && f.AccountName == normalised);
-                        if (functionTaken)
+                        if (positionTaken)
                             return Results.Conflict(new { Error = "ServiceAccount.AccountNameTaken",
-                                Message = $"Account name '{normalised}' is already used by a function." });
+                                Message = $"Account name '{normalised}' is already used by a position." });
 
                         sa.AccountName = normalised;
                     }

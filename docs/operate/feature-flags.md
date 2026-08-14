@@ -33,6 +33,7 @@ Flags are read at startup; no hot-reload. A flip requires a restart.
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `PageBuilder` | `false` | End-to-end [custom authentication pages](../platform/pages). While off: editor routes are hidden/redirected, Realm/Application page endpoints return 404, DTO/app-info schemas are masked, and auth routes use fixed screens. While on: Realm defaults and Application overrides are editable and rendered on login, forgot-password, and signed-out routes. |
+| `PositionTerminals` | `false` | [Positions and shared terminals](../admin/positions) — the device-bound identity for terminals that changing people staff by passkey tap. While off: the sidebar entry is hidden, `/api/position*` and the terminal-facing `/connect/staffing/*` endpoints return 404, and the staffing grant is refused. While on: positions, grants, terminal slots, enrollment and staffing sessions are live. See the [consumer contract](../integrate/position-terminals) for the wire formats. |
 
 ## Defense in depth
 

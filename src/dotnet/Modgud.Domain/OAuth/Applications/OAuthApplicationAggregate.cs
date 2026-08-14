@@ -37,16 +37,16 @@ public partial class OAuthApplicationAggregate
     public Guid? LinkedServiceAccountId { get; private set; }
 
     /// <summary>
-    /// MG-FT-03 — function this terminal-managed client mints tokens for
-    /// (<c>sub = FunctionPrincipalId</c>). Always set together with
+    /// MG-FT-03 — position this terminal-managed client mints tokens for
+    /// (<c>sub = PositionPrincipalId</c>). Always set together with
     /// <see cref="ManagedTerminalEnrollmentId"/>; mutually exclusive with
     /// <see cref="LinkedServiceAccountId"/> (one client = one auth mode).
     /// </summary>
-    public Guid? LinkedFunctionPrincipalId { get; private set; }
+    public Guid? LinkedPositionPrincipalId { get; private set; }
 
     /// <summary>The terminal slot that owns this client (1:1). A set value
     /// locks the client against the generic OAuth admin surface — it may only
-    /// be changed through the function-terminal API.</summary>
+    /// be changed through the position-terminal API.</summary>
     public Guid? ManagedTerminalEnrollmentId { get; private set; }
 
     public bool IsDeleted { get; private set; }
@@ -157,10 +157,10 @@ public partial class OAuthApplicationAggregate
         return e;
     }
 
-    public OAuthApplicationFunctionTerminalLinkChanged SetFunctionTerminalLink(
-        Guid? functionPrincipalId, Guid? terminalEnrollmentId)
+    public OAuthApplicationPositionTerminalLinkChanged SetPositionTerminalLink(
+        Guid? positionPrincipalId, Guid? terminalEnrollmentId)
     {
-        var e = new OAuthApplicationFunctionTerminalLinkChanged(Id, functionPrincipalId, terminalEnrollmentId);
+        var e = new OAuthApplicationPositionTerminalLinkChanged(Id, positionPrincipalId, terminalEnrollmentId);
         Apply(e);
         return e;
     }
@@ -210,9 +210,9 @@ public partial class OAuthApplicationAggregate
     public void Apply(OAuthApplicationServiceAccountLinkChanged @event)
         => LinkedServiceAccountId = @event.ServiceAccountId;
 
-    public void Apply(OAuthApplicationFunctionTerminalLinkChanged @event)
+    public void Apply(OAuthApplicationPositionTerminalLinkChanged @event)
     {
-        LinkedFunctionPrincipalId = @event.FunctionPrincipalId;
+        LinkedPositionPrincipalId = @event.PositionPrincipalId;
         ManagedTerminalEnrollmentId = @event.TerminalEnrollmentId;
     }
 

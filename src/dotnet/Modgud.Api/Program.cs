@@ -43,7 +43,7 @@ using Modgud.Domain.Common;
 using AuthRateLimitPolicy = Modgud.Domain.Realms.AuthRateLimitPolicy;
 using Modgud.Authentication.Domain;
 using Modgud.Infrastructure;
-using Modgud.Infrastructure.FunctionTerminals;
+using Modgud.Infrastructure.PositionTerminals;
 using Modgud.Infrastructure.OAuth;
 using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.Scheduling;
@@ -748,9 +748,9 @@ try
     builder.Services.AddScoped<Modgud.Authentication.Sessions.IUserAccessRevoker,
         Modgud.Authentication.Sessions.UserAccessRevoker>();
     // MG-FT-07 — the staffing-session kill switch: locks + every revocation
-    // cascade (user/passkey/grant/terminal/function) end sessions through it.
-    builder.Services.AddScoped<Modgud.Infrastructure.FunctionTerminals.IFunctionStaffingRevoker,
-        Modgud.Infrastructure.FunctionTerminals.FunctionStaffingRevoker>();
+    // cascade (user/passkey/grant/terminal/position) end sessions through it.
+    builder.Services.AddScoped<Modgud.Infrastructure.PositionTerminals.IStaffingRevoker,
+        Modgud.Infrastructure.PositionTerminals.StaffingRevoker>();
 
     // Infrastructure (Marten + repositories + query services + event dispatcher)
     // Authentication Marten setup (documents + events + projections) is wired via
@@ -762,7 +762,7 @@ try
         {
             options.UseModgudAuthentication();
             options.UseModgudOAuth();
-            options.UseModgudFunctionTerminals();
+            options.UseModgudPositionTerminals();
         },
         // The behavioural integration suite owns projection progress explicitly:
         // each consistency boundary runs a fresh interactive daemon. Running the
@@ -956,7 +956,7 @@ try
         // MG-FT-07 staffing-session kill switch — same story: it composes
         // IOAuthGrantRevoker, whose chain reaches the same opaque OpenIddict
         // manager factories. DeleteUsersCommand injects it for the user cascade.
-        opts.CodeGeneration.AlwaysUseServiceLocationFor<Modgud.Infrastructure.FunctionTerminals.IFunctionStaffingRevoker>();
+        opts.CodeGeneration.AlwaysUseServiceLocationFor<Modgud.Infrastructure.PositionTerminals.IStaffingRevoker>();
 
         // Auto-register Event Forwarding subscriptions for all ReferenceSyncHandler<TEvent> implementations
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
@@ -1329,7 +1329,7 @@ try
     app.MapPasskeyEndpoints("api");
     app.MapNativePasskeyEndpoints();
     app.MapNativePasskeyEnrollEndpoints();
-    Modgud.Api.Features.Auth.FunctionStaffing.FunctionStaffingEndpoints.MapFunctionStaffingEndpoints(app);
+    Modgud.Api.Features.Auth.Staffing.StaffingEndpoints.MapStaffingEndpoints(app);
     app.MapNativePasskeyManagementEndpoints();
     app.MapMagicLinkEndpoints("api");
     app.MapPasswordResetEndpoints("api");
@@ -1348,9 +1348,9 @@ try
     // Marten Endpoints
     app.MapUsersEndpoints("api");
     Modgud.Api.Features.ServiceAccounts.ServiceAccountsEndpoints.MapServiceAccountsEndpoints(app, "api");
-    Modgud.Api.Features.Functions.FunctionsEndpoints.MapFunctionsEndpoints(app, "api");
-    Modgud.Api.Features.Functions.FunctionGrantsEndpoints.MapFunctionGrantsEndpoints(app, "api");
-    Modgud.Api.Features.Functions.FunctionTerminalsEndpoints.MapFunctionTerminalsEndpoints(app, "api");
+    Modgud.Api.Features.Positions.PositionsEndpoints.MapPositionsEndpoints(app, "api");
+    Modgud.Api.Features.Positions.PositionGrantsEndpoints.MapPositionGrantsEndpoints(app, "api");
+    Modgud.Api.Features.Positions.PositionTerminalsEndpoints.MapPositionTerminalsEndpoints(app, "api");
     app.MapPrincipalEndpoints("api");
     app.MapRolesEndpoints("api");
     app.MapGroupEndpoints("api");

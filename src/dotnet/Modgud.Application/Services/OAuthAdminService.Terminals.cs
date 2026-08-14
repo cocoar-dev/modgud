@@ -1,6 +1,6 @@
 using ErrorOr;
 using Modgud.Application.Errors;
-using Modgud.Domain.FunctionTerminals;
+using Modgud.Domain.PositionTerminals;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
 using static Modgud.Application.Services.OAuthAdminMapping;
@@ -20,14 +20,14 @@ public partial class OAuthAdminService
     /// Stages the terminal-managed public client for one slot. The profile is
     /// FIXED (plan §6.4): public, secretless, DPoP-mandatory, reference tokens,
     /// per-client RP-ID, exactly the three terminal grants — validated against
-    /// <see cref="OAuthAdminMapping.ValidateFunctionTerminalLinkInvariant"/> as
+    /// <see cref="OAuthAdminMapping.ValidatePositionTerminalLinkInvariant"/> as
     /// defense in depth even though this method is the only producer.
     /// </summary>
     public Error? StageCreateTerminalClient(
         Guid applicationId,
         string clientId,
         string displayName,
-        Guid functionPrincipalId,
+        Guid positionPrincipalId,
         Guid terminalEnrollmentId,
         string webAuthnRpId)
     {
@@ -36,10 +36,10 @@ public partial class OAuthAdminService
         if (ValidateWebAuthnRpId(webAuthnRpId) is { } rpIdError)
             return rpIdError;
 
-        if (ValidateFunctionTerminalLinkInvariant(
+        if (ValidatePositionTerminalLinkInvariant(
                 grants, OAuthClientTypes.Public, requireClientSecret: false,
                 AccessTokenType.Reference, requireDpop: true,
-                linkedServiceAccountId: null, functionPrincipalId, terminalEnrollmentId,
+                linkedServiceAccountId: null, positionPrincipalId, terminalEnrollmentId,
                 webAuthnRpId) is { } invariantError)
             return invariantError;
 
@@ -70,14 +70,14 @@ public partial class OAuthAdminService
             requireDpop: true, requireDpopNonce: false)));
 
         _session.Events.Append(applicationId,
-            aggregate.SetFunctionTerminalLink(functionPrincipalId, terminalEnrollmentId));
+            aggregate.SetPositionTerminalLink(positionPrincipalId, terminalEnrollmentId));
 
         return null;
     }
 
     /// <summary>
     /// Stages the client's enabled flag (slot disable/reactivate). Bypasses the
-    /// terminal-managed guard deliberately — this IS the function-terminal
+    /// terminal-managed guard deliberately — this IS the position-terminal
     /// mutation path the guard points callers to.
     /// </summary>
     public async Task<Error?> StageSetTerminalClientEnabledAsync(

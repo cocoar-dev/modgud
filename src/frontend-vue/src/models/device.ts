@@ -11,9 +11,9 @@ export interface DeviceScopeInfo {
 export type DeviceVerificationStatus = 'needs_code' | 'ready' | 'invalid_code'
 
 /** MG-FT-04 — what the approving admin must see before registering a device
- * as a function terminal (§11.4). */
+ * as a position terminal (§11.4). */
 export interface TerminalConsentInfo {
-  FunctionName: string
+  PositionName: string
   TerminalName: string
   Location?: string | null
   ClientId: string

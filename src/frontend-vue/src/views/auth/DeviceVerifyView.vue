@@ -268,14 +268,14 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
               {{ t('device.terminal.title', {}, 'Register terminal?') }}
             </h2>
             <p class="mt-1 text-sm text-surface-500">
-              {{ t('device.terminal.subtitle', {}, 'A device is asking to be registered as a function terminal.') }}
+              {{ t('device.terminal.subtitle', {}, 'A device is asking to be registered as a position terminal.') }}
             </p>
           </div>
 
           <dl class="divide-y divide-surface-200 rounded border border-surface-200 bg-white text-sm">
             <div class="flex justify-between gap-4 px-3 py-2">
-              <dt class="text-surface-500">{{ t('device.terminal.function', {}, 'Function') }}</dt>
-              <dd class="font-medium text-surface-800">{{ model!.Terminal!.FunctionName }}</dd>
+              <dt class="text-surface-500">{{ t('device.terminal.position', {}, 'Position') }}</dt>
+              <dd class="font-medium text-surface-800">{{ model!.Terminal!.PositionName }}</dd>
             </div>
             <div class="flex justify-between gap-4 px-3 py-2">
               <dt class="text-surface-500">{{ t('device.terminal.terminal', {}, 'Terminal') }}</dt>
@@ -301,7 +301,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
           </dl>
 
           <CoarNotice variant="warning">
-            {{ t('device.terminal.warning', {}, 'This device will be permanently registered as a terminal of this function. Registration alone does not grant any alerting access yet.') }}
+            {{ t('device.terminal.warning', {}, 'This device will be permanently registered as a terminal of this position. Registration alone does not grant any alerting access yet.') }}
           </CoarNotice>
 
           <CoarNotice v-if="!model!.Terminal!.DpopFingerprint" variant="error">

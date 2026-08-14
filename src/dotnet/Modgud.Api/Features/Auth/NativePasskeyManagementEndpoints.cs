@@ -72,7 +72,7 @@ public static class NativePasskeyManagementEndpoints
             IDocumentSession session,
             IApplicationSettingsResolver settingsResolver,
             UserManager<ApplicationUser> userManager,
-            Modgud.Infrastructure.FunctionTerminals.IFunctionStaffingRevoker staffingRevoker,
+            Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker,
             CancellationToken ct) =>
         {
             if (await NativeBearerEndpointSupport.GateDisabledAsync(settingsResolver, context, ct) is { } gate) return gate;
@@ -90,7 +90,7 @@ public static class NativePasskeyManagementEndpoints
             // MG-FT-07 §15.4 — staffing sessions opened with THIS credential
             // end with it: the shift's trust anchor (the tap) is gone.
             await staffingRevoker.EndAllForPasskeyAsync(
-                credential.Id, Modgud.Domain.FunctionTerminals.StaffingSessionEndReason.PasskeyDeleted, ct);
+                credential.Id, Modgud.Domain.PositionTerminals.StaffingSessionEndReason.PasskeyDeleted, ct);
 
             return Results.NoContent();
         })

@@ -1,0 +1,68 @@
+using Modgud.Domain.ValueObjects;
+
+namespace Modgud.Application.DTOs.Positions;
+
+/// <summary>
+/// Wire shape for a <see cref="Modgud.Authorization.Principals.PositionPrincipal"/>
+/// (MG-FT-01) — the business identity of a position ("gate porter for customer
+/// XY") staffed by changing humans on shared terminals. Like a service account
+/// it carries an account name and no email; unlike one it owns no credentials —
+/// its tokens are minted through the staffing flow, and terminal use is gated by
+/// <see cref="TerminalPolicy"/>.
+/// </summary>
+public class PositionPrincipalDto
+{
+    public required string Id { get; set; }
+    public required string AccountName { get; set; }
+    public string? Purpose { get; set; }
+    public bool IsActive { get; set; } = true;
+    public EntityStatus Status { get; set; } = EntityStatus.Active;
+    public required PositionTerminalPolicyDto TerminalPolicy { get; set; }
+}
+
+/// <summary>
+/// Wire shape of the per-position terminal policy. Lifetimes travel as whole
+/// minutes (matching the other lifetime DTOs on the admin surface).
+/// </summary>
+public class PositionTerminalPolicyDto
+{
+    public bool Enabled { get; set; }
+    public int StaffingSessionLifetimeMinutes { get; set; }
+    public int MaximumStaffingSessionLifetimeMinutes { get; set; }
+}
+
+public class PositionCreateDto
+{
+    public string AccountName { get; set; } = string.Empty;
+    public string? Purpose { get; set; }
+    public bool IsActive { get; set; } = true;
+
+    /// <summary>Optional at create — omitted means terminal use stays disabled
+    /// with the default lifetimes (a position is never terminal-enabled by
+    /// accident).</summary>
+    public PositionTerminalPolicyUpdateDto? TerminalPolicy { get; set; }
+
+    /// <summary>
+    /// Users to authorize in the same save (modal-contract rule 5: the entity
+    /// is creatable completely — like groups on user create). All-or-nothing:
+    /// one invalid user rejects the whole create; the position stream and every
+    /// grant stream commit in one unit of work.
+    /// </summary>
+    public List<string>? GrantUserIds { get; set; }
+}
+
+public class PositionUpdateDto
+{
+    public string? AccountName { get; set; }
+    public string? Purpose { get; set; }
+    public bool? IsActive { get; set; }
+    public PositionTerminalPolicyUpdateDto? TerminalPolicy { get; set; }
+}
+
+/// <summary>Partial policy update — null fields keep the persisted value.</summary>
+public class PositionTerminalPolicyUpdateDto
+{
+    public bool? Enabled { get; set; }
+    public int? StaffingSessionLifetimeMinutes { get; set; }
+    public int? MaximumStaffingSessionLifetimeMinutes { get; set; }
+}

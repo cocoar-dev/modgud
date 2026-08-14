@@ -7,7 +7,7 @@ namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
 /// MG-FT-00 spike 3 — one passkey credential shared by two public clients that
-/// carry the SAME per-client RP ID (the AlertHub function-terminal scenario:
+/// carry the SAME per-client RP ID (the AlertHub position-terminal scenario:
 /// terminal-left and terminal-right are distinct OAuth clients, but both live
 /// under the one AlertHub RP ID the staff passkeys are enrolled for).
 ///
