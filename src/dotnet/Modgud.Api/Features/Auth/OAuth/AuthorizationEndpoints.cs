@@ -575,6 +575,16 @@ public static class AuthorizationEndpoints
                 clientSessionService, fido2Factory, rpIdResolver, httpContext.RequestAborted);
         }
 
+        // MG-FT-05 — a passkey tap on an enrolled terminal opens a
+        // StaffingSession for the FUNCTION (plan §13).
+        if (string.Equals(request.GrantType, FunctionGrantTypes.StaffingSession, StringComparison.Ordinal))
+        {
+            return await ExchangeFunctionStaffingAsync(
+                request, httpContext, settings, session, userManager, signInManager,
+                scopeManager, applicationManager, authorizationManager, permissionService,
+                fido2Factory, rpIdResolver, grantRevoker, httpContext.RequestAborted);
+        }
+
         throw new InvalidOperationException("The specified grant type is not supported.");
 
         static IResult ForbidInvalidGrant(string description) =>
@@ -731,6 +741,277 @@ public static class AuthorizationEndpoints
             await grantRevoker.RevokeAuthorizationByIdAsync(authorizationId, CancellationToken.None);
             throw;
         }
+
+        principal.SetAuthorizationId(authorizationId);
+        return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+    }
+
+    // ──────────────────── MG-FT-05 staffing grant (§13) ───────────────────────
+
+    /// <summary>
+    /// Redeems a passkey tap on an enrolled terminal into a
+    /// <see cref="StaffingSession"/> (plan §13.3, steps in order). Everything
+    /// the token authorizes is derived from the terminal client and the
+    /// ceremony pinned at begin — the request chooses only scopes (validated
+    /// upstream) and supplies the assertion. Concurrency (§13.5): the terminal
+    /// stream's version guards the activation — of two racing taps exactly one
+    /// commit wins; the loser gets a retryable invalid_grant. A superseded
+    /// active session ends as ReplacedByNewActivation in the SAME commit and
+    /// its authorization is revoked right after.
+    /// </summary>
+    private static async Task<IResult> ExchangeFunctionStaffingAsync(
+        OpenIddictRequest request,
+        HttpContext httpContext,
+        AppSettings settings,
+        IDocumentSession session,
+        UserManager<ApplicationUser> userManager,
+        SignInManager<ApplicationUser> signInManager,
+        IOpenIddictScopeManager scopeManager,
+        IOpenIddictApplicationManager applicationManager,
+        IOpenIddictAuthorizationManager authorizationManager,
+        IPermissionService permissionService,
+        RealmScopedFido2Factory fido2Factory,
+        RpIdResolver rpIdResolver,
+        IOAuthGrantRevoker grantRevoker,
+        CancellationToken ct)
+    {
+        static IResult Refuse(string description) =>
+            ForbidNativeGrant(Errors.InvalidGrant, description);
+
+        if (!settings.Features.FunctionTerminals)
+            return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled.");
+
+        // §13.3 steps 1–3 — the redeeming client must be a terminal-managed
+        // client with an intact function/terminal link. (The fixed profile is
+        // creation-enforced and admin-locked; DPoP is demanded unconditionally
+        // below, which is stronger than re-reading the RequireDpop flag.)
+        if (string.IsNullOrEmpty(request.ClientId))
+            return ForbidNativeGrant(Errors.InvalidClient, "client_id is required.");
+
+        var state = await session.Query<OAuthApplicationState>()
+            .FirstOrDefaultAsync(x => x.ClientId == request.ClientId && !x.IsDeleted, ct);
+        if (state?.ManagedTerminalEnrollmentId is not { } terminalId ||
+            state.LinkedFunctionPrincipalId is not { } functionId)
+        {
+            return Refuse("The client is not a function-terminal client.");
+        }
+
+        var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
+        if (terminal is null || terminal.OAuthApplicationId != state.Id ||
+            terminal.FunctionPrincipalId != functionId ||
+            !string.Equals(terminal.ClientId, request.ClientId, StringComparison.Ordinal))
+        {
+            return Refuse("The client is not linked to a valid terminal slot.");
+        }
+
+        if (terminal.Status != TerminalEnrollmentStatus.Active || string.IsNullOrEmpty(terminal.DpopJkt))
+            return Refuse("The terminal is not active.");
+
+        var function = await session.LoadAsync<FunctionPrincipal>(functionId, ct);
+        if (function is null || function.IsDeleted || !function.TerminalPolicy.Enabled)
+            return Refuse("Terminal use is disabled for this function.");
+
+        // Proof-of-possession for THIS request, validated in-endpoint (same
+        // rationale as the enrollment exchange: the DPoP pipeline handlers run
+        // only after SignIn). The proof key must be the slot's enrolled key.
+        var proofHeader = httpContext.Request.Headers[DpopConstants.HeaderName];
+        if (proofHeader.Count != 1)
+            return Refuse("A DPoP proof is required.");
+        var htu = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.Path}";
+        var proof = DpopProofValidator.Validate(
+            proofHeader.ToString(), httpContext.Request.Method, htu, DateTimeOffset.UtcNow);
+        if (!proof.IsValid || !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
+            return Refuse("The DPoP proof key is not this terminal's enrolled key.");
+
+        // §13.3 steps 4–5 — load + pin-check the ceremony.
+        var assertionJson = (string?)request.GetParameter("assertion");
+        if (!Guid.TryParse((string?)request.GetParameter("ceremony_id"), out var ceremonyId))
+            return Refuse("Invalid or expired staffing ceremony.");
+
+        var ceremony = await session.LoadAsync<FunctionStaffingCeremony>(ceremonyId, ct);
+        if (ceremony is null || ceremony.IsExpired || ceremony.IsConsumed)
+        {
+            if (ceremony is { IsExpired: true })
+            {
+                session.Delete(ceremony);
+                await session.SaveChangesAsync(ct);
+            }
+            return Refuse("Invalid or expired staffing ceremony.");
+        }
+
+        if (!string.Equals(ceremony.ClientId, request.ClientId, StringComparison.Ordinal) ||
+            ceremony.TerminalEnrollmentId != terminal.Id ||
+            ceremony.FunctionPrincipalId != functionId ||
+            !string.Equals(ceremony.DpopJkt, terminal.DpopJkt, StringComparison.Ordinal))
+        {
+            return Refuse("Invalid or expired staffing ceremony.");
+        }
+
+        // §13.3 step 6 — consume BEFORE the verify: a version-checked Store of
+        // the ConsumedAt marker (not a Delete — deletes aren't version-checked),
+        // so a captured ceremony_id can never be replayed and of two racing
+        // redeems the loser's save throws. Mirrors ExchangeNativePasskeyAsync.
+        ceremony.ConsumedAt = DateTimeOffset.UtcNow;
+        session.Store(ceremony);
+        try
+        {
+            await session.SaveChangesAsync(ct);
+        }
+        catch (JasperFx.ConcurrencyException)
+        {
+            return Refuse("Invalid or expired staffing ceremony.");
+        }
+
+        if (string.IsNullOrWhiteSpace(assertionJson))
+            return Refuse("Invalid or expired staffing ceremony.");
+
+        // §13.3 steps 7–9 — verify the tap against the ceremony-pinned RP-ID.
+        string[]? presentedOrigins = null;
+        try
+        {
+            var assertion = JsonSerializer.Deserialize<AuthenticatorAssertionRawResponse>(
+                assertionJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (RealmFido2.TryGetClientDataOrigin(assertion?.Response?.ClientDataJson) is { } origin)
+                presentedOrigins = [origin];
+        }
+        catch (JsonException) { /* leave null — the verifier fails closed */ }
+
+        var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
+        IFido2 fido2;
+        try
+        {
+            fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: ceremony.RpId, additionalOrigins: presentedOrigins);
+        }
+        catch (RelyingPartyUnavailableException)
+        {
+            return Refuse("Staffing is not available for this realm.");
+        }
+
+        AssertionOptions options;
+        try
+        {
+            options = AssertionOptions.FromJson(ceremony.OptionsJson);
+        }
+        catch
+        {
+            return Refuse("Invalid or expired staffing ceremony.");
+        }
+
+        // The shared verifier commits its own save (counter advance) — safe
+        // here: the ceremony consume above already committed and nothing else
+        // is staged on the session yet.
+        var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(
+            fido2, options, assertionJson, session, ceremony.RpId, primaryDomain, ct);
+        if (storedCredential is null)
+            return Refuse("Passkey verification failed.");
+
+        // §13.3 steps 10–13 — the activating person: alive + allowed to sign
+        // in, the passkey belongs to the ceremony RP-ID, and an ACTIVE grant
+        // authorizes them for this function (Suspended does not).
+        var user = await userManager.FindByIdAsync(storedCredential.UserId.ToString());
+        if (user is null || !await signInManager.CanSignInAsync(user) || !user.IsActive || user.IsDeleted)
+            return Refuse("Passkey verification failed.");
+        if (!string.Equals(storedCredential.RpId ?? primaryDomain, ceremony.RpId, StringComparison.OrdinalIgnoreCase))
+            return Refuse("Passkey verification failed.");
+
+        var grant = (await session.Query<FunctionActivationGrant>()
+            .Where(g => g.FunctionPrincipalId == functionId && g.UserId == user.Id &&
+                        g.Status == FunctionActivationGrantStatus.Active)
+            .ToListAsync(ct)).FirstOrDefault();
+        if (grant is null)
+            return Refuse("The user is not authorized to staff this function.");
+
+        // §13.3 step 16 — scopes: offline_access keeps the shift refreshable;
+        // requested scopes passed the client/app restriction gates at the top
+        // of ExchangeAsync. Audiences resolve from the granted scopes; the
+        // function's own roles + permissions are embedded per audience (§7.3).
+        var now = DateTimeOffset.UtcNow;
+        var sessionId = Guid.NewGuid();
+        var principal = FunctionStaffingPrincipal.Create(function, terminal, sessionId, now);
+
+        var scopes = request.GetScopes();
+        if (!scopes.Contains(Scopes.OfflineAccess)) scopes = scopes.Add(Scopes.OfflineAccess);
+        principal.SetScopes(scopes);
+        var resources = await scopeManager.ListResourcesAsync(principal.GetScopes(), ct).ToListAsync(ct);
+        principal.SetResources(resources);
+
+        var resourceAccess = await BuildResourceAccessAsync(
+            functionId, resources, wantsRoles: true, wantsPermissions: true, session, permissionService);
+        if (resourceAccess is not null)
+        {
+            principal.SetClaim("resource_access", JsonSerializer.SerializeToElement(resourceAccess));
+        }
+
+        // §7.4 — short access tokens; the refresh chain lives exactly as long
+        // as the session's absolute end, which no refresh ever moves.
+        var sessionLifetime = function.TerminalPolicy.StaffingSessionLifetime;
+        if (sessionLifetime > function.TerminalPolicy.MaximumStaffingSessionLifetime)
+            sessionLifetime = function.TerminalPolicy.MaximumStaffingSessionLifetime;
+        var absoluteExpiresAt = now + sessionLifetime;
+        principal.SetAccessTokenLifetime(TimeSpan.FromMinutes(10));
+        principal.SetRefreshTokenLifetime(sessionLifetime);
+
+        // §13.3 steps 17–20 + §13.5 — the activation lock: the terminal
+        // stream's version guards the pointer; of two racing taps exactly one
+        // SaveChanges wins. A still-active previous session ends in the SAME
+        // commit (ReplacedByNewActivation).
+        var terminalStream = await session.Events.FetchForWriting<TerminalEnrollment>(terminal.Id, ct);
+        var slot = terminalStream.Aggregate;
+        if (slot is null || slot.Status != TerminalEnrollmentStatus.Active)
+            return Refuse("The terminal is not active.");
+
+        StaffingSession? superseded = null;
+        if (slot.ActiveStaffingSessionId is { } oldSessionId)
+        {
+            superseded = await session.LoadAsync<StaffingSession>(oldSessionId, ct);
+            if (superseded is { Status: StaffingSessionStatus.Active })
+            {
+                session.Events.Append(superseded.Id, new StaffingSessionEnded(
+                    superseded.Id, StaffingSessionEndReason.ReplacedByNewActivation, now));
+            }
+            else
+            {
+                superseded = null;
+            }
+        }
+
+        // §13.4 — authorization FIRST (no shared transaction with Marten); a
+        // failed Marten commit compensates by revoking it again.
+        var application = await applicationManager.FindByClientIdAsync(request.ClientId!, ct)
+            ?? throw new InvalidOperationException("The application cannot be found.");
+        var clientPk = await applicationManager.GetIdAsync(application, ct)
+            ?? throw new InvalidOperationException("The application has no id.");
+        var authorization = await authorizationManager.CreateAsync(
+            principal: principal,
+            subject: function.Id.ToString(),
+            client: clientPk,
+            type: AuthorizationTypes.AdHoc,
+            scopes: principal.GetScopes(),
+            cancellationToken: ct);
+        var authorizationId = await authorizationManager.GetIdAsync(authorization, ct)
+            ?? throw new InvalidOperationException("The staffing authorization has no id.");
+
+        session.Events.StartStream<StaffingSession>(sessionId, new StaffingSessionStarted(
+            sessionId, functionId, terminal.Id,
+            user.Id, storedCredential.Id, grant.Id,
+            terminal.DpopJkt!, authorizationId, now, absoluteExpiresAt));
+        terminalStream.AppendOne(new TerminalStaffingSessionActivated(terminal.Id, sessionId, now));
+        try
+        {
+            await session.SaveChangesAsync(ct);
+        }
+        catch (Exception e)
+        {
+            await grantRevoker.RevokeAuthorizationByIdAsync(authorizationId, CancellationToken.None);
+            if (e is JasperFx.ConcurrencyException)
+                return Refuse("Another activation is in progress on this terminal; please retry.");
+            throw;
+        }
+
+        // The replaced session's device is cut off NOW (reference tokens die
+        // with their authorization), not at its next refresh.
+        if (superseded is not null && !string.IsNullOrEmpty(superseded.OAuthAuthorizationId))
+            await grantRevoker.RevokeAuthorizationByIdAsync(superseded.OAuthAuthorizationId, ct);
 
         principal.SetAuthorizationId(authorizationId);
         return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
