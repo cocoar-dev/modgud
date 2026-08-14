@@ -342,16 +342,23 @@ public static class AuthorizationEndpoints
             var subject = result.Principal?.GetClaim(Claims.Subject);
             if (string.IsNullOrEmpty(subject)) return ForbidInvalidGrant("The token is no longer valid.");
 
-            // MG-FT-04 §11.6 — terminal-enrollment tokens carry a FUNCTION
-            // subject, not a person: dispatch before the user branch (the
-            // user lookup below could never resolve a function id).
-            if (string.Equals(
-                    result.Principal?.GetClaim(FunctionTokenClaimTypes.TokenUse),
-                    FunctionTokenUses.TerminalEnrollment, StringComparison.Ordinal))
+            // MG-FT-04/06 — function tokens carry a FUNCTION subject, not a
+            // person: dispatch before the user branch (the user lookup below
+            // could never resolve a function id). Enrollment chain → §11.6;
+            // staffing chain → the §14 refresh.
+            var functionTokenUse = result.Principal?.GetClaim(FunctionTokenClaimTypes.TokenUse);
+            if (string.Equals(functionTokenUse, FunctionTokenUses.TerminalEnrollment, StringComparison.Ordinal))
             {
                 return await ExchangeTerminalEnrollmentAsync(
                     httpContext, request, result.Principal!, settings, session,
                     applicationManager, authorizationManager, grantRevoker);
+            }
+
+            if (string.Equals(functionTokenUse, FunctionTokenUses.StaffingSession, StringComparison.Ordinal))
+            {
+                return await ExchangeFunctionStaffingRefreshAsync(
+                    httpContext, request, result.Principal!, settings, session,
+                    userManager, signInManager, scopeManager, permissionService, grantRevoker);
             }
 
             var user = await userManager.FindByIdAsync(subject);
@@ -1014,6 +1021,175 @@ public static class AuthorizationEndpoints
             await grantRevoker.RevokeAuthorizationByIdAsync(superseded.OAuthAuthorizationId, ct);
 
         principal.SetAuthorizationId(authorizationId);
+        return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+    }
+
+    // ──────────────────── MG-FT-06 staffing refresh (§14) ─────────────────────
+
+    /// <summary>
+    /// The staffing-chain refresh (plan §14): re-validates the WHOLE trust
+    /// chain on every refresh (§14.3 — session, authorization, function,
+    /// terminal, client link, device key, activating user, passkey, grant)
+    /// and re-issues the function principal with the SAME
+    /// <c>staffing_session_id</c> and <c>auth_time</c> (§14.4) — no new
+    /// WebAuthn ceremony, and the refresh lifetime is clamped to the
+    /// session's absolute end, which never moves. A business session end
+    /// (ended/expired/de-authorized) answers <c>interaction_required</c> /
+    /// <c>staffing_required</c> (§14.5): the consumer must lock and demand a
+    /// fresh tap, never silently retry.
+    /// </summary>
+    private static async Task<IResult> ExchangeFunctionStaffingRefreshAsync(
+        HttpContext httpContext,
+        OpenIddictRequest request,
+        ClaimsPrincipal tokenPrincipal,
+        AppSettings settings,
+        IDocumentSession session,
+        UserManager<ApplicationUser> userManager,
+        SignInManager<ApplicationUser> signInManager,
+        IOpenIddictScopeManager scopeManager,
+        IPermissionService permissionService,
+        IOAuthGrantRevoker grantRevoker)
+    {
+        static IResult Refuse(string description) =>
+            ForbidNativeGrant(Errors.InvalidGrant, description);
+        static IResult RequireStaffing() =>
+            ForbidNativeGrant(Errors.InteractionRequired, "staffing_required");
+
+        var ct = httpContext.RequestAborted;
+
+        if (!settings.Features.FunctionTerminals)
+            return Refuse("Function terminals are not enabled.");
+        if (!request.IsRefreshTokenGrantType())
+            return Refuse("The token is no longer valid.");
+
+        // §14.3 checks 1–2 — the session behind the token, still active.
+        if (!Guid.TryParse(tokenPrincipal.GetClaim(Claims.Subject), out var functionId) ||
+            !Guid.TryParse(tokenPrincipal.GetClaim(FunctionTokenClaimTypes.TerminalId), out var terminalId) ||
+            !Guid.TryParse(tokenPrincipal.GetClaim(FunctionTokenClaimTypes.StaffingSessionId), out var sessionId))
+        {
+            return Refuse("The token is no longer valid.");
+        }
+
+        var staffing = await session.LoadAsync<StaffingSession>(sessionId, ct);
+        if (staffing is null ||
+            staffing.FunctionPrincipalId != functionId ||
+            staffing.TerminalEnrollmentId != terminalId)
+        {
+            return Refuse("The token is no longer valid.");
+        }
+        if (staffing.Status != StaffingSessionStatus.Active)
+            return RequireStaffing();
+
+        // §14.3 check 3 — absolute end reached ⇒ end the session NOW (lazy
+        // expiry, §15.4 row "StaffingSession abgelaufen"): Ended(Expired)
+        // event, terminal pointer cleared when still ours, authorization
+        // revoked — then demand a fresh tap.
+        var now = DateTimeOffset.UtcNow;
+        if (staffing.AbsoluteExpiresAt <= now)
+        {
+            session.Events.Append(staffing.Id, new StaffingSessionEnded(
+                staffing.Id, StaffingSessionEndReason.Expired, now));
+            var expiredTerminalStream = await session.Events.FetchForWriting<TerminalEnrollment>(terminalId, ct);
+            if (expiredTerminalStream.Aggregate?.ActiveStaffingSessionId == staffing.Id)
+            {
+                expiredTerminalStream.AppendOne(new TerminalStaffingSessionCleared(
+                    terminalId, staffing.Id, now));
+            }
+            try
+            {
+                await session.SaveChangesAsync(ct);
+            }
+            catch (JasperFx.ConcurrencyException)
+            {
+                // A racing tap/refresh already moved the terminal — the
+                // session end will be (or was) handled there; still refuse.
+            }
+            await grantRevoker.RevokeAuthorizationByIdAsync(staffing.OAuthAuthorizationId, CancellationToken.None);
+            return RequireStaffing();
+        }
+
+        // §14.3 check 4 — the refresh token must belong to exactly this
+        // session's authorization.
+        if (!string.Equals(tokenPrincipal.GetAuthorizationId(), staffing.OAuthAuthorizationId, StringComparison.Ordinal))
+            return Refuse("The token is no longer valid.");
+
+        // §14.3 checks 5–7 — function alive + terminal use on; slot Active
+        // and still owned by this session.
+        var function = await session.LoadAsync<FunctionPrincipal>(functionId, ct);
+        if (function is null || function.IsDeleted || !function.TerminalPolicy.Enabled)
+            return RequireStaffing();
+
+        var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
+        if (terminal is null || terminal.Status != TerminalEnrollmentStatus.Active)
+            return RequireStaffing();
+        if (terminal.ActiveStaffingSessionId != staffing.Id)
+            return RequireStaffing();
+
+        // §14.3 check 8 — the client is still the slot's own, fully linked.
+        var state = await session.Query<OAuthApplicationState>()
+            .FirstOrDefaultAsync(x => x.ClientId == request.ClientId && !x.IsDeleted, ct);
+        if (state is null ||
+            state.ManagedTerminalEnrollmentId != terminal.Id ||
+            state.LinkedFunctionPrincipalId != functionId ||
+            terminal.OAuthApplicationId != state.Id ||
+            !string.Equals(terminal.ClientId, request.ClientId, StringComparison.Ordinal))
+        {
+            return Refuse("The client does not own this terminal slot.");
+        }
+
+        // §14.3 check 9 — proof-of-possession for THIS request, in-endpoint
+        // (pipeline handlers run only after SignIn): proof key ≡ session key
+        // ≡ terminal key.
+        var proofHeader = httpContext.Request.Headers[DpopConstants.HeaderName];
+        if (proofHeader.Count != 1)
+            return Refuse("A DPoP proof is required.");
+        var htu = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.Path}";
+        var proof = DpopProofValidator.Validate(
+            proofHeader.ToString(), httpContext.Request.Method, htu, now);
+        if (!proof.IsValid ||
+            !string.Equals(proof.Jkt, staffing.DpopJkt, StringComparison.Ordinal) ||
+            !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
+        {
+            return Refuse("The DPoP proof key does not match this staffing session's key.");
+        }
+
+        // §14.3 checks 10–12 — the activating person, their passkey, and
+        // their grant must all still authorize this shift.
+        var user = await userManager.FindByIdAsync(staffing.ActivatedByUserId.ToString());
+        if (user is null || !await signInManager.CanSignInAsync(user) || !user.IsActive || user.IsDeleted)
+            return RequireStaffing();
+        if (await session.LoadAsync<StoredPasskeyCredential>(staffing.ActivatedByPasskeyCredentialId, ct) is null)
+            return RequireStaffing();
+        var grant = await session.LoadAsync<FunctionActivationGrant>(staffing.FunctionActivationGrantId, ct);
+        if (grant is null || grant.Status != FunctionActivationGrantStatus.Active)
+            return RequireStaffing();
+
+        // §14.3 check 13 + §14.4 — re-issue the SAME session identity with
+        // freshly computed scopes/permissions; auth_time is the ORIGINAL tap.
+        var authTime = long.TryParse(tokenPrincipal.GetClaim(Claims.AuthenticationTime), out var unix)
+            ? DateTimeOffset.FromUnixTimeSeconds(unix)
+            : staffing.StartedAt;
+        var principal = FunctionStaffingPrincipal.Create(function, terminal, staffing.Id, authTime);
+
+        var scopes = tokenPrincipal.GetScopes();
+        principal.SetScopes(scopes);
+        var resources = await scopeManager.ListResourcesAsync(scopes, ct).ToListAsync(ct);
+        principal.SetResources(resources);
+        var resourceAccess = await BuildResourceAccessAsync(
+            functionId, resources, wantsRoles: true, wantsPermissions: true, session, permissionService);
+        if (resourceAccess is not null)
+        {
+            principal.SetClaim("resource_access", JsonSerializer.SerializeToElement(resourceAccess));
+        }
+
+        // §14.4 — the chain can never outlive the shift: the rotated refresh
+        // token's lifetime is exactly the time to the fixed absolute end.
+        principal.SetAccessTokenLifetime(TimeSpan.FromMinutes(10));
+        principal.SetRefreshTokenLifetime(staffing.AbsoluteExpiresAt - now);
+        principal.SetAuthorizationId(staffing.OAuthAuthorizationId);
+
+        // §14.3 check 14 — rotation + reuse detection are OpenIddict's stock
+        // pipeline (RedeemTokenEntry + Protection.ValidateTokenEntry).
         return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
