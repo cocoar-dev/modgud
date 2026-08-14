@@ -87,6 +87,12 @@ public static class OAuthMartenSetup
             .Identity(x => x.Id)
             .Index(x => x.ExpiresAt);
 
+        // DPoP device-code binding ledger (MG-FT spike — RFC 9449 over RFC 8628):
+        // string id (SHA-256 of the device_code), ExpiresAt indexed for pruning.
+        options.Schema.For<DeviceCodeDpopBinding>()
+            .Identity(x => x.Id)
+            .Index(x => x.ExpiresAt);
+
         // Stable event-type aliases — copied verbatim from the legacy backend so
         // re-using a legacy DB would also work, and so renames are safe forever.
         options.Events.MapEventType<OAuthApplicationCreated>("oauth_application_created");
