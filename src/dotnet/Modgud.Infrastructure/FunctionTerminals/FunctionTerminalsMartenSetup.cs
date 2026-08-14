@@ -50,6 +50,31 @@ public static class FunctionTerminalsMartenSetup
             .Identity(x => x.Id)
             .Index(x => x.ExpiresAt);
 
+        // Staffing ceremonies — ephemeral single-use documents (plan §4.4).
+        // Optimistic concurrency makes the consume (set ConsumedAt) race-safe:
+        // of two racing redeems only one save wins (plan §13.3 step 6).
+        options.Schema.For<FunctionStaffingCeremony>()
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Index(x => x.ExpiresAt)
+            .Index(x => x.ClientId);
+
+        // Staffing sessions — inline projection of the session streams
+        // (plan §4.5/§5.2). OAuthAuthorizationId unique: one authorization is
+        // one session's anchor, never shared.
+        options.Schema.For<StaffingSession>()
+            .Identity(x => x.Id)
+            .Index(x => x.TerminalEnrollmentId)
+            .Index(x => x.FunctionPrincipalId)
+            .Index(x => x.ActivatedByUserId)
+            .Index(x => x.ActivatedByPasskeyCredentialId)
+            .Index(x => x.FunctionActivationGrantId)
+            .Index(x => x.OAuthAuthorizationId, x => x.IsUnique = true)
+            .Index(x => x.Status)
+            .Index(x => x.AbsoluteExpiresAt);
+
+        options.Projections.Add<StaffingSessionProjection>(ProjectionLifecycle.Inline);
+
         // Stable event-type aliases — keeps mt_events.type rename-proof.
         options.Events.MapEventType<FunctionActivationGrantIssued>("function_activation_grant_issued");
         options.Events.MapEventType<FunctionActivationGrantSuspended>("function_activation_grant_suspended");
@@ -62,6 +87,11 @@ public static class FunctionTerminalsMartenSetup
         options.Events.MapEventType<TerminalEnrollmentDisabled>("terminal_enrollment_disabled");
         options.Events.MapEventType<TerminalEnrollmentReactivated>("terminal_enrollment_reactivated");
         options.Events.MapEventType<TerminalEnrollmentRevoked>("terminal_enrollment_revoked");
+        options.Events.MapEventType<TerminalStaffingSessionActivated>("terminal_staffing_session_activated");
+        options.Events.MapEventType<TerminalStaffingSessionCleared>("terminal_staffing_session_cleared");
+
+        options.Events.MapEventType<StaffingSessionStarted>("staffing_session_started");
+        options.Events.MapEventType<StaffingSessionEnded>("staffing_session_ended");
 
         return options;
     }

@@ -43,3 +43,18 @@ public record TerminalEnrollmentRevoked(
     Guid Id,
     Guid RevokedByUserId,
     DateTimeOffset RevokedAt);
+
+/// <summary>The terminal's activation lock (MG-FT-05, plan §13.5): appended
+/// with a stream-version guard (FetchForWriting) so two racing taps can never
+/// both win — the loser's append conflicts and retries the flow.</summary>
+public record TerminalStaffingSessionActivated(
+    Guid Id,
+    Guid StaffingSessionId,
+    DateTimeOffset ActivatedAt);
+
+/// <summary>Clears the pointer when a session ends — only if it still points
+/// at that session (a newer activation may already own the slot).</summary>
+public record TerminalStaffingSessionCleared(
+    Guid Id,
+    Guid StaffingSessionId,
+    DateTimeOffset ClearedAt);

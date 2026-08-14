@@ -61,4 +61,15 @@ public partial class TerminalEnrollmentProjection : SingleStreamProjection<Termi
         terminal.RevokedAt = e.RevokedAt;
         terminal.ActiveStaffingSessionId = null;
     }
+
+    public void Apply(TerminalStaffingSessionActivated e, TerminalEnrollment terminal)
+        => terminal.ActiveStaffingSessionId = e.StaffingSessionId;
+
+    public void Apply(TerminalStaffingSessionCleared e, TerminalEnrollment terminal)
+    {
+        // Only clear when the pointer still belongs to the ending session — a
+        // supersede may already have activated a newer one.
+        if (terminal.ActiveStaffingSessionId == e.StaffingSessionId)
+            terminal.ActiveStaffingSessionId = null;
+    }
 }

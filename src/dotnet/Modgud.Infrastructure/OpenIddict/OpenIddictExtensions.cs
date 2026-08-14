@@ -206,6 +206,12 @@ public static class OpenIddictExtensions
                 options.AllowCustomFlow(CocoarGrantTypes.Magic);
                 options.AllowCustomFlow(CocoarGrantTypes.Passkey);
 
+                // MG-FT-05 — the function-staffing grant (passkey tap on an
+                // enrolled terminal opens a StaffingSession). Same double gate:
+                // the Features.FunctionTerminals flag in the dispatch branch,
+                // and the gt: permission only terminal-managed clients carry.
+                options.AllowCustomFlow(Modgud.Domain.FunctionTerminals.FunctionGrantTypes.StaffingSession);
+
                 // Reference tokens by default; per-client opt-in to JWT via AccessTokenTypeHandler.
                 options.UseReferenceAccessTokens()
                     .UseReferenceRefreshTokens();
@@ -379,6 +385,11 @@ public static class OpenIddictExtensions
                 // on the server pipeline. Without it a realm-signed access token is
                 // rejected as invalid_token ("issuer not valid", ID2088).
                 options.AddEventHandler(RealmValidationTokenHandler.Descriptor);
+
+                // MG-FT-05 — see DpopValidationProofOfPossessionBypassHandler:
+                // OpenIddict 7.6's stock PoP validation only understands
+                // mTLS-bound tokens and hard-rejects our DPoP cnf.jkt tokens.
+                options.AddEventHandler(Dpop.DpopValidationProofOfPossessionBypassHandler.Descriptor);
             });
 
         // DPoP proof replay store — tenant-scoped Marten session, so the jti

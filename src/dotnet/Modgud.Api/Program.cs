@@ -1315,6 +1315,7 @@ try
     app.MapPasskeyEndpoints("api");
     app.MapNativePasskeyEndpoints();
     app.MapNativePasskeyEnrollEndpoints();
+    Modgud.Api.Features.Auth.FunctionStaffing.FunctionStaffingEndpoints.MapFunctionStaffingEndpoints(app);
     app.MapNativePasskeyManagementEndpoints();
     app.MapMagicLinkEndpoints("api");
     app.MapPasswordResetEndpoints("api");
