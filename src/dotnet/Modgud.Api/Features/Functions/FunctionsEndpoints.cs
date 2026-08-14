@@ -5,7 +5,9 @@ using Modgud.Application.DTOs.Functions;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Events;
 using Modgud.Authorization.Principals;
+using Modgud.Domain.FunctionTerminals;
 using Modgud.Domain.ValueObjects;
+using Modgud.Infrastructure.FunctionTerminals;
 using Modgud.Infrastructure.OpenIddict;
 using Marten;
 
@@ -137,6 +139,7 @@ public static class FunctionsEndpoints
                 IDocumentSession session,
                 DataEventDispatcher dispatcher,
                 IOAuthGrantRevoker revoker,
+                IFunctionStaffingRevoker staffingRevoker,
                 CancellationToken ct) =>
             {
                 if (!settings.Features.FunctionTerminals) return Results.NotFound();
@@ -182,16 +185,17 @@ public static class FunctionsEndpoints
 
                 // Deactivation cuts off live function access, mirroring the SA
                 // rule (Audit #6): function tokens carry sub = fn.Id, so a
-                // by-subject revoke kills every outstanding staffing token. The
-                // full deactivation cascade (ending StaffingSessions, blocking
-                // enrollment) is MG-FT-07; the token revoke is the part that
-                // must never lag behind. Gated on the persisted
+                // by-subject revoke kills every outstanding staffing token, and
+                // the MG-FT-07 cascade ends the sessions themselves (Ended
+                // event, terminal pointer, audit). Gated on the persisted
                 // active→inactive transition.
                 if (wasActive)
                 {
                     var persisted = await session.LoadAsync<FunctionPrincipal>(id.Guid, ct);
                     if (persisted is { IsActive: false })
                     {
+                        await staffingRevoker.EndAllForFunctionAsync(
+                            persisted.Id, StaffingSessionEndReason.FunctionDisabled, ct);
                         var subject = persisted.Id.ToString();
                         await revoker.RevokeTokensBySubjectAsync(subject, ct);
                         await revoker.RevokeAuthorizationsBySubjectAsync(subject, ct);
@@ -211,6 +215,7 @@ public static class FunctionsEndpoints
                 IDocumentSession session,
                 DataEventDispatcher dispatcher,
                 IOAuthGrantRevoker revoker,
+                IFunctionStaffingRevoker staffingRevoker,
                 CancellationToken ct) =>
             {
                 if (!settings.Features.FunctionTerminals) return Results.NotFound();
@@ -224,8 +229,10 @@ public static class FunctionsEndpoints
                 await session.SaveChangesAsync(ct);
 
                 // A deleted function must lose every outstanding token now, not
-                // at natural expiry (mirrors SA Audit #7). Terminal/enrollment
-                // cascades are MG-FT-07.
+                // at natural expiry (mirrors SA Audit #7) — and its running
+                // shifts end for real (MG-FT-07 cascade).
+                await staffingRevoker.EndAllForFunctionAsync(
+                    fn.Id, StaffingSessionEndReason.FunctionDisabled, ct);
                 var subject = fn.Id.ToString();
                 await revoker.RevokeTokensBySubjectAsync(subject, ct);
                 await revoker.RevokeAuthorizationsBySubjectAsync(subject, ct);

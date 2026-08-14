@@ -73,7 +73,8 @@ public static class AuditDurability
         AuditEvents.SamlMetadataRefreshCompleted or
         AuditEvents.AccountLifecycleSwept or
         AuditEvents.DcrClientFirstUsed or
-        AuditEvents.DcrClientGarbageCollected
+        AuditEvents.DcrClientGarbageCollected or
+        AuditEvents.StaffingSessionEnded
             => AuditDurabilityClass.Telemetry,
 
         _ => throw new ArgumentOutOfRangeException(

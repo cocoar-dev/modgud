@@ -27,6 +27,7 @@ public record DeleteUsersCommand(List<Guid> UserIds, Guid? RequestedByAdminUserI
 public class DeleteUsersHandler(
     IDocumentSession session,
     IUserAccessRevoker accessRevoker,
+    Modgud.Infrastructure.FunctionTerminals.IFunctionStaffingRevoker staffingRevoker,
     IRealmSettingsService realmSettings,
     TimeProvider clock)
 {
@@ -64,7 +65,14 @@ public class DeleteUsersHandler(
         // endpoint) so RealmMiddleware's tenant is still ambient — do NOT move it
         // to durable/background dispatch without making the revoker tenant-explicit.
         foreach (var id in toBin)
+        {
             await accessRevoker.RevokeAllAccessAsync(id, AccessRevocationReason.Deletion, ct);
+            // MG-FT-07 §15.4 — shifts this person opened on shared terminals
+            // end with their account: the function tokens stay valid for OTHER
+            // activators, so this must target exactly this user's sessions.
+            await staffingRevoker.EndAllForUserAsync(
+                id, Modgud.Domain.FunctionTerminals.StaffingSessionEndReason.UserDisabled, ct);
+        }
 
         foreach (var id in toBin)
         {

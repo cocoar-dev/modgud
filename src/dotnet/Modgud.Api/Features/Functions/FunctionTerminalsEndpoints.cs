@@ -5,6 +5,7 @@ using Modgud.Application.Services;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Principals;
 using Modgud.Domain.FunctionTerminals;
+using Modgud.Infrastructure.FunctionTerminals;
 using Modgud.Infrastructure.OpenIddict;
 using Marten;
 
@@ -132,25 +133,28 @@ public static class FunctionTerminalsEndpoints
 
         group.MapPost("{terminalId}/disable", (ShortGuid functionId, ShortGuid terminalId, AppSettings settings,
                 IDocumentSession session, OAuthAdminService oauth, DataEventDispatcher dispatcher,
-                IOAuthGrantRevoker revoker, HttpContext httpContext, CancellationToken ct) =>
-            TransitionAsync(functionId.Guid, terminalId.Guid, settings, session, oauth, dispatcher, revoker, httpContext, ct,
-                TerminalEnrollmentStatus.Disabled))
+                IOAuthGrantRevoker revoker, IFunctionStaffingRevoker staffingRevoker,
+                HttpContext httpContext, CancellationToken ct) =>
+            TransitionAsync(functionId.Guid, terminalId.Guid, settings, session, oauth, dispatcher, revoker,
+                staffingRevoker, httpContext, ct, TerminalEnrollmentStatus.Disabled))
             .WithName("V2_FunctionTerminals_Disable")
             .RequiresPermission("function:write");
 
         group.MapPost("{terminalId}/reactivate", (ShortGuid functionId, ShortGuid terminalId, AppSettings settings,
                 IDocumentSession session, OAuthAdminService oauth, DataEventDispatcher dispatcher,
-                IOAuthGrantRevoker revoker, HttpContext httpContext, CancellationToken ct) =>
-            TransitionAsync(functionId.Guid, terminalId.Guid, settings, session, oauth, dispatcher, revoker, httpContext, ct,
-                targetStatus: null))
+                IOAuthGrantRevoker revoker, IFunctionStaffingRevoker staffingRevoker,
+                HttpContext httpContext, CancellationToken ct) =>
+            TransitionAsync(functionId.Guid, terminalId.Guid, settings, session, oauth, dispatcher, revoker,
+                staffingRevoker, httpContext, ct, targetStatus: null))
             .WithName("V2_FunctionTerminals_Reactivate")
             .RequiresPermission("function:write");
 
         group.MapPost("{terminalId}/revoke", (ShortGuid functionId, ShortGuid terminalId, AppSettings settings,
                 IDocumentSession session, OAuthAdminService oauth, DataEventDispatcher dispatcher,
-                IOAuthGrantRevoker revoker, HttpContext httpContext, CancellationToken ct) =>
-            TransitionAsync(functionId.Guid, terminalId.Guid, settings, session, oauth, dispatcher, revoker, httpContext, ct,
-                TerminalEnrollmentStatus.Revoked))
+                IOAuthGrantRevoker revoker, IFunctionStaffingRevoker staffingRevoker,
+                HttpContext httpContext, CancellationToken ct) =>
+            TransitionAsync(functionId.Guid, terminalId.Guid, settings, session, oauth, dispatcher, revoker,
+                staffingRevoker, httpContext, ct, TerminalEnrollmentStatus.Revoked))
             .WithName("V2_FunctionTerminals_Revoke")
             .RequiresPermission("function:write");
 
@@ -168,6 +172,7 @@ public static class FunctionTerminalsEndpoints
     private static async Task<IResult> TransitionAsync(
         Guid functionId, Guid terminalId, AppSettings settings, IDocumentSession session,
         OAuthAdminService oauth, DataEventDispatcher dispatcher, IOAuthGrantRevoker revoker,
+        IFunctionStaffingRevoker staffingRevoker,
         HttpContext httpContext, CancellationToken ct, TerminalEnrollmentStatus? targetStatus)
     {
         if (await LoadTerminalAsync(settings, session, functionId, terminalId, ct) is not { } terminal)
@@ -210,6 +215,13 @@ public static class FunctionTerminalsEndpoints
         }
 
         await session.SaveChangesAsync(ct);
+
+        // MG-FT-07 §15.4 — a disabled/revoked slot's running shift ends NOW
+        // (Ended event + pointer clear + authorization revoke, own session).
+        if (targetStatus == TerminalEnrollmentStatus.Disabled)
+            await staffingRevoker.EndAllForTerminalAsync(terminal.Id, StaffingSessionEndReason.TerminalDisabled, ct);
+        else if (targetStatus == TerminalEnrollmentStatus.Revoked)
+            await staffingRevoker.EndAllForTerminalAsync(terminal.Id, StaffingSessionEndReason.TerminalRevoked, ct);
 
         // A revoked slot's device must be cut off NOW, not at token expiry —
         // the client's tokens are reference tokens precisely for this.

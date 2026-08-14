@@ -39,6 +39,7 @@ public static class AppRealmSeeder
         ("service-account", ["read", "write"]),
         ("function", ["read", "write"]),
         ("function-terminal", ["enroll"]),
+        ("function-staffing-session", ["read", "force-lock"]),
         ("role", ["read", "write"]),
         ("authorization-group", ["read", "write"]),
         ("permission-role", ["read", "write"]),
