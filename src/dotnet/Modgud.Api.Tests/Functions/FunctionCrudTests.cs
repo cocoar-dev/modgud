@@ -194,6 +194,29 @@ public class FunctionCrudTests : IntegrationTestBase
             (await zeroClient.PostAsJsonAsync("/api/function", new { AccountName = "fn-nope" }, JsonOptions, ct)).StatusCode);
     }
 
+    [Fact]
+    public async Task Functions_are_event_sourced_one_event_per_mutation()
+    {
+        // Pins the persistence model itself: FunctionPrincipal documents are the
+        // inline projection of a stream (like Person/Group), never direct writes.
+        // If someone reverts to session.Store, the stream stays empty and this fails.
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var created = await CreateFunctionAsync("fn-stream", ct);
+
+        await Client.PutAsJsonAsync($"/api/function/{created.Id}", new { Purpose = "p2" }, JsonOptions, ct);
+        await Client.DeleteAsync($"/api/function/{created.Id}", ct);
+
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<Marten.IQuerySession>();
+        var id = new BuildingBlocks.Helper.ShortGuid(created.Id).Guid;
+        var stream = await session.Events.FetchStreamAsync(id, token: ct);
+        Assert.Equal(3, stream.Count); // created + updated + deleted
+        Assert.Contains(stream, e => e.Data is Modgud.Authorization.Events.FunctionPrincipalCreatedEvent);
+        Assert.Contains(stream, e => e.Data is Modgud.Authorization.Events.FunctionPrincipalUpdatedEvent);
+        Assert.Contains(stream, e => e.Data is Modgud.Authorization.Events.FunctionPrincipalDeletedEvent);
+    }
+
     private async Task<FunctionPrincipalDto> CreateFunctionAsync(string accountName, CancellationToken ct)
     {
         var resp = await Client.PostAsJsonAsync("/api/function", new { AccountName = accountName }, JsonOptions, ct);

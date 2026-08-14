@@ -73,6 +73,7 @@ public static class MartenStoreOptionsExtensions
         martenOpts.Projections.Add<PermissionRoleProjection>(ProjectionLifecycle.Inline);
         martenOpts.Projections.Add<AppProjection>(ProjectionLifecycle.Inline);
         martenOpts.Projections.Add<GroupProjection>(ProjectionLifecycle.Inline);
+        martenOpts.Projections.Add<FunctionPrincipalProjection>(ProjectionLifecycle.Inline);
 
         // Stable event-type aliases. Marten resolves events through these, so the
         // .NET type FQN can change without breaking persisted streams.
@@ -81,6 +82,10 @@ public static class MartenStoreOptionsExtensions
         martenOpts.Events.MapEventType<GroupDeletedEvent>("authorization_group_deleted");
         martenOpts.Events.MapEventType<GroupMembershipRecomputedEvent>("authorization_group_membership_recomputed");
         martenOpts.Events.MapEventType<GroupMembershipRecomputeFailedEvent>("authorization_group_membership_recompute_failed");
+
+        martenOpts.Events.MapEventType<FunctionPrincipalCreatedEvent>("authorization_function_created");
+        martenOpts.Events.MapEventType<FunctionPrincipalUpdatedEvent>("authorization_function_updated");
+        martenOpts.Events.MapEventType<FunctionPrincipalDeletedEvent>("authorization_function_deleted");
 
         martenOpts.Events.MapEventType<PermissionRoleCreatedEvent>("permission_role_created");
         martenOpts.Events.MapEventType<PermissionRoleUpdatedEvent>("permission_role_updated");
