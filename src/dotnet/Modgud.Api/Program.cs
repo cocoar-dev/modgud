@@ -757,7 +757,15 @@ try
         {
             options.UseModgudAuthentication();
             options.UseModgudOAuth();
-        });
+        },
+        // The behavioural integration suite owns projection progress explicitly:
+        // each consistency boundary runs a fresh interactive daemon. Running the
+        // production background daemon beside full database resets creates two
+        // competing lifecycle owners and makes test outcomes scheduler-dependent.
+        asyncDaemonMode: builder.Environment.IsEnvironment("Testing") &&
+                         !builder.Configuration.GetValue<bool>("Testing:UseBackgroundProjectionDaemon")
+            ? JasperFx.Events.Daemon.DaemonMode.Disabled
+            : JasperFx.Events.Daemon.DaemonMode.Solo);
 
     // OpenTelemetry foundation (Phase 1). See
     // the maintainers' 'observability-opentelemetry' design note.

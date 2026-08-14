@@ -24,7 +24,7 @@ namespace Modgud.Api.Tests.Infrastructure;
 /// can make the bootstrap-invite issuance throw and exercise the realm-create
 /// atomicity path.</para>
 /// </summary>
-public sealed class ColdStartWebApplicationFactory : ModgudWebApplicationFactory
+public class ColdStartWebApplicationFactory : ModgudWebApplicationFactory
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -82,5 +82,19 @@ public sealed class ColdStartWebApplicationFactory : ModgudWebApplicationFactory
         }
 
         return client;
+    }
+}
+
+/// <summary>
+/// Narrow production-shaped test host: Testing keeps every other test override,
+/// but Marten's Solo background daemon remains enabled so its maintenance and
+/// shutdown lifecycle can be verified independently from the behavioural suite.
+/// </summary>
+public sealed class SoloDaemonColdStartWebApplicationFactory : ColdStartWebApplicationFactory
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        builder.UseSetting("Testing:UseBackgroundProjectionDaemon", "true");
     }
 }

@@ -62,7 +62,8 @@ public class ColdStartFixture : IAsyncLifetime
     /// genuinely pristine cold boot it can mutate and throw away. The caller owns
     /// the returned host and must dispose it.
     /// </summary>
-    public async Task<IsolatedColdStartHost> CreateIsolatedHostAsync()
+    public async Task<IsolatedColdStartHost> CreateIsolatedHostAsync(
+        bool useBackgroundProjectionDaemon = false)
     {
         var isolatedDb = "coldstart_" + Guid.NewGuid().ToString("N")[..12];
         var isolatedConnectionString = Container.GetConnectionString()
@@ -71,7 +72,9 @@ public class ColdStartFixture : IAsyncLifetime
         var ctx = BuildContext(isolatedConnectionString);
         CocoarTestConfiguration.Apply(ctx);
 
-        var factory = new ColdStartWebApplicationFactory();
+        ColdStartWebApplicationFactory factory = useBackgroundProjectionDaemon
+            ? new SoloDaemonColdStartWebApplicationFactory()
+            : new ColdStartWebApplicationFactory();
         // Force the host to build NOW, under this isolated context, so the
         // cold-boot bootstrap targets the isolated DB.
         factory.CreateClient().Dispose();
