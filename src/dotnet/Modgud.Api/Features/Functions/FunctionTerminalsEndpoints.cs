@@ -133,28 +133,28 @@ public static class FunctionTerminalsEndpoints
 
         group.MapPost("{terminalId}/disable", (ShortGuid functionId, ShortGuid terminalId, AppSettings settings,
                 IDocumentSession session, OAuthAdminService oauth, DataEventDispatcher dispatcher,
-                IOAuthGrantRevoker revoker, IFunctionStaffingRevoker staffingRevoker,
+                IOAuthGrantRevoker revoker, IFunctionStaffingRevoker staffingRevoker, Wolverine.IMessageBus bus,
                 HttpContext httpContext, CancellationToken ct) =>
             TransitionAsync(functionId.Guid, terminalId.Guid, settings, session, oauth, dispatcher, revoker,
-                staffingRevoker, httpContext, ct, TerminalEnrollmentStatus.Disabled))
+                staffingRevoker, bus, httpContext, ct, TerminalEnrollmentStatus.Disabled))
             .WithName("V2_FunctionTerminals_Disable")
             .RequiresPermission("function:write");
 
         group.MapPost("{terminalId}/reactivate", (ShortGuid functionId, ShortGuid terminalId, AppSettings settings,
                 IDocumentSession session, OAuthAdminService oauth, DataEventDispatcher dispatcher,
-                IOAuthGrantRevoker revoker, IFunctionStaffingRevoker staffingRevoker,
+                IOAuthGrantRevoker revoker, IFunctionStaffingRevoker staffingRevoker, Wolverine.IMessageBus bus,
                 HttpContext httpContext, CancellationToken ct) =>
             TransitionAsync(functionId.Guid, terminalId.Guid, settings, session, oauth, dispatcher, revoker,
-                staffingRevoker, httpContext, ct, targetStatus: null))
+                staffingRevoker, bus, httpContext, ct, targetStatus: null))
             .WithName("V2_FunctionTerminals_Reactivate")
             .RequiresPermission("function:write");
 
         group.MapPost("{terminalId}/revoke", (ShortGuid functionId, ShortGuid terminalId, AppSettings settings,
                 IDocumentSession session, OAuthAdminService oauth, DataEventDispatcher dispatcher,
-                IOAuthGrantRevoker revoker, IFunctionStaffingRevoker staffingRevoker,
+                IOAuthGrantRevoker revoker, IFunctionStaffingRevoker staffingRevoker, Wolverine.IMessageBus bus,
                 HttpContext httpContext, CancellationToken ct) =>
             TransitionAsync(functionId.Guid, terminalId.Guid, settings, session, oauth, dispatcher, revoker,
-                staffingRevoker, httpContext, ct, TerminalEnrollmentStatus.Revoked))
+                staffingRevoker, bus, httpContext, ct, TerminalEnrollmentStatus.Revoked))
             .WithName("V2_FunctionTerminals_Revoke")
             .RequiresPermission("function:write");
 
@@ -172,7 +172,7 @@ public static class FunctionTerminalsEndpoints
     private static async Task<IResult> TransitionAsync(
         Guid functionId, Guid terminalId, AppSettings settings, IDocumentSession session,
         OAuthAdminService oauth, DataEventDispatcher dispatcher, IOAuthGrantRevoker revoker,
-        IFunctionStaffingRevoker staffingRevoker,
+        IFunctionStaffingRevoker staffingRevoker, Wolverine.IMessageBus bus,
         HttpContext httpContext, CancellationToken ct, TerminalEnrollmentStatus? targetStatus)
     {
         if (await LoadTerminalAsync(settings, session, functionId, terminalId, ct) is not { } terminal)
@@ -230,6 +230,12 @@ public static class FunctionTerminalsEndpoints
 
         var updated = await LoadDtoAsync(session, terminal.Id, ct);
         dispatcher.DispatchUpdatedEvent("Terminal", updated, session.TenantId);
+
+        // MG-FT-09 (§17) — consumer notification with the PROJECTED status
+        // (a reactivate lands on Pending or Active depending on enrollment).
+        await bus.PublishAsync(new Modgud.Domain.FunctionTerminals.Contracts.V1.FunctionTerminalStatusChanged(
+            functionId, terminal.Id, updated.Status, now));
+
         return Results.Ok(updated);
     }
 

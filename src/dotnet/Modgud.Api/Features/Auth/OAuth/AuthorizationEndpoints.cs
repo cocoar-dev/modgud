@@ -10,6 +10,7 @@ using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Services;
 using Modgud.Domain.FunctionTerminals;
+using Modgud.Domain.FunctionTerminals.Contracts.V1;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Storage;
 using Modgud.Permissions;
@@ -290,7 +291,8 @@ public static class AuthorizationEndpoints
         IApplicationSettingsResolver applicationSettingsResolver,
         IDocumentSession session,
         AppSettings settings,
-        IOAuthGrantRevoker grantRevoker)
+        IOAuthGrantRevoker grantRevoker,
+        Wolverine.IMessageBus bus)
     {
         var request = httpContext.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("The OpenID Connect request cannot be retrieved.");
@@ -351,14 +353,14 @@ public static class AuthorizationEndpoints
             {
                 return await ExchangeTerminalEnrollmentAsync(
                     httpContext, request, result.Principal!, settings, session,
-                    applicationManager, authorizationManager, grantRevoker);
+                    applicationManager, authorizationManager, grantRevoker, bus);
             }
 
             if (string.Equals(functionTokenUse, FunctionTokenUses.StaffingSession, StringComparison.Ordinal))
             {
                 return await ExchangeFunctionStaffingRefreshAsync(
                     httpContext, request, result.Principal!, settings, session,
-                    userManager, signInManager, scopeManager, permissionService, grantRevoker);
+                    userManager, signInManager, scopeManager, permissionService, grantRevoker, bus);
             }
 
             var user = await userManager.FindByIdAsync(subject);
@@ -589,7 +591,7 @@ public static class AuthorizationEndpoints
             return await ExchangeFunctionStaffingAsync(
                 request, httpContext, settings, session, userManager, signInManager,
                 scopeManager, applicationManager, authorizationManager, permissionService,
-                fido2Factory, rpIdResolver, grantRevoker, httpContext.RequestAborted);
+                fido2Factory, rpIdResolver, grantRevoker, bus, httpContext.RequestAborted);
         }
 
         throw new InvalidOperationException("The specified grant type is not supported.");
@@ -634,7 +636,8 @@ public static class AuthorizationEndpoints
         IDocumentSession session,
         IOpenIddictApplicationManager applicationManager,
         IOpenIddictAuthorizationManager authorizationManager,
-        IOAuthGrantRevoker grantRevoker)
+        IOAuthGrantRevoker grantRevoker,
+        Wolverine.IMessageBus bus)
     {
         static IResult Refuse(string description) =>
             ForbidNativeGrant(Errors.InvalidGrant, description);
@@ -749,6 +752,10 @@ public static class AuthorizationEndpoints
             throw;
         }
 
+        // MG-FT-09 (§17) — the slot went Pending → Active.
+        await bus.PublishAsync(new FunctionTerminalStatusChanged(
+            functionId, slot.Id, TerminalEnrollmentStatus.Active, DateTimeOffset.UtcNow));
+
         principal.SetAuthorizationId(authorizationId);
         return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
@@ -780,6 +787,7 @@ public static class AuthorizationEndpoints
         RealmScopedFido2Factory fido2Factory,
         RpIdResolver rpIdResolver,
         IOAuthGrantRevoker grantRevoker,
+        Wolverine.IMessageBus bus,
         CancellationToken ct)
     {
         static IResult Refuse(string description) =>
@@ -1020,6 +1028,17 @@ public static class AuthorizationEndpoints
         if (superseded is not null && !string.IsNullOrEmpty(superseded.OAuthAuthorizationId))
             await grantRevoker.RevokeAuthorizationByIdAsync(superseded.OAuthAuthorizationId, ct);
 
+        // MG-FT-09 (§17) — consumer notifications: the new shift, and the end
+        // of the one it replaced. No person data (§17.2).
+        await bus.PublishAsync(new FunctionStaffingSessionStarted(
+            functionId, terminal.Id, sessionId, now, absoluteExpiresAt));
+        if (superseded is not null)
+        {
+            await bus.PublishAsync(new FunctionStaffingSessionEnded(
+                functionId, terminal.Id, superseded.Id,
+                StaffingSessionEndReason.ReplacedByNewActivation, now));
+        }
+
         principal.SetAuthorizationId(authorizationId);
         return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
@@ -1048,7 +1067,8 @@ public static class AuthorizationEndpoints
         SignInManager<ApplicationUser> signInManager,
         IOpenIddictScopeManager scopeManager,
         IPermissionService permissionService,
-        IOAuthGrantRevoker grantRevoker)
+        IOAuthGrantRevoker grantRevoker,
+        Wolverine.IMessageBus bus)
     {
         static IResult Refuse(string description) =>
             ForbidNativeGrant(Errors.InvalidGrant, description);
@@ -1105,6 +1125,8 @@ public static class AuthorizationEndpoints
                 // session end will be (or was) handled there; still refuse.
             }
             await grantRevoker.RevokeAuthorizationByIdAsync(staffing.OAuthAuthorizationId, CancellationToken.None);
+            await bus.PublishAsync(new FunctionStaffingSessionEnded(
+                functionId, terminalId, staffing.Id, StaffingSessionEndReason.Expired, now));
             return RequireStaffing();
         }
 

@@ -265,6 +265,7 @@ export const baseConfig = {
             { text: 'Login flows', link: '/integrate/login-flows' },
             { text: 'Login providers (OIDC federation)', link: '/integrate/login-providers' },
             { text: '2FA (TOTP, Email, Passkey)', link: '/integrate/two-factor' },
+            { text: 'Function terminals (consumer contract)', link: '/integrate/function-terminals' },
           ],
         },
       ],
