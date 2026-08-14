@@ -201,7 +201,7 @@ public static class FunctionGrantsEndpoints
     /// <summary>Grant transitions are audited with an actor; behind
     /// RequiresPermission a missing user id is a broken auth state, not a
     /// business case — fail loudly instead of recording an empty actor.</summary>
-    private static Guid RequireActor(HttpContext httpContext) =>
+    internal static Guid RequireActor(HttpContext httpContext) =>
         httpContext.GetUserId() ?? throw new InvalidOperationException(
             "Grant mutation without an authenticated user id — the permission filter should have rejected this request.");
 

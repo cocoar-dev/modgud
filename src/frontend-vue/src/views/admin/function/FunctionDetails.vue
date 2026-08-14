@@ -90,15 +90,34 @@ const grantsLoading = ref(false)
 const selectedGrantUserId = ref<string | null>(null)
 const grantsHttp = computed(() => useHttpClient(`/api/function/${props.id}/grants`))
 
+// Create mode stages grants (rule 5: the entity is creatable completely — the
+// one Save commits function + grants atomically); edit mode operates on live
+// grants immediately (rule 2, they have their own lifecycle + audit identity).
+const stagedGrantUserIds = ref<string[]>([])
+
+function userLabel(userId: string): string {
+  const u = userStore.entities.find((x) => x.Id === userId)
+  return u ? (`${u.Firstname ?? ''} ${u.Lastname ?? ''}`.trim() || u.Email || userId) : userId
+}
+
 const grantableUserOptions = computed(() => {
-  const liveGrantUserIds = new Set(grants.value.filter((g) => g.Status !== 'Revoked').map((g) => g.UserId))
+  const taken = isCreate.value
+    ? new Set(stagedGrantUserIds.value)
+    : new Set(grants.value.filter((g) => g.Status !== 'Revoked').map((g) => g.UserId))
   return userStore.entities
-    .filter((u) => u.IsActive && !liveGrantUserIds.has(u.Id))
-    .map((u) => ({
-      value: u.Id,
-      label: `${u.Firstname ?? ''} ${u.Lastname ?? ''}`.trim() || u.Email || u.Id,
-    }))
+    .filter((u) => u.IsActive && !taken.has(u.Id))
+    .map((u) => ({ value: u.Id, label: userLabel(u.Id) }))
 })
+
+function stageGrant() {
+  if (!selectedGrantUserId.value) return
+  stagedGrantUserIds.value.push(selectedGrantUserId.value)
+  selectedGrantUserId.value = null
+}
+
+function unstageGrant(userId: string) {
+  stagedGrantUserIds.value = stagedGrantUserIds.value.filter((id) => id !== userId)
+}
 
 async function loadGrants() {
   if (isCreate.value) return
@@ -133,6 +152,8 @@ async function transitionGrant(grant: FunctionGrantDto, action: 'suspend' | 'res
 }
 
 onMounted(async () => {
+  // The user list feeds the grant picker in BOTH modes.
+  void userStore.initialize()
   if (!isCreate.value) {
     loading.value = true
     try {
@@ -146,10 +167,8 @@ onMounted(async () => {
         MaximumStaffingSessionLifetimeMinutes: fn.TerminalPolicy.MaximumStaffingSessionLifetimeMinutes,
       }
       original.value = { ...form.value }
-      // Grants + the user list for the picker load alongside — neither may
-      // block the form fields from painting.
+      // Grants load alongside — they must not block the form fields.
       void loadGrants()
-      void userStore.initialize()
     } catch (e: unknown) {
       const err = e as { data?: { Message?: string }; message?: string }
       error.value = err?.data?.Message ?? err?.message ?? String(e)
@@ -181,6 +200,7 @@ async function save() {
         Purpose: form.value.Purpose.trim() || undefined,
         IsActive: form.value.IsActive,
         TerminalPolicy: policyDiff(),
+        GrantUserIds: stagedGrantUserIds.value.length > 0 ? stagedGrantUserIds.value : undefined,
       }
       await store.createEntity(createDto)
     } else {
@@ -279,9 +299,10 @@ async function save() {
         </section>
       </div>
 
-      <!-- Grants exist only after create (rule 5: a section that cannot exist
-           yet is absent). Actions are immediate operations, not staged edits. -->
-      <section v-if="!isCreate" class="form-section">
+      <!-- Rule 5: same section in both modes — create STAGES grants (the one
+           Save commits function + grants atomically), edit operates on live
+           grants immediately (rule 2: own lifecycle, explicit actions). -->
+      <section class="form-section">
         <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
           <h3 class="section-divider__title">{{ t('admin.functionGrants.sectionTitle', {}, 'Authorized users') }}</h3>
         </CoarDivider>
@@ -293,12 +314,28 @@ async function save() {
             searchable
             class="min-w-0 flex-1"
             :placeholder="t('admin.functionGrants.pickUser', {}, 'Select a user…')" />
-          <CoarButton size="s" icon-start="plus" class="shrink-0" :disabled="!selectedGrantUserId" @click="issueGrant">
+          <CoarButton size="s" icon-start="plus" class="shrink-0" :disabled="!selectedGrantUserId"
+            @click="isCreate ? stageGrant() : issueGrant()">
             {{ t('admin.functionGrants.issueButton', {}, 'Grant') }}
           </CoarButton>
         </div>
 
-        <div v-if="grantsLoading" class="text-xs text-surface-500">
+        <template v-if="isCreate">
+          <div v-if="stagedGrantUserIds.length === 0" class="grant-empty">
+            {{ t('admin.functionGrants.stagedEmpty', {}, 'No users staged yet — they are authorized together with the create.') }}
+          </div>
+          <ul v-else class="flex flex-col gap-2">
+            <li v-for="userId in stagedGrantUserIds" :key="userId"
+                class="flex items-center gap-2 rounded border border-surface-200 p-3">
+              <span class="min-w-0 flex-1 truncate font-medium">{{ userLabel(userId) }}</span>
+              <CoarButton size="s" variant="ghost" icon-start="trash-2" @click="unstageGrant(userId)">
+                {{ t('common.remove', {}, 'Remove') }}
+              </CoarButton>
+            </li>
+          </ul>
+        </template>
+
+        <div v-else-if="grantsLoading" class="text-xs text-surface-500">
           {{ t('common.loading', {}, 'Loading...') }}
         </div>
         <div v-else-if="grants.length === 0" class="grant-empty">

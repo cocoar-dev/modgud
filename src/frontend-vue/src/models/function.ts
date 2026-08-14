@@ -25,6 +25,8 @@ export interface FunctionCreateDto {
   Purpose?: string
   IsActive?: boolean
   TerminalPolicy?: FunctionTerminalPolicyUpdateDto
+  /** Users authorized in the same save (staged in create mode; all-or-nothing). */
+  GrantUserIds?: string[]
 }
 
 export interface FunctionUpdateDto {
