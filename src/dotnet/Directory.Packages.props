@@ -39,19 +39,17 @@
     <!-- Marten & Wolverine — Critter Stack 2026 (Marten 9 + Wolverine 6 +
          JasperFx 2). Migrated from 8.37 / 5.32 in chore/critter-stack-2026.
          Gotchas: the maintainers' 'critter-stack-2026' engineering note.
-         9.8 → 9.11 (Wolverine 6.9 → 6.16): a partial bump that stays BELOW the
-         9.12 regression. Marten 9.12 broke async-projection catch-up under
-         MasterTableTenancy (which modgud uses) — identity read-models never
-         materialize — via the JasperFx.Events 2.18 "DI-projection partial-class
-         dispatch" refactor; still unfixed in 9.16.1 (verified: 41/517 integration
-         failures). 9.11.0 is the highest known-good (AppTemplate pins it too).
-         WolverineFx.Marten 6.16 is the last 6.x that pins Marten 9.11 (6.17 jumps
-         to 9.14). Do NOT lift Marten past 9.11 without running the integration
-         suite — it provisions per-realm DBs and asserts on projected read-models,
-         so the regression fails it. -->
-    <PackageVersion Include="Marten" Version="9.11.0" />
-    <PackageVersion Include="Marten.AspNetCore" Version="9.11.0" />
-    <PackageVersion Include="WolverineFx.Marten" Version="6.16.0" />
+         9.11 was temporarily pinned after the JasperFx source-generator stopped
+         dispatching the inherited, cross-assembly Principal projection reliably.
+         The projection is now split by concrete document type (Person + Group),
+         matching Marten's supported subclass-projection pattern and removing that
+         generator edge case. 9.23 also includes the 9.13 LINQ SQL-injection fix
+         and later async-daemon/catch-up hardening. Keep Marten and WolverineFx.Marten
+         on the versions paired by Wolverine, and gate future lifts with the full
+         integration suite plus the reset/projection stress test. -->
+    <PackageVersion Include="Marten" Version="9.23.0" />
+    <PackageVersion Include="Marten.AspNetCore" Version="9.23.0" />
+    <PackageVersion Include="WolverineFx.Marten" Version="6.27.1" />
     <!-- Marten 9.8+ bundles the JasperFx events source generator as an analyzer
          (analyzers/dotnet/cs/JasperFx.Events.SourceGenerator.dll inside the
          Marten package), so no standalone JasperFx.Events.SourceGenerator
@@ -59,7 +57,7 @@
          and broke the build with duplicate *.Evolver.g.cs (CS0101/CS0111). -->
     <!-- Wolverine 6 decoupled the Roslyn runtime codegen from core;
          IMessageBus.InvokeAsync<T> needs it in the host project. -->
-    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.16.0" />
+    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.27.1" />
     <!-- Other packages -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <!-- Rx 7 collapsed the facade packages (System.Reactive.Linq / .Core / …)

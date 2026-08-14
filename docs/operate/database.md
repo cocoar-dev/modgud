@@ -72,7 +72,8 @@ for the OpenIddict stores.
 | `OAuthScopeStateProjection` → `OAuthScopeState` | `OAuthScopeAggregate` | `MartenScopeStore` (OpenIddict) |
 | `OAuthApiStateProjection` → `OAuthApiState` | `OAuthApiAggregate` | API resource management |
 | `LoginProviderProjection` → `LoginProvider` | (no separate aggregate — events apply directly onto the document) | Login provider resolution |
-| `PrincipalProjectionBase` → `Principal` (polymorphic) | abstract — app extension | Authorization slice |
+| `PersonProjection` → `Person` (Principal subtype) | User stream | Authentication slice |
+| `GroupProjection` → `Group` (Principal subtype) | Group stream | Authorization slice |
 | `PermissionRoleProjection` | Permission role aggregate | Authorization slice |
 | `ExternalIdentityLinkProjection` | (no aggregate, plain doc apply) | OIDC login |
 
@@ -104,11 +105,11 @@ Stream: <userId>
   ...
 ```
 
-`PrincipalProjectionBase` (abstract) consumes these events and writes
-them into the `mt_doc_principal` table as the `Person` subclass. That's
-the bridge to the Authorization slice: the slice needs `Person` records
-for email routing and membership predicates, the app fills them from
-the events.
+`PersonProjection` consumes these events and writes them into the
+`mt_doc_principal` table as the concrete `Person` subclass. `GroupProjection`
+does the same independently for group streams. Keeping the projections
+concrete avoids source-generator inheritance across assemblies while preserving
+one polymorphic table for email routing and membership predicates.
 
 ## Security data separation
 

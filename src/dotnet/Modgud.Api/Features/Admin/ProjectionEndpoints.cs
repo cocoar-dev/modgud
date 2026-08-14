@@ -88,7 +88,8 @@ public static class ProjectionEndpoints
                     // documents itself and replays from event 0. Same path the
                     // `recover rebuild-projections` CLI uses for first-migration bootstrap;
                     // this endpoint is the maintenance equivalent (when an admin is logged in).
-                    await daemon.RebuildProjectionAsync<ModgudPrincipalProjection>(timeout, ct);
+                    await daemon.RebuildProjectionAsync<PersonProjection>(timeout, ct);
+                    await daemon.RebuildProjectionAsync<GroupProjection>(timeout, ct);
                     await daemon.RebuildProjectionAsync<PermissionRoleProjection>(timeout, ct);
                 }
                 finally

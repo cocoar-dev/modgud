@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Marten;
 using Marten.Events;
+using Marten.Events.Daemon.Coordination;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
@@ -598,6 +599,33 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     public Task WaitForProjectionsAsync(TimeSpan? timeout = null)
         => CatchUpAsyncProjectionsAsync(timeout);
+
+    /// <summary>
+    /// Rebuilds one projection without racing the host's continuously-running
+    /// daemon for the same tenant database. Marten 9.23 persists projection
+    /// progress more strictly; running an interactive rebuild daemon beside the
+    /// live daemon can make both insert the same progression row.
+    /// </summary>
+    public async Task RebuildProjectionAsync<T>(
+        string tenantId = TenantConstants.SystemTenantId,
+        TimeSpan? timeout = null,
+        CancellationToken ct = default)
+    {
+        var store = Services.GetRequiredService<IDocumentStore>();
+        var coordinator = Services.GetRequiredService<IProjectionCoordinator>();
+        var liveDaemon = await coordinator.DaemonForDatabase(tenantId);
+
+        await liveDaemon.StopAllAsync();
+        try
+        {
+            using var rebuildDaemon = await store.BuildProjectionDaemonAsync(tenantId);
+            await rebuildDaemon.RebuildProjectionAsync<T>(timeout ?? TimeSpan.FromMinutes(2), ct);
+        }
+        finally
+        {
+            await liveDaemon.StartAllAsync();
+        }
+    }
 
     /// <summary>
     /// Gets a document by ID directly from the database

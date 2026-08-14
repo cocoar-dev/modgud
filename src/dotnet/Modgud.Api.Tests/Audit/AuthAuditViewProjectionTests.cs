@@ -72,10 +72,6 @@ public class AuthAuditViewProjectionTests : IntegrationTestBase
 
     private async Task RebuildAuthAuditAsync(CancellationToken ct)
     {
-        // MasterTableTenancy disables the default tenant — build the daemon for the
-        // "system" realm DB explicitly (mirrors ProjectionRebuildTests / RecoveryCli).
-        var store = Factory.Services.GetRequiredService<IDocumentStore>();
-        using var daemon = await store.BuildProjectionDaemonAsync("system");
-        await daemon.RebuildProjectionAsync<AuthAuditViewProjection>(TimeSpan.FromMinutes(2), ct);
+        await Factory.RebuildProjectionAsync<AuthAuditViewProjection>(ct: ct);
     }
 }

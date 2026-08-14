@@ -18,14 +18,16 @@ public class UserCreateCompletenessTests(SharedPostgresFixture fixture) : Integr
         var ct = TestContext.Current.CancellationToken;
         var group = await Factory.CreateTestGroupAsync($"Complete_{Guid.NewGuid():N}", []);
         var groupId = new ShortGuid(group.Id).ToString();
+        var email = $"ada-{Guid.NewGuid():N}@test.com";
+        var userName = $"ada-{Guid.NewGuid():N}";
 
         var response = await Client.PostAsJsonAsync("/api/user", new
         {
             Firstname = "Ada",
             Lastname = "Complete",
             Acronym = "AC",
-            Email = $"ada-{Guid.NewGuid():N}@test.com",
-            UserName = $"ada-{Guid.NewGuid():N}",
+            Email = email,
+            UserName = userName,
             Password = "TestPass1234",
             EmailConfirmed = true,
             IsActive = true,
@@ -43,9 +45,13 @@ public class UserCreateCompletenessTests(SharedPostgresFixture fixture) : Integr
 
         using var scope = Factory.Services.CreateScope();
         var query = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+        var person = await query.LoadAsync<Person>(userId, ct);
         var storedGroup = await query.LoadAsync<Group>(group.Id, ct);
         var security = await query.LoadAsync<UserSecurityData>(userId, ct);
 
+        Assert.NotNull(person);
+        Assert.Equal(email, person.Email);
+        Assert.Equal(userName, person.AccountName);
         Assert.Contains(userId, storedGroup!.MemberIds);
         Assert.Equal(30, security!.GracePeriodDaysOverride);
         Assert.True(security.TwoFactorExempt);

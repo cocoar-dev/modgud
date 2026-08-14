@@ -1,41 +1,35 @@
-using Modgud.Authorization.Principals;
-using Modgud.Authorization.Projections;
+using Marten.Events.Aggregation;
 using Modgud.Authentication.Domain;
-using Modgud.Authentication.Events;
 using Modgud.Authentication.Domain.ExternalAuth.Events;
+using Modgud.Authentication.Events;
+using Modgud.Authorization.Principals;
 using Modgud.Domain.Users.Events;
 
 namespace Modgud.Authentication.Projections;
 
 /// <summary>
-/// Inline projection feeding the unified <see cref="Principal"/> document table
-/// from user-stream events. The library base owns all group-stream events; this
-/// class adds the Person side (Person).
+/// Builds Person documents inline from user streams. Person is mapped as a
+/// concrete subclass of Principal, so it shares the principal table with Group
+/// without relying on projection-class inheritance across assemblies.
 /// </summary>
-public partial class ModgudPrincipalProjection : PrincipalProjectionBase
+public partial class PersonProjection : SingleStreamProjection<Person, Guid>
 {
-    // SingleStreamProjection uses the event's stream-id automatically — user events
-    // live on user streams (stream-id = user-id), group events on group streams
-    // (stream-id = group-id). Both land in the same polymorphic Principal document
-    // table keyed by stream-id, distinguished by the Marten sub-class discriminator.
-
-    public Principal Create(UserCreatedEvent @event) => CreatePerson(
+    public Person Create(UserCreatedEvent @event) => CreatePerson(
         @event.Id,
         @event.Firstname.OrDefault(),
         @event.Lastname.OrDefault(),
         @event.Acronym.OrDefault(),
         @event.Email.OrDefault());
 
-    public Principal Create(UserMigratedEvent @event) => CreatePerson(
+    public Person Create(UserMigratedEvent @event) => CreatePerson(
         @event.Id,
         @event.Firstname.OrDefault(),
         @event.Lastname.OrDefault(),
         @event.Acronym.OrDefault(),
         @event.Email.OrDefault());
 
-    public Principal Apply(UserUpdatedEvent @event, Principal current)
+    public Person Apply(UserUpdatedEvent @event, Person person)
     {
-        if (current is not Person person) return current;
         if (@event.Firstname.HasValue) person.Firstname = @event.Firstname.Value;
         if (@event.Lastname.HasValue) person.Lastname = @event.Lastname.Value;
         if (@event.Acronym.HasValue) person.Acronym = @event.Acronym.Value;
@@ -47,45 +41,42 @@ public partial class ModgudPrincipalProjection : PrincipalProjectionBase
         return person;
     }
 
-    public Principal Apply(UserIdentitySetupEvent @event, Principal current)
+    public Person Apply(UserIdentitySetupEvent @event, Person person)
     {
-        if (current is not Person person) return current;
         person.AccountName = @event.UserName;
         person.NormalizedUserName = @event.UserName.ToUpperInvariant();
         person.IsActive = @event.IsActive;
         return person;
     }
 
-    public Principal Apply(UserUserNameChangedEvent @event, Principal current)
+    public Person Apply(UserUserNameChangedEvent @event, Person person)
     {
-        if (current is not Person person) return current;
         person.AccountName = @event.UserName;
         person.NormalizedUserName = @event.UserName.ToUpperInvariant();
         return person;
     }
 
-    public Principal Apply(UserActivatedEvent @event, Principal current)
+    public Person Apply(UserActivatedEvent @event, Person person)
     {
-        current.IsActive = true;
-        return current;
+        person.IsActive = true;
+        return person;
     }
 
-    public Principal Apply(UserDeactivatedEvent @event, Principal current)
+    public Person Apply(UserDeactivatedEvent @event, Person person)
     {
-        current.IsActive = false;
-        return current;
+        person.IsActive = false;
+        return person;
     }
 
-    public Principal Apply(UserDeletedEvent @event, Principal current)
+    public Person Apply(UserDeletedEvent @event, Person person)
     {
-        current.IsDeleted = true;
-        current.IsActive = false;
-        return current;
+        person.IsDeleted = true;
+        person.IsActive = false;
+        return person;
     }
 
-    public Principal Apply(UserExternalIdentityLinkedEvent @event, Principal current)
+    public Person Apply(UserExternalIdentityLinkedEvent @event, Person person)
     {
-        if (current is not Person person) return current;
         var newRef = new ExternalIdentityRef(@event.LinkId, @event.LoginProviderId, @event.Issuer);
         person.ExternalIdentities = person.ExternalIdentities
             .Where(r => r.LinkId != @event.LinkId)
@@ -94,9 +85,8 @@ public partial class ModgudPrincipalProjection : PrincipalProjectionBase
         return person;
     }
 
-    public Principal Apply(UserExternalIdentityUnlinkedEvent @event, Principal current)
+    public Person Apply(UserExternalIdentityUnlinkedEvent @event, Person person)
     {
-        if (current is not Person person) return current;
         person.ExternalIdentities = person.ExternalIdentities
             .Where(r => r.LinkId != @event.LinkId)
             .ToList();
