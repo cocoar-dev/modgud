@@ -3,6 +3,7 @@ using BuildingBlocks.EventDispatcher;
 using BuildingBlocks.Helper;
 using Modgud.Application.DTOs.Functions;
 using Modgud.Authorization.AspNetCore;
+using Modgud.Authorization.Events;
 using Modgud.Authorization.Principals;
 using Modgud.Domain.ValueObjects;
 using Modgud.Infrastructure.OpenIddict;
@@ -73,6 +74,8 @@ public static class FunctionsEndpoints
                 var policy = ApplyPolicy(FunctionTerminalPolicy.Disabled, dto.TerminalPolicy, out var policyError);
                 if (policyError is not null) return policyError;
 
+                // Event-sourced like Person/Group: the FunctionPrincipal document
+                // is the inline projection of this stream, never written directly.
                 var fn = new FunctionPrincipal
                 {
                     Id = Guid.NewGuid(),
@@ -81,7 +84,8 @@ public static class FunctionsEndpoints
                     IsActive = dto.IsActive,
                     TerminalPolicy = policy,
                 };
-                session.Store(fn);
+                session.Events.StartStream<FunctionPrincipal>(fn.Id, new FunctionPrincipalCreatedEvent(
+                    fn.Id, fn.AccountName, fn.Purpose, fn.IsActive, fn.TerminalPolicy));
                 await session.SaveChangesAsync(ct);
 
                 var created = ToDto(fn);
@@ -135,7 +139,10 @@ public static class FunctionsEndpoints
                     fn.TerminalPolicy = policy;
                 }
 
-                session.Store(fn);
+                // Full-replace event (mirrors GroupUpdatedEvent) — `fn` carries the
+                // merged state; the inline projection writes the document.
+                session.Events.Append(id.Guid, new FunctionPrincipalUpdatedEvent(
+                    fn.Id, fn.AccountName, fn.Purpose, fn.IsActive, fn.TerminalPolicy));
                 await session.SaveChangesAsync(ct);
 
                 // Deactivation cuts off live function access, mirroring the SA
@@ -176,11 +183,9 @@ public static class FunctionsEndpoints
                 var fn = await session.LoadAsync<FunctionPrincipal>(id.Guid, ct);
                 if (fn is null || fn.IsDeleted) return Results.NotFound();
 
-                // Soft delete so audit / group-membership references stay
-                // resolvable; Update (not Store) avoids the polymorphic-table
-                // concurrency dance — same rationale as the SA delete.
-                fn.IsDeleted = true;
-                session.Update(fn);
+                // Soft delete via the stream: the projection flips IsDeleted (and
+                // IsActive) so audit / group-membership references stay resolvable.
+                session.Events.Append(id.Guid, new FunctionPrincipalDeletedEvent(id.Guid));
                 await session.SaveChangesAsync(ct);
 
                 // A deleted function must lose every outstanding token now, not
