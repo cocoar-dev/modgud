@@ -111,6 +111,14 @@ does the same independently for group streams. Keeping the projections
 concrete avoids source-generator inheritance across assemblies while preserving
 one polymorphic table for email routing and membership predicates.
 
+Because `Person`, `Group`, and the directly stored `ServiceAccount` subtype share
+that physical table, principal projections must be rebuilt as one coordinated
+operation. The admin endpoint and `recover rebuild-projections` replay both
+event-sourced subtypes in place, then prune only stale Person and Group
+discriminator rows; Service Accounts are left intact. Do not invoke Marten's
+individual generic rebuild API for these projection types from custom maintenance
+code.
+
 ## Security data separation
 
 **Security-sensitive data does NOT land in the event stream.** Instead

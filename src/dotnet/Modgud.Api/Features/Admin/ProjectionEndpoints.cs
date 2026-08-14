@@ -84,12 +84,12 @@ public static class ProjectionEndpoints
                         await daemon.RebuildProjectionAsync(
                             "ViewProjections", timeout, rebuildCancellation);
 
-                        // Inline projections — RebuildProjectionAsync<T> drops the produced
-                        // documents itself and replays from event 0. Same path the
-                        // `recover rebuild-projections` CLI uses for first-migration bootstrap;
-                        // this endpoint is the maintenance equivalent (when an admin is logged in).
-                        await daemon.RebuildProjectionAsync<PersonProjection>(timeout, rebuildCancellation);
-                        await daemon.RebuildProjectionAsync<GroupProjection>(timeout, rebuildCancellation);
+                        // Person, Group, and ServiceAccount share mt_doc_principal. The
+                        // coordinated rebuild deletes only the two event-sourced subtypes;
+                        // Marten's normal per-projection teardown would truncate the whole
+                        // table and destroy the other subtype on each sequential rebuild.
+                        await PrincipalProjectionRebuilder.RebuildAsync(
+                            store, daemon, tenantId, timeout, ct: rebuildCancellation);
                         await daemon.RebuildProjectionAsync<PermissionRoleProjection>(timeout, rebuildCancellation);
                     }
                     finally

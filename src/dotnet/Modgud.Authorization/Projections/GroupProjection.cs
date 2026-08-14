@@ -11,6 +11,23 @@ namespace Modgud.Authorization.Projections;
 /// </summary>
 public partial class GroupProjection : SingleStreamProjection<Group, Guid>
 {
+    public GroupProjection()
+    {
+        // Group shares mt_doc_principal with Person and the non-event-sourced
+        // ServiceAccount subtype. A normal Marten teardown would truncate that
+        // entire root table. Cleanup is therefore coordinated explicitly by the
+        // authentication slice's PrincipalProjectionRebuilder.
+        Options.TeardownDataOnRebuild = false;
+
+        // Defining this constructor suppresses the source generator's generated
+        // IncludeType constructor, so keep the event allow-list explicit here.
+        IncludeType<GroupCreatedEvent>();
+        IncludeType<GroupUpdatedEvent>();
+        IncludeType<GroupMembershipRecomputedEvent>();
+        IncludeType<GroupMembershipRecomputeFailedEvent>();
+        IncludeType<GroupDeletedEvent>();
+    }
+
     public Group Create(GroupCreatedEvent @event) => new()
     {
         Id = @event.Id,

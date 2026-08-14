@@ -14,6 +14,30 @@ namespace Modgud.Authentication.Projections;
 /// </summary>
 public partial class PersonProjection : SingleStreamProjection<Person, Guid>
 {
+    public PersonProjection()
+    {
+        // Person, Group, and ServiceAccount are subclasses in the same physical
+        // mt_doc_principal table. Marten's default projection teardown truncates
+        // the root table, so rebuilding PersonProjection by itself would also
+        // delete every Group and directly stored ServiceAccount. The supported
+        // PrincipalProjectionRebuilder replays both event-sourced principal
+        // projections in place, then performs subtype-scoped stale-row cleanup.
+        Options.TeardownDataOnRebuild = false;
+
+        // Defining this constructor suppresses the source generator's generated
+        // IncludeType constructor, so keep the event allow-list explicit here.
+        IncludeType<UserCreatedEvent>();
+        IncludeType<UserMigratedEvent>();
+        IncludeType<UserUpdatedEvent>();
+        IncludeType<UserIdentitySetupEvent>();
+        IncludeType<UserUserNameChangedEvent>();
+        IncludeType<UserActivatedEvent>();
+        IncludeType<UserDeactivatedEvent>();
+        IncludeType<UserDeletedEvent>();
+        IncludeType<UserExternalIdentityLinkedEvent>();
+        IncludeType<UserExternalIdentityUnlinkedEvent>();
+    }
+
     public Person Create(UserCreatedEvent @event) => CreatePerson(
         @event.Id,
         @event.Firstname.OrDefault(),

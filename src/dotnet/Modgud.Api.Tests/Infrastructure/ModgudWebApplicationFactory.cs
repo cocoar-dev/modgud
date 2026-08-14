@@ -21,6 +21,7 @@ using Modgud.Api;
 using Modgud.Authentication.Api.Account;
 using Modgud.Infrastructure.Email;
 using Modgud.Authentication.Identity;
+using Modgud.Authentication.Projections;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Authorization.Principals;
@@ -609,6 +610,30 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
             using var rebuildDaemon = await store.BuildProjectionDaemonAsync(tenantId);
             await rebuildDaemon.RebuildProjectionAsync<T>(
                 timeout ?? TimeSpan.FromMinutes(2), rebuildCancellation);
+        }, ct);
+    }
+
+    /// <summary>
+    /// Rebuilds both event-sourced Principal subtypes with subtype-scoped cleanup,
+    /// preserving directly stored ServiceAccount rows in mt_doc_principal.
+    /// </summary>
+    public async Task RebuildPrincipalProjectionsAsync(
+        string tenantId = TenantConstants.SystemTenantId,
+        TimeSpan? timeout = null,
+        CancellationToken ct = default)
+    {
+        var store = Services.GetRequiredService<IDocumentStore>();
+        var coordinatorControl = Services.GetRequiredService<IProjectionCoordinatorControl>();
+
+        await coordinatorControl.RunPausedAsync(async rebuildCancellation =>
+        {
+            using var rebuildDaemon = await store.BuildProjectionDaemonAsync(tenantId);
+            await PrincipalProjectionRebuilder.RebuildAsync(
+                store,
+                rebuildDaemon,
+                tenantId,
+                timeout ?? TimeSpan.FromMinutes(2),
+                ct: rebuildCancellation);
         }, ct);
     }
 
