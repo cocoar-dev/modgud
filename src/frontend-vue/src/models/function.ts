@@ -77,3 +77,20 @@ export interface FunctionGrantDto {
   RevokedAt?: string | null
   UserHasPasskey: boolean
 }
+
+// ── Staffing sessions (MG-FT-05/07) ──────────────────────────────────────
+
+export type StaffingSessionStatus = 'Active' | 'Ended'
+
+/** Admin read model of one staffing shift. ActivatedByUserId is audit
+ * metadata for this surface only — it never travels in tokens. */
+export interface StaffingSessionDto {
+  Id: string
+  TerminalId: string
+  ActivatedByUserId: string
+  Status: StaffingSessionStatus
+  StartedAt: string
+  AbsoluteExpiresAt: string
+  EndedAt?: string | null
+  EndReason?: string | null
+}

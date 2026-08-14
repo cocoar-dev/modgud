@@ -18,7 +18,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useUserStore } from '@/stores/user.store'
-import type { FunctionCreateDto, FunctionUpdateDto, FunctionTerminalPolicyUpdateDto, FunctionGrantDto, TerminalDto } from '@/models/function'
+import type { FunctionCreateDto, FunctionUpdateDto, FunctionTerminalPolicyUpdateDto, FunctionGrantDto, TerminalDto, StaffingSessionDto } from '@/models/function'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -196,6 +196,63 @@ async function transitionTerminal(terminal: TerminalDto, action: 'disable' | 're
   }
 }
 
+// ── Staffing sessions (MG-FT-05/07) — read + force-lock, edit-mode only.
+// The list is the admin's live view of who staffed which terminal when;
+// force-lock ends a running shift remotely (§15.3).
+const staffingSessions = ref<StaffingSessionDto[]>([])
+const sessionsLoading = ref(false)
+const sessionsHttp = computed(() => useHttpClient(`/api/function/${props.id}/staffing-sessions`))
+
+async function loadStaffingSessions() {
+  if (isCreate.value) return
+  sessionsLoading.value = true
+  try {
+    staffingSessions.value = await sessionsHttp.value.get<StaffingSessionDto[]>()
+  } catch {
+    // function-staffing-session:read may be missing — the section simply
+    // stays empty rather than breaking the modal.
+    staffingSessions.value = []
+  } finally {
+    sessionsLoading.value = false
+  }
+}
+
+async function forceLockSession(sessionId: string) {
+  try {
+    await useHttpClient(`/api/staffing-session/${sessionId}/force-lock`).post()
+    await Promise.all([loadStaffingSessions(), loadTerminals()])
+  } catch (e: unknown) {
+    const err = e as { data?: { Message?: string }; message?: string }
+    toast.error(err?.data?.Message ?? err?.message ?? String(e))
+  }
+}
+
+function terminalLabel(terminalId: string): string {
+  return terminals.value.find((x) => x.Id === terminalId)?.DisplayName ?? terminalId
+}
+
+function endReasonLabel(reason: string | null | undefined): string {
+  switch (reason) {
+    case 'LocalLock': return t('admin.staffingSessions.reason.localLock', {}, 'Locked at the terminal')
+    case 'RemoteLock': return t('admin.staffingSessions.reason.remoteLock', {}, 'Force-locked by an admin')
+    case 'ReplacedByNewActivation': return t('admin.staffingSessions.reason.replaced', {}, 'Replaced by a new tap')
+    case 'Expired': return t('admin.staffingSessions.reason.expired', {}, 'Shift ceiling reached')
+    case 'FunctionDisabled': return t('admin.staffingSessions.reason.functionDisabled', {}, 'Function deactivated')
+    case 'TerminalDisabled': return t('admin.staffingSessions.reason.terminalDisabled', {}, 'Terminal disabled')
+    case 'TerminalRevoked': return t('admin.staffingSessions.reason.terminalRevoked', {}, 'Terminal revoked')
+    case 'UserDisabled': return t('admin.staffingSessions.reason.userDisabled', {}, 'User deactivated')
+    case 'PasskeyDeleted': return t('admin.staffingSessions.reason.passkeyDeleted', {}, 'Passkey deleted')
+    case 'GrantSuspended': return t('admin.staffingSessions.reason.grantSuspended', {}, 'Grant suspended')
+    case 'GrantRevoked': return t('admin.staffingSessions.reason.grantRevoked', {}, 'Grant revoked')
+    case 'OAuthClientDisabled': return t('admin.staffingSessions.reason.clientDisabled', {}, 'OAuth client disabled')
+    default: return reason ?? ''
+  }
+}
+
+function formatTime(value: string | null | undefined): string {
+  return value ? new Date(value).toLocaleString() : ''
+}
+
 onMounted(async () => {
   // The user list feeds the grant picker in BOTH modes.
   void userStore.initialize()
@@ -212,9 +269,10 @@ onMounted(async () => {
         MaximumStaffingSessionLifetimeMinutes: fn.TerminalPolicy.MaximumStaffingSessionLifetimeMinutes,
       }
       original.value = { ...form.value }
-      // Grants + terminals load alongside — they must not block the form fields.
+      // Grants + terminals + sessions load alongside — they must not block the form fields.
       void loadGrants()
       void loadTerminals()
+      void loadStaffingSessions()
     } catch (e: unknown) {
       const err = e as { data?: { Message?: string }; message?: string }
       error.value = err?.data?.Message ?? err?.message ?? String(e)
@@ -424,6 +482,56 @@ async function save() {
           </div>
         </section>
       </div>
+
+      <!-- Staffing sessions (MG-FT-05/07) — the live/audit view of shifts on
+           this function's terminals; force-lock ends a running one remotely.
+           Edit-mode only: sessions cannot exist before the function does. -->
+      <section v-if="!isCreate" class="form-section">
+        <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+          <h3 class="section-divider__title">{{ t('admin.staffingSessions.sectionTitle', {}, 'Staffing sessions') }}</h3>
+        </CoarDivider>
+
+        <div v-if="sessionsLoading" class="text-xs text-surface-500">
+          {{ t('common.loading', {}, 'Loading...') }}
+        </div>
+        <div v-else-if="staffingSessions.length === 0" class="grant-empty">
+          {{ t('admin.staffingSessions.empty', {}, 'No staffing sessions yet.') }}
+        </div>
+        <ul v-else class="flex flex-col gap-2">
+          <li v-for="s in staffingSessions" :key="s.Id"
+              class="flex flex-wrap items-center gap-2 rounded border border-surface-200 p-3">
+            <div class="flex min-w-0 flex-1 flex-col">
+              <span class="truncate font-medium">
+                {{ terminalLabel(s.TerminalId) }}
+                <span class="font-normal text-surface-500">· {{ userLabel(s.ActivatedByUserId) }}</span>
+              </span>
+              <span class="truncate text-xs text-surface-500">
+                {{ formatTime(s.StartedAt) }}
+                <template v-if="s.Status === 'Active'">
+                  → {{ t('admin.staffingSessions.until', {}, 'until at most') }} {{ formatTime(s.AbsoluteExpiresAt) }}
+                </template>
+                <template v-else>
+                  → {{ formatTime(s.EndedAt) }} · {{ endReasonLabel(s.EndReason) }}
+                </template>
+              </span>
+            </div>
+            <CoarTag :variant="s.Status === 'Active' ? 'success' : 'neutral'">
+              {{ s.Status === 'Active'
+                ? t('admin.staffingSessions.statusActive', {}, 'Active')
+                : t('admin.staffingSessions.statusEnded', {}, 'Ended') }}
+            </CoarTag>
+            <CoarPopconfirm v-if="s.Status === 'Active'"
+              :title="t('admin.staffingSessions.forceLockTitle', {}, 'Force-lock session?')"
+              :message="t('admin.staffingSessions.forceLockConfirm', {}, 'The terminal is locked immediately and its tokens are revoked; staff must tap their passkey again to continue.')"
+              confirm-variant="danger"
+              @confirmed="forceLockSession(s.Id)">
+              <CoarButton size="s" variant="ghost" icon-start="lock">
+                {{ t('admin.staffingSessions.forceLockButton', {}, 'Force-lock') }}
+              </CoarButton>
+            </CoarPopconfirm>
+          </li>
+        </ul>
+      </section>
 
       <!-- Rule 5: same section in both modes — create STAGES grants (the one
            Save commits function + grants atomically), edit operates on live
