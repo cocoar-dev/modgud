@@ -34,6 +34,7 @@ export interface PageThemeConfig {
  */
 export interface FeatureFlags {
   PageBuilder: boolean
+  FunctionTerminals: boolean
 }
 
 /**
@@ -85,6 +86,7 @@ const defaults: AppConfig = {
   PageTheme: null,
   Features: {
     PageBuilder: false,
+    FunctionTerminals: false,
   },
   // Lenient default = today's behaviour, used until /api/app-info responds.
   RegistrationFields: {

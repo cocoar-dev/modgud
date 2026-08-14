@@ -47,4 +47,13 @@ public class FeatureFlags : IFeatureFlags
     /// is a separate sprint and not gated by this flag.
     /// </summary>
     public bool PageBuilder { get; set; } = false;
+
+    /// <summary>
+    /// The function-terminals surface (MG-FT work-item series). While off
+    /// (default): the admin sidebar entry is hidden and /api/function/*
+    /// returns 404. The principal type itself stays registered — existing
+    /// documents remain readable — but nothing can be created or staffed
+    /// through the UI/API until an operator turns the feature on.
+    /// </summary>
+    public bool FunctionTerminals { get; set; } = false;
 }

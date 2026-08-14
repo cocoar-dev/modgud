@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.Functions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Modgud.Api.Tests.Functions;
 
@@ -19,10 +20,28 @@ public class FunctionCrudTests : IntegrationTestBase
 {
     public FunctionCrudTests(SharedPostgresFixture fixture) : base(fixture) { }
 
+    /// <summary>Every test pins its own flag state explicitly (the AppSettings
+    /// singleton survives the per-test Marten reset) — mirrors the
+    /// PageBuilderFeatureFlagTests discipline.</summary>
+    private void SetFeatureFlag(bool enabled) =>
+        Factory.Services.GetRequiredService<AppSettings>().Features.FunctionTerminals = enabled;
+
+    [Fact]
+    public async Task Endpoints_return_404_while_the_feature_flag_is_off()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(false); // the shipping default — the feature is dark
+
+        Assert.Equal(HttpStatusCode.NotFound, (await Client.GetAsync("/api/function", ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await Client.PostAsJsonAsync("/api/function", new { AccountName = "fn-dark" }, JsonOptions, ct)).StatusCode);
+    }
+
     [Fact]
     public async Task Create_normalises_the_name_and_defaults_to_disabled_terminal_policy()
     {
         var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
 
         var resp = await Client.PostAsJsonAsync("/api/function",
             new { AccountName = "  Portier.Kunde-XY  ", Purpose = "  Tor 3  " }, JsonOptions, ct);
@@ -47,6 +66,7 @@ public class FunctionCrudTests : IntegrationTestBase
     public async Task Create_rejects_names_taken_by_person_service_account_or_function()
     {
         var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
 
         // The default admin's Person carries account name "tu".
         var vsPerson = await Client.PostAsJsonAsync("/api/function", new { AccountName = "tu" }, JsonOptions, ct);
@@ -69,6 +89,7 @@ public class FunctionCrudTests : IntegrationTestBase
         // The REVERSE direction — without it the namespace rule fails open:
         // the function side alone cannot stop an SA from taking its name.
         var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
 
         var fn = await Client.PostAsJsonAsync("/api/function", new { AccountName = "fn-owns-name" }, JsonOptions, ct);
         Assert.True(fn.IsSuccessStatusCode);
@@ -82,6 +103,7 @@ public class FunctionCrudTests : IntegrationTestBase
     public async Task Update_merges_the_terminal_policy_and_enforces_the_lifetime_ceiling()
     {
         var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
         var created = await CreateFunctionAsync("fn-policy", ct);
 
         // Enable with custom lifetimes (8 h shift, 10 h ceiling).
@@ -125,6 +147,7 @@ public class FunctionCrudTests : IntegrationTestBase
     public async Task Update_renames_with_conflict_detection()
     {
         var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
         var a = await CreateFunctionAsync("fn-rename-a", ct);
         await CreateFunctionAsync("fn-rename-b", ct);
 
@@ -143,6 +166,7 @@ public class FunctionCrudTests : IntegrationTestBase
     public async Task Delete_soft_deletes_and_frees_the_name()
     {
         var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
         var created = await CreateFunctionAsync("fn-del", ct);
 
         var del = await Client.DeleteAsync($"/api/function/{created.Id}", ct);
@@ -160,6 +184,7 @@ public class FunctionCrudTests : IntegrationTestBase
     public async Task A_zero_role_user_gets_403_on_read_and_write()
     {
         var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
         await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Zero", lastname: "Fn", acronym: "ZF", email: "zerofn@test.com", password: "TestPass1234");
         var zeroClient = await CreateAuthenticatedClientAsync("zf", "TestPass1234");

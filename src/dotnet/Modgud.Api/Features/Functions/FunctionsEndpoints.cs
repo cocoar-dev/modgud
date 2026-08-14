@@ -30,8 +30,10 @@ public static class FunctionsEndpoints
             .WithTags("Functions")
             .RequireAuthorization();
 
-        group.MapGet("", async (IDocumentSession session) =>
+        group.MapGet("", async (AppSettings settings, IDocumentSession session) =>
             {
+                if (!settings.Features.FunctionTerminals) return Results.NotFound();
+
                 var rows = await session.Query<FunctionPrincipal>()
                     .Where(f => !f.IsDeleted)
                     .OrderBy(f => f.AccountName)
@@ -42,8 +44,10 @@ public static class FunctionsEndpoints
             .WithName("V2_Function_GetAll")
             .RequiresPermission("function:read");
 
-        group.MapGet("{id}", async (ShortGuid id, IDocumentSession session, CancellationToken ct) =>
+        group.MapGet("{id}", async (ShortGuid id, AppSettings settings, IDocumentSession session, CancellationToken ct) =>
             {
+                if (!settings.Features.FunctionTerminals) return Results.NotFound();
+
                 var fn = await session.LoadAsync<FunctionPrincipal>(id.Guid, ct);
                 return fn is null || fn.IsDeleted ? Results.NotFound() : Results.Ok(ToDto(fn));
             })
@@ -52,10 +56,13 @@ public static class FunctionsEndpoints
 
         group.MapPost("", async (
                 FunctionCreateDto dto,
+                AppSettings settings,
                 IDocumentSession session,
                 DataEventDispatcher dispatcher,
                 CancellationToken ct) =>
             {
+                if (!settings.Features.FunctionTerminals) return Results.NotFound();
+
                 var normalised = (dto.AccountName ?? string.Empty).Trim().ToLowerInvariant();
                 var validation = ValidateAccountName(normalised);
                 if (validation is not null) return validation;
@@ -87,11 +94,14 @@ public static class FunctionsEndpoints
         group.MapPut("{id}", async (
                 ShortGuid id,
                 FunctionUpdateDto dto,
+                AppSettings settings,
                 IDocumentSession session,
                 DataEventDispatcher dispatcher,
                 IOAuthGrantRevoker revoker,
                 CancellationToken ct) =>
             {
+                if (!settings.Features.FunctionTerminals) return Results.NotFound();
+
                 var fn = await session.LoadAsync<FunctionPrincipal>(id.Guid, ct);
                 if (fn is null || fn.IsDeleted) return Results.NotFound();
 
@@ -155,11 +165,14 @@ public static class FunctionsEndpoints
 
         group.MapDelete("{id}", async (
                 ShortGuid id,
+                AppSettings settings,
                 IDocumentSession session,
                 DataEventDispatcher dispatcher,
                 IOAuthGrantRevoker revoker,
                 CancellationToken ct) =>
             {
+                if (!settings.Features.FunctionTerminals) return Results.NotFound();
+
                 var fn = await session.LoadAsync<FunctionPrincipal>(id.Guid, ct);
                 if (fn is null || fn.IsDeleted) return Results.NotFound();
 

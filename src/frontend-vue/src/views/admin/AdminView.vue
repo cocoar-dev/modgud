@@ -33,7 +33,7 @@ interface NavItemDef {
    * Optional gate that hides the item when the named operator-level
    * feature flag is off. Independent from permissions — both must pass.
    */
-  requireFeature?: 'PageBuilder'
+  requireFeature?: 'PageBuilder' | 'FunctionTerminals'
 }
 
 interface SectionDef {
@@ -66,7 +66,7 @@ const sections = computed<SectionDef[]>(() => [
     items: [
       { label: 'nav.users', labelEn: 'Users', icon: 'users', to: '/admin/users', requirePermissions: ['user:read'] },
       { label: 'admin.serviceAccounts.title', labelEn: 'Service Accounts', icon: 'cpu', to: '/admin/service-accounts', requirePermissions: ['service-account:read'] },
-      { label: 'admin.functions.title', labelEn: 'Functions', icon: 'briefcase', to: '/admin/functions', requirePermissions: ['function:read'] },
+      { label: 'admin.functions.title', labelEn: 'Functions', icon: 'briefcase', to: '/admin/functions', requirePermissions: ['function:read'], requireFeature: 'FunctionTerminals' },
       { label: 'nav.roles', labelEn: 'Roles', icon: 'shield', to: '/admin/roles', requirePermissions: ['permission-role:read'] },
       { label: 'nav.groups', labelEn: 'Groups', icon: 'users-round', to: '/admin/groups', requirePermissions: ['authorization-group:read'] },
     ],
