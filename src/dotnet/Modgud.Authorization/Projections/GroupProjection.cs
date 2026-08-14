@@ -28,7 +28,10 @@ public partial class GroupProjection : SingleStreamProjection<Group, Guid>
         IncludeType<GroupDeletedEvent>();
     }
 
-    public Group Create(GroupCreatedEvent @event) => new()
+    // Apply the creation event even when a snapshot already exists. During a
+    // teardown-free rebuild this replaces the old snapshot with a fresh Group
+    // before the remainder of the stream is replayed.
+    public Group Apply(GroupCreatedEvent @event, Group _) => new()
     {
         Id = @event.Id,
         Name = @event.Name,

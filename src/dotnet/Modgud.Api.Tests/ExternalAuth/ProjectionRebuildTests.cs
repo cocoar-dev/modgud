@@ -143,6 +143,21 @@ public class ProjectionRebuildTests : IntegrationTestBase
             session.Store(serviceAccount);
             session.Store(stalePerson);
             session.Store(staleGroup);
+
+            var corruptedPerson = await session.LoadAsync<Person>(user.Id, ct);
+            Assert.NotNull(corruptedPerson);
+            corruptedPerson!.Firstname = "CORRUPTED";
+            corruptedPerson.Email = "corrupted@invalid.example";
+            corruptedPerson.NormalizedEmail = "CORRUPTED@INVALID.EXAMPLE";
+            corruptedPerson.IsDeleted = true;
+            session.Store(corruptedPerson);
+
+            var corruptedGroup = await session.LoadAsync<Group>(group.Id, ct);
+            Assert.NotNull(corruptedGroup);
+            corruptedGroup!.Name = "CORRUPTED";
+            corruptedGroup.MemberIds = [];
+            corruptedGroup.IsDeleted = true;
+            session.Store(corruptedGroup);
             await session.SaveChangesAsync(ct);
         }
 
@@ -156,9 +171,13 @@ public class ProjectionRebuildTests : IntegrationTestBase
             var preservedServiceAccount = await query.LoadAsync<ServiceAccount>(serviceAccount.Id, ct);
 
             Assert.NotNull(rebuiltPerson);
+            Assert.Equal("Principal", rebuiltPerson!.Firstname);
             Assert.Equal("principal-replay@acme.com", rebuiltPerson!.Email);
+            Assert.False(rebuiltPerson.IsDeleted);
             Assert.NotNull(rebuiltGroup);
+            Assert.Equal(group.Name, rebuiltGroup!.Name);
             Assert.Contains(user.Id, rebuiltGroup!.MemberIds);
+            Assert.False(rebuiltGroup.IsDeleted);
             Assert.NotNull(preservedServiceAccount);
             Assert.Equal(serviceAccount.AccountName, preservedServiceAccount!.AccountName);
             Assert.Equal(serviceAccount.Purpose, preservedServiceAccount.Purpose);
