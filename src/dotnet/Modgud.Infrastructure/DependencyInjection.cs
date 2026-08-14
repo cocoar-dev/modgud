@@ -20,8 +20,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Modgud.Application.Contracts;
 using Modgud.Infrastructure.Events;
 using Modgud.Infrastructure.Persistence.Marten.Configuration;
+using Modgud.Infrastructure.Persistence.Marten;
 using Modgud.Infrastructure.Installation;
 using Wolverine.Marten;
+using Microsoft.Extensions.Hosting;
 
 namespace Modgud.Infrastructure;
 
@@ -36,7 +38,8 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
         string connectionString,
-        Action<StoreOptions>? additionalMartenConfig = null)
+        Action<StoreOptions>? additionalMartenConfig = null,
+        DaemonMode asyncDaemonMode = DaemonMode.Solo)
     {
         // Make sure HttpContext access is available — TenantedSessionFactory
         // needs it to resolve the active tenant out of HttpContext.Items.
@@ -172,7 +175,24 @@ public static class DependencyInjection
         // missing storage.
         services.AddResourceSetupOnStartup();
 
-        martenBuilder.AddAsyncDaemon(DaemonMode.Solo);
+        martenBuilder.AddAsyncDaemon(asyncDaemonMode);
+        if (asyncDaemonMode is DaemonMode.Solo or DaemonMode.HotCold)
+        {
+            // Registered after Marten's coordinator hosted service on purpose.
+            // Hosted services stop in reverse registration order, so this gate
+            // drains application maintenance before Marten begins host shutdown.
+            services.Configure<HostOptions>(options =>
+                options.ServicesStopConcurrently = false);
+            services.AddSingleton<HostedProjectionCoordinatorControl>();
+            services.AddSingleton<IProjectionCoordinatorControl>(sp =>
+                sp.GetRequiredService<HostedProjectionCoordinatorControl>());
+            services.AddSingleton<IHostedService>(sp =>
+                sp.GetRequiredService<HostedProjectionCoordinatorControl>());
+        }
+        else
+        {
+            services.AddSingleton<IProjectionCoordinatorControl, DisabledProjectionCoordinatorControl>();
+        }
 
         // Register Event Dispatcher
         services.AddScoped<IEventDispatcher, SignalREventDispatcher>();

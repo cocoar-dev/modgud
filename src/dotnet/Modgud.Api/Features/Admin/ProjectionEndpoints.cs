@@ -3,12 +3,12 @@ using Modgud.Authorization.Membership;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Projections;
 using Marten;
-using Marten.Events.Daemon.Coordination;
 using Modgud.Authentication.Domain;
 using Modgud.Infrastructure.Events;
 using Modgud.Authentication.Projections;
 using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
 using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Infrastructure.Persistence.Marten;
 using System.Diagnostics;
 
 namespace Modgud.Api.Features.Admin;
@@ -30,7 +30,7 @@ public static class ProjectionEndpoints
 
         group.MapPost("rebuild", async (
             IDocumentStore store,
-            IProjectionCoordinator coordinator,
+            IProjectionCoordinatorControl coordinatorControl,
             HttpContext httpContext,
             CancellationToken ct) =>
         {
@@ -64,38 +64,39 @@ public static class ProjectionEndpoints
                 // maintenance operation; inline projections keep working, while async
                 // projections in all realms catch up after ResumeAsync. Rebuild side
                 // effects remain suppressed only for the target tenant.
-                await coordinator.PauseAsync();
-
-                ProjectionSideEffects.SuppressRebuildFor(tenantId);
-
-                try
+                await coordinatorControl.RunPausedAsync(async rebuildCancellation =>
                 {
-                    // Async composite (UserView only in the IdP-only baseline) —
-                    // explicit deletes mirror what each projection writes so
-                    // RebuildProjectionAsync sees a clean slate before the daemon replays.
-                    await using var session = store.LightweightSession(tenantId);
-                    session.DeleteWhere<UserView>(x => true);
-                    await session.SaveChangesAsync(ct);
+                    ProjectionSideEffects.SuppressRebuildFor(tenantId);
 
-                    // Daemon is scoped to a single tenant database under MasterTableTenancy.
-                    using var daemon = await store.BuildProjectionDaemonAsync(tenantId);
-                    var timeout = TimeSpan.FromMinutes(10);
+                    try
+                    {
+                        // Async composite (UserView only in the IdP-only baseline) —
+                        // explicit deletes mirror what each projection writes so
+                        // RebuildProjectionAsync sees a clean slate before the daemon replays.
+                        await using var session = store.LightweightSession(tenantId);
+                        session.DeleteWhere<UserView>(x => true);
+                        await session.SaveChangesAsync(rebuildCancellation);
 
-                    await daemon.RebuildProjectionAsync("ViewProjections", timeout, ct);
+                        // Daemon is scoped to a single tenant database under MasterTableTenancy.
+                        using var daemon = await store.BuildProjectionDaemonAsync(tenantId);
+                        var timeout = TimeSpan.FromMinutes(10);
 
-                    // Inline projections — RebuildProjectionAsync<T> drops the produced
-                    // documents itself and replays from event 0. Same path the
-                    // `recover rebuild-projections` CLI uses for first-migration bootstrap;
-                    // this endpoint is the maintenance equivalent (when an admin is logged in).
-                    await daemon.RebuildProjectionAsync<PersonProjection>(timeout, ct);
-                    await daemon.RebuildProjectionAsync<GroupProjection>(timeout, ct);
-                    await daemon.RebuildProjectionAsync<PermissionRoleProjection>(timeout, ct);
-                }
-                finally
-                {
-                    ProjectionSideEffects.ResumeAfterRebuild(tenantId);
-                    await coordinator.ResumeAsync();
-                }
+                        await daemon.RebuildProjectionAsync(
+                            "ViewProjections", timeout, rebuildCancellation);
+
+                        // Inline projections — RebuildProjectionAsync<T> drops the produced
+                        // documents itself and replays from event 0. Same path the
+                        // `recover rebuild-projections` CLI uses for first-migration bootstrap;
+                        // this endpoint is the maintenance equivalent (when an admin is logged in).
+                        await daemon.RebuildProjectionAsync<PersonProjection>(timeout, rebuildCancellation);
+                        await daemon.RebuildProjectionAsync<GroupProjection>(timeout, rebuildCancellation);
+                        await daemon.RebuildProjectionAsync<PermissionRoleProjection>(timeout, rebuildCancellation);
+                    }
+                    finally
+                    {
+                        ProjectionSideEffects.ResumeAfterRebuild(tenantId);
+                    }
+                }, ct);
 
                 Serilog.Log.Information("Admin: Full projection rebuild completed");
                 return Results.Ok(new { Message = "All projections rebuilt successfully" });

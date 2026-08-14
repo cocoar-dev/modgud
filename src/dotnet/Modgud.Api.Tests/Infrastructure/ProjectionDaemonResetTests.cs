@@ -1,13 +1,13 @@
-using Marten.Events.Daemon.Coordination;
 using Microsoft.Extensions.DependencyInjection;
+using Modgud.Infrastructure.Persistence.Marten;
 
 namespace Modgud.Api.Tests.Infrastructure;
 
 /// <summary>
 /// Pins the lifecycle contract between the shared integration-test host and
-/// Marten's async projection daemon. Resetting event data restarts sequence
-/// numbers, so no daemon carrying the previous database's in-memory high-water
-/// state may survive the reset.
+/// Marten projection execution. Resetting event data restarts sequence numbers,
+/// so the deterministic behavioural suite must not retain a background daemon
+/// carrying the previous database's in-memory high-water state.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
 public sealed class ProjectionDaemonResetTests : IntegrationTestBase
@@ -15,18 +15,14 @@ public sealed class ProjectionDaemonResetTests : IntegrationTestBase
     public ProjectionDaemonResetTests(SharedPostgresFixture fixture) : base(fixture) { }
 
     [Fact]
-    public async Task Every_reset_discards_cached_daemon_before_projecting_new_sequence()
+    public async Task Every_reset_projects_the_new_sequence_without_a_background_daemon()
     {
-        var coordinator = Factory.Services.GetRequiredService<IProjectionCoordinator>();
+        var coordinatorControl = Factory.Services.GetRequiredService<IProjectionCoordinatorControl>();
+        Assert.False(coordinatorControl.IsBackgroundDaemonEnabled);
 
         for (var cycle = 1; cycle <= 10; cycle++)
         {
-            var daemonBeforeReset = await coordinator.DaemonForDatabase("system");
-
             await Factory.ResetMartenDataAsync();
-
-            var daemonAfterReset = await coordinator.DaemonForDatabase("system");
-            Assert.NotSame(daemonBeforeReset, daemonAfterReset);
 
             var user = await Factory.CreateTestUserAsync(
                 firstname: "After",

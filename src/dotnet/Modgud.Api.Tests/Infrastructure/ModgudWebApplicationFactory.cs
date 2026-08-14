@@ -29,6 +29,7 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using Modgud.Infrastructure.Scheduling;
 using Modgud.Infrastructure.OpenIddict;
+using Modgud.Infrastructure.Persistence.Marten;
 using Marten.Storage;
 using Npgsql;
 using OpenIddict.Abstractions;
@@ -530,9 +531,10 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>
-    /// Resets all Marten data between tests by fully stopping and discarding
-    /// the async daemon, clearing data, and starting a fresh daemon. After the
-    /// wipe, the
+    /// Resets all Marten data between tests while projection execution is exclusively
+    /// owned by this operation. Behavioural test hosts have no background daemon;
+    /// production-shaped hosts are stopped and restarted by the coordinator control.
+    /// After the wipe, the
     /// system <see cref="App"/> catalog is re-seeded so tests that build
     /// roles via <see cref="CreateTestRoleAsync"/> find the modgud
     /// catalog they need to FK into.
@@ -548,19 +550,16 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         _tokenPipelineFaults.Reset();
 
         var cancellation = TestContext.Current.CancellationToken;
-        var coordinator = Services.GetRequiredService<IProjectionCoordinator>();
         var store = Services.GetRequiredService<IDocumentStore>();
+        var coordinatorControl = Services.GetRequiredService<IProjectionCoordinatorControl>();
 
-        // Marten's ResetAllMartenDataAsync only pauses the coordinator. Pause keeps
-        // its daemon cache and in-memory high-water tracker alive while ResetAllData
-        // restarts event sequences at 1. Reusing that daemon can write a progression
-        // from the previous test into the fresh database, leaving progression ahead
-        // of the new events. StopAsync additionally disposes and evicts every cached
-        // daemon, so ResumeAsync is guaranteed to build one against the reset state.
-        await coordinator.StopAsync(cancellation);
-        try
+        // ResetAllData restarts event sequences at 1. The behavioural suite therefore
+        // runs without a background daemon and owns the reset window exclusively. If
+        // this helper is used by a production-shaped host, RunStoppedAsync also evicts
+        // every cached daemon before the sequence reset.
+        await coordinatorControl.RunStoppedAsync(async resetCancellation =>
         {
-            await store.Advanced.ResetAllData(cancellation);
+            await store.Advanced.ResetAllData(resetCancellation);
 
             // The singleton RealmKeyStore caches per-realm signing keys in memory for 60s
             // and survives the Marten wipe above — which deleted the persisted
@@ -575,17 +574,13 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
                 keyStore.ClearCachesForReset();
             }
 
-            // Re-seed the system App + Control-Plane App while the coordinator is
-            // stopped so no background projection can observe half-seeded reset state.
+            // Re-seed the system App + Control-Plane App inside the exclusive reset
+            // window so no projection barrier can observe half-seeded state.
             await Modgud.Infrastructure.Authorization.AppRealmSeeder.SeedAsync(
                 Services,
                 tenantId: "system",
                 isControlPlane: true);
-        }
-        finally
-        {
-            await coordinator.ResumeAsync();
-        }
+        }, cancellation);
     }
 
     /// <summary>
@@ -597,10 +592,9 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         => CatchUpAsyncProjectionsAsync(TenantConstants.SystemTenantId, timeout);
 
     /// <summary>
-    /// Rebuilds one projection without racing the host's continuously-running
-    /// daemon. Marten's coordinator can automatically restart agents after a
-    /// daemon-level StopAllAsync call, so pause the coordinator itself while the
-    /// interactive rebuild owns the progression rows.
+    /// Rebuilds one projection inside the same exclusive maintenance abstraction used
+    /// in production. The behavioural test host has no background daemon; a production-
+    /// shaped host is paused while the interactive rebuild owns progression rows.
     /// </summary>
     public async Task RebuildProjectionAsync<T>(
         string tenantId = TenantConstants.SystemTenantId,
@@ -608,18 +602,14 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         CancellationToken ct = default)
     {
         var store = Services.GetRequiredService<IDocumentStore>();
-        var coordinator = Services.GetRequiredService<IProjectionCoordinator>();
+        var coordinatorControl = Services.GetRequiredService<IProjectionCoordinatorControl>();
 
-        await coordinator.PauseAsync();
-        try
+        await coordinatorControl.RunPausedAsync(async rebuildCancellation =>
         {
             using var rebuildDaemon = await store.BuildProjectionDaemonAsync(tenantId);
-            await rebuildDaemon.RebuildProjectionAsync<T>(timeout ?? TimeSpan.FromMinutes(2), ct);
-        }
-        finally
-        {
-            await coordinator.ResumeAsync();
-        }
+            await rebuildDaemon.RebuildProjectionAsync<T>(
+                timeout ?? TimeSpan.FromMinutes(2), rebuildCancellation);
+        }, ct);
     }
 
     /// <summary>
@@ -634,8 +624,9 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>
-    /// Deterministically materializes all async projections in one tenant by fully
-    /// stopping the live coordinator and driving a fresh interactive daemon inline.
+    /// Deterministically materializes all async projections in one tenant with a fresh
+    /// interactive daemon. Behavioural hosts deliberately have no live coordinator;
+    /// production-shaped hosts are fully stopped for the duration of the barrier.
     ///
     /// Marten's all-database testing extension fans out through the coordinator-owned
     /// daemons for every dynamically-created realm. After hundreds of reset/catch-up
@@ -658,21 +649,16 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         cts.CancelAfter(timeout ?? TimeSpan.FromSeconds(60));
 
         var store = Services.GetRequiredService<IDocumentStore>();
-        var coordinator = Services.GetRequiredService<IProjectionCoordinator>();
+        var coordinatorControl = Services.GetRequiredService<IProjectionCoordinatorControl>();
 
-        // Stop rather than pause: the shared test host has undergone many complete
-        // data resets. Evicting coordinator-owned daemons guarantees no cached
-        // high-water state can race or disagree with this exclusive catch-up.
-        await coordinator.StopAsync(cts.Token);
-        try
+        // The test host has no coordinator-owned daemon or high-water cache. The
+        // control still makes this an exclusive barrier and preserves the same safe
+        // semantics if a production-shaped host ever calls the helper.
+        await coordinatorControl.RunStoppedAsync(async catchUpCancellation =>
         {
             using var daemon = await store.BuildProjectionDaemonAsync(tenantId);
-            await daemon.CatchUpAsync(cts.Token);
-        }
-        finally
-        {
-            await coordinator.ResumeAsync();
-        }
+            await daemon.CatchUpAsync(catchUpCancellation);
+        }, cts.Token);
     }
 
     /// <summary>
