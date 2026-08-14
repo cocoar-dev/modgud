@@ -44,7 +44,20 @@ public class StaffingSweepJob(
             return;
         }
 
-        var ct = context.CancellationToken;
+        var ended = await SweepAsync(session, staffingRevoker, context.CancellationToken);
+
+        context.Result = ended switch
+        {
+            0 => "No staffing sessions ran past their absolute end",
+            _ => $"Ended {ended} expired staffing session(s)",
+        };
+    }
+
+    /// <summary>The sweep itself, callable without a Quartz context (tests).
+    /// Returns the number of expired sessions that were ended.</summary>
+    public static async Task<int> SweepAsync(
+        IDocumentSession session, IFunctionStaffingRevoker staffingRevoker, CancellationToken ct)
+    {
         var now = DateTimeOffset.UtcNow;
 
         session.DeleteWhere<FunctionStaffingCeremony>(c => c.ExpiresAt < now);
@@ -62,10 +75,6 @@ public class StaffingSweepJob(
             ended += await staffingRevoker.EndSessionAsync(id, StaffingSessionEndReason.Expired, ct);
         }
 
-        context.Result = ended switch
-        {
-            0 => "No staffing sessions ran past their absolute end",
-            _ => $"Ended {ended} expired staffing session(s)",
-        };
+        return ended;
     }
 }

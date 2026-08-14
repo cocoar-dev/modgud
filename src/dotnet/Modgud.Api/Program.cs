@@ -953,6 +953,11 @@ try
         // can't construct in generated code. DeleteUsersCommand injects it.
         opts.CodeGeneration.AlwaysUseServiceLocationFor<Modgud.Authentication.Sessions.IUserAccessRevoker>();
 
+        // MG-FT-07 staffing-session kill switch — same story: it composes
+        // IOAuthGrantRevoker, whose chain reaches the same opaque OpenIddict
+        // manager factories. DeleteUsersCommand injects it for the user cascade.
+        opts.CodeGeneration.AlwaysUseServiceLocationFor<Modgud.Infrastructure.FunctionTerminals.IFunctionStaffingRevoker>();
+
         // Auto-register Event Forwarding subscriptions for all ReferenceSyncHandler<TEvent> implementations
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
     });
