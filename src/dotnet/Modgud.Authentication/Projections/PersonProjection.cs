@@ -14,14 +14,42 @@ namespace Modgud.Authentication.Projections;
 /// </summary>
 public partial class PersonProjection : SingleStreamProjection<Person, Guid>
 {
-    public Person Create(UserCreatedEvent @event) => CreatePerson(
+    public PersonProjection()
+    {
+        // Person, Group, and ServiceAccount are subclasses in the same physical
+        // mt_doc_principal table. Marten's default projection teardown truncates
+        // the root table, so rebuilding PersonProjection by itself would also
+        // delete every Group and directly stored ServiceAccount. The supported
+        // PrincipalProjectionRebuilder replays both event-sourced principal
+        // projections in place, then performs subtype-scoped stale-row cleanup.
+        Options.TeardownDataOnRebuild = false;
+
+        // Defining this constructor suppresses the source generator's generated
+        // IncludeType constructor, so keep the event allow-list explicit here.
+        IncludeType<UserCreatedEvent>();
+        IncludeType<UserMigratedEvent>();
+        IncludeType<UserUpdatedEvent>();
+        IncludeType<UserIdentitySetupEvent>();
+        IncludeType<UserUserNameChangedEvent>();
+        IncludeType<UserActivatedEvent>();
+        IncludeType<UserDeactivatedEvent>();
+        IncludeType<UserDeletedEvent>();
+        IncludeType<UserExternalIdentityLinkedEvent>();
+        IncludeType<UserExternalIdentityUnlinkedEvent>();
+    }
+
+    // Use Apply instead of Create for creation events so a teardown-free rebuild
+    // replaces an existing snapshot with a fresh document before replaying the
+    // remaining stream. The ignored argument is the old snapshot (or the blank
+    // instance supplied by the generated evolver for a new stream).
+    public Person Apply(UserCreatedEvent @event, Person _) => CreatePerson(
         @event.Id,
         @event.Firstname.OrDefault(),
         @event.Lastname.OrDefault(),
         @event.Acronym.OrDefault(),
         @event.Email.OrDefault());
 
-    public Person Create(UserMigratedEvent @event) => CreatePerson(
+    public Person Apply(UserMigratedEvent @event, Person _) => CreatePerson(
         @event.Id,
         @event.Firstname.OrDefault(),
         @event.Lastname.OrDefault(),

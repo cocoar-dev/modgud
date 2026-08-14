@@ -39,8 +39,10 @@ public sealed class DpopProofValidationHandler : IOpenIddictServerHandler<Proces
             // use_dpop_nonce challenge) does NOT burn the code, and the client can
             // retry the nonce handshake with the same code (RFC 9449 §8-9). Still
             // well before the access token is generated, so the cnf.jkt binding
-            // stashed for the GenerateToken handlers is in place.
-            .SetOrder(RedeemTokenEntry.Descriptor.Order - 1)
+            // stashed for the GenerateToken handlers is in place. (-2, not -1:
+            // DpopDeviceCodeBindingHandler needs the stashed thumbprint and must
+            // itself still run before the redeem.)
+            .SetOrder(RedeemTokenEntry.Descriptor.Order - 2)
             .SetType(OpenIddictServerHandlerType.Custom)
             .Build();
 
@@ -60,9 +62,13 @@ public sealed class DpopProofValidationHandler : IOpenIddictServerHandler<Proces
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        // Token endpoint only for this slice (authorization_code / refresh_token /
-        // client_credentials / native grants all sign in here).
-        if (context.EndpointType != OpenIddictServerEndpointType.Token)
+        // Token endpoint (authorization_code / refresh_token / client_credentials /
+        // native grants all sign in here) PLUS the device-authorization endpoint:
+        // a proof presented with the device request is validated here so
+        // DpopDeviceCodeBindingStampHandler can bind the minted device code to the
+        // proof key (MG-FT spike; RFC 9449 applied to RFC 8628).
+        if (context.EndpointType is not (OpenIddictServerEndpointType.Token
+            or OpenIddictServerEndpointType.DeviceAuthorization))
             return;
 
         var httpRequest = context.Transaction.GetHttpRequest();
@@ -130,8 +136,11 @@ public sealed class DpopProofValidationHandler : IOpenIddictServerHandler<Proces
             return;
         }
 
-        // Hand the binding to the claim-stamping + token-type handlers via
-        // HttpContext.Items (shared across every event for this token request).
+        // Hand the binding to the downstream handlers via HttpContext.Items
+        // (shared across every event for this one request). At the token
+        // endpoint the claim-stamping/token-type handlers read it; at the
+        // device-authorization endpoint DpopDeviceCodeBindingCaptureHandler
+        // persists it against the minted device code.
         httpRequest.HttpContext.Items[DpopConstants.HttpContextJktKey] = result.Jkt;
     }
 

@@ -97,6 +97,12 @@ Rebuild all Marten projections (inline + async). Bootstrap path for
 the first migration after a breaking schema change — runs without any
 admin authentication.
 
+Stop the normal application container and take a database backup before running
+this command. Do not run it with Modgud v0.9.1: that version can remove Principal
+subtypes from their shared table during replay. Upgrade to a newer patch release
+first. The fixed command rebuilds Person and Group together while preserving
+directly stored Service Accounts.
+
 ```bash
 dotnet Modgud.Api.dll recover rebuild-projections
 ```

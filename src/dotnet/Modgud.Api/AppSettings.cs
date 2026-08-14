@@ -39,12 +39,16 @@ public class AppSettings : IAuthSettings
 public class FeatureFlags : IFeatureFlags
 {
     /// <summary>
-    /// Visibility of the Page-Builder editor in Admin → Customization → Pages.
-    /// While off (default): sidebar entry hidden, /admin/customization/pages
-    /// routes redirect away, /api/admin/customization/pages/* returns 404,
-    /// and RealmSettingsDto omits the Pages section. While on: editor mounts
-    /// and persists schemas. Runtime rendering of those schemas on /login etc.
-    /// is a separate sprint and not gated by this flag.
+    /// The Page-Builder, editor AND runtime. While off (default): the sidebar
+    /// entry is hidden, /admin/customization/pages routes redirect away,
+    /// /api/admin/customization/pages/* returns 404, and RealmSettingsDto omits
+    /// the Pages section. While on: the editor mounts and persists schemas, and
+    /// the auth surfaces render an activated schema instead of their built-in
+    /// layout (LoginView checks the same flag before it reads Pages.login).
+    ///
+    /// A stored schema is bypassed by ?safemode=1 on the login page, and a
+    /// schema that fails to parse falls back to the built-in layout rather than
+    /// taking authentication down with it.
     /// </summary>
     public bool PageBuilder { get; set; } = false;
 

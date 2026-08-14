@@ -5,12 +5,10 @@ using Modgud.Authentication.Domain.ExternalAuth;
 using Modgud.Authentication.Domain.ExternalAuth.Events;
 using Modgud.Authentication.Gdpr;
 using Modgud.Authentication.Identity.ExternalAuth;
-using Modgud.Authentication.Projections;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Authorization.Membership;
 using Modgud.Authorization.Principals;
-using Modgud.Authorization.Projections;
 
 namespace Modgud.Api.Tests.ExternalAuth;
 
@@ -108,13 +106,92 @@ public class ProjectionRebuildTests : IntegrationTestBase
         }
     }
 
+    [Fact]
+    public async Task Principal_Rebuild_Preserves_All_Subtypes_Removes_Stale_Rows_And_Is_Repeatable()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            "Principal", "Replay", "pr", "principal-replay@acme.com");
+        var group = await Factory.CreateTestGroupAsync(
+            $"Rebuild_{Guid.NewGuid():N}"[..18], [user.Id]);
+
+        var serviceAccount = new ServiceAccount
+        {
+            Id = Guid.CreateVersion7(),
+            AccountName = $"rebuild-test-{Guid.NewGuid():N}"[..25],
+            Purpose = "Must survive principal projection rebuilds",
+            IsActive = true,
+        };
+        var stalePerson = new Person
+        {
+            Id = Guid.CreateVersion7(),
+            Firstname = "Stale",
+            Lastname = "Person",
+            Email = "stale-person@acme.com",
+            NormalizedEmail = "STALE-PERSON@ACME.COM",
+            IsActive = true,
+        };
+        var staleGroup = new Group
+        {
+            Id = Guid.CreateVersion7(),
+            Name = $"Stale_{Guid.NewGuid():N}"[..18],
+            IsActive = true,
+        };
+
+        await using (var session = GetTenantedDocumentSession())
+        {
+            session.Store(serviceAccount);
+            session.Store(stalePerson);
+            session.Store(staleGroup);
+
+            var corruptedPerson = await session.LoadAsync<Person>(user.Id, ct);
+            Assert.NotNull(corruptedPerson);
+            corruptedPerson!.Firstname = "CORRUPTED";
+            corruptedPerson.Email = "corrupted@invalid.example";
+            corruptedPerson.NormalizedEmail = "CORRUPTED@INVALID.EXAMPLE";
+            corruptedPerson.IsDeleted = true;
+            session.Store(corruptedPerson);
+
+            var corruptedGroup = await session.LoadAsync<Group>(group.Id, ct);
+            Assert.NotNull(corruptedGroup);
+            corruptedGroup!.Name = "CORRUPTED";
+            corruptedGroup.MemberIds = [];
+            corruptedGroup.IsDeleted = true;
+            session.Store(corruptedGroup);
+            await session.SaveChangesAsync(ct);
+        }
+
+        for (var rebuild = 0; rebuild < 2; rebuild++)
+        {
+            await Factory.RebuildPrincipalProjectionsAsync(ct: ct);
+
+            await using var query = GetTenantedSession();
+            var rebuiltPerson = await query.LoadAsync<Person>(user.Id, ct);
+            var rebuiltGroup = await query.LoadAsync<Group>(group.Id, ct);
+            var preservedServiceAccount = await query.LoadAsync<ServiceAccount>(serviceAccount.Id, ct);
+
+            Assert.NotNull(rebuiltPerson);
+            Assert.Equal("Principal", rebuiltPerson!.Firstname);
+            Assert.Equal("principal-replay@acme.com", rebuiltPerson!.Email);
+            Assert.False(rebuiltPerson.IsDeleted);
+            Assert.NotNull(rebuiltGroup);
+            Assert.Equal(group.Name, rebuiltGroup!.Name);
+            Assert.Contains(user.Id, rebuiltGroup!.MemberIds);
+            Assert.False(rebuiltGroup.IsDeleted);
+            Assert.NotNull(preservedServiceAccount);
+            Assert.Equal(serviceAccount.AccountName, preservedServiceAccount!.AccountName);
+            Assert.Equal(serviceAccount.Purpose, preservedServiceAccount.Purpose);
+            Assert.Null(await query.LoadAsync<Person>(stalePerson.Id, ct));
+            Assert.Null(await query.LoadAsync<Group>(staleGroup.Id, ct));
+        }
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────
 
     private async Task RebuildAsync(CancellationToken ct)
     {
         await Factory.RebuildProjectionAsync<ExternalIdentityLinkProjection>(ct: ct);
-        await Factory.RebuildProjectionAsync<PersonProjection>(ct: ct);
-        await Factory.RebuildProjectionAsync<GroupProjection>(ct: ct);
+        await Factory.RebuildPrincipalProjectionsAsync(ct: ct);
     }
 
     private async Task<Guid> SeedLinkAsync(Guid userId, Guid providerId, string issuer, string subject)
