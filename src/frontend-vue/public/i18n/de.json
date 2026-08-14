@@ -1919,7 +1919,22 @@
     "notFound": "Geräte-Anfrage nicht gefunden oder abgelaufen. Starte die Anmeldung auf deinem Gerät neu.",
     "alreadyUsed": "Diese Geräte-Anfrage wurde bereits abgeschlossen.",
     "expired": "Geräte-Anfrage abgelaufen. Starte die Anmeldung auf deinem Gerät neu.",
-    "loadError": "Geräte-Anfrage konnte nicht geladen werden."
+    "loadError": "Geräte-Anfrage konnte nicht geladen werden.",
+    "terminal": {
+      "title": "Terminal registrieren?",
+      "subtitle": "Ein Gerät möchte als Funktions-Terminal registriert werden.",
+      "function": "Funktion",
+      "terminal": "Terminal",
+      "location": "Standort",
+      "client": "OAuth-Client",
+      "fingerprint": "Geräteschlüssel",
+      "noKey": "fehlt",
+      "warning": "Dieses Gerät wird dauerhaft als Terminal dieser Funktion registriert. Die Registrierung allein erlaubt noch keinen Alarmzugriff.",
+      "noKeyHint": "Die Geräte-Anfrage enthielt keinen Geräteschlüssel — die Registrierung wird abgelehnt. Starte die Registrierung auf dem Terminal neu.",
+      "approve": "Terminal registrieren",
+      "approvedTitle": "Terminal registriert",
+      "approvedBody": "Das Terminal schließt die Registrierung jetzt ab. Diese Seite kann geschlossen werden."
+    }
   },
   "consent": {
     "title": "{client} autorisieren",

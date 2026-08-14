@@ -154,6 +154,15 @@ public sealed class DpopDeviceCodeBindingCaptureHandler
         {
             Id = DeviceCodeDpopBindingKey.For(deviceCode),
             Jkt = jkt,
+            // The verification step only ever sees the user_code — hash it in
+            // so the terminal-enrollment consent can resolve the bound key.
+            // Normalized (letters/digits, upper-cased) before hashing: user
+            // codes travel with display separators and are case-insensitive
+            // (RFC 8628 §6.1), and the verification side hashes what the human
+            // typed — both sides must reduce to the same canonical form.
+            UserCodeHash = context.Response?.UserCode is { Length: > 0 } userCode
+                ? DeviceCodeDpopBindingKey.ForUserCode(userCode)
+                : null,
             ExpiresAt = DateTimeOffset.UtcNow + expiresIn,
         });
         await session.SaveChangesAsync(context.CancellationToken);
@@ -166,4 +175,18 @@ internal static class DeviceCodeDpopBindingKey
 {
     public static string For(string deviceCode) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(deviceCode)));
+
+    /// <summary>User-code variant: normalizes first (keep letters/digits,
+    /// upper-case — mirroring OpenIddict's own reference-id normalization),
+    /// because user codes are case-insensitive and displayed with separators.</summary>
+    public static string ForUserCode(string userCode)
+    {
+        Span<char> buffer = stackalloc char[userCode.Length];
+        var n = 0;
+        foreach (var c in userCode)
+        {
+            if (char.IsLetterOrDigit(c)) buffer[n++] = char.ToUpperInvariant(c);
+        }
+        return For(new string(buffer[..n]));
+    }
 }

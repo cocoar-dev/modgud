@@ -10,6 +10,18 @@ export interface DeviceScopeInfo {
 
 export type DeviceVerificationStatus = 'needs_code' | 'ready' | 'invalid_code'
 
+/** MG-FT-04 — what the approving admin must see before registering a device
+ * as a function terminal (§11.4). */
+export interface TerminalConsentInfo {
+  FunctionName: string
+  TerminalName: string
+  Location?: string | null
+  ClientId: string
+  /** Null/absent when the device request carried no DPoP proof — the approval
+   * will be refused server-side in that case. */
+  DpopFingerprint?: string | null
+}
+
 export interface DeviceVerificationInfo {
   Ticket: string
   Status: DeviceVerificationStatus
@@ -18,4 +30,9 @@ export interface DeviceVerificationInfo {
   UserCode?: string | null
   ClientName?: string | null
   Scopes: DeviceScopeInfo[]
+  /** 'user' = ordinary person device flow; 'terminal' = terminal enrollment
+   * (MG-FT-04) — render the terminal consent instead of the scope consent. */
+  Kind?: 'user' | 'terminal'
+  /** Set when Kind === 'terminal'. */
+  Terminal?: TerminalConsentInfo | null
 }

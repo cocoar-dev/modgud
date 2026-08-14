@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
+using Modgud.Api.Features.Auth.FunctionTerminals;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Sessions;
 using Modgud.Authentication.Domain;
@@ -7,7 +9,9 @@ using Modgud.Authentication.Identity;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Services;
+using Modgud.Domain.FunctionTerminals;
 using Modgud.Domain.OAuth.Apis;
+using Modgud.Domain.OAuth.Storage;
 using Modgud.Permissions;
 using Modgud.Permissions.Abstractions;
 using Modgud.Domain.OAuth.Applications;
@@ -15,7 +19,9 @@ using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.OAuth.Consent;
 using Modgud.Domain.OAuth.Scopes;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.OpenIddict.Cimd;
+using Modgud.Infrastructure.OpenIddict.Dpop;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Fido2NetLib;
 using Fido2NetLib.Objects;
@@ -282,7 +288,9 @@ public static class AuthorizationEndpoints
         RealmScopedFido2Factory fido2Factory,
         RpIdResolver rpIdResolver,
         IApplicationSettingsResolver applicationSettingsResolver,
-        IDocumentSession session)
+        IDocumentSession session,
+        AppSettings settings,
+        IOAuthGrantRevoker grantRevoker)
     {
         var request = httpContext.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("The OpenID Connect request cannot be retrieved.");
@@ -333,6 +341,18 @@ public static class AuthorizationEndpoints
             var result = await httpContext.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
             var subject = result.Principal?.GetClaim(Claims.Subject);
             if (string.IsNullOrEmpty(subject)) return ForbidInvalidGrant("The token is no longer valid.");
+
+            // MG-FT-04 §11.6 — terminal-enrollment tokens carry a FUNCTION
+            // subject, not a person: dispatch before the user branch (the
+            // user lookup below could never resolve a function id).
+            if (string.Equals(
+                    result.Principal?.GetClaim(FunctionTokenClaimTypes.TokenUse),
+                    FunctionTokenUses.TerminalEnrollment, StringComparison.Ordinal))
+            {
+                return await ExchangeTerminalEnrollmentAsync(
+                    httpContext, request, result.Principal!, settings, session,
+                    applicationManager, authorizationManager, grantRevoker);
+            }
 
             var user = await userManager.FindByIdAsync(subject);
             if (user is null) return ForbidInvalidGrant("The token is no longer valid.");
@@ -565,6 +585,155 @@ public static class AuthorizationEndpoints
                     [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = description,
                 }),
                 new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+    }
+
+    // ──────────────────── MG-FT-04 terminal enrollment (§11.6) ────────────────
+
+    /// <summary>
+    /// Token-endpoint dispatch for tokens with
+    /// <c>token_use = terminal_enrollment</c> — the FUNCTION-subject chain a
+    /// terminal lives on between enrollment and its first staffing ceremony.
+    /// Two grants only:
+    /// <list type="bullet">
+    ///   <item><description><c>device_code</c> — the one-time enrollment
+    ///   exchange: pins the device's DPoP key onto the slot (Enrolled event,
+    ///   Pending → Active) and anchors the chain on a fresh ad-hoc
+    ///   authorization.</description></item>
+    ///   <item><description><c>refresh_token</c> — keeps the enrollment chain
+    ///   alive across shifts; the plan only spells out the staffing refresh
+    ///   (MG-FT-06), but without this branch the generic refresh path would
+    ///   try to load a USER by the function subject and kill the chain.
+    ///   </description></item>
+    /// </list>
+    /// DPoP proof-of-possession is enforced upstream (device-code ledger
+    /// handler + RequireDpop on the client) — here we only re-check the
+    /// business state and, at enrollment, require a key to pin.
+    /// </summary>
+    private static async Task<IResult> ExchangeTerminalEnrollmentAsync(
+        HttpContext httpContext,
+        OpenIddictRequest request,
+        ClaimsPrincipal tokenPrincipal,
+        AppSettings settings,
+        IDocumentSession session,
+        IOpenIddictApplicationManager applicationManager,
+        IOpenIddictAuthorizationManager authorizationManager,
+        IOAuthGrantRevoker grantRevoker)
+    {
+        static IResult Refuse(string description) =>
+            ForbidNativeGrant(Errors.InvalidGrant, description);
+
+        if (!settings.Features.FunctionTerminals)
+            return Refuse("Function terminals are not enabled.");
+
+        if (!request.IsDeviceCodeGrantType() && !request.IsRefreshTokenGrantType())
+            return Refuse("The token is no longer valid.");
+
+        if (!Guid.TryParse(tokenPrincipal.GetClaim(Claims.Subject), out var functionId) ||
+            !Guid.TryParse(tokenPrincipal.GetClaim(FunctionTokenClaimTypes.TerminalId), out var terminalId))
+        {
+            return Refuse("The token is no longer valid.");
+        }
+
+        var ct = httpContext.RequestAborted;
+        var function = await session.LoadAsync<FunctionPrincipal>(functionId, ct);
+        if (function is null || function.IsDeleted)
+            return Refuse("The function no longer exists.");
+        if (!function.TerminalPolicy.Enabled)
+            return Refuse("Terminal use is disabled for this function.");
+
+        if (request.IsRefreshTokenGrantType())
+        {
+            var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
+            if (terminal is null || terminal.FunctionPrincipalId != functionId)
+                return Refuse("The token is no longer valid.");
+            if (!string.Equals(request.ClientId, terminal.ClientId, StringComparison.Ordinal))
+                return Refuse("The client does not own this terminal slot.");
+            if (terminal.Status != TerminalEnrollmentStatus.Active)
+                return Refuse("The terminal slot is no longer active.");
+
+            var refreshed = TerminalEnrollmentPrincipal.Create(function, terminal);
+            refreshed.SetAuthorizationId(tokenPrincipal.GetAuthorizationId());
+            return Results.SignIn(refreshed, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+        }
+
+        // device_code — the one-time enrollment exchange. FetchForWriting
+        // guards the Pending→Active transition with the stream version, so two
+        // racing polls can never both enroll (the loser's SaveChanges throws).
+        var stream = await session.Events.FetchForWriting<TerminalEnrollment>(terminalId, ct);
+        var slot = stream.Aggregate;
+        if (slot is null || slot.FunctionPrincipalId != functionId)
+            return Refuse("The token is no longer valid.");
+        if (!string.Equals(request.ClientId, slot.ClientId, StringComparison.Ordinal))
+            return Refuse("The client does not own this terminal slot.");
+        if (slot.Status != TerminalEnrollmentStatus.Pending || slot.DpopJkt is not null)
+            return Refuse("The terminal slot is not pending enrollment; re-enrollment requires a fresh slot.");
+
+        // The key to pin — validated HERE, directly from the header. It cannot
+        // come from the HttpContext.Items stash and the ledger enforcement
+        // cannot be trusted to have run yet: DpopProofValidationHandler and
+        // DpopDeviceCodeBindingHandler both live in the ProcessSignIn pipeline,
+        // which runs AFTER this method has returned — i.e. after the Enrolled
+        // event below would already be committed. Without the signature check +
+        // ledger comparison here, a wrong-key poll would pin the ATTACKER's key
+        // onto the slot and only then fail the token response. (The pipeline
+        // re-validates the same proof afterwards; the jti is only recorded
+        // there, so this pre-read does not trip the replay ledger.)
+        var proofHeader = httpContext.Request.Headers[DpopConstants.HeaderName];
+        if (proofHeader.Count != 1)
+            return Refuse("A DPoP proof is required to enroll a terminal.");
+        var htu = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.Path}";
+        var proof = DpopProofValidator.Validate(
+            proofHeader.ToString(), httpContext.Request.Method, htu, DateTimeOffset.UtcNow);
+        if (!proof.IsValid || string.IsNullOrEmpty(proof.Jkt))
+            return Refuse("A valid DPoP proof is required to enroll a terminal.");
+        var jkt = proof.Jkt;
+
+        var deviceCode = request.DeviceCode;
+        var binding = string.IsNullOrEmpty(deviceCode)
+            ? null
+            : await session.LoadAsync<DeviceCodeDpopBinding>(
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                    Encoding.UTF8.GetBytes(deviceCode))), ct);
+        if (binding is null || binding.ExpiresAt <= DateTimeOffset.UtcNow)
+            return Refuse("The device code is not DPoP-bound; terminal enrollment requires a device key.");
+        if (!string.Equals(jkt, binding.Jkt, StringComparison.Ordinal))
+            return Refuse("The DPoP proof key does not match the key this device code is bound to.");
+
+        var principal = TerminalEnrollmentPrincipal.Create(function, slot);
+
+        // Durable anchor of every token this terminal will ever hold in the
+        // enrollment chain — revoking it (slot revoke, §13.4) cuts the device
+        // off. Created in the OpenIddict store FIRST; there is no shared
+        // transaction with Marten, so a failed event append below compensates
+        // by revoking the fresh authorization (§13.4).
+        var application = await applicationManager.FindByClientIdAsync(request.ClientId!, ct)
+            ?? throw new InvalidOperationException("The application cannot be found.");
+        var clientPk = await applicationManager.GetIdAsync(application, ct)
+            ?? throw new InvalidOperationException("The application has no id.");
+        var authorization = await authorizationManager.CreateAsync(
+            principal: principal,
+            subject: function.Id.ToString(),
+            client: clientPk,
+            type: AuthorizationTypes.AdHoc,
+            scopes: principal.GetScopes(),
+            cancellationToken: ct);
+        var authorizationId = await authorizationManager.GetIdAsync(authorization, ct)
+            ?? throw new InvalidOperationException("The enrollment authorization has no id.");
+
+        try
+        {
+            stream.AppendOne(new TerminalEnrollmentEnrolled(
+                slot.Id, jkt, authorizationId, DateTimeOffset.UtcNow));
+            await session.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            await grantRevoker.RevokeAuthorizationByIdAsync(authorizationId, CancellationToken.None);
+            throw;
+        }
+
+        principal.SetAuthorizationId(authorizationId);
+        return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
     // ─────────────────────────── ADR-0010 native grants ───────────────────────

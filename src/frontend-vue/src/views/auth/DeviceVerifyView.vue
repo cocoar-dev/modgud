@@ -64,6 +64,7 @@ const standardScopeFallbacks: Record<string, { label: string; description: strin
 }
 
 const clientName = computed(() => model.value?.ClientName || t('device.theApp', {}, 'the device'))
+const isTerminal = computed(() => model.value?.Kind === 'terminal' && !!model.value?.Terminal)
 
 onMounted(async () => {
   // No ticket = the user navigated to /device directly (typed the URL the
@@ -260,6 +261,70 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
           </CoarButton>
         </div>
 
+        <!-- Terminal enrollment prompt (MG-FT-04, §11.4) -->
+        <div v-else-if="phase === 'prompt' && isTerminal" class="space-y-4">
+          <div class="text-center">
+            <h2 class="text-lg font-semibold text-surface-800">
+              {{ t('device.terminal.title', {}, 'Register terminal?') }}
+            </h2>
+            <p class="mt-1 text-sm text-surface-500">
+              {{ t('device.terminal.subtitle', {}, 'A device is asking to be registered as a function terminal.') }}
+            </p>
+          </div>
+
+          <dl class="divide-y divide-surface-200 rounded border border-surface-200 bg-white text-sm">
+            <div class="flex justify-between gap-4 px-3 py-2">
+              <dt class="text-surface-500">{{ t('device.terminal.function', {}, 'Function') }}</dt>
+              <dd class="font-medium text-surface-800">{{ model!.Terminal!.FunctionName }}</dd>
+            </div>
+            <div class="flex justify-between gap-4 px-3 py-2">
+              <dt class="text-surface-500">{{ t('device.terminal.terminal', {}, 'Terminal') }}</dt>
+              <dd class="font-medium text-surface-800">{{ model!.Terminal!.TerminalName }}</dd>
+            </div>
+            <div v-if="model!.Terminal!.Location" class="flex justify-between gap-4 px-3 py-2">
+              <dt class="text-surface-500">{{ t('device.terminal.location', {}, 'Location') }}</dt>
+              <dd class="font-medium text-surface-800">{{ model!.Terminal!.Location }}</dd>
+            </div>
+            <div class="flex justify-between gap-4 px-3 py-2">
+              <dt class="text-surface-500">{{ t('device.terminal.client', {}, 'OAuth client') }}</dt>
+              <dd class="font-mono text-xs text-surface-700 break-all">{{ model!.Terminal!.ClientId }}</dd>
+            </div>
+            <div class="flex justify-between gap-4 px-3 py-2">
+              <dt class="text-surface-500">{{ t('device.terminal.fingerprint', {}, 'Device key') }}</dt>
+              <dd v-if="model!.Terminal!.DpopFingerprint" class="font-mono font-medium text-surface-800">
+                {{ model!.Terminal!.DpopFingerprint }}
+              </dd>
+              <dd v-else class="text-warning-700">
+                {{ t('device.terminal.noKey', {}, 'missing') }}
+              </dd>
+            </div>
+          </dl>
+
+          <CoarNotice variant="warning">
+            {{ t('device.terminal.warning', {}, 'This device will be permanently registered as a terminal of this function. Registration alone does not grant any alerting access yet.') }}
+          </CoarNotice>
+
+          <CoarNotice v-if="!model!.Terminal!.DpopFingerprint" variant="error">
+            {{ t('device.terminal.noKeyHint', {}, 'The device request carried no device key — registration will be refused. Restart the enrollment on the terminal.') }}
+          </CoarNotice>
+
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
+
+          <div class="flex gap-2">
+            <CoarButton variant="secondary" :disabled="submitting" full-width @click="decide(false)">
+              {{ t('device.deny', {}, 'Deny') }}
+            </CoarButton>
+            <CoarButton
+              :loading="submitting"
+              :disabled="!model!.Terminal!.DpopFingerprint"
+              full-width
+              @click="decide(true)"
+            >
+              {{ t('device.terminal.approve', {}, 'Register terminal') }}
+            </CoarButton>
+          </div>
+        </div>
+
         <!-- Approve / deny prompt -->
         <div v-else-if="phase === 'prompt'" class="space-y-4">
           <div class="text-center">
@@ -299,10 +364,14 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
         <!-- Approved -->
         <div v-else-if="phase === 'approved'" class="space-y-4 text-center">
           <h2 class="text-lg font-semibold text-surface-800">
-            {{ t('device.approvedTitle', {}, 'Device connected') }}
+            {{ isTerminal
+              ? t('device.terminal.approvedTitle', {}, 'Terminal registered')
+              : t('device.approvedTitle', {}, 'Device connected') }}
           </h2>
           <p class="text-sm text-surface-600">
-            {{ t('device.approvedBody', {}, 'You can return to your device — it is now signed in. You may close this page.') }}
+            {{ isTerminal
+              ? t('device.terminal.approvedBody', {}, 'The terminal is completing its registration now. You may close this page.')
+              : t('device.approvedBody', {}, 'You can return to your device — it is now signed in. You may close this page.') }}
           </p>
         </div>
 
