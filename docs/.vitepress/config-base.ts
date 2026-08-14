@@ -198,7 +198,7 @@ export const baseConfig = {
           items: [
             { text: 'Users', link: '/admin/users' },
             { text: 'Service Accounts', link: '/admin/service-accounts' },
-            { text: 'Functions & Terminals', link: '/admin/functions' },
+            { text: 'Positions & Terminals', link: '/admin/positions' },
             { text: 'Roles', link: '/admin/roles' },
             { text: 'Groups', link: '/admin/groups' },
           ],
@@ -266,7 +266,7 @@ export const baseConfig = {
             { text: 'Login flows', link: '/integrate/login-flows' },
             { text: 'Login providers (OIDC federation)', link: '/integrate/login-providers' },
             { text: '2FA (TOTP, Email, Passkey)', link: '/integrate/two-factor' },
-            { text: 'Function terminals (consumer contract)', link: '/integrate/function-terminals' },
+            { text: 'Position terminals (consumer contract)', link: '/integrate/position-terminals' },
           ],
         },
       ],

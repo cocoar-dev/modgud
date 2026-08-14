@@ -111,7 +111,7 @@ public static class OAuthMartenSetup
         // Legacy single-app event — kept registered for stream replay only.
         options.Events.MapEventType<OAuthApplicationAppIdChanged>("oauth_application_app_id_changed");
         options.Events.MapEventType<OAuthApplicationAppIdsChanged>("oauth_application_app_ids_changed");
-        options.Events.MapEventType<OAuthApplicationFunctionTerminalLinkChanged>("oauth_application_function_terminal_link_changed");
+        options.Events.MapEventType<OAuthApplicationPositionTerminalLinkChanged>("oauth_application_position_terminal_link_changed");
         options.Events.MapEventType<OAuthApplicationDeleted>("oauth_application_deleted");
 
         options.Events.MapEventType<OAuthScopeCreated>("oauth_scope_created");

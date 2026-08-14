@@ -94,11 +94,11 @@ public static class OAuthErrors
 
     // ── MG-FT-03 — terminal-managed clients ───────────────────────────────
 
-    public static Error InvalidFunctionTerminalClient(string rule) => Error.Validation(
-        code: "OAuth.InvalidFunctionTerminalClient",
-        description: $"Invalid function-terminal client profile: {rule}");
+    public static Error InvalidPositionTerminalClient(string rule) => Error.Validation(
+        code: "OAuth.InvalidPositionTerminalClient",
+        description: $"Invalid position-terminal client profile: {rule}");
 
     public static Error CannotMutateTerminalManagedClient(string clientId) => Error.Validation(
         code: "OAuth.CannotMutateTerminalManagedClient",
-        description: $"OAuth client '{clientId}' is owned by a function terminal. Mutations must go through the function-terminal endpoints (/api/function/{{id}}/terminals); the standard admin surface is read-only for terminal-managed clients.");
+        description: $"OAuth client '{clientId}' is owned by a position terminal. Mutations must go through the position-terminal endpoints (/api/position/{{id}}/terminals); the standard admin surface is read-only for terminal-managed clients.");
 }

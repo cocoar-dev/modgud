@@ -75,13 +75,13 @@ public class CreateUserHandler(
         if (userNameTaken)
             return DomainErrors.User.UserNameTaken(normalizedUserName);
 
-        // MG-FT-01 — function principals share the account-name namespace: a
-        // function's id becomes a token subject exactly like a person's, so a
-        // human must not take a function's handle.
-        var functionNameTaken = await session.Query<FunctionPrincipal>()
+        // MG-FT-01 — position principals share the account-name namespace: a
+        // position's id becomes a token subject exactly like a person's, so a
+        // human must not take a position's handle.
+        var positionNameTaken = await session.Query<PositionPrincipal>()
             .Where(f => f.AccountName == normalizedUserName && !f.IsDeleted)
             .AnyAsync(ct);
-        if (functionNameTaken)
+        if (positionNameTaken)
             return DomainErrors.User.UserNameTaken(normalizedUserName);
 
         // Check Email uniqueness — persons carry emails directly, groups have

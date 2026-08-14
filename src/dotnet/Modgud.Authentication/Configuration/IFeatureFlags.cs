@@ -18,10 +18,10 @@ public interface IFeatureFlags
     bool PageBuilder { get; }
 
     /// <summary>
-    /// Visibility of the function-terminals surface (MG-FT). While off the
+    /// Visibility of the position-terminals surface (MG-FT). While off the
     /// admin sidebar entry is hidden and the endpoints under
-    /// <c>/api/function/*</c> return 404 — the feature ships dark on
+    /// <c>/api/position/*</c> return 404 — the feature ships dark on
     /// <c>develop</c> until the work-item series is complete.
     /// </summary>
-    bool FunctionTerminals { get; }
+    bool PositionTerminals { get; }
 }

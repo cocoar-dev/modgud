@@ -56,9 +56,9 @@ public partial class OAuthApplicationStateProjection : SingleStreamProjection<OA
     public void Apply(OAuthApplicationServiceAccountLinkChanged e, OAuthApplicationState s)
         => s.LinkedServiceAccountId = e.ServiceAccountId;
 
-    public void Apply(OAuthApplicationFunctionTerminalLinkChanged e, OAuthApplicationState s)
+    public void Apply(OAuthApplicationPositionTerminalLinkChanged e, OAuthApplicationState s)
     {
-        s.LinkedFunctionPrincipalId = e.FunctionPrincipalId;
+        s.LinkedPositionPrincipalId = e.PositionPrincipalId;
         s.ManagedTerminalEnrollmentId = e.TerminalEnrollmentId;
     }
 

@@ -16,7 +16,7 @@ namespace Modgud.Infrastructure.OpenIddict.Dpop;
 /// <para>This handler flags the per-context bypass so such tokens validate;
 /// proof-of-possession is NOT dropped — every Modgud endpoint that accepts a
 /// DPoP-bound token enforces the binding itself by validating the presented
-/// <c>DPoP</c> proof against the expected key (the function-staffing begin
+/// <c>DPoP</c> proof against the expected key (the staffing begin
 /// endpoint pins <c>TerminalEnrollment.DpopJkt</c>), and external resource
 /// servers enforce <c>cnf.jkt</c> via <c>Modgud.AspNetCore.ResourceServer</c>.
 /// Wiring generic DPoP-scheme extraction + enforcement into the validation

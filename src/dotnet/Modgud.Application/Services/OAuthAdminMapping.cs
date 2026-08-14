@@ -13,7 +13,7 @@ using ErrorOr;
 namespace Modgud.Application.Services;
 
 /// <summary>
-/// Pure helper functions mirroring the private helpers inside
+/// Pure helper positions mirroring the private helpers inside
 /// <see cref="OAuthAdminService"/> — permission list construction,
 /// property/setting (de)serialization, BCrypt secret hashing, and
 /// projection-state → DTO mapping. Extracted into an <c>internal static</c>
@@ -111,7 +111,7 @@ internal static class OAuthAdminMapping
         // which ValidateGrantTypes turns into a hard error.
         "urn:ietf:params:oauth:grant-type:device_code" => OAuthPermissions.GrantTypes.DeviceCode,
         // MG-FT — staffing grant for terminal-managed clients.
-        Modgud.Domain.FunctionTerminals.FunctionGrantTypes.StaffingSession => OAuthPermissions.GrantTypes.FunctionStaffing,
+        Modgud.Domain.PositionTerminals.PositionGrantTypes.StaffingSession => OAuthPermissions.GrantTypes.Staffing,
         // ADR-0010 — native (cookieless) passwordless grants. Admin-set per-client
         // opt-in surfaces here so the OAuth-client admin CRUD can grant them.
         CocoarGrantTypes.Otp => OAuthPermissions.GrantTypes.CocoarOtp,
@@ -126,7 +126,7 @@ internal static class OAuthAdminMapping
         OAuthPermissions.GrantTypes.ClientCredentials => "client_credentials",
         OAuthPermissions.GrantTypes.RefreshToken => "refresh_token",
         // A legacy client that somehow carries gt:implicit / gt:password (they
-        // were never functional — no server flow) maps to null here, so it is
+        // were never positional — no server flow) maps to null here, so it is
         // dropped from the DTO and stripped on the next save.
         OAuthPermissions.GrantTypes.DeviceCode => "urn:ietf:params:oauth:grant-type:device_code",
         OAuthPermissions.GrantTypes.CocoarOtp => CocoarGrantTypes.Otp,
@@ -716,11 +716,11 @@ internal static class OAuthAdminMapping
         CocoarGrantTypes.Magic,
         CocoarGrantTypes.Passkey,
         // MG-FT — the staffing tap authenticates a human (even though the
-        // minted token's subject is the function), so it is user-flow. Missing
+        // minted token's subject is the position), so it is user-flow. Missing
         // this entry would let a client combine client_credentials + SA link
         // + staffing grant and silently break the one-auth-mode rule
         // (fail-open — pinned by the feasibility check before MG-FT-00).
-        Modgud.Domain.FunctionTerminals.FunctionGrantTypes.StaffingSession,
+        Modgud.Domain.PositionTerminals.PositionGrantTypes.StaffingSession,
     };
 
     /// <summary>
@@ -744,68 +744,68 @@ internal static class OAuthAdminMapping
 
     /// <summary>The terminal client profile's grant set — EXACTLY these (plan
     /// §6.4 rule 7): enrollment via device flow, the staffing tap, and the
-    /// function-scoped refresh. Everything else (client_credentials, the web
+    /// position-scoped refresh. Everything else (client_credentials, the web
     /// code flow, the native login grants) is forbidden on a terminal.</summary>
     internal static readonly IReadOnlySet<string> TerminalGrantTypes = new HashSet<string>(StringComparer.Ordinal)
     {
         "urn:ietf:params:oauth:grant-type:device_code",
         "refresh_token",
-        Modgud.Domain.FunctionTerminals.FunctionGrantTypes.StaffingSession,
+        Modgud.Domain.PositionTerminals.PositionGrantTypes.StaffingSession,
     };
 
     /// <summary>
-    /// Enforces the function-terminal client profile (plan §6.4). Not a
+    /// Enforces the position-terminal client profile (plan §6.4). Not a
     /// terminal client (both link fields empty) ⇒ valid, nothing to check.
     /// <c>ValidateServiceAccountLinkInvariant</c> stays untouched — the two
     /// invariants compose: a terminal client carries no SA link, so the SA
     /// rules never fire for it.
     /// </summary>
-    internal static Error? ValidateFunctionTerminalLinkInvariant(
+    internal static Error? ValidatePositionTerminalLinkInvariant(
         IReadOnlyList<string> effectiveGrants,
         string? clientType,
         bool requireClientSecret,
         AccessTokenType accessTokenType,
         bool requireDpop,
         Guid? linkedServiceAccountId,
-        Guid? linkedFunctionPrincipalId,
+        Guid? linkedPositionPrincipalId,
         Guid? managedTerminalEnrollmentId,
         string? webAuthnRpId)
     {
-        var hasFunction = linkedFunctionPrincipalId.HasValue;
+        var hasPosition = linkedPositionPrincipalId.HasValue;
         var hasTerminal = managedTerminalEnrollmentId.HasValue;
-        if (!hasFunction && !hasTerminal) return null;
+        if (!hasPosition && !hasTerminal) return null;
 
-        if (hasFunction != hasTerminal)
-            return OAuthErrors.InvalidFunctionTerminalClient(
-                "LinkedFunctionPrincipalId and ManagedTerminalEnrollmentId must be set together.");
+        if (hasPosition != hasTerminal)
+            return OAuthErrors.InvalidPositionTerminalClient(
+                "LinkedPositionPrincipalId and ManagedTerminalEnrollmentId must be set together.");
 
         if (linkedServiceAccountId.HasValue)
-            return OAuthErrors.InvalidFunctionTerminalClient(
+            return OAuthErrors.InvalidPositionTerminalClient(
                 "a terminal-managed client cannot also be ServiceAccount-linked (one client = one auth mode).");
 
         if (!string.Equals(clientType, OAuthClientTypes.Public, StringComparison.Ordinal))
-            return OAuthErrors.InvalidFunctionTerminalClient("the client must be public.");
+            return OAuthErrors.InvalidPositionTerminalClient("the client must be public.");
 
         if (requireClientSecret)
-            return OAuthErrors.InvalidFunctionTerminalClient(
+            return OAuthErrors.InvalidPositionTerminalClient(
                 "the client must not carry a client secret — the device is bound via DPoP, not a shared secret.");
 
         if (!requireDpop)
-            return OAuthErrors.InvalidFunctionTerminalClient(
+            return OAuthErrors.InvalidPositionTerminalClient(
                 "DPoP is mandatory — terminal tokens must be sender-constrained to the enrolled device key.");
 
         if (accessTokenType != AccessTokenType.Reference)
-            return OAuthErrors.InvalidFunctionTerminalClient(
+            return OAuthErrors.InvalidPositionTerminalClient(
                 "access tokens must be reference tokens so a revocation cuts off the terminal instantly.");
 
         if (string.IsNullOrWhiteSpace(webAuthnRpId))
-            return OAuthErrors.InvalidFunctionTerminalClient(
+            return OAuthErrors.InvalidPositionTerminalClient(
                 "a WebAuthn RP ID is required — the staffing tap verifies staff passkeys against it.");
 
         var grants = new HashSet<string>(effectiveGrants, StringComparer.Ordinal);
         if (!grants.SetEquals(TerminalGrantTypes))
-            return OAuthErrors.InvalidFunctionTerminalClient(
-                "allowed grants are exactly device_code, refresh_token, and the function staffing grant.");
+            return OAuthErrors.InvalidPositionTerminalClient(
+                "allowed grants are exactly device_code, refresh_token, and the position staffing grant.");
 
         return null;
     }

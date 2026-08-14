@@ -53,7 +53,7 @@ public static class MartenStoreOptionsExtensions
             .AddSubClass<Person>("person")
             .AddSubClass<Group>("group")
             .AddSubClass<ServiceAccount>("service-account")
-            .AddSubClass<FunctionPrincipal>("function");
+            .AddSubClass<PositionPrincipal>("position");
 
         // PermissionRole — its own top-level document.
         martenOpts.Schema.For<PermissionRole>();
@@ -73,7 +73,7 @@ public static class MartenStoreOptionsExtensions
         martenOpts.Projections.Add<PermissionRoleProjection>(ProjectionLifecycle.Inline);
         martenOpts.Projections.Add<AppProjection>(ProjectionLifecycle.Inline);
         martenOpts.Projections.Add<GroupProjection>(ProjectionLifecycle.Inline);
-        martenOpts.Projections.Add<FunctionPrincipalProjection>(ProjectionLifecycle.Inline);
+        martenOpts.Projections.Add<PositionPrincipalProjection>(ProjectionLifecycle.Inline);
 
         // Stable event-type aliases. Marten resolves events through these, so the
         // .NET type FQN can change without breaking persisted streams.
@@ -83,9 +83,9 @@ public static class MartenStoreOptionsExtensions
         martenOpts.Events.MapEventType<GroupMembershipRecomputedEvent>("authorization_group_membership_recomputed");
         martenOpts.Events.MapEventType<GroupMembershipRecomputeFailedEvent>("authorization_group_membership_recompute_failed");
 
-        martenOpts.Events.MapEventType<FunctionPrincipalCreatedEvent>("authorization_function_created");
-        martenOpts.Events.MapEventType<FunctionPrincipalUpdatedEvent>("authorization_function_updated");
-        martenOpts.Events.MapEventType<FunctionPrincipalDeletedEvent>("authorization_function_deleted");
+        martenOpts.Events.MapEventType<PositionPrincipalCreatedEvent>("authorization_position_created");
+        martenOpts.Events.MapEventType<PositionPrincipalUpdatedEvent>("authorization_position_updated");
+        martenOpts.Events.MapEventType<PositionPrincipalDeletedEvent>("authorization_position_deleted");
 
         martenOpts.Events.MapEventType<PermissionRoleCreatedEvent>("permission_role_created");
         martenOpts.Events.MapEventType<PermissionRoleUpdatedEvent>("permission_role_updated");
@@ -128,6 +128,6 @@ public static class MartenStoreOptionsExtensions
         ti.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(typeof(Person), "person"));
         ti.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(typeof(Group), "group"));
         ti.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(typeof(ServiceAccount), "service-account"));
-        ti.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(typeof(FunctionPrincipal), "function"));
+        ti.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(typeof(PositionPrincipal), "position"));
     }
 }

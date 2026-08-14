@@ -192,9 +192,9 @@ public static class AuditEvents
     /// auto-purge counts). Realm-owned operational summary.</summary>
     public const string AccountLifecycleSwept = "ops.account_lifecycle_swept";
 
-    /// <summary>One or more function staffing sessions were ended outside their
+    /// <summary>One or more position staffing sessions were ended outside their
     /// natural token flow (MG-FT-07): local/remote lock, revocation cascade
-    /// (user/passkey/grant/terminal/function), or the expiry janitor. The
+    /// (user/passkey/grant/terminal/position), or the expiry janitor. The
     /// record carries the end reason and count — the sessions themselves stay
     /// queryable as ended <c>StaffingSession</c> documents.</summary>
     public const string StaffingSessionEnded = "security.staffing_session_ended";

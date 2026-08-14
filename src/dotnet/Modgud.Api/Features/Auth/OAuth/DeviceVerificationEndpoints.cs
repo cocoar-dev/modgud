@@ -1,10 +1,10 @@
 using System.Security.Claims;
-using Modgud.Api.Features.Auth.FunctionTerminals;
+using Modgud.Api.Features.Auth.PositionTerminals;
 using Modgud.Authentication.Domain;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Services;
-using Modgud.Domain.FunctionTerminals;
+using Modgud.Domain.PositionTerminals;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Device;
 using Modgud.Domain.OAuth.Storage;
@@ -134,7 +134,7 @@ public static class DeviceVerificationEndpoints
 
             // MG-FT-04 (plan §11.3/§11.4) — when the user code belongs to a
             // terminal-managed client, this approval is a terminal ENROLLMENT,
-            // not a person consent: a different principal (the FUNCTION) gets
+            // not a person consent: a different principal (the POSITION) gets
             // bound to the device code. Dispatch before the person path so a
             // terminal client can never mint a user-bound token.
             var normalizedUserCode = NormalizeUserCode(request.UserCode);
@@ -319,7 +319,7 @@ public static class DeviceVerificationEndpoints
         }
 
         // MG-FT-04 — a terminal-managed client gets the terminal consent
-        // rendering: which function, which slot, which device key. The person
+        // rendering: which position, which slot, which device key. The person
         // flow above stays byte-for-byte unchanged for everything else. When
         // the client IS terminal-managed but the flag is off or the link is
         // broken, the code reads as INVALID — never as a person consent, which
@@ -328,8 +328,8 @@ public static class DeviceVerificationEndpoints
         var target = await LoadTerminalTargetAsync(clientId, session, cancellationToken);
         if (target is not null)
         {
-            if (!settings.Features.FunctionTerminals ||
-                target.Terminal is null || target.Function is null || target.Function.IsDeleted)
+            if (!settings.Features.PositionTerminals ||
+                target.Terminal is null || target.Position is null || target.Position.IsDeleted)
             {
                 return null;
             }
@@ -340,7 +340,7 @@ public static class DeviceVerificationEndpoints
 
             terminalInfo = new TerminalConsentInfo
             {
-                FunctionName = target.Function.DisplayName,
+                PositionName = target.Position.DisplayName,
                 TerminalName = target.Terminal.DisplayName,
                 Location = target.Terminal.Location,
                 ClientId = target.Terminal.ClientId,
@@ -370,12 +370,12 @@ public static class DeviceVerificationEndpoints
 
     /// <summary>Resolution of a user code's OAuth client to its terminal
     /// enrollment target. Null = not a terminal-managed client → ordinary
-    /// person flow. Non-null with null <see cref="Terminal"/>/<see cref="Function"/>
+    /// person flow. Non-null with null <see cref="Terminal"/>/<see cref="Position"/>
     /// = the client claims a terminal link that doesn't resolve — callers must
     /// REFUSE, never fall back to the person flow.</summary>
     private sealed record TerminalVerificationTarget(
         TerminalEnrollment? Terminal,
-        FunctionPrincipal? Function);
+        PositionPrincipal? Position);
 
     private static async Task<TerminalVerificationTarget?> LoadTerminalTargetAsync(
         string? applicationId,
@@ -394,8 +394,8 @@ public static class DeviceVerificationEndpoints
         if (terminal is null || terminal.OAuthApplicationId != appId)
             return new TerminalVerificationTarget(null, null);
 
-        var function = await session.LoadAsync<FunctionPrincipal>(terminal.FunctionPrincipalId, cancellationToken);
-        return new TerminalVerificationTarget(terminal, function);
+        var position = await session.LoadAsync<PositionPrincipal>(terminal.PositionPrincipalId, cancellationToken);
+        return new TerminalVerificationTarget(terminal, position);
     }
 
     /// <summary>The terminal-enrollment approval (plan §11.4). Every check
@@ -427,27 +427,27 @@ public static class DeviceVerificationEndpoints
         // Feature gate — a terminal client whose flag was switched off after
         // creation must not be enrollable (and never falls through to the
         // person flow; the caller dispatched here on the client link alone).
-        if (!settings.Features.FunctionTerminals)
-            return Refuse("Function terminals are not enabled.");
+        if (!settings.Features.PositionTerminals)
+            return Refuse("Position terminals are not enabled.");
 
         // Check 4 — client ↔ terminal link intact (both directions).
-        if (target.Terminal is null || target.Function is null)
+        if (target.Terminal is null || target.Position is null)
             return Refuse("The OAuth client is not linked to a valid terminal slot.");
 
         // Check 2 — the approving admin holds the enrollment permission.
-        if (!await permissionService.HasPermissionAsync(admin.Id, AppSlugs.Modgud, "function-terminal:enroll"))
-            return Refuse("You are not authorized to enroll function terminals.");
+        if (!await permissionService.HasPermissionAsync(admin.Id, AppSlugs.Modgud, "position-terminal:enroll"))
+            return Refuse("You are not authorized to enroll position terminals.");
 
         // Check 3 — only a Pending slot is enrollable; re-enrollment of an
         // Active/Disabled/Revoked slot is always a fresh slot instead.
         if (target.Terminal.Status != TerminalEnrollmentStatus.Pending)
             return Refuse("The terminal slot is not pending enrollment.");
 
-        // Check 5 — function alive; check 6 — terminal use enabled on it.
-        if (target.Function.IsDeleted)
-            return Refuse("The function no longer exists.");
-        if (!target.Function.TerminalPolicy.Enabled)
-            return Refuse("Terminal use is disabled for this function.");
+        // Check 5 — position alive; check 6 — terminal use enabled on it.
+        if (target.Position.IsDeleted)
+            return Refuse("The position no longer exists.");
+        if (!target.Position.TerminalPolicy.Enabled)
+            return Refuse("Terminal use is disabled for this position.");
 
         // Check 7 — the initial device request must have been DPoP-proofed:
         // without a bound key there is nothing to pin the enrollment to.
@@ -482,11 +482,11 @@ public static class DeviceVerificationEndpoints
         });
         await session.SaveChangesAsync(cancellationToken);
 
-        // OpenIddict binds this FUNCTION principal to the pending device code;
+        // OpenIddict binds this POSITION principal to the pending device code;
         // the terminal's poll then reaches the token-endpoint enrollment
         // exchange (§11.6) with token_use=terminal_enrollment.
         return Results.SignIn(
-            TerminalEnrollmentPrincipal.Create(target.Function, target.Terminal),
+            TerminalEnrollmentPrincipal.Create(target.Position, target.Terminal),
             properties: null,
             OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
@@ -589,11 +589,11 @@ public record DeviceVerificationInfo
 }
 
 /// <summary>What the approving admin must see before registering a device as a
-/// terminal (plan §11.4): which function, which slot, and the key fingerprint
+/// terminal (plan §11.4): which position, which slot, and the key fingerprint
 /// of the device asking.</summary>
 public record TerminalConsentInfo
 {
-    public required string FunctionName { get; init; }
+    public required string PositionName { get; init; }
     public required string TerminalName { get; init; }
     public string? Location { get; init; }
     public required string ClientId { get; init; }

@@ -1,14 +1,14 @@
 using Marten;
 using Quartz;
-using Modgud.Domain.FunctionTerminals;
-using Modgud.Infrastructure.FunctionTerminals;
+using Modgud.Domain.PositionTerminals;
+using Modgud.Infrastructure.PositionTerminals;
 
 namespace Modgud.Api.Features.Admin.Jobs;
 
 /// <summary>
-/// MG-FT-07 (plan §5.3) — the function-terminals janitor. Two duties per realm:
+/// MG-FT-07 (plan §5.3) — the position-terminals janitor. Two duties per realm:
 /// <list type="number">
-///   <item><description>Delete lapsed <see cref="FunctionStaffingCeremony"/>
+///   <item><description>Delete lapsed <see cref="StaffingCeremony"/>
 ///   documents (begun but never redeemed; the begin endpoint also prunes
 ///   amortized — this is the backstop for idle realms).</description></item>
 ///   <item><description>End active <see cref="StaffingSession"/>s whose
@@ -23,13 +23,13 @@ namespace Modgud.Api.Features.Admin.Jobs;
 [DisallowConcurrentExecution]
 public class StaffingSweepJob(
     IDocumentSession session,
-    IFunctionStaffingRevoker staffingRevoker,
+    IStaffingRevoker staffingRevoker,
     AppSettings settings) : IJob
 {
     public const string Key = "staffing-sweep";
-    public const string Name = "Function Staffing Sweep";
+    public const string Name = "Position Staffing Sweep";
     public const string Description =
-        "Deletes lapsed function-staffing ceremonies and ends staffing sessions that ran past " +
+        "Deletes lapsed staffing ceremonies and ends staffing sessions that ran past " +
         "their absolute end (the shift ceiling a refresh can never move). Per-realm, idempotent.";
 
     /// <summary>Every 5 minutes — a silent terminal's session should not
@@ -38,9 +38,9 @@ public class StaffingSweepJob(
 
     public async Task Execute(IJobExecutionContext context)
     {
-        if (!settings.Features.FunctionTerminals)
+        if (!settings.Features.PositionTerminals)
         {
-            context.Result = "Skipped because function terminals are disabled";
+            context.Result = "Skipped because position terminals are disabled";
             return;
         }
 
@@ -56,11 +56,11 @@ public class StaffingSweepJob(
     /// <summary>The sweep itself, callable without a Quartz context (tests).
     /// Returns the number of expired sessions that were ended.</summary>
     public static async Task<int> SweepAsync(
-        IDocumentSession session, IFunctionStaffingRevoker staffingRevoker, CancellationToken ct)
+        IDocumentSession session, IStaffingRevoker staffingRevoker, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
 
-        session.DeleteWhere<FunctionStaffingCeremony>(c => c.ExpiresAt < now);
+        session.DeleteWhere<StaffingCeremony>(c => c.ExpiresAt < now);
         await session.SaveChangesAsync(ct);
 
         var expired = (await session.Query<StaffingSession>()

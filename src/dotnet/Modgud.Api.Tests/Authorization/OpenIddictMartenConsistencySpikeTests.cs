@@ -13,7 +13,7 @@ namespace Modgud.Api.Tests.Authorization;
 /// <summary>
 /// MG-FT-00 spike 2 — OpenIddict/Marten transaction consistency.
 ///
-/// Pins the two facts the function-terminal staffing grant (MG-FT-05) must be
+/// Pins the two facts the position-terminal staffing grant (MG-FT-05) must be
 /// designed around:
 ///
 /// 1. There is NO ambient shared transaction. Every OpenIddict store call opens
