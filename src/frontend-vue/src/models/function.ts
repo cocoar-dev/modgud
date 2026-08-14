@@ -43,6 +43,25 @@ export interface FunctionTerminalPolicyUpdateDto {
   MaximumStaffingSessionLifetimeMinutes?: number
 }
 
+// ── Terminal slots (MG-FT-03) ────────────────────────────────────────────
+
+export type TerminalStatus = 'Pending' | 'Active' | 'Disabled' | 'Revoked'
+
+export interface TerminalDto {
+  Id: string
+  FunctionId: string
+  DisplayName: string
+  Location?: string | null
+  ClientId: string
+  WebAuthnRpId: string
+  Status: TerminalStatus
+  Enrolled: boolean
+  CreatedAt: string
+  EnrolledAt?: string | null
+  DisabledAt?: string | null
+  RevokedAt?: string | null
+}
+
 // ── Activation grants (MG-FT-02) ─────────────────────────────────────────
 
 export type FunctionGrantStatus = 'Active' | 'Suspended' | 'Revoked'

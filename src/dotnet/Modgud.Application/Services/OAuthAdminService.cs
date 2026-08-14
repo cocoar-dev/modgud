@@ -27,7 +27,7 @@ namespace Modgud.Application.Services;
 /// <c>TenantedSessionFactory</c>, so every CRUD call automatically targets the
 /// active realm's database.</para>
 /// </summary>
-public class OAuthAdminService
+public partial class OAuthAdminService
 {
     private static readonly Regex ServiceAccountNamePattern =
         new("^[a-z0-9][a-z0-9._-]{1,63}$", RegexOptions.Compiled);
@@ -345,6 +345,12 @@ public class OAuthAdminService
         if (aggregate.LinkedServiceAccountId.HasValue)
             return OAuthErrors.CannotMutateServiceAccountManagedClient(aggregate.ClientId);
 
+        // MG-FT-03 — same rule for terminal-managed clients: the terminal
+        // endpoints are the single mutation path that preserves the terminal
+        // client profile end-to-end.
+        if (aggregate.ManagedTerminalEnrollmentId.HasValue)
+            return OAuthErrors.CannotMutateTerminalManagedClient(aggregate.ClientId);
+
         // Phase 2C — guard against the path "add client_credentials via PUT".
         // The UpdateDto can't carry a LinkedServiceAccountId (by design — the
         // SA-scoped endpoints own that mutation), so any attempt to add
@@ -479,6 +485,11 @@ public class OAuthAdminService
         // PUT guard in UpdateClientAsync.
         if (aggregate.LinkedServiceAccountId.HasValue)
             return OAuthErrors.CannotMutateServiceAccountManagedClient(aggregate.ClientId);
+
+        // MG-FT-03 — a terminal-managed client dies with its slot (revoke via
+        // the terminal endpoints), never through the generic admin delete.
+        if (aggregate.ManagedTerminalEnrollmentId.HasValue)
+            return OAuthErrors.CannotMutateTerminalManagedClient(aggregate.ClientId);
 
         return await DeleteClientInternalAsync(guid, aggregate, ct);
     }

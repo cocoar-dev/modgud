@@ -110,6 +110,8 @@ internal static class OAuthAdminMapping
         // rejected up front by ValidateGrantTypes. An unmapped grant returns null,
         // which ValidateGrantTypes turns into a hard error.
         "urn:ietf:params:oauth:grant-type:device_code" => OAuthPermissions.GrantTypes.DeviceCode,
+        // MG-FT — staffing grant for terminal-managed clients.
+        Modgud.Domain.FunctionTerminals.FunctionGrantTypes.StaffingSession => OAuthPermissions.GrantTypes.FunctionStaffing,
         // ADR-0010 — native (cookieless) passwordless grants. Admin-set per-client
         // opt-in surfaces here so the OAuth-client admin CRUD can grant them.
         CocoarGrantTypes.Otp => OAuthPermissions.GrantTypes.CocoarOtp,
@@ -713,6 +715,12 @@ internal static class OAuthAdminMapping
         CocoarGrantTypes.Otp,
         CocoarGrantTypes.Magic,
         CocoarGrantTypes.Passkey,
+        // MG-FT — the staffing tap authenticates a human (even though the
+        // minted token's subject is the function), so it is user-flow. Missing
+        // this entry would let a client combine client_credentials + SA link
+        // + staffing grant and silently break the one-auth-mode rule
+        // (fail-open — pinned by the feasibility check before MG-FT-00).
+        Modgud.Domain.FunctionTerminals.FunctionGrantTypes.StaffingSession,
     };
 
     /// <summary>
@@ -729,6 +737,76 @@ internal static class OAuthAdminMapping
 
         if (hasCc && !hasLink) return OAuthErrors.ClientCredentialsRequiresServiceAccountLink;
         if (hasLink && (!hasCc || hasUserFlow)) return OAuthErrors.ServiceAccountLinkRequiresClientCredentialsOnly;
+        return null;
+    }
+
+    // ─────────────────────────── MG-FT-03 — terminal-managed clients ──────
+
+    /// <summary>The terminal client profile's grant set — EXACTLY these (plan
+    /// §6.4 rule 7): enrollment via device flow, the staffing tap, and the
+    /// function-scoped refresh. Everything else (client_credentials, the web
+    /// code flow, the native login grants) is forbidden on a terminal.</summary>
+    internal static readonly IReadOnlySet<string> TerminalGrantTypes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "urn:ietf:params:oauth:grant-type:device_code",
+        "refresh_token",
+        Modgud.Domain.FunctionTerminals.FunctionGrantTypes.StaffingSession,
+    };
+
+    /// <summary>
+    /// Enforces the function-terminal client profile (plan §6.4). Not a
+    /// terminal client (both link fields empty) ⇒ valid, nothing to check.
+    /// <c>ValidateServiceAccountLinkInvariant</c> stays untouched — the two
+    /// invariants compose: a terminal client carries no SA link, so the SA
+    /// rules never fire for it.
+    /// </summary>
+    internal static Error? ValidateFunctionTerminalLinkInvariant(
+        IReadOnlyList<string> effectiveGrants,
+        string? clientType,
+        bool requireClientSecret,
+        AccessTokenType accessTokenType,
+        bool requireDpop,
+        Guid? linkedServiceAccountId,
+        Guid? linkedFunctionPrincipalId,
+        Guid? managedTerminalEnrollmentId,
+        string? webAuthnRpId)
+    {
+        var hasFunction = linkedFunctionPrincipalId.HasValue;
+        var hasTerminal = managedTerminalEnrollmentId.HasValue;
+        if (!hasFunction && !hasTerminal) return null;
+
+        if (hasFunction != hasTerminal)
+            return OAuthErrors.InvalidFunctionTerminalClient(
+                "LinkedFunctionPrincipalId and ManagedTerminalEnrollmentId must be set together.");
+
+        if (linkedServiceAccountId.HasValue)
+            return OAuthErrors.InvalidFunctionTerminalClient(
+                "a terminal-managed client cannot also be ServiceAccount-linked (one client = one auth mode).");
+
+        if (!string.Equals(clientType, OAuthClientTypes.Public, StringComparison.Ordinal))
+            return OAuthErrors.InvalidFunctionTerminalClient("the client must be public.");
+
+        if (requireClientSecret)
+            return OAuthErrors.InvalidFunctionTerminalClient(
+                "the client must not carry a client secret — the device is bound via DPoP, not a shared secret.");
+
+        if (!requireDpop)
+            return OAuthErrors.InvalidFunctionTerminalClient(
+                "DPoP is mandatory — terminal tokens must be sender-constrained to the enrolled device key.");
+
+        if (accessTokenType != AccessTokenType.Reference)
+            return OAuthErrors.InvalidFunctionTerminalClient(
+                "access tokens must be reference tokens so a revocation cuts off the terminal instantly.");
+
+        if (string.IsNullOrWhiteSpace(webAuthnRpId))
+            return OAuthErrors.InvalidFunctionTerminalClient(
+                "a WebAuthn RP ID is required — the staffing tap verifies staff passkeys against it.");
+
+        var grants = new HashSet<string>(effectiveGrants, StringComparer.Ordinal);
+        if (!grants.SetEquals(TerminalGrantTypes))
+            return OAuthErrors.InvalidFunctionTerminalClient(
+                "allowed grants are exactly device_code, refresh_token, and the function staffing grant.");
+
         return null;
     }
 

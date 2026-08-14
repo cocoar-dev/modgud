@@ -63,4 +63,16 @@ public record OAuthApplicationPropertiesChanged(Guid ApplicationId, IReadOnlyDic
 /// </summary>
 public record OAuthApplicationServiceAccountLinkChanged(Guid ApplicationId, Guid? ServiceAccountId);
 
+/// <summary>
+/// MG-FT-03 — marks a client as terminal-managed: owned by exactly one
+/// <c>TerminalEnrollment</c> and linked to exactly one FunctionPrincipal. Both
+/// ids are set together or cleared together (enforced by
+/// <c>ValidateFunctionTerminalLinkInvariant</c>). Existing streams project
+/// null — no data migration.
+/// </summary>
+public record OAuthApplicationFunctionTerminalLinkChanged(
+    Guid ApplicationId,
+    Guid? FunctionPrincipalId,
+    Guid? TerminalEnrollmentId);
+
 public record OAuthApplicationDeleted(Guid ApplicationId);

@@ -27,11 +27,35 @@ public static class FunctionTerminalsMartenSetup
 
         options.Projections.Add<FunctionActivationGrantProjection>(ProjectionLifecycle.Inline);
 
+        // Terminal slots — inline projection of the enrollment streams. The
+        // unique indexes are half of the 1:1 terminal↔client rule (the other
+        // half is the function-terminal client invariant). NOTE deliberate
+        // deviation from plan §5.2: no UseOptimisticConcurrency on the
+        // document — it is projection-owned; the "at most one active session"
+        // activation lock (MG-FT-05) will guard via the stream version
+        // (append-time optimistic concurrency), not via a direct doc write.
+        options.Schema.For<TerminalEnrollment>()
+            .Identity(x => x.Id)
+            .Index(x => x.FunctionPrincipalId)
+            .Index(x => x.ClientId, x => x.IsUnique = true)
+            .Index(x => x.OAuthApplicationId, x => x.IsUnique = true)
+            .Index(x => x.Status)
+            .Index(x => x.ActiveStaffingSessionId);
+
+        options.Projections.Add<TerminalEnrollmentProjection>(ProjectionLifecycle.Inline);
+
         // Stable event-type aliases — keeps mt_events.type rename-proof.
         options.Events.MapEventType<FunctionActivationGrantIssued>("function_activation_grant_issued");
         options.Events.MapEventType<FunctionActivationGrantSuspended>("function_activation_grant_suspended");
         options.Events.MapEventType<FunctionActivationGrantResumed>("function_activation_grant_resumed");
         options.Events.MapEventType<FunctionActivationGrantRevoked>("function_activation_grant_revoked");
+
+        options.Events.MapEventType<TerminalEnrollmentCreated>("terminal_enrollment_created");
+        options.Events.MapEventType<TerminalEnrollmentDetailsChanged>("terminal_enrollment_details_changed");
+        options.Events.MapEventType<TerminalEnrollmentEnrolled>("terminal_enrollment_enrolled");
+        options.Events.MapEventType<TerminalEnrollmentDisabled>("terminal_enrollment_disabled");
+        options.Events.MapEventType<TerminalEnrollmentReactivated>("terminal_enrollment_reactivated");
+        options.Events.MapEventType<TerminalEnrollmentRevoked>("terminal_enrollment_revoked");
 
         return options;
     }

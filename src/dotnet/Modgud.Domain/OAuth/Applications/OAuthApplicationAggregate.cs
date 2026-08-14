@@ -35,6 +35,20 @@ public partial class OAuthApplicationAggregate
     /// the service layer: one OAuth client = one auth mode.
     /// </summary>
     public Guid? LinkedServiceAccountId { get; private set; }
+
+    /// <summary>
+    /// MG-FT-03 — function this terminal-managed client mints tokens for
+    /// (<c>sub = FunctionPrincipalId</c>). Always set together with
+    /// <see cref="ManagedTerminalEnrollmentId"/>; mutually exclusive with
+    /// <see cref="LinkedServiceAccountId"/> (one client = one auth mode).
+    /// </summary>
+    public Guid? LinkedFunctionPrincipalId { get; private set; }
+
+    /// <summary>The terminal slot that owns this client (1:1). A set value
+    /// locks the client against the generic OAuth admin surface — it may only
+    /// be changed through the function-terminal API.</summary>
+    public Guid? ManagedTerminalEnrollmentId { get; private set; }
+
     public bool IsDeleted { get; private set; }
 
     public OAuthApplicationAggregate() { }
@@ -143,6 +157,14 @@ public partial class OAuthApplicationAggregate
         return e;
     }
 
+    public OAuthApplicationFunctionTerminalLinkChanged SetFunctionTerminalLink(
+        Guid? functionPrincipalId, Guid? terminalEnrollmentId)
+    {
+        var e = new OAuthApplicationFunctionTerminalLinkChanged(Id, functionPrincipalId, terminalEnrollmentId);
+        Apply(e);
+        return e;
+    }
+
     public OAuthApplicationDeleted Delete()
     {
         var e = new OAuthApplicationDeleted(Id);
@@ -187,6 +209,12 @@ public partial class OAuthApplicationAggregate
 
     public void Apply(OAuthApplicationServiceAccountLinkChanged @event)
         => LinkedServiceAccountId = @event.ServiceAccountId;
+
+    public void Apply(OAuthApplicationFunctionTerminalLinkChanged @event)
+    {
+        LinkedFunctionPrincipalId = @event.FunctionPrincipalId;
+        ManagedTerminalEnrollmentId = @event.TerminalEnrollmentId;
+    }
 
     public void Apply(OAuthApplicationDeleted @event) => IsDeleted = true;
 }
