@@ -107,15 +107,10 @@ enrollment consent the admin sees a key fingerprint (`XXXX-XXXX` — first
 fingerprint on the device so the admin can visually match device and
 consent.
 
-::: tip Reference client
-The Modgud repository ships a **terminal simulator** under
-`tools/terminal-simulator/` (dev tooling, never part of the container):
-a static page + tiny proxy that runs the full enrollment → passkey tap →
-refresh → lock cycle against a local instance, logging every request.
-Its DPoP/assertion code is the living wire-format reference for the flows
-below; the C# equivalent is the E2E suite
-(`TerminalDeviceEnrollmentTests`, `FunctionStaffingTests`).
-:::
+The E2E suite (`TerminalDeviceEnrollmentTests`,
+`FunctionStaffingTests`) is the executable wire-format reference for every
+flow below — real DPoP proofs and real ES256 WebAuthn assertions against
+the full stack.
 
 ## Terminal flows (for terminal implementers)
 
