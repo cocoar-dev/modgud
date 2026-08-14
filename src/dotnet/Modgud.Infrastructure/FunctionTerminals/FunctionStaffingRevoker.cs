@@ -1,9 +1,11 @@
 using BuildingBlocks.EventDispatcher;
 using Marten;
 using Modgud.Domain.FunctionTerminals;
+using Modgud.Domain.FunctionTerminals.Contracts.V1;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.Persistence.Tenancy;
+using Wolverine;
 
 namespace Modgud.Infrastructure.FunctionTerminals;
 
@@ -24,17 +26,20 @@ public sealed class FunctionStaffingRevoker : IFunctionStaffingRevoker
     private readonly IOAuthGrantRevoker _grantRevoker;
     private readonly ISecurityAuditLog _securityAudit;
     private readonly DataEventDispatcher _dispatcher;
+    private readonly IMessageBus _bus;
 
     public FunctionStaffingRevoker(
         ITenantSessionFactory sessionFactory,
         IOAuthGrantRevoker grantRevoker,
         ISecurityAuditLog securityAudit,
-        DataEventDispatcher dispatcher)
+        DataEventDispatcher dispatcher,
+        IMessageBus bus)
     {
         _sessionFactory = sessionFactory;
         _grantRevoker = grantRevoker;
         _securityAudit = securityAudit;
         _dispatcher = dispatcher;
+        _bus = bus;
     }
 
     public Task<int> EndSessionAsync(Guid sessionId, StaffingSessionEndReason reason, CancellationToken ct = default) =>
@@ -145,6 +150,12 @@ public sealed class FunctionStaffingRevoker : IFunctionStaffingRevoker
             TerminalId = staffing.TerminalEnrollmentId,
             FunctionId = staffing.FunctionPrincipalId,
         }, session.TenantId);
+
+        // MG-FT-09 (§17) — the consumer notification: no person data, and
+        // never the security boundary (the tokens above are already dead).
+        await _bus.PublishAsync(new FunctionStaffingSessionEnded(
+            staffing.FunctionPrincipalId, staffing.TerminalEnrollmentId,
+            staffing.Id, reason, now));
 
         return true;
     }
