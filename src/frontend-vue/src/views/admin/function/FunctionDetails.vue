@@ -8,12 +8,20 @@ import {
   CoarFormField,
   CoarCheckbox,
   CoarDivider,
+  CoarSelect,
+  CoarButton,
+  CoarTag,
+  CoarPopconfirm,
+  useToast,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
-import type { FunctionCreateDto, FunctionUpdateDto, FunctionTerminalPolicyUpdateDto } from '@/models/function'
+import { useHttpClient } from '@/composables/useHttpClient'
+import { useUserStore } from '@/stores/user.store'
+import type { FunctionCreateDto, FunctionUpdateDto, FunctionTerminalPolicyUpdateDto, FunctionGrantDto } from '@/models/function'
 
 const { t } = useI18n()
+const toast = useToast()
 
 const props = defineProps<{
   id: string
@@ -21,6 +29,7 @@ const props = defineProps<{
 }>()
 
 const store = useFunctionStore()
+const userStore = useUserStore()
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -72,6 +81,57 @@ const footerButton = computed(() => ({
   onClick: save,
 }))
 
+// ── Activation grants (MG-FT-02) — edit-mode only. Operations, not staged
+// edits (modal-contract rule 2): grants have their own lifecycle and audit
+// identity, mirroring the SA credentials tab, so issue/suspend/resume/revoke
+// act immediately with explicit buttons, apart from the primary Save.
+const grants = ref<FunctionGrantDto[]>([])
+const grantsLoading = ref(false)
+const selectedGrantUserId = ref<string | null>(null)
+const grantsHttp = computed(() => useHttpClient(`/api/function/${props.id}/grants`))
+
+const grantableUserOptions = computed(() => {
+  const liveGrantUserIds = new Set(grants.value.filter((g) => g.Status !== 'Revoked').map((g) => g.UserId))
+  return userStore.entities
+    .filter((u) => u.IsActive && !liveGrantUserIds.has(u.Id))
+    .map((u) => ({
+      value: u.Id,
+      label: `${u.Firstname ?? ''} ${u.Lastname ?? ''}`.trim() || u.Email || u.Id,
+    }))
+})
+
+async function loadGrants() {
+  if (isCreate.value) return
+  grantsLoading.value = true
+  try {
+    grants.value = await grantsHttp.value.get<FunctionGrantDto[]>()
+  } finally {
+    grantsLoading.value = false
+  }
+}
+
+async function issueGrant() {
+  if (!selectedGrantUserId.value) return
+  try {
+    await grantsHttp.value.post({ UserId: selectedGrantUserId.value })
+    selectedGrantUserId.value = null
+    await loadGrants()
+  } catch (e: unknown) {
+    const err = e as { data?: { Message?: string }; message?: string }
+    toast.error(err?.data?.Message ?? err?.message ?? String(e))
+  }
+}
+
+async function transitionGrant(grant: FunctionGrantDto, action: 'suspend' | 'resume' | 'revoke') {
+  try {
+    await grantsHttp.value.addPath(grant.Id, action).post()
+    await loadGrants()
+  } catch (e: unknown) {
+    const err = e as { data?: { Message?: string }; message?: string }
+    toast.error(err?.data?.Message ?? err?.message ?? String(e))
+  }
+}
+
 onMounted(async () => {
   if (!isCreate.value) {
     loading.value = true
@@ -86,6 +146,10 @@ onMounted(async () => {
         MaximumStaffingSessionLifetimeMinutes: fn.TerminalPolicy.MaximumStaffingSessionLifetimeMinutes,
       }
       original.value = { ...form.value }
+      // Grants + the user list for the picker load alongside — neither may
+      // block the form fields from painting.
+      void loadGrants()
+      void userStore.initialize()
     } catch (e: unknown) {
       const err = e as { data?: { Message?: string }; message?: string }
       error.value = err?.data?.Message ?? err?.message ?? String(e)
@@ -215,6 +279,71 @@ async function save() {
         </section>
       </div>
 
+      <!-- Grants exist only after create (rule 5: a section that cannot exist
+           yet is absent). Actions are immediate operations, not staged edits. -->
+      <section v-if="!isCreate" class="form-section">
+        <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+          <h3 class="section-divider__title">{{ t('admin.functionGrants.sectionTitle', {}, 'Authorized users') }}</h3>
+        </CoarDivider>
+
+        <div class="mb-3 flex items-center gap-2">
+          <CoarSelect
+            v-model="selectedGrantUserId"
+            :options="grantableUserOptions"
+            searchable
+            class="min-w-0 flex-1"
+            :placeholder="t('admin.functionGrants.pickUser', {}, 'Select a user…')" />
+          <CoarButton size="s" icon-start="plus" class="shrink-0" :disabled="!selectedGrantUserId" @click="issueGrant">
+            {{ t('admin.functionGrants.issueButton', {}, 'Grant') }}
+          </CoarButton>
+        </div>
+
+        <div v-if="grantsLoading" class="text-xs text-surface-500">
+          {{ t('common.loading', {}, 'Loading...') }}
+        </div>
+        <div v-else-if="grants.length === 0" class="grant-empty">
+          {{ t('admin.functionGrants.empty', {}, 'No user is authorized to staff this function yet.') }}
+        </div>
+        <ul v-else class="flex flex-col gap-2">
+          <li v-for="grant in grants" :key="grant.Id"
+              class="flex flex-wrap items-center gap-2 rounded border border-surface-200 p-3">
+            <div class="flex min-w-0 flex-1 flex-col">
+              <span class="truncate font-medium">{{ grant.UserDisplayName || grant.UserAccountName || grant.UserId }}</span>
+              <span v-if="grant.UserAccountName" class="truncate text-xs text-surface-500">{{ grant.UserAccountName }}</span>
+            </div>
+            <CoarTag v-if="!grant.UserHasPasskey && grant.Status !== 'Revoked'" variant="warning">
+              {{ t('admin.functionGrants.noPasskey', {}, 'No passkey') }}
+            </CoarTag>
+            <CoarTag :variant="grant.Status === 'Active' ? 'success' : grant.Status === 'Suspended' ? 'warning' : 'neutral'">
+              {{ grant.Status === 'Active'
+                ? t('admin.functionGrants.statusActive', {}, 'Active')
+                : grant.Status === 'Suspended'
+                  ? t('admin.functionGrants.statusSuspended', {}, 'Suspended')
+                  : t('admin.functionGrants.statusRevoked', {}, 'Revoked') }}
+            </CoarTag>
+            <div v-if="grant.Status !== 'Revoked'" class="flex items-center gap-1">
+              <CoarButton v-if="grant.Status === 'Active'" size="s" variant="ghost" icon-start="pause"
+                @click="transitionGrant(grant, 'suspend')">
+                {{ t('admin.functionGrants.suspendButton', {}, 'Suspend') }}
+              </CoarButton>
+              <CoarButton v-else size="s" variant="ghost" icon-start="play"
+                @click="transitionGrant(grant, 'resume')">
+                {{ t('admin.functionGrants.resumeButton', {}, 'Resume') }}
+              </CoarButton>
+              <CoarPopconfirm
+                :title="t('admin.functionGrants.revokeTitle', {}, 'Revoke grant?')"
+                :message="t('admin.functionGrants.revokeConfirm', {}, 'Revoking is permanent — re-authorizing this user later creates a new grant with a fresh audit trail.')"
+                confirm-variant="danger"
+                @confirmed="transitionGrant(grant, 'revoke')">
+                <CoarButton size="s" variant="ghost" icon-start="trash-2">
+                  {{ t('admin.functionGrants.revokeButton', {}, 'Revoke') }}
+                </CoarButton>
+              </CoarPopconfirm>
+            </div>
+          </li>
+        </ul>
+      </section>
+
       <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
     </div>
     <div v-else class="flex flex-1 items-center justify-center p-8">
@@ -241,5 +370,14 @@ async function save() {
   color: var(--coar-text-neutral-primary, #1f2937);
   font-size: 0.875rem;
   font-weight: 600;
+}
+
+.grant-empty {
+  padding: 1rem;
+  border: 1px dashed var(--coar-border-neutral-secondary, #d1d5db);
+  border-radius: 0.25rem;
+  color: var(--coar-text-neutral-secondary, #6b7280);
+  font-size: 0.875rem;
+  text-align: center;
 }
 </style>

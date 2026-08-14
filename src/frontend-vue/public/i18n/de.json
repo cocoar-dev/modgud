@@ -476,6 +476,21 @@
       "lifetimePositive": "Laufzeiten müssen positiv sein.",
       "lifetimeCeiling": "Die Session-Laufzeit darf das absolute Maximum nicht überschreiten."
     },
+    "functionGrants": {
+      "sectionTitle": "Berechtigte Benutzer",
+      "pickUser": "Benutzer auswählen…",
+      "issueButton": "Berechtigen",
+      "empty": "Noch kein Benutzer darf diese Funktion besetzen.",
+      "noPasskey": "Kein Passkey",
+      "statusActive": "Aktiv",
+      "statusSuspended": "Ausgesetzt",
+      "statusRevoked": "Widerrufen",
+      "suspendButton": "Aussetzen",
+      "resumeButton": "Fortsetzen",
+      "revokeButton": "Widerrufen",
+      "revokeTitle": "Berechtigung widerrufen?",
+      "revokeConfirm": "Der Widerruf ist endgültig — eine spätere erneute Berechtigung erzeugt einen neuen Eintrag mit eigener Audit-Spur."
+    },
     "serviceAccountCredentials": {
       "sectionTitle": "OAuth-Clients",
       "sectionHintShort": "Diesem Service Account zugeordnete OAuth-Clients.",

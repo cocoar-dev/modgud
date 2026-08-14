@@ -43,6 +43,7 @@ using Modgud.Domain.Common;
 using AuthRateLimitPolicy = Modgud.Domain.Realms.AuthRateLimitPolicy;
 using Modgud.Authentication.Domain;
 using Modgud.Infrastructure;
+using Modgud.Infrastructure.FunctionTerminals;
 using Modgud.Infrastructure.OAuth;
 using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.Scheduling;
@@ -757,6 +758,7 @@ try
         {
             options.UseModgudAuthentication();
             options.UseModgudOAuth();
+            options.UseModgudFunctionTerminals();
         },
         // The behavioural integration suite owns projection progress explicitly:
         // each consistency boundary runs a fresh interactive daemon. Running the
@@ -1332,6 +1334,7 @@ try
     app.MapUsersEndpoints("api");
     Modgud.Api.Features.ServiceAccounts.ServiceAccountsEndpoints.MapServiceAccountsEndpoints(app, "api");
     Modgud.Api.Features.Functions.FunctionsEndpoints.MapFunctionsEndpoints(app, "api");
+    Modgud.Api.Features.Functions.FunctionGrantsEndpoints.MapFunctionGrantsEndpoints(app, "api");
     app.MapPrincipalEndpoints("api");
     app.MapRolesEndpoints("api");
     app.MapGroupEndpoints("api");
