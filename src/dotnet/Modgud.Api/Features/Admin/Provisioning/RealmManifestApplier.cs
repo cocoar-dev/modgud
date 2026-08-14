@@ -709,6 +709,7 @@ public sealed class RealmManifestApplier(
         var userHandler = new DeleteUsersHandler(
             session,
             sp.GetRequiredService<IUserAccessRevoker>(),
+            sp.GetRequiredService<Modgud.Infrastructure.FunctionTerminals.IFunctionStaffingRevoker>(),
             sp.GetRequiredService<IRealmSettingsService>(),
             sp.GetRequiredService<TimeProvider>());
         foreach (var p in await session.Query<Person>().Where(x => !x.IsDeleted).ToListAsync(ct))

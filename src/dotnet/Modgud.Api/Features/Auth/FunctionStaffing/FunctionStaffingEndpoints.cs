@@ -1,3 +1,4 @@
+using BuildingBlocks.Helper;
 using Fido2NetLib;
 using Fido2NetLib.Objects;
 using Marten;
@@ -5,9 +6,11 @@ using Microsoft.AspNetCore.Authorization;
 using Modgud.Api.Features.Auth.FunctionTerminals;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
+using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Principals;
 using Modgud.Domain.FunctionTerminals;
 using Modgud.Domain.OAuth.Applications;
+using Modgud.Infrastructure.FunctionTerminals;
 using Modgud.Infrastructure.OpenIddict.Dpop;
 using OpenIddict.Abstractions;
 using OpenIddict.Validation.AspNetCore;
@@ -44,7 +47,138 @@ public static class FunctionStaffingEndpoints
                 AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
             });
 
+        // §15.2 — the terminal-facing local lock. Authenticated by either
+        // function token of the SAME terminal (staffing token of the active
+        // session, or the enrollment token so locking works with an expired
+        // access token); DPoP-proofed with the slot's enrolled key. Path note:
+        // under /connect like the other terminal-control surfaces (the plan
+        // sketch shows it root-level).
+        application.MapPost("/connect/function-terminal/{terminalId:guid}/lock", LockAsync)
+            .WithName("FunctionStaffing_Lock")
+            .WithTags("Function Staffing")
+            .DisableAntiforgery()
+            .RequireAuthorization(new AuthorizeAttribute
+            {
+                AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+            });
+
+        // §15.3 — admin surface (cookie-auth like every /api endpoint).
+        var admin = application.MapGroup("/api")
+            .WithTags("Function Staffing")
+            .RequireAuthorization();
+
+        admin.MapGet("function/{functionId}/staffing-sessions", ListSessionsAsync)
+            .WithName("V2_StaffingSessions_List")
+            .RequiresPermission("function-staffing-session:read");
+
+        admin.MapPost("staffing-session/{sessionId}/force-lock", (
+                ShortGuid sessionId, AppSettings settings, IFunctionStaffingRevoker revoker, CancellationToken ct) =>
+                ForceLockAsync(settings, () => revoker.EndSessionAsync(
+                    sessionId.Guid, StaffingSessionEndReason.RemoteLock, ct)))
+            .WithName("V2_StaffingSessions_ForceLock")
+            .RequiresPermission("function-staffing-session:force-lock");
+
+        admin.MapPost("function-terminal/{terminalId}/force-lock", (
+                ShortGuid terminalId, AppSettings settings, IFunctionStaffingRevoker revoker, CancellationToken ct) =>
+                ForceLockAsync(settings, () => revoker.EndAllForTerminalAsync(
+                    terminalId.Guid, StaffingSessionEndReason.RemoteLock, ct)))
+            .WithName("V2_Terminals_ForceLock")
+            .RequiresPermission("function-staffing-session:force-lock");
+
         return application;
+    }
+
+    private static async Task<IResult> ForceLockAsync(AppSettings settings, Func<Task<int>> end)
+    {
+        if (!settings.Features.FunctionTerminals) return Results.NotFound();
+        var ended = await end();
+        // Idempotent — force-locking an idle terminal / ended session is a
+        // successful no-op, not an error.
+        return Results.Ok(new { Ended = ended });
+    }
+
+    private static async Task<IResult> ListSessionsAsync(
+        ShortGuid functionId,
+        AppSettings settings,
+        IDocumentSession session,
+        CancellationToken ct)
+    {
+        if (!settings.Features.FunctionTerminals) return Results.NotFound();
+        if (await session.LoadAsync<FunctionPrincipal>(functionId.Guid, ct) is not { IsDeleted: false })
+            return Results.NotFound();
+
+        var sessions = await session.Query<StaffingSession>()
+            .Where(s => s.FunctionPrincipalId == functionId.Guid)
+            .OrderByDescending(s => s.StartedAt)
+            .Take(100)
+            .ToListAsync(ct);
+
+        // ActivatedBy* stays admin-only security metadata (plan §4.5) — it is
+        // shown HERE for audit purposes and never travels in tokens.
+        return Results.Ok(sessions.Select(s => new
+        {
+            Id = new ShortGuid(s.Id).ToString(),
+            TerminalId = new ShortGuid(s.TerminalEnrollmentId).ToString(),
+            ActivatedByUserId = new ShortGuid(s.ActivatedByUserId).ToString(),
+            s.Status,
+            s.StartedAt,
+            s.AbsoluteExpiresAt,
+            s.EndedAt,
+            s.EndReason,
+        }));
+    }
+
+    private static async Task<IResult> LockAsync(
+        Guid terminalId,
+        HttpContext context,
+        AppSettings settings,
+        IDocumentSession session,
+        IFunctionStaffingRevoker revoker,
+        CancellationToken ct)
+    {
+        if (!settings.Features.FunctionTerminals) return Results.NotFound();
+
+        var principal = context.User;
+        var tokenUse = principal.GetClaim(FunctionTokenClaimTypes.TokenUse);
+        var isStaffing = string.Equals(tokenUse, FunctionTokenUses.StaffingSession, StringComparison.Ordinal);
+        var isEnrollment = string.Equals(tokenUse, FunctionTokenUses.TerminalEnrollment, StringComparison.Ordinal);
+        if (!isStaffing && !isEnrollment)
+            return Forbidden("Staffing.InvalidToken", "A function terminal token is required.");
+
+        // Own terminal only — the token's terminal claim must be the route's.
+        if (!Guid.TryParse(principal.GetClaim(FunctionTokenClaimTypes.TerminalId), out var tokenTerminalId) ||
+            tokenTerminalId != terminalId)
+        {
+            return Forbidden("Staffing.ForeignTerminal", "The token does not belong to this terminal.");
+        }
+
+        var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
+        if (terminal is null || string.IsNullOrEmpty(terminal.DpopJkt))
+            return Forbidden("Staffing.InvalidToken", "A function terminal token is required.");
+
+        // Same device key — a lock from another machine is not a local lock.
+        var proofHeader = context.Request.Headers[DpopConstants.HeaderName];
+        if (proofHeader.Count != 1)
+            return Forbidden("Staffing.DpopRequired", "A DPoP proof is required.");
+        var htu = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}";
+        var proof = DpopProofValidator.Validate(
+            proofHeader.ToString(), context.Request.Method, htu, DateTimeOffset.UtcNow);
+        if (!proof.IsValid || !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
+            return Forbidden("Staffing.DpopMismatch", "The DPoP proof key is not this terminal's enrolled key.");
+
+        // A staffing token may only lock ITS OWN (still-active) session — a
+        // superseded shift's token cannot kill the successor.
+        if (isStaffing)
+        {
+            if (!Guid.TryParse(principal.GetClaim(FunctionTokenClaimTypes.StaffingSessionId), out var tokenSessionId) ||
+                terminal.ActiveStaffingSessionId != tokenSessionId)
+            {
+                return Forbidden("Staffing.SessionSuperseded", "The staffing session is no longer this terminal's active session.");
+            }
+        }
+
+        var ended = await revoker.EndAllForTerminalAsync(terminalId, StaffingSessionEndReason.LocalLock, ct);
+        return Results.Ok(new { Ended = ended });
     }
 
     private static async Task<IResult> BeginAsync(

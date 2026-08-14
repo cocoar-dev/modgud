@@ -303,9 +303,18 @@ public class FunctionStaffingTests : IntegrationTestBase
         var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
         tokens.Dispose();
 
-        var revoke = await Client.PostAsync(
-            $"/api/function/{new ShortGuid(setup.FunctionId)}/grants/{setup.GrantId}/revoke", null, ct);
-        Assert.True(revoke.IsSuccessStatusCode, await revoke.Content.ReadAsStringAsync(ct));
+        // Suspend the grant WITHOUT the HTTP endpoint: the admin surface now
+        // cascades the session end (MG-FT-07, its own test), which would kill
+        // the refresh token before the §14.3 grant check ever runs. Appending
+        // the event directly leaves the session alive — the state a racing
+        // suspend produces — so the refresh-time check is what refuses.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var docs = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            docs.Events.Append(new ShortGuid(setup.GrantId).Guid, new FunctionActivationGrantSuspended(
+                new ShortGuid(setup.GrantId).Guid, Guid.NewGuid(), DateTimeOffset.UtcNow));
+            await docs.SaveChangesAsync(ct);
+        }
 
         var refresh = await PostTokenAsync(RefreshForm(setup.ClientId, refreshToken), setup.DeviceKey);
         Assert.False(refresh.IsSuccessStatusCode);
@@ -338,6 +347,214 @@ public class FunctionStaffingTests : IntegrationTestBase
         ["refresh_token"] = refreshToken,
         ["client_id"] = clientId,
     };
+
+    // ─── MG-FT-07: locks + revocation cascades (§15) ──────────────────────
+
+    [Fact]
+    public async Task A_local_lock_ends_the_active_session()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-lock", ct);
+
+        var tokens = await TapAsync(setup, ct);
+        var staffingAccessToken = tokens.RootElement.GetProperty("access_token").GetString()!;
+        tokens.Dispose();
+
+        var lockResp = await PostLockAsync(setup.TerminalId, staffingAccessToken, setup.DeviceKey);
+        var lockBody = await lockResp.Content.ReadAsStringAsync(ct);
+        Assert.True(lockResp.IsSuccessStatusCode, $"lock failed ({(int)lockResp.StatusCode}): {lockBody}");
+        Assert.Equal(1, JsonDocument.Parse(lockBody).RootElement.GetProperty("Ended").GetInt32());
+
+        await AssertSessionEndedAsync(setup.TerminalId, StaffingSessionEndReason.LocalLock, ct);
+    }
+
+    [Fact]
+    public async Task The_enrollment_token_locks_too_but_a_wrong_key_cannot()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-lock-enroll", ct);
+        (await TapAsync(setup, ct)).Dispose();
+
+        // Wrong device key → refused, session survives.
+        using var attackerKey = new DpopProofBuilder();
+        var attack = await PostLockAsync(setup.TerminalId, setup.EnrollmentAccessToken, attackerKey);
+        Assert.Equal(HttpStatusCode.Forbidden, attack.StatusCode);
+
+        // The enrollment token + enrolled key lock even with the staffing
+        // access token expired/lost (§15.2 rationale).
+        var lockResp = await PostLockAsync(setup.TerminalId, setup.EnrollmentAccessToken, setup.DeviceKey);
+        Assert.True(lockResp.IsSuccessStatusCode, await lockResp.Content.ReadAsStringAsync(ct));
+        await AssertSessionEndedAsync(setup.TerminalId, StaffingSessionEndReason.LocalLock, ct);
+    }
+
+    [Fact]
+    public async Task An_admin_force_lock_ends_the_session_idempotently()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-forcelock", ct);
+        (await TapAsync(setup, ct)).Dispose();
+
+        Guid sessionId;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            sessionId = (await session.Query<StaffingSession>()
+                .Where(s => s.TerminalEnrollmentId == setup.TerminalId).ToListAsync(ct)).Single().Id;
+        }
+
+        var force = await Client.PostAsync($"/api/staffing-session/{new ShortGuid(sessionId)}/force-lock", null, ct);
+        var forceBody = await force.Content.ReadAsStringAsync(ct);
+        Assert.True(force.IsSuccessStatusCode, $"force-lock failed ({(int)force.StatusCode}): {forceBody}");
+        Assert.Equal(1, JsonDocument.Parse(forceBody).RootElement.GetProperty("Ended").GetInt32());
+        await AssertSessionEndedAsync(setup.TerminalId, StaffingSessionEndReason.RemoteLock, ct);
+
+        // Idempotent: both admin lock shapes are successful no-ops now.
+        var again = await Client.PostAsync($"/api/staffing-session/{new ShortGuid(sessionId)}/force-lock", null, ct);
+        Assert.Equal(0, JsonDocument.Parse(await again.Content.ReadAsStringAsync(ct)).RootElement.GetProperty("Ended").GetInt32());
+        var terminalLock = await Client.PostAsync($"/api/function-terminal/{new ShortGuid(setup.TerminalId)}/force-lock", null, ct);
+        Assert.Equal(0, JsonDocument.Parse(await terminalLock.Content.ReadAsStringAsync(ct)).RootElement.GetProperty("Ended").GetInt32());
+    }
+
+    [Fact]
+    public async Task A_zero_role_user_cannot_force_lock_or_list_sessions()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Zero", lastname: "Lock", acronym: "ZL", email: "zerolock@test.com", password: "TestPass1234");
+        var zero = await CreateAuthenticatedClientAsync("zl", "TestPass1234");
+        var anyId = new ShortGuid(Guid.NewGuid()).ToString();
+
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await zero.PostAsync($"/api/staffing-session/{anyId}/force-lock", null, ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await zero.PostAsync($"/api/function-terminal/{anyId}/force-lock", null, ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await zero.GetAsync($"/api/function/{anyId}/staffing-sessions", ct)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Revoking_the_grant_ends_the_running_session()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-cascade-grant", ct);
+        (await TapAsync(setup, ct)).Dispose();
+
+        var revoke = await Client.PostAsync(
+            $"/api/function/{new ShortGuid(setup.FunctionId)}/grants/{setup.GrantId}/revoke", null, ct);
+        Assert.True(revoke.IsSuccessStatusCode, await revoke.Content.ReadAsStringAsync(ct));
+
+        await AssertSessionEndedAsync(setup.TerminalId, StaffingSessionEndReason.GrantRevoked, ct);
+    }
+
+    [Fact]
+    public async Task Disabling_the_terminal_ends_the_running_session()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-cascade-term", ct);
+        (await TapAsync(setup, ct)).Dispose();
+
+        var disable = await Client.PostAsync(
+            $"/api/function/{new ShortGuid(setup.FunctionId)}/terminals/{new ShortGuid(setup.TerminalId)}/disable", null, ct);
+        Assert.True(disable.IsSuccessStatusCode, await disable.Content.ReadAsStringAsync(ct));
+
+        await AssertSessionEndedAsync(setup.TerminalId, StaffingSessionEndReason.TerminalDisabled, ct);
+    }
+
+    [Fact]
+    public async Task Deactivating_the_function_ends_the_running_session()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-cascade-fn", ct);
+        (await TapAsync(setup, ct)).Dispose();
+
+        var update = await Client.PutAsJsonAsync($"/api/function/{new ShortGuid(setup.FunctionId)}",
+            new { IsActive = false }, JsonOptions, ct);
+        Assert.True(update.IsSuccessStatusCode, await update.Content.ReadAsStringAsync(ct));
+
+        await AssertSessionEndedAsync(setup.TerminalId, StaffingSessionEndReason.FunctionDisabled, ct);
+    }
+
+    [Fact]
+    public async Task Binning_the_user_ends_their_session()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-cascade-user", ct);
+        (await TapAsync(setup, ct)).Dispose();
+
+        var delete = await Client.DeleteAsync($"/api/user/{new ShortGuid(setup.UserId)}", ct);
+        Assert.True(delete.IsSuccessStatusCode, await delete.Content.ReadAsStringAsync(ct));
+
+        await AssertSessionEndedAsync(setup.TerminalId, StaffingSessionEndReason.UserDisabled, ct);
+    }
+
+    [Fact]
+    public async Task The_janitor_ends_expired_sessions_and_prunes_lapsed_ceremonies()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-janitor", ct);
+        (await TapAsync(setup, ct)).Dispose();
+
+        // A lapsed ceremony + a session past its absolute end.
+        var begin = await BeginStaffingAsync(setup, ct);
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var docs = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            var ceremony = await docs.LoadAsync<FunctionStaffingCeremony>(Guid.Parse(begin.CeremonyId), ct);
+            ceremony!.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+            docs.Store(ceremony);
+            var staffing = (await docs.Query<StaffingSession>()
+                .Where(s => s.TerminalEnrollmentId == setup.TerminalId).ToListAsync(ct)).Single();
+            staffing.AbsoluteExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+            docs.Store(staffing);
+            await docs.SaveChangesAsync(ct);
+        }
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var docs = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            var revoker = scope.ServiceProvider.GetRequiredService<Modgud.Infrastructure.FunctionTerminals.IFunctionStaffingRevoker>();
+            var ended = await Modgud.Api.Features.Admin.Jobs.StaffingSweepJob.SweepAsync(docs, revoker, ct);
+            Assert.Equal(1, ended);
+        }
+
+        await AssertSessionEndedAsync(setup.TerminalId, StaffingSessionEndReason.Expired, ct);
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            Assert.Null(await session.LoadAsync<FunctionStaffingCeremony>(Guid.Parse(begin.CeremonyId), ct));
+        }
+    }
+
+    private async Task<HttpResponseMessage> PostLockAsync(Guid terminalId, string accessToken, DpopProofBuilder key)
+    {
+        var url = $"/connect/function-terminal/{terminalId}/lock";
+        var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Headers.Add(DpopConstants.HeaderName,
+            key.CreateProof("POST", $"http://localhost{url}", DateTimeOffset.UtcNow));
+        return await Factory.CreateClient().SendAsync(request, TestContext.Current.CancellationToken);
+    }
+
+    private async Task AssertSessionEndedAsync(Guid terminalId, StaffingSessionEndReason expectedReason, CancellationToken ct)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+        var staffing = (await session.Query<StaffingSession>()
+            .Where(s => s.TerminalEnrollmentId == terminalId).ToListAsync(ct)).Single();
+        Assert.Equal(StaffingSessionStatus.Ended, staffing.Status);
+        Assert.Equal(expectedReason, staffing.EndReason);
+        var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
+        Assert.Null(terminal!.ActiveStaffingSessionId);
+    }
 
     // ─── scenario setup ───────────────────────────────────────────────────
 

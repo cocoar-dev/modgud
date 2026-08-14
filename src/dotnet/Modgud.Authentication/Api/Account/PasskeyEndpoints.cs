@@ -218,7 +218,8 @@ public static class PasskeyEndpoints
             HttpContext context,
             UserManager<ApplicationUser> userManager,
             IAuthSettings appSettings,
-            IDocumentSession session) =>
+            IDocumentSession session,
+            Modgud.Infrastructure.FunctionTerminals.IFunctionStaffingRevoker staffingRevoker) =>
         {
             var userId = context.GetUserId();
             if (userId is null) return Results.Unauthorized();
@@ -250,6 +251,11 @@ public static class PasskeyEndpoints
 
             session.Delete(credential);
             await session.SaveChangesAsync();
+
+            // MG-FT-07 §15.4 — staffing sessions opened with THIS credential
+            // end with it: the shift's trust anchor (the tap) is gone.
+            await staffingRevoker.EndAllForPasskeyAsync(
+                credential.Id, Modgud.Domain.FunctionTerminals.StaffingSessionEndReason.PasskeyDeleted);
 
             return Results.Ok(new { SecureSetupRequired = secureSetupRequired });
         })

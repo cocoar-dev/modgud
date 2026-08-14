@@ -747,6 +747,10 @@ try
         Modgud.Infrastructure.OpenIddict.OpenIddictGrantRevoker>();
     builder.Services.AddScoped<Modgud.Authentication.Sessions.IUserAccessRevoker,
         Modgud.Authentication.Sessions.UserAccessRevoker>();
+    // MG-FT-07 — the staffing-session kill switch: locks + every revocation
+    // cascade (user/passkey/grant/terminal/function) end sessions through it.
+    builder.Services.AddScoped<Modgud.Infrastructure.FunctionTerminals.IFunctionStaffingRevoker,
+        Modgud.Infrastructure.FunctionTerminals.FunctionStaffingRevoker>();
 
     // Infrastructure (Marten + repositories + query services + event dispatcher)
     // Authentication Marten setup (documents + events + projections) is wired via
@@ -949,6 +953,11 @@ try
         // can't construct in generated code. DeleteUsersCommand injects it.
         opts.CodeGeneration.AlwaysUseServiceLocationFor<Modgud.Authentication.Sessions.IUserAccessRevoker>();
 
+        // MG-FT-07 staffing-session kill switch — same story: it composes
+        // IOAuthGrantRevoker, whose chain reaches the same opaque OpenIddict
+        // manager factories. DeleteUsersCommand injects it for the user cascade.
+        opts.CodeGeneration.AlwaysUseServiceLocationFor<Modgud.Infrastructure.FunctionTerminals.IFunctionStaffingRevoker>();
+
         // Auto-register Event Forwarding subscriptions for all ReferenceSyncHandler<TEvent> implementations
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
     });
@@ -975,6 +984,11 @@ try
         name: Modgud.Api.Features.Admin.Jobs.DcrGcJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.DcrGcJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.DcrGcJob.Description);
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.StaffingSweepJob>(
+        key: Modgud.Api.Features.Admin.Jobs.StaffingSweepJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.StaffingSweepJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.StaffingSweepJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.StaffingSweepJob.Description);
     builder.Services.AddRealmJob<Modgud.Api.Features.Inbox.InboxRetentionJob>(
         key: Modgud.Api.Features.Inbox.InboxRetentionJob.Key,
         name: Modgud.Api.Features.Inbox.InboxRetentionJob.Name,

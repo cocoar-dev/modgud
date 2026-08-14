@@ -6,6 +6,7 @@ using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Principals;
 using Modgud.Domain.FunctionTerminals;
+using Modgud.Infrastructure.FunctionTerminals;
 using Marten;
 
 namespace Modgud.Api.Features.Functions;
@@ -125,22 +126,25 @@ public static class FunctionGrantsEndpoints
             .RequiresPermission("function:write");
 
         group.MapPost("{grantId}/suspend", (ShortGuid functionId, ShortGuid grantId, AppSettings settings,
-                IDocumentSession session, DataEventDispatcher dispatcher, HttpContext httpContext, CancellationToken ct) =>
-            TransitionAsync(functionId.Guid, grantId.Guid, settings, session, dispatcher, httpContext, ct,
+                IDocumentSession session, DataEventDispatcher dispatcher, IFunctionStaffingRevoker staffingRevoker,
+                HttpContext httpContext, CancellationToken ct) =>
+            TransitionAsync(functionId.Guid, grantId.Guid, settings, session, dispatcher, staffingRevoker, httpContext, ct,
                 targetStatus: FunctionActivationGrantStatus.Suspended))
             .WithName("V2_FunctionGrants_Suspend")
             .RequiresPermission("function:write");
 
         group.MapPost("{grantId}/resume", (ShortGuid functionId, ShortGuid grantId, AppSettings settings,
-                IDocumentSession session, DataEventDispatcher dispatcher, HttpContext httpContext, CancellationToken ct) =>
-            TransitionAsync(functionId.Guid, grantId.Guid, settings, session, dispatcher, httpContext, ct,
+                IDocumentSession session, DataEventDispatcher dispatcher, IFunctionStaffingRevoker staffingRevoker,
+                HttpContext httpContext, CancellationToken ct) =>
+            TransitionAsync(functionId.Guid, grantId.Guid, settings, session, dispatcher, staffingRevoker, httpContext, ct,
                 targetStatus: FunctionActivationGrantStatus.Active))
             .WithName("V2_FunctionGrants_Resume")
             .RequiresPermission("function:write");
 
         group.MapPost("{grantId}/revoke", (ShortGuid functionId, ShortGuid grantId, AppSettings settings,
-                IDocumentSession session, DataEventDispatcher dispatcher, HttpContext httpContext, CancellationToken ct) =>
-            TransitionAsync(functionId.Guid, grantId.Guid, settings, session, dispatcher, httpContext, ct,
+                IDocumentSession session, DataEventDispatcher dispatcher, IFunctionStaffingRevoker staffingRevoker,
+                HttpContext httpContext, CancellationToken ct) =>
+            TransitionAsync(functionId.Guid, grantId.Guid, settings, session, dispatcher, staffingRevoker, httpContext, ct,
                 targetStatus: FunctionActivationGrantStatus.Revoked))
             .WithName("V2_FunctionGrants_Revoke")
             .RequiresPermission("function:write");
@@ -156,7 +160,8 @@ public static class FunctionGrantsEndpoints
     /// </summary>
     private static async Task<IResult> TransitionAsync(
         Guid functionId, Guid grantId, AppSettings settings, IDocumentSession session,
-        DataEventDispatcher dispatcher, HttpContext httpContext, CancellationToken ct,
+        DataEventDispatcher dispatcher, IFunctionStaffingRevoker staffingRevoker,
+        HttpContext httpContext, CancellationToken ct,
         FunctionActivationGrantStatus targetStatus)
     {
         if (await LoadFunctionAsync(settings, session, functionId, ct) is not { } _)
@@ -183,6 +188,17 @@ public static class FunctionGrantsEndpoints
         };
         session.Events.Append(grant.Id, @event);
         await session.SaveChangesAsync(ct);
+
+        // MG-FT-07 §15.4 — a de-authorized user's running shifts end NOW, not
+        // at the next refresh. The revoker runs on its own session, after this
+        // endpoint's commit.
+        if (targetStatus is FunctionActivationGrantStatus.Suspended or FunctionActivationGrantStatus.Revoked)
+        {
+            await staffingRevoker.EndAllForGrantAsync(grant.Id,
+                targetStatus == FunctionActivationGrantStatus.Suspended
+                    ? StaffingSessionEndReason.GrantSuspended
+                    : StaffingSessionEndReason.GrantRevoked, ct);
+        }
 
         // Reflect the transition without re-loading: the inline projection has
         // already applied the same change to the document.
