@@ -82,7 +82,7 @@ public class FunctionStaffingTests : IntegrationTestBase
 
         // Event-sourced: session stream = started; terminal stream gained the
         // activation event (created + enrolled + activated).
-        Assert.Equal(1, (await session.Events.FetchStreamAsync(staffing.Id, token: ct)).Count);
+        Assert.Single(await session.Events.FetchStreamAsync(staffing.Id, token: ct));
         Assert.Equal(3, (await session.Events.FetchStreamAsync(setup.TerminalId, token: ct)).Count);
 
         // The ceremony is single-use — a replay of the same ceremony_id fails.
@@ -212,6 +212,132 @@ public class FunctionStaffingTests : IntegrationTestBase
             SetFeatureFlag(true);
         }
     }
+
+    // ─── MG-FT-06: the staffing refresh (§14) ─────────────────────────────
+
+    [Fact]
+    public async Task The_staffing_chain_refreshes_without_a_new_tap()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-refresh", ct);
+
+        var tokens = await TapAsync(setup, ct);
+        var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
+        tokens.Dispose();
+
+        var refresh = await PostTokenAsync(RefreshForm(setup.ClientId, refreshToken), setup.DeviceKey);
+        var body = await refresh.Content.ReadAsStringAsync(ct);
+        Assert.True(refresh.IsSuccessStatusCode, $"staffing refresh failed ({(int)refresh.StatusCode}): {body}");
+        using var refreshed = JsonDocument.Parse(body);
+        Assert.Equal("DPoP", refreshed.RootElement.GetProperty("token_type").GetString());
+        Assert.False(string.IsNullOrEmpty(refreshed.RootElement.GetProperty("refresh_token").GetString()));
+
+        // No new session, no new ceremony — the shift just continues.
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+        var staffing = (await session.Query<StaffingSession>()
+            .Where(s => s.TerminalEnrollmentId == setup.TerminalId).ToListAsync(ct)).Single();
+        Assert.Equal(StaffingSessionStatus.Active, staffing.Status);
+        var terminal = await session.LoadAsync<TerminalEnrollment>(setup.TerminalId, ct);
+        Assert.Equal(staffing.Id, terminal!.ActiveStaffingSessionId);
+    }
+
+    [Fact]
+    public async Task An_expired_session_refresh_demands_a_new_tap()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-expired", ct);
+
+        var tokens = await TapAsync(setup, ct);
+        var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
+        tokens.Dispose();
+
+        // Push the session past its absolute end (the doc is projection-owned;
+        // for the test a direct store is fine — the Ended event the refusal
+        // appends keeps the mutated document).
+        Guid sessionId;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var docs = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            var staffing = (await docs.Query<StaffingSession>()
+                .Where(s => s.TerminalEnrollmentId == setup.TerminalId).ToListAsync(ct)).Single();
+            sessionId = staffing.Id;
+            staffing.AbsoluteExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+            docs.Store(staffing);
+            await docs.SaveChangesAsync(ct);
+        }
+
+        // §14.5 — the consumer must lock and demand a fresh tap.
+        var refresh = await PostTokenAsync(RefreshForm(setup.ClientId, refreshToken), setup.DeviceKey);
+        Assert.False(refresh.IsSuccessStatusCode);
+        var body = await refresh.Content.ReadAsStringAsync(ct);
+        Assert.Contains("staffing_required", body);
+        Assert.Contains("interaction_required", body);
+
+        // Lazy expiry ended the session for real: Ended(Expired), pointer
+        // cleared, authorization dead (a second refresh attempt can't even
+        // authenticate).
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            var staffing = await session.LoadAsync<StaffingSession>(sessionId, ct);
+            Assert.Equal(StaffingSessionStatus.Ended, staffing!.Status);
+            Assert.Equal(StaffingSessionEndReason.Expired, staffing.EndReason);
+            var terminal = await session.LoadAsync<TerminalEnrollment>(setup.TerminalId, ct);
+            Assert.Null(terminal!.ActiveStaffingSessionId);
+        }
+        var retry = await PostTokenAsync(RefreshForm(setup.ClientId, refreshToken), setup.DeviceKey);
+        Assert.False(retry.IsSuccessStatusCode);
+    }
+
+    [Fact]
+    public async Task A_revoked_grant_stops_the_refresh_chain()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-degrant", ct);
+
+        var tokens = await TapAsync(setup, ct);
+        var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
+        tokens.Dispose();
+
+        var revoke = await Client.PostAsync(
+            $"/api/function/{new ShortGuid(setup.FunctionId)}/grants/{setup.GrantId}/revoke", null, ct);
+        Assert.True(revoke.IsSuccessStatusCode, await revoke.Content.ReadAsStringAsync(ct));
+
+        var refresh = await PostTokenAsync(RefreshForm(setup.ClientId, refreshToken), setup.DeviceKey);
+        Assert.False(refresh.IsSuccessStatusCode);
+        Assert.Contains("staffing_required", await refresh.Content.ReadAsStringAsync(ct));
+    }
+
+    [Fact]
+    public async Task A_wrong_key_cannot_refresh_the_staffing_chain()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-refkey", ct);
+
+        var tokens = await TapAsync(setup, ct);
+        var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
+        tokens.Dispose();
+
+        using var attackerKey = new DpopProofBuilder();
+        var refresh = await PostTokenAsync(RefreshForm(setup.ClientId, refreshToken), attackerKey);
+        Assert.False(refresh.IsSuccessStatusCode);
+
+        // The chain itself stays alive for the legitimate key.
+        var legit = await PostTokenAsync(RefreshForm(setup.ClientId, refreshToken), setup.DeviceKey);
+        Assert.True(legit.IsSuccessStatusCode, await legit.Content.ReadAsStringAsync(ct));
+    }
+
+    private static Dictionary<string, string> RefreshForm(string clientId, string refreshToken) => new()
+    {
+        ["grant_type"] = "refresh_token",
+        ["refresh_token"] = refreshToken,
+        ["client_id"] = clientId,
+    };
 
     // ─── scenario setup ───────────────────────────────────────────────────
 
