@@ -18,7 +18,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useUserStore } from '@/stores/user.store'
-import type { FunctionCreateDto, FunctionUpdateDto, FunctionTerminalPolicyUpdateDto, FunctionGrantDto } from '@/models/function'
+import type { FunctionCreateDto, FunctionUpdateDto, FunctionTerminalPolicyUpdateDto, FunctionGrantDto, TerminalDto } from '@/models/function'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -151,6 +151,51 @@ async function transitionGrant(grant: FunctionGrantDto, action: 'suspend' | 'res
   }
 }
 
+// ── Terminal slots (MG-FT-03) — edit-mode operations like grants. Slot
+// creation requires the PERSISTED terminal policy to be enabled (the server
+// enforces it); a staged-but-unsaved enable is not enough.
+const terminals = ref<TerminalDto[]>([])
+const terminalsLoading = ref(false)
+const newTerminal = ref({ DisplayName: '', Location: '', WebAuthnRpId: '' })
+const terminalsHttp = computed(() => useHttpClient(`/api/function/${props.id}/terminals`))
+const canCreateTerminals = computed(() => !isCreate.value && original.value.TerminalEnabled)
+
+async function loadTerminals() {
+  if (isCreate.value) return
+  terminalsLoading.value = true
+  try {
+    terminals.value = await terminalsHttp.value.get<TerminalDto[]>()
+  } finally {
+    terminalsLoading.value = false
+  }
+}
+
+async function createTerminal() {
+  if (!newTerminal.value.DisplayName.trim() || !newTerminal.value.WebAuthnRpId.trim()) return
+  try {
+    await terminalsHttp.value.post({
+      DisplayName: newTerminal.value.DisplayName.trim(),
+      Location: newTerminal.value.Location.trim() || undefined,
+      WebAuthnRpId: newTerminal.value.WebAuthnRpId.trim(),
+    })
+    newTerminal.value = { DisplayName: '', Location: '', WebAuthnRpId: newTerminal.value.WebAuthnRpId }
+    await loadTerminals()
+  } catch (e: unknown) {
+    const err = e as { data?: { Message?: string }; message?: string }
+    toast.error(err?.data?.Message ?? err?.message ?? String(e))
+  }
+}
+
+async function transitionTerminal(terminal: TerminalDto, action: 'disable' | 'reactivate' | 'revoke') {
+  try {
+    await terminalsHttp.value.addPath(terminal.Id, action).post()
+    await loadTerminals()
+  } catch (e: unknown) {
+    const err = e as { data?: { Message?: string }; message?: string }
+    toast.error(err?.data?.Message ?? err?.message ?? String(e))
+  }
+}
+
 onMounted(async () => {
   // The user list feeds the grant picker in BOTH modes.
   void userStore.initialize()
@@ -167,8 +212,9 @@ onMounted(async () => {
         MaximumStaffingSessionLifetimeMinutes: fn.TerminalPolicy.MaximumStaffingSessionLifetimeMinutes,
       }
       original.value = { ...form.value }
-      // Grants load alongside — they must not block the form fields.
+      // Grants + terminals load alongside — they must not block the form fields.
       void loadGrants()
+      void loadTerminals()
     } catch (e: unknown) {
       const err = e as { data?: { Message?: string }; message?: string }
       error.value = err?.data?.Message ?? err?.message ?? String(e)
@@ -295,6 +341,86 @@ async function save() {
               :hint="t('admin.functions.maxSessionLifetimeHint', {}, 'The hard ceiling a refresh can never extend past (1440 = 24 hours).')">
               <CoarNumberInput v-model="form.MaximumStaffingSessionLifetimeMinutes" :min="1" :disabled="!form.TerminalEnabled" />
             </CoarFormField>
+          </div>
+
+          <!-- Terminal slots (MG-FT-03). Rule 1: visible in every state — the
+               create row is disabled (with the reason as hint) until the
+               PERSISTED policy allows slots. Slot ops are immediate actions. -->
+          <div class="mt-4">
+            <div v-if="isCreate" class="grant-empty">
+              {{ t('admin.functionTerminals.createFirst', {}, 'Terminal slots can be set up after the function is created.') }}
+            </div>
+            <template v-else>
+              <div class="mb-3 flex flex-wrap items-end gap-2">
+                <CoarFormField class="min-w-0 flex-1" :label="t('admin.functionTerminals.name', {}, 'Terminal name')">
+                  <CoarTextInput v-model="newTerminal.DisplayName" :disabled="!canCreateTerminals"
+                    :placeholder="t('admin.functionTerminals.namePlaceholder', {}, 'Gate terminal left, …')" />
+                </CoarFormField>
+                <CoarFormField class="min-w-0 flex-1" :label="t('admin.functionTerminals.location', {}, 'Location')">
+                  <CoarTextInput v-model="newTerminal.Location" :disabled="!canCreateTerminals"
+                    :placeholder="t('admin.functionTerminals.locationPlaceholder', {}, 'Gate 3, …')" />
+                </CoarFormField>
+                <CoarFormField class="min-w-0 flex-1" :label="t('admin.functionTerminals.rpId', {}, 'WebAuthn RP ID')"
+                  :hint="t('admin.functionTerminals.rpIdHint', {}, 'The RP ID staff passkeys verify against — usually shared by every terminal of the consuming app.')">
+                  <CoarTextInput v-model="newTerminal.WebAuthnRpId" :disabled="!canCreateTerminals"
+                    placeholder="alerthub.example.com" />
+                </CoarFormField>
+                <CoarButton size="s" icon-start="plus" class="shrink-0 mb-1"
+                  :disabled="!canCreateTerminals || !newTerminal.DisplayName.trim() || !newTerminal.WebAuthnRpId.trim()"
+                  @click="createTerminal">
+                  {{ t('admin.functionTerminals.createButton', {}, 'Add slot') }}
+                </CoarButton>
+              </div>
+              <CoarNotice v-if="!canCreateTerminals" variant="info" class="mb-3">
+                {{ t('admin.functionTerminals.enablePolicyFirst', {}, 'Enable terminal use and save before creating slots.') }}
+              </CoarNotice>
+
+              <div v-if="terminalsLoading" class="text-xs text-surface-500">
+                {{ t('common.loading', {}, 'Loading...') }}
+              </div>
+              <div v-else-if="terminals.length === 0" class="grant-empty">
+                {{ t('admin.functionTerminals.empty', {}, 'No terminal slots yet.') }}
+              </div>
+              <ul v-else class="flex flex-col gap-2">
+                <li v-for="terminal in terminals" :key="terminal.Id"
+                    class="flex flex-wrap items-center gap-2 rounded border border-surface-200 p-3">
+                  <div class="flex min-w-0 flex-1 flex-col">
+                    <span class="truncate font-medium">{{ terminal.DisplayName }}</span>
+                    <span class="truncate text-xs text-surface-500">
+                      <code>{{ terminal.ClientId }}</code>
+                      <template v-if="terminal.Location"> · {{ terminal.Location }}</template>
+                    </span>
+                  </div>
+                  <CoarTag :variant="terminal.Status === 'Active' ? 'success'
+                    : terminal.Status === 'Pending' ? 'info'
+                    : terminal.Status === 'Disabled' ? 'warning' : 'neutral'">
+                    {{ terminal.Status === 'Active' ? t('admin.functionTerminals.statusActive', {}, 'Active')
+                      : terminal.Status === 'Pending' ? t('admin.functionTerminals.statusPending', {}, 'Pending enrollment')
+                      : terminal.Status === 'Disabled' ? t('admin.functionTerminals.statusDisabled', {}, 'Disabled')
+                      : t('admin.functionTerminals.statusRevoked', {}, 'Revoked') }}
+                  </CoarTag>
+                  <div v-if="terminal.Status !== 'Revoked'" class="flex items-center gap-1">
+                    <CoarButton v-if="terminal.Status !== 'Disabled'" size="s" variant="ghost" icon-start="pause"
+                      @click="transitionTerminal(terminal, 'disable')">
+                      {{ t('admin.functionTerminals.disableButton', {}, 'Disable') }}
+                    </CoarButton>
+                    <CoarButton v-else size="s" variant="ghost" icon-start="play"
+                      @click="transitionTerminal(terminal, 'reactivate')">
+                      {{ t('admin.functionTerminals.reactivateButton', {}, 'Reactivate') }}
+                    </CoarButton>
+                    <CoarPopconfirm
+                      :title="t('admin.functionTerminals.revokeTitle', {}, 'Revoke terminal?')"
+                      :message="t('admin.functionTerminals.revokeConfirm', {}, 'Revoking is permanent: the device is cut off immediately and needs a brand-new slot (with a fresh enrollment) to ever return.')"
+                      confirm-variant="danger"
+                      @confirmed="transitionTerminal(terminal, 'revoke')">
+                      <CoarButton size="s" variant="ghost" icon-start="trash-2">
+                        {{ t('admin.functionTerminals.revokeButton', {}, 'Revoke') }}
+                      </CoarButton>
+                    </CoarPopconfirm>
+                  </div>
+                </li>
+              </ul>
+            </template>
           </div>
         </section>
       </div>

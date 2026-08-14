@@ -58,6 +58,11 @@ public static class OAuthPermissions
         public const string CocoarOtp = Prefixes.GrantType + CocoarGrantTypes.Otp;
         public const string CocoarMagic = Prefixes.GrantType + CocoarGrantTypes.Magic;
         public const string CocoarPasskey = Prefixes.GrantType + CocoarGrantTypes.Passkey;
+
+        // MG-FT — the staffing grant a function terminal redeems a passkey tap
+        // with (MG-FT-05). Same gt:-URN convention as the native grants.
+        public const string FunctionStaffing =
+            Prefixes.GrantType + Modgud.Domain.FunctionTerminals.FunctionGrantTypes.StaffingSession;
     }
 
     public static class ResponseTypes

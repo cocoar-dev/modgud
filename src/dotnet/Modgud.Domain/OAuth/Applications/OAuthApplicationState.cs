@@ -41,6 +41,16 @@ public class OAuthApplicationState
     /// strict separation: one OAuth client = one auth mode.
     /// </summary>
     public Guid? LinkedServiceAccountId { get; set; }
+
+    /// <summary>MG-FT-03 — set together with
+    /// <see cref="ManagedTerminalEnrollmentId"/> on terminal-managed clients;
+    /// mutually exclusive with <see cref="LinkedServiceAccountId"/>.</summary>
+    public Guid? LinkedFunctionPrincipalId { get; set; }
+
+    /// <summary>The terminal slot owning this client — a set value locks the
+    /// client against the generic OAuth admin surface.</summary>
+    public Guid? ManagedTerminalEnrollmentId { get; set; }
+
     public bool IsDeleted { get; set; }
 
     /// <summary>Transient — never persisted; used to surface fresh secrets to API responses.</summary>

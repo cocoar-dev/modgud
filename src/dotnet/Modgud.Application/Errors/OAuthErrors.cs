@@ -91,4 +91,14 @@ public static class OAuthErrors
     public static Error CannotMutateServiceAccountManagedClient(string clientId) => Error.Validation(
         code: "OAuth.CannotMutateServiceAccountManagedClient",
         description: $"OAuth client '{clientId}' is owned by a ServiceAccount. Mutations must go through the SA-scoped credentials endpoints; the standard admin PUT is read-only for SA-managed clients.");
+
+    // ── MG-FT-03 — terminal-managed clients ───────────────────────────────
+
+    public static Error InvalidFunctionTerminalClient(string rule) => Error.Validation(
+        code: "OAuth.InvalidFunctionTerminalClient",
+        description: $"Invalid function-terminal client profile: {rule}");
+
+    public static Error CannotMutateTerminalManagedClient(string clientId) => Error.Validation(
+        code: "OAuth.CannotMutateTerminalManagedClient",
+        description: $"OAuth client '{clientId}' is owned by a function terminal. Mutations must go through the function-terminal endpoints (/api/function/{{id}}/terminals); the standard admin surface is read-only for terminal-managed clients.");
 }

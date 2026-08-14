@@ -492,6 +492,27 @@
       "revokeTitle": "Berechtigung widerrufen?",
       "revokeConfirm": "Der Widerruf ist endgültig — eine spätere erneute Berechtigung erzeugt einen neuen Eintrag mit eigener Audit-Spur."
     },
+    "functionTerminals": {
+      "createFirst": "Terminal-Slots lassen sich einrichten, sobald die Funktion angelegt ist.",
+      "enablePolicyFirst": "Terminal-Nutzung aktivieren und speichern, bevor Slots angelegt werden.",
+      "name": "Terminal-Name",
+      "namePlaceholder": "Portier-Terminal links, …",
+      "location": "Standort",
+      "locationPlaceholder": "Tor 3, …",
+      "rpId": "WebAuthn RP-ID",
+      "rpIdHint": "Die RP-ID, gegen die Personal-Passkeys geprüft werden — üblicherweise für alle Terminals der konsumierenden App gleich.",
+      "createButton": "Slot anlegen",
+      "empty": "Noch keine Terminal-Slots.",
+      "statusActive": "Aktiv",
+      "statusPending": "Enrollment ausstehend",
+      "statusDisabled": "Deaktiviert",
+      "statusRevoked": "Widerrufen",
+      "disableButton": "Deaktivieren",
+      "reactivateButton": "Reaktivieren",
+      "revokeButton": "Widerrufen",
+      "revokeTitle": "Terminal widerrufen?",
+      "revokeConfirm": "Der Widerruf ist endgültig: das Gerät wird sofort abgeschnitten und braucht einen komplett neuen Slot (mit frischem Enrollment), um je zurückzukehren."
+    },
     "serviceAccountCredentials": {
       "sectionTitle": "OAuth-Clients",
       "sectionHintShort": "Diesem Service Account zugeordnete OAuth-Clients.",
