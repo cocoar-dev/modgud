@@ -41,6 +41,14 @@ public class FunctionCreateDto
     /// with the default lifetimes (a function is never terminal-enabled by
     /// accident).</summary>
     public FunctionTerminalPolicyUpdateDto? TerminalPolicy { get; set; }
+
+    /// <summary>
+    /// Users to authorize in the same save (modal-contract rule 5: the entity
+    /// is creatable completely — like groups on user create). All-or-nothing:
+    /// one invalid user rejects the whole create; the function stream and every
+    /// grant stream commit in one unit of work.
+    /// </summary>
+    public List<string>? GrantUserIds { get; set; }
 }
 
 public class FunctionUpdateDto

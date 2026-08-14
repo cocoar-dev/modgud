@@ -168,6 +168,49 @@ public class FunctionGrantTests : IntegrationTestBase
             (await zeroClient.PostAsJsonAsync($"/api/function/{anyId}/grants", new { UserId = anyId }, JsonOptions, ct)).StatusCode);
     }
 
+    [Fact]
+    public async Task Create_with_staged_grants_authorizes_the_users_in_the_same_save()
+    {
+        // Rule 5 — the entity is creatable completely: function + grants in one
+        // atomic create, like groups on user create.
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var u1 = await CreateUserAsync("sga", ct);
+        var u2 = await CreateUserAsync("sgb", ct);
+
+        var resp = await Client.PostAsJsonAsync("/api/function",
+            new { AccountName = "fn-staged-grants", GrantUserIds = new[] { u1, u2 } }, JsonOptions, ct);
+        Assert.True(resp.IsSuccessStatusCode, await resp.Content.ReadAsStringAsync(ct));
+        var fn = (await resp.Content.ReadFromJsonAsync<FunctionPrincipalDto>(JsonOptions, ct))!.Id;
+
+        var list = await Client.GetFromJsonAsync<List<FunctionGrantDto>>($"/api/function/{fn}/grants", JsonOptions, ct);
+        Assert.Equal(2, list!.Count);
+        Assert.All(list, g => Assert.Equal(FunctionActivationGrantStatus.Active, g.Status));
+    }
+
+    [Fact]
+    public async Task Create_with_an_invalid_staged_grant_creates_nothing()
+    {
+        // All-or-nothing: one bad user rejects the WHOLE create — no function,
+        // no partial grants.
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var good = await CreateUserAsync("sgc", ct);
+        var inactive = await CreateUserAsync("sgd", ct, isActive: false);
+
+        var resp = await Client.PostAsJsonAsync("/api/function",
+            new { AccountName = "fn-atomic-reject", GrantUserIds = new[] { good, inactive } }, JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+
+        // The name is still free — nothing was created.
+        var retry = await Client.PostAsJsonAsync("/api/function",
+            new { AccountName = "fn-atomic-reject" }, JsonOptions, ct);
+        Assert.True(retry.IsSuccessStatusCode, await retry.Content.ReadAsStringAsync(ct));
+        var fn = (await retry.Content.ReadFromJsonAsync<FunctionPrincipalDto>(JsonOptions, ct))!.Id;
+        var list = await Client.GetFromJsonAsync<List<FunctionGrantDto>>($"/api/function/{fn}/grants", JsonOptions, ct);
+        Assert.Empty(list!);
+    }
+
     // ─── helpers ──────────────────────────────────────────────────────────
 
     private async Task<string> CreateFunctionAsync(string accountName, CancellationToken ct)

@@ -480,6 +480,7 @@
       "sectionTitle": "Berechtigte Benutzer",
       "pickUser": "Benutzer auswählen…",
       "issueButton": "Berechtigen",
+      "stagedEmpty": "Noch keine Benutzer vorgemerkt — sie werden gemeinsam mit dem Anlegen berechtigt.",
       "empty": "Noch kein Benutzer darf diese Funktion besetzen.",
       "noPasskey": "Kein Passkey",
       "statusActive": "Aktiv",

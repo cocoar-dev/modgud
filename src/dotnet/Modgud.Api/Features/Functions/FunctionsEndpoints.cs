@@ -60,6 +60,7 @@ public static class FunctionsEndpoints
                 AppSettings settings,
                 IDocumentSession session,
                 DataEventDispatcher dispatcher,
+                HttpContext httpContext,
                 CancellationToken ct) =>
             {
                 if (!settings.Features.FunctionTerminals) return Results.NotFound();
@@ -74,6 +75,28 @@ public static class FunctionsEndpoints
                 var policy = ApplyPolicy(FunctionTerminalPolicy.Disabled, dto.TerminalPolicy, out var policyError);
                 if (policyError is not null) return policyError;
 
+                // Staged grants (rule 5: the entity is creatable completely) —
+                // resolve and validate EVERY user before creating anything, so a
+                // malformed or inactive user can never leave a half-granted
+                // function behind (mirrors group staging on user create).
+                var grantUserIds = new List<Guid>();
+                foreach (var rawUserId in dto.GrantUserIds?.Distinct() ?? [])
+                {
+                    if (!ShortGuid.TryParse(rawUserId, out Guid grantUserId))
+                        return Results.BadRequest(new { Error = "FunctionGrant.InvalidUserId",
+                            Message = $"Grant user id '{rawUserId}' is invalid." });
+
+                    var person = await session.LoadAsync<Person>(grantUserId, ct);
+                    if (person is null || person.IsDeleted)
+                        return Results.BadRequest(new { Error = "FunctionGrant.UserNotFound",
+                            Message = $"Grant user '{rawUserId}' does not exist." });
+                    if (!person.IsActive)
+                        return Results.BadRequest(new { Error = "FunctionGrant.UserInactive",
+                            Message = $"Grant user '{rawUserId}' is inactive." });
+
+                    grantUserIds.Add(grantUserId);
+                }
+
                 // Event-sourced like Person/Group: the FunctionPrincipal document
                 // is the inline projection of this stream, never written directly.
                 var fn = new FunctionPrincipal
@@ -86,6 +109,18 @@ public static class FunctionsEndpoints
                 };
                 session.Events.StartStream<FunctionPrincipal>(fn.Id, new FunctionPrincipalCreatedEvent(
                     fn.Id, fn.AccountName, fn.Purpose, fn.IsActive, fn.TerminalPolicy));
+
+                // Function stream + every staged grant stream in ONE unit of
+                // work — the create is atomic across both.
+                var actor = FunctionGrantsEndpoints.RequireActor(httpContext);
+                var now = DateTimeOffset.UtcNow;
+                foreach (var grantUserId in grantUserIds)
+                {
+                    var grantId = Guid.NewGuid();
+                    session.Events.StartStream<Modgud.Domain.FunctionTerminals.FunctionActivationGrant>(
+                        grantId, new Modgud.Domain.FunctionTerminals.FunctionActivationGrantIssued(
+                            grantId, fn.Id, grantUserId, actor, now));
+                }
                 await session.SaveChangesAsync(ct);
 
                 var created = ToDto(fn);
