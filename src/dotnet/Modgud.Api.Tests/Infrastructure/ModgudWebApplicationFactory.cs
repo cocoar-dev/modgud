@@ -530,8 +530,9 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>
-    /// Resets all Marten data between tests by stopping the async daemon,
-    /// clearing data, and restarting the daemon. After the wipe, the
+    /// Resets all Marten data between tests by fully stopping and discarding
+    /// the async daemon, clearing data, and starting a fresh daemon. After the
+    /// wipe, the
     /// system <see cref="App"/> catalog is re-seeded so tests that build
     /// roles via <see cref="CreateTestRoleAsync"/> find the modgud
     /// catalog they need to FK into.
@@ -546,29 +547,45 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 
         _tokenPipelineFaults.Reset();
 
-        await _host.ResetAllMartenDataAsync();
+        var cancellation = TestContext.Current.CancellationToken;
+        var coordinator = Services.GetRequiredService<IProjectionCoordinator>();
+        var store = Services.GetRequiredService<IDocumentStore>();
 
-        // The singleton RealmKeyStore caches per-realm signing keys in memory for 60s
-        // and survives the Marten wipe above — which deleted the persisted
-        // RealmSigningKey rows. Without clearing it, a token gets signed with a cached
-        // active key (60s fast path, no DB read) whose row no longer exists, while the
-        // JWKS verification set is rebuilt from the now-empty DB and omits it -> OpenIddict
-        // ID2090 "signing key not found" -> /connect/userinfo 401 (intermittent on CI).
-        // Clearing makes the next sign + verify both re-read the regenerated key.
-        if (Services.GetService<Modgud.Infrastructure.Realms.IRealmKeyStore>()
-                is Modgud.Infrastructure.Realms.RealmKeyStore keyStore)
+        // Marten's ResetAllMartenDataAsync only pauses the coordinator. Pause keeps
+        // its daemon cache and in-memory high-water tracker alive while ResetAllData
+        // restarts event sequences at 1. Reusing that daemon can write a progression
+        // from the previous test into the fresh database, leaving progression ahead
+        // of the new events. StopAsync additionally disposes and evicts every cached
+        // daemon, so ResumeAsync is guaranteed to build one against the reset state.
+        await coordinator.StopAsync(cancellation);
+        try
         {
-            keyStore.ClearCachesForReset();
-        }
+            await store.Advanced.ResetAllData(cancellation);
 
-        // Re-seed the system App + Control-Plane App so per-test fresh state
-        // still has the catalog. The boot-time seed in Program.cs runs once
-        // and is wiped by ResetAllMartenDataAsync; running it again here is
-        // idempotent so this stays safe even if the boot seed survives.
-        await Modgud.Infrastructure.Authorization.AppRealmSeeder.SeedAsync(
-            Services,
-            tenantId: "system",
-            isControlPlane: true);
+            // The singleton RealmKeyStore caches per-realm signing keys in memory for 60s
+            // and survives the Marten wipe above — which deleted the persisted
+            // RealmSigningKey rows. Without clearing it, a token gets signed with a cached
+            // active key (60s fast path, no DB read) whose row no longer exists, while the
+            // JWKS verification set is rebuilt from the now-empty DB and omits it -> OpenIddict
+            // ID2090 "signing key not found" -> /connect/userinfo 401 (intermittent on CI).
+            // Clearing makes the next sign + verify both re-read the regenerated key.
+            if (Services.GetService<Modgud.Infrastructure.Realms.IRealmKeyStore>()
+                    is Modgud.Infrastructure.Realms.RealmKeyStore keyStore)
+            {
+                keyStore.ClearCachesForReset();
+            }
+
+            // Re-seed the system App + Control-Plane App while the coordinator is
+            // stopped so no background projection can observe half-seeded reset state.
+            await Modgud.Infrastructure.Authorization.AppRealmSeeder.SeedAsync(
+                Services,
+                tenantId: "system",
+                isControlPlane: true);
+        }
+        finally
+        {
+            await coordinator.ResumeAsync();
+        }
     }
 
     /// <summary>
@@ -617,8 +634,8 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>
-    /// Deterministically materializes all async projections in one tenant by pausing
-    /// the live coordinator and driving a fresh interactive daemon inline.
+    /// Deterministically materializes all async projections in one tenant by fully
+    /// stopping the live coordinator and driving a fresh interactive daemon inline.
     ///
     /// Marten's all-database testing extension fans out through the coordinator-owned
     /// daemons for every dynamically-created realm. After hundreds of reset/catch-up
@@ -643,7 +660,10 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         var store = Services.GetRequiredService<IDocumentStore>();
         var coordinator = Services.GetRequiredService<IProjectionCoordinator>();
 
-        await coordinator.PauseAsync();
+        // Stop rather than pause: the shared test host has undergone many complete
+        // data resets. Evicting coordinator-owned daemons guarantees no cached
+        // high-water state can race or disagree with this exclusive catch-up.
+        await coordinator.StopAsync(cts.Token);
         try
         {
             using var daemon = await store.BuildProjectionDaemonAsync(tenantId);
@@ -656,10 +676,10 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>
-    /// Runs a bounded async-projection barrier and verifies the result through a fresh
-    /// query session. A second/third pass is only used when Marten reported catch-up but
-    /// the expected document state was not observable yet; persistent failures still
-    /// fail at the arrange source instead of surfacing as a displaced endpoint failure.
+    /// Runs one exclusive async-projection barrier and verifies the result through a
+    /// fresh query session. There are deliberately no retries: a catch-up that reports
+    /// success without making the expected state observable is a test-infrastructure
+    /// failure and must remain visible.
     /// </summary>
     private async Task<T> AwaitProjectedDocumentAsync<T>(
         Guid id,
@@ -668,26 +688,19 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         string tenantId = TenantConstants.SystemTenantId)
         where T : class
     {
-        const int maxAttempts = 3;
         var cancellation = TestContext.Current.CancellationToken;
 
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            await CatchUpAsyncProjectionsAsync(tenantId);
+        await CatchUpAsyncProjectionsAsync(tenantId);
 
-            var store = Services.GetRequiredService<IDocumentStore>();
-            await using var query = store.QuerySession(tenantId);
-            var document = await query.LoadAsync<T>(id, cancellation);
-            if (document is not null && isReady(document))
-                return document;
-
-            if (attempt < maxAttempts)
-                await Task.Delay(TimeSpan.FromMilliseconds(50), cancellation);
-        }
+        var store = Services.GetRequiredService<IDocumentStore>();
+        await using var query = store.QuerySession(tenantId);
+        var document = await query.LoadAsync<T>(id, cancellation);
+        if (document is not null && isReady(document))
+            return document;
 
         throw new InvalidOperationException(
             $"{typeof(T).Name} {id} did not satisfy the async-projection barrier: " +
-            $"expected {expectation} after {maxAttempts} catch-up attempts.");
+            $"expected {expectation} after one exclusive catch-up.");
     }
 }
 
