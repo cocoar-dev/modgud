@@ -198,6 +198,7 @@ export const baseConfig = {
           items: [
             { text: 'Users', link: '/admin/users' },
             { text: 'Service Accounts', link: '/admin/service-accounts' },
+            { text: 'Functions & Terminals', link: '/admin/functions' },
             { text: 'Roles', link: '/admin/roles' },
             { text: 'Groups', link: '/admin/groups' },
           ],
