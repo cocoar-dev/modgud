@@ -1331,6 +1331,7 @@ try
     // Marten Endpoints
     app.MapUsersEndpoints("api");
     Modgud.Api.Features.ServiceAccounts.ServiceAccountsEndpoints.MapServiceAccountsEndpoints(app, "api");
+    Modgud.Api.Features.Functions.FunctionsEndpoints.MapFunctionsEndpoints(app, "api");
     app.MapPrincipalEndpoints("api");
     app.MapRolesEndpoints("api");
     app.MapGroupEndpoints("api");

@@ -49,6 +49,14 @@ public class UpdateUserHandler(IDocumentSession session)
                 .AnyAsync(ct);
             if (userNameTaken)
                 return DomainErrors.User.UserNameTaken(normalizedUserName);
+
+            // MG-FT-01 — function principals share the account-name namespace
+            // (see CreateUserCommand for the rationale).
+            var functionNameTaken = await session.Query<FunctionPrincipal>()
+                .Where(f => f.AccountName == normalizedUserName && !f.IsDeleted)
+                .AnyAsync(ct);
+            if (functionNameTaken)
+                return DomainErrors.User.UserNameTaken(normalizedUserName);
         }
 
         // Email is required on humans — reject attempts to clear it. The
