@@ -602,9 +602,9 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 
     /// <summary>
     /// Rebuilds one projection without racing the host's continuously-running
-    /// daemon for the same tenant database. Marten 9.23 persists projection
-    /// progress more strictly; running an interactive rebuild daemon beside the
-    /// live daemon can make both insert the same progression row.
+    /// daemon. Marten's coordinator can automatically restart agents after a
+    /// daemon-level StopAllAsync call, so pause the coordinator itself while the
+    /// interactive rebuild owns the progression rows.
     /// </summary>
     public async Task RebuildProjectionAsync<T>(
         string tenantId = TenantConstants.SystemTenantId,
@@ -613,9 +613,8 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     {
         var store = Services.GetRequiredService<IDocumentStore>();
         var coordinator = Services.GetRequiredService<IProjectionCoordinator>();
-        var liveDaemon = await coordinator.DaemonForDatabase(tenantId);
 
-        await liveDaemon.StopAllAsync();
+        await coordinator.PauseAsync();
         try
         {
             using var rebuildDaemon = await store.BuildProjectionDaemonAsync(tenantId);
@@ -623,7 +622,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         }
         finally
         {
-            await liveDaemon.StartAllAsync();
+            await coordinator.ResumeAsync();
         }
     }
 

@@ -57,15 +57,14 @@ public static class ProjectionEndpoints
             Serilog.Log.Information("Admin: Starting full projection rebuild for tenant {TenantId}", tenantId);
             try
             {
-                // Audit M8: scope the rebuild to the caller's realm. Pause ONLY this
-                // tenant's continuously-running daemon (so the rebuild daemon doesn't
-                // race it) and suppress side effects for THIS tenant only — other
-                // realms' daemons keep processing and keep dispatching their live
-                // SignalR updates. The previous global coordinator.PauseAsync() +
-                // ProjectionSideEffects.Enabled=false froze every realm for the
-                // duration of one realm's rebuild.
-                var liveDaemon = await coordinator.DaemonForDatabase(tenantId);
-                await liveDaemon.StopAllAsync();
+                // A daemon-level StopAllAsync does not disable the coordinator's
+                // automatic restart logic. It can restart a live shard while the
+                // interactive daemon is rebuilding and make both insert the same
+                // mt_event_progression row. Pause the coordinator for this rare
+                // maintenance operation; inline projections keep working, while async
+                // projections in all realms catch up after ResumeAsync. Rebuild side
+                // effects remain suppressed only for the target tenant.
+                await coordinator.PauseAsync();
 
                 ProjectionSideEffects.SuppressRebuildFor(tenantId);
 
@@ -95,7 +94,7 @@ public static class ProjectionEndpoints
                 finally
                 {
                     ProjectionSideEffects.ResumeAfterRebuild(tenantId);
-                    await liveDaemon.StartAllAsync();
+                    await coordinator.ResumeAsync();
                 }
 
                 Serilog.Log.Information("Admin: Full projection rebuild completed");
