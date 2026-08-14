@@ -72,6 +72,7 @@ const REALM_MODAL_SIZE = {
 // the warning/form content stays visible and both permission columns have room.
 const ROLE_MODAL_SIZE = MODAL_LIST_FORM
 const SERVICE_ACCOUNT_MODAL_SIZE = MODAL_MD
+const FUNCTION_MODAL_SIZE = MODAL_MD
 
 // API modal uses the same tabbed expert editor for create and edit. A FIXED
 // frame (like ROLE) keeps the size stable across tabs and is sized to the
@@ -262,6 +263,20 @@ const routes = [
                     path: ':id',
                     component: () => import('@/views/admin/serviceAccount/ServiceAccountDetails.vue'),
                     overlayOptions: { size: SERVICE_ACCOUNT_MODAL_SIZE },
+                  },
+                ],
+              },
+            },
+            {
+              path: 'functions',
+              component: () => import('@/views/admin/function/FunctionsView.vue'),
+              meta: {
+                routedFragments: [
+                  {
+                    type: 'modal',
+                    path: ':id',
+                    component: () => import('@/views/admin/function/FunctionDetails.vue'),
+                    overlayOptions: { size: FUNCTION_MODAL_SIZE },
                   },
                 ],
               },

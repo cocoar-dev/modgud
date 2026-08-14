@@ -66,6 +66,7 @@ const sections = computed<SectionDef[]>(() => [
     items: [
       { label: 'nav.users', labelEn: 'Users', icon: 'users', to: '/admin/users', requirePermissions: ['user:read'] },
       { label: 'admin.serviceAccounts.title', labelEn: 'Service Accounts', icon: 'cpu', to: '/admin/service-accounts', requirePermissions: ['service-account:read'] },
+      { label: 'admin.functions.title', labelEn: 'Functions', icon: 'briefcase', to: '/admin/functions', requirePermissions: ['function:read'] },
       { label: 'nav.roles', labelEn: 'Roles', icon: 'shield', to: '/admin/roles', requirePermissions: ['permission-role:read'] },
       { label: 'nav.groups', labelEn: 'Groups', icon: 'users-round', to: '/admin/groups', requirePermissions: ['authorization-group:read'] },
     ],
