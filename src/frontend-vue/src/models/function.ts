@@ -40,3 +40,19 @@ export interface FunctionTerminalPolicyUpdateDto {
   StaffingSessionLifetimeMinutes?: number
   MaximumStaffingSessionLifetimeMinutes?: number
 }
+
+// ── Activation grants (MG-FT-02) ─────────────────────────────────────────
+
+export type FunctionGrantStatus = 'Active' | 'Suspended' | 'Revoked'
+
+export interface FunctionGrantDto {
+  Id: string
+  FunctionId: string
+  UserId: string
+  UserDisplayName?: string | null
+  UserAccountName?: string | null
+  Status: FunctionGrantStatus
+  CreatedAt: string
+  RevokedAt?: string | null
+  UserHasPasskey: boolean
+}
