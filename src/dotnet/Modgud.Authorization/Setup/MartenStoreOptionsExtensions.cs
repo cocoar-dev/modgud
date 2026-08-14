@@ -52,7 +52,8 @@ public static class MartenStoreOptionsExtensions
             .UseNumericRevisions(true)
             .AddSubClass<Person>("person")
             .AddSubClass<Group>("group")
-            .AddSubClass<ServiceAccount>("service-account");
+            .AddSubClass<ServiceAccount>("service-account")
+            .AddSubClass<FunctionPrincipal>("function");
 
         // PermissionRole — its own top-level document.
         martenOpts.Schema.For<PermissionRole>();
@@ -122,5 +123,6 @@ public static class MartenStoreOptionsExtensions
         ti.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(typeof(Person), "person"));
         ti.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(typeof(Group), "group"));
         ti.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(typeof(ServiceAccount), "service-account"));
+        ti.PolymorphismOptions.DerivedTypes.Add(new JsonDerivedType(typeof(FunctionPrincipal), "function"));
     }
 }

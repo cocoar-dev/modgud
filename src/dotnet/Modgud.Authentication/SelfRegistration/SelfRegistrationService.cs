@@ -179,6 +179,13 @@ public sealed class SelfRegistrationService(
             .AnyAsync(p => p.AccountName == normalizedUserName && !p.IsDeleted, ct);
         if (userNameTaken) return GenericSuccess;
 
+        // MG-FT-01 — function principals share the account-name namespace; a
+        // self-registration must not take a function's handle. Same uniform
+        // GenericSuccess so the check can't be used for name enumeration.
+        var functionNameTaken = await session.Query<FunctionPrincipal>()
+            .AnyAsync(f => f.AccountName == normalizedUserName && !f.IsDeleted, ct);
+        if (functionNameTaken) return GenericSuccess;
+
         // Create the Identity user. EmailConfirmed=false; IsActive
         // depends on RequireAdminApproval (pending users are inactive
         // until an admin flips the flag from the admin UI).

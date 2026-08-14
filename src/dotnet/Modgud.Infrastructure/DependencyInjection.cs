@@ -225,6 +225,9 @@ public static class DependencyInjection
             // Identity / directory
             opt.RegisterResource(app, "user", "read", "write");
             opt.RegisterResource(app, "service-account", "read", "write");
+            // MG-FT-01 — the function principal ("Portier Kunde XY"): the fourth
+            // principal kind, staffed via shared terminals.
+            opt.RegisterResource(app, "function", "read", "write");
             // ADR-0012 — registration invite codes (the InviteCode posture). The
             // admin-UI bulk-mint gates on these in-process permissions; the M2M
             // mint path gates on the separate app-scoped `invite:write` OAuth scope.
@@ -308,7 +311,8 @@ public static class DependencyInjection
             .AddDiscriminatorMappings<Principal>("Type",
                 ("person", typeof(Person)),
                 ("group", typeof(Group)),
-                ("service-account", typeof(ServiceAccount)))
+                ("service-account", typeof(ServiceAccount)),
+                ("function", typeof(FunctionPrincipal)))
             .WithExecutionTimeout(TimeSpan.FromSeconds(2)));
         services.AddTsTranspiler();
         services.AddTsDefinition();

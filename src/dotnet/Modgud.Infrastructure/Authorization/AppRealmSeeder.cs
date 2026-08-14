@@ -37,6 +37,7 @@ public static class AppRealmSeeder
         // Identity / directory
         ("user", ["read", "write"]),
         ("service-account", ["read", "write"]),
+        ("function", ["read", "write"]),
         ("role", ["read", "write"]),
         ("authorization-group", ["read", "write"]),
         ("permission-role", ["read", "write"]),

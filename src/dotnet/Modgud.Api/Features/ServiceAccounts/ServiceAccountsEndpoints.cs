@@ -76,6 +76,11 @@ public static class ServiceAccountsEndpoints
                     return Results.Conflict(new { Error = "ServiceAccount.AccountNameTaken",
                         Message = $"Account name '{normalised}' is already in use." });
 
+                // MG-FT-01 — function principals joined the shared namespace.
+                if (await session.Query<FunctionPrincipal>().AnyAsync(f => !f.IsDeleted && f.AccountName == normalised))
+                    return Results.Conflict(new { Error = "ServiceAccount.AccountNameTaken",
+                        Message = $"Account name '{normalised}' is already used by a function." });
+
                 // When an initial credential is supplied, delegate to the OAuth
                 // create path that already supports inline ServiceAccount
                 // creation. It stages principal, OAuth stream and hashed secret
@@ -167,6 +172,13 @@ public static class ServiceAccountsEndpoints
                         if (saTaken)
                             return Results.Conflict(new { Error = "ServiceAccount.AccountNameTaken",
                                 Message = $"Account name '{normalised}' is already in use." });
+
+                        // MG-FT-01 — function principals joined the shared namespace.
+                        var functionTaken = await session.Query<FunctionPrincipal>()
+                            .AnyAsync(f => !f.IsDeleted && f.AccountName == normalised);
+                        if (functionTaken)
+                            return Results.Conflict(new { Error = "ServiceAccount.AccountNameTaken",
+                                Message = $"Account name '{normalised}' is already used by a function." });
 
                         sa.AccountName = normalised;
                     }
