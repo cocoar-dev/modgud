@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modgud Terminal Simulator</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --line:#334155; --text:#e2e8f0; --dim:#94a3b8;
+          --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --accent:#38bdf8; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 ui-monospace,Consolas,monospace; background:var(--bg); color:var(--text); }
+  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+  header h1 { margin:0; font-size:16px; }
+  header .fp { color:var(--accent); font-size:18px; letter-spacing:2px; }
+  main { display:grid; grid-template-columns:minmax(340px,420px) 1fr; gap:14px; padding:14px 20px; }
+  @media (max-width:900px){ main{grid-template-columns:1fr;} }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:14px; }
+  section h2 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:1px; color:var(--dim); }
+  label { display:block; font-size:11px; color:var(--dim); margin:8px 0 2px; }
+  input { width:100%; padding:6px 8px; background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:4px; font:inherit; }
+  button { padding:7px 14px; margin:8px 6px 0 0; background:var(--accent); color:#04202f; border:0; border-radius:5px;
+           font:inherit; font-weight:700; cursor:pointer; }
+  button.secondary { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  button.danger { background:var(--err); color:#3d0505; }
+  button:disabled { opacity:.35; cursor:not-allowed; }
+  .status { padding:6px 10px; border-radius:5px; margin-top:8px; font-weight:700; }
+  .status.idle{ background:#1e2a3f; color:var(--dim);} .status.ok{ background:#12351f; color:var(--ok);}
+  .status.warn{ background:#3a2e10; color:var(--warn);} .status.err{ background:#3a1414; color:var(--err);}
+  .code { font-size:26px; letter-spacing:4px; color:var(--warn); margin:6px 0; }
+  a { color:var(--accent); }
+  #log { background:#0a0f1e; border:1px solid var(--line); border-radius:8px; padding:10px;
+         height:calc(100vh - 120px); overflow:auto; font-size:12px; white-space:pre-wrap; word-break:break-all; }
+  #log .req{ color:var(--accent);} #log .res-ok{ color:var(--ok);} #log .res-err{ color:var(--err);} #log .note{ color:var(--dim);}
+  #lock-overlay { position:fixed; inset:0; background:rgba(3,7,18,.93); display:none; z-index:10;
+                  align-items:center; justify-content:center; flex-direction:column; text-align:center; }
+  #lock-overlay h2 { color:var(--warn); font-size:28px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🖥️ Modgud Terminal Simulator <span style="color:var(--dim);font-weight:400">— reference client for the function-terminal flows</span></h1>
+  <div>Device key: <span class="fp" id="fingerprint">—</span></div>
+</header>
+
+<div id="lock-overlay">
+  <h2>🔒 Terminal locked</h2>
+  <p>The staffing session has ended (<code>staffing_required</code>).<br>A new passkey tap is required to continue.</p>
+  <button onclick="hideLock()">Back to the simulator</button>
+</div>
+
+<main>
+<div>
+  <section>
+    <h2>1 · Provisioning (from the Modgud slot view)</h2>
+    <label>client_id of the terminal slot</label>
+    <input id="cfg-client" placeholder="porter.customer-xy.terminal.XXXXXXXX">
+    <label>terminal_id (slot GUID — needed for the lock endpoint)</label>
+    <input id="cfg-terminal" placeholder="00000000-0000-0000-0000-000000000000">
+    <div class="status idle" id="cfg-note"></div>
+    <button class="secondary" onclick="saveConfig()">Save configuration</button>
+    <button class="danger" onclick="resetDevice()">⚠ Factory reset (new device key)</button>
+  </section>
+
+  <section>
+    <h2>2 · Enrollment (once per device)</h2>
+    <div class="status idle" id="enroll-status">not enrolled</div>
+    <div id="enroll-code-box" style="display:none">
+      <p class="note">Show this to the approving admin — verify the device-key fingerprint matches:</p>
+      <div class="code" id="enroll-code"></div>
+      <p><a id="enroll-link" target="_blank" rel="noopener">Open the verification page →</a></p>
+    </div>
+    <button id="btn-enroll" onclick="startEnrollment()">Start enrollment (device flow)</button>
+  </section>
+
+  <section>
+    <h2>3 · Staffing (per shift — the passkey tap)</h2>
+    <div class="status idle" id="staff-status">no active session</div>
+    <button id="btn-tap" onclick="tap()" disabled>🔑 Passkey tap (begin shift)</button>
+    <button id="btn-refresh" class="secondary" onclick="refreshStaffing()" disabled>Refresh access token</button>
+    <button id="btn-lock" class="danger" onclick="lockTerminal()" disabled>🔒 Lock terminal</button>
+  </section>
+</div>
+
+<div>
+  <section style="margin-bottom:14px">
+    <h2>Request log <button class="secondary" style="float:right;margin:0" onclick="document.getElementById('log').textContent=''">clear</button></h2>
+    <div id="log"></div>
+  </section>
+</div>
+</main>
+
+<script>
+"use strict";
+// ═══════════════════════════════════════════════════════════════════════════
+// Modgud Terminal Simulator — a faithful reference client for the flows in
+// docs/integrate/function-terminals.md. Served by Modgud itself (same origin,
+// so no CORS and the slot's WebAuthn RP-ID can simply be this host).
+//
+// The device key is a NON-EXTRACTABLE WebCrypto ES256 key stored in
+// IndexedDB — the browser-grade equivalent of a secure element: the private
+// key never leaves the crypto subsystem, this page can only ask it to sign.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const BASE = window.location.origin;
+const STAFFING_GRANT = "urn:cocoar:params:oauth:grant-type:function_staffing";
+const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
+
+const $ = (id) => document.getElementById(id);
+const enc = new TextEncoder();
+let keyPair = null, publicJwk = null;
+
+// ── tiny helpers ───────────────────────────────────────────────────────────
+const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)))
+  .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const b64urlDecode = (s) => {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(s + "=".repeat((4 - s.length % 4) % 4));
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0)).buffer;
+};
+const log = (cls, text) => {
+  const el = document.createElement("div");
+  el.className = cls;
+  el.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+  $("log").prepend(el);
+};
+const setStatus = (id, cls, text) => { const el = $(id); el.className = "status " + cls; el.textContent = text; };
+const store = {
+  get: (k) => localStorage.getItem("term-sim:" + k),
+  set: (k, v) => localStorage.setItem("term-sim:" + k, v),
+  del: (k) => localStorage.removeItem("term-sim:" + k),
+};
+
+// ── device key (IndexedDB, non-extractable) ────────────────────────────────
+function idb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("modgud-terminal-sim", 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("keys");
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbGet(name) {
+  const db = await idb();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction("keys").objectStore("keys").get(name);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbPut(name, value) {
+  const db = await idb();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction("keys", "readwrite").objectStore("keys").put(value, name);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function loadOrCreateKey() {
+  keyPair = await idbGet("device-key");
+  if (!keyPair) {
+    // extractable:false — the private key can sign but never be exported.
+    keyPair = await crypto.subtle.generateKey(
+      { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+    await idbPut("device-key", keyPair);
+    log("note", "Generated a fresh non-extractable ES256 device key.");
+  }
+  const jwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+  publicJwk = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
+  $("fingerprint").textContent = await fingerprint();
+}
+
+// RFC 7638 thumbprint (lexicographic member order), then the human
+// fingerprint Modgud shows on the enrollment consent: first 8 hex chars of
+// SHA-256 over the thumbprint STRING, grouped XXXX-XXXX.
+async function jwkThumbprint() {
+  const canonical = `{"crv":"${publicJwk.crv}","kty":"${publicJwk.kty}","x":"${publicJwk.x}","y":"${publicJwk.y}"}`;
+  return b64url(await crypto.subtle.digest("SHA-256", enc.encode(canonical)));
+}
+async function fingerprint() {
+  const digest = await crypto.subtle.digest("SHA-256", enc.encode(await jwkThumbprint()));
+  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+  return `${hex.slice(0, 4)}-${hex.slice(4, 8)}`;
+}
+
+async function resetDevice() {
+  if (!confirm("Factory reset? The device key is destroyed — the slot can NOT be re-enrolled with a new key; the admin must create a fresh slot.")) return;
+  const db = await idb();
+  await new Promise((res) => { const r = db.transaction("keys", "readwrite").objectStore("keys").clear(); r.onsuccess = res; });
+  ["enrollment-at", "enrollment-rt", "staffing-at", "staffing-rt"].forEach(store.del);
+  location.reload();
+}
+
+// ── DPoP (RFC 9449) — one proof per request, signed by the device key ──────
+async function dpopProof(htm, htu) {
+  const header = { typ: "dpop+jwt", alg: "ES256", jwk: publicJwk };
+  const payload = { jti: crypto.randomUUID().replaceAll("-", ""), htm, htu, iat: Math.floor(Date.now() / 1000) };
+  const input = `${b64url(enc.encode(JSON.stringify(header)))}.${b64url(enc.encode(JSON.stringify(payload)))}`;
+  // WebCrypto ECDSA emits raw r‖s (IEEE P1363) — exactly the JWS ES256 format.
+  const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, keyPair.privateKey, enc.encode(input));
+  return `${input}.${b64url(sig)}`;
+}
+
+async function call(method, path, { form, bearer } = {}) {
+  const url = BASE + path;
+  const headers = { "DPoP": await dpopProof(method, url) };
+  if (bearer) headers["Authorization"] = "Bearer " + bearer;
+  let body;
+  if (form) {
+    headers["Content-Type"] = "application/x-www-form-urlencoded";
+    body = new URLSearchParams(form).toString();
+  }
+  log("req", `→ ${method} ${path}${form ? "  " + JSON.stringify(form).slice(0, 200) : ""}`);
+  const resp = await fetch(url, { method, headers, body });
+  const text = await resp.text();
+  let json = null; try { json = JSON.parse(text); } catch { /* non-JSON */ }
+  log(resp.ok ? "res-ok" : "res-err", `← ${resp.status}  ${text.slice(0, 400)}`);
+  return { ok: resp.ok, status: resp.status, json, text };
+}
+
+// The binding error contract: staffing_required ⇒ lock the UI, demand a tap.
+function isStaffingRequired(r) {
+  return r?.json?.error === "interaction_required" ||
+    (r?.text ?? "").includes("staffing_required");
+}
+function showLock() { $("lock-overlay").style.display = "flex"; onSessionGone(); }
+function hideLock() { $("lock-overlay").style.display = "none"; }
+function onSessionGone() {
+  store.del("staffing-at"); store.del("staffing-rt");
+  setStatus("staff-status", "idle", "no active session");
+  $("btn-refresh").disabled = true; $("btn-lock").disabled = !store.get("enrollment-at");
+}
+
+// ── configuration ──────────────────────────────────────────────────────────
+function saveConfig() {
+  store.set("client-id", $("cfg-client").value.trim());
+  store.set("terminal-id", $("cfg-terminal").value.trim());
+  refreshUi();
+}
+function cfg() { return { clientId: store.get("client-id") ?? "", terminalId: store.get("terminal-id") ?? "" }; }
+
+// ── enrollment (RFC 8628 device flow, DPoP-bound end to end) ───────────────
+async function startEnrollment() {
+  const { clientId } = cfg();
+  if (!clientId) return alert("Configure the slot's client_id first.");
+  $("btn-enroll").disabled = true;
+  setStatus("enroll-status", "warn", "device flow running …");
+
+  const dev = await call("POST", "/connect/device", { form: { client_id: clientId } });
+  if (!dev.ok) { setStatus("enroll-status", "err", "device request refused — see log"); $("btn-enroll").disabled = false; return; }
+
+  $("enroll-code-box").style.display = "block";
+  $("enroll-code").textContent = dev.json.user_code;
+  $("enroll-link").href = dev.json.verification_uri_complete ?? dev.json.verification_uri;
+
+  let interval = (dev.json.interval ?? 5) * 1000;
+  const deadline = Date.now() + (dev.json.expires_in ?? 600) * 1000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, interval));
+    const poll = await call("POST", "/connect/token", { form: {
+      grant_type: DEVICE_GRANT, device_code: dev.json.device_code, client_id: clientId } });
+    if (poll.ok) {
+      store.set("enrollment-at", poll.json.access_token);
+      store.set("enrollment-rt", poll.json.refresh_token);
+      $("enroll-code-box").style.display = "none";
+      setStatus("enroll-status", "ok", "enrolled — device key pinned to the slot");
+      refreshUi();
+      return;
+    }
+    const err = poll.json?.error;
+    if (err === "authorization_pending") continue;
+    if (err === "slow_down") { interval += 5000; continue; }
+    setStatus("enroll-status", "err", `enrollment refused (${err ?? poll.status}) — see log`);
+    $("enroll-code-box").style.display = "none";
+    $("btn-enroll").disabled = false;
+    return;
+  }
+  setStatus("enroll-status", "err", "device code expired — start again");
+  $("btn-enroll").disabled = false;
+}
+
+// ── staffing (begin → navigator.credentials.get → custom grant) ───────────
+async function tap() {
+  const { clientId } = cfg();
+  const enrollmentAt = store.get("enrollment-at");
+  if (!enrollmentAt) return alert("Enroll the terminal first.");
+
+  const begin = await call("POST", "/connect/function-staffing/begin", { bearer: enrollmentAt });
+  if (!begin.ok) {
+    if (begin.status === 401) {
+      // Enrollment access token lapsed — refresh the enrollment chain once.
+      log("note", "Enrollment token lapsed; refreshing the enrollment chain …");
+      if (await refreshEnrollment()) return tap();
+    }
+    setStatus("staff-status", "err", "begin refused — see log (grants? passkeys for this RP-ID?)");
+    return;
+  }
+
+  // The options arrive verbatim — only base64url fields become ArrayBuffers.
+  const pk = begin.json.publicKey;
+  const options = {
+    challenge: b64urlDecode(pk.challenge),
+    rpId: pk.rpId,
+    timeout: pk.timeout,
+    userVerification: pk.userVerification || "preferred",
+    allowCredentials: (pk.allowCredentials ?? []).map((c) => ({ type: "public-key", id: b64urlDecode(c.id) })),
+  };
+  setStatus("staff-status", "warn", "waiting for the passkey tap …");
+  let credential;
+  try {
+    credential = await navigator.credentials.get({ publicKey: options });
+  } catch (e) {
+    log("res-err", "WebAuthn: " + e);
+    setStatus("staff-status", "err", "tap cancelled/failed — is the slot RP-ID this host, and does the user have a passkey?");
+    return;
+  }
+
+  const r = credential.response;
+  const assertion = JSON.stringify({
+    id: credential.id,
+    rawId: b64url(credential.rawId),
+    type: credential.type,
+    response: {
+      authenticatorData: b64url(r.authenticatorData),
+      clientDataJSON: b64url(r.clientDataJSON),
+      signature: b64url(r.signature),
+      userHandle: r.userHandle ? b64url(r.userHandle) : null,
+    },
+  });
+
+  const token = await call("POST", "/connect/token", { form: {
+    grant_type: STAFFING_GRANT, client_id: clientId,
+    ceremony_id: begin.json.ceremonyId, assertion } });
+  if (!token.ok) { setStatus("staff-status", "err", "staffing grant refused — see log"); return; }
+
+  store.set("staffing-at", token.json.access_token);
+  store.set("staffing-rt", token.json.refresh_token);
+  setStatus("staff-status", "ok", `SHIFT ACTIVE — access token ${token.json.expires_in}s, refresh chain until the shift ceiling`);
+  refreshUi();
+}
+
+async function refreshEnrollment() {
+  const { clientId } = cfg();
+  const rt = store.get("enrollment-rt");
+  if (!rt) return false;
+  const r = await call("POST", "/connect/token", { form: {
+    grant_type: "refresh_token", refresh_token: rt, client_id: clientId } });
+  if (!r.ok) { setStatus("enroll-status", "err", "enrollment chain dead — slot disabled/revoked? Re-enroll."); return false; }
+  store.set("enrollment-at", r.json.access_token);
+  store.set("enrollment-rt", r.json.refresh_token);
+  return true;
+}
+
+async function refreshStaffing() {
+  const { clientId } = cfg();
+  const rt = store.get("staffing-rt");
+  if (!rt) return;
+  const r = await call("POST", "/connect/token", { form: {
+    grant_type: "refresh_token", refresh_token: rt, client_id: clientId } });
+  if (r.ok) {
+    store.set("staffing-at", r.json.access_token);
+    store.set("staffing-rt", r.json.refresh_token);
+    setStatus("staff-status", "ok", `SHIFT ACTIVE — token refreshed (${r.json.expires_in}s)`);
+    return;
+  }
+  if (isStaffingRequired(r)) { showLock(); return; }
+  setStatus("staff-status", "err", "refresh refused — see log");
+}
+
+async function lockTerminal() {
+  const { terminalId } = cfg();
+  if (!terminalId) return alert("Configure the terminal_id first.");
+  // The enrollment token works too (§15.2) — locking must not depend on a
+  // live staffing access token.
+  const bearer = store.get("staffing-at") ?? store.get("enrollment-at");
+  const r = await call("POST", `/connect/function-terminal/${terminalId}/lock`, { bearer });
+  if (r.ok) { log("note", `Lock ended ${r.json?.Ended ?? "?"} session(s).`); showLock(); }
+}
+
+// ── boot ───────────────────────────────────────────────────────────────────
+function refreshUi() {
+  const { clientId, terminalId } = cfg();
+  $("cfg-client").value = clientId; $("cfg-terminal").value = terminalId;
+  $("cfg-note").textContent =
+    `RP-ID note: create the slot with WebAuthn RP-ID "${window.location.hostname}" so passkey taps work on this host.`;
+  const enrolled = !!store.get("enrollment-at");
+  const staffed = !!store.get("staffing-at");
+  if (enrolled) setStatus("enroll-status", "ok", "enrolled — device key pinned to the slot");
+  $("btn-enroll").disabled = enrolled;
+  $("btn-tap").disabled = !enrolled;
+  $("btn-refresh").disabled = !staffed;
+  $("btn-lock").disabled = !enrolled;
+  if (staffed) setStatus("staff-status", "ok", "SHIFT ACTIVE (restored from storage)");
+}
+
+loadOrCreateKey().then(refreshUi).catch((e) => {
+  log("res-err", "Key setup failed: " + e);
+  alert("WebCrypto/IndexedDB unavailable — use a secure context (https or localhost).");
+});
+</script>
+</body>
+</html>

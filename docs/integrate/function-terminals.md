@@ -87,6 +87,36 @@ Delivery rides Modgud's Wolverine outbox; the external transport binding is
 deployment configuration. Events are at-least-once and unordered across
 terminals — key any projection by `StaffingSessionId`.
 
+## Provisioning (what a terminal gets at install time)
+
+A Modgud admin creates one slot per device and reads the terminal-app
+configuration off the slot view:
+
+| Parameter | Source | Notes |
+|---|---|---|
+| Modgud base URL | deployment | |
+| `client_id` | slot view (auto-generated `{function}.terminal.{8 chars}`) | public client, no secret, DPoP mandatory, reference tokens |
+| `terminal_id` | slot view (the slot's GUID) | needed for the lock endpoint |
+| RP-ID | slot view (WebAuthn RP-ID set at slot creation) | use ONE RP-ID for all terminals of the consuming app so a staff passkey works on every terminal |
+
+The terminal generates an **ES256 (P-256) device key** at first start —
+ideally in a secure element / TPM, never exportable. Key loss or rotation
+means a **fresh slot** (deliberate: no silent re-enrollment). During the
+enrollment consent the admin sees a key fingerprint (`XXXX-XXXX` — first
+8 hex chars of SHA-256 over the RFC 7638 JWK thumbprint); show the same
+fingerprint on the device so the admin can visually match device and
+consent.
+
+::: tip Reference client
+The Modgud repository ships a **terminal simulator** under
+`tools/terminal-simulator/` (dev tooling, never part of the container):
+a static page + tiny proxy that runs the full enrollment → passkey tap →
+refresh → lock cycle against a local instance, logging every request.
+Its DPoP/assertion code is the living wire-format reference for the flows
+below; the C# equivalent is the E2E suite
+(`TerminalDeviceEnrollmentTests`, `FunctionStaffingTests`).
+:::
+
 ## Terminal flows (for terminal implementers)
 
 1. **Enrollment** (once per device): RFC 8628 device flow against the slot's
