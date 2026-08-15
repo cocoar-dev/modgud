@@ -269,6 +269,47 @@ public class PositionCrudTests : IntegrationTestBase
         }
     }
 
+    /// <summary>
+    /// §15.4 — deleting a position takes its terminal slots with it. Without the
+    /// cascade a soft-deleted position left its slots Pending/Active and their
+    /// managed OAuth clients registered, pointing at a principal that no longer
+    /// exists (found by clicking through the running container).
+    /// </summary>
+    [Fact]
+    public async Task Deleting_a_position_revokes_its_slots_and_deletes_their_clients()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+
+        var resp = await Client.PostAsJsonAsync("/api/position", new
+        {
+            AccountName = "portier.cascade",
+            TerminalPolicy = new { Enabled = true },
+            Terminals = new[] { new { DisplayName = "Terminal links", WebAuthnRpId = "alerthub.example.com" } },
+        }, JsonOptions, ct);
+        Assert.True(resp.IsSuccessStatusCode, $"create failed: {await resp.Content.ReadAsStringAsync(ct)}");
+        var created = (await resp.Content.ReadFromJsonAsync<PositionPrincipalDto>(JsonOptions, ct))!;
+
+        var slot = (await Client.GetFromJsonAsync<List<TerminalDto>>(
+            $"/api/position/{created.Id}/terminals", JsonOptions, ct))!.Single();
+
+        var delete = await Client.DeleteAsync($"/api/position/{created.Id}", ct);
+        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+
+        var enrollment = await session.LoadAsync<TerminalEnrollment>(new ShortGuid(slot.Id).Guid, ct);
+        Assert.NotNull(enrollment);
+        Assert.Equal(TerminalEnrollmentStatus.Revoked, enrollment!.Status);
+
+        // Same shape as the per-slot revoke: the client document stays for audit
+        // but is soft-deleted, so nothing can authenticate with it any more.
+        var client = (await session.Query<OAuthApplicationState>()
+            .Where(c => c.ClientId == slot.ClientId).ToListAsync(ct)).Single();
+        Assert.True(client.IsDeleted);
+    }
+
     /// <summary>Plan §4.1 holds at create time too: slots need terminal use.
     /// The rejection is all-or-nothing — no position, no orphaned client.</summary>
     [Fact]

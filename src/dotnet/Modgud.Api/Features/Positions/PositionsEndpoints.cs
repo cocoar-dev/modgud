@@ -256,15 +256,36 @@ public static class PositionsEndpoints
                 ShortGuid id,
                 AppSettings settings,
                 IDocumentSession session,
+                OAuthAdminService oauth,
                 DataEventDispatcher dispatcher,
                 IOAuthGrantRevoker revoker,
                 IStaffingRevoker staffingRevoker,
+                Wolverine.IMessageBus bus,
+                HttpContext httpContext,
                 CancellationToken ct) =>
             {
                 if (!settings.Features.PositionTerminals) return Results.NotFound();
 
                 var fn = await session.LoadAsync<PositionPrincipal>(id.Guid, ct);
                 if (fn is null || fn.IsDeleted) return Results.NotFound();
+
+                var deleteActor = PositionGrantsEndpoints.RequireActor(httpContext);
+                var deletedAt = DateTimeOffset.UtcNow;
+
+                // §15.4 — the slots go with the position. Without this a deleted
+                // position left its terminal slots Pending/Active and their
+                // managed OAuth clients registered: orphans pointing at a
+                // principal that no longer exists. Same steps the per-slot
+                // revoke takes, staged into this delete's unit of work.
+                var slots = await session.Query<TerminalEnrollment>()
+                    .Where(t => t.PositionPrincipalId == id.Guid && t.Status != TerminalEnrollmentStatus.Revoked)
+                    .ToListAsync(ct);
+                foreach (var slot in slots)
+                {
+                    session.Events.Append(slot.Id, new TerminalEnrollmentRevoked(slot.Id, deleteActor, deletedAt));
+                    if (await oauth.StageDeleteTerminalClientAsync(slot.OAuthApplicationId, ct) is { } slotError)
+                        return Results.BadRequest(new { Error = slotError.Code, Message = slotError.Description });
+                }
 
                 // Soft delete via the stream: the projection flips IsDeleted (and
                 // IsActive) so audit / group-membership references stay resolvable.
@@ -279,6 +300,16 @@ public static class PositionsEndpoints
                 var subject = fn.Id.ToString();
                 await revoker.RevokeTokensBySubjectAsync(subject, ct);
                 await revoker.RevokeAuthorizationsBySubjectAsync(subject, ct);
+
+                // Each revoked slot's device is cut off now, not at token expiry,
+                // and consumers hear about it (MG-FT-09 §17).
+                foreach (var slot in slots)
+                {
+                    await revoker.RevokeTokensByApplicationIdAsync(slot.OAuthApplicationId.ToString(), ct);
+                    dispatcher.DispatchDeletedEvent("Terminal", new ShortGuid(slot.Id).ToString(), session.TenantId);
+                    await bus.PublishAsync(new Modgud.Domain.PositionTerminals.Contracts.V1.PositionTerminalStatusChanged(
+                        fn.Id, slot.Id, TerminalEnrollmentStatus.Revoked, deletedAt));
+                }
 
                 dispatcher.DispatchDeletedEvent("Position", new ShortGuid(fn.Id).ToString(), session.TenantId);
                 return Results.Ok();
