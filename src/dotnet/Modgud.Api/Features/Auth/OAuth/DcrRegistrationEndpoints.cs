@@ -138,7 +138,8 @@ public static class DcrRegistrationEndpoints
                 OutcomeCode = AuditOutcomes.Succeeded,
                 OperationCode = "register",
             }),
-            ct);
+            actorId: null,
+            ct: ct);
         if (createResult.IsError)
         {
             // Should never happen for DCR-validated input — the validator

@@ -189,6 +189,30 @@ public record CreateOAuthClientDto
     /// when client validation or persistence fails.
     /// </summary>
     public ServiceAccountCreateDto? NewServiceAccount { get; init; }
+
+    /// <summary>
+    /// Optional ShortGuid of a Position this terminal client serves — the
+    /// terminal counterpart of <see cref="LinkedServiceAccountId"/>. Required
+    /// when <see cref="AllowedGrantTypes"/> includes the staffing grant, and
+    /// forbidden without it. Creating the client creates the position's
+    /// terminal slot in the same save.
+    /// </summary>
+    public string? LinkedPositionPrincipalId { get; init; }
+
+    /// <summary>
+    /// Optional Position to create atomically with this terminal client.
+    /// Mutually exclusive with <see cref="LinkedPositionPrincipalId"/> — same
+    /// shape as <see cref="NewServiceAccount"/>, so first-time terminal setup
+    /// fits in one save without leaving an orphaned principal behind.
+    /// </summary>
+    public Positions.PositionCreateDto? NewPosition { get; init; }
+
+    /// <summary>Display name of the terminal slot this client serves
+    /// ("Gate terminal left"). Required alongside a position link.</summary>
+    public string? TerminalDisplayName { get; init; }
+
+    /// <summary>Optional physical location of that slot ("Gate 3").</summary>
+    public string? TerminalLocation { get; init; }
 }
 
 public record UpdateOAuthClientDto
@@ -270,4 +294,15 @@ public record OAuthClientCreatedDto
     public required OAuthClientDto Client { get; init; }
     public string? ClientSecret { get; init; }
     public ServiceAccountDto? CreatedServiceAccount { get; init; }
+
+    /// <summary>
+    /// The Position created inline via <see cref="CreateOAuthClientDto.NewPosition"/> —
+    /// the terminal counterpart of <see cref="CreatedServiceAccount"/>. Null when the
+    /// client referenced an existing position or is not terminal-managed.
+    /// </summary>
+    public Positions.PositionPrincipalDto? CreatedPosition { get; init; }
+
+    /// <summary>ShortGuid of the terminal slot created alongside a
+    /// terminal-managed client. Null for non-terminal clients.</summary>
+    public string? CreatedTerminalId { get; init; }
 }

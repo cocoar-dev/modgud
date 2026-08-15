@@ -89,8 +89,10 @@ terminals — key any projection by `StaffingSessionId`.
 
 ## Provisioning (what a terminal gets at install time)
 
-A Modgud admin creates one slot per device and reads the terminal-app
-configuration off the slot view:
+A Modgud admin creates one slot per device — either in the position modal
+or from the OAuth-client side (creating a client with the staffing grant
+stages position link + slot + client in one save) — and reads the
+terminal-app configuration off the slot view:
 
 | Parameter | Source | Notes |
 |---|---|---|

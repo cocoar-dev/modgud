@@ -1,5 +1,7 @@
 using BuildingBlocks.EventDispatcher;
+using BuildingBlocks.Helper;
 using Marten;
+using Modgud.Api.Features.Positions;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Services;
 using Modgud.Authentication.ExtensionMethods;
@@ -40,7 +42,7 @@ public static class OAuthClientsEndpoints
         .WithName("OAuth_Clients_Get")
         .RequiresPermission("oauth-client:read");
 
-        group.MapPost("", async (CreateOAuthClientDto dto, HttpContext http, IPermissionService permissions, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
+        group.MapPost("", async (CreateOAuthClientDto dto, HttpContext http, AppSettings settings, IPermissionService permissions, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
         {
             if (dto.NewServiceAccount is not null)
             {
@@ -50,13 +52,31 @@ public static class OAuthClientsEndpoints
                     return Results.Forbid();
             }
 
-            var result = await svc.CreateClientAsync(dto, ct);
+            // MG-FT — terminal-managed create: 404 while the feature flag is off
+            // (mirrors the position endpoints), and creating/linking a position's
+            // slot needs position:write on top of oauth-client:write.
+            if (OAuthAdminService.HasTerminalClientIntent(dto))
+            {
+                if (!settings.Features.PositionTerminals) return Results.NotFound();
+                var userId = http.GetUserId();
+                if (userId is null || !await permissions.HasPermissionAsync(
+                        userId.Value, AppSlugs.Modgud, "position:write", ct))
+                    return Results.Forbid();
+            }
+
+            var result = await svc.CreateClientAsync(
+                dto, dcrMetadata: null, enlistInTransaction: null, actorId: http.GetUserId(), ct);
             // Broadcast only the client view (never the one-time secret in the wrapper).
             if (!result.IsError)
             {
                 dispatcher.DispatchCreatedEvent("OAuthClient", result.Value.Client, session.TenantId);
                 if (result.Value.CreatedServiceAccount is { } serviceAccount)
                     dispatcher.DispatchCreatedEvent("ServiceAccount", serviceAccount, session.TenantId);
+                if (result.Value.CreatedPosition is { } position)
+                    dispatcher.DispatchCreatedEvent("Position", position, session.TenantId);
+                if (result.Value.CreatedTerminalId is { } terminalId && ShortGuid.TryParse(terminalId, out Guid terminalGuid))
+                    dispatcher.DispatchCreatedEvent("Terminal",
+                        await PositionTerminalsEndpoints.LoadDtoAsync(session, terminalGuid, ct), session.TenantId);
             }
             return result.ToResult(created => Results.Created($"{path}/admin/oauth/clients/{created.Client.Id}", created));
         })

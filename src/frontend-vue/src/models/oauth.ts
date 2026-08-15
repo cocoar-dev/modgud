@@ -3,6 +3,7 @@
 // Backend serializes with PropertyNamingPolicy=null, so PascalCase is required.
 
 import type { ServiceAccountCreateDto, ServiceAccountDto } from './serviceAccount'
+import type { PositionCreateDto, PositionPrincipalDto } from './position'
 
 export interface OAuthClientClaimDto {
   Type: string
@@ -141,6 +142,22 @@ export interface CreateOAuthClientDto {
    * exclusive with LinkedServiceAccountId.
    */
   NewServiceAccount?: ServiceAccountCreateDto | null
+  /**
+   * Existing Position this terminal client serves — the terminal counterpart
+   * of LinkedServiceAccountId. Required with the staffing grant; the client's
+   * terminal slot is created in the same save.
+   */
+  LinkedPositionPrincipalId?: string | null
+  /**
+   * Position created atomically with this terminal client. Mutually exclusive
+   * with LinkedPositionPrincipalId. Must not stage terminal slots — this
+   * client IS the slot.
+   */
+  NewPosition?: PositionCreateDto | null
+  /** Display name of the terminal slot ("Gate terminal left"). Required with a position link. */
+  TerminalDisplayName?: string | null
+  /** Optional physical location of that slot ("Gate 3"). */
+  TerminalLocation?: string | null
 }
 
 export interface UpdateOAuthClientDto {
@@ -200,6 +217,10 @@ export interface OAuthClientCreatedDto {
   Client: OAuthClientDto
   ClientSecret?: string | null
   CreatedServiceAccount?: ServiceAccountDto | null
+  /** Position created inline via NewPosition — the terminal counterpart of CreatedServiceAccount. */
+  CreatedPosition?: PositionPrincipalDto | null
+  /** ShortGuid of the terminal slot created alongside a terminal-managed client. */
+  CreatedTerminalId?: string | null
 }
 
 export interface ClientSecretDto {

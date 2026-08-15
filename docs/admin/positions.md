@@ -63,9 +63,30 @@ surface is read-only for it).
 
 - **WebAuthn RP ID** — the domain staff passkeys verify against. Use ONE
   RP-ID for all terminals of the consuming app, so a staff passkey works
-  on every terminal.
+  on every terminal. Once a position has a slot, further slots inherit its
+  RP-ID and the field locks — staff passkeys hang off the RP-ID, so only a
+  matching RP-ID lets the already-enrolled tokens unlock a new terminal.
 - The slot view shows the **`client_id`** and the slot id — hand both to
   whoever installs the terminal device.
+
+### …or start from the OAuth-client side
+
+**Admin → OAuth Clients → Create** works too: pick the **staffing grant**
+in the Flows tab and the terminal block appears — reference an existing
+position or stage a **new position as a draft** (same pattern as creating a
+service account inline with a `client_credentials` client). The rule
+mirrors the M2M one: as a `client_credentials` client must be backed by a
+service account, a staffing client must be backed by a position — referenced
+or created inline, never both. Both paths meet in the same save: position
+(if new), slot, and client land atomically.
+
+- The **`client_id` is generated** (`{position}.terminal.{suffix}`) so the
+  audit log reads the owning position straight off the identifier.
+- The client profile is **fixed server-side** (public, secretless, DPoP
+  mandatory, reference tokens, exactly device_code + refresh_token +
+  staffing) — scopes, lifetimes and redirects from the client form do not
+  apply to terminal clients.
+- Requires `position:write` **in addition to** `oauth-client:write`.
 
 ## 4. Approve the enrollment
 
