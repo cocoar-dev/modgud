@@ -30,15 +30,6 @@ const toast = useToast()
 const props = defineProps<{
   id: string
   close: (result?: unknown) => void
-  /**
-   * Reuse the normal create dialog as an embedded draft editor (opened from
-   * ClientDetails for a terminal client). In this mode Save returns the
-   * validated PositionCreateDto to the parent without calling the API; the
-   * terminal slot itself is defined by the client form, so slot staging is
-   * absent and terminal use must stay enabled.
-   */
-  draftOnly?: boolean
-  initial?: PositionCreateDto
 }>()
 
 const store = usePositionStore()
@@ -51,15 +42,13 @@ const error = ref<string | null>(null)
 const activeTab = ref<'general' | 'terminals' | 'grants' | 'sessions'>('general')
 
 const form = ref({
-  AccountName: props.initial?.AccountName ?? '',
-  Purpose: props.initial?.Purpose ?? '',
-  IsActive: props.initial?.IsActive ?? true,
-  // A draft position backs the terminal client being created, so terminal use
-  // starts (and must stay) on; the plain create keeps the safe default off.
-  TerminalEnabled: props.initial?.TerminalPolicy?.Enabled ?? (props.draftOnly ?? false),
+  AccountName: '',
+  Purpose: '',
+  IsActive: true,
+  TerminalEnabled: false,
   // Plan defaults: a 16 h shift session under a 24 h absolute ceiling.
-  StaffingSessionLifetimeMinutes: props.initial?.TerminalPolicy?.StaffingSessionLifetimeMinutes ?? 16 * 60,
-  MaximumStaffingSessionLifetimeMinutes: props.initial?.TerminalPolicy?.MaximumStaffingSessionLifetimeMinutes ?? 24 * 60,
+  StaffingSessionLifetimeMinutes: 16 * 60,
+  MaximumStaffingSessionLifetimeMinutes: 24 * 60,
 })
 const original = ref({ ...form.value })
 const accountNamePattern = /^[a-z0-9][a-z0-9._-]{1,63}$/
@@ -94,9 +83,7 @@ const modalTitle = computed(() => {
 
 const footerButton = computed(() => ({
   visible: true,
-  text: props.draftOnly
-    ? t('admin.positions.applyDraft', {}, 'Übernehmen')
-    : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
+  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: !form.value.AccountName.trim() || generalIssues.value.length > 0
     || terminalIssues.value.length > 0 || loading.value,
   onClick: save,
@@ -114,7 +101,7 @@ const grantsHttp = computed(() => useHttpClient(`/api/position/${props.id}/grant
 // Create mode stages grants (rule 5: the entity is creatable completely — the
 // one Save commits position + grants atomically); edit mode operates on live
 // grants immediately (rule 2, they have their own lifecycle + audit identity).
-const stagedGrantUserIds = ref<string[]>(props.initial?.GrantUserIds ? [...props.initial.GrantUserIds] : [])
+const stagedGrantUserIds = ref<string[]>([])
 
 function userLabel(userId: string): string {
   const u = userStore.entities.find((x) => x.Id === userId)
@@ -224,9 +211,6 @@ const terminalIssues = computed(() => {
   if (stagedTerminals.value.length > 0 && !form.value.TerminalEnabled)
     issues.push(t('admin.positionTerminals.stagedNeedPolicy', {},
       'Turn terminal use on — the staged slots are saved with it.'))
-  if (props.draftOnly && !form.value.TerminalEnabled)
-    issues.push(t('admin.positions.draftNeedsTerminalUse', {},
-      'Terminal use must stay on — this position backs the terminal client being created.'))
   return issues
 })
 
@@ -373,30 +357,15 @@ async function save() {
         AccountName: form.value.AccountName.trim(),
         Purpose: form.value.Purpose.trim() || undefined,
         IsActive: form.value.IsActive,
-        // The draft travels through the client create, which merges the policy
-        // onto the disabled default — so it needs the FULL policy, not the
-        // diff (an untouched draft would otherwise arrive policy-less and be
-        // rejected as terminal-disabled).
-        TerminalPolicy: props.draftOnly
-          ? {
-              Enabled: form.value.TerminalEnabled,
-              StaffingSessionLifetimeMinutes: form.value.StaffingSessionLifetimeMinutes,
-              MaximumStaffingSessionLifetimeMinutes: form.value.MaximumStaffingSessionLifetimeMinutes,
-            }
-          : policyDiff(),
+        TerminalPolicy: policyDiff(),
         GrantUserIds: stagedGrantUserIds.value.length > 0 ? stagedGrantUserIds.value : undefined,
-        // draftOnly: the slot is defined by the client form, never staged here.
-        Terminals: !props.draftOnly && stagedTerminals.value.length > 0
+        Terminals: stagedTerminals.value.length > 0
           ? stagedTerminals.value.map((slot) => ({
               DisplayName: slot.DisplayName,
               Location: slot.Location || undefined,
               WebAuthnRpId: slot.WebAuthnRpId,
             }))
           : undefined,
-      }
-      if (props.draftOnly) {
-        props.close(createDto)
-        return
       }
       await store.createEntity(createDto)
     } else {
@@ -535,16 +504,10 @@ async function save() {
             </CoarFormField>
           </div>
 
-          <!-- draftOnly: the slot is defined by the surrounding client form —
-               staging a second producer here would race the same save. -->
-          <CoarNotice v-if="props.draftOnly" variant="info" class="mt-4">
-            {{ t('admin.positions.draftSlotHint', {}, 'The terminal slot is defined by the OAuth client being created and lands together with this position in one save. Additional slots can be added in the position modal afterwards.') }}
-          </CoarNotice>
-
           <!-- Terminal slots (MG-FT-03). Rule 1: visible in every state — the
                create row is disabled (with the reason as hint) until the
                PERSISTED policy allows slots. Slot ops are immediate actions. -->
-          <div v-if="!props.draftOnly" class="mt-4">
+          <div class="mt-4">
             <div class="mb-3 flex flex-wrap items-end gap-2">
               <CoarFormField class="min-w-0 flex-1" :label="t('admin.positionTerminals.name', {}, 'Terminal name')">
                 <CoarTextInput v-model="newTerminal.DisplayName" :disabled="!canAddTerminal"

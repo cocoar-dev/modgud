@@ -93,6 +93,12 @@ export interface OAuthClientDto {
    * the read-only modal that deep-links to the SA editor.
    */
   LinkedServiceAccountId?: string | null
+  /**
+   * ShortGuid of the Position whose terminal slot this client serves, or
+   * null for non-terminal clients. Drives the Terminal column in the admin
+   * grid and the deep-link into the position modal.
+   */
+  LinkedPositionPrincipalId?: string | null
 }
 
 export interface CreateOAuthClientDto {

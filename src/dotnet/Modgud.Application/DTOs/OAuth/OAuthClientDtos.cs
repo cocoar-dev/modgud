@@ -108,6 +108,13 @@ public record OAuthClientDto
     /// <c>client_credentials</c>, or unlinked + user-flow grants).
     /// </summary>
     public string? LinkedServiceAccountId { get; init; }
+
+    /// <summary>
+    /// ShortGuid of the Position whose terminal slot this client serves, or
+    /// null for non-terminal clients. Drives the Terminal-badge in the admin
+    /// grid and the read-only modal that deep-links into the position editor.
+    /// </summary>
+    public string? LinkedPositionPrincipalId { get; init; }
 }
 
 public record OAuthClientClaimDto

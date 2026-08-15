@@ -69,24 +69,25 @@ surface is read-only for it).
 - The slot view shows the **`client_id`** and the slot id — hand both to
   whoever installs the terminal device.
 
-### …or start from the OAuth-client side
+### How terminal clients appear elsewhere
 
-**Admin → OAuth Clients → Create** works too: pick the **staffing grant**
-in the Flows tab and the terminal block appears — reference an existing
-position or stage a **new position as a draft** (same pattern as creating a
-service account inline with a `client_credentials` client). The rule
-mirrors the M2M one: as a `client_credentials` client must be backed by a
-service account, a staffing client must be backed by a position — referenced
-or created inline, never both. Both paths meet in the same save: position
-(if new), slot, and client land atomically.
+The position modal is the **only UI** that creates and manages terminal
+clients — deliberately: a terminal client is the technical footprint of a
+slot, not a configurable OAuth client. In the **OAuth Clients grid** they
+stay visible as inventory (the Terminal column names the owning position,
+so the device fleet is countable at a glance), but they are read-only
+there: opening one deep-links into the position modal instead — the same
+rule SA-managed clients follow with the Service-Account editor.
 
-- The **`client_id` is generated** (`{position}.terminal.{suffix}`) so the
-  audit log reads the owning position straight off the identifier.
-- The client profile is **fixed server-side** (public, secretless, DPoP
-  mandatory, reference tokens, exactly device_code + refresh_token +
-  staffing) — scopes, lifetimes and redirects from the client form do not
-  apply to terminal clients.
-- Requires `position:write` **in addition to** `oauth-client:write`.
+For automation, the admin **API** also accepts the client-side create
+(`POST /api/admin/oauth/clients` with the staffing grant): reference an
+existing position (`LinkedPositionPrincipalId`) or inline-create one
+(`NewPosition`) — never both, mirroring the `client_credentials` ⇔
+service-account rule. Position (if new), slot, and client land in one
+atomic save; the profile is **fixed server-side** (public, secretless,
+DPoP mandatory, reference tokens, exactly device_code + refresh_token +
+staffing), the `client_id` is generated (`{position}.terminal.{suffix}`),
+and the call needs `position:write` in addition to `oauth-client:write`.
 
 ## 4. Approve the enrollment
 

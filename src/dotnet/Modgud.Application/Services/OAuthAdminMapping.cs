@@ -582,6 +582,9 @@ internal static class OAuthAdminMapping
             LinkedServiceAccountId = s.LinkedServiceAccountId is null
                 ? null
                 : new ShortGuid(s.LinkedServiceAccountId.Value).ToString(),
+            LinkedPositionPrincipalId = s.LinkedPositionPrincipalId is null
+                ? null
+                : new ShortGuid(s.LinkedPositionPrincipalId.Value).ToString(),
         };
     }
 
