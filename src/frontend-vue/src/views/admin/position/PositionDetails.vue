@@ -743,12 +743,19 @@ async function save() {
 </template>
 
 <style scoped>
+/* Pinned body height so the modal keeps ONE size across all tabs (no resize
+   on tab switch) — same pattern as .user-edit-frame in UserDetails. Applies
+   in create too, because create is tabbed as well. flex: 0 0 auto is required
+   so the height wins inside the modal's flex column. */
 .position-editor {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
   min-width: 0;
+  min-height: 0;
   padding: 0.25rem;
+  flex: 0 0 auto;
+  height: 60vh;
 }
 
 .form-section + .form-section {
@@ -782,6 +789,9 @@ async function save() {
   gap: 16px;
   padding: 2px 2px 16px;
   min-height: 0;
+  /* Long grant/slot/session lists scroll inside the pinned frame instead of
+     growing the modal. */
+  overflow-y: auto;
 }
 
 .tab-label {
