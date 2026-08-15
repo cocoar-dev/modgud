@@ -1,3 +1,7 @@
+using BuildingBlocks.Helper;
+using Marten;
+using Modgud.Domain.PositionTerminals;
+using Modgud.Domain.OAuth.Applications;
 using System.Net;
 using System.Net.Http.Json;
 using Modgud.Api.Tests.Infrastructure;
@@ -215,6 +219,80 @@ public class PositionCrudTests : IntegrationTestBase
         Assert.Contains(stream, e => e.Data is Modgud.Authorization.Events.PositionPrincipalCreatedEvent);
         Assert.Contains(stream, e => e.Data is Modgud.Authorization.Events.PositionPrincipalUpdatedEvent);
         Assert.Contains(stream, e => e.Data is Modgud.Authorization.Events.PositionPrincipalDeletedEvent);
+    }
+
+    /// <summary>
+    /// Modal contract rule 5 — a position is creatable as a whole: staged
+    /// terminal slots travel in the create body and commit with the position,
+    /// exactly like the service account's initial credential. Each slot brings
+    /// its managed OAuth client along in that same unit of work.
+    /// </summary>
+    [Fact]
+    public async Task Create_sets_up_staged_terminal_slots_in_the_same_save()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+
+        var resp = await Client.PostAsJsonAsync("/api/position", new
+        {
+            AccountName = "portier.staged",
+            TerminalPolicy = new { Enabled = true },
+            Terminals = new[]
+            {
+                new { DisplayName = "Terminal links", Location = "Tor 3", WebAuthnRpId = "alerthub.example.com" },
+                new { DisplayName = "Terminal rechts", Location = (string?)null, WebAuthnRpId = "alerthub.example.com" },
+            },
+        }, JsonOptions, ct);
+        var body = await resp.Content.ReadAsStringAsync(ct);
+        Assert.True(resp.IsSuccessStatusCode, $"create failed ({(int)resp.StatusCode}): {body}");
+
+        var created = (await resp.Content.ReadFromJsonAsync<PositionPrincipalDto>(JsonOptions, ct))!;
+        Assert.True(created.TerminalPolicy.Enabled);
+
+        var slots = await Client.GetFromJsonAsync<List<TerminalDto>>(
+            $"/api/position/{created.Id}/terminals", JsonOptions, ct);
+        Assert.NotNull(slots);
+        Assert.Equal(2, slots!.Count);
+        Assert.All(slots, s => Assert.Equal(TerminalEnrollmentStatus.Pending, s.Status));
+        Assert.All(slots, s => Assert.StartsWith("portier.staged.terminal.", s.ClientId));
+        Assert.Equal("Tor 3", slots.Single(s => s.DisplayName == "Terminal links").Location);
+
+        // Every slot's managed client committed with it — no half-created pair.
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+        foreach (var slot in slots)
+        {
+            var client = (await session.Query<OAuthApplicationState>()
+                .Where(c => c.ClientId == slot.ClientId).ToListAsync(ct)).Single();
+            Assert.Equal(new ShortGuid(created.Id).Guid, client.LinkedPositionPrincipalId);
+            Assert.Equal(new ShortGuid(slot.Id).Guid, client.ManagedTerminalEnrollmentId);
+        }
+    }
+
+    /// <summary>Plan §4.1 holds at create time too: slots need terminal use.
+    /// The rejection is all-or-nothing — no position, no orphaned client.</summary>
+    [Fact]
+    public async Task Create_rejects_staged_slots_while_terminal_use_stays_off()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+
+        var resp = await Client.PostAsJsonAsync("/api/position", new
+        {
+            AccountName = "portier.noterminals",
+            Terminals = new[] { new { DisplayName = "Terminal links", WebAuthnRpId = "alerthub.example.com" } },
+        }, JsonOptions, ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        Assert.Contains("TerminalPolicyDisabled", await resp.Content.ReadAsStringAsync(ct));
+
+        var all = await Client.GetFromJsonAsync<List<PositionPrincipalDto>>("/api/position", JsonOptions, ct);
+        Assert.DoesNotContain(all!, p => p.AccountName == "portier.noterminals");
+
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+        Assert.Empty(await session.Query<OAuthApplicationState>()
+            .Where(c => c.ClientId.StartsWith("portier.noterminals.")).ToListAsync(ct));
     }
 
     private async Task<PositionPrincipalDto> CreatePositionAsync(string accountName, CancellationToken ct)

@@ -28,8 +28,11 @@ classes, wire formats, integration events) lives under
   960 = 16 h). **Absolute maximum** — the hard ceiling no refresh can
   extend past (default 1440 = 24 h). Access tokens stay short-lived
   (10 min) independently of these.
-- **Authorized users** can be staged right in the create dialog — the
-  position and its grants are created in one atomic save.
+- **Authorized users** and **terminal slots** can be staged right in the
+  create dialog, on their own tabs — the position, its grants and its slots
+  are created in one atomic save. Nothing forces you to create the position
+  first and come back for the rest. (Enrolling a device stays a later step:
+  that is a ceremony on the device, not a setting.)
 
 Like every principal, the position receives roles/permissions through the
 normal groups & roles machinery — that is what ends up in its staffing
@@ -52,7 +55,8 @@ staffing sessions and revokes the session tokens.
 
 ## 3. Create terminal slots
 
-**Position detail → Shared terminals.** One slot per physical device.
+**Position detail → Terminals** (or the same tab while creating the
+position). One slot per physical device.
 Each slot atomically creates its own locked-down OAuth client (public,
 no secret, DPoP mandatory, reference tokens — the generic OAuth admin
 surface is read-only for it).

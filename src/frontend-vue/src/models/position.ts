@@ -27,6 +27,14 @@ export interface PositionCreateDto {
   TerminalPolicy?: PositionTerminalPolicyUpdateDto
   /** Users authorized in the same save (staged in create mode; all-or-nothing). */
   GrantUserIds?: string[]
+  /** Terminal slots set up in the same save; requires TerminalPolicy.Enabled. */
+  Terminals?: TerminalCreateDto[]
+}
+
+export interface TerminalCreateDto {
+  DisplayName: string
+  Location?: string
+  WebAuthnRpId: string
 }
 
 export interface PositionUpdateDto {

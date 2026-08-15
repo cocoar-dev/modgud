@@ -49,6 +49,16 @@ public class PositionCreateDto
     /// grant stream commit in one unit of work.
     /// </summary>
     public List<string>? GrantUserIds { get; set; }
+
+    /// <summary>
+    /// Terminal slots to set up in the same save (modal-contract rule 5 — like
+    /// the service account's initial credential). Requires
+    /// <see cref="TerminalPolicy"/> to enable terminal use. All-or-nothing: each
+    /// slot's OAuth client is staged into the same session as the position and
+    /// grant streams, so one rejected slot leaves nothing behind. Enrollment
+    /// stays a later step — that is a device ceremony, not a setting.
+    /// </summary>
+    public List<TerminalCreateDto>? Terminals { get; set; }
 }
 
 public class PositionUpdateDto

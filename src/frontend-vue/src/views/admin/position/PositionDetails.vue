@@ -12,6 +12,10 @@ import {
   CoarButton,
   CoarTag,
   CoarPopconfirm,
+  CoarTabGroup,
+  CoarTab,
+  CoarIcon,
+  CoarPopover,
   useToast,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
@@ -33,6 +37,9 @@ const userStore = useUserStore()
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
 const error = ref<string | null>(null)
+// Modal-contract rule 5: create and edit share the layout — the sessions tab
+// is simply absent while the position does not exist yet.
+const activeTab = ref<'general' | 'terminals' | 'grants' | 'sessions'>('general')
 
 const form = ref({
   AccountName: '',
@@ -77,7 +84,8 @@ const modalTitle = computed(() => {
 const footerButton = computed(() => ({
   visible: true,
   text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
-  disabled: !form.value.AccountName.trim() || !!accountNameError.value || !!lifetimeError.value || loading.value,
+  disabled: !form.value.AccountName.trim() || generalIssues.value.length > 0
+    || terminalIssues.value.length > 0 || loading.value,
   onClick: save,
 }))
 
@@ -151,14 +159,47 @@ async function transitionGrant(grant: PositionGrantDto, action: 'suspend' | 'res
   }
 }
 
-// ── Terminal slots (MG-FT-03) — edit-mode operations like grants. Slot
-// creation requires the PERSISTED terminal policy to be enabled (the server
-// enforces it); a staged-but-unsaved enable is not enough.
+// ── Terminal slots (MG-FT-03). Create mode STAGES slots the same way it
+// stages grants (rule 5: the entity is creatable completely — mirrors the
+// service account's initial credential, which is staged into the same
+// atomic create). Edit mode operates on live slots immediately (rule 2),
+// where the PERSISTED policy has to allow them.
 const terminals = ref<TerminalDto[]>([])
 const terminalsLoading = ref(false)
 const newTerminal = ref({ DisplayName: '', Location: '', WebAuthnRpId: '' })
 const terminalsHttp = computed(() => useHttpClient(`/api/position/${props.id}/terminals`))
-const canCreateTerminals = computed(() => !isCreate.value && original.value.TerminalEnabled)
+const stagedTerminals = ref<{ DisplayName: string; Location: string; WebAuthnRpId: string }[]>([])
+// In create the staged policy decides (it is committed in the same save); in
+// edit only the persisted one does, because the server validates against it.
+const canAddTerminal = computed(() =>
+  isCreate.value ? form.value.TerminalEnabled : original.value.TerminalEnabled)
+
+function stageTerminal() {
+  if (!newTerminal.value.DisplayName.trim() || !newTerminal.value.WebAuthnRpId.trim()) return
+  stagedTerminals.value.push({
+    DisplayName: newTerminal.value.DisplayName.trim(),
+    Location: newTerminal.value.Location.trim(),
+    WebAuthnRpId: newTerminal.value.WebAuthnRpId.trim(),
+  })
+  // Keep the RP ID — every terminal of one consuming app shares it.
+  newTerminal.value = { DisplayName: '', Location: '', WebAuthnRpId: newTerminal.value.WebAuthnRpId }
+}
+
+function unstageTerminal(index: number) {
+  stagedTerminals.value.splice(index, 1)
+}
+
+// Tabs organize, they don't disclose (rule 1) — so a validation error on an
+// inactive tab is flagged on its label, otherwise a disabled Save would have
+// no visible cause. Same shape as GroupDetails.
+const generalIssues = computed(() => [accountNameError.value].filter(Boolean) as string[])
+const terminalIssues = computed(() => {
+  const issues = [lifetimeError.value].filter(Boolean) as string[]
+  if (stagedTerminals.value.length > 0 && !form.value.TerminalEnabled)
+    issues.push(t('admin.positionTerminals.stagedNeedPolicy', {},
+      'Turn terminal use on — the staged slots are saved with it.'))
+  return issues
+})
 
 async function loadTerminals() {
   if (isCreate.value) return
@@ -305,6 +346,13 @@ async function save() {
         IsActive: form.value.IsActive,
         TerminalPolicy: policyDiff(),
         GrantUserIds: stagedGrantUserIds.value.length > 0 ? stagedGrantUserIds.value : undefined,
+        Terminals: stagedTerminals.value.length > 0
+          ? stagedTerminals.value.map((slot) => ({
+              DisplayName: slot.DisplayName,
+              Location: slot.Location || undefined,
+              WebAuthnRpId: slot.WebAuthnRpId,
+            }))
+          : undefined,
       }
       await store.createEntity(createDto)
     } else {
@@ -336,7 +384,50 @@ async function save() {
 <template>
   <ModalLayout :close="close" :title="modalTitle" icon="briefcase" :footer-button="footerButton">
     <div v-if="!loading || isCreate" class="position-editor">
-      <div class="modal-form">
+      <CoarTabGroup v-model="activeTab" class="tab-bar">
+        <CoarTab id="general">
+          <span class="tab-label">
+            {{ t('admin.positions.tabs.general', {}, 'General') }}
+            <CoarPopover v-if="generalIssues.length" mode="hover" :offset="8">
+              <span class="tab-issue" role="img" :aria-label="generalIssues.join(' ')">
+                <CoarIcon name="circle-alert" size="s" />
+              </span>
+              <template #content>
+                <div class="tab-issue-panel">
+                  <h4>{{ t('admin.positions.validation.incomplete', {}, 'Missing information') }}</h4>
+                  <ul>
+                    <li v-for="issue in generalIssues" :key="issue">{{ issue }}</li>
+                  </ul>
+                </div>
+              </template>
+            </CoarPopover>
+          </span>
+        </CoarTab>
+        <CoarTab id="terminals">
+          <span class="tab-label">
+            {{ t('admin.positions.tabs.terminals', {}, 'Terminals') }}
+            <CoarPopover v-if="terminalIssues.length" mode="hover" :offset="8">
+              <span class="tab-issue" role="img" :aria-label="terminalIssues.join(' ')">
+                <CoarIcon name="circle-alert" size="s" />
+              </span>
+              <template #content>
+                <div class="tab-issue-panel">
+                  <h4>{{ t('admin.positions.validation.incomplete', {}, 'Missing information') }}</h4>
+                  <ul>
+                    <li v-for="issue in terminalIssues" :key="issue">{{ issue }}</li>
+                  </ul>
+                </div>
+              </template>
+            </CoarPopover>
+          </span>
+        </CoarTab>
+        <CoarTab id="grants">{{ t('admin.positions.tabs.grants', {}, 'Authorized users') }}</CoarTab>
+        <!-- Rule 5: absent in create — sessions cannot exist before the position. -->
+        <CoarTab v-if="!isCreate" id="sessions">{{ t('admin.positions.tabs.sessions', {}, 'Staffing sessions') }}</CoarTab>
+      </CoarTabGroup>
+
+      <!-- Tab: General -->
+      <div v-show="activeTab === 'general'" class="tab-content modal-form">
         <!-- Section: Basis -->
         <section class="form-section">
           <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
@@ -372,14 +463,13 @@ async function save() {
             </CoarFormField>
           </div>
         </section>
+      </div>
 
-        <!-- Section: Terminals. Rule 1 — the lifetime fields stay VISIBLE when
-             terminal use is off (disabled, showing the effective defaults);
-             hiding them would make the policy unfindable. -->
+      <!-- Tab: Terminals. Rule 1 — the lifetime fields stay VISIBLE when
+           terminal use is off (disabled, showing the effective defaults);
+           hiding them would make the policy unfindable. -->
+      <div v-show="activeTab === 'terminals'" class="tab-content modal-form">
         <section class="form-section">
-          <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
-            <h3 class="section-divider__title">{{ t('admin.positions.section.terminals', {}, 'Shared terminals') }}</h3>
-          </CoarDivider>
           <div class="modal-form-grid">
             <CoarFormField class="col-full"
               :label="t('admin.positions.terminalsEnabled', {}, 'Terminal use')"
@@ -405,34 +495,56 @@ async function save() {
                create row is disabled (with the reason as hint) until the
                PERSISTED policy allows slots. Slot ops are immediate actions. -->
           <div class="mt-4">
-            <div v-if="isCreate" class="grant-empty">
-              {{ t('admin.positionTerminals.createFirst', {}, 'Terminal slots can be set up after the position is created.') }}
+            <div class="mb-3 flex flex-wrap items-end gap-2">
+              <CoarFormField class="min-w-0 flex-1" :label="t('admin.positionTerminals.name', {}, 'Terminal name')">
+                <CoarTextInput v-model="newTerminal.DisplayName" :disabled="!canAddTerminal"
+                  :placeholder="t('admin.positionTerminals.namePlaceholder', {}, 'Gate terminal left, …')" />
+              </CoarFormField>
+              <CoarFormField class="min-w-0 flex-1" :label="t('admin.positionTerminals.location', {}, 'Location')">
+                <CoarTextInput v-model="newTerminal.Location" :disabled="!canAddTerminal"
+                  :placeholder="t('admin.positionTerminals.locationPlaceholder', {}, 'Gate 3, …')" />
+              </CoarFormField>
+              <CoarFormField class="min-w-0 flex-1" :label="t('admin.positionTerminals.rpId', {}, 'WebAuthn RP ID')"
+                :hint="t('admin.positionTerminals.rpIdHint', {}, 'The RP ID staff passkeys verify against — usually shared by every terminal of the consuming app.')">
+                <CoarTextInput v-model="newTerminal.WebAuthnRpId" :disabled="!canAddTerminal"
+                  placeholder="alerthub.example.com" />
+              </CoarFormField>
+              <CoarButton size="s" icon-start="plus" class="shrink-0 mb-1"
+                :disabled="!canAddTerminal || !newTerminal.DisplayName.trim() || !newTerminal.WebAuthnRpId.trim()"
+                @click="isCreate ? stageTerminal() : createTerminal()">
+                {{ t('admin.positionTerminals.createButton', {}, 'Add slot') }}
+              </CoarButton>
             </div>
-            <template v-else>
-              <div class="mb-3 flex flex-wrap items-end gap-2">
-                <CoarFormField class="min-w-0 flex-1" :label="t('admin.positionTerminals.name', {}, 'Terminal name')">
-                  <CoarTextInput v-model="newTerminal.DisplayName" :disabled="!canCreateTerminals"
-                    :placeholder="t('admin.positionTerminals.namePlaceholder', {}, 'Gate terminal left, …')" />
-                </CoarFormField>
-                <CoarFormField class="min-w-0 flex-1" :label="t('admin.positionTerminals.location', {}, 'Location')">
-                  <CoarTextInput v-model="newTerminal.Location" :disabled="!canCreateTerminals"
-                    :placeholder="t('admin.positionTerminals.locationPlaceholder', {}, 'Gate 3, …')" />
-                </CoarFormField>
-                <CoarFormField class="min-w-0 flex-1" :label="t('admin.positionTerminals.rpId', {}, 'WebAuthn RP ID')"
-                  :hint="t('admin.positionTerminals.rpIdHint', {}, 'The RP ID staff passkeys verify against — usually shared by every terminal of the consuming app.')">
-                  <CoarTextInput v-model="newTerminal.WebAuthnRpId" :disabled="!canCreateTerminals"
-                    placeholder="alerthub.example.com" />
-                </CoarFormField>
-                <CoarButton size="s" icon-start="plus" class="shrink-0 mb-1"
-                  :disabled="!canCreateTerminals || !newTerminal.DisplayName.trim() || !newTerminal.WebAuthnRpId.trim()"
-                  @click="createTerminal">
-                  {{ t('admin.positionTerminals.createButton', {}, 'Add slot') }}
-                </CoarButton>
-              </div>
-              <CoarNotice v-if="!canCreateTerminals" variant="info" class="mb-3">
-                {{ t('admin.positionTerminals.enablePolicyFirst', {}, 'Enable terminal use and save before creating slots.') }}
-              </CoarNotice>
+            <CoarNotice v-if="!canAddTerminal" variant="info" class="mb-3">
+              {{ isCreate
+                ? t('admin.positionTerminals.enablePolicyStaged', {}, 'Turn terminal use on to add slots — they are created together with the position.')
+                : t('admin.positionTerminals.enablePolicyFirst', {}, 'Enable terminal use and save before creating slots.') }}
+            </CoarNotice>
 
+            <!-- Create: the staged slots, committed by the single Save. -->
+            <template v-if="isCreate">
+              <div v-if="stagedTerminals.length === 0" class="grant-empty">
+                {{ t('admin.positionTerminals.emptyStaged', {}, 'No terminal slots staged yet.') }}
+              </div>
+              <ul v-else class="flex flex-col gap-2">
+                <li v-for="(slot, index) in stagedTerminals" :key="`${slot.DisplayName}-${index}`"
+                    class="flex flex-wrap items-center gap-2 rounded border border-surface-200 p-3">
+                  <div class="flex min-w-0 flex-1 flex-col">
+                    <span class="truncate font-medium">{{ slot.DisplayName }}</span>
+                    <span class="truncate text-xs text-surface-500">
+                      {{ slot.WebAuthnRpId }}
+                      <template v-if="slot.Location"> · {{ slot.Location }}</template>
+                    </span>
+                  </div>
+                  <CoarTag variant="info">{{ t('admin.positionTerminals.statusStaged', {}, 'On save') }}</CoarTag>
+                  <CoarButton size="s" variant="ghost" icon-start="x" @click="unstageTerminal(index)">
+                    {{ t('common.remove', {}, 'Remove') }}
+                  </CoarButton>
+                </li>
+              </ul>
+            </template>
+
+            <template v-else>
               <div v-if="terminalsLoading" class="text-xs text-surface-500">
                 {{ t('common.loading', {}, 'Loading...') }}
               </div>
@@ -486,11 +598,7 @@ async function save() {
       <!-- Staffing sessions (MG-FT-05/07) — the live/audit view of shifts on
            this position's terminals; force-lock ends a running one remotely.
            Edit-mode only: sessions cannot exist before the position does. -->
-      <section v-if="!isCreate" class="form-section">
-        <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
-          <h3 class="section-divider__title">{{ t('admin.staffingSessions.sectionTitle', {}, 'Staffing sessions') }}</h3>
-        </CoarDivider>
-
+      <section v-if="!isCreate" v-show="activeTab === 'sessions'" class="form-section tab-content">
         <div v-if="sessionsLoading" class="text-xs text-surface-500">
           {{ t('common.loading', {}, 'Loading...') }}
         </div>
@@ -536,11 +644,7 @@ async function save() {
       <!-- Rule 5: same section in both modes — create STAGES grants (the one
            Save commits position + grants atomically), edit operates on live
            grants immediately (rule 2: own lifecycle, explicit actions). -->
-      <section class="form-section">
-        <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
-          <h3 class="section-divider__title">{{ t('admin.positionGrants.sectionTitle', {}, 'Authorized users') }}</h3>
-        </CoarDivider>
-
+      <section v-show="activeTab === 'grants'" class="form-section tab-content">
         <div class="mb-3 flex items-center gap-2">
           <CoarSelect
             v-model="selectedGrantUserId"
@@ -650,5 +754,48 @@ async function save() {
   color: var(--coar-text-neutral-secondary, #6b7280);
   font-size: 0.875rem;
   text-align: center;
+}
+
+.tab-bar {
+  margin-bottom: 12px;
+}
+
+.tab-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 2px 2px 16px;
+  min-height: 0;
+}
+
+.tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tab-issue {
+  display: flex;
+  align-items: center;
+  color: var(--coar-text-warning-primary, #b45309);
+  cursor: help;
+}
+
+.tab-issue-panel {
+  width: min(24rem, 70vw);
+  padding: 0.75rem 0.875rem;
+}
+
+.tab-issue-panel h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.tab-issue-panel ul {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.8rem;
 }
 </style>

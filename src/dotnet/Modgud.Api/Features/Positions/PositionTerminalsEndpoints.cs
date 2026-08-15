@@ -255,7 +255,7 @@ public static class PositionTerminalsEndpoints
         return terminal is null || terminal.PositionPrincipalId != positionId ? null : terminal;
     }
 
-    private static async Task<TerminalDto> LoadDtoAsync(IDocumentSession session, Guid terminalId, CancellationToken ct)
+    internal static async Task<TerminalDto> LoadDtoAsync(IDocumentSession session, Guid terminalId, CancellationToken ct)
         => ToDto((await session.LoadAsync<TerminalEnrollment>(terminalId, ct))!);
 
     private static TerminalDto ToDto(TerminalEnrollment t) => new()
