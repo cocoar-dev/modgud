@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using BuildingBlocks.EventDispatcher;
 using BuildingBlocks.Helper;
 using Modgud.Application.DTOs.Positions;
+using Modgud.Application.Services;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Events;
 using Modgud.Authorization.Principals;
@@ -61,6 +62,7 @@ public static class PositionsEndpoints
                 PositionCreateDto dto,
                 AppSettings settings,
                 IDocumentSession session,
+                OAuthAdminService oauth,
                 DataEventDispatcher dispatcher,
                 HttpContext httpContext,
                 CancellationToken ct) =>
@@ -76,6 +78,18 @@ public static class PositionsEndpoints
 
                 var policy = ApplyPolicy(PositionTerminalPolicy.Disabled, dto.TerminalPolicy, out var policyError);
                 if (policyError is not null) return policyError;
+
+                // Staged terminal slots — same up-front validation as the grants
+                // below. Plan §4.1 still holds: slots exist only while the
+                // position is opted into terminal use, so the staged policy has
+                // to enable it in this very save.
+                var stagedTerminals = dto.Terminals ?? [];
+                if (stagedTerminals.Count > 0 && !policy.Enabled)
+                    return Results.BadRequest(new { Error = "Terminal.TerminalPolicyDisabled",
+                        Message = "Enable terminal use on the position before adding terminal slots." });
+                if (stagedTerminals.Any(t => string.IsNullOrWhiteSpace(t.DisplayName)))
+                    return Results.BadRequest(new { Error = "Terminal.DisplayNameRequired",
+                        Message = "A display name is required." });
 
                 // Staged grants (rule 5: the entity is creatable completely) —
                 // resolve and validate EVERY user before creating anything, so a
@@ -123,10 +137,39 @@ public static class PositionsEndpoints
                         grantId, new Modgud.Domain.PositionTerminals.PositionGrantIssued(
                             grantId, fn.Id, grantUserId, actor, now));
                 }
+
+                // ... and every staged slot with its terminal-managed client, in
+                // that same unit of work (mirrors the service-account initial
+                // credential). A rejected slot returns before SaveChanges, so
+                // the whole create — position, grants, slots — never happened.
+                var terminalIds = new List<Guid>();
+                foreach (var terminal in stagedTerminals)
+                {
+                    var enrollmentId = Guid.NewGuid();
+                    var applicationId = Guid.NewGuid();
+                    var clientId = $"{fn.AccountName}.terminal.{new ShortGuid(Guid.NewGuid()).ToString()[..8]}";
+
+                    var clientError = oauth.StageCreateTerminalClient(
+                        applicationId, clientId, $"{fn.DisplayName} — {terminal.DisplayName.Trim()}",
+                        fn.Id, enrollmentId, terminal.WebAuthnRpId);
+                    if (clientError is not null)
+                        return Results.BadRequest(new { Error = clientError.Value.Code, Message = clientError.Value.Description });
+
+                    session.Events.StartStream<TerminalEnrollment>(enrollmentId, new TerminalEnrollmentCreated(
+                        enrollmentId, fn.Id, terminal.DisplayName.Trim(),
+                        string.IsNullOrWhiteSpace(terminal.Location) ? null : terminal.Location.Trim(),
+                        applicationId, clientId, terminal.WebAuthnRpId.Trim().ToLowerInvariant(),
+                        actor, now));
+                    terminalIds.Add(enrollmentId);
+                }
+
                 await session.SaveChangesAsync(ct);
 
                 var created = ToDto(fn);
                 dispatcher.DispatchCreatedEvent("Position", created, session.TenantId);
+                foreach (var terminalId in terminalIds)
+                    dispatcher.DispatchCreatedEvent("Terminal",
+                        await PositionTerminalsEndpoints.LoadDtoAsync(session, terminalId, ct), session.TenantId);
                 return Results.Ok(created);
             })
             .WithName("V2_Position_Create")
