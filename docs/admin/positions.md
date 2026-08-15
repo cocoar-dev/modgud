@@ -11,8 +11,11 @@ Downstream systems then see the POSITION as the actor (`sub` = the
 position), never the person — who tapped stays visible only to you, in the
 staffing-session audit view.
 
-This page is the admin workflow. The developer-facing contract (token
-classes, wire formats, integration events) lives under
+This page is the admin workflow. New to the model? Start with
+[Positions — the concepts](/admin/positions-concepts) — the building
+blocks, the three links, and why a position is not a group, with diagrams.
+The developer-facing contract (token classes, wire formats, integration
+events) lives under
 [Integrate → Position terminals](/integrate/position-terminals).
 
 ## 1. Create the position
@@ -63,9 +66,31 @@ surface is read-only for it).
 
 - **WebAuthn RP ID** — the domain staff passkeys verify against. Use ONE
   RP-ID for all terminals of the consuming app, so a staff passkey works
-  on every terminal.
+  on every terminal. Once a position has a slot, further slots inherit its
+  RP-ID and the field locks — staff passkeys hang off the RP-ID, so only a
+  matching RP-ID lets the already-enrolled tokens unlock a new terminal.
 - The slot view shows the **`client_id`** and the slot id — hand both to
   whoever installs the terminal device.
+
+### How terminal clients appear elsewhere
+
+The position modal is the **only UI** that creates and manages terminal
+clients — deliberately: a terminal client is the technical footprint of a
+slot, not a configurable OAuth client. In the **OAuth Clients grid** they
+stay visible as inventory (the Terminal column names the owning position,
+so the device fleet is countable at a glance), but they are read-only
+there: opening one deep-links into the position modal instead — the same
+rule SA-managed clients follow with the Service-Account editor.
+
+For automation, the admin **API** also accepts the client-side create
+(`POST /api/admin/oauth/clients` with the staffing grant): reference an
+existing position (`LinkedPositionPrincipalId`) or inline-create one
+(`NewPosition`) — never both, mirroring the `client_credentials` ⇔
+service-account rule. Position (if new), slot, and client land in one
+atomic save; the profile is **fixed server-side** (public, secretless,
+DPoP mandatory, reference tokens, exactly device_code + refresh_token +
+staffing), the `client_id` is generated (`{position}.terminal.{suffix}`),
+and the call needs `position:write` in addition to `oauth-client:write`.
 
 ## 4. Approve the enrollment
 

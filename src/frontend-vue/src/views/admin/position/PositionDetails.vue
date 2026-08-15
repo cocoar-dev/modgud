@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { usePositionStore } from '@/stores/position.store'
 import {
   CoarNotice,
@@ -173,6 +173,19 @@ const stagedTerminals = ref<{ DisplayName: string; Location: string; WebAuthnRpI
 // edit only the persisted one does, because the server validates against it.
 const canAddTerminal = computed(() =>
   isCreate.value ? form.value.TerminalEnabled : original.value.TerminalEnabled)
+
+// Passkeys hang off the RP ID, not the client: the existing hardware tokens of
+// this position unlock a new slot only when it carries the SAME RP ID. So once
+// any slot exists (live or staged), further slots inherit its RP ID and the
+// field locks.
+const existingRpId = computed(() =>
+  terminals.value.find((slot) => slot.Status !== 'Revoked')?.WebAuthnRpId
+  ?? stagedTerminals.value[0]?.WebAuthnRpId
+  ?? '')
+
+watch(existingRpId, (rpId) => {
+  if (rpId) newTerminal.value.WebAuthnRpId = rpId
+}, { immediate: true })
 
 function stageTerminal() {
   if (!newTerminal.value.DisplayName.trim() || !newTerminal.value.WebAuthnRpId.trim()) return
@@ -505,8 +518,10 @@ async function save() {
                   :placeholder="t('admin.positionTerminals.locationPlaceholder', {}, 'Gate 3, …')" />
               </CoarFormField>
               <CoarFormField class="min-w-0 flex-1" :label="t('admin.positionTerminals.rpId', {}, 'WebAuthn RP ID')"
-                :hint="t('admin.positionTerminals.rpIdHint', {}, 'The RP ID staff passkeys verify against — usually shared by every terminal of the consuming app.')">
-                <CoarTextInput v-model="newTerminal.WebAuthnRpId" :disabled="!canAddTerminal"
+                :hint="existingRpId
+                  ? t('admin.positionTerminals.rpIdLockedHint', {}, 'Inherited from the existing slots: staff passkeys hang off the RP ID, so every slot of this position shares it — only then do the already-enrolled tokens unlock a new terminal.')
+                  : t('admin.positionTerminals.rpIdHint', {}, 'The RP ID staff passkeys verify against — usually shared by every terminal of the consuming app.')">
+                <CoarTextInput v-model="newTerminal.WebAuthnRpId" :disabled="!canAddTerminal || !!existingRpId"
                   placeholder="alerthub.example.com" />
               </CoarFormField>
               <CoarButton size="s" icon-start="plus" class="shrink-0 mb-1"
@@ -728,12 +743,19 @@ async function save() {
 </template>
 
 <style scoped>
+/* Pinned body height so the modal keeps ONE size across all tabs (no resize
+   on tab switch) — same pattern as .user-edit-frame in UserDetails. Applies
+   in create too, because create is tabbed as well. flex: 0 0 auto is required
+   so the height wins inside the modal's flex column. */
 .position-editor {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
   min-width: 0;
+  min-height: 0;
   padding: 0.25rem;
+  flex: 0 0 auto;
+  height: 60vh;
 }
 
 .form-section + .form-section {
@@ -767,6 +789,9 @@ async function save() {
   gap: 16px;
   padding: 2px 2px 16px;
   min-height: 0;
+  /* Long grant/slot/session lists scroll inside the pinned frame instead of
+     growing the modal. */
+  overflow-y: auto;
 }
 
 .tab-label {

@@ -84,6 +84,42 @@ public static class OAuthErrors
         code: "OAuth.ClientCredentialsRequiresServiceAccountLink",
         description: "A client with the 'client_credentials' grant must reference LinkedServiceAccountId or include NewServiceAccount.");
 
+    public static Error InvalidPositionId(string id) => Error.Validation(
+        code: "OAuth.InvalidPositionId",
+        description: $"LinkedPositionPrincipalId '{id}' is not a valid Guid or ShortGuid.");
+
+    public static Error PositionNotFound(string id) => Error.Validation(
+        code: "OAuth.PositionNotFound",
+        description: $"Position '{id}' not found or deleted.");
+
+    public static Error InvalidNewPositionName => Error.Validation(
+        code: "OAuth.InvalidNewPositionName",
+        description: "The new Position account name must be 2-64 characters and contain only lowercase letters, digits, dots, hyphens, or underscores.");
+
+    public static Error PositionNameAlreadyExists(string accountName) => Error.Conflict(
+        code: "OAuth.PositionNameAlreadyExists",
+        description: $"Account name '{accountName}' is already used by a person, ServiceAccount, or Position.");
+
+    public static Error PositionLinkModesAreMutuallyExclusive => Error.Validation(
+        code: "OAuth.PositionLinkModesAreMutuallyExclusive",
+        description: "Provide either LinkedPositionPrincipalId or NewPosition, not both.");
+
+    public static Error StaffingGrantRequiresPositionLink => Error.Validation(
+        code: "OAuth.StaffingGrantRequiresPositionLink",
+        description: "A client with the staffing grant must reference LinkedPositionPrincipalId or include NewPosition — the terminal counterpart of the client_credentials rule.");
+
+    public static Error PositionLinkRequiresStaffingGrant => Error.Validation(
+        code: "OAuth.PositionLinkRequiresStaffingGrant",
+        description: "A position-linked client must carry the terminal grants (device_code + refresh_token + staffing); it is a shared-terminal client, not a general-purpose one.");
+
+    public static Error TerminalDisplayNameRequired => Error.Validation(
+        code: "OAuth.TerminalDisplayNameRequired",
+        description: "A position-linked client needs TerminalDisplayName — it names the slot the device serves.");
+
+    public static Error PositionTerminalsDisabled(string accountName) => Error.Validation(
+        code: "OAuth.PositionTerminalsDisabled",
+        description: $"Position '{accountName}' has terminal use switched off. Enable it before attaching terminal clients.");
+
     public static Error ServiceAccountLinkRequiresClientCredentialsOnly => Error.Validation(
         code: "OAuth.ServiceAccountLinkRequiresClientCredentialsOnly",
         description: "A ServiceAccount-linked client must use only the 'client_credentials' grant. User-flow grants (authorization_code, refresh_token, device_code) are forbidden — strict separation between user-flow and machine-to-machine clients.");

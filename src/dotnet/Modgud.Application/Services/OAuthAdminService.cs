@@ -88,6 +88,7 @@ public partial class OAuthAdminService
             dto,
             dcrMetadata,
             enlistInTransaction: null,
+            actorId: null,
             ct);
 
     /// <summary>
@@ -95,15 +96,27 @@ public partial class OAuthAdminService
     /// The API layer uses this to add its infrastructure-owned required audit
     /// document before this service commits, without introducing an
     /// Application-to-Infrastructure dependency.
+    /// <para><paramref name="actorId"/> is the authenticated admin creating the
+    /// client — required only for terminal-managed creates, whose enrollment
+    /// stream records the acting admin.</para>
     /// </summary>
     public async Task<ErrorOr<OAuthClientCreatedDto>> CreateClientAsync(
         CreateOAuthClientDto dto,
         DcrMetadataInput? dcrMetadata,
         Action<IDocumentSession>? enlistInTransaction,
+        Guid? actorId = null,
         CancellationToken ct = default)
     {
         if (dto.ClientType is not (OAuthClientTypes.Public or OAuthClientTypes.Confidential))
             return OAuthErrors.InvalidClientType(dto.ClientType);
+
+        // MG-FT — a client that names the staffing grant or any position/terminal
+        // field is a terminal-managed client and takes its own create path: the
+        // fixed profile in StageCreateTerminalClient, never the generic build
+        // below (same divert-don't-drift reasoning as the SA-scoped credential
+        // issue path).
+        if (HasTerminalClientIntent(dto))
+            return await CreateTerminalClientAsync(dto, isDcr: dcrMetadata is not null, actorId, ct);
 
         if (dto.ConsentType is not (OAuthConsentTypes.Explicit or OAuthConsentTypes.Implicit or OAuthConsentTypes.External))
             return OAuthErrors.InvalidConsentType(dto.ConsentType);
@@ -359,6 +372,14 @@ public partial class OAuthAdminService
         if (dto.AllowedGrantTypes is not null &&
             ValidateServiceAccountLinkInvariant(dto.AllowedGrantTypes, linkedServiceAccountId: null) is { } updLinkErr)
             return updLinkErr;
+
+        // MG-FT — same guard for the staffing grant: the UpdateDto carries no
+        // position link (terminal clients are born via their own create path),
+        // so adding the staffing grant here would mint a staffing client with
+        // no position behind it.
+        if (dto.AllowedGrantTypes is not null &&
+            dto.AllowedGrantTypes.Contains(Modgud.Domain.PositionTerminals.PositionGrantTypes.StaffingSession, StringComparer.Ordinal))
+            return OAuthErrors.StaffingGrantRequiresPositionLink;
 
         // Reject unsupported / removed grant types (implicit, password, typos)
         // on update too — the guard is only meaningful if it can't be bypassed

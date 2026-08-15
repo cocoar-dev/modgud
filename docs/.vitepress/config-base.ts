@@ -199,6 +199,7 @@ export const baseConfig = {
             { text: 'Users', link: '/admin/users' },
             { text: 'Service Accounts', link: '/admin/service-accounts' },
             { text: 'Positions & Terminals', link: '/admin/positions' },
+            { text: 'Positions — the Concepts', link: '/admin/positions-concepts' },
             { text: 'Roles', link: '/admin/roles' },
             { text: 'Groups', link: '/admin/groups' },
           ],

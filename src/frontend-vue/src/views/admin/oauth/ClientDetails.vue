@@ -30,6 +30,7 @@ import { useServiceAccountStore } from '@/stores/serviceAccount.store'
 import { useClone, CLIENT_CLONE } from '@/composables/useClone'
 import { useModalOverlay } from '@/composables/useModalOverlay'
 import { MODAL_MD } from '@/router/modal-sizes'
+import { useRouter } from 'vue-router'
 import type { OAuthClientDto, CreateOAuthClientDto, UpdateOAuthClientDto, AccessTokenType } from '@/models/oauth'
 import type { ServiceAccountCreateDto } from '@/models/serviceAccount'
 
@@ -46,6 +47,7 @@ const applicationsStore = useApplicationsStore()
 const realmSettingsStore = useRealmSettingsStore()
 const serviceAccountStore = useServiceAccountStore()
 const modalOverlay = useModalOverlay()
+const router = useRouter()
 const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create' && !justCreated.value)
 // Genuinely-existing client opened from the list (drives the regenerate-secret
@@ -141,11 +143,24 @@ const hasNativeGrantWithRealmOff = computed(
   () => !nativeGrantsEnabled.value
     && form.value.AllowedGrantTypes.some((g) => cocoarGrantValues.has(g)))
 
+// MG-FT — the staffing grant marks a terminal-managed client of a Position.
+// It is never OFFERED here (terminal clients are born via the position modal
+// or the API, with a server-pinned profile); the option exists only so an
+// existing terminal client's grant list renders instead of silently hiding
+// the selection.
+const STAFFING_GRANT = 'urn:cocoar:params:oauth:grant-type:staffing'
+const staffingGrantTypeOptions = computed(() => [
+  { value: STAFFING_GRANT, label: 'urn:cocoar:…:staffing',
+    subtitle: t('admin.oauthClients.grantTypes.staffingDescription', {}, 'Terminal-Client einer Position — Personal aktiviert per Passkey-Tap'),
+    icon: 'briefcase', group: t('admin.oauthClients.grantTypes.groupTerminal', {}, 'Terminal (Positionen)') },
+])
+
 const grantTypeOptions = computed(() => {
   const selected = new Set(form.value.AllowedGrantTypes)
   const cocoar = cocoarGrantTypeOptions.value.filter(
     (o) => nativeGrantsEnabled.value || selected.has(o.value))
-  return [...standardGrantTypeOptions.value, ...cocoar]
+  const staffing = staffingGrantTypeOptions.value.filter((o) => selected.has(o.value))
+  return [...standardGrantTypeOptions.value, ...cocoar, ...staffing]
 })
 
 const scopeOptions = computed(() => {
@@ -248,6 +263,8 @@ interface FormState {
   AppIds: string[]
   /** Required for a pure client_credentials client; immutable after creation. */
   LinkedServiceAccountId: string
+  /** Set on terminal-managed clients (read-only viewer; editor = position modal). */
+  LinkedPositionPrincipalId: string
 }
 
 const SCOPE_PERMISSION_PREFIX = 'scp:'
@@ -290,6 +307,7 @@ function emptyForm(): FormState {
     WebAuthnRpId: '',
     AppIds: [],
     LinkedServiceAccountId: '',
+    LinkedPositionPrincipalId: '',
   }
 }
 
@@ -345,6 +363,21 @@ function discardNewServiceAccountDraft() {
   newServiceAccountForm.value = { AccountName: '', Purpose: '', IsActive: true }
 }
 
+// ── Terminal client (MG-FT) — terminal-managed clients are born via the
+// position modal (or the API's staffing-grant path) and are read-only here:
+// this modal degrades to a viewer with a deep-link to the owning position.
+// The grid normally redirects before this modal even opens; the viewer
+// covers direct fragment deep-links.
+const isTerminalManaged = computed(() => !!form.value.LinkedPositionPrincipalId)
+
+function goToPosition() {
+  // Deliberately NOT props.close(): the routed-modal plumbing reacts to a
+  // resolved close by pushing the list route again, which would clobber this
+  // navigation. Changing the route unmounts the client list, which closes
+  // this modal itself, and the fragment opens the position modal over there.
+  void router.push(`/admin/positions#${form.value.LinkedPositionPrincipalId}`)
+}
+
 function fromDto(dto: OAuthClientDto): FormState {
   return {
     ClientId: dto.ClientId,
@@ -371,6 +404,7 @@ function fromDto(dto: OAuthClientDto): FormState {
     WebAuthnRpId: dto.WebAuthnRpId ?? '',
     AppIds: [...(dto.AppIds ?? [])],
     LinkedServiceAccountId: dto.LinkedServiceAccountId ?? '',
+    LinkedPositionPrincipalId: dto.LinkedPositionPrincipalId ?? '',
   }
 }
 
@@ -420,6 +454,17 @@ const footerButton = computed(() => {
     return {
       visible: true,
       text: t('common.done', {}, 'Done'),
+      disabled: false,
+      loading: false,
+      onClick: () => props.close(),
+    }
+  // Terminal-managed clients are a viewer here (modal-contract Viewer kind):
+  // every mutation path lives in the position modal, so there is nothing to
+  // save — only close.
+  if (isTerminalManaged.value)
+    return {
+      visible: true,
+      text: t('common.close', {}, 'Schließen'),
       disabled: false,
       loading: false,
       onClick: () => props.close(),
@@ -612,6 +657,20 @@ async function copySecret() {
            to a ServiceAccount"); show it instead of a bare "HTTP 400". -->
       <CoarNotice v-if="error" variant="error" class="secret-banner">
         {{ error }}
+      </CoarNotice>
+
+      <!-- Terminal-managed client — this modal is a viewer (modal-contract
+           Viewer kind): the authoritative editor is the position modal, same
+           rule as SA-managed clients and their SA editor. -->
+      <CoarNotice v-if="isTerminalManaged" variant="info" class="secret-banner">
+        <div class="flex items-center gap-3">
+          <span class="min-w-0 flex-1">
+            {{ t('admin.oauthClients.terminal.managedHint', {}, 'Terminal-Client einer Position — Verwaltung (deaktivieren, reaktivieren, widerrufen) erfolgt im Positions-Modal; diese Ansicht ist schreibgeschützt.') }}
+          </span>
+          <CoarButton size="s" variant="secondary" icon-start="briefcase" class="shrink-0" @click="goToPosition">
+            {{ t('admin.oauthClients.terminal.goToPosition', {}, 'Zur Position') }}
+          </CoarButton>
+        </div>
       </CoarNotice>
 
       <!-- Full-object expert editor. Every tab participates in the same local

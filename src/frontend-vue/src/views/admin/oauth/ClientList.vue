@@ -14,6 +14,8 @@ import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-par
 import { useOAuthClientStore } from '@/stores/oauthClient.store'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useServiceAccountStore } from '@/stores/serviceAccount.store'
+import { usePositionStore } from '@/stores/position.store'
+import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, CLIENT_CLONE } from '@/composables/useClone'
@@ -29,6 +31,8 @@ const { stage } = useClone()
 const store = useOAuthClientStore()
 const appCtx = useAppContextStore()
 const saStore = useServiceAccountStore()
+const positionStore = usePositionStore()
+const appConfig = useAppConfigStore()
 const router = useRouter()
 
 // Resolve LinkedServiceAccountId → AccountName for the M2M column. Built
@@ -45,6 +49,22 @@ const saNameById = computed(() => {
 function saNameFor(client: OAuthClientDto): string | null {
   if (!client.LinkedServiceAccountId) return null
   return saNameById.value.get(client.LinkedServiceAccountId) ?? client.LinkedServiceAccountId
+}
+
+// Resolve LinkedPositionPrincipalId → AccountName for the Terminal column —
+// the position counterpart of the M2M column. Falls back to the raw id when
+// the position list is not loaded (feature off / missing position:read).
+const positionNameById = computed(() => {
+  const map = new Map<string, string>()
+  for (const p of positionStore.entities) {
+    map.set(p.Id, p.AccountName)
+  }
+  return map
+})
+
+function positionNameFor(client: OAuthClientDto): string | null {
+  if (!client.LinkedPositionPrincipalId) return null
+  return positionNameById.value.get(client.LinkedPositionPrincipalId) ?? client.LinkedPositionPrincipalId
 }
 
 const ui = useUI()
@@ -93,6 +113,11 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthClientDto>(), 
     // clients are owned by a SA vs user-flow clients without opening each.
     (col) => col.field('LinkedServiceAccountId').header('M2M', 'admin.oauthClients.m2m').width(180)
       .option('valueGetter', (p: any) => p.data ? (saNameFor(p.data as OAuthClientDto) ?? '') : ''),
+    // Terminal column — the position counterpart of M2M: surfaces the owning
+    // position's AccountName for terminal-managed clients. The device fleet
+    // stays countable at a glance without opening each position.
+    (col) => col.field('LinkedPositionPrincipalId').header('Terminal', 'admin.oauthClients.terminal').width(180)
+      .option('valueGetter', (p: any) => p.data ? (positionNameFor(p.data as OAuthClientDto) ?? '') : ''),
     (col) => col.field('IsDynamicallyRegistered').header('DCR', 'admin.oauthClients.dcr').width(80)
       .option('valueGetter', (p: any) => p.data?.IsDynamicallyRegistered ? '●' : '')
       .option('cellStyle', { textAlign: 'center', color: 'var(--coar-accent-primary, #6366f1)' }),
@@ -140,15 +165,26 @@ onMounted(async () => {
   await Promise.all([
     store.initialize(),
     saStore.entities.length === 0 ? saStore.loadAll() : Promise.resolve(),
+    // Position names for the Terminal column — only while the feature is on
+    // (the endpoints 404 otherwise); a missing position:read just leaves the
+    // column showing raw ids.
+    appConfig.config.Features.PositionTerminals && positionStore.entities.length === 0
+      ? positionStore.loadAll().catch(() => {})
+      : Promise.resolve(),
   ])
 })
 
 // SA-managed clients are read-only from this grid — their authoritative
 // editor lives in the Service-Account modal. Deep-link there on
-// double-click instead of opening ClientDetails.
+// double-click instead of opening ClientDetails. Terminal-managed clients
+// follow the same rule: their editor is the position modal.
 function openClient(client: OAuthClientDto) {
   if (client.LinkedServiceAccountId) {
     router.push(`/admin/service-accounts#${client.LinkedServiceAccountId}`)
+    return
+  }
+  if (client.LinkedPositionPrincipalId) {
+    router.push(`/admin/positions#${client.LinkedPositionPrincipalId}`)
     return
   }
   navigateToModal(client.Id)
