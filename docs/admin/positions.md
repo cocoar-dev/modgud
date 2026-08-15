@@ -11,8 +11,11 @@ Downstream systems then see the POSITION as the actor (`sub` = the
 position), never the person — who tapped stays visible only to you, in the
 staffing-session audit view.
 
-This page is the admin workflow. The developer-facing contract (token
-classes, wire formats, integration events) lives under
+This page is the admin workflow. New to the model? Start with
+[Positions — the concepts](/admin/positions-concepts) — the building
+blocks, the three links, and why a position is not a group, with diagrams.
+The developer-facing contract (token classes, wire formats, integration
+events) lives under
 [Integrate → Position terminals](/integrate/position-terminals).
 
 ## 1. Create the position
