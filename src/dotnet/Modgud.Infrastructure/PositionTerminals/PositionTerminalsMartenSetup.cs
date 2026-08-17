@@ -37,6 +37,7 @@ public static class PositionTerminalsMartenSetup
         options.Schema.For<TerminalEnrollment>()
             .Identity(x => x.Id)
             .Index(x => x.PositionPrincipalId)
+            .Index(x => x.AllowedPositionIds)
             .Index(x => x.ClientId, x => x.IsUnique = true)
             .Index(x => x.OAuthApplicationId, x => x.IsUnique = true)
             .Index(x => x.Status)
@@ -69,11 +70,31 @@ public static class PositionTerminalsMartenSetup
             .Index(x => x.ActivatedByUserId)
             .Index(x => x.ActivatedByPasskeyCredentialId)
             .Index(x => x.PositionGrantId)
+            .Index(x => x.Evidence.MethodId)
+            .Index(x => x.Evidence.UserId)
+            .Index(x => x.Evidence.GrantId)
+            .Index(x => x.Evidence.CredentialId)
+            .Index(x => x.Evidence.ActivationTokenId)
+            .Index(x => x.Evidence.TeamSecretVersion)
+            .Index(x => x.Evidence.Binding)
             .Index(x => x.OAuthAuthorizationId, x => x.IsUnique = true)
             .Index(x => x.Status)
             .Index(x => x.AbsoluteExpiresAt);
 
         options.Projections.Add<StaffingSessionProjection>(ProjectionLifecycle.Inline);
+
+        options.Schema.For<ActivationToken>()
+            .Identity(x => x.Id)
+            .Index(x => x.Status)
+            .Index(x => x.AssignedPositionIds);
+        options.Schema.For<ActivationTokenCredential>()
+            .Identity(x => x.Id)
+            .Index(x => x.ActivationTokenId)
+            .Index(x => x.RpId);
+        options.Schema.For<ActivationTokenRegistrationCeremony>()
+            .Identity(x => x.Id)
+            .Index(x => x.ExpiresAt)
+            .Index(x => x.TerminalEnrollmentId, x => x.Name = "idx_activation_reg_terminal");
 
         // Stable event-type aliases — keeps mt_events.type rename-proof.
         options.Events.MapEventType<PositionGrantIssued>("position_grant_issued");
@@ -83,6 +104,7 @@ public static class PositionTerminalsMartenSetup
 
         options.Events.MapEventType<TerminalEnrollmentCreated>("terminal_enrollment_created");
         options.Events.MapEventType<TerminalEnrollmentDetailsChanged>("terminal_enrollment_details_changed");
+        options.Events.MapEventType<TerminalAllowedPositionsChanged>("terminal_allowed_positions_changed");
         options.Events.MapEventType<TerminalEnrollmentEnrolled>("terminal_enrollment_enrolled");
         options.Events.MapEventType<TerminalEnrollmentDisabled>("terminal_enrollment_disabled");
         options.Events.MapEventType<TerminalEnrollmentReactivated>("terminal_enrollment_reactivated");
@@ -91,6 +113,7 @@ public static class PositionTerminalsMartenSetup
         options.Events.MapEventType<TerminalStaffingSessionCleared>("terminal_staffing_session_cleared");
 
         options.Events.MapEventType<StaffingSessionStarted>("staffing_session_started");
+        options.Events.MapEventType<StaffingSessionStartedV2>("staffing_session_started_v2");
         options.Events.MapEventType<StaffingSessionEnded>("staffing_session_ended");
 
         return options;

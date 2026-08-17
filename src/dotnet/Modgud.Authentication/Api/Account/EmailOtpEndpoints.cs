@@ -87,6 +87,7 @@ public static class EmailOtpEndpoints
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             IOAuthGrantRevoker grantRevoker,
+            Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker,
             IAuthSettings appSettings,
             IDocumentSession session,
             CancellationToken ct) =>
@@ -116,6 +117,10 @@ public static class EmailOtpEndpoints
             // Audit #10 — and revoke OAuth reference tokens, which the stamp rotation
             // alone doesn't kill (stock introspection trusts store status).
             await grantRevoker.RevokeTokensBySubjectAsync(user.Id.ToString(), ct);
+            await staffingRevoker.EndAllForUserAsync(
+                user.Id,
+                Modgud.Domain.PositionTerminals.StaffingSessionEndReason.ActivationCredentialInvalidated,
+                ct);
 
             return Results.Ok(new
             {

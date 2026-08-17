@@ -17,6 +17,7 @@ export interface TerminalConsentInfo {
   TerminalName: string
   Location?: string | null
   ClientId: string
+  Binding: 'dpop' | 'client-secret' | 'none'
   /** Null/absent when the device request carried no DPoP proof — the approval
    * will be refused server-side in that case. */
   DpopFingerprint?: string | null

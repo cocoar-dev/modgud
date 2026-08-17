@@ -111,6 +111,46 @@ public class TerminalDeviceEnrollmentTests : IntegrationTestBase
         Assert.False(string.IsNullOrEmpty(refreshed.RootElement.GetProperty("access_token").GetString()));
     }
 
+    [Theory]
+    [InlineData(DeviceBindingIds.ClientSecret)]
+    [InlineData(DeviceBindingIds.None)]
+    public async Task Weaker_bindings_still_require_and_complete_admin_approved_device_flow(string binding)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var fn = await CreatePositionAsync($"fn-{binding}", terminalEnabled: true, ct,
+            allowedBindings: [binding]);
+        var terminal = await CreateTerminalAsync(fn, $"Terminal {binding}", ct, binding);
+
+        var expectsSecret = binding == DeviceBindingIds.ClientSecret;
+        Assert.Equal(expectsSecret, !string.IsNullOrWhiteSpace(terminal.ClientSecret));
+        var (deviceCode, userCode) = await RequestDeviceCodeAsync(
+            terminal.ClientId, dpopProof: null, terminal.ClientSecret);
+
+        var admin = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
+        var ticket = await OpenVerificationAsync(admin, userCode);
+        var info = await GetVerificationInfoAsync(admin, ticket, ct);
+        var consent = info.GetProperty("Terminal");
+        Assert.Equal(binding, consent.GetProperty("Binding").GetString());
+        Assert.False(consent.TryGetProperty("DpopFingerprint", out var fingerprint) &&
+                     fingerprint.ValueKind is not JsonValueKind.Null);
+
+        var approve = await SubmitDecisionAsync(admin, userCode, approve: true);
+        Assert.True((int)approve.StatusCode < 400, await approve.Content.ReadAsStringAsync(ct));
+        var poll = await PollTokenAsync(
+            terminal.ClientId, deviceCode, dpopProof: null, terminal.ClientSecret);
+        var body = await poll.Content.ReadAsStringAsync(ct);
+        Assert.True(poll.IsSuccessStatusCode, body);
+        using var tokens = JsonDocument.Parse(body);
+        Assert.Equal("Bearer", tokens.RootElement.GetProperty("token_type").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(tokens.RootElement.GetProperty("refresh_token").GetString()));
+
+        var slot = await LoadSlotAsync(terminal.Id, ct);
+        Assert.Equal(TerminalEnrollmentStatus.Active, slot.Status);
+        Assert.Null(slot.DpopJkt);
+        Assert.False(string.IsNullOrWhiteSpace(slot.EnrollmentAuthorizationId));
+    }
+
     [Fact]
     public async Task Approval_is_refused_without_the_enroll_permission()
     {
@@ -290,21 +330,31 @@ public class TerminalDeviceEnrollmentTests : IntegrationTestBase
 
     // ─── flow helpers ─────────────────────────────────────────────────────
 
-    private async Task<string> CreatePositionAsync(string accountName, bool terminalEnabled, CancellationToken ct)
+    private async Task<string> CreatePositionAsync(
+        string accountName,
+        bool terminalEnabled,
+        CancellationToken ct,
+        string[]? allowedBindings = null)
     {
         var resp = await Client.PostAsJsonAsync("/api/position", new
         {
             AccountName = accountName,
-            TerminalPolicy = terminalEnabled ? new { Enabled = true } : null,
+            TerminalPolicy = terminalEnabled
+                ? new { Enabled = true, AllowedDeviceBindings = allowedBindings }
+                : null,
         }, JsonOptions, ct);
         Assert.True(resp.IsSuccessStatusCode, await resp.Content.ReadAsStringAsync(ct));
         return (await resp.Content.ReadFromJsonAsync<PositionPrincipalDto>(JsonOptions, ct))!.Id;
     }
 
-    private async Task<TerminalDto> CreateTerminalAsync(string positionId, string displayName, CancellationToken ct)
+    private async Task<TerminalDto> CreateTerminalAsync(
+        string positionId,
+        string displayName,
+        CancellationToken ct,
+        string binding = DeviceBindingIds.Dpop)
     {
         var resp = await Client.PostAsJsonAsync($"/api/position/{positionId}/terminals",
-            new { DisplayName = displayName, Location = "Tor 3", WebAuthnRpId = RpId }, JsonOptions, ct);
+            new { DisplayName = displayName, Location = "Tor 3", WebAuthnRpId = RpId, Binding = binding }, JsonOptions, ct);
         var body = await resp.Content.ReadAsStringAsync(ct);
         Assert.True(resp.IsSuccessStatusCode, $"terminal create failed ({(int)resp.StatusCode}): {body}");
         return (await resp.Content.ReadFromJsonAsync<TerminalDto>(JsonOptions, ct))!;
@@ -312,15 +362,17 @@ public class TerminalDeviceEnrollmentTests : IntegrationTestBase
 
     /// <summary>Terminal clients have no scp permissions — the device request
     /// carries no scope; the granted scopes come from the enrollment principal.</summary>
-    private async Task<(string DeviceCode, string UserCode)> RequestDeviceCodeAsync(string clientId, string? dpopProof)
+    private async Task<(string DeviceCode, string UserCode)> RequestDeviceCodeAsync(
+        string clientId,
+        string? dpopProof,
+        string? clientSecret = null)
     {
         var client = Factory.CreateClient();
+        var form = new List<KeyValuePair<string, string>> { new("client_id", clientId) };
+        if (clientSecret is not null) form.Add(new("client_secret", clientSecret));
         var request = new HttpRequestMessage(HttpMethod.Post, "/connect/device")
         {
-            Content = new FormUrlEncodedContent(new List<KeyValuePair<string, string>>
-            {
-                new("client_id", clientId),
-            }),
+            Content = new FormUrlEncodedContent(form),
         };
         if (dpopProof is not null) request.Headers.Add(DpopConstants.HeaderName, dpopProof);
 
@@ -363,17 +415,23 @@ public class TerminalDeviceEnrollmentTests : IntegrationTestBase
         return await cookieClient.PostAsync("/connect/verify", new FormUrlEncodedContent(form), TestContext.Current.CancellationToken);
     }
 
-    private async Task<HttpResponseMessage> PollTokenAsync(string clientId, string deviceCode, string? dpopProof)
+    private async Task<HttpResponseMessage> PollTokenAsync(
+        string clientId,
+        string deviceCode,
+        string? dpopProof,
+        string? clientSecret = null)
     {
         var client = Factory.CreateClient();
+        var form = new List<KeyValuePair<string, string>>
+        {
+            new("grant_type", DeviceCodeGrant),
+            new("device_code", deviceCode),
+            new("client_id", clientId),
+        };
+        if (clientSecret is not null) form.Add(new("client_secret", clientSecret));
         var request = new HttpRequestMessage(HttpMethod.Post, "/connect/token")
         {
-            Content = new FormUrlEncodedContent(new List<KeyValuePair<string, string>>
-            {
-                new("grant_type", DeviceCodeGrant),
-                new("device_code", deviceCode),
-                new("client_id", clientId),
-            }),
+            Content = new FormUrlEncodedContent(form),
         };
         if (dpopProof is not null) request.Headers.Add(DpopConstants.HeaderName, dpopProof);
         return await client.SendAsync(request, TestContext.Current.CancellationToken);

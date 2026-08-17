@@ -43,6 +43,16 @@ public sealed record PositionTerminalPolicy
 {
     public bool Enabled { get; init; }
 
+    /// <summary>Open proof-method IDs. Missing on old documents deserializes to
+    /// today's only supported method and therefore preserves old behaviour.</summary>
+    public IReadOnlyList<string> AllowedActivationProofs { get; init; }
+        = [ActivationProofMethodIds.PersonalPasskey];
+
+    /// <summary>Open device-binding IDs. Missing on old documents defaults to
+    /// DPoP, matching every enrollment created before ADR 0004.</summary>
+    public IReadOnlyList<string> AllowedDeviceBindings { get; init; }
+        = [DeviceBindingIds.Dpop];
+
     public TimeSpan StaffingSessionLifetime { get; init; } = TimeSpan.FromHours(16);
 
     public TimeSpan MaximumStaffingSessionLifetime { get; init; } = TimeSpan.FromHours(24);

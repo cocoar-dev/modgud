@@ -13,11 +13,15 @@ public partial class TerminalEnrollmentProjection : SingleStreamProjection<Termi
     {
         Id = e.Id,
         PositionPrincipalId = e.PositionPrincipalId,
+        AllowedPositionIds = e.AllowedPositionIds is { Count: > 0 }
+            ? [.. e.AllowedPositionIds]
+            : [e.PositionPrincipalId],
         DisplayName = e.DisplayName,
         Location = e.Location,
         OAuthApplicationId = e.OAuthApplicationId,
         ClientId = e.ClientId,
         WebAuthnRpId = e.WebAuthnRpId,
+        Binding = string.IsNullOrWhiteSpace(e.Binding) ? "dpop" : e.Binding,
         Status = TerminalEnrollmentStatus.Pending,
         CreatedAt = e.CreatedAt,
         CreatedByUserId = e.CreatedByUserId,
@@ -28,6 +32,9 @@ public partial class TerminalEnrollmentProjection : SingleStreamProjection<Termi
         terminal.DisplayName = e.DisplayName;
         terminal.Location = e.Location;
     }
+
+    public void Apply(TerminalAllowedPositionsChanged e, TerminalEnrollment terminal)
+        => terminal.AllowedPositionIds = [.. e.AllowedPositionIds];
 
     public void Apply(TerminalEnrollmentEnrolled e, TerminalEnrollment terminal)
     {
@@ -49,7 +56,7 @@ public partial class TerminalEnrollmentProjection : SingleStreamProjection<Termi
     {
         // Back to where the slot stood before the disable: Active once a key is
         // enrolled, otherwise still Pending (waiting for MG-FT-04's flow).
-        terminal.Status = terminal.DpopJkt is null
+        terminal.Status = terminal.EnrollmentAuthorizationId is null
             ? TerminalEnrollmentStatus.Pending
             : TerminalEnrollmentStatus.Active;
         terminal.DisabledAt = null;

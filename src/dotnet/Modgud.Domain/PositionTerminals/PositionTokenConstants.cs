@@ -19,17 +19,28 @@ public static class PositionTokenClaimTypes
     public const string TokenUse = "token_use";
     public const string TerminalId = "terminal_id";
     public const string StaffingSessionId = "staffing_session_id";
+    public const string ActivationProof = "activation_proof";
+    public const string TerminalBinding = "terminal_binding";
+    public const string StepUpAction = "stepup_action";
+    public const string StepUpNonce = "stepup_nonce";
 }
 
 public static class PositionTokenUses
 {
     public const string TerminalEnrollment = "terminal_enrollment";
     public const string StaffingSession = "staffing_session";
+    public const string StaffingStepUp = "staffing_step_up";
+}
+
+public static class PositionAuthenticationContextReferences
+{
+    public const string StaffingStepUp = "urn:cocoar:staffing:step-up";
 }
 
 public static class PositionPrincipalTypes
 {
     public const string Position = "position";
+    public const string Terminal = "terminal";
 }
 
 /// <summary>Terminal-control surface constants: the audience enrollment tokens

@@ -17,6 +17,21 @@ public sealed class StaffingCeremony
     public Guid TerminalEnrollmentId { get; set; }
     public string ClientId { get; set; } = string.Empty;
     public string DpopJkt { get; set; } = string.Empty;
+    public string MethodId { get; set; } = "personal-passkey";
+    public Guid? SubjectUserId { get; set; }
+    public Guid? SubjectGrantId { get; set; }
+    /// <summary>For a V2 n:m proof-first ceremony, the positions whose
+    /// credentials were included in the challenge. This list is server-side
+    /// only and is not disclosed until the proof has been verified.</summary>
+    public Guid[] CandidatePositionIds { get; set; } = [];
+    /// <summary>Present only on the short-lived continuation created after a
+    /// valid proof identified more than one position. Each entry carries the
+    /// position-specific evidence (notably the correct personal grant id).</summary>
+    public StaffingCandidateEvidence[] VerifiedCandidates { get; set; } = [];
+    public Guid? StepUpForStaffingSessionId { get; set; }
+    public string? StepUpAction { get; set; }
+    public string? StepUpNonce { get; set; }
+    public string[] StepUpScopes { get; set; } = [];
 
     public string RpId { get; set; } = string.Empty;
     public string OptionsJson { get; set; } = string.Empty;
@@ -28,3 +43,7 @@ public sealed class StaffingCeremony
     public bool IsExpired => DateTimeOffset.UtcNow >= ExpiresAt;
     public bool IsConsumed => ConsumedAt is not null;
 }
+
+public sealed record StaffingCandidateEvidence(
+    Guid PositionPrincipalId,
+    ActivationEvidence Evidence);

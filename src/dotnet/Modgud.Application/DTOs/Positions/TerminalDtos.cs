@@ -11,16 +11,20 @@ public class TerminalDto
 {
     public required string Id { get; set; }
     public required string PositionId { get; set; }
+    public IReadOnlyList<string> AllowedPositionIds { get; set; } = [];
     public required string DisplayName { get; set; }
     public string? Location { get; set; }
     public required string ClientId { get; set; }
     public required string WebAuthnRpId { get; set; }
+    public required string Binding { get; set; }
     public TerminalEnrollmentStatus Status { get; set; }
     public bool Enrolled { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? EnrolledAt { get; set; }
     public DateTimeOffset? DisabledAt { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }
+    /// <summary>Only populated on the create response for client-secret slots.</summary>
+    public string? ClientSecret { get; set; }
 }
 
 public class TerminalCreateDto
@@ -32,6 +36,18 @@ public class TerminalCreateDto
     /// typically shared across every terminal client of the consuming app
     /// (spike 3: the credential is RP-ID-scoped, not client-scoped).</summary>
     public string WebAuthnRpId { get; set; } = string.Empty;
+
+    /// <summary>Stable open binding ID. Omitted by old clients = dpop.</summary>
+    public string Binding { get; set; } = "dpop";
+
+    /// <summary>Optional n:m assignment. The route position is included
+    /// automatically; omitted by V1 clients means that singleton position.</summary>
+    public IReadOnlyList<string>? AllowedPositionIds { get; set; }
+}
+
+public sealed class TerminalAllowedPositionsUpdateDto
+{
+    public IReadOnlyList<string> AllowedPositionIds { get; set; } = [];
 }
 
 public class TerminalUpdateDto

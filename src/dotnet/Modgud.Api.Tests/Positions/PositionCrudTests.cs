@@ -7,6 +7,9 @@ using System.Net.Http.Json;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.Positions;
 using Microsoft.Extensions.DependencyInjection;
+using Modgud.Authorization.Events;
+using Modgud.Authorization.Principals;
+using Modgud.Application.DTOs.RealmSettings;
 
 namespace Modgud.Api.Tests.Positions;
 
@@ -59,6 +62,8 @@ public class PositionCrudTests : IntegrationTestBase
         Assert.True(created.IsActive);
         // Never terminal-enabled by accident; plan defaults 16 h / 24 h.
         Assert.False(created.TerminalPolicy.Enabled);
+        Assert.Equal([ActivationProofMethodIds.PersonalPasskey], created.TerminalPolicy.AllowedActivationProofs);
+        Assert.Equal([DeviceBindingIds.Dpop], created.TerminalPolicy.AllowedDeviceBindings);
         Assert.Equal(16 * 60, created.TerminalPolicy.StaffingSessionLifetimeMinutes);
         Assert.Equal(24 * 60, created.TerminalPolicy.MaximumStaffingSessionLifetimeMinutes);
 
@@ -145,6 +150,64 @@ public class PositionCrudTests : IntegrationTestBase
             TerminalPolicy = new { MaximumStaffingSessionLifetimeMinutes = 0 },
         }, JsonOptions, ct);
         Assert.Equal(HttpStatusCode.BadRequest, nonPositive.StatusCode);
+    }
+
+    [Fact]
+    public async Task Realm_floor_tightening_requires_preview_and_confirmation_for_legacy_policy()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+
+        // Simulate a policy written by a later plug-in and then read after a
+        // rollback. Reads preserve its open string ID; the stricter floor must
+        // still find it and cannot save silently.
+        var positionId = Guid.NewGuid();
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            var policy = new PositionTerminalPolicy
+            {
+                Enabled = true,
+                AllowedActivationProofs = [ActivationProofMethodIds.PersonalPasskey],
+                AllowedDeviceBindings = ["plugin.sender-constrained"],
+            };
+            session.Events.StartStream<PositionPrincipal>(positionId,
+                new PositionPrincipalCreatedEvent(positionId, "legacy.binding", null, true, policy));
+            await session.SaveChangesAsync(ct);
+        }
+
+        var readPreserveWriteReject = await Client.PutAsJsonAsync(
+            $"/api/position/{ShortGuid.Encode(positionId)}",
+            new { Purpose = "must not rewrite the unavailable binding" }, JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.BadRequest, readPreserveWriteReject.StatusCode);
+        Assert.Contains("Position.UnknownDeviceBinding",
+            await readPreserveWriteReject.Content.ReadAsStringAsync(ct));
+
+        var floor = new UpdatePositionSecuritySettingsDto
+        {
+            RequiredBindingCapabilities = BindingCapability.SenderConstrained,
+        };
+        var previewResponse = await Client.PostAsJsonAsync(
+            "/api/admin/realm-settings/position-security/preview", floor, JsonOptions, ct);
+        Assert.True(previewResponse.IsSuccessStatusCode,
+            await previewResponse.Content.ReadAsStringAsync(ct));
+        var preview = await previewResponse.Content.ReadFromJsonAsync<PositionSecurityConsequencesDto>(JsonOptions, ct);
+        Assert.Single(preview!.Positions);
+        Assert.Equal("legacy.binding", preview.Positions[0].AccountName);
+        Assert.Equal(["plugin.sender-constrained"], preview.Positions[0].ViolatingDeviceBindings);
+
+        var unconfirmed = await Client.PatchAsJsonAsync("/api/admin/realm-settings",
+            new UpdateRealmSettingsDto { PositionSecurity = floor }, JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.BadRequest, unconfirmed.StatusCode);
+        Assert.Contains("ConfirmationRequired", await unconfirmed.Content.ReadAsStringAsync(ct));
+
+        var confirmed = await Client.PatchAsJsonAsync("/api/admin/realm-settings",
+            new UpdateRealmSettingsDto
+            {
+                PositionSecurity = floor,
+                ConfirmPositionSecurityConsequences = true,
+            }, JsonOptions, ct);
+        Assert.True(confirmed.IsSuccessStatusCode, await confirmed.Content.ReadAsStringAsync(ct));
     }
 
     [Fact]
@@ -254,7 +317,7 @@ public class PositionCrudTests : IntegrationTestBase
         Assert.NotNull(slots);
         Assert.Equal(2, slots!.Count);
         Assert.All(slots, s => Assert.Equal(TerminalEnrollmentStatus.Pending, s.Status));
-        Assert.All(slots, s => Assert.StartsWith("portier.staged.terminal.", s.ClientId));
+        Assert.All(slots, s => Assert.StartsWith("terminal.", s.ClientId));
         Assert.Equal("Tor 3", slots.Single(s => s.DisplayName == "Terminal links").Location);
 
         // Every slot's managed client committed with it — no half-created pair.
@@ -264,7 +327,7 @@ public class PositionCrudTests : IntegrationTestBase
         {
             var client = (await session.Query<OAuthApplicationState>()
                 .Where(c => c.ClientId == slot.ClientId).ToListAsync(ct)).Single();
-            Assert.Equal(new ShortGuid(created.Id).Guid, client.LinkedPositionPrincipalId);
+            Assert.Null(client.LinkedPositionPrincipalId);
             Assert.Equal(new ShortGuid(slot.Id).Guid, client.ManagedTerminalEnrollmentId);
         }
     }

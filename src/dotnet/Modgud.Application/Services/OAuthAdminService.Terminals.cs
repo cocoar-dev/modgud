@@ -10,6 +10,7 @@ using Modgud.Domain.PositionTerminals;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
 using static Modgud.Application.Services.OAuthAdminMapping;
+using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Application.Services;
 
@@ -73,12 +74,25 @@ public partial class OAuthAdminService
             return OAuthErrors.InvalidPositionTerminalClient(
                 "allowed grants are exactly device_code, refresh_token, and the position staffing grant.");
 
-        if (!string.Equals(dto.ClientType, OAuthClientTypes.Public, StringComparison.Ordinal))
-            return OAuthErrors.InvalidPositionTerminalClient("the client must be public.");
+        var binding = string.IsNullOrWhiteSpace(dto.TerminalBinding)
+            ? DeviceBindingIds.Dpop
+            : dto.TerminalBinding;
+        if (!PositionTerminalSecurity.TryGetWritableBinding(binding, out _))
+            return OAuthErrors.InvalidPositionTerminalClient($"device binding '{binding}' is unknown or unavailable.");
+        var expectedClientType = binding == DeviceBindingIds.ClientSecret
+            ? OAuthClientTypes.Confidential
+            : OAuthClientTypes.Public;
+        if (!string.Equals(dto.ClientType, expectedClientType, StringComparison.Ordinal))
+            return OAuthErrors.InvalidPositionTerminalClient(
+                $"binding '{binding}' requires a {expectedClientType} client.");
 
         var terminalDisplayName = (dto.TerminalDisplayName ?? string.Empty).Trim();
         if (terminalDisplayName.Length == 0)
             return OAuthErrors.TerminalDisplayNameRequired;
+
+        var realm = await _session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        var proofFloor = realm?.PositionSecurity?.RequiredProofCapabilities ?? ProofCapability.None;
+        var bindingFloor = realm?.PositionSecurity?.RequiredBindingCapabilities ?? BindingCapability.None;
 
         // ── Resolve or inline-create the position ─────────────────────────
         PositionPrincipal position;
@@ -124,6 +138,8 @@ public partial class OAuthAdminService
                 policy = policy with
                 {
                     Enabled = policyUpdate.Enabled ?? policy.Enabled,
+                    AllowedActivationProofs = policyUpdate.AllowedActivationProofs ?? policy.AllowedActivationProofs,
+                    AllowedDeviceBindings = policyUpdate.AllowedDeviceBindings ?? policy.AllowedDeviceBindings,
                     StaffingSessionLifetime = policyUpdate.StaffingSessionLifetimeMinutes is { } sessionMinutes
                         ? TimeSpan.FromMinutes(sessionMinutes)
                         : policy.StaffingSessionLifetime,
@@ -137,6 +153,26 @@ public partial class OAuthAdminService
                 if (policy.StaffingSessionLifetime > policy.MaximumStaffingSessionLifetime)
                     return Error.Validation("Position.InvalidTerminalPolicy",
                         "The staffing session lifetime must not exceed the absolute maximum lifetime.");
+
+                if (policy.Enabled && (policy.AllowedActivationProofs.Count == 0 || policy.AllowedDeviceBindings.Count == 0))
+                    return OAuthErrors.InvalidPositionTerminalClient(
+                        "an enabled Position policy requires at least one activation proof and one device binding.");
+                var unknownProof = policy.AllowedActivationProofs.FirstOrDefault(
+                    methodId => !PositionTerminalSecurity.TryGetWritableProof(methodId, out _));
+                if (unknownProof is not null)
+                    return OAuthErrors.InvalidPositionTerminalClient(
+                        $"activation proof '{unknownProof}' is unknown or unavailable.");
+                var unknownBinding = policy.AllowedDeviceBindings.FirstOrDefault(
+                    bindingId => !PositionTerminalSecurity.TryGetWritableBinding(bindingId, out _));
+                if (unknownBinding is not null)
+                    return OAuthErrors.InvalidPositionTerminalClient(
+                        $"device binding '{unknownBinding}' is unknown or unavailable.");
+                if (policy.AllowedActivationProofs.Any(methodId =>
+                        !PositionTerminalSecurity.ProofMeetsFloor(methodId, proofFloor))
+                    || policy.AllowedDeviceBindings.Any(bindingId =>
+                        !PositionTerminalSecurity.BindingMeetsFloor(bindingId, bindingFloor)))
+                    return OAuthErrors.InvalidPositionTerminalClient(
+                        "every allowed activation proof and device binding of the new Position must meet the realm capability floor.");
             }
 
             // Staged grants — resolve and validate EVERY user before creating
@@ -176,6 +212,8 @@ public partial class OAuthAdminService
                 TerminalPolicy = new PositionTerminalPolicyDto
                 {
                     Enabled = position.TerminalPolicy.Enabled,
+                    AllowedActivationProofs = position.TerminalPolicy.AllowedActivationProofs,
+                    AllowedDeviceBindings = position.TerminalPolicy.AllowedDeviceBindings,
                     StaffingSessionLifetimeMinutes = (int)position.TerminalPolicy.StaffingSessionLifetime.TotalMinutes,
                     MaximumStaffingSessionLifetimeMinutes = (int)position.TerminalPolicy.MaximumStaffingSessionLifetime.TotalMinutes,
                 },
@@ -184,27 +222,49 @@ public partial class OAuthAdminService
 
         if (!position.TerminalPolicy.Enabled)
             return OAuthErrors.PositionTerminalsDisabled(position.AccountName);
+        if (!position.TerminalPolicy.AllowedDeviceBindings.Contains(binding, StringComparer.Ordinal))
+            return OAuthErrors.InvalidPositionTerminalClient(
+                $"device binding '{binding}' is not allowed by the position policy.");
+        if (!PositionTerminalSecurity.BindingMeetsFloor(binding, bindingFloor))
+            return OAuthErrors.InvalidPositionTerminalClient(
+                $"device binding '{binding}' does not meet the realm security floor.");
 
-        // ── ClientId per convention (dto.ClientId is deliberately ignored —
-        // the audit log reads the owning position off the generated id) ──────
-        var clientId = string.Empty;
-        for (var attempt = 0; attempt < 8; attempt++)
-        {
-            var candidate = $"{position.AccountName}.terminal.{new ShortGuid(Guid.NewGuid()).ToString()[..8]}";
-            var clash = await _session.Query<OAuthApplicationState>()
-                .AnyAsync(x => !x.IsDeleted && x.ClientId == candidate, ct);
-            if (!clash) { clientId = candidate; break; }
-        }
+        // The generic OAuth-client surface owns the client identity just like
+        // it does for client_credentials + ServiceAccount. Keep generation as
+        // a backwards-compatible fallback for older callers that omit the id
+        // (the position/terminal endpoints still use that convention), but do
+        // not overwrite an explicit admin choice.
+        var clientId = (dto.ClientId ?? string.Empty).Trim();
         if (clientId.Length == 0)
-            return Error.Conflict("OAuth.ClientIdAutoGenerationFailed",
-                "Could not generate a unique client_id for the terminal client after 8 attempts.");
+        {
+            for (var attempt = 0; attempt < 8; attempt++)
+            {
+                var candidate = $"terminal.{new ShortGuid(Guid.NewGuid()).ToString()[..8]}";
+                var clash = await _session.Query<OAuthApplicationState>()
+                    .AnyAsync(x => !x.IsDeleted && x.ClientId == candidate, ct);
+                if (!clash) { clientId = candidate; break; }
+            }
+            if (clientId.Length == 0)
+                return Error.Conflict("OAuth.ClientIdAutoGenerationFailed",
+                    "Could not generate a unique client_id for the terminal client after 8 attempts.");
+        }
+        else if (await _session.Query<OAuthApplicationState>()
+                     .AnyAsync(x => !x.IsDeleted && x.ClientId == clientId, ct))
+        {
+            return OAuthErrors.ClientIdAlreadyExists(clientId);
+        }
+
+        var clientDisplayName = string.IsNullOrWhiteSpace(dto.DisplayName)
+            ? $"{position.DisplayName} — {terminalDisplayName}"
+            : dto.DisplayName.Trim();
 
         // ── Stage client + enrollment, commit once ─────────────────────────
         var enrollmentId = Guid.NewGuid();
         var applicationId = Guid.NewGuid();
         var clientError = StageCreateTerminalClient(
-            applicationId, clientId, $"{position.DisplayName} — {terminalDisplayName}",
-            position.Id, enrollmentId, dto.WebAuthnRpId ?? string.Empty);
+            applicationId, clientId, clientDisplayName,
+            position.Id, enrollmentId, dto.WebAuthnRpId ?? string.Empty,
+            binding, out var clientSecret);
         if (clientError is not null)
             return clientError.Value;
 
@@ -220,7 +280,7 @@ public partial class OAuthAdminService
             enrollmentId, position.Id, terminalDisplayName,
             string.IsNullOrWhiteSpace(dto.TerminalLocation) ? null : dto.TerminalLocation.Trim(),
             applicationId, clientId, dto.WebAuthnRpId!.Trim().ToLowerInvariant(),
-            actorId.Value, now));
+            actorId.Value, now, binding, [position.Id]));
 
         await _session.SaveChangesAsync(ct);
 
@@ -228,16 +288,18 @@ public partial class OAuthAdminService
         return new OAuthClientCreatedDto
         {
             Client = MapClient(state!),
-            ClientSecret = null,
+            ClientSecret = clientSecret,
             CreatedPosition = createdPosition,
             CreatedTerminalId = new ShortGuid(enrollmentId).ToString(),
         };
     }
 
     /// <summary>
-    /// Stages the terminal-managed public client for one slot. The profile is
-    /// FIXED (plan §6.4): public, secretless, DPoP-mandatory, reference tokens,
-    /// per-client RP-ID, exactly the three terminal grants — validated against
+    /// Stages the terminal-managed client for one slot. The profile is fixed
+    /// by its binding: DPoP is public and sender-constrained, ClientSecret is
+    /// confidential, and None is public bearer-only. Every profile uses
+    /// reference tokens, a per-client RP-ID, and exactly the three terminal
+    /// grants. The result is validated against
     /// <see cref="OAuthAdminMapping.ValidatePositionTerminalLinkInvariant"/> as
     /// defense in depth even though this method is the only producer.
     /// </summary>
@@ -247,26 +309,38 @@ public partial class OAuthAdminService
         string displayName,
         Guid positionPrincipalId,
         Guid terminalEnrollmentId,
-        string webAuthnRpId)
+        string webAuthnRpId,
+        string binding,
+        out string? clientSecret)
     {
+        clientSecret = null;
         var grants = TerminalGrantTypes.ToList();
 
         if (ValidateWebAuthnRpId(webAuthnRpId) is { } rpIdError)
             return rpIdError;
 
+        if (!PositionTerminalSecurity.TryGetWritableBinding(binding, out _))
+            return OAuthErrors.InvalidPositionTerminalClient($"device binding '{binding}' is unknown or unavailable.");
+
+        var clientType = binding == DeviceBindingIds.ClientSecret
+            ? OAuthClientTypes.Confidential
+            : OAuthClientTypes.Public;
+        var requireSecret = binding == DeviceBindingIds.ClientSecret;
+        var requireDpop = binding == DeviceBindingIds.Dpop;
+
         if (ValidatePositionTerminalLinkInvariant(
-                grants, OAuthClientTypes.Public, requireClientSecret: false,
-                AccessTokenType.Reference, requireDpop: true,
+                grants, clientType, requireSecret,
+                AccessTokenType.Reference, requireDpop,
                 linkedServiceAccountId: null, positionPrincipalId, terminalEnrollmentId,
-                webAuthnRpId) is { } invariantError)
+                webAuthnRpId, binding) is { } invariantError)
             return invariantError;
 
-        var permissions = BuildClientPermissions(grants, scopes: [], OAuthClientTypes.Public);
+        var permissions = BuildClientPermissions(grants, scopes: [], clientType);
         var (aggregate, createdEvent) = OAuthApplicationAggregate.Create(
             applicationId,
             clientId,
             displayName,
-            OAuthClientTypes.Public,
+            clientType,
             OAuthConsentTypes.Implicit,
             applicationType: null,
             redirectUris: [],
@@ -282,13 +356,24 @@ public partial class OAuthAdminService
         }));
 
         _session.Events.Append(applicationId, aggregate.SetProperties(BuildClientProperties(
-            enabled: true, allowBrowser: false, requireSecret: false, enableLocal: false,
+            enabled: true, allowBrowser: false, requireSecret: requireSecret, enableLocal: false,
             requireConsent: false, allowRemember: false, corsOrigins: [],
             alwaysSend: false, updateClaims: false, claims: [], roles: [],
-            requireDpop: true, requireDpopNonce: false)));
+            requireDpop: requireDpop, requireDpopNonce: false)));
 
+        // V2 links the client to the terminal only. The position set belongs to
+        // the slot and may change independently; legacy streams retain their
+        // position link for dual-protocol acceptance.
         _session.Events.Append(applicationId,
-            aggregate.SetPositionTerminalLink(positionPrincipalId, terminalEnrollmentId));
+            aggregate.SetPositionTerminalLink(positionPrincipalId: null, terminalEnrollmentId));
+
+        if (requireSecret)
+        {
+            clientSecret = GenerateSecret();
+            var security = OAuthApplicationSecurityData.Create(applicationId);
+            security.ClientSecret = HashSecret(clientSecret);
+            _session.Store(security);
+        }
 
         return null;
     }

@@ -34,4 +34,6 @@ public interface IStaffingRevoker
     Task<int> EndAllForPasskeyAsync(Guid credentialId, StaffingSessionEndReason reason, CancellationToken ct = default);
 
     Task<int> EndAllForGrantAsync(Guid grantId, StaffingSessionEndReason reason, CancellationToken ct = default);
+    Task<int> EndAllForActivationTokenAsync(Guid activationTokenId, StaffingSessionEndReason reason, CancellationToken ct = default);
+    Task<int> EndAllForActivationTokenAndPositionAsync(Guid activationTokenId, Guid positionId, StaffingSessionEndReason reason, CancellationToken ct = default);
 }

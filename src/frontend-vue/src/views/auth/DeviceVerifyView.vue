@@ -290,6 +290,10 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
               <dd class="font-mono text-xs text-surface-700 break-all">{{ model!.Terminal!.ClientId }}</dd>
             </div>
             <div class="flex justify-between gap-4 px-3 py-2">
+              <dt class="text-surface-500">{{ t('device.terminal.binding', {}, 'Device binding') }}</dt>
+              <dd class="font-mono font-medium text-surface-800">{{ model!.Terminal!.Binding }}</dd>
+            </div>
+            <div v-if="model!.Terminal!.Binding === 'dpop'" class="flex justify-between gap-4 px-3 py-2">
               <dt class="text-surface-500">{{ t('device.terminal.fingerprint', {}, 'Device key') }}</dt>
               <dd v-if="model!.Terminal!.DpopFingerprint" class="font-mono font-medium text-surface-800">
                 {{ model!.Terminal!.DpopFingerprint }}
@@ -304,7 +308,15 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
             {{ t('device.terminal.warning', {}, 'This device will be permanently registered as a terminal of this position. Registration alone does not grant any alerting access yet.') }}
           </CoarNotice>
 
-          <CoarNotice v-if="!model!.Terminal!.DpopFingerprint" variant="error">
+          <CoarNotice v-if="model!.Terminal!.Binding === 'client-secret'" variant="info">
+            {{ t('device.terminal.clientSecretHint', {}, 'The device authenticates with its one-time client secret. Approval still binds this client to the terminal slot.') }}
+          </CoarNotice>
+
+          <CoarNotice v-if="model!.Terminal!.Binding === 'none'" variant="warning">
+            {{ t('device.terminal.noneHint', {}, 'This terminal has no device identity. Admin approval is the only issuance barrier; protect the client ID and restrict where the control token can be used.') }}
+          </CoarNotice>
+
+          <CoarNotice v-if="model!.Terminal!.Binding === 'dpop' && !model!.Terminal!.DpopFingerprint" variant="error">
             {{ t('device.terminal.noKeyHint', {}, 'The device request carried no device key — registration will be refused. Restart the enrollment on the terminal.') }}
           </CoarNotice>
 
@@ -316,7 +328,7 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
             </CoarButton>
             <CoarButton
               :loading="submitting"
-              :disabled="!model!.Terminal!.DpopFingerprint"
+              :disabled="model!.Terminal!.Binding === 'dpop' && !model!.Terminal!.DpopFingerprint"
               full-width
               @click="decide(true)"
             >

@@ -1,64 +1,221 @@
 # Position terminals (consumer contract)
 
 > **Status:** behind the `PositionTerminals` feature flag (default off). This
-> page is the versioned contract (V1) for systems consuming position tokens —
-> e.g. an alerting product whose shared gate terminals are staffed by changing
-> personnel.
+> page describes Control-Plane V2 and the position business-token contract.
 
-A **position** ("gate porter for customer XY") is a first-class principal:
-the business actor in your system is the position itself, never the person
-currently staffing it. A person authorizes a shift with a passkey tap on an
-**enrolled terminal**; Modgud mints tokens whose subject is the position.
+A position is the business actor. A terminal first obtains a control-token
+chain through an admin-approved Device Flow; an allowed activation proof then
+opens a staffing session and mints business tokens with the position as
+subject.
 
 ## Token classes
 
-Every position token carries `principal_type: "position"` and a `token_use`
-discriminator. Consumers MUST branch on `token_use` — the two classes have
-disjoint capabilities:
+Consumers MUST branch on `token_use`; control and business tokens have disjoint
+audiences and capabilities.
 
-| | Enrollment token | Staffing token |
+| | Control token V2 | Staffing token | Step-up token |
+|---|---|---|---|
+| `token_use` | `terminal_enrollment` | `staffing_session` | `staffing_step_up` |
+| `principal_type` | `terminal` | `position` | `position` |
+| `sub` | terminal id | selected position id | same position id as the staffing session |
+| Purpose | candidate selection, proof begin, local lock | ordinary business calls | fresh proof for a sensitive business call |
+| Audience | `modgud-terminal-control` only | resources resolved from staffing scopes | same resource set, no refresh/offline scope |
+| Lifetime | refreshable while the terminal remains Active | 10-minute access tokens under the session ceiling | reference access token, at most 60 seconds |
+
+Staffing and step-up tokens also carry `terminal_id`, `staffing_session_id`,
+`auth_time`, `activation_proof`, `terminal_binding`, and method-dependent
+`amr`:
+
+| `activation_proof` | `amr` | Person in token? |
 |---|---|---|
-| `token_use` | `terminal_enrollment` | `staffing_session` |
-| Purpose | terminal-control surface only (begin a staffing ceremony, lock) | the business token of a staffed shift |
-| Audience | `modgud-terminal-control` (never a business API) | resolved from the granted scopes |
-| Extra claims | `terminal_id` | `terminal_id`, `staffing_session_id`, `auth_time` (the tap), `amr: ["webauthn"]` |
-| Lifetime | short access token, refreshable while the slot stays Active | 10-minute access token; the refresh chain ends hard at the session's absolute ceiling |
+| `personal-passkey` | `webauthn` | never |
+| `personal-password` | `pwd` | never |
+| `personal-email-otp` | `otp` | never |
+| `position-token` | `webauthn` | no person exists for the proof |
 
-Common claims on both: `sub` (the PositionPrincipal id), `name` (the
-position's account name), `cnf.jkt` (the terminal's DPoP key thumbprint —
-all position tokens are DPoP-bound reference tokens).
+`terminal_binding` is the open wire string selected on the terminal slot,
+currently `dpop`, `client-secret`, or `none`. `cnf.jkt` is present only for
+DPoP-bound terminals. Activating user id/name/e-mail, grant id, credential id,
+and logical activation-token id are internal security evidence and never
+travel in business tokens or integration events.
 
-**Never present:** the activating person's user id, name, e-mail, or passkey
-reference. Who tapped is Modgud-internal security audit (visible only to
-admins holding `staffing-session:read`).
+### Control V1 transition
 
-## Introspection
+Control V1 used `principal_type: "position"` and `sub = positionId`. New
+enrollments issue V2 only. Existing V1 refresh chains continue to work while
+their terminal still has exactly its original singleton position assignment;
+the endpoints detect both token forms. A second assignment requires a fresh
+V2 enrollment and V1 is rejected for that slot. V1 acceptance is deprecated
+as of 2026-08-15 and will not be removed before 2027-08-15; operators should
+replace legacy slots during normal device maintenance.
 
-Position tokens are opaque reference tokens; resource servers resolve them
-via `POST /connect/introspect` (or the `Modgud.AspNetCore.ResourceServer`
-package, which also enforces the `cnf.jkt` DPoP binding). The introspection
-response carries the claims above. Note OpenIddict's audience rule: a caller
-only sees a token as `active` when it is the token's presenter or listed in
-its audiences — your resource server's client id must therefore be among the
-API resources the staffing token's scopes resolve to.
+## Introspection and binding
 
-## Error contract
+All three classes are opaque reference tokens. Resource servers resolve them
+through `POST /connect/introspect` or
+`Modgud.AspNetCore.ResourceServer`. OpenIddict returns `active` only to the
+token presenter or an audience resource, so the resource server client id must
+be among the resources resolved from the granted scopes.
 
-| Situation | Error | What the terminal must do |
+For `dpop`, every terminal call carries a DPoP proof. Resource endpoints bind
+the proof to the presented access token through `ath` and reject reused `jti`
+values. `client-secret` terminals authenticate their confidential OAuth client
+at the token endpoint; `none` terminals have no cryptographic device binding.
+Both weaker modes still require admin-approved enrollment.
+
+## Provisioning
+
+One slot owns one managed OAuth client and one immutable binding. A slot may be
+assigned to several compatible positions before enrollment.
+
+| Parameter | Source | Notes |
 |---|---|---|
-| Staffing refresh after the session ended, expired, or was de-authorized (grant/terminal/position/user/passkey) | `interaction_required` / `staffing_required` | Lock the UI and demand a fresh passkey tap. Never retry silently. |
-| Chain-integrity violation (wrong client, wrong DPoP key, replayed ceremony) | `invalid_grant` | Treat as fatal; restart the affected flow. |
-| Missing/invalid DPoP proof | `invalid_dpop_proof` | Re-sign with the enrolled key and retry once. |
+| Modgud base URL | deployment | |
+| `client_id` | slot response | generated as `terminal.{8 chars}` |
+| `terminal_id` | slot response | used by lock, registration, and step-up routes |
+| `client_secret` | creation response | only for `client-secret`; shown once |
+| device P-256 key | terminal | only for `dpop`; ideally non-exportable |
+| RP-ID | slot response | WebAuthn RP for personal passkeys and position-token credentials |
 
-Revocation is server-side and instant (reference tokens die with their
-authorization). Integration events are notifications only — a consumer that
-receives a `...SessionEnded` event late was already unable to use the
-session's tokens.
+Changing a binding, losing a key/secret, or adding a position after enrollment
+means a fresh slot and Device Flow. Removing an assignment is immediate and
+ends a running session for that position.
+
+## Terminal flows
+
+### 1. Enrollment
+
+All bindings run RFC 8628 against the slot client and require a user-code
+approval by an admin with `position-terminal:enroll`.
+
+- `dpop`: proof on device and token requests; consent shows the JWK-thumbprint
+  fingerprint and token exchange permanently pins the key.
+- `client-secret`: confidential-client authentication; consent still approves
+  this physical installation.
+- `none`: public client without DPoP; consent explicitly warns that approval is
+  the only issuance barrier.
+
+Successful exchange returns the refreshable Control V2 chain.
+
+### 2. Staffing begin and position selection
+
+Call `POST /connect/staffing/begin` with the control access token and JSON:
+
+```json
+{
+  "methodId": "personal-passkey",
+  "accountName": "anna"
+}
+```
+
+`methodId` and `accountName` are method-specific. Begin never returns a
+position list. For a multi-position terminal it builds one proof challenge
+from the union of eligible credentials. Supplying `positionId` before proof is
+rejected with `Staffing.ProofRequiredBeforeSelection`.
+
+A successful begin returns `ceremonyId`, `methodId`, and either `publicKey`
+(WebAuthn methods) or `challenge` (password/e-mail OTP fields). Redeem the
+proof at `/connect/token`:
+
+```text
+grant_type=urn:cocoar:params:oauth:grant-type:staffing
+client_id=<terminal client>
+ceremony_id=<id>
+assertion=<method response JSON>
+```
+
+For password, assertion is `{"password":"..."}`; for e-mail OTP it is
+`{"code":"..."}`; passkey and position-token use WebAuthn assertion JSON.
+The verified user or logical token is then intersected with the terminal's
+currently allowed positions. If one remains, the response is the staffing
+token immediately. If several remain, and only then, the proof response is:
+
+```json
+{
+  "selectionRequired": true,
+  "ceremonyId": "single-use-selection-ticket",
+  "candidates": [
+    { "id": "...", "displayName": "Reception" }
+  ]
+}
+```
+
+Redeem the returned selection ticket once, without resending the proof:
+
+```text
+grant_type=urn:cocoar:params:oauth:grant-type:staffing
+client_id=<terminal client>
+ceremony_id=<single-use-selection-ticket>
+position_id=<candidate short guid>
+```
+
+Both proof and selection ceremonies are single-use and bound to terminal,
+client and device binding. The selection ticket stores position-specific
+evidence server-side and revalidates it immediately before minting the token.
+
+### 3. Position-token registration
+
+Admins create and assign a logical activation token. From an enrolled terminal,
+register an RP-bound credential with:
+
+1. `POST /connect/activation-token/{tokenId}/register/begin`
+2. WebAuthn `navigator.credentials.create` using the returned options
+3. `POST /connect/activation-token/{tokenId}/register` with ceremony and
+   attestation response
+
+The control token authenticates both calls (plus DPoP for a DPoP terminal).
+The token must be assigned to at least one position available on that terminal.
+Register once per RP-ID where the logical token must work.
+
+### 4. Lock
+
+`POST /connect/staffing/{terminalId}/lock` accepts the same terminal's control
+or current staffing token. DPoP terminals include an `ath`-bound, replay-safe
+proof. The operation is idempotent and immediately revokes the staffing
+authorization.
+
+### 5. Step-up
+
+Begin with the current staffing access token:
+
+```http
+POST /connect/staffing/{terminalId}/step-up
+Content-Type: application/json
+
+{
+  "methodId": "personal-passkey",
+  "accountName": "anna",
+  "action": "alarm.acknowledge",
+  "nonce": "consumer-generated-unpredictable-value"
+}
+```
+
+`action` and `nonce` are optional but must appear together. Complete the fresh
+proof, then use the normal staffing grant with `step_up=true`. The result has
+`acr: "urn:cocoar:staffing:step-up"`, fresh `auth_time`, the new `amr` and
+`activation_proof`, and—when supplied—`stepup_action` and `stepup_nonce`.
+Consumers needing one-action semantics MUST validate action/nonce and atomically
+consume the token `jti`; DPoP and a 60-second lifetime do not by themselves
+prevent multiple uses inside the window.
+
+## Errors and invalidation
+
+| Situation | OAuth/API outcome | Terminal action |
+|---|---|---|
+| Session ended, expired, assignment removed, policy tightened, or proof evidence no longer valid | `interaction_required` / `staffing_required` | lock and require fresh activation |
+| Wrong client/binding, reused ceremony, wrong selected position | `invalid_grant` / forbidden | restart the affected flow |
+| Missing/invalid/replayed DPoP proof on a DPoP terminal | `invalid_dpop_proof` / forbidden | create one fresh proof; never reuse `jti` |
+| Adding a position to an enrolled slot | `Terminal.ReenrollmentRequired` (409) | create and enroll a replacement slot |
+
+Refresh revalidates the current position policy, realm floor, terminal
+assignment, and method-specific evidence. Immediate cascades revoke the
+authorization for enumerated lifecycle events; the refresh backstop bounds any
+missed cascade by the 10-minute access-token lifetime.
 
 ## Integration events (V1)
 
-Published records (`Modgud.Domain.PositionTerminals.Contracts.V1` — the
-namespace is the version; breaking changes ship as a side-by-side `V2`):
+Published records remain method- and person-agnostic in
+`Modgud.Domain.PositionTerminals.Contracts.V1`:
 
 ```csharp
 record PositionStaffingSessionStarted(
@@ -74,60 +231,7 @@ record PositionTerminalStatusChanged(
     TerminalEnrollmentStatus Status, DateTimeOffset ChangedAt);
 ```
 
-Correlate shifts by `StaffingSessionId`; a `Started` for a terminal that
-still has an open session implies the previous one ended
-(`ReplacedByNewActivation` follows). `Reason` values: `LocalLock`,
-`RemoteLock`, `ReplacedByNewActivation`, `Expired`, `PositionDisabled`,
-`TerminalDisabled`, `TerminalRevoked`, `UserDisabled`, `PasskeyDeleted`,
-`GrantSuspended`, `GrantRevoked`, `OAuthClientDisabled`.
-
-Person data is deliberately absent from every event.
-
-Delivery rides Modgud's Wolverine outbox; the external transport binding is
-deployment configuration. Events are at-least-once and unordered across
-terminals — key any projection by `StaffingSessionId`.
-
-## Provisioning (what a terminal gets at install time)
-
-A Modgud admin creates one slot per device — either in the position modal
-or from the OAuth-client side (creating a client with the staffing grant
-stages position link + slot + client in one save) — and reads the
-terminal-app configuration off the slot view:
-
-| Parameter | Source | Notes |
-|---|---|---|
-| Modgud base URL | deployment | |
-| `client_id` | slot view (auto-generated `{position}.terminal.{8 chars}`) | public client, no secret, DPoP mandatory, reference tokens |
-| `terminal_id` | slot view (the slot's GUID) | needed for the lock endpoint |
-| RP-ID | slot view (WebAuthn RP-ID set at slot creation) | use ONE RP-ID for all terminals of the consuming app so a staff passkey works on every terminal |
-
-The terminal generates an **ES256 (P-256) device key** at first start —
-ideally in a secure element / TPM, never exportable. Key loss or rotation
-means a **fresh slot** (deliberate: no silent re-enrollment). During the
-enrollment consent the admin sees a key fingerprint (`XXXX-XXXX` — first
-8 hex chars of SHA-256 over the RFC 7638 JWK thumbprint); show the same
-fingerprint on the device so the admin can visually match device and
-consent.
-
-The E2E suite (`TerminalDeviceEnrollmentTests`,
-`StaffingTests`) is the executable wire-format reference for every
-flow below — real DPoP proofs and real ES256 WebAuthn assertions against
-the full stack.
-
-## Terminal flows (for terminal implementers)
-
-1. **Enrollment** (once per device): RFC 8628 device flow against the slot's
-   own OAuth client, with a DPoP proof from a device-held key on every
-   request. An admin approves the terminal consent; the poll pins the key
-   onto the slot and yields the enrollment token chain.
-2. **Staffing** (per shift): `POST /connect/staffing/begin` with
-   `Authorization: Bearer <enrollment access token>` plus a `DPoP` proof
-   header → WebAuthn assertion options (`allowCredentials` restricted to
-   authorized users' passkeys). The person taps; redeem with
-   `grant_type=urn:cocoar:params:oauth:grant-type:staffing`,
-   `ceremony_id` and the `assertion` JSON, DPoP-proofed.
-3. **Lock**: `POST /connect/staffing/{terminalId}/lock` with either
-   position token of the same terminal (the enrollment token works even when
-   the staffing access token already expired) plus a DPoP proof.
-
-All three surfaces refuse any key other than the slot's enrolled one.
+Delivery uses the Wolverine outbox: at-least-once and unordered across
+terminals. Project by `StaffingSessionId`. Events are notifications, not a
+revocation mechanism; reference-token authorization is already dead when an
+ended event is observed.

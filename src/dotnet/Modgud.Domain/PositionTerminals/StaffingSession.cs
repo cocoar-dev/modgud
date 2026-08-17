@@ -25,7 +25,15 @@ public sealed class StaffingSession
     public Guid ActivatedByPasskeyCredentialId { get; set; }
     public Guid PositionGrantId { get; set; }
 
-    public string DpopJkt { get; set; } = string.Empty;
+    /// <summary>Versioned, method-neutral activation evidence. Legacy scalar
+    /// fields stay projected for query compatibility during the transition.</summary>
+    public ActivationEvidence Evidence { get; set; } = new()
+    {
+        MethodId = "personal-passkey",
+        Binding = "dpop",
+    };
+
+    public string? DpopJkt { get; set; }
     public string OAuthAuthorizationId { get; set; } = string.Empty;
 
     public StaffingSessionStatus Status { get; set; }
@@ -36,6 +44,21 @@ public sealed class StaffingSession
 
     public DateTimeOffset? EndedAt { get; set; }
     public StaffingSessionEndReason? EndReason { get; set; }
+
+    /// <summary>Projection-row compatibility for sessions written before the
+    /// Evidence property existed (event rebuilds already use the V1 upcast).</summary>
+    public ActivationEvidence GetActivationEvidence()
+    {
+        if (Evidence.UserId is not null || ActivatedByUserId == Guid.Empty) return Evidence;
+        return Evidence with
+        {
+            MethodId = "personal-passkey",
+            UserId = ActivatedByUserId,
+            GrantId = PositionGrantId == Guid.Empty ? null : PositionGrantId,
+            CredentialId = ActivatedByPasskeyCredentialId == Guid.Empty ? null : ActivatedByPasskeyCredentialId,
+            Binding = "dpop",
+        };
+    }
 }
 
 public enum StaffingSessionStatus
@@ -58,4 +81,23 @@ public enum StaffingSessionEndReason
     GrantSuspended,
     GrantRevoked,
     OAuthClientDisabled,
+    PolicyTightened,
+    ActivationCredentialInvalidated,
+    ActivationTokenRevoked,
+    ActivationTokenUnassigned,
+}
+
+/// <summary>
+/// Method-neutral evidence captured at activation. Optional identifiers are
+/// populated only when the selected proof method owns that concept.
+/// </summary>
+public sealed record ActivationEvidence
+{
+    public required string MethodId { get; init; }
+    public Guid? UserId { get; init; }
+    public Guid? GrantId { get; init; }
+    public Guid? CredentialId { get; init; }
+    public Guid? ActivationTokenId { get; init; }
+    public int? TeamSecretVersion { get; init; }
+    public required string Binding { get; init; }
 }

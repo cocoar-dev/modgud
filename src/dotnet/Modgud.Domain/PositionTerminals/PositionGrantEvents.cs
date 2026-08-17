@@ -26,3 +26,12 @@ public record PositionGrantRevoked(
     Guid Id,
     Guid RevokedByUserId,
     DateTimeOffset RevokedAt);
+
+public record PositionGrantActivationFailed(
+    Guid Id,
+    DateTimeOffset AttemptedAt,
+    DateTimeOffset? LockedUntil);
+
+public record PositionGrantActivationSucceeded(
+    Guid Id,
+    DateTimeOffset SucceededAt);

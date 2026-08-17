@@ -2,10 +2,13 @@ using System.Text.RegularExpressions;
 using BuildingBlocks.Helper;
 using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Application.DTOs.Realms;
+using Modgud.Authorization.Principals;
 using Modgud.Authentication.SelfRegistration.Captcha;
+using Modgud.Domain.PositionTerminals;
 using Modgud.Domain.Realms;
 using Modgud.Domain.Assets;
 using Modgud.Infrastructure.Audit;
+using Modgud.Infrastructure.PositionTerminals;
 using ErrorOr;
 using Marten;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
@@ -23,13 +26,16 @@ public interface IRealmSettingsService
 {
     Task<RealmSettingsDoc> LoadAsync(CancellationToken ct = default);
     Task<RealmSettingsDto> GetDtoAsync(CancellationToken ct = default);
+    Task<PositionSecurityConsequencesDto> PreviewPositionSecurityAsync(
+        UpdatePositionSecuritySettingsDto dto, CancellationToken ct = default);
     Task<ErrorOr<RealmSettingsDto>> PatchAsync(UpdateRealmSettingsDto dto, CancellationToken ct = default);
 }
 
 public sealed class RealmSettingsService(
     IDocumentSession session,
     CaptchaSecretStore captchaStore,
-    ISecurityAuditLog? securityAudit = null) : IRealmSettingsService
+    ISecurityAuditLog? securityAudit = null,
+    IStaffingRevoker? staffingRevoker = null) : IRealmSettingsService
 {
     public async Task<RealmSettingsDoc> LoadAsync(CancellationToken ct = default)
     {
@@ -57,6 +63,7 @@ public sealed class RealmSettingsService(
         };
         var previousSecurityRetentionDays =
             doc.Audit?.SecurityRetentionDays ?? AuditSettings.Defaults.SecurityRetentionDays;
+        PositionSecurityConsequencesDto? positionSecurityConsequences = null;
 
         if (dto.SelfRegistration is not null)
         {
@@ -96,6 +103,25 @@ public sealed class RealmSettingsService(
             var clientSessions = ApplyClientSessionPatch(doc.ClientSessions, dto.ClientSessions);
             if (clientSessions.IsError) return clientSessions.FirstError;
             doc.ClientSessions = clientSessions.Value;
+        }
+
+        if (dto.PositionSecurity is not null)
+        {
+            positionSecurityConsequences = await PreviewPositionSecurityAsync(dto.PositionSecurity, ct);
+            if (positionSecurityConsequences.HasConsequences && !dto.ConfirmPositionSecurityConsequences)
+                return Error.Validation("PositionSecurity.ConfirmationRequired",
+                    $"The stricter floor affects {positionSecurityConsequences.Positions.Count} positions, " +
+                    $"{positionSecurityConsequences.TerminalIds.Count} terminal slots and " +
+                    $"{positionSecurityConsequences.StaffingSessionIds.Count} active staffing sessions. " +
+                    "Preview and confirm the consequences before saving.");
+
+            doc.PositionSecurity = new Modgud.Domain.RealmSettings.PositionSecuritySettings
+            {
+                RequiredProofCapabilities = dto.PositionSecurity.RequiredProofCapabilities
+                    ?? doc.PositionSecurity?.RequiredProofCapabilities,
+                RequiredBindingCapabilities = dto.PositionSecurity.RequiredBindingCapabilities
+                    ?? doc.PositionSecurity?.RequiredBindingCapabilities,
+            };
         }
 
         if (dto.AuthRateLimits is not null)
@@ -163,7 +189,84 @@ public sealed class RealmSettingsService(
         }
         await session.SaveChangesAsync(ct);
 
+        // Deliberately best-effort after the durable settings write. Refresh
+        // revalidation is the fail-closed backstop if one individual cascade
+        // fails; callers may safely retry because the revoker is idempotent.
+        if (positionSecurityConsequences is { StaffingSessionIds.Count: > 0 } && staffingRevoker is not null)
+        {
+            foreach (var encodedId in positionSecurityConsequences.StaffingSessionIds)
+            {
+                if (ShortGuid.TryDecode(encodedId, out var sessionId))
+                    await staffingRevoker.EndSessionAsync(sessionId, StaffingSessionEndReason.PolicyTightened, ct);
+            }
+        }
+
         return ToDto(doc);
+    }
+
+    public async Task<PositionSecurityConsequencesDto> PreviewPositionSecurityAsync(
+        UpdatePositionSecuritySettingsDto dto, CancellationToken ct = default)
+    {
+        var current = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        var requiredProof = dto.RequiredProofCapabilities
+            ?? current?.PositionSecurity?.RequiredProofCapabilities
+            ?? ProofCapability.None;
+        var requiredBinding = dto.RequiredBindingCapabilities
+            ?? current?.PositionSecurity?.RequiredBindingCapabilities
+            ?? BindingCapability.None;
+
+        var positions = (await session.Query<PositionPrincipal>()
+                .Where(p => !p.IsDeleted && p.TerminalPolicy.Enabled)
+                .ToListAsync(ct))
+            .ToDictionary(p => p.Id);
+
+        var affectedPositions = positions.Values
+            .Select(position => new PositionSecurityAffectedPositionDto(
+                ShortGuid.Encode(position.Id),
+                position.AccountName,
+                position.TerminalPolicy.AllowedActivationProofs
+                    .Where(id => !PositionTerminalSecurity.ProofMeetsFloor(id, requiredProof))
+                    .ToArray(),
+                position.TerminalPolicy.AllowedDeviceBindings
+                    .Where(id => !PositionTerminalSecurity.BindingMeetsFloor(id, requiredBinding))
+                    .ToArray()))
+            .Where(p => p.ViolatingActivationProofs.Count > 0 || p.ViolatingDeviceBindings.Count > 0)
+            .ToArray();
+
+        if (positions.Count == 0)
+            return new PositionSecurityConsequencesDto { Positions = affectedPositions };
+
+        var positionIds = positions.Keys.ToArray();
+        var terminals = await session.Query<TerminalEnrollment>()
+            .Where(t => positionIds.Contains(t.PositionPrincipalId))
+            .ToListAsync(ct);
+        var affectedTerminalIds = terminals
+            .Where(t => !PositionTerminalSecurity.BindingMeetsFloor(t.Binding, requiredBinding))
+            .Select(t => t.Id)
+            .ToHashSet();
+
+        var activeSessions = await session.Query<StaffingSession>()
+            .Where(s => s.Status == StaffingSessionStatus.Active && positionIds.Contains(s.PositionPrincipalId))
+            .ToListAsync(ct);
+        var affectedSessions = activeSessions.Where(s =>
+        {
+            var methodId = string.IsNullOrWhiteSpace(s.Evidence?.MethodId)
+                ? ActivationProofMethodIds.PersonalPasskey
+                : s.Evidence.MethodId;
+            var binding = string.IsNullOrWhiteSpace(s.Evidence?.Binding)
+                ? DeviceBindingIds.Dpop
+                : s.Evidence.Binding;
+            return !PositionTerminalSecurity.ProofMeetsFloor(methodId, requiredProof)
+                   || !PositionTerminalSecurity.BindingMeetsFloor(binding, requiredBinding)
+                   || affectedTerminalIds.Contains(s.TerminalEnrollmentId);
+        });
+
+        return new PositionSecurityConsequencesDto
+        {
+            Positions = affectedPositions,
+            TerminalIds = affectedTerminalIds.Select(ShortGuid.Encode).ToArray(),
+            StaffingSessionIds = affectedSessions.Select(s => ShortGuid.Encode(s.Id)).ToArray(),
+        };
     }
 
     private SelfRegistrationSettings ApplySelfRegistrationPatch(
@@ -199,6 +302,11 @@ public sealed class RealmSettingsService(
         NativeGrants = MapNativeGrantsToDto(doc.NativeGrants),
         BrowserSessions = MapBrowserSessionsToDto(doc.BrowserSessions),
         ClientSessions = MapClientSessionsToDto(doc.ClientSessions),
+        PositionSecurity = new PositionSecuritySettingsDto
+        {
+            RequiredProofCapabilities = doc.PositionSecurity?.RequiredProofCapabilities,
+            RequiredBindingCapabilities = doc.PositionSecurity?.RequiredBindingCapabilities,
+        },
         AuthRateLimits = MapAuthRateLimitsToDto(doc.AuthRateLimits),
         Branding = MapBrandingToDto(doc.Branding),
         EmailBranding = MapEmailBrandingToDto(doc.EmailBranding),

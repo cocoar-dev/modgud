@@ -26,6 +26,14 @@ public sealed class PositionGrant
 
     public DateTimeOffset? RevokedAt { get; set; }
     public Guid? RevokedByUserId { get; set; }
+
+    /// <summary>Staffing-specific brute-force budget. It deliberately lives on
+    /// the grant rather than the user so attempts at a public terminal cannot
+    /// lock the person's normal realm login.</summary>
+    public int ActivationFailedCount { get; set; }
+    public DateTimeOffset? ActivationLockoutEnd { get; set; }
+
+    public bool IsActivationLockedOut(DateTimeOffset now) => ActivationLockoutEnd > now;
 }
 
 public enum PositionGrantStatus

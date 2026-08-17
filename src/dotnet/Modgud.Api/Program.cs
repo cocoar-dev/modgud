@@ -751,6 +751,16 @@ try
     // cascade (user/passkey/grant/terminal/position) end sessions through it.
     builder.Services.AddScoped<Modgud.Infrastructure.PositionTerminals.IStaffingRevoker,
         Modgud.Infrastructure.PositionTerminals.StaffingRevoker>();
+    builder.Services.AddScoped<Modgud.Api.Features.Auth.Staffing.IActivationProof,
+        Modgud.Api.Features.Auth.Staffing.PersonalPasskeyActivationProof>();
+    builder.Services.AddScoped<Modgud.Api.Features.Auth.Staffing.IActivationProof,
+        Modgud.Api.Features.Auth.Staffing.PersonalPasswordActivationProof>();
+    builder.Services.AddScoped<Modgud.Api.Features.Auth.Staffing.IActivationProof,
+        Modgud.Api.Features.Auth.Staffing.PersonalEmailOtpActivationProof>();
+    builder.Services.AddScoped<Modgud.Api.Features.Auth.Staffing.IActivationProof,
+        Modgud.Api.Features.Auth.Staffing.PositionTokenActivationProof>();
+    builder.Services.AddScoped<Modgud.Api.Features.Auth.Staffing.ActivationInvalidationRegistry>();
+    builder.Services.AddScoped<Modgud.Api.Features.Auth.Staffing.ActivationProofRegistry>();
 
     // Infrastructure (Marten + repositories + query services + event dispatcher)
     // Authentication Marten setup (documents + events + projections) is wired via
@@ -1351,6 +1361,7 @@ try
     Modgud.Api.Features.Positions.PositionsEndpoints.MapPositionsEndpoints(app, "api");
     Modgud.Api.Features.Positions.PositionGrantsEndpoints.MapPositionGrantsEndpoints(app, "api");
     Modgud.Api.Features.Positions.PositionTerminalsEndpoints.MapPositionTerminalsEndpoints(app, "api");
+    Modgud.Api.Features.Positions.ActivationTokenEndpoints.MapActivationTokenEndpoints(app);
     app.MapPrincipalEndpoints("api");
     app.MapRolesEndpoints("api");
     app.MapGroupEndpoints("api");

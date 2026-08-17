@@ -68,6 +68,10 @@ public class RealmSettings
     /// <see cref="ClientSessionPolicy.Defaults"/>.</summary>
     public ClientSessionPolicy? ClientSessions { get; set; }
 
+    /// <summary>Realm-wide capability floors for position-terminal security.
+    /// Null = no proof or binding floor.</summary>
+    public PositionSecuritySettings? PositionSecurity { get; set; }
+
     /// <summary>Per-realm overrides for the per-IP auth rate-limit ceilings
     /// (native-otp, magic-link, password-reset, email-otp, email-verification,
     /// passkey-begin, bootstrap). Null = never configured; every policy uses its

@@ -2,7 +2,7 @@ namespace Modgud.Domain.PositionTerminals;
 
 /// <summary>
 /// One physical terminal slot of a position (MG-FT-03, plan §4.3). Owns exactly
-/// one terminal-managed public OAuth client (1:1, enforced by the unique
+/// one terminal-managed OAuth client (1:1, enforced by the unique
 /// indexes on <see cref="ClientId"/>/<see cref="OAuthApplicationId"/> and the
 /// position-terminal client invariant). <see cref="DpopJkt"/> is empty until
 /// the device-flow enrollment succeeds (MG-FT-04) and immutable afterwards —
@@ -18,12 +18,23 @@ public sealed class TerminalEnrollment
     public Guid Id { get; set; }
     public Guid PositionPrincipalId { get; set; }
 
+    /// <summary>V2 n:m assignment. Legacy projected rows leave this empty and
+    /// therefore resolve to the singleton <see cref="PositionPrincipalId"/>.</summary>
+    public List<Guid> AllowedPositionIds { get; set; } = [];
+
+    public IReadOnlyList<Guid> EffectiveAllowedPositionIds =>
+        AllowedPositionIds.Count > 0 ? AllowedPositionIds : [PositionPrincipalId];
+
     public string DisplayName { get; set; } = string.Empty;
     public string? Location { get; set; }
 
     public Guid OAuthApplicationId { get; set; }
     public string ClientId { get; set; } = string.Empty;
     public string WebAuthnRpId { get; set; } = string.Empty;
+
+    /// <summary>Immutable enrollment binding. Old projected documents and old
+    /// create events default to DPoP.</summary>
+    public string Binding { get; set; } = "dpop";
 
     public string? DpopJkt { get; set; }
     public string? EnrollmentAuthorizationId { get; set; }

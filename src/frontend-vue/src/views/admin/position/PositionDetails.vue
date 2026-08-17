@@ -22,7 +22,8 @@ import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useUserStore } from '@/stores/user.store'
-import type { PositionCreateDto, PositionUpdateDto, PositionTerminalPolicyUpdateDto, PositionGrantDto, TerminalDto, StaffingSessionDto } from '@/models/position'
+import type { PositionCreateDto, PositionUpdateDto, PositionTerminalPolicyUpdateDto, PositionTerminalPolicyConsequencesDto, PositionGrantDto, TerminalDto, StaffingSessionDto, ActivationTokenDto } from '@/models/position'
+import type { RealmSettingsDto } from '@/models/realmSettings'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -30,6 +31,13 @@ const toast = useToast()
 const props = defineProps<{
   id: string
   close: (result?: unknown) => void
+  /**
+   * Embedded create mode used by the OAuth-client editor. The position is
+   * returned as a draft and committed atomically with its first terminal
+   * client, mirroring the ServiceAccount draft flow.
+   */
+  draftOnly?: boolean
+  initial?: PositionCreateDto
 }>()
 
 const store = usePositionStore()
@@ -37,20 +45,49 @@ const userStore = useUserStore()
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
 const error = ref<string | null>(null)
+const creationCompleted = ref(false)
+const createdTerminalSecrets = ref<{ ClientId: string; ClientSecret: string }[]>([])
 // Modal-contract rule 5: create and edit share the layout — the sessions tab
 // is simply absent while the position does not exist yet.
-const activeTab = ref<'general' | 'terminals' | 'grants' | 'sessions'>('general')
+const activeTab = ref<'general' | 'terminals' | 'grants' | 'tokens' | 'sessions'>('general')
 
 const form = ref({
-  AccountName: '',
-  Purpose: '',
-  IsActive: true,
-  TerminalEnabled: false,
+  AccountName: props.initial?.AccountName ?? '',
+  Purpose: props.initial?.Purpose ?? '',
+  IsActive: props.initial?.IsActive ?? true,
+  // An embedded draft is specifically being created for a terminal client,
+  // so terminal use starts enabled and cannot accidentally be switched off.
+  TerminalEnabled: props.initial?.TerminalPolicy?.Enabled ?? (props.draftOnly ? true : false),
+  AllowedActivationProofs: [...(props.initial?.TerminalPolicy?.AllowedActivationProofs ?? ['personal-passkey'])] as string[],
+  AllowedDeviceBindings: [...(props.initial?.TerminalPolicy?.AllowedDeviceBindings ?? ['dpop'])] as string[],
   // Plan defaults: a 16 h shift session under a 24 h absolute ceiling.
-  StaffingSessionLifetimeMinutes: 16 * 60,
-  MaximumStaffingSessionLifetimeMinutes: 24 * 60,
+  StaffingSessionLifetimeMinutes: props.initial?.TerminalPolicy?.StaffingSessionLifetimeMinutes ?? 16 * 60,
+  MaximumStaffingSessionLifetimeMinutes: props.initial?.TerminalPolicy?.MaximumStaffingSessionLifetimeMinutes ?? 24 * 60,
 })
 const original = ref({ ...form.value })
+const realmPositionSecurity = ref<RealmSettingsDto['PositionSecurity'] | null>(null)
+const activationProofOptions = computed(() => [
+  { id: 'personal-passkey', label: t('admin.positions.activationProof.personalPasskey', {}, 'Personal passkey'), available: true, phase: '' },
+  { id: 'personal-password', label: t('admin.positions.activationProof.personalPassword', {}, 'Personal password'), available: true, phase: '' },
+  { id: 'personal-email-otp', label: t('admin.positions.activationProof.personalEmailOtp', {}, 'Personal email OTP'), available: true, phase: '' },
+  { id: 'position-token', label: t('admin.positions.activationProof.positionToken', {}, 'Position token'), available: true, phase: '' },
+  { id: 'team-secret', label: t('admin.positions.activationProof.teamSecret', {}, 'Team secret'), available: false, phase: 'reserved' },
+] as const)
+const deviceBindingOptions = computed(() => [
+  { id: 'dpop', label: t('admin.positionTerminals.bindingOption.dpop.label', {}, 'DPoP key'), available: true, phase: '' },
+  { id: 'client-secret', label: t('admin.positionTerminals.bindingOption.clientSecret.label', {}, 'Client secret'), available: true, phase: '' },
+  { id: 'none', label: t('admin.positionTerminals.bindingOption.none.label', {}, 'No device binding'), available: true, phase: '' },
+] as const)
+const terminalBindingSelectOptions = computed(() => deviceBindingOptions.value
+  .filter((option) => option.available && form.value.AllowedDeviceBindings.includes(option.id))
+  .map((option) => ({ value: option.id, label: option.label })))
+
+function setAllowed(collection: 'AllowedActivationProofs' | 'AllowedDeviceBindings', id: string, enabled: boolean) {
+  const values = form.value[collection]
+  form.value[collection] = enabled
+    ? Array.from(new Set([...values, id]))
+    : values.filter((value) => value !== id)
+}
 const accountNamePattern = /^[a-z0-9][a-z0-9._-]{1,63}$/
 
 const accountNameError = computed(() => {
@@ -76,14 +113,18 @@ const lifetimeError = computed(() => {
 })
 
 const modalTitle = computed(() => {
+  if (props.draftOnly)
+    return t('admin.positions.createTerminalPositionTitle', {}, 'Neue Position für Terminal')
   return isCreate.value
     ? t('admin.positions.createTitle', {}, 'Create position')
     : (form.value.AccountName || t('admin.positions.editTitle', {}, 'Position'))
 })
 
 const footerButton = computed(() => ({
-  visible: true,
-  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
+  visible: !creationCompleted.value,
+  text: props.draftOnly
+    ? t('common.apply', {}, 'Übernehmen')
+    : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: !form.value.AccountName.trim() || generalIssues.value.length > 0
     || terminalIssues.value.length > 0 || loading.value,
   onClick: save,
@@ -166,9 +207,24 @@ async function transitionGrant(grant: PositionGrantDto, action: 'suspend' | 'res
 // where the PERSISTED policy has to allow them.
 const terminals = ref<TerminalDto[]>([])
 const terminalsLoading = ref(false)
-const newTerminal = ref({ DisplayName: '', Location: '', WebAuthnRpId: '' })
+const newTerminal = ref({
+  DisplayName: '',
+  Location: '',
+  WebAuthnRpId: '',
+  Binding: 'dpop',
+  AllowedPositionIds: (isCreate.value ? [] : [props.id]) as string[],
+})
 const terminalsHttp = computed(() => useHttpClient(`/api/position/${props.id}/terminals`))
-const stagedTerminals = ref<{ DisplayName: string; Location: string; WebAuthnRpId: string }[]>([])
+const stagedTerminals = ref<{
+  DisplayName: string
+  Location: string
+  WebAuthnRpId: string
+  Binding: string
+  AllowedPositionIds: string[]
+}[]>([])
+const revealedTerminalSecret = ref<string | null>(null)
+const editingTerminalPositionsId = ref<string | null>(null)
+const terminalPositionDrafts = ref<Record<string, string[]>>({})
 // In create the staged policy decides (it is committed in the same save); in
 // edit only the persisted one does, because the server validates against it.
 const canAddTerminal = computed(() =>
@@ -187,15 +243,38 @@ watch(existingRpId, (rpId) => {
   if (rpId) newTerminal.value.WebAuthnRpId = rpId
 }, { immediate: true })
 
+watch(terminalBindingSelectOptions, (options) => {
+  if (!options.some((option) => option.value === newTerminal.value.Binding))
+    newTerminal.value.Binding = options[0]?.value ?? ''
+})
+
+const compatibleAdditionalPositions = computed(() => store.entities
+  .filter((position) => position.Id !== props.id
+    && position.IsActive
+    && position.TerminalPolicy.Enabled
+    && position.TerminalPolicy.AllowedDeviceBindings.includes(newTerminal.value.Binding))
+  .sort((left, right) => left.AccountName.localeCompare(right.AccountName)))
+
+function setNewTerminalPosition(positionId: string, enabled: boolean) {
+  newTerminal.value.AllowedPositionIds = enabled
+    ? Array.from(new Set([...newTerminal.value.AllowedPositionIds, positionId]))
+    : newTerminal.value.AllowedPositionIds.filter((id) => id !== positionId)
+}
+
 function stageTerminal() {
   if (!newTerminal.value.DisplayName.trim() || !newTerminal.value.WebAuthnRpId.trim()) return
   stagedTerminals.value.push({
     DisplayName: newTerminal.value.DisplayName.trim(),
     Location: newTerminal.value.Location.trim(),
     WebAuthnRpId: newTerminal.value.WebAuthnRpId.trim(),
+    Binding: newTerminal.value.Binding,
+    AllowedPositionIds: [...newTerminal.value.AllowedPositionIds],
   })
   // Keep the RP ID — every terminal of one consuming app shares it.
-  newTerminal.value = { DisplayName: '', Location: '', WebAuthnRpId: newTerminal.value.WebAuthnRpId }
+  newTerminal.value = {
+    DisplayName: '', Location: '', WebAuthnRpId: newTerminal.value.WebAuthnRpId,
+    Binding: 'dpop', AllowedPositionIds: isCreate.value ? [] : [props.id],
+  }
 }
 
 function unstageTerminal(index: number) {
@@ -208,6 +287,10 @@ function unstageTerminal(index: number) {
 const generalIssues = computed(() => [accountNameError.value].filter(Boolean) as string[])
 const terminalIssues = computed(() => {
   const issues = [lifetimeError.value].filter(Boolean) as string[]
+  if (form.value.TerminalEnabled && form.value.AllowedActivationProofs.length === 0)
+    issues.push(t('admin.positions.activationProofRequired', {}, 'Select at least one activation proof.'))
+  if (form.value.TerminalEnabled && form.value.AllowedDeviceBindings.length === 0)
+    issues.push(t('admin.positions.deviceBindingRequired', {}, 'Select at least one device binding.'))
   if (stagedTerminals.value.length > 0 && !form.value.TerminalEnabled)
     issues.push(t('admin.positionTerminals.stagedNeedPolicy', {},
       'Turn terminal use on — the staged slots are saved with it.'))
@@ -227,13 +310,99 @@ async function loadTerminals() {
 async function createTerminal() {
   if (!newTerminal.value.DisplayName.trim() || !newTerminal.value.WebAuthnRpId.trim()) return
   try {
-    await terminalsHttp.value.post({
+    const created = await terminalsHttp.value.post<TerminalDto>({
       DisplayName: newTerminal.value.DisplayName.trim(),
       Location: newTerminal.value.Location.trim() || undefined,
       WebAuthnRpId: newTerminal.value.WebAuthnRpId.trim(),
+      Binding: newTerminal.value.Binding,
+      AllowedPositionIds: [...newTerminal.value.AllowedPositionIds],
     })
-    newTerminal.value = { DisplayName: '', Location: '', WebAuthnRpId: newTerminal.value.WebAuthnRpId }
+    revealedTerminalSecret.value = created.ClientSecret ?? null
+    newTerminal.value = {
+      DisplayName: '', Location: '', WebAuthnRpId: newTerminal.value.WebAuthnRpId,
+      Binding: 'dpop', AllowedPositionIds: [props.id],
+    }
     await loadTerminals()
+  } catch (e: unknown) {
+    const err = e as { data?: { Message?: string }; message?: string }
+    toast.error(err?.data?.Message ?? err?.message ?? String(e))
+  }
+}
+
+async function copyTerminalSecret() {
+  if (revealedTerminalSecret.value) await navigator.clipboard.writeText(revealedTerminalSecret.value)
+}
+async function copyText(value: string) { await navigator.clipboard.writeText(value) }
+
+function positionLabel(positionId: string): string {
+  return store.entities.find((position) => position.Id === positionId)?.AccountName ?? positionId
+}
+
+function editTerminalPositions(terminal: TerminalDto) {
+  editingTerminalPositionsId.value = terminal.Id
+  terminalPositionDrafts.value[terminal.Id] = [...terminal.AllowedPositionIds]
+}
+
+function setTerminalPosition(terminal: TerminalDto, positionId: string, enabled: boolean) {
+  const current = terminalPositionDrafts.value[terminal.Id] ?? [...terminal.AllowedPositionIds]
+  terminalPositionDrafts.value[terminal.Id] = enabled
+    ? Array.from(new Set([...current, positionId]))
+    : current.filter((id) => id !== positionId)
+}
+
+function positionsForTerminal(terminal: TerminalDto) {
+  return store.entities
+    .filter((position) => terminal.AllowedPositionIds.includes(position.Id)
+      || (position.IsActive
+        && position.TerminalPolicy.Enabled
+        && position.TerminalPolicy.AllowedDeviceBindings.includes(terminal.Binding)))
+    .sort((left, right) => left.AccountName.localeCompare(right.AccountName))
+}
+
+async function saveTerminalPositions(terminal: TerminalDto) {
+  const allowed = terminalPositionDrafts.value[terminal.Id] ?? terminal.AllowedPositionIds
+  if (allowed.length === 0) return
+  try {
+    await terminalsHttp.value.addPath(terminal.Id, 'positions').put({ AllowedPositionIds: allowed })
+    editingTerminalPositionsId.value = null
+    await loadTerminals()
+  } catch (e: unknown) {
+    const err = e as { data?: { Message?: string }; message?: string }
+    toast.error(err?.data?.Message ?? err?.message ?? String(e))
+  }
+}
+
+// ── Position-owned activation tokens (F2). Registration itself happens on
+// an enrolled terminal so the browser origin is compatible with its RP ID.
+const activationTokens = ref<ActivationTokenDto[]>([])
+const activationTokensLoading = ref(false)
+const newActivationTokenLabel = ref('')
+const activationTokensHttp = computed(() => useHttpClient(`/api/position/${props.id}/activation-tokens`))
+
+async function loadActivationTokens() {
+  if (isCreate.value) return
+  activationTokensLoading.value = true
+  try { activationTokens.value = await activationTokensHttp.value.get<ActivationTokenDto[]>() }
+  finally { activationTokensLoading.value = false }
+}
+
+async function createActivationToken() {
+  const label = newActivationTokenLabel.value.trim()
+  if (!label) return
+  try {
+    await activationTokensHttp.value.post({ Label: label })
+    newActivationTokenLabel.value = ''
+    await loadActivationTokens()
+  } catch (e: unknown) {
+    const err = e as { data?: { Message?: string }; message?: string }
+    toast.error(err?.data?.Message ?? err?.message ?? String(e))
+  }
+}
+
+async function transitionActivationToken(token: ActivationTokenDto, action: 'disable' | 'reactivate' | 'revoke') {
+  try {
+    await useHttpClient(`/api/activation-token/${token.Id}/${action}`).post()
+    await Promise.all([loadActivationTokens(), loadStaffingSessions()])
   } catch (e: unknown) {
     const err = e as { data?: { Message?: string }; message?: string }
     toast.error(err?.data?.Message ?? err?.message ?? String(e))
@@ -299,6 +468,8 @@ function endReasonLabel(reason: string | null | undefined): string {
     case 'GrantSuspended': return t('admin.staffingSessions.reason.grantSuspended', {}, 'Grant suspended')
     case 'GrantRevoked': return t('admin.staffingSessions.reason.grantRevoked', {}, 'Grant revoked')
     case 'OAuthClientDisabled': return t('admin.staffingSessions.reason.clientDisabled', {}, 'OAuth client disabled')
+    case 'PolicyTightened': return t('admin.staffingSessions.reason.policyTightened', {}, 'Security policy tightened')
+    case 'ActivationCredentialInvalidated': return t('admin.staffingSessions.reason.credentialInvalidated', {}, 'Activation credential invalidated')
     default: return reason ?? ''
   }
 }
@@ -308,8 +479,18 @@ function formatTime(value: string | null | undefined): string {
 }
 
 onMounted(async () => {
-  // The user list feeds the grant picker in BOTH modes.
-  void userStore.initialize()
+  // Draft mode only configures the new position's identity + policy. It does
+  // not need live users or positions because grants/extra slots belong to the
+  // parent create operation.
+  if (!props.draftOnly) {
+    // The user list feeds the grant picker in BOTH modes.
+    void userStore.initialize()
+    // n:m terminal assignment needs the complete position catalog in both modes.
+    void store.loadAll()
+  }
+  void useHttpClient('/api/admin/realm-settings').get<RealmSettingsDto>()
+    .then((dto) => { realmPositionSecurity.value = dto.PositionSecurity })
+    .catch(() => { realmPositionSecurity.value = null })
   if (!isCreate.value) {
     loading.value = true
     try {
@@ -319,6 +500,8 @@ onMounted(async () => {
         Purpose: fn.Purpose ?? '',
         IsActive: fn.IsActive,
         TerminalEnabled: fn.TerminalPolicy.Enabled,
+        AllowedActivationProofs: [...(fn.TerminalPolicy.AllowedActivationProofs ?? ['personal-passkey'])],
+        AllowedDeviceBindings: [...(fn.TerminalPolicy.AllowedDeviceBindings ?? ['dpop'])],
         StaffingSessionLifetimeMinutes: fn.TerminalPolicy.StaffingSessionLifetimeMinutes,
         MaximumStaffingSessionLifetimeMinutes: fn.TerminalPolicy.MaximumStaffingSessionLifetimeMinutes,
       }
@@ -327,6 +510,7 @@ onMounted(async () => {
       void loadGrants()
       void loadTerminals()
       void loadStaffingSessions()
+      void loadActivationTokens()
     } catch (e: unknown) {
       const err = e as { data?: { Message?: string }; message?: string }
       error.value = err?.data?.Message ?? err?.message ?? String(e)
@@ -340,6 +524,10 @@ function policyDiff(): PositionTerminalPolicyUpdateDto | undefined {
   const diff: PositionTerminalPolicyUpdateDto = {}
   if (form.value.TerminalEnabled !== original.value.TerminalEnabled)
     diff.Enabled = form.value.TerminalEnabled
+  if (form.value.AllowedActivationProofs.join('\0') !== original.value.AllowedActivationProofs.join('\0'))
+    diff.AllowedActivationProofs = [...form.value.AllowedActivationProofs]
+  if (form.value.AllowedDeviceBindings.join('\0') !== original.value.AllowedDeviceBindings.join('\0'))
+    diff.AllowedDeviceBindings = [...form.value.AllowedDeviceBindings]
   if (form.value.StaffingSessionLifetimeMinutes !== original.value.StaffingSessionLifetimeMinutes)
     diff.StaffingSessionLifetimeMinutes = form.value.StaffingSessionLifetimeMinutes
   if (form.value.MaximumStaffingSessionLifetimeMinutes !== original.value.MaximumStaffingSessionLifetimeMinutes)
@@ -349,6 +537,22 @@ function policyDiff(): PositionTerminalPolicyUpdateDto | undefined {
 
 async function save() {
   if (!form.value.AccountName.trim() || accountNameError.value || lifetimeError.value) return
+  if (props.draftOnly) {
+    const draft: PositionCreateDto = {
+      AccountName: form.value.AccountName.trim(),
+      Purpose: form.value.Purpose.trim() || undefined,
+      IsActive: true,
+      TerminalPolicy: {
+        Enabled: true,
+        AllowedActivationProofs: [...form.value.AllowedActivationProofs],
+        AllowedDeviceBindings: [...form.value.AllowedDeviceBindings],
+        StaffingSessionLifetimeMinutes: form.value.StaffingSessionLifetimeMinutes,
+        MaximumStaffingSessionLifetimeMinutes: form.value.MaximumStaffingSessionLifetimeMinutes,
+      },
+    }
+    props.close(draft)
+    return
+  }
   loading.value = true
   error.value = null
   try {
@@ -364,10 +568,20 @@ async function save() {
               DisplayName: slot.DisplayName,
               Location: slot.Location || undefined,
               WebAuthnRpId: slot.WebAuthnRpId,
+              Binding: slot.Binding,
+              AllowedPositionIds: slot.AllowedPositionIds.length > 0 ? slot.AllowedPositionIds : undefined,
             }))
           : undefined,
       }
-      await store.createEntity(createDto)
+      const created = await store.httpClient.post<import('@/models/position').PositionPrincipalDto>(createDto)
+      store.setStoreEntities([created])
+      createdTerminalSecrets.value = (created.CreatedTerminals ?? [])
+        .filter((terminal) => !!terminal.ClientSecret)
+        .map((terminal) => ({ ClientId: terminal.ClientId, ClientSecret: terminal.ClientSecret! }))
+      if (createdTerminalSecrets.value.length > 0) {
+        creationCompleted.value = true
+        return
+      }
     } else {
       // Send only fields that actually changed. Empty Purpose = explicit clear
       // (server normalises blank to null).
@@ -381,7 +595,20 @@ async function save() {
         body.IsActive = form.value.IsActive
       }
       const diff = policyDiff()
-      if (diff) body.TerminalPolicy = diff
+      if (diff) {
+        body.TerminalPolicy = diff
+        const consequences = await useHttpClient(`/api/position/${props.id}/terminal-policy/preview`)
+          .post<PositionTerminalPolicyConsequencesDto>(diff)
+        if (consequences.HasConsequences) {
+          const confirmed = confirm(t(
+            'admin.positions.policyConsequencesConfirm',
+            { terminals: consequences.TerminalIds.length, sessions: consequences.StaffingSessionIds.length },
+            `This change affects ${consequences.TerminalIds.length} terminal slots and immediately ends ${consequences.StaffingSessionIds.length} active staffing sessions. Continue?`,
+          ))
+          if (!confirmed) return
+          body.ConfirmTerminalPolicyConsequences = true
+        }
+      }
       await store.httpClient.addPath(props.id).put(body)
     }
     props.close()
@@ -416,7 +643,7 @@ async function save() {
             </CoarPopover>
           </span>
         </CoarTab>
-        <CoarTab id="terminals">
+        <CoarTab v-if="!props.draftOnly" id="terminals">
           <span class="tab-label">
             {{ t('admin.positions.tabs.terminals', {}, 'Terminals') }}
             <CoarPopover v-if="terminalIssues.length" mode="hover" :offset="8">
@@ -434,10 +661,20 @@ async function save() {
             </CoarPopover>
           </span>
         </CoarTab>
-        <CoarTab id="grants">{{ t('admin.positions.tabs.grants', {}, 'Authorized users') }}</CoarTab>
+        <CoarTab v-if="!props.draftOnly" id="grants">{{ t('admin.positions.tabs.grants', {}, 'Authorized users') }}</CoarTab>
+        <CoarTab v-if="!isCreate" id="tokens">{{ t('admin.positions.tabs.tokens', {}, 'Activation tokens') }}</CoarTab>
         <!-- Rule 5: absent in create — sessions cannot exist before the position. -->
         <CoarTab v-if="!isCreate" id="sessions">{{ t('admin.positions.tabs.sessions', {}, 'Staffing sessions') }}</CoarTab>
       </CoarTabGroup>
+
+      <CoarNotice v-if="creationCompleted" variant="warning">
+        <p class="mb-2 font-medium">{{ t('admin.positionTerminals.secretsOnce', {}, 'Position created. Copy these client secrets now; they will not be shown again.') }}</p>
+        <div v-for="secret in createdTerminalSecrets" :key="secret.ClientId" class="mb-2 flex flex-wrap items-center gap-2">
+          <code>{{ secret.ClientId }}</code>
+          <code class="min-w-0 flex-1 break-all rounded bg-white/40 px-2 py-1">{{ secret.ClientSecret }}</code>
+          <CoarButton size="s" variant="secondary" @click="copyText(secret.ClientSecret)">{{ t('common.copy', {}, 'Copy') }}</CoarButton>
+        </div>
+      </CoarNotice>
 
       <!-- Tab: General -->
       <div v-show="activeTab === 'general'" class="tab-content modal-form">
@@ -472,7 +709,7 @@ async function save() {
               :hint="t('admin.positions.activeHint', {}, 'Deactivating immediately revokes every outstanding token of this position; staffing and enrollment stay blocked until reactivation.')"
               layout="inline"
               label-position="after">
-              <CoarCheckbox v-model="form.IsActive" />
+              <CoarCheckbox v-model="form.IsActive" :disabled="props.draftOnly" />
             </CoarFormField>
           </div>
         </section>
@@ -481,7 +718,7 @@ async function save() {
       <!-- Tab: Terminals. Rule 1 — the lifetime fields stay VISIBLE when
            terminal use is off (disabled, showing the effective defaults);
            hiding them would make the policy unfindable. -->
-      <div v-show="activeTab === 'terminals'" class="tab-content modal-form">
+      <div v-if="!props.draftOnly" v-show="activeTab === 'terminals'" class="tab-content modal-form">
         <section class="form-section">
           <div class="modal-form-grid">
             <CoarFormField class="col-full"
@@ -489,7 +726,7 @@ async function save() {
               :hint="t('admin.positions.terminalsEnabledHint', {}, 'Off by default. Terminal slots can only be created and enrolled while this is on; staff then activate the position with a passkey tap.')"
               layout="inline"
               label-position="after">
-              <CoarCheckbox v-model="form.TerminalEnabled" />
+              <CoarCheckbox v-model="form.TerminalEnabled" :disabled="props.draftOnly" />
             </CoarFormField>
             <CoarFormField
               :label="t('admin.positions.sessionLifetime', {}, 'Staffing session (minutes)')"
@@ -502,12 +739,61 @@ async function save() {
               :hint="t('admin.positions.maxSessionLifetimeHint', {}, 'The hard ceiling a refresh can never extend past (1440 = 24 hours).')">
               <CoarNumberInput v-model="form.MaximumStaffingSessionLifetimeMinutes" :min="1" :disabled="!form.TerminalEnabled" />
             </CoarFormField>
+
+            <div class="col-full grid gap-4 md:grid-cols-2">
+              <div class="rounded border border-surface-200 p-3">
+                <h3 class="mb-1 text-sm font-semibold">
+                  {{ t('admin.positions.activationProofs', {}, 'Allowed activation proofs') }}
+                </h3>
+                <p class="mb-3 text-xs text-surface-500">
+                  {{ t('admin.positions.activationProofsHint', {}, 'How a staff member proves they may activate this position.') }}
+                </p>
+                <div v-for="option in activationProofOptions" :key="option.id" class="mb-2 flex items-start gap-2">
+                  <CoarCheckbox
+                    :model-value="form.AllowedActivationProofs.includes(option.id)"
+                    :disabled="!form.TerminalEnabled || !option.available"
+                    @update:model-value="(value) => setAllowed('AllowedActivationProofs', option.id, !!value)" />
+                  <div class="min-w-0">
+                    <div class="text-sm">{{ option.label }} <code class="text-xs">{{ option.id }}</code></div>
+                    <div v-if="!option.available" class="text-xs text-surface-500">
+                      {{ t('admin.positions.proofReserved', {}, 'Reserved; not implemented yet.') }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rounded border border-surface-200 p-3">
+                <h3 class="mb-1 text-sm font-semibold">
+                  {{ t('admin.positions.deviceBindings', {}, 'Allowed device bindings') }}
+                </h3>
+                <p class="mb-3 text-xs text-surface-500">
+                  {{ t('admin.positions.deviceBindingsHint', {}, 'The immutable binding chosen when a terminal slot is created.') }}
+                </p>
+                <div v-for="option in deviceBindingOptions" :key="option.id" class="mb-2 flex items-start gap-2">
+                  <CoarCheckbox
+                    :model-value="form.AllowedDeviceBindings.includes(option.id)"
+                    :disabled="!form.TerminalEnabled || !option.available"
+                    @update:model-value="(value) => setAllowed('AllowedDeviceBindings', option.id, !!value)" />
+                  <div class="min-w-0">
+                    <div class="text-sm">{{ option.label }} <code class="text-xs">{{ option.id }}</code></div>
+                    <div v-if="!option.available" class="text-xs text-surface-500">
+                      {{ t('admin.positions.availableInPhase', { phase: option.phase }, `Available in ${option.phase}.`) }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <CoarNotice v-if="realmPositionSecurity" class="col-full" variant="info">
+              {{ t('admin.positions.realmFloor', {}, 'Realm floor') }}:
+              {{ realmPositionSecurity.RequiredProofCapabilities?.join(', ') || t('common.none', {}, 'none') }} ·
+              {{ realmPositionSecurity.RequiredBindingCapabilities?.join(', ') || t('common.none', {}, 'none') }}
+            </CoarNotice>
           </div>
 
           <!-- Terminal slots (MG-FT-03). Rule 1: visible in every state — the
                create row is disabled (with the reason as hint) until the
                PERSISTED policy allows slots. Slot ops are immediate actions. -->
-          <div class="mt-4">
+          <div v-if="!props.draftOnly" class="mt-4">
             <div class="mb-3 flex flex-wrap items-end gap-2">
               <CoarFormField class="min-w-0 flex-1" :label="t('admin.positionTerminals.name', {}, 'Terminal name')">
                 <CoarTextInput v-model="newTerminal.DisplayName" :disabled="!canAddTerminal"
@@ -524,16 +810,55 @@ async function save() {
                 <CoarTextInput v-model="newTerminal.WebAuthnRpId" :disabled="!canAddTerminal || !!existingRpId"
                   placeholder="alerthub.example.com" />
               </CoarFormField>
+              <CoarFormField class="min-w-0 flex-1" :label="t('admin.positionTerminals.binding', {}, 'Device binding')">
+                <CoarSelect v-model="newTerminal.Binding" :options="terminalBindingSelectOptions"
+                  :disabled="!canAddTerminal" />
+              </CoarFormField>
               <CoarButton size="s" icon-start="plus" class="shrink-0 mb-1"
                 :disabled="!canAddTerminal || !newTerminal.DisplayName.trim() || !newTerminal.WebAuthnRpId.trim()"
                 @click="isCreate ? stageTerminal() : createTerminal()">
                 {{ t('admin.positionTerminals.createButton', {}, 'Add slot') }}
               </CoarButton>
             </div>
+            <div v-if="canAddTerminal" class="mb-3 rounded border border-surface-200 p-3">
+              <div class="mb-1 text-sm font-semibold">
+                {{ t('admin.positionTerminals.allowedPositions', {}, 'Positions available on this terminal') }}
+              </div>
+              <p class="mb-2 text-xs text-surface-500">
+                {{ t('admin.positionTerminals.allowedPositionsHint', {}, 'Select every compatible position before enrollment. Adding another position after enrollment requires a fresh terminal slot and a new Device Flow approval.') }}
+              </p>
+              <div class="mb-2 flex items-center gap-2 text-sm">
+                <CoarCheckbox :model-value="true" disabled />
+                <span>{{ isCreate ? (form.AccountName || t('admin.positions.thisPosition', {}, 'This new position')) : positionLabel(props.id) }}</span>
+                <CoarTag variant="neutral">{{ t('admin.positions.thisPosition', {}, 'This position') }}</CoarTag>
+              </div>
+              <div v-for="position in compatibleAdditionalPositions" :key="position.Id"
+                  class="mb-2 flex items-center gap-2 text-sm">
+                <CoarCheckbox
+                  :model-value="newTerminal.AllowedPositionIds.includes(position.Id)"
+                  @update:model-value="(value) => setNewTerminalPosition(position.Id, !!value)" />
+                <span>{{ position.AccountName }}</span>
+              </div>
+              <div v-if="compatibleAdditionalPositions.length === 0" class="text-xs text-surface-500">
+                {{ t('admin.positionTerminals.noCompatibleAdditionalPositions', {}, 'No other active position currently accepts this device binding.') }}
+              </div>
+            </div>
             <CoarNotice v-if="!canAddTerminal" variant="info" class="mb-3">
               {{ isCreate
                 ? t('admin.positionTerminals.enablePolicyStaged', {}, 'Turn terminal use on to add slots — they are created together with the position.')
                 : t('admin.positionTerminals.enablePolicyFirst', {}, 'Enable terminal use and save before creating slots.') }}
+            </CoarNotice>
+            <CoarNotice v-if="newTerminal.Binding === 'none'" variant="warning" class="mb-3">
+              {{ t('admin.positionTerminals.noneWarning', {}, 'No binding means the terminal has no provable device identity. Admin enrollment approval is the only issuance barrier.') }}
+            </CoarNotice>
+            <CoarNotice v-if="revealedTerminalSecret" variant="warning" class="mb-3">
+              <div class="flex flex-wrap items-center gap-2">
+                <span>{{ t('admin.positionTerminals.secretOnce', {}, 'Copy this client secret now; it will not be shown again.') }}</span>
+                <code class="min-w-0 flex-1 break-all rounded bg-white/40 px-2 py-1">{{ revealedTerminalSecret }}</code>
+                <CoarButton size="s" variant="secondary" @click="copyTerminalSecret">
+                  {{ t('common.copy', {}, 'Copy') }}
+                </CoarButton>
+              </div>
             </CoarNotice>
 
             <!-- Create: the staged slots, committed by the single Save. -->
@@ -547,8 +872,9 @@ async function save() {
                   <div class="flex min-w-0 flex-1 flex-col">
                     <span class="truncate font-medium">{{ slot.DisplayName }}</span>
                     <span class="truncate text-xs text-surface-500">
-                      {{ slot.WebAuthnRpId }}
+                      {{ slot.WebAuthnRpId }} · {{ slot.Binding }}
                       <template v-if="slot.Location"> · {{ slot.Location }}</template>
+                      · {{ slot.AllowedPositionIds.length + 1 }} {{ t('admin.positionTerminals.positions', {}, 'position(s)') }}
                     </span>
                   </div>
                   <CoarTag variant="info">{{ t('admin.positionTerminals.statusStaged', {}, 'On save') }}</CoarTag>
@@ -574,6 +900,7 @@ async function save() {
                     <span class="truncate text-xs text-surface-500">
                       <code>{{ terminal.ClientId }}</code>
                       <template v-if="terminal.Location"> · {{ terminal.Location }}</template>
+                      · {{ terminal.AllowedPositionIds?.length ?? 1 }} {{ t('admin.positionTerminals.positions', {}, 'position(s)') }}
                     </span>
                   </div>
                   <CoarTag :variant="terminal.Status === 'Active' ? 'success'
@@ -584,6 +911,13 @@ async function save() {
                       : terminal.Status === 'Disabled' ? t('admin.positionTerminals.statusDisabled', {}, 'Disabled')
                       : t('admin.positionTerminals.statusRevoked', {}, 'Revoked') }}
                   </CoarTag>
+                  <CoarTag variant="neutral">{{ terminal.Binding }}</CoarTag>
+                  <CoarButton v-if="terminal.Status !== 'Revoked'" size="s" variant="ghost" icon-start="list-checks"
+                    @click="editingTerminalPositionsId === terminal.Id
+                      ? editingTerminalPositionsId = null
+                      : editTerminalPositions(terminal)">
+                    {{ t('admin.positionTerminals.editPositions', {}, 'Positions') }}
+                  </CoarButton>
                   <div v-if="terminal.Status !== 'Revoked'" class="flex items-center gap-1">
                     <CoarButton v-if="terminal.Status !== 'Disabled'" size="s" variant="ghost" icon-start="pause"
                       @click="transitionTerminal(terminal, 'disable')">
@@ -603,12 +937,82 @@ async function save() {
                       </CoarButton>
                     </CoarPopconfirm>
                   </div>
+                  <div v-if="editingTerminalPositionsId === terminal.Id"
+                      class="basis-full rounded border border-surface-200 bg-surface-50 p-3">
+                    <p v-if="terminal.Enrolled" class="mb-2 text-xs text-surface-500">
+                      {{ t('admin.positionTerminals.enrolledAssignmentHint', {}, 'This terminal is already enrolled. Existing positions may be removed, but adding another one requires creating and enrolling a replacement multi-position slot.') }}
+                    </p>
+                    <div v-for="position in positionsForTerminal(terminal)" :key="position.Id"
+                        class="mb-2 flex items-center gap-2 text-sm">
+                      <CoarCheckbox
+                        :model-value="(terminalPositionDrafts[terminal.Id] ?? terminal.AllowedPositionIds).includes(position.Id)"
+                        :disabled="terminal.Enrolled && !terminal.AllowedPositionIds.includes(position.Id)"
+                        @update:model-value="(value) => setTerminalPosition(terminal, position.Id, !!value)" />
+                      <span>{{ position.AccountName }}</span>
+                      <CoarTag v-if="terminal.AllowedPositionIds.includes(position.Id)" variant="neutral">
+                        {{ t('admin.positionTerminals.currentAssignment', {}, 'Assigned') }}
+                      </CoarTag>
+                    </div>
+                    <div class="mt-2 flex justify-end gap-2">
+                      <CoarButton size="s" variant="ghost" @click="editingTerminalPositionsId = null">
+                        {{ t('common.cancel', {}, 'Cancel') }}
+                      </CoarButton>
+                      <CoarButton size="s"
+                        :disabled="(terminalPositionDrafts[terminal.Id] ?? terminal.AllowedPositionIds).length === 0"
+                        @click="saveTerminalPositions(terminal)">
+                        {{ t('common.save', {}, 'Save') }}
+                      </CoarButton>
+                    </div>
+                  </div>
                 </li>
               </ul>
             </template>
           </div>
         </section>
       </div>
+
+      <section v-if="!isCreate" v-show="activeTab === 'tokens'" class="form-section tab-content">
+        <CoarNotice variant="info">
+          {{ t('admin.activationTokens.registrationHint', {}, 'Create and assign the logical token here. Register its WebAuthn credential from an enrolled terminal so registration uses the terminal application’s RP-compatible origin.') }}
+        </CoarNotice>
+        <div class="flex items-end gap-2">
+          <CoarFormField class="min-w-0 flex-1" :label="t('admin.activationTokens.label', {}, 'Token label')">
+            <CoarTextInput v-model="newActivationTokenLabel" placeholder="YubiKey safe #1" />
+          </CoarFormField>
+          <CoarButton size="s" icon-start="plus" :disabled="!newActivationTokenLabel.trim()"
+            @click="createActivationToken">
+            {{ t('admin.activationTokens.create', {}, 'Create token') }}
+          </CoarButton>
+        </div>
+        <div v-if="activationTokensLoading" class="text-xs text-surface-500">{{ t('common.loading', {}, 'Loading...') }}</div>
+        <div v-else-if="activationTokens.length === 0" class="grant-empty">
+          {{ t('admin.activationTokens.empty', {}, 'No position-owned activation tokens assigned.') }}
+        </div>
+        <ul v-else class="flex flex-col gap-2">
+          <li v-for="token in activationTokens" :key="token.Id"
+              class="flex flex-wrap items-center gap-2 rounded border border-surface-200 p-3">
+            <div class="flex min-w-0 flex-1 flex-col">
+              <span class="truncate font-medium">{{ token.Label }}</span>
+              <span class="truncate text-xs text-surface-500">
+                {{ token.RegisteredRpIds.length > 0 ? token.RegisteredRpIds.join(', ') : t('admin.activationTokens.notRegistered', {}, 'Not registered on an RP yet') }}
+              </span>
+            </div>
+            <CoarTag :variant="token.Status === 'Active' ? 'success' : token.Status === 'Disabled' ? 'warning' : 'neutral'">
+              {{ token.Status }}
+            </CoarTag>
+            <CoarButton v-if="token.Status === 'Active'" size="s" variant="ghost" icon-start="pause"
+              @click="transitionActivationToken(token, 'disable')">{{ t('common.disable', {}, 'Disable') }}</CoarButton>
+            <CoarButton v-if="token.Status === 'Disabled'" size="s" variant="ghost" icon-start="play"
+              @click="transitionActivationToken(token, 'reactivate')">{{ t('common.reactivate', {}, 'Reactivate') }}</CoarButton>
+            <CoarPopconfirm v-if="token.Status !== 'Revoked'"
+              :title="t('admin.activationTokens.revokeTitle', {}, 'Revoke activation token?')"
+              :message="t('admin.activationTokens.revokeConfirm', {}, 'Revocation is permanent and immediately ends every staffing session activated with this token.')"
+              confirm-variant="danger" @confirmed="transitionActivationToken(token, 'revoke')">
+              <CoarButton size="s" variant="ghost" icon-start="trash-2">{{ t('common.revoke', {}, 'Revoke') }}</CoarButton>
+            </CoarPopconfirm>
+          </li>
+        </ul>
+      </section>
 
       <!-- Staffing sessions (MG-FT-05/07) — the live/audit view of shifts on
            this position's terminals; force-lock ends a running one remotely.
@@ -626,7 +1030,11 @@ async function save() {
             <div class="flex min-w-0 flex-1 flex-col">
               <span class="truncate font-medium">
                 {{ terminalLabel(s.TerminalId) }}
-                <span class="font-normal text-surface-500">· {{ userLabel(s.ActivatedByUserId) }}</span>
+                <span class="font-normal text-surface-500">
+                  · {{ s.ActivationProof === 'position-token'
+                    ? `${t('admin.activationTokens.token', {}, 'Token')} ${s.ActivationTokenId ?? ''}`
+                    : s.ActivatedByUserId ? userLabel(s.ActivatedByUserId) : s.ActivationProof }}
+                </span>
               </span>
               <span class="truncate text-xs text-surface-500">
                 {{ formatTime(s.StartedAt) }}

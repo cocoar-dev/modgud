@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
-import type { RealmSettingsDto, UpdateRealmSettingsDto } from '@/models/realmSettings'
+import type { RealmSettingsDto, UpdateRealmSettingsDto, UpdatePositionSecuritySettingsDto, PositionSecurityConsequencesDto } from '@/models/realmSettings'
 
 /**
  * Realm-wide settings store. One singleton doc per tenant DB — the
@@ -40,5 +40,12 @@ export const useRealmSettingsStore = defineStore('realmSettings', () => {
     return res?.Kid ?? ''
   }
 
-  return { settings, loaded, load, patch, rotateSigningKey }
+  async function previewPositionSecurity(
+    dto: UpdatePositionSecuritySettingsDto,
+  ): Promise<PositionSecurityConsequencesDto> {
+    return http.addPath('position-security').addPath('preview')
+      .post<PositionSecurityConsequencesDto>(dto)
+  }
+
+  return { settings, loaded, load, patch, previewPositionSecurity, rotateSigningKey }
 })

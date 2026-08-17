@@ -1,6 +1,5 @@
 using BuildingBlocks.Helper;
-using Fido2NetLib;
-using Fido2NetLib.Objects;
+using System.Text.Json;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
 using Modgud.Api.Features.Auth.PositionTerminals;
@@ -15,6 +14,7 @@ using Modgud.Infrastructure.OpenIddict.Dpop;
 using OpenIddict.Abstractions;
 using OpenIddict.Validation.AspNetCore;
 using static OpenIddict.Abstractions.OpenIddictConstants;
+using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Api.Features.Auth.Staffing;
 
@@ -23,16 +23,17 @@ namespace Modgud.Api.Features.Auth.Staffing;
 /// terminal, holding its enrollment access token, asks for WebAuthn assertion
 /// options so a person can tap their passkey and open a
 /// <see cref="StaffingSession"/> (redeemed via the custom staffing grant at
-/// the token endpoint, §13). Position and terminal are derived from the
-/// validated token — the request chooses nothing.
+/// the token endpoint, §13). The validated control token fixes the terminal;
+/// V1 also fixes its singleton position, while V2 resolves an allowed position
+/// only after the activation proof has succeeded.
 ///
 /// <para>Contract note (documented deviation from §12's
 /// <c>Authorization: DPoP</c> sketch): the API's OpenIddict validation
 /// pipeline extracts Bearer tokens only, so the enrollment token travels as
-/// <c>Authorization: Bearer</c> while the DPoP proof-of-possession is
-/// enforced explicitly here — the <c>DPoP</c> header is mandatory and its
-/// key must be the slot's enrolled key (§12.2 check 7). Full
-/// DPoP-scheme-extraction on the resource side is a hardening follow-up.</para>
+/// <c>Authorization: Bearer</c>. DPoP-bound slots additionally enforce the
+/// proof explicitly here; ClientSecret and None slots rely on their respective
+/// enrollment/token-endpoint profile. Full DPoP-scheme extraction on the
+/// resource side remains a hardening follow-up.</para>
 /// </summary>
 public static class StaffingEndpoints
 {
@@ -45,7 +46,8 @@ public static class StaffingEndpoints
             .RequireAuthorization(new AuthorizeAttribute
             {
                 AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
-            });
+            })
+            .RequireRateLimiting("passkey-begin");
 
         // §15.2 — the terminal-facing local lock. Authenticated by either
         // position token of the SAME terminal (staffing token of the active
@@ -61,6 +63,16 @@ public static class StaffingEndpoints
             {
                 AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
             });
+
+        application.MapPost("/connect/staffing/{terminalId:guid}/step-up", StepUpBeginAsync)
+            .WithName("Staffing_StepUpBegin")
+            .WithTags("Position Staffing")
+            .DisableAntiforgery()
+            .RequireAuthorization(new AuthorizeAttribute
+            {
+                AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
+            })
+            .RequireRateLimiting("passkey-begin");
 
         // §15.3 — admin surface (cookie-auth like every /api endpoint).
         var admin = application.MapGroup("/api")
@@ -86,6 +98,93 @@ public static class StaffingEndpoints
             .RequiresPermission("staffing-session:force-lock");
 
         return application;
+    }
+
+    private static async Task<IResult> StepUpBeginAsync(
+        Guid terminalId,
+        StepUpBeginInput input,
+        HttpContext context,
+        AppSettings settings,
+        IDocumentSession session,
+        ActivationProofRegistry activationProofs,
+        IDpopReplayStore replayStore,
+        CancellationToken ct)
+    {
+        if (!settings.Features.PositionTerminals) return Results.NotFound();
+        var principal = context.User;
+        if (!string.Equals(principal.GetClaim(PositionTokenClaimTypes.TokenUse),
+                PositionTokenUses.StaffingSession, StringComparison.Ordinal) ||
+            !Guid.TryParse(principal.GetClaim(Claims.Subject), out var positionId) ||
+            !Guid.TryParse(principal.GetClaim(PositionTokenClaimTypes.TerminalId), out var tokenTerminalId) ||
+            tokenTerminalId != terminalId ||
+            !Guid.TryParse(principal.GetClaim(PositionTokenClaimTypes.StaffingSessionId), out var staffingSessionId))
+            return Forbidden("Staffing.InvalidToken", "An active staffing access token is required.");
+
+        if ((input.Action is null) != (input.Nonce is null) ||
+            input.Action is { Length: > 200 } || input.Nonce is { Length: > 200 } ||
+            string.IsNullOrWhiteSpace(input.Action) != string.IsNullOrWhiteSpace(input.Nonce))
+            return Results.BadRequest(new
+            {
+                Error = "Staffing.InvalidStepUpBinding",
+                Message = "Action and nonce must be supplied together and be at most 200 characters."
+            });
+
+        var staffing = await session.LoadAsync<StaffingSession>(staffingSessionId, ct);
+        var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
+        var position = await session.LoadAsync<PositionPrincipal>(positionId, ct);
+        if (staffing is not { Status: StaffingSessionStatus.Active } ||
+            staffing.AbsoluteExpiresAt <= DateTimeOffset.UtcNow ||
+            staffing.TerminalEnrollmentId != terminalId || staffing.PositionPrincipalId != positionId ||
+            terminal is not { Status: TerminalEnrollmentStatus.Active } ||
+            terminal.ActiveStaffingSessionId != staffing.Id ||
+            !terminal.EffectiveAllowedPositionIds.Contains(positionId) ||
+            position is null || position.IsDeleted || !position.IsActive || !position.TerminalPolicy.Enabled)
+            return Forbidden("Staffing.SessionUnavailable", "The staffing session is no longer active.");
+
+        if (string.Equals(terminal.Binding, DeviceBindingIds.Dpop, StringComparison.Ordinal))
+        {
+            var proofHeader = context.Request.Headers[DpopConstants.HeaderName];
+            if (proofHeader.Count != 1 || !TryGetPresentedAccessToken(context.Request, out var accessToken))
+                return Forbidden("Staffing.DpopRequired", "A DPoP proof bound to the staffing access token is required.");
+            var now = DateTimeOffset.UtcNow;
+            var htu = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}";
+            var proof = DpopProofValidator.Validate(
+                proofHeader.ToString(), context.Request.Method, htu, now, accessToken);
+            if (!proof.IsValid || !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
+                return Forbidden("Staffing.DpopMismatch", "The DPoP proof key does not match this terminal.");
+            if (!await RecordDpopProofAsync(replayStore, proof, now, ct))
+                return Forbidden("Staffing.DpopReplay", "The DPoP proof has already been used.");
+        }
+
+        var realm = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        var requiredProof = realm?.PositionSecurity?.RequiredProofCapabilities ?? ProofCapability.None;
+        var methodId = string.IsNullOrWhiteSpace(input.MethodId)
+            ? position.TerminalPolicy.AllowedActivationProofs.FirstOrDefault(m =>
+                PositionTerminalSecurity.ProofMeetsFloor(m, requiredProof) && activationProofs.TryGet(m, out _))
+            : input.MethodId.Trim();
+        if (methodId is null ||
+            !position.TerminalPolicy.AllowedActivationProofs.Contains(methodId, StringComparer.Ordinal) ||
+            !PositionTerminalSecurity.ProofMeetsFloor(methodId, requiredProof) ||
+            !activationProofs.TryGet(methodId, out var activationProof))
+            return Forbidden("Staffing.ActivationProofUnavailable", "The requested step-up proof is unavailable.");
+
+        var challenge = await activationProof.BeginAsync(
+            new ActivationContext(position, terminal,
+                BeginInput: new ActivationBeginInput(methodId, input.AccountName, new ShortGuid(position.Id).ToString())), ct);
+        if (challenge.Failure is { } failure) return Forbidden(failure.Code, failure.Message);
+        var ceremony = challenge.Ceremony!;
+        ceremony.StepUpForStaffingSessionId = staffing.Id;
+        ceremony.StepUpAction = string.IsNullOrWhiteSpace(input.Action) ? null : input.Action;
+        ceremony.StepUpNonce = string.IsNullOrWhiteSpace(input.Nonce) ? null : input.Nonce;
+        ceremony.StepUpScopes = principal.GetScopes()
+            .Where(scope => !string.Equals(scope, Scopes.OfflineAccess, StringComparison.Ordinal))
+            .ToArray();
+        session.Store(ceremony);
+        await session.SaveChangesAsync(ct);
+
+        return Results.Content(
+            $"{{\"ceremonyId\":\"{ceremony.Id}\",\"methodId\":{JsonSerializer.Serialize(methodId)}," +
+            $"\"{challenge.ResponseProperty}\":{challenge.OptionsJson}}}", "application/json");
     }
 
     private static async Task<IResult> ForceLockAsync(AppSettings settings, Func<Task<int>> end)
@@ -115,16 +214,26 @@ public static class StaffingEndpoints
 
         // ActivatedBy* stays admin-only security metadata (plan §4.5) — it is
         // shown HERE for audit purposes and never travels in tokens.
-        return Results.Ok(sessions.Select(s => new
+        return Results.Ok(sessions.Select(s =>
         {
-            Id = new ShortGuid(s.Id).ToString(),
-            TerminalId = new ShortGuid(s.TerminalEnrollmentId).ToString(),
-            ActivatedByUserId = new ShortGuid(s.ActivatedByUserId).ToString(),
-            s.Status,
-            s.StartedAt,
-            s.AbsoluteExpiresAt,
-            s.EndedAt,
-            s.EndReason,
+            var evidence = s.GetActivationEvidence();
+            return new
+            {
+                Id = new ShortGuid(s.Id).ToString(),
+                TerminalId = new ShortGuid(s.TerminalEnrollmentId).ToString(),
+                ActivatedByUserId = evidence.UserId is { } userId
+                    ? new ShortGuid(userId).ToString()
+                    : null,
+                ActivationProof = evidence.MethodId,
+                ActivationTokenId = evidence.ActivationTokenId is { } tokenId
+                    ? new ShortGuid(tokenId).ToString()
+                    : null,
+                s.Status,
+                s.StartedAt,
+                s.AbsoluteExpiresAt,
+                s.EndedAt,
+                s.EndReason,
+            };
         }));
     }
 
@@ -133,6 +242,7 @@ public static class StaffingEndpoints
         HttpContext context,
         AppSettings settings,
         IDocumentSession session,
+        IDpopReplayStore replayStore,
         IStaffingRevoker revoker,
         CancellationToken ct)
     {
@@ -153,18 +263,26 @@ public static class StaffingEndpoints
         }
 
         var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
-        if (terminal is null || string.IsNullOrEmpty(terminal.DpopJkt))
+        if (terminal is null)
             return Forbidden("Staffing.InvalidToken", "A position terminal token is required.");
 
-        // Same device key — a lock from another machine is not a local lock.
-        var proofHeader = context.Request.Headers[DpopConstants.HeaderName];
-        if (proofHeader.Count != 1)
-            return Forbidden("Staffing.DpopRequired", "A DPoP proof is required.");
-        var htu = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}";
-        var proof = DpopProofValidator.Validate(
-            proofHeader.ToString(), context.Request.Method, htu, DateTimeOffset.UtcNow);
-        if (!proof.IsValid || !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
-            return Forbidden("Staffing.DpopMismatch", "The DPoP proof key is not this terminal's enrolled key.");
+        if (string.Equals(terminal.Binding, DeviceBindingIds.Dpop, StringComparison.Ordinal))
+        {
+            // Same device key — a lock from another machine is not a local lock.
+            var proofHeader = context.Request.Headers[DpopConstants.HeaderName];
+            if (proofHeader.Count != 1)
+                return Forbidden("Staffing.DpopRequired", "A DPoP proof is required.");
+            if (!TryGetPresentedAccessToken(context.Request, out var accessToken))
+                return Forbidden("Staffing.InvalidToken", "The presented access token cannot be bound to the DPoP proof.");
+            var now = DateTimeOffset.UtcNow;
+            var htu = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}";
+            var proof = DpopProofValidator.Validate(
+                proofHeader.ToString(), context.Request.Method, htu, now, accessToken);
+            if (!proof.IsValid || !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
+                return Forbidden("Staffing.DpopMismatch", "The DPoP proof key is not this terminal's enrolled key.");
+            if (!await RecordDpopProofAsync(replayStore, proof, now, ct))
+                return Forbidden("Staffing.DpopReplay", "The DPoP proof has already been used.");
+        }
 
         // A staffing token may only lock ITS OWN (still-active) session — a
         // superseded shift's token cannot kill the successor.
@@ -185,8 +303,8 @@ public static class StaffingEndpoints
         HttpContext context,
         AppSettings settings,
         IDocumentSession session,
-        RealmScopedFido2Factory fido2Factory,
-        RpIdResolver rpIdResolver,
+        ActivationProofRegistry activationProofs,
+        IDpopReplayStore replayStore,
         CancellationToken ct)
     {
         if (!settings.Features.PositionTerminals) return Results.NotFound();
@@ -201,7 +319,11 @@ public static class StaffingEndpoints
             return Forbidden("Staffing.InvalidToken", "A terminal enrollment token is required.");
         }
 
-        if (!Guid.TryParse(principal.GetClaim(Claims.Subject), out var positionId) ||
+        var isControlV2 = string.Equals(
+            principal.GetClaim(PositionTokenClaimTypes.PrincipalType),
+            PositionPrincipalTypes.Terminal,
+            StringComparison.Ordinal);
+        if (!Guid.TryParse(principal.GetClaim(Claims.Subject), out var subjectId) ||
             !Guid.TryParse(principal.GetClaim(PositionTokenClaimTypes.TerminalId), out var terminalId))
         {
             return Forbidden("Staffing.InvalidToken", "A terminal enrollment token is required.");
@@ -210,9 +332,13 @@ public static class StaffingEndpoints
         // §12.2 checks 3+4 — the slot exists and its client link is intact in
         // both directions; the token's client (when stamped) must be the
         // slot's own client.
+        if (isControlV2) terminalId = subjectId;
         var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
-        if (terminal is null || terminal.PositionPrincipalId != positionId)
+        if (terminal is null)
             return Forbidden("Staffing.InvalidToken", "A terminal enrollment token is required.");
+        if (!isControlV2 &&
+            (terminal.EffectiveAllowedPositionIds.Count != 1 || terminal.EffectiveAllowedPositionIds[0] != subjectId))
+            return Forbidden("Staffing.LegacyControlToken", "This terminal assignment requires a V2 control token and re-enrollment.");
 
         var state = await session.LoadAsync<OAuthApplicationState>(terminal.OAuthApplicationId, ct);
         if (state is null || state.IsDeleted || state.ManagedTerminalEnrollmentId != terminal.Id)
@@ -222,90 +348,213 @@ public static class StaffingEndpoints
         if (tokenClientId is not null && !string.Equals(tokenClientId, terminal.ClientId, StringComparison.Ordinal))
             return Forbidden("Staffing.ClientMismatch", "The token was not issued to this terminal's client.");
 
-        // §12.2 checks 5+6 — position alive + policy on, slot Active.
-        var position = await session.LoadAsync<PositionPrincipal>(positionId, ct);
-        if (position is null || position.IsDeleted || !position.TerminalPolicy.Enabled)
-            return Forbidden("Staffing.PositionUnavailable", "Terminal use is disabled for this position.");
+        // §12.2 check 6 — the slot itself must be active before either listing
+        // V2 candidates or beginning a proof.
         if (terminal.Status != TerminalEnrollmentStatus.Active)
             return Forbidden("Staffing.TerminalNotActive", "The terminal is not active.");
 
-        // §12.2 check 7 — proof-of-possession: the DPoP proof presented with
-        // THIS request must be signed by the slot's enrolled key.
-        var proofHeader = context.Request.Headers[DpopConstants.HeaderName];
-        if (proofHeader.Count != 1)
-            return Forbidden("Staffing.DpopRequired", "A DPoP proof is required.");
-        var htu = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}";
-        var proof = DpopProofValidator.Validate(
-            proofHeader.ToString(), context.Request.Method, htu, DateTimeOffset.UtcNow);
-        if (!proof.IsValid || !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
-            return Forbidden("Staffing.DpopMismatch", "The DPoP proof key is not this terminal's enrolled key.");
+        // Sender constraint protects candidate discovery as well as ceremony
+        // creation. Other bindings rely on their token-endpoint client mode.
+        if (string.Equals(terminal.Binding, DeviceBindingIds.Dpop, StringComparison.Ordinal))
+        {
+            if (string.IsNullOrEmpty(terminal.DpopJkt))
+                return Forbidden("Staffing.BindingUnavailable", "The terminal has no enrolled device key.");
+            var proofHeader = context.Request.Headers[DpopConstants.HeaderName];
+            if (proofHeader.Count != 1)
+                return Forbidden("Staffing.DpopRequired", "A DPoP proof is required.");
+            if (!TryGetPresentedAccessToken(context.Request, out var accessToken))
+                return Forbidden("Staffing.InvalidToken", "The presented access token cannot be bound to the DPoP proof.");
+            var now = DateTimeOffset.UtcNow;
+            var htu = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}";
+            var proof = DpopProofValidator.Validate(
+                proofHeader.ToString(), context.Request.Method, htu, now, accessToken);
+            if (!proof.IsValid || !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
+                return Forbidden("Staffing.DpopMismatch", "The DPoP proof key is not this terminal's enrolled key.");
+            if (!await RecordDpopProofAsync(replayStore, proof, now, ct))
+                return Forbidden("Staffing.DpopReplay", "The DPoP proof has already been used.");
+        }
 
-        // §12.2 check 8 — at least one ACTIVE user→position grant (Suspended
-        // does not authorize staffing).
-        var grantedUserIds = (await session.Query<PositionGrant>()
-            .Where(g => g.PositionPrincipalId == positionId && g.Status == PositionGrantStatus.Active)
-            .ToListAsync(ct))
-            .Select(g => g.UserId)
-            .Distinct()
-            .ToList();
-        if (grantedUserIds.Count == 0)
-            return Forbidden("Staffing.NoActiveGrants", "No user is authorized to staff this position.");
-
-        // §12.2 check 9 + §12.3 — allowCredentials restricted to the granted
-        // users' passkeys under the terminal's RP-ID (legacy RpId == null
-        // credentials count for the realm's primary domain).
-        var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
-        var allowedCredentials = (await session.Query<StoredPasskeyCredential>()
-            .Where(c => grantedUserIds.Contains(c.UserId))
-            .ToListAsync(ct))
-            .Where(c => string.Equals(c.RpId ?? primaryDomain, terminal.WebAuthnRpId, StringComparison.OrdinalIgnoreCase))
-            .Select(c => new PublicKeyCredentialDescriptor(c.CredentialId))
-            .ToList();
-        if (allowedCredentials.Count == 0)
-            return Forbidden("Staffing.NoEligiblePasskeys", "No authorized user has a passkey for this terminal.");
-
-        IFido2 fido2;
+        ActivationBeginInput beginInput;
         try
         {
-            fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: terminal.WebAuthnRpId);
+            beginInput = context.Request.ContentLength is > 0
+                ? await JsonSerializer.DeserializeAsync<ActivationBeginInput>(
+                      context.Request.Body,
+                      new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct)
+                  ?? new ActivationBeginInput(null, null)
+                : new ActivationBeginInput(null, null);
         }
-        catch (RelyingPartyUnavailableException)
+        catch (JsonException)
         {
-            return Forbidden("Staffing.RelyingPartyUnavailable", "The terminal's relying party is not available.");
+            return Results.BadRequest(new
+            {
+                Error = "Staffing.InvalidBeginRequest",
+                Message = "The staffing begin request is not valid JSON."
+            });
         }
 
-        var options = fido2.GetAssertionOptions(new GetAssertionOptionsParams
-        {
-            AllowedCredentials = allowedCredentials,
-            UserVerification = UserVerificationRequirement.Preferred,
-        });
-        var optionsJson = options.ToJson();
+        var realm = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        var requiredProof = realm?.PositionSecurity?.RequiredProofCapabilities ?? ProofCapability.None;
+        var requiredBinding = realm?.PositionSecurity?.RequiredBindingCapabilities ?? BindingCapability.None;
+        if (!PositionTerminalSecurity.BindingMeetsFloor(terminal.Binding, requiredBinding))
+            return Forbidden("Staffing.BindingBelowRealmFloor", "The terminal binding does not meet the realm security floor.");
 
-        // Amortized cleanup of lapsed ceremonies (plan §5.3), then persist the
-        // pinned ceremony — the token request may re-choose NOTHING of this.
-        session.DeleteWhere<StaffingCeremony>(c => c.ExpiresAt < DateTimeOffset.UtcNow);
-        var ceremony = new StaffingCeremony
+        Guid positionId;
+        if (isControlV2)
         {
-            Id = Guid.NewGuid(),
-            PositionPrincipalId = position.Id,
-            TerminalEnrollmentId = terminal.Id,
-            ClientId = terminal.ClientId,
-            DpopJkt = terminal.DpopJkt!,
-            RpId = terminal.WebAuthnRpId,
-            OptionsJson = optionsJson,
-            CreatedAt = DateTimeOffset.UtcNow,
-            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
-        };
-        session.Store(ceremony);
-        await session.SaveChangesAsync(ct);
+            if (string.IsNullOrWhiteSpace(beginInput.PositionId))
+            {
+                var candidates = new List<PositionPrincipal>();
+                foreach (var allowedId in terminal.EffectiveAllowedPositionIds)
+                {
+                    var candidate = await session.LoadAsync<PositionPrincipal>(allowedId, ct);
+                    if (candidate is null || candidate.IsDeleted || !candidate.IsActive ||
+                        !candidate.TerminalPolicy.Enabled ||
+                        !candidate.TerminalPolicy.AllowedDeviceBindings.Contains(terminal.Binding, StringComparer.Ordinal))
+                        continue;
+                    candidates.Add(candidate);
+                }
 
+                var requestedMethod = beginInput.MethodId?.Trim();
+                IActivationProof? candidateProof = null;
+                if (!string.IsNullOrWhiteSpace(requestedMethod))
+                {
+                    if (!PositionTerminalSecurity.ProofMeetsFloor(requestedMethod, requiredProof) ||
+                        !activationProofs.TryGet(requestedMethod, out candidateProof))
+                        return Forbidden("Staffing.ActivationProofUnavailable",
+                            "The requested activation proof is not currently available.");
+                }
+                else
+                {
+                    requestedMethod = candidates
+                        .SelectMany(candidate => candidate.TerminalPolicy.AllowedActivationProofs)
+                        .FirstOrDefault(method =>
+                            PositionTerminalSecurity.ProofMeetsFloor(method, requiredProof) &&
+                            activationProofs.TryGet(method, out _));
+                    if (requestedMethod is not null)
+                        activationProofs.TryGet(requestedMethod, out candidateProof);
+                }
+                if (candidateProof is null || requestedMethod is null)
+                    return Forbidden("Staffing.ActivationProofUnavailable",
+                        "No allowed activation proof is currently available.");
+
+                candidates = candidates
+                    .Where(candidate => candidate.TerminalPolicy.AllowedActivationProofs
+                        .Contains(requestedMethod, StringComparer.Ordinal))
+                    .ToList();
+                if (candidates.Count == 0)
+                    return Forbidden("Staffing.ActivationProofNotAllowed",
+                        "The requested activation proof is not allowed on this terminal.");
+
+                if (candidates.Count > 1)
+                {
+                    // Proof first: the challenge contains the union of eligible
+                    // credentials, but position names/ids stay server-side. The
+                    // redeem identifies the actor/token and only then returns
+                    // the intersected candidates when an actual choice remains.
+                    var candidateChallenge = await candidateProof.BeginCandidatesAsync(
+                        candidates, terminal, beginInput with { MethodId = requestedMethod }, ct);
+                    if (candidateChallenge.Failure is { } candidateFailure)
+                        return Forbidden(candidateFailure.Code, candidateFailure.Message);
+                    return ChallengeResult(candidateProof, candidateChallenge);
+                }
+                positionId = candidates[0].Id;
+            }
+            else if (terminal.EffectiveAllowedPositionIds.Count > 1)
+                return Forbidden("Staffing.ProofRequiredBeforeSelection",
+                    "A multi-position terminal can select a position only after activation proof verification.");
+            else if (!ShortGuid.TryParse(beginInput.PositionId, out positionId) ||
+                     !terminal.EffectiveAllowedPositionIds.Contains(positionId))
+                return Forbidden("Staffing.PositionNotAllowed", "The selected position is not allowed on this terminal.");
+        }
+        else
+        {
+            positionId = subjectId;
+            if (!string.IsNullOrWhiteSpace(beginInput.PositionId) &&
+                (!ShortGuid.TryParse(beginInput.PositionId, out Guid requestedId) || requestedId != positionId))
+                return Forbidden("Staffing.PositionNotAllowed", "A legacy control token cannot select another position.");
+        }
+
+        // §12.2 check 5 — selected position alive + compatible policy.
+        var position = await session.LoadAsync<PositionPrincipal>(positionId, ct);
+        if (position is null || position.IsDeleted || !position.IsActive || !position.TerminalPolicy.Enabled)
+            return Forbidden("Staffing.PositionUnavailable", "Terminal use is disabled for this position.");
+
+        // Current policy and realm floors are checked at execution time as the
+        // fail-closed half of read-preserve/write-reject for open IDs.
+        if (!position.TerminalPolicy.AllowedDeviceBindings.Contains(terminal.Binding, StringComparer.Ordinal))
+            return Forbidden("Staffing.BindingNotAllowed", "The terminal binding is no longer allowed by this position.");
+        IActivationProof? activationProof = null;
+        if (!string.IsNullOrWhiteSpace(beginInput.MethodId))
+        {
+            var requestedMethod = beginInput.MethodId.Trim();
+            if (!position.TerminalPolicy.AllowedActivationProofs.Contains(requestedMethod, StringComparer.Ordinal))
+                return Forbidden("Staffing.ActivationProofNotAllowed", "The requested activation proof is not allowed by this position.");
+            if (!PositionTerminalSecurity.ProofMeetsFloor(requestedMethod, requiredProof) ||
+                !activationProofs.TryGet(requestedMethod, out activationProof))
+                return Forbidden("Staffing.ActivationProofUnavailable", "The requested activation proof is not currently available.");
+        }
+        else foreach (var methodId in position.TerminalPolicy.AllowedActivationProofs)
+        {
+            if (PositionTerminalSecurity.ProofMeetsFloor(methodId, requiredProof) &&
+                activationProofs.TryGet(methodId, out activationProof))
+                break;
+            activationProof = null;
+        }
+        if (activationProof is null)
+            return Forbidden("Staffing.ActivationProofUnavailable", "No allowed activation proof is currently available.");
+
+        var challenge = await activationProof.BeginAsync(
+            new ActivationContext(position, terminal, BeginInput: beginInput), ct);
+        if (challenge.Failure is { } failure)
+            return Forbidden(failure.Code, failure.Message);
+        return ChallengeResult(activationProof, challenge);
+    }
+
+    private static IResult ChallengeResult(IActivationProof proof, ActivationChallenge challenge)
+    {
+        var ceremony = challenge.Ceremony!;
         // Options JSON must reach the authenticator verbatim (same rationale as
         // the native passkey begin) — no re-serialization.
         return Results.Content(
-            $"{{\"ceremonyId\":\"{ceremony.Id}\",\"publicKey\":{optionsJson}}}",
+            $"{{\"ceremonyId\":\"{ceremony.Id}\",\"methodId\":{JsonSerializer.Serialize(proof.MethodId)}," +
+            $"\"{challenge.ResponseProperty}\":{challenge.OptionsJson}}}",
             "application/json");
     }
 
     private static IResult Forbidden(string error, string message) =>
         Results.Json(new { Error = error, Message = message }, statusCode: StatusCodes.Status403Forbidden);
+
+    private static bool TryGetPresentedAccessToken(HttpRequest request, out string accessToken)
+    {
+        accessToken = string.Empty;
+        var authorization = request.Headers.Authorization;
+        if (authorization.Count != 1) return false;
+        var raw = authorization.ToString();
+        var separator = raw.IndexOf(' ');
+        if (separator <= 0 || separator == raw.Length - 1) return false;
+        if (!raw.AsSpan(0, separator).Equals("Bearer", StringComparison.OrdinalIgnoreCase) &&
+            !raw.AsSpan(0, separator).Equals("DPoP", StringComparison.OrdinalIgnoreCase))
+            return false;
+        accessToken = raw[(separator + 1)..].Trim();
+        return accessToken.Length > 0;
+    }
+
+    private static Task<bool> RecordDpopProofAsync(
+        IDpopReplayStore replayStore,
+        DpopValidationResult proof,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        var expiresAt = proof.IssuedAt!.Value
+            + DpopProofValidator.DefaultMaxAge
+            + DpopProofValidator.DefaultClockSkew;
+        return replayStore.TryRecordAsync(proof.Jti!, expiresAt, now, ct);
+    }
 }
+
+public sealed record StepUpBeginInput(
+    string? MethodId,
+    string? AccountName,
+    string? Action,
+    string? Nonce);

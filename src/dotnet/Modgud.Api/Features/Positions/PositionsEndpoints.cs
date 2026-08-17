@@ -11,6 +11,7 @@ using Modgud.Domain.ValueObjects;
 using Modgud.Infrastructure.PositionTerminals;
 using Modgud.Infrastructure.OpenIddict;
 using Marten;
+using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Api.Features.Positions;
 
@@ -78,6 +79,8 @@ public static class PositionsEndpoints
 
                 var policy = ApplyPolicy(PositionTerminalPolicy.Disabled, dto.TerminalPolicy, out var policyError);
                 if (policyError is not null) return policyError;
+                if (await ValidatePolicyAgainstRealmFloorAsync(session, policy, ct) is { } floorError)
+                    return floorError;
 
                 // Staged terminal slots — same up-front validation as the grants
                 // below. Plan §4.1 still holds: slots exist only while the
@@ -85,11 +88,51 @@ public static class PositionsEndpoints
                 // to enable it in this very save.
                 var stagedTerminals = dto.Terminals ?? [];
                 if (stagedTerminals.Count > 0 && !policy.Enabled)
-                    return Results.BadRequest(new { Error = "Terminal.TerminalPolicyDisabled",
-                        Message = "Enable terminal use on the position before adding terminal slots." });
+                    return Results.BadRequest(new
+                    {
+                        Error = "Terminal.TerminalPolicyDisabled",
+                        Message = "Enable terminal use on the position before adding terminal slots."
+                    });
                 if (stagedTerminals.Any(t => string.IsNullOrWhiteSpace(t.DisplayName)))
-                    return Results.BadRequest(new { Error = "Terminal.DisplayNameRequired",
-                        Message = "A display name is required." });
+                    return Results.BadRequest(new
+                    {
+                        Error = "Terminal.DisplayNameRequired",
+                        Message = "A display name is required."
+                    });
+                var stagedAllowedPositionIds = new List<Guid[]>();
+                foreach (var terminal in stagedTerminals)
+                {
+                    var binding = string.IsNullOrWhiteSpace(terminal.Binding)
+                        ? DeviceBindingIds.Dpop
+                        : terminal.Binding;
+                    if (!PositionTerminalSecurity.TryGetWritableBinding(binding, out _))
+                        return Results.BadRequest(new
+                        {
+                            Error = "Terminal.UnknownDeviceBinding",
+                            Message = $"Device binding '{binding}' is unknown or unavailable."
+                        });
+                    if (!policy.AllowedDeviceBindings.Contains(binding, StringComparer.Ordinal))
+                        return Results.BadRequest(new
+                        {
+                            Error = "Terminal.DeviceBindingNotAllowed",
+                            Message = $"Device binding '{binding}' is not allowed by the position policy."
+                        });
+                    var allowedIds = new HashSet<Guid>();
+                    foreach (var rawId in terminal.AllowedPositionIds ?? [])
+                    {
+                        if (!ShortGuid.TryParse(rawId, out Guid allowedId))
+                            return Results.BadRequest(new { Error = "Terminal.InvalidPositionId", Message = $"Position id '{rawId}' is invalid." });
+                        allowedIds.Add(allowedId);
+                    }
+                    foreach (var allowedId in allowedIds)
+                    {
+                        var allowed = await session.LoadAsync<PositionPrincipal>(allowedId, ct);
+                        if (allowed is null || allowed.IsDeleted || !allowed.IsActive || !allowed.TerminalPolicy.Enabled ||
+                            !allowed.TerminalPolicy.AllowedDeviceBindings.Contains(binding, StringComparer.Ordinal))
+                            return Results.BadRequest(new { Error = "Terminal.PositionUnavailable", Message = $"Position '{ShortGuid.Encode(allowedId)}' is not compatible with this terminal." });
+                    }
+                    stagedAllowedPositionIds.Add(allowedIds.ToArray());
+                }
 
                 // Staged grants (rule 5: the entity is creatable completely) —
                 // resolve and validate EVERY user before creating anything, so a
@@ -99,16 +142,25 @@ public static class PositionsEndpoints
                 foreach (var rawUserId in dto.GrantUserIds?.Distinct() ?? [])
                 {
                     if (!ShortGuid.TryParse(rawUserId, out Guid grantUserId))
-                        return Results.BadRequest(new { Error = "PositionGrant.InvalidUserId",
-                            Message = $"Grant user id '{rawUserId}' is invalid." });
+                        return Results.BadRequest(new
+                        {
+                            Error = "PositionGrant.InvalidUserId",
+                            Message = $"Grant user id '{rawUserId}' is invalid."
+                        });
 
                     var person = await session.LoadAsync<Person>(grantUserId, ct);
                     if (person is null || person.IsDeleted)
-                        return Results.BadRequest(new { Error = "PositionGrant.UserNotFound",
-                            Message = $"Grant user '{rawUserId}' does not exist." });
+                        return Results.BadRequest(new
+                        {
+                            Error = "PositionGrant.UserNotFound",
+                            Message = $"Grant user '{rawUserId}' does not exist."
+                        });
                     if (!person.IsActive)
-                        return Results.BadRequest(new { Error = "PositionGrant.UserInactive",
-                            Message = $"Grant user '{rawUserId}' is inactive." });
+                        return Results.BadRequest(new
+                        {
+                            Error = "PositionGrant.UserInactive",
+                            Message = $"Grant user '{rawUserId}' is inactive."
+                        });
 
                     grantUserIds.Add(grantUserId);
                 }
@@ -142,16 +194,19 @@ public static class PositionsEndpoints
                 // that same unit of work (mirrors the service-account initial
                 // credential). A rejected slot returns before SaveChanges, so
                 // the whole create — position, grants, slots — never happened.
-                var terminalIds = new List<Guid>();
-                foreach (var terminal in stagedTerminals)
+                var terminalIds = new List<(Guid Id, string? ClientSecret)>();
+                for (var terminalIndex = 0; terminalIndex < stagedTerminals.Count; terminalIndex++)
                 {
+                    var terminal = stagedTerminals[terminalIndex];
                     var enrollmentId = Guid.NewGuid();
                     var applicationId = Guid.NewGuid();
-                    var clientId = $"{fn.AccountName}.terminal.{new ShortGuid(Guid.NewGuid()).ToString()[..8]}";
+                    var clientId = $"terminal.{new ShortGuid(Guid.NewGuid()).ToString()[..8]}";
 
                     var clientError = oauth.StageCreateTerminalClient(
                         applicationId, clientId, $"{fn.DisplayName} — {terminal.DisplayName.Trim()}",
-                        fn.Id, enrollmentId, terminal.WebAuthnRpId);
+                        fn.Id, enrollmentId, terminal.WebAuthnRpId,
+                        string.IsNullOrWhiteSpace(terminal.Binding) ? DeviceBindingIds.Dpop : terminal.Binding,
+                        out var clientSecret);
                     if (clientError is not null)
                         return Results.BadRequest(new { Error = clientError.Value.Code, Message = clientError.Value.Description });
 
@@ -159,17 +214,27 @@ public static class PositionsEndpoints
                         enrollmentId, fn.Id, terminal.DisplayName.Trim(),
                         string.IsNullOrWhiteSpace(terminal.Location) ? null : terminal.Location.Trim(),
                         applicationId, clientId, terminal.WebAuthnRpId.Trim().ToLowerInvariant(),
-                        actor, now));
-                    terminalIds.Add(enrollmentId);
+                        actor, now, string.IsNullOrWhiteSpace(terminal.Binding)
+                            ? DeviceBindingIds.Dpop
+                            : terminal.Binding,
+                        [fn.Id, .. stagedAllowedPositionIds[terminalIndex].Where(id => id != fn.Id)]));
+                    terminalIds.Add((enrollmentId, clientSecret));
                 }
 
                 await session.SaveChangesAsync(ct);
 
                 var created = ToDto(fn);
                 dispatcher.DispatchCreatedEvent("Position", created, session.TenantId);
-                foreach (var terminalId in terminalIds)
+                var createdTerminals = new List<TerminalDto>();
+                foreach (var terminal in terminalIds)
+                {
                     dispatcher.DispatchCreatedEvent("Terminal",
-                        await PositionTerminalsEndpoints.LoadDtoAsync(session, terminalId, ct), session.TenantId);
+                        await PositionTerminalsEndpoints.LoadDtoAsync(session, terminal.Id, ct), session.TenantId);
+                    var terminalDto = await PositionTerminalsEndpoints.LoadDtoAsync(session, terminal.Id, ct);
+                    terminalDto.ClientSecret = terminal.ClientSecret;
+                    createdTerminals.Add(terminalDto);
+                }
+                created.CreatedTerminals = createdTerminals.Count == 0 ? null : createdTerminals;
                 return Results.Ok(created);
             })
             .WithName("V2_Position_Create")
@@ -191,6 +256,8 @@ public static class PositionsEndpoints
                 if (fn is null || fn.IsDeleted) return Results.NotFound();
 
                 var wasActive = fn.IsActive;
+                var previousPolicy = fn.TerminalPolicy;
+                var policyConsequences = new PositionTerminalPolicyConsequencesDto();
 
                 if (dto.AccountName is { } rawAccountName)
                 {
@@ -213,18 +280,46 @@ public static class PositionsEndpoints
                 if (dto.IsActive.HasValue)
                     fn.IsActive = dto.IsActive.Value;
 
+                // A full-replace PositionPrincipalUpdatedEvent persists the policy even
+                // when this request only changes another field. Validate that persisted
+                // value as a write as well: open IDs remain readable, but unknown or
+                // currently unavailable IDs must never be written back silently.
+                var policy = ApplyPolicy(
+                    fn.TerminalPolicy,
+                    dto.TerminalPolicy ?? new PositionTerminalPolicyUpdateDto(),
+                    out var policyError);
+                if (policyError is not null) return policyError;
+                if (await ValidatePolicyAgainstRealmFloorAsync(session, policy, ct) is { } floorError)
+                    return floorError;
+
                 if (dto.TerminalPolicy is not null)
                 {
-                    var policy = ApplyPolicy(fn.TerminalPolicy, dto.TerminalPolicy, out var policyError);
-                    if (policyError is not null) return policyError;
-                    fn.TerminalPolicy = policy;
+                    policyConsequences = await PreviewPolicyConsequencesAsync(
+                        session, fn.Id, previousPolicy, policy, ct);
+                    if (policyConsequences.HasConsequences && !dto.ConfirmTerminalPolicyConsequences)
+                        return Results.BadRequest(new
+                        {
+                            Error = "Position.TerminalPolicyConfirmationRequired",
+                            Message = $"The policy change affects {policyConsequences.TerminalIds.Count} terminal slots and " +
+                                      $"{policyConsequences.StaffingSessionIds.Count} active staffing sessions. " +
+                                      "Preview and confirm the consequences before saving.",
+                            Consequences = policyConsequences,
+                        });
                 }
+                fn.TerminalPolicy = policy;
 
                 // Full-replace event (mirrors GroupUpdatedEvent) — `fn` carries the
                 // merged state; the inline projection writes the document.
                 session.Events.Append(id.Guid, new PositionPrincipalUpdatedEvent(
                     fn.Id, fn.AccountName, fn.Purpose, fn.IsActive, fn.TerminalPolicy));
                 await session.SaveChangesAsync(ct);
+
+                foreach (var encodedSessionId in policyConsequences.StaffingSessionIds)
+                {
+                    if (ShortGuid.TryDecode(encodedSessionId, out var staffingSessionId))
+                        await staffingRevoker.EndSessionAsync(
+                            staffingSessionId, StaffingSessionEndReason.PolicyTightened, ct);
+                }
 
                 // Deactivation cuts off live position access, mirroring the SA
                 // rule (Audit #6): position tokens carry sub = fn.Id, so a
@@ -252,6 +347,27 @@ public static class PositionsEndpoints
             .WithName("V2_Position_Update")
             .RequiresPermission("position:write");
 
+        group.MapPost("{id}/terminal-policy/preview", async (
+                ShortGuid id,
+                PositionTerminalPolicyUpdateDto dto,
+                AppSettings settings,
+                IDocumentSession session,
+                CancellationToken ct) =>
+            {
+                if (!settings.Features.PositionTerminals) return Results.NotFound();
+                var position = await session.LoadAsync<PositionPrincipal>(id.Guid, ct);
+                if (position is null || position.IsDeleted) return Results.NotFound();
+
+                var policy = ApplyPolicy(position.TerminalPolicy, dto, out var policyError);
+                if (policyError is not null) return policyError;
+                if (await ValidatePolicyAgainstRealmFloorAsync(session, policy, ct) is { } floorError)
+                    return floorError;
+                return Results.Ok(await PreviewPolicyConsequencesAsync(
+                    session, position.Id, position.TerminalPolicy, policy, ct));
+            })
+            .WithName("V2_Position_TerminalPolicyPreview")
+            .RequiresPermission("position:write");
+
         group.MapDelete("{id}", async (
                 ShortGuid id,
                 AppSettings settings,
@@ -272,19 +388,30 @@ public static class PositionsEndpoints
                 var deleteActor = PositionGrantsEndpoints.RequireActor(httpContext);
                 var deletedAt = DateTimeOffset.UtcNow;
 
-                // §15.4 — the slots go with the position. Without this a deleted
-                // position left its terminal slots Pending/Active and their
-                // managed OAuth clients registered: orphans pointing at a
-                // principal that no longer exists. Same steps the per-slot
-                // revoke takes, staged into this delete's unit of work.
-                var slots = await session.Query<TerminalEnrollment>()
-                    .Where(t => t.PositionPrincipalId == id.Guid && t.Status != TerminalEnrollmentStatus.Revoked)
-                    .ToListAsync(ct);
+                // F4 — remove this position from shared terminals; only a slot
+                // whose allow-list becomes empty dies with the position.
+                var slots = (await session.Query<TerminalEnrollment>().ToListAsync(ct))
+                    .Where(t => t.Status != TerminalEnrollmentStatus.Revoked &&
+                                t.EffectiveAllowedPositionIds.Contains(id.Guid))
+                    .ToList();
+                var revokedSlots = new List<TerminalEnrollment>();
+                var updatedSlots = new List<TerminalEnrollment>();
                 foreach (var slot in slots)
                 {
-                    session.Events.Append(slot.Id, new TerminalEnrollmentRevoked(slot.Id, deleteActor, deletedAt));
-                    if (await oauth.StageDeleteTerminalClientAsync(slot.OAuthApplicationId, ct) is { } slotError)
-                        return Results.BadRequest(new { Error = slotError.Code, Message = slotError.Description });
+                    var remaining = slot.EffectiveAllowedPositionIds.Where(p => p != id.Guid).ToArray();
+                    if (remaining.Length == 0)
+                    {
+                        session.Events.Append(slot.Id, new TerminalEnrollmentRevoked(slot.Id, deleteActor, deletedAt));
+                        if (await oauth.StageDeleteTerminalClientAsync(slot.OAuthApplicationId, ct) is { } slotError)
+                            return Results.BadRequest(new { Error = slotError.Code, Message = slotError.Description });
+                        revokedSlots.Add(slot);
+                    }
+                    else
+                    {
+                        session.Events.Append(slot.Id, new TerminalAllowedPositionsChanged(
+                            slot.Id, remaining, deleteActor, deletedAt));
+                        updatedSlots.Add(slot);
+                    }
                 }
 
                 // Soft delete via the stream: the projection flips IsDeleted (and
@@ -303,12 +430,17 @@ public static class PositionsEndpoints
 
                 // Each revoked slot's device is cut off now, not at token expiry,
                 // and consumers hear about it (MG-FT-09 §17).
-                foreach (var slot in slots)
+                foreach (var slot in revokedSlots)
                 {
                     await revoker.RevokeTokensByApplicationIdAsync(slot.OAuthApplicationId.ToString(), ct);
                     dispatcher.DispatchDeletedEvent("Terminal", new ShortGuid(slot.Id).ToString(), session.TenantId);
                     await bus.PublishAsync(new Modgud.Domain.PositionTerminals.Contracts.V1.PositionTerminalStatusChanged(
                         fn.Id, slot.Id, TerminalEnrollmentStatus.Revoked, deletedAt));
+                }
+                foreach (var slot in updatedSlots)
+                {
+                    var updated = await PositionTerminalsEndpoints.LoadDtoAsync(session, slot.Id, ct);
+                    dispatcher.DispatchUpdatedEvent("Terminal", updated, session.TenantId);
                 }
 
                 dispatcher.DispatchDeletedEvent("Position", new ShortGuid(fn.Id).ToString(), session.TenantId);
@@ -358,6 +490,12 @@ public static class PositionsEndpoints
         var merged = current with
         {
             Enabled = update.Enabled ?? current.Enabled,
+            AllowedActivationProofs = update.AllowedActivationProofs is null
+                ? current.AllowedActivationProofs
+                : update.AllowedActivationProofs.Distinct(StringComparer.Ordinal).ToArray(),
+            AllowedDeviceBindings = update.AllowedDeviceBindings is null
+                ? current.AllowedDeviceBindings
+                : update.AllowedDeviceBindings.Distinct(StringComparer.Ordinal).ToArray(),
             StaffingSessionLifetime = update.StaffingSessionLifetimeMinutes is { } sl
                 ? TimeSpan.FromMinutes(sl)
                 : current.StaffingSessionLifetime,
@@ -366,17 +504,57 @@ public static class PositionsEndpoints
                 : current.MaximumStaffingSessionLifetime,
         };
 
+        if (merged.Enabled && (merged.AllowedActivationProofs.Count == 0 || merged.AllowedDeviceBindings.Count == 0))
+        {
+            error = Results.BadRequest(new
+            {
+                Error = "Position.InvalidTerminalPolicy",
+                Message = "An enabled terminal policy requires at least one activation proof and one device binding."
+            });
+            return current;
+        }
+
+        var unknownProof = merged.AllowedActivationProofs.FirstOrDefault(
+            id => !PositionTerminalSecurity.TryGetWritableProof(id, out _));
+        if (unknownProof is not null)
+        {
+            error = Results.BadRequest(new
+            {
+                Error = "Position.UnknownActivationProof",
+                Message = $"Activation proof '{unknownProof}' is unknown or unavailable."
+            });
+            return current;
+        }
+
+        var unknownBinding = merged.AllowedDeviceBindings.FirstOrDefault(
+            id => !PositionTerminalSecurity.TryGetWritableBinding(id, out _));
+        if (unknownBinding is not null)
+        {
+            error = Results.BadRequest(new
+            {
+                Error = "Position.UnknownDeviceBinding",
+                Message = $"Device binding '{unknownBinding}' is unknown or unavailable."
+            });
+            return current;
+        }
+
         if (merged.StaffingSessionLifetime <= TimeSpan.Zero || merged.MaximumStaffingSessionLifetime <= TimeSpan.Zero)
         {
-            error = Results.BadRequest(new { Error = "Position.InvalidTerminalPolicy",
-                Message = "Staffing session lifetimes must be positive." });
+            error = Results.BadRequest(new
+            {
+                Error = "Position.InvalidTerminalPolicy",
+                Message = "Staffing session lifetimes must be positive."
+            });
             return current;
         }
 
         if (merged.StaffingSessionLifetime > merged.MaximumStaffingSessionLifetime)
         {
-            error = Results.BadRequest(new { Error = "Position.InvalidTerminalPolicy",
-                Message = "The staffing session lifetime must not exceed the absolute maximum lifetime." });
+            error = Results.BadRequest(new
+            {
+                Error = "Position.InvalidTerminalPolicy",
+                Message = "The staffing session lifetime must not exceed the absolute maximum lifetime."
+            });
             return current;
         }
 
@@ -386,14 +564,90 @@ public static class PositionsEndpoints
     private static IResult? ValidateAccountName(string normalised)
     {
         if (string.IsNullOrWhiteSpace(normalised))
-            return Results.BadRequest(new { Error = "Position.AccountNameRequired",
-                Message = "Account name is required." });
+            return Results.BadRequest(new
+            {
+                Error = "Position.AccountNameRequired",
+                Message = "Account name is required."
+            });
 
         if (!AccountNamePattern.IsMatch(normalised))
-            return Results.BadRequest(new { Error = "Position.InvalidAccountName",
-                Message = "Account name must be 2-64 chars, start with a letter or digit, and contain only lowercase letters, digits, dots, hyphens, or underscores." });
+            return Results.BadRequest(new
+            {
+                Error = "Position.InvalidAccountName",
+                Message = "Account name must be 2-64 chars, start with a letter or digit, and contain only lowercase letters, digits, dots, hyphens, or underscores."
+            });
 
         return null;
+    }
+
+    private static async Task<IResult?> ValidatePolicyAgainstRealmFloorAsync(
+        IDocumentSession session, PositionTerminalPolicy policy, CancellationToken ct)
+    {
+        var realm = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        var requiredProof = realm?.PositionSecurity?.RequiredProofCapabilities ?? ProofCapability.None;
+        var requiredBinding = realm?.PositionSecurity?.RequiredBindingCapabilities ?? BindingCapability.None;
+
+        var violatingProofs = policy.AllowedActivationProofs
+            .Where(id => !PositionTerminalSecurity.ProofMeetsFloor(id, requiredProof))
+            .ToArray();
+        var violatingBindings = policy.AllowedDeviceBindings
+            .Where(id => !PositionTerminalSecurity.BindingMeetsFloor(id, requiredBinding))
+            .ToArray();
+        if (violatingProofs.Length == 0 && violatingBindings.Length == 0) return null;
+
+        return Results.BadRequest(new
+        {
+            Error = "Position.TerminalPolicyBelowRealmFloor",
+            Message = "Every allowed activation proof and device binding must meet the realm capability floor.",
+            ViolatingActivationProofs = violatingProofs,
+            ViolatingDeviceBindings = violatingBindings,
+        });
+    }
+
+    private static async Task<PositionTerminalPolicyConsequencesDto> PreviewPolicyConsequencesAsync(
+        IDocumentSession session,
+        Guid positionId,
+        PositionTerminalPolicy previous,
+        PositionTerminalPolicy proposed,
+        CancellationToken ct)
+    {
+        var lifetimeTightened =
+            proposed.StaffingSessionLifetime < previous.StaffingSessionLifetime ||
+            proposed.MaximumStaffingSessionLifetime < previous.MaximumStaffingSessionLifetime;
+
+        var terminals = (await session.Query<TerminalEnrollment>()
+                .Where(t => t.Status != TerminalEnrollmentStatus.Revoked)
+                .ToListAsync(ct))
+            .Where(t => t.EffectiveAllowedPositionIds.Contains(positionId))
+            .ToList();
+        var affectedTerminalIds = terminals
+            .Where(t => !proposed.Enabled ||
+                        !proposed.AllowedDeviceBindings.Contains(t.Binding, StringComparer.Ordinal))
+            .Select(t => t.Id)
+            .ToHashSet();
+
+        var activeSessions = await session.Query<StaffingSession>()
+            .Where(s => s.PositionPrincipalId == positionId && s.Status == StaffingSessionStatus.Active)
+            .ToListAsync(ct);
+        var affectedSessions = activeSessions.Where(s =>
+        {
+            var methodId = string.IsNullOrWhiteSpace(s.Evidence?.MethodId)
+                ? ActivationProofMethodIds.PersonalPasskey
+                : s.Evidence.MethodId;
+            var binding = string.IsNullOrWhiteSpace(s.Evidence?.Binding)
+                ? DeviceBindingIds.Dpop
+                : s.Evidence.Binding;
+            return !proposed.Enabled || lifetimeTightened ||
+                   !proposed.AllowedActivationProofs.Contains(methodId, StringComparer.Ordinal) ||
+                   !proposed.AllowedDeviceBindings.Contains(binding, StringComparer.Ordinal) ||
+                   affectedTerminalIds.Contains(s.TerminalEnrollmentId);
+        });
+
+        return new PositionTerminalPolicyConsequencesDto
+        {
+            TerminalIds = affectedTerminalIds.Select(ShortGuid.Encode).ToArray(),
+            StaffingSessionIds = affectedSessions.Select(s => ShortGuid.Encode(s.Id)).ToArray(),
+        };
     }
 
     private static PositionPrincipalDto ToDto(PositionPrincipal fn) => new()
@@ -406,6 +660,8 @@ public static class PositionsEndpoints
         TerminalPolicy = new PositionTerminalPolicyDto
         {
             Enabled = fn.TerminalPolicy.Enabled,
+            AllowedActivationProofs = fn.TerminalPolicy.AllowedActivationProofs,
+            AllowedDeviceBindings = fn.TerminalPolicy.AllowedDeviceBindings,
             StaffingSessionLifetimeMinutes = (int)fn.TerminalPolicy.StaffingSessionLifetime.TotalMinutes,
             MaximumStaffingSessionLifetimeMinutes = (int)fn.TerminalPolicy.MaximumStaffingSessionLifetime.TotalMinutes,
         },

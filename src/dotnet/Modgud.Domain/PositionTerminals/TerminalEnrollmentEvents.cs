@@ -16,7 +16,15 @@ public record TerminalEnrollmentCreated(
     string ClientId,
     string WebAuthnRpId,
     Guid CreatedByUserId,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? Binding = null,
+    IReadOnlyList<Guid>? AllowedPositionIds = null);
+
+public record TerminalAllowedPositionsChanged(
+    Guid Id,
+    IReadOnlyList<Guid> AllowedPositionIds,
+    Guid ChangedByUserId,
+    DateTimeOffset ChangedAt);
 
 public record TerminalEnrollmentDetailsChanged(
     Guid Id,
@@ -25,7 +33,7 @@ public record TerminalEnrollmentDetailsChanged(
 
 public record TerminalEnrollmentEnrolled(
     Guid Id,
-    string DpopJkt,
+    string? DpopJkt,
     string EnrollmentAuthorizationId,
     DateTimeOffset EnrolledAt);
 

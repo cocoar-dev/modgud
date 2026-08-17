@@ -543,6 +543,7 @@ public static class AccountEndpoints
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             IUserAccessRevoker accessRevoker,
+            Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker,
             IAuthSettings appSettings) =>
         {
             if (appSettings.AuthenticationMinimumLevel >= 2)
@@ -570,6 +571,10 @@ public static class AccountEndpoints
             // authoritative row as part of the refreshed cookie.
             await accessRevoker.RevokeAllAccessAsync(
                 user.Id, AccessRevocationReason.ForceSignOut, context.RequestAborted);
+            await staffingRevoker.EndAllForUserAsync(
+                user.Id,
+                Modgud.Domain.PositionTerminals.StaffingSessionEndReason.ActivationCredentialInvalidated,
+                context.RequestAborted);
             var refreshed = await userManager.FindByIdAsync(user.Id.ToString());
             if (refreshed is not null)
             {

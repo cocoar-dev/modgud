@@ -58,7 +58,8 @@ public class TerminalClientFromClientSideTests : IntegrationTestBase
 
         var resp = await PostClientAsync(new
         {
-            ClientId = "ignored-by-the-terminal-path",
+            ClientId = "tc-linked-client",
+            DisplayName = "Terminal client: Tor 3",
             ClientType = "public",
             AllowedGrantTypes = new[] { StaffingGrant },
             LinkedPositionPrincipalId = fn,
@@ -70,9 +71,10 @@ public class TerminalClientFromClientSideTests : IntegrationTestBase
         Assert.True(resp.IsSuccessStatusCode, $"create failed ({(int)resp.StatusCode}): {body}");
         var created = JsonSerializer.Deserialize<JsonElement>(body);
 
-        // ClientId follows the convention, never the caller's value.
         var clientId = created.GetProperty("Client").GetProperty("ClientId").GetString()!;
-        Assert.StartsWith("tc-linked.terminal.", clientId);
+        Assert.Equal("tc-linked-client", clientId);
+        Assert.Equal("Terminal client: Tor 3",
+            created.GetProperty("Client").GetProperty("DisplayName").GetString());
         // Nulls may be omitted from the payload entirely — assert "absent or null".
         Assert.False(created.TryGetProperty("ClientSecret", out var secret) && secret.ValueKind is not JsonValueKind.Null);
         Assert.False(created.TryGetProperty("CreatedPosition", out var inlinePosition) && inlinePosition.ValueKind is not JsonValueKind.Null);
@@ -95,7 +97,7 @@ public class TerminalClientFromClientSideTests : IntegrationTestBase
         var client = (await session.Query<OAuthApplicationState>()
             .Where(c => c.ClientId == clientId).ToListAsync(ct)).Single();
         Assert.Equal("public", client.ClientType);
-        Assert.Equal(new ShortGuid(fn).Guid, client.LinkedPositionPrincipalId);
+        Assert.Null(client.LinkedPositionPrincipalId);
         Assert.Equal(new ShortGuid(terminalId!).Guid, client.ManagedTerminalEnrollmentId);
         Assert.Null(client.LinkedServiceAccountId);
         Assert.Equal(AccessTokenType.Reference.ToString(), client.Settings[OAuthApplicationSettingKeys.AccessTokenType]);
@@ -138,6 +140,10 @@ public class TerminalClientFromClientSideTests : IntegrationTestBase
         Assert.Equal(JsonValueKind.Object, position.ValueKind);
         var positionId = position.GetProperty("Id").GetString()!;
         Assert.Equal("tc-inline", position.GetProperty("AccountName").GetString());
+        Assert.Equal(["personal-passkey"], position.GetProperty("TerminalPolicy")
+            .GetProperty("AllowedActivationProofs").EnumerateArray().Select(x => x.GetString()!).ToArray());
+        Assert.Equal(["dpop"], position.GetProperty("TerminalPolicy")
+            .GetProperty("AllowedDeviceBindings").EnumerateArray().Select(x => x.GetString()!).ToArray());
 
         // The position is real, terminal-enabled, and carries the slot.
         var loaded = await Client.GetFromJsonAsync<PositionPrincipalDto>($"/api/position/{positionId}", JsonOptions, ct);
@@ -148,8 +154,37 @@ public class TerminalClientFromClientSideTests : IntegrationTestBase
         var slots = await Client.GetFromJsonAsync<List<TerminalDto>>($"/api/position/{positionId}/terminals", JsonOptions, ct);
         var slot = Assert.Single(slots!);
         Assert.Equal("Empfang", slot.DisplayName);
-        Assert.StartsWith("tc-inline.terminal.", slot.ClientId);
+        Assert.StartsWith("terminal.", slot.ClientId);
         Assert.Equal(created.GetProperty("Client").GetProperty("ClientId").GetString(), slot.ClientId);
+    }
+
+    [Fact]
+    public async Task An_inline_position_rejects_unknown_policy_ids_like_the_position_endpoint()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+
+        var resp = await PostClientAsync(new
+        {
+            ClientId = "",
+            ClientType = "public",
+            AllowedGrantTypes = new[] { StaffingGrant },
+            NewPosition = new
+            {
+                AccountName = "tc-invalid-policy",
+                TerminalPolicy = new
+                {
+                    Enabled = true,
+                    AllowedActivationProofs = new[] { "invented-proof" },
+                    AllowedDeviceBindings = new[] { "dpop" },
+                },
+            },
+            TerminalDisplayName = "Empfang",
+            WebAuthnRpId = RpId,
+        }, ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        Assert.Contains("unknown or unavailable", await resp.Content.ReadAsStringAsync(ct));
     }
 
     [Fact]

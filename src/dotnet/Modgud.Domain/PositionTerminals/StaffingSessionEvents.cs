@@ -13,7 +13,19 @@ public record StaffingSessionStarted(
     Guid ActivatedByUserId,
     Guid ActivatedByPasskeyCredentialId,
     Guid PositionGrantId,
-    string DpopJkt,
+    string? DpopJkt,
+    string OAuthAuthorizationId,
+    DateTimeOffset StartedAt,
+    DateTimeOffset AbsoluteExpiresAt);
+
+/// <summary>Current wire event. V1 remains mapped and is upcast by the
+/// projection into personal-passkey/dpop evidence.</summary>
+public record StaffingSessionStartedV2(
+    Guid Id,
+    Guid PositionPrincipalId,
+    Guid TerminalEnrollmentId,
+    ActivationEvidence Evidence,
+    string? DpopJkt,
     string OAuthAuthorizationId,
     DateTimeOffset StartedAt,
     DateTimeOffset AbsoluteExpiresAt);

@@ -248,7 +248,9 @@ public class StaffingConcurrencyTests : IntegrationTestBase
         var request = new HttpRequestMessage(HttpMethod.Post, "/connect/staffing/begin");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", setup.EnrollmentAccessToken);
         request.Headers.Add(DpopConstants.HeaderName,
-            setup.DeviceKey.CreateProof("POST", "http://localhost/connect/staffing/begin", DateTimeOffset.UtcNow));
+            setup.DeviceKey.CreateProof(
+                "POST", "http://localhost/connect/staffing/begin", DateTimeOffset.UtcNow,
+                setup.EnrollmentAccessToken));
         var resp = await Factory.CreateClient().SendAsync(request, ct);
         var body = await resp.Content.ReadAsStringAsync(ct);
         Assert.True(resp.IsSuccessStatusCode, $"staffing begin failed ({(int)resp.StatusCode}): {body}");
