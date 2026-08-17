@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using BuildingBlocks.Helper;
 using Modgud.Api.Features.Auth.PositionTerminals;
+using Modgud.Api.Features.Auth.Staffing;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Sessions;
 using Modgud.Authentication.Domain;
@@ -23,6 +25,7 @@ using Modgud.Domain.Realms;
 using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.OpenIddict.Cimd;
 using Modgud.Infrastructure.OpenIddict.Dpop;
+using Modgud.Infrastructure.PositionTerminals;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Fido2NetLib;
 using Fido2NetLib.Objects;
@@ -288,10 +291,12 @@ public static class AuthorizationEndpoints
         IEmailOtpService emailOtpService,
         RealmScopedFido2Factory fido2Factory,
         RpIdResolver rpIdResolver,
+        ActivationProofRegistry activationProofs,
         IApplicationSettingsResolver applicationSettingsResolver,
         IDocumentSession session,
         AppSettings settings,
         IOAuthGrantRevoker grantRevoker,
+        IStaffingRevoker staffingRevoker,
         Wolverine.IMessageBus bus)
     {
         var request = httpContext.GetOpenIddictServerRequest()
@@ -360,7 +365,7 @@ public static class AuthorizationEndpoints
             {
                 return await ExchangeStaffingRefreshAsync(
                     httpContext, request, result.Principal!, settings, session,
-                    userManager, signInManager, scopeManager, permissionService, grantRevoker, bus);
+                    scopeManager, permissionService, activationProofs, grantRevoker, staffingRevoker, bus);
             }
 
             var user = await userManager.FindByIdAsync(subject);
@@ -588,10 +593,17 @@ public static class AuthorizationEndpoints
         // StaffingSession for the POSITION (plan §13).
         if (string.Equals(request.GrantType, PositionGrantTypes.StaffingSession, StringComparison.Ordinal))
         {
+            if (string.Equals((string?)request.GetParameter("step_up"), "true", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals((string?)request.GetParameter("step_up"), "1", StringComparison.Ordinal))
+            {
+                return await ExchangeStaffingStepUpAsync(
+                    request, httpContext, settings, session, scopeManager,
+                    permissionService, activationProofs, httpContext.RequestAborted);
+            }
             return await ExchangeStaffingAsync(
-                request, httpContext, settings, session, userManager, signInManager,
+                request, httpContext, settings, session,
                 scopeManager, applicationManager, authorizationManager, permissionService,
-                fido2Factory, rpIdResolver, grantRevoker, bus, httpContext.RequestAborted);
+                activationProofs, grantRevoker, bus, httpContext.RequestAborted);
         }
 
         throw new InvalidOperationException("The specified grant type is not supported.");
@@ -648,30 +660,60 @@ public static class AuthorizationEndpoints
         if (!request.IsDeviceCodeGrantType() && !request.IsRefreshTokenGrantType())
             return Refuse("The token is no longer valid.");
 
-        if (!Guid.TryParse(tokenPrincipal.GetClaim(Claims.Subject), out var positionId) ||
-            !Guid.TryParse(tokenPrincipal.GetClaim(PositionTokenClaimTypes.TerminalId), out var terminalId))
+        var isControlV2 = string.Equals(
+            tokenPrincipal.GetClaim(PositionTokenClaimTypes.PrincipalType),
+            PositionPrincipalTypes.Terminal,
+            StringComparison.Ordinal);
+        if (!Guid.TryParse(tokenPrincipal.GetClaim(Claims.Subject), out var subjectId) ||
+            !Guid.TryParse(tokenPrincipal.GetClaim(PositionTokenClaimTypes.TerminalId), out var terminalClaimId))
         {
             return Refuse("The token is no longer valid.");
         }
+        var terminalId = isControlV2 ? subjectId : terminalClaimId;
+        var legacyPositionId = isControlV2 ? (Guid?)null : subjectId;
 
         var ct = httpContext.RequestAborted;
-        var position = await session.LoadAsync<PositionPrincipal>(positionId, ct);
-        if (position is null || position.IsDeleted)
-            return Refuse("The position no longer exists.");
-        if (!position.TerminalPolicy.Enabled)
-            return Refuse("Terminal use is disabled for this position.");
+        var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
+        if (terminal is null)
+            return Refuse("The terminal no longer exists.");
+        var allowedPositionIds = terminal.EffectiveAllowedPositionIds;
+        if (legacyPositionId is { } legacy &&
+            (allowedPositionIds.Count != 1 || allowedPositionIds[0] != legacy))
+            return Refuse("This legacy control-token chain requires re-enrollment before the terminal assignment can change.");
+
+        PositionPrincipal? legacyPosition = null;
+        if (legacyPositionId is { } legacyId)
+        {
+            legacyPosition = await session.LoadAsync<PositionPrincipal>(legacyId, ct);
+            if (legacyPosition is null || legacyPosition.IsDeleted || !legacyPosition.TerminalPolicy.Enabled)
+                return Refuse("The position no longer exists or terminal use is disabled.");
+        }
+        else
+        {
+            var hasUsablePosition = false;
+            foreach (var allowedId in allowedPositionIds)
+            {
+                var allowed = await session.LoadAsync<PositionPrincipal>(allowedId, ct);
+                if (allowed is { IsDeleted: false, IsActive: true } && allowed.TerminalPolicy.Enabled)
+                {
+                    hasUsablePosition = true;
+                    break;
+                }
+            }
+            if (!hasUsablePosition)
+                return Refuse("The terminal has no usable position assignment.");
+        }
 
         if (request.IsRefreshTokenGrantType())
         {
-            var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
-            if (terminal is null || terminal.PositionPrincipalId != positionId)
-                return Refuse("The token is no longer valid.");
             if (!string.Equals(request.ClientId, terminal.ClientId, StringComparison.Ordinal))
                 return Refuse("The client does not own this terminal slot.");
             if (terminal.Status != TerminalEnrollmentStatus.Active)
                 return Refuse("The terminal slot is no longer active.");
 
-            var refreshed = TerminalEnrollmentPrincipal.Create(position, terminal);
+            var refreshed = isControlV2
+                ? TerminalEnrollmentPrincipal.CreateV2(terminal)
+                : TerminalEnrollmentPrincipal.Create(legacyPosition!, terminal);
             refreshed.SetAuthorizationId(tokenPrincipal.GetAuthorizationId());
             return Results.SignIn(refreshed, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         }
@@ -681,13 +723,16 @@ public static class AuthorizationEndpoints
         // racing polls can never both enroll (the loser's SaveChanges throws).
         var stream = await session.Events.FetchForWriting<TerminalEnrollment>(terminalId, ct);
         var slot = stream.Aggregate;
-        if (slot is null || slot.PositionPrincipalId != positionId)
+        if (slot is null)
             return Refuse("The token is no longer valid.");
         if (!string.Equals(request.ClientId, slot.ClientId, StringComparison.Ordinal))
             return Refuse("The client does not own this terminal slot.");
-        if (slot.Status != TerminalEnrollmentStatus.Pending || slot.DpopJkt is not null)
+        if (slot.Status != TerminalEnrollmentStatus.Pending || slot.EnrollmentAuthorizationId is not null)
             return Refuse("The terminal slot is not pending enrollment; re-enrollment requires a fresh slot.");
 
+        string? jkt = null;
+        if (string.Equals(slot.Binding, DeviceBindingIds.Dpop, StringComparison.Ordinal))
+        {
         // The key to pin — validated HERE, directly from the header. It cannot
         // come from the HttpContext.Items stash and the ledger enforcement
         // cannot be trusted to have run yet: DpopProofValidationHandler and
@@ -706,7 +751,7 @@ public static class AuthorizationEndpoints
             proofHeader.ToString(), httpContext.Request.Method, htu, DateTimeOffset.UtcNow);
         if (!proof.IsValid || string.IsNullOrEmpty(proof.Jkt))
             return Refuse("A valid DPoP proof is required to enroll a terminal.");
-        var jkt = proof.Jkt;
+        jkt = proof.Jkt;
 
         var deviceCode = request.DeviceCode;
         var binding = string.IsNullOrEmpty(deviceCode)
@@ -718,8 +763,11 @@ public static class AuthorizationEndpoints
             return Refuse("The device code is not DPoP-bound; terminal enrollment requires a device key.");
         if (!string.Equals(jkt, binding.Jkt, StringComparison.Ordinal))
             return Refuse("The DPoP proof key does not match the key this device code is bound to.");
+        }
 
-        var principal = TerminalEnrollmentPrincipal.Create(position, slot);
+        var principal = isControlV2
+            ? TerminalEnrollmentPrincipal.CreateV2(slot)
+            : TerminalEnrollmentPrincipal.Create(legacyPosition!, slot);
 
         // Durable anchor of every token this terminal will ever hold in the
         // enrollment chain — revoking it (slot revoke, §13.4) cuts the device
@@ -732,7 +780,7 @@ public static class AuthorizationEndpoints
             ?? throw new InvalidOperationException("The application has no id.");
         var authorization = await authorizationManager.CreateAsync(
             principal: principal,
-            subject: position.Id.ToString(),
+            subject: (isControlV2 ? slot.Id : legacyPosition!.Id).ToString(),
             client: clientPk,
             type: AuthorizationTypes.AdHoc,
             scopes: principal.GetScopes(),
@@ -753,14 +801,132 @@ public static class AuthorizationEndpoints
         }
 
         // MG-FT-09 (§17) — the slot went Pending → Active.
-        await bus.PublishAsync(new PositionTerminalStatusChanged(
-            positionId, slot.Id, TerminalEnrollmentStatus.Active, DateTimeOffset.UtcNow));
+        foreach (var allowedPositionId in slot.EffectiveAllowedPositionIds)
+        {
+            await bus.PublishAsync(new PositionTerminalStatusChanged(
+                allowedPositionId, slot.Id, TerminalEnrollmentStatus.Active, DateTimeOffset.UtcNow));
+        }
 
         principal.SetAuthorizationId(authorizationId);
         return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
     // ──────────────────── MG-FT-05 staffing grant (§13) ───────────────────────
+
+    private static async Task<IResult> ExchangeStaffingStepUpAsync(
+        OpenIddictRequest request,
+        HttpContext httpContext,
+        AppSettings settings,
+        IDocumentSession session,
+        IOpenIddictScopeManager scopeManager,
+        IPermissionService permissionService,
+        ActivationProofRegistry activationProofs,
+        CancellationToken ct)
+    {
+        static IResult Refuse(string description) => ForbidNativeGrant(Errors.InvalidGrant, description);
+        if (!settings.Features.PositionTerminals || string.IsNullOrEmpty(request.ClientId))
+            return Refuse("Position terminals are not enabled.");
+
+        var state = await session.Query<OAuthApplicationState>()
+            .FirstOrDefaultAsync(x => x.ClientId == request.ClientId && !x.IsDeleted, ct);
+        if (state?.ManagedTerminalEnrollmentId is not { } terminalId)
+            return Refuse("The client is not a position-terminal client.");
+        var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
+        if (terminal is null || terminal.Status != TerminalEnrollmentStatus.Active ||
+            terminal.OAuthApplicationId != state.Id ||
+            !string.Equals(terminal.ClientId, request.ClientId, StringComparison.Ordinal))
+            return Refuse("The terminal is not active.");
+
+        if (string.Equals(terminal.Binding, DeviceBindingIds.Dpop, StringComparison.Ordinal))
+        {
+            var header = httpContext.Request.Headers[DpopConstants.HeaderName];
+            if (header.Count != 1) return Refuse("A DPoP proof is required.");
+            var htu = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.Path}";
+            var proof = DpopProofValidator.Validate(
+                header.ToString(), httpContext.Request.Method, htu, DateTimeOffset.UtcNow);
+            if (!proof.IsValid || !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
+                return Refuse("The DPoP proof key does not match this terminal.");
+        }
+
+        if (!Guid.TryParse((string?)request.GetParameter("ceremony_id"), out var ceremonyId))
+            return Refuse("Invalid or expired step-up ceremony.");
+        var ceremony = await session.LoadAsync<StaffingCeremony>(ceremonyId, ct);
+        if (ceremony is null || ceremony.IsExpired || ceremony.IsConsumed ||
+            ceremony.StepUpForStaffingSessionId is not { } staffingSessionId ||
+            ceremony.TerminalEnrollmentId != terminal.Id ||
+            !string.Equals(ceremony.ClientId, request.ClientId, StringComparison.Ordinal) ||
+            (string.Equals(terminal.Binding, DeviceBindingIds.Dpop, StringComparison.Ordinal) &&
+             !string.Equals(ceremony.DpopJkt, terminal.DpopJkt, StringComparison.Ordinal)))
+            return Refuse("Invalid or expired step-up ceremony.");
+
+        var staffing = await session.LoadAsync<StaffingSession>(staffingSessionId, ct);
+        var now = DateTimeOffset.UtcNow;
+        if (staffing is not { Status: StaffingSessionStatus.Active } ||
+            staffing.AbsoluteExpiresAt <= now ||
+            staffing.TerminalEnrollmentId != terminal.Id ||
+            staffing.PositionPrincipalId != ceremony.PositionPrincipalId ||
+            terminal.ActiveStaffingSessionId != staffing.Id ||
+            !terminal.EffectiveAllowedPositionIds.Contains(staffing.PositionPrincipalId))
+            return Refuse("The staffing session is no longer active.");
+
+        var position = await session.LoadAsync<PositionPrincipal>(staffing.PositionPrincipalId, ct);
+        if (position is null || position.IsDeleted || !position.IsActive || !position.TerminalPolicy.Enabled)
+            return Refuse("The position is no longer available.");
+        var methodId = string.IsNullOrWhiteSpace(ceremony.MethodId)
+            ? ActivationProofMethodIds.PersonalPasskey
+            : ceremony.MethodId;
+        var realm = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        var requiredProof = realm?.PositionSecurity?.RequiredProofCapabilities ?? ProofCapability.None;
+        var requiredBinding = realm?.PositionSecurity?.RequiredBindingCapabilities ?? BindingCapability.None;
+        if (!position.TerminalPolicy.AllowedActivationProofs.Contains(methodId, StringComparer.Ordinal) ||
+            !position.TerminalPolicy.AllowedDeviceBindings.Contains(terminal.Binding, StringComparer.Ordinal) ||
+            !PositionTerminalSecurity.ProofMeetsFloor(methodId, requiredProof) ||
+            !PositionTerminalSecurity.BindingMeetsFloor(terminal.Binding, requiredBinding) ||
+            !activationProofs.TryGet(methodId, out var activationProof))
+            return Refuse("The step-up proof or terminal binding is no longer allowed.");
+
+        ceremony.ConsumedAt = now;
+        session.Store(ceremony);
+        try { await session.SaveChangesAsync(ct); }
+        catch (JasperFx.ConcurrencyException) { return Refuse("Invalid or expired step-up ceremony."); }
+
+        var assertion = (string?)request.GetParameter("assertion");
+        if (string.IsNullOrWhiteSpace(assertion)) return Refuse("Step-up proof verification failed.");
+        var result = await activationProof.CompleteAsync(
+            new ActivationContext(position, terminal, ceremony), assertion, ct);
+        if (result.Failure is not null || result.Evidence is not { } evidence)
+            return Refuse(result.Failure?.Message ?? "Step-up proof verification failed.");
+
+        var principal = StaffingPrincipal.Create(position, terminal, staffing.Id, now, evidence.MethodId);
+        principal.SetClaim(PositionTokenClaimTypes.TokenUse, PositionTokenUses.StaffingStepUp);
+        principal.SetClaim(Claims.AuthenticationContextReference, PositionAuthenticationContextReferences.StaffingStepUp);
+        if (ceremony.StepUpAction is not null)
+            principal.SetClaim(PositionTokenClaimTypes.StepUpAction, ceremony.StepUpAction);
+        if (ceremony.StepUpNonce is not null)
+            principal.SetClaim(PositionTokenClaimTypes.StepUpNonce, ceremony.StepUpNonce);
+
+        // A step-up proves freshness for the current session; it must never
+        // widen that session by accepting a new scope set from this request.
+        principal.SetScopes(ceremony.StepUpScopes);
+        var resources = await scopeManager.ListResourcesAsync(principal.GetScopes(), ct).ToListAsync(ct);
+        principal.SetResources(resources);
+        var resourceAccess = await BuildResourceAccessAsync(
+            position.Id, resources, wantsRoles: true, wantsPermissions: true, session, permissionService);
+        if (resourceAccess is not null)
+            principal.SetClaim("resource_access", JsonSerializer.SerializeToElement(resourceAccess));
+
+        // StaffingPrincipal assigned destinations before the step-up-specific
+        // claims above replaced/added claims. Re-apply them here so token_use,
+        // acr and optional action/nonce are actually present on the wire.
+        principal.SetDestinations(_ => [Destinations.AccessToken]);
+
+        var lifetime = staffing.AbsoluteExpiresAt - now;
+        if (lifetime > TimeSpan.FromSeconds(60)) lifetime = TimeSpan.FromSeconds(60);
+        if (lifetime <= TimeSpan.Zero) return Refuse("The staffing session is no longer active.");
+        principal.SetAccessTokenLifetime(lifetime);
+        principal.SetAuthorizationId(staffing.OAuthAuthorizationId);
+        return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+    }
 
     /// <summary>
     /// Redeems a passkey tap on an enrolled terminal into a
@@ -778,14 +944,11 @@ public static class AuthorizationEndpoints
         HttpContext httpContext,
         AppSettings settings,
         IDocumentSession session,
-        UserManager<ApplicationUser> userManager,
-        SignInManager<ApplicationUser> signInManager,
         IOpenIddictScopeManager scopeManager,
         IOpenIddictApplicationManager applicationManager,
         IOpenIddictAuthorizationManager authorizationManager,
         IPermissionService permissionService,
-        RealmScopedFido2Factory fido2Factory,
-        RpIdResolver rpIdResolver,
+        ActivationProofRegistry activationProofs,
         IOAuthGrantRevoker grantRevoker,
         Wolverine.IMessageBus bus,
         CancellationToken ct)
@@ -805,27 +968,23 @@ public static class AuthorizationEndpoints
 
         var state = await session.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(x => x.ClientId == request.ClientId && !x.IsDeleted, ct);
-        if (state?.ManagedTerminalEnrollmentId is not { } terminalId ||
-            state.LinkedPositionPrincipalId is not { } positionId)
+        if (state?.ManagedTerminalEnrollmentId is not { } terminalId)
         {
             return Refuse("The client is not a position-terminal client.");
         }
 
         var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
         if (terminal is null || terminal.OAuthApplicationId != state.Id ||
-            terminal.PositionPrincipalId != positionId ||
             !string.Equals(terminal.ClientId, request.ClientId, StringComparison.Ordinal))
         {
             return Refuse("The client is not linked to a valid terminal slot.");
         }
 
-        if (terminal.Status != TerminalEnrollmentStatus.Active || string.IsNullOrEmpty(terminal.DpopJkt))
+        if (terminal.Status != TerminalEnrollmentStatus.Active)
             return Refuse("The terminal is not active.");
 
-        var position = await session.LoadAsync<PositionPrincipal>(positionId, ct);
-        if (position is null || position.IsDeleted || !position.TerminalPolicy.Enabled)
-            return Refuse("Terminal use is disabled for this position.");
-
+        if (string.Equals(terminal.Binding, DeviceBindingIds.Dpop, StringComparison.Ordinal))
+        {
         // Proof-of-possession for THIS request, validated in-endpoint (same
         // rationale as the enrollment exchange: the DPoP pipeline handlers run
         // only after SignIn). The proof key must be the slot's enrolled key.
@@ -837,6 +996,7 @@ public static class AuthorizationEndpoints
             proofHeader.ToString(), httpContext.Request.Method, htu, DateTimeOffset.UtcNow);
         if (!proof.IsValid || !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
             return Refuse("The DPoP proof key is not this terminal's enrolled key.");
+        }
 
         // §13.3 steps 4–5 — load + pin-check the ceremony.
         var assertionJson = (string?)request.GetParameter("assertion");
@@ -856,85 +1016,157 @@ public static class AuthorizationEndpoints
 
         if (!string.Equals(ceremony.ClientId, request.ClientId, StringComparison.Ordinal) ||
             ceremony.TerminalEnrollmentId != terminal.Id ||
-            ceremony.PositionPrincipalId != positionId ||
-            !string.Equals(ceremony.DpopJkt, terminal.DpopJkt, StringComparison.Ordinal))
+            (string.Equals(terminal.Binding, DeviceBindingIds.Dpop, StringComparison.Ordinal) &&
+             !string.Equals(ceremony.DpopJkt, terminal.DpopJkt, StringComparison.Ordinal)))
         {
             return Refuse("Invalid or expired staffing ceremony.");
         }
 
-        // §13.3 step 6 — consume BEFORE the verify: a version-checked Store of
-        // the ConsumedAt marker (not a Delete — deletes aren't version-checked),
-        // so a captured ceremony_id can never be replayed and of two racing
-        // redeems the loser's save throws. Mirrors ExchangeNativePasskeyAsync.
-        ceremony.ConsumedAt = DateTimeOffset.UtcNow;
-        session.Store(ceremony);
-        try
-        {
-            await session.SaveChangesAsync(ct);
-        }
-        catch (JasperFx.ConcurrencyException)
-        {
-            return Refuse("Invalid or expired staffing ceremony.");
-        }
+        var evidenceMethodId = string.IsNullOrWhiteSpace(ceremony.MethodId)
+            ? ActivationProofMethodIds.PersonalPasskey
+            : ceremony.MethodId;
+        var realm = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        var requiredProof = realm?.PositionSecurity?.RequiredProofCapabilities ?? ProofCapability.None;
+        var requiredBinding = realm?.PositionSecurity?.RequiredBindingCapabilities ?? BindingCapability.None;
+        if (!PositionTerminalSecurity.ProofMeetsFloor(evidenceMethodId, requiredProof) ||
+            !PositionTerminalSecurity.BindingMeetsFloor(terminal.Binding, requiredBinding) ||
+            !activationProofs.TryGet(evidenceMethodId, out var activationProof))
+            return Refuse("The activation proof or terminal binding is no longer allowed.");
 
-        if (string.IsNullOrWhiteSpace(assertionJson))
-            return Refuse("Invalid or expired staffing ceremony.");
+        bool PositionIsCurrentlyEligible(PositionPrincipal candidate) =>
+            terminal.EffectiveAllowedPositionIds.Contains(candidate.Id) &&
+            !candidate.IsDeleted && candidate.IsActive && candidate.TerminalPolicy.Enabled &&
+            candidate.TerminalPolicy.AllowedActivationProofs.Contains(evidenceMethodId, StringComparer.Ordinal) &&
+            candidate.TerminalPolicy.AllowedDeviceBindings.Contains(terminal.Binding, StringComparer.Ordinal);
 
-        // §13.3 steps 7–9 — verify the tap against the ceremony-pinned RP-ID.
-        string[]? presentedOrigins = null;
-        try
+        async Task<bool> ConsumeCeremonyAsync()
         {
-            var assertion = JsonSerializer.Deserialize<AuthenticatorAssertionRawResponse>(
-                assertionJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (RealmFido2.TryGetClientDataOrigin(assertion?.Response?.ClientDataJson) is { } origin)
-                presentedOrigins = [origin];
-        }
-        catch (JsonException) { /* leave null — the verifier fails closed */ }
-
-        var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
-        IFido2 fido2;
-        try
-        {
-            fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: ceremony.RpId, additionalOrigins: presentedOrigins);
-        }
-        catch (RelyingPartyUnavailableException)
-        {
-            return Refuse("Staffing is not available for this realm.");
+            // Consume BEFORE proof verification/selection. The optimistic
+            // update makes both proof tickets and selection continuations
+            // single-use under concurrent redemption.
+            ceremony.ConsumedAt = DateTimeOffset.UtcNow;
+            session.Store(ceremony);
+            try { await session.SaveChangesAsync(ct); return true; }
+            catch (JasperFx.ConcurrencyException) { return false; }
         }
 
-        AssertionOptions options;
-        try
+        Guid positionId;
+        PositionPrincipal position;
+        ActivationEvidence evidence;
+        if (ceremony.VerifiedCandidates.Length > 0)
         {
-            options = AssertionOptions.FromJson(ceremony.OptionsJson);
+            var requestedPosition = (string?)request.GetParameter("position_id");
+            StaffingCandidateEvidence selected;
+            if (ceremony.VerifiedCandidates.Length == 1 && string.IsNullOrWhiteSpace(requestedPosition))
+                selected = ceremony.VerifiedCandidates[0];
+            else
+            {
+                if (string.IsNullOrWhiteSpace(requestedPosition) ||
+                    !ShortGuid.TryParse(requestedPosition, out Guid selectedId))
+                    return Refuse("The selected position was not established by the activation proof.");
+                var found = ceremony.VerifiedCandidates.FirstOrDefault(candidate =>
+                    candidate.PositionPrincipalId == selectedId);
+                if (found is null)
+                    return Refuse("The selected position was not established by the activation proof.");
+                selected = found;
+            }
+
+            positionId = selected.PositionPrincipalId;
+            var selectedPosition = await session.LoadAsync<PositionPrincipal>(positionId, ct);
+            if (selectedPosition is null || !PositionIsCurrentlyEligible(selectedPosition) ||
+                !await activationProof.RevalidateAsync(selected.Evidence, selectedPosition, ct))
+                return Refuse("The selected position is no longer available for this activation proof.");
+            position = selectedPosition;
+            if (!await ConsumeCeremonyAsync())
+                return Refuse("Invalid or expired staffing ceremony.");
+            evidence = selected.Evidence;
         }
-        catch
+        else if (ceremony.CandidatePositionIds.Length > 0)
         {
-            return Refuse("Invalid or expired staffing ceremony.");
+            var positions = new List<PositionPrincipal>();
+            foreach (var candidateId in ceremony.CandidatePositionIds.Distinct())
+            {
+                if (!terminal.EffectiveAllowedPositionIds.Contains(candidateId)) continue;
+                if (await session.LoadAsync<PositionPrincipal>(candidateId, ct) is { } candidate &&
+                    PositionIsCurrentlyEligible(candidate))
+                    positions.Add(candidate);
+            }
+            if (positions.Count == 0)
+                return Refuse("No position is currently available for this activation proof.");
+            if (!await ConsumeCeremonyAsync())
+                return Refuse("Invalid or expired staffing ceremony.");
+            if (string.IsNullOrWhiteSpace(assertionJson))
+                return Refuse("Invalid or expired staffing ceremony.");
+
+            var activation = await activationProof.CompleteCandidatesAsync(
+                ceremony, assertionJson, positions, terminal, ct);
+            if (activation.Failure is not null || activation.Candidates.Count == 0)
+                return Refuse(activation.Failure?.Message ?? "Activation proof verification failed.");
+            var eligibleIds = positions.Select(candidate => candidate.Id).ToHashSet();
+            var verified = activation.Candidates
+                .Where(candidate => eligibleIds.Contains(candidate.PositionPrincipalId))
+                .GroupBy(candidate => candidate.PositionPrincipalId)
+                .Select(group => group.First())
+                .ToArray();
+            if (verified.Length == 0)
+                return Refuse("The activation proof does not authorize a position on this terminal.");
+            if (verified.Length > 1)
+            {
+                var continuationNow = DateTimeOffset.UtcNow;
+                var continuation = new StaffingCeremony
+                {
+                    Id = Guid.NewGuid(),
+                    PositionPrincipalId = Guid.Empty,
+                    CandidatePositionIds = verified.Select(candidate => candidate.PositionPrincipalId).ToArray(),
+                    VerifiedCandidates = verified,
+                    TerminalEnrollmentId = terminal.Id,
+                    ClientId = terminal.ClientId,
+                    DpopJkt = terminal.DpopJkt ?? string.Empty,
+                    MethodId = evidenceMethodId,
+                    CreatedAt = continuationNow,
+                    ExpiresAt = continuationNow.AddMinutes(5),
+                };
+                session.Store(continuation);
+                await session.SaveChangesAsync(ct);
+                var names = positions.ToDictionary(candidate => candidate.Id, candidate => candidate.DisplayName);
+                return Results.Ok(new
+                {
+                    selectionRequired = true,
+                    ceremonyId = continuation.Id,
+                    candidates = verified.Select(candidate => new
+                    {
+                        id = new ShortGuid(candidate.PositionPrincipalId).ToString(),
+                        displayName = names[candidate.PositionPrincipalId],
+                    }),
+                });
+            }
+
+            positionId = verified[0].PositionPrincipalId;
+            position = positions.Single(candidate => candidate.Id == positionId);
+            evidence = verified[0].Evidence;
         }
+        else
+        {
+            positionId = ceremony.PositionPrincipalId;
+            if (!terminal.EffectiveAllowedPositionIds.Contains(positionId) ||
+                (state.LinkedPositionPrincipalId is { } legacyPositionId &&
+                 (terminal.EffectiveAllowedPositionIds.Count != 1 || legacyPositionId != positionId)))
+                return Refuse("The selected position is not allowed on this terminal.");
+            var selectedPosition = await session.LoadAsync<PositionPrincipal>(positionId, ct);
+            if (selectedPosition is null || !PositionIsCurrentlyEligible(selectedPosition))
+                return Refuse("Terminal use is disabled for this position.");
+            position = selectedPosition;
+            if (!await ConsumeCeremonyAsync())
+                return Refuse("Invalid or expired staffing ceremony.");
+            if (string.IsNullOrWhiteSpace(assertionJson))
+                return Refuse("Invalid or expired staffing ceremony.");
 
-        // The shared verifier commits its own save (counter advance) — safe
-        // here: the ceremony consume above already committed and nothing else
-        // is staged on the session yet.
-        var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(
-            fido2, options, assertionJson, session, ceremony.RpId, primaryDomain, ct);
-        if (storedCredential is null)
-            return Refuse("Passkey verification failed.");
-
-        // §13.3 steps 10–13 — the activating person: alive + allowed to sign
-        // in, the passkey belongs to the ceremony RP-ID, and an ACTIVE grant
-        // authorizes them for this position (Suspended does not).
-        var user = await userManager.FindByIdAsync(storedCredential.UserId.ToString());
-        if (user is null || !await signInManager.CanSignInAsync(user) || !user.IsActive || user.IsDeleted)
-            return Refuse("Passkey verification failed.");
-        if (!string.Equals(storedCredential.RpId ?? primaryDomain, ceremony.RpId, StringComparison.OrdinalIgnoreCase))
-            return Refuse("Passkey verification failed.");
-
-        var grant = (await session.Query<PositionGrant>()
-            .Where(g => g.PositionPrincipalId == positionId && g.UserId == user.Id &&
-                        g.Status == PositionGrantStatus.Active)
-            .ToListAsync(ct)).FirstOrDefault();
-        if (grant is null)
-            return Refuse("The user is not authorized to staff this position.");
+            var activation = await activationProof.CompleteAsync(
+                new ActivationContext(position, terminal, ceremony), assertionJson, ct);
+            if (activation.Failure is not null || activation.Evidence is not { } completedEvidence)
+                return Refuse(activation.Failure?.Message ?? "Activation proof verification failed.");
+            evidence = completedEvidence;
+        }
 
         // §13.3 step 16 — scopes: offline_access keeps the shift refreshable;
         // requested scopes passed the client/app restriction gates at the top
@@ -942,7 +1174,7 @@ public static class AuthorizationEndpoints
         // position's own roles + permissions are embedded per audience (§7.3).
         var now = DateTimeOffset.UtcNow;
         var sessionId = Guid.NewGuid();
-        var principal = StaffingPrincipal.Create(position, terminal, sessionId, now);
+        var principal = StaffingPrincipal.Create(position, terminal, sessionId, now, evidence.MethodId);
 
         var scopes = request.GetScopes();
         if (!scopes.Contains(Scopes.OfflineAccess)) scopes = scopes.Add(Scopes.OfflineAccess);
@@ -1006,10 +1238,9 @@ public static class AuthorizationEndpoints
         var authorizationId = await authorizationManager.GetIdAsync(authorization, ct)
             ?? throw new InvalidOperationException("The staffing authorization has no id.");
 
-        session.Events.StartStream<StaffingSession>(sessionId, new StaffingSessionStarted(
-            sessionId, positionId, terminal.Id,
-            user.Id, storedCredential.Id, grant.Id,
-            terminal.DpopJkt!, authorizationId, now, absoluteExpiresAt));
+        session.Events.StartStream<StaffingSession>(sessionId, new StaffingSessionStartedV2(
+            sessionId, positionId, terminal.Id, evidence,
+            terminal.DpopJkt, authorizationId, now, absoluteExpiresAt));
         terminalStream.AppendOne(new TerminalStaffingSessionActivated(terminal.Id, sessionId, now));
         try
         {
@@ -1063,11 +1294,11 @@ public static class AuthorizationEndpoints
         ClaimsPrincipal tokenPrincipal,
         AppSettings settings,
         IDocumentSession session,
-        UserManager<ApplicationUser> userManager,
-        SignInManager<ApplicationUser> signInManager,
         IOpenIddictScopeManager scopeManager,
         IPermissionService permissionService,
+        ActivationProofRegistry activationProofs,
         IOAuthGrantRevoker grantRevoker,
+        IStaffingRevoker staffingRevoker,
         Wolverine.IMessageBus bus)
     {
         static IResult Refuse(string description) =>
@@ -1139,26 +1370,55 @@ public static class AuthorizationEndpoints
         // and still owned by this session.
         var position = await session.LoadAsync<PositionPrincipal>(positionId, ct);
         if (position is null || position.IsDeleted || !position.TerminalPolicy.Enabled)
+        {
+            await staffingRevoker.EndSessionAsync(
+                staffing.Id, StaffingSessionEndReason.PositionDisabled, ct);
             return RequireStaffing();
+        }
 
         var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
         if (terminal is null || terminal.Status != TerminalEnrollmentStatus.Active)
+        {
+            await staffingRevoker.EndSessionAsync(
+                staffing.Id, StaffingSessionEndReason.TerminalDisabled, ct);
             return RequireStaffing();
+        }
         if (terminal.ActiveStaffingSessionId != staffing.Id)
             return RequireStaffing();
+
+        var evidence = staffing.GetActivationEvidence();
+        var realm = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        var requiredProof = realm?.PositionSecurity?.RequiredProofCapabilities ?? ProofCapability.None;
+        var requiredBinding = realm?.PositionSecurity?.RequiredBindingCapabilities ?? BindingCapability.None;
+        activationProofs.TryGet(evidence.MethodId, out var activationProof);
+        var policyValid =
+            terminal.EffectiveAllowedPositionIds.Contains(positionId) &&
+            position.TerminalPolicy.AllowedActivationProofs.Contains(evidence.MethodId, StringComparer.Ordinal) &&
+            position.TerminalPolicy.AllowedDeviceBindings.Contains(evidence.Binding, StringComparer.Ordinal) &&
+            string.Equals(terminal.Binding, evidence.Binding, StringComparison.Ordinal) &&
+            PositionTerminalSecurity.ProofMeetsFloor(evidence.MethodId, requiredProof) &&
+            PositionTerminalSecurity.BindingMeetsFloor(evidence.Binding, requiredBinding) &&
+            activationProof is not null;
+        if (!policyValid)
+        {
+            await staffingRevoker.EndSessionAsync(
+                staffing.Id, StaffingSessionEndReason.PolicyTightened, ct);
+            return RequireStaffing();
+        }
 
         // §14.3 check 8 — the client is still the slot's own, fully linked.
         var state = await session.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(x => x.ClientId == request.ClientId && !x.IsDeleted, ct);
         if (state is null ||
             state.ManagedTerminalEnrollmentId != terminal.Id ||
-            state.LinkedPositionPrincipalId != positionId ||
             terminal.OAuthApplicationId != state.Id ||
             !string.Equals(terminal.ClientId, request.ClientId, StringComparison.Ordinal))
         {
             return Refuse("The client does not own this terminal slot.");
         }
 
+        if (string.Equals(terminal.Binding, DeviceBindingIds.Dpop, StringComparison.Ordinal))
+        {
         // §14.3 check 9 — proof-of-possession for THIS request, in-endpoint
         // (pipeline handlers run only after SignIn): proof key ≡ session key
         // ≡ terminal key.
@@ -1174,24 +1434,23 @@ public static class AuthorizationEndpoints
         {
             return Refuse("The DPoP proof key does not match this staffing session's key.");
         }
+        }
 
-        // §14.3 checks 10–12 — the activating person, their passkey, and
-        // their grant must all still authorize this shift.
-        var user = await userManager.FindByIdAsync(staffing.ActivatedByUserId.ToString());
-        if (user is null || !await signInManager.CanSignInAsync(user) || !user.IsActive || user.IsDeleted)
+        // Proof-specific credential/grant validity is adapter-owned. This is
+        // the durable fail-closed backstop for a missed best-effort cascade.
+        if (!await activationProof!.RevalidateAsync(evidence, position, ct))
+        {
+            await staffingRevoker.EndSessionAsync(
+                staffing.Id, StaffingSessionEndReason.ActivationCredentialInvalidated, ct);
             return RequireStaffing();
-        if (await session.LoadAsync<StoredPasskeyCredential>(staffing.ActivatedByPasskeyCredentialId, ct) is null)
-            return RequireStaffing();
-        var grant = await session.LoadAsync<PositionGrant>(staffing.PositionGrantId, ct);
-        if (grant is null || grant.Status != PositionGrantStatus.Active)
-            return RequireStaffing();
+        }
 
         // §14.3 check 13 + §14.4 — re-issue the SAME session identity with
         // freshly computed scopes/permissions; auth_time is the ORIGINAL tap.
         var authTime = long.TryParse(tokenPrincipal.GetClaim(Claims.AuthenticationTime), out var unix)
             ? DateTimeOffset.FromUnixTimeSeconds(unix)
             : staffing.StartedAt;
-        var principal = StaffingPrincipal.Create(position, terminal, staffing.Id, authTime);
+        var principal = StaffingPrincipal.Create(position, terminal, staffing.Id, authTime, evidence.MethodId);
 
         var scopes = tokenPrincipal.GetScopes();
         principal.SetScopes(scopes);

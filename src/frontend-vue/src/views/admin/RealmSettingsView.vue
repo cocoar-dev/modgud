@@ -47,6 +47,10 @@ import type {
   FieldRequirement,
   RealmSettingsDto,
   UpdateRealmSettingsDto,
+  PositionSecuritySettingsDto,
+  UpdatePositionSecuritySettingsDto,
+  ProofCapability,
+  BindingCapability,
 } from '@/models/realmSettings'
 
 const { t, language } = useI18n()
@@ -71,6 +75,61 @@ const settingsContentRef = ref<HTMLElement | null>(null)
 
 const canRotateSigningKey = computed(() => authStore.hasPermission('realm-settings:write'))
 const rotating = ref(false)
+
+const proofCapabilityOptions = computed<Array<{ id: ProofCapability; label: string; hint: string }>>(() => [
+  {
+    id: 'IdentifiedActor',
+    label: t('admin.realmSettings.positionSecurity.capability.identifiedActor.label', {}, 'Identified actor'),
+    hint: t('admin.realmSettings.positionSecurity.capability.identifiedActor.hint', {}, 'The activation identifies an individual actor.'),
+  },
+  {
+    id: 'PhishingResistant',
+    label: t('admin.realmSettings.positionSecurity.capability.phishingResistant.label', {}, 'Phishing resistant'),
+    hint: t('admin.realmSettings.positionSecurity.capability.phishingResistant.hint', {}, 'The proof resists credential forwarding and phishing.'),
+  },
+  {
+    id: 'IndividuallyRevocable',
+    label: t('admin.realmSettings.positionSecurity.capability.individuallyRevocable.label', {}, 'Individually revocable'),
+    hint: t('admin.realmSettings.positionSecurity.capability.individuallyRevocable.hint', {}, 'The concrete activation credential can be revoked on its own.'),
+  },
+])
+const bindingCapabilityOptions = computed<Array<{ id: BindingCapability; label: string; hint: string }>>(() => [
+  {
+    id: 'DeviceIdentity',
+    label: t('admin.realmSettings.positionSecurity.capability.deviceIdentity.label', {}, 'Device identity'),
+    hint: t('admin.realmSettings.positionSecurity.capability.deviceIdentity.hint', {}, 'The terminal has an individual device identity.'),
+  },
+  {
+    id: 'SenderConstrained',
+    label: t('admin.realmSettings.positionSecurity.capability.senderConstrained.label', {}, 'Sender constrained'),
+    hint: t('admin.realmSettings.positionSecurity.capability.senderConstrained.hint', {}, 'Tokens can only be used by the enrolled sender key.'),
+  },
+])
+const originalPositionSecurity = ref<PositionSecuritySettingsDto | null>(null)
+const positionSecurityForm = ref<{
+  RequiredProofCapabilities: ProofCapability[]
+  RequiredBindingCapabilities: BindingCapability[]
+}>({ RequiredProofCapabilities: [], RequiredBindingCapabilities: [] })
+
+function setPositionCapability(
+  collection: 'RequiredProofCapabilities' | 'RequiredBindingCapabilities',
+  id: ProofCapability | BindingCapability,
+  enabled: boolean,
+) {
+  if (collection === 'RequiredProofCapabilities') {
+    const value = id as ProofCapability
+    const values = positionSecurityForm.value.RequiredProofCapabilities
+    positionSecurityForm.value.RequiredProofCapabilities = enabled
+      ? Array.from(new Set([...values, value]))
+      : values.filter((candidate) => candidate !== value)
+  } else {
+    const value = id as BindingCapability
+    const values = positionSecurityForm.value.RequiredBindingCapabilities
+    positionSecurityForm.value.RequiredBindingCapabilities = enabled
+      ? Array.from(new Set([...values, value]))
+      : values.filter((candidate) => candidate !== value)
+  }
+}
 
 // ── PageBuilder: pick the active page variant per slot (ADR-0001) ──
 const appConfig = useAppConfigStore()
@@ -392,6 +451,11 @@ onMounted(async () => {
     browserSessionsForm.value = { ...dto.BrowserSessions }
     originalClientSessions.value = dto.ClientSessions
     clientSessionsForm.value = { ...dto.ClientSessions }
+    originalPositionSecurity.value = dto.PositionSecurity
+    positionSecurityForm.value = {
+      RequiredProofCapabilities: [...(dto.PositionSecurity.RequiredProofCapabilities ?? [])],
+      RequiredBindingCapabilities: [...(dto.PositionSecurity.RequiredBindingCapabilities ?? [])],
+    }
     originalAuthRateLimits.value = dto.AuthRateLimits
     authRateLimitsForm.value = authRateLimitsFromDto(dto.AuthRateLimits)
     originalDeletion.value = dto.Deletion
@@ -542,6 +606,19 @@ function buildAuthRateLimitsPatch(): UpdateAuthRateLimitsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+function buildPositionSecurityPatch(): UpdatePositionSecuritySettingsDto | undefined {
+  const orig = originalPositionSecurity.value
+  if (!orig) return undefined
+  const proof = positionSecurityForm.value.RequiredProofCapabilities
+  const binding = positionSecurityForm.value.RequiredBindingCapabilities
+  if (arrayEqual(proof, orig.RequiredProofCapabilities ?? []) &&
+      arrayEqual(binding, orig.RequiredBindingCapabilities ?? [])) return undefined
+  return {
+    RequiredProofCapabilities: [...proof],
+    RequiredBindingCapabilities: [...binding],
+  }
+}
+
 function buildDeletionPatch(): UpdateDeletionSettingsDto | undefined {
   const orig = originalDeletion.value
   if (!orig) return undefined
@@ -594,6 +671,7 @@ function buildTabPayload(tab: SavableTabId): UpdateRealmSettingsDto {
     payload.NativeGrants = buildNativeGrantsPatch()
   } else if (tab === 'security') {
     payload.AuthRateLimits = buildAuthRateLimitsPatch()
+    payload.PositionSecurity = buildPositionSecurityPatch()
   } else if (tab === 'data-retention') {
     payload.Audit = buildAuditPatch()
     payload.Deletion = buildDeletionPatch()
@@ -629,6 +707,11 @@ function syncSavedTab(tab: SavableTabId, updated: RealmSettingsDto) {
   } else if (tab === 'security') {
     originalAuthRateLimits.value = updated.AuthRateLimits
     authRateLimitsForm.value = authRateLimitsFromDto(updated.AuthRateLimits)
+    originalPositionSecurity.value = updated.PositionSecurity
+    positionSecurityForm.value = {
+      RequiredProofCapabilities: [...(updated.PositionSecurity.RequiredProofCapabilities ?? [])],
+      RequiredBindingCapabilities: [...(updated.PositionSecurity.RequiredBindingCapabilities ?? [])],
+    }
   } else if (tab === 'data-retention') {
     originalAudit.value = updated.Audit
     auditForm.value = { ...updated.Audit }
@@ -686,6 +769,22 @@ async function save(tab: SavableTabId) {
   saving.value = true
   error.value = null
   try {
+    if (payload.PositionSecurity) {
+      const consequences = await settingsStore.previewPositionSecurity(payload.PositionSecurity)
+      if (consequences.HasConsequences) {
+        const confirmed = confirm(t(
+          'admin.realmSettings.positionSecurity.confirm',
+          {
+            positions: consequences.Positions.length,
+            terminals: consequences.TerminalIds.length,
+            sessions: consequences.StaffingSessionIds.length,
+          },
+          `This floor makes ${consequences.Positions.length} positions and ${consequences.TerminalIds.length} terminal slots non-conforming, and immediately ends ${consequences.StaffingSessionIds.length} active staffing sessions. Continue?`,
+        ))
+        if (!confirmed) return
+        payload.ConfirmPositionSecurityConsequences = true
+      }
+    }
     const updated = await settingsStore.patch(payload)
     syncSavedTab(tab, updated)
     savedFlash.value = true
@@ -1016,6 +1115,50 @@ async function rotateSigningKey() {
 
         <!-- Security posture and key material. -->
         <template v-else-if="activeTab === 'security'">
+          <section class="settings-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">
+                {{ t('admin.realmSettings.positionSecurity.title', {}, 'Position-terminal security floor') }}
+              </h2>
+            </CoarDivider>
+            <p class="section-description">
+              {{ t('admin.realmSettings.positionSecurity.hint', {}, 'Every activation method and terminal binding allowed by a position must provide all selected capabilities. Tightening is previewed before it takes effect.') }}
+            </p>
+            <div class="form-grid-2">
+              <div class="rounded border border-surface-200 p-3">
+                <h3 class="mb-3 text-sm font-semibold">
+                  {{ t('admin.realmSettings.positionSecurity.proofCapabilities', {}, 'Required proof capabilities') }}
+                </h3>
+                <div v-for="option in proofCapabilityOptions" :key="option.id" class="mb-3 flex items-start gap-2">
+                  <CoarCheckbox
+                    :model-value="positionSecurityForm.RequiredProofCapabilities.includes(option.id)"
+                    @update:model-value="(value) => setPositionCapability('RequiredProofCapabilities', option.id, !!value)" />
+                  <div>
+                    <div class="text-sm">{{ option.label }}</div>
+                    <div class="text-xs text-surface-500">{{ option.hint }}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="rounded border border-surface-200 p-3">
+                <h3 class="mb-3 text-sm font-semibold">
+                  {{ t('admin.realmSettings.positionSecurity.bindingCapabilities', {}, 'Required binding capabilities') }}
+                </h3>
+                <div v-for="option in bindingCapabilityOptions" :key="option.id" class="mb-3 flex items-start gap-2">
+                  <CoarCheckbox
+                    :model-value="positionSecurityForm.RequiredBindingCapabilities.includes(option.id)"
+                    @update:model-value="(value) => setPositionCapability('RequiredBindingCapabilities', option.id, !!value)" />
+                  <div>
+                    <div class="text-sm">{{ option.label }}</div>
+                    <div class="text-xs text-surface-500">{{ option.hint }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <CoarNotice variant="warning">
+              {{ t('admin.realmSettings.positionSecurity.warning', {}, 'A confirmed tightening ends affected staffing sessions immediately. Non-conforming slots cannot activate again until their position policy is corrected.') }}
+            </CoarNotice>
+          </section>
+
           <section class="settings-section">
             <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
               <h2 class="section-title">{{ t('admin.realmSettings.sections.rateLimits', {}, 'Authentication rate limits') }}</h2>

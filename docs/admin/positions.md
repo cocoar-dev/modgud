@@ -5,8 +5,8 @@
 
 A **position** is a business identity that changing people staff in shifts —
 "gate porter for customer XY", "reception HQ". Unlike a user or a service
-account, a position never owns credentials: its tokens are minted when an
-authorized person taps their passkey on an **enrolled shared terminal**.
+account, a position never signs in directly: its tokens are minted only after
+an allowed activation proof succeeds on an **enrolled shared terminal**.
 Downstream systems then see the POSITION as the actor (`sub` = the
 position), never the person — who tapped stays visible only to you, in the
 staffing-session audit view.
@@ -27,6 +27,12 @@ events) lives under
   namespace with user and service-account names.
 - **Terminal use** — off by default. Terminal slots can only be created
   and enrolled while this is on.
+- **Activation proofs** — one or more of personal passkey, personal password,
+  personal e-mail OTP, or a position-owned activation token. Team secret is a
+  reserved wire ID and is not selectable yet.
+- **Device bindings** — one or more of DPoP, client secret, or no binding.
+  DPoP is the recommended default; the weaker choices are explicit policy
+  decisions and may be forbidden by the realm security floor.
 - **Staffing session (minutes)** — how long one shift lives (default
   960 = 16 h). **Absolute maximum** — the hard ceiling no refresh can
   extend past (default 1440 = 24 h). Access tokens stay short-lived
@@ -48,10 +54,11 @@ staff this position". One live grant per (position, user); grants are
 suspend-/resume-/revocable, revoke is final (re-authorizing later creates
 a fresh grant with its own audit trail).
 
-Watch the **"No passkey" badge**: staffing happens by passkey tap, so a
-grantee without a passkey under the terminals' RP-ID cannot actually
-activate the position. Have them register a passkey in their account
-settings first.
+The **"No passkey" badge** matters when `personal-passkey` is enabled. A user
+may still activate with password or e-mail OTP when the position permits that
+method. Password and OTP failures are locked per grant as well as rate-limited
+per source IP; changing/resetting the password or disabling e-mail OTP ends
+sessions established with that proof.
 
 Suspending or revoking a grant **immediately ends** that person's running
 staffing sessions and revokes the session tokens.
@@ -60,9 +67,15 @@ staffing sessions and revokes the session tokens.
 
 **Position detail → Terminals** (or the same tab while creating the
 position). One slot per physical device.
-Each slot atomically creates its own locked-down OAuth client (public,
-no secret, DPoP mandatory, reference tokens — the generic OAuth admin
-surface is read-only for it).
+Each slot atomically creates its own locked-down OAuth client (reference
+tokens; the generic OAuth admin surface is read-only for it). The selected
+binding fixes the client profile:
+
+| Binding | Client | Device identity |
+|---|---|---|
+| `dpop` | public, no secret | enrolled P-256 key; DPoP required |
+| `client-secret` | confidential | one-time-displayed secret |
+| `none` | public, no secret | no cryptographic device identity |
 
 - **WebAuthn RP ID** — the domain staff passkeys verify against. Use ONE
   RP-ID for all terminals of the consuming app, so a staff passkey works
@@ -70,47 +83,73 @@ surface is read-only for it).
   RP-ID and the field locks — staff passkeys hang off the RP-ID, so only a
   matching RP-ID lets the already-enrolled tokens unlock a new terminal.
 - The slot view shows the **`client_id`** and the slot id — hand both to
-  whoever installs the terminal device.
+  whoever installs the terminal device. For `client-secret`, copy the secret
+  immediately; it is never returned again.
+- A new slot can be assigned to several compatible positions before
+  enrollment. One terminal may then staff any of them, but still runs only one
+  staffing session at a time. Removing an assignment is immediate. Adding an
+  assignment after enrollment is intentionally rejected: create a replacement
+  multi-position slot and run Device Flow again.
 
 ### How terminal clients appear elsewhere
 
-The position modal is the **only UI** that creates and manages terminal
-clients — deliberately: a terminal client is the technical footprint of a
-slot, not a configurable OAuth client. In the **OAuth Clients grid** they
-stay visible as inventory (the Terminal column names the owning position,
-so the device fleet is countable at a glance), but they are read-only
-there: opening one deep-links into the position modal instead — the same
-rule SA-managed clients follow with the Service-Account editor.
+There are two equivalent UI entry points for creating a terminal slot:
 
-For automation, the admin **API** also accepts the client-side create
-(`POST /api/admin/oauth/clients` with the staffing grant): reference an
-existing position (`LinkedPositionPrincipalId`) or inline-create one
-(`NewPosition`) — never both, mirroring the `client_credentials` ⇔
-service-account rule. Position (if new), slot, and client land in one
-atomic save; the profile is **fixed server-side** (public, secretless,
-DPoP mandatory, reference tokens, exactly device_code + refresh_token +
-staffing), the `client_id` is generated (`{position}.terminal.{suffix}`),
-and the call needs `position:write` in addition to `oauth-client:write`.
+- **Position detail → Terminals** starts with the business position and adds
+  one or more slots.
+- **OAuth Clients → Create → staffing** starts with the technical client. As
+  with `client_credentials` and Service Accounts, you then choose an existing
+  Position or draft a new one in the same dialog.
+
+Selecting `staffing` is a **terminal profile**, not a freely combinable grant.
+The dialog replaces the grant selection with the fixed package `device_code +
+refresh_token + staffing`; browser login, native-login and
+`client_credentials` grants cannot be added. Position (if new), slot, and
+client land in one atomic save. The server derives the remaining OAuth profile
+from the chosen binding (reference tokens; public + DPoP, confidential + client
+secret, or public + no binding) and generates the `client_id`
+(`terminal.{suffix}`).
+
+After creation, terminal clients stay visible in the **OAuth Clients grid** as
+inventory. Their lifecycle is managed from the Position detail, so opening an
+existing terminal client is read-only and links back to its slot — the same
+ownership rule that SA-managed clients follow with the Service-Account editor.
+
+For automation, the same contract is available through
+`POST /api/admin/oauth/clients`: reference an existing position
+(`LinkedPositionPrincipalId`) or inline-create one (`NewPosition`) — never
+both. The call needs `position:write` in addition to `oauth-client:write`.
 
 ## 4. Approve the enrollment
 
-The device starts its enrollment and shows a **user code** plus a
-**device-key fingerprint** (`XXXX-XXXX`). Open the verification link (or
-enter the code at `/device`), and you'll see the terminal consent:
-position, terminal, location, client, and the fingerprint of the key that
-made the request.
+Every binding uses the complete RFC 8628 Device Flow and explicit admin
+approval. The device starts enrollment and shows a **user code**. Open the
+verification link (or enter the code at `/device`) to see position(s), terminal,
+location, client, and binding.
 
-**Compare the fingerprint with what the device shows** — that is the
-whole point of the ceremony: you are permanently binding THIS device's
-key to the slot. Approving requires the `position-terminal:enroll`
+For DPoP, also compare the **device-key fingerprint** (`XXXX-XXXX`) with the
+device display before approving; the enrollment pins that key permanently.
+For client-secret, the device authenticates with its one-time secret. With no
+binding, approval is the sole issuance barrier and the consent highlights that
+risk. Approving requires the `position-terminal:enroll`
 permission (deliberately separate from `position:write` — registering a
 physical device is a higher-trust act).
 
-Enrollment is one-shot: an enrolled slot can never be re-enrolled with a
-different key. Device replaced or key lost? Revoke the slot and create a
-fresh one.
+Enrollment is one-shot for every binding. Device replaced, key/secret lost,
+or positions added? Revoke the slot and create a fresh one.
 
-## 5. Monitor & intervene
+## 5. Position-owned activation tokens
+
+**Position detail → Activation tokens.** A logical token can be assigned to
+one or more positions, disabled/reactivated, or permanently revoked. Its
+WebAuthn credential is registered from an enrolled terminal so browser origin
+and terminal RP-ID match. The credential is therefore RP-bound; register the
+same logical token separately for each consuming RP where it must work.
+
+The staffing audit records the logical token and credential, not a person.
+Unassigning or revoking it immediately ends every session established with it.
+
+## 6. Monitor & intervene
 
 **Position detail → Staffing sessions** (requires
 `staffing-session:read`): every shift with terminal, **who
@@ -126,7 +165,9 @@ events), start, absolute end, and the end reason.
   also deletes the slot's OAuth client.
 - Everything cascades automatically: deactivating the position, binning
   the user, deleting the used passkey, or revoking the grant all end the
-  affected sessions immediately. Expired sessions are swept by the
+  affected sessions immediately. The same applies to password/OTP changes,
+  activation-token invalidation, policy tightening, or removing a terminal's
+  position assignment. Expired sessions are swept by the
   `staffing-sweep` system job (every 5 minutes).
 
 ## Permissions reference

@@ -14,9 +14,9 @@ namespace Modgud.Api.Tests.Positions;
 
 /// <summary>
 /// MG-FT-03 — terminal slots: a slot create commits enrollment + its
-/// terminal-managed public client atomically with the fixed profile (public,
-/// secretless, DPoP, reference tokens, RP-ID, exactly the three terminal
-/// grants); the generic OAuth admin surface is read-only for that client; and
+/// terminal-managed client atomically with its binding-specific fixed profile
+/// (DPoP, ClientSecret, or None; reference tokens, RP-ID, and exact grants);
+/// the generic OAuth admin surface is read-only for that client; and
 /// the Pending/Disabled/Revoked lifecycle is idempotent with revoked terminal.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
@@ -61,7 +61,7 @@ public class PositionTerminalTests : IntegrationTestBase
 
         Assert.Equal(TerminalEnrollmentStatus.Pending, terminal.Status);
         Assert.False(terminal.Enrolled);
-        Assert.StartsWith("fn-slot.terminal.", terminal.ClientId);
+        Assert.StartsWith("terminal.", terminal.ClientId);
         Assert.Equal(RpId, terminal.WebAuthnRpId);
 
         using var scope = Factory.Services.CreateScope();
@@ -72,7 +72,7 @@ public class PositionTerminalTests : IntegrationTestBase
 
         // The fixed terminal profile, field by field.
         Assert.Equal("public", client.ClientType);
-        Assert.Equal(new ShortGuid(terminal.PositionId).Guid, client.LinkedPositionPrincipalId);
+        Assert.Null(client.LinkedPositionPrincipalId);
         Assert.Equal(new ShortGuid(terminal.Id).Guid, client.ManagedTerminalEnrollmentId);
         Assert.Null(client.LinkedServiceAccountId);
         Assert.Equal(AccessTokenType.Reference.ToString(), client.Settings[OAuthApplicationSettingKeys.AccessTokenType]);
@@ -165,6 +165,63 @@ public class PositionTerminalTests : IntegrationTestBase
         Assert.NotEqual(left.ClientId, right.ClientId);
         var list = await Client.GetFromJsonAsync<List<TerminalDto>>($"/api/position/{fn}/terminals", JsonOptions, ct);
         Assert.Equal(2, list!.Count);
+    }
+
+    [Fact]
+    public async Task A_pending_terminal_can_be_shared_but_an_enrolled_terminal_cannot_gain_a_position()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var first = await CreatePositionAsync("fn-shared-a", terminalEnabled: true, ct);
+        var second = await CreatePositionAsync("fn-shared-b", terminalEnabled: true, ct);
+        var third = await CreatePositionAsync("fn-shared-c", terminalEnabled: true, ct);
+
+        var create = await Client.PostAsJsonAsync($"/api/position/{first}/terminals", new
+        {
+            DisplayName = "Shared",
+            Location = "Desk",
+            WebAuthnRpId = RpId,
+            AllowedPositionIds = new[] { first, second },
+        }, JsonOptions, ct);
+        Assert.True(create.IsSuccessStatusCode, await create.Content.ReadAsStringAsync(ct));
+        var terminal = (await create.Content.ReadFromJsonAsync<TerminalDto>(JsonOptions, ct))!;
+        Assert.Equal(
+            new[] { first, second }.OrderBy(x => x, StringComparer.Ordinal),
+            terminal.AllowedPositionIds.OrderBy(x => x, StringComparer.Ordinal));
+
+        var secondList = await Client.GetFromJsonAsync<List<TerminalDto>>(
+            $"/api/position/{second}/terminals", JsonOptions, ct);
+        Assert.Equal(terminal.Id, Assert.Single(secondList!).Id);
+
+        var remove = await Client.PutAsJsonAsync(
+            $"/api/position/{first}/terminals/{terminal.Id}/positions",
+            new { AllowedPositionIds = new[] { first } }, JsonOptions, ct);
+        Assert.True(remove.IsSuccessStatusCode, await remove.Content.ReadAsStringAsync(ct));
+        secondList = await Client.GetFromJsonAsync<List<TerminalDto>>(
+            $"/api/position/{second}/terminals", JsonOptions, ct);
+        Assert.Empty(secondList!);
+
+        var restore = await Client.PutAsJsonAsync(
+            $"/api/position/{first}/terminals/{terminal.Id}/positions",
+            new { AllowedPositionIds = new[] { first, second } }, JsonOptions, ct);
+        Assert.True(restore.IsSuccessStatusCode, await restore.Content.ReadAsStringAsync(ct));
+
+        // Enrollment fixes the approved position set. A later addition must
+        // create a new V2 slot rather than silently widening this device.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            var id = new ShortGuid(terminal.Id).Guid;
+            session.Events.Append(id, new TerminalEnrollmentEnrolled(
+                id, "test-jkt", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow));
+            await session.SaveChangesAsync(ct);
+        }
+
+        var widen = await Client.PutAsJsonAsync(
+            $"/api/position/{first}/terminals/{terminal.Id}/positions",
+            new { AllowedPositionIds = new[] { first, second, third } }, JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.Conflict, widen.StatusCode);
+        Assert.Contains("Terminal.ReenrollmentRequired", await widen.Content.ReadAsStringAsync(ct));
     }
 
     [Fact]

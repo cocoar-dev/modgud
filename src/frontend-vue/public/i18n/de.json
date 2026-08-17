@@ -33,6 +33,9 @@
     "active": "Aktiv",
     "enabled": "Aktiviert",
     "disabled": "Deaktiviert",
+    "disable": "Deaktivieren",
+    "reactivate": "Reaktivieren",
+    "revoke": "Widerrufen",
     "statusTag": {
       "active": "Aktiv",
       "inactive": "Inaktiv"
@@ -464,6 +467,7 @@
       "active": "Aktiv",
       "activeHint": "Deaktivieren widerruft sofort alle ausstehenden Tokens dieser Position; Besetzung und Enrollment bleiben bis zur Reaktivierung blockiert.",
       "createTitle": "Position anlegen",
+      "createTerminalPositionTitle": "Neue Position für Terminal",
       "editTitle": "Position",
       "section.basics": "Basis",
       "section.status": "Status",
@@ -471,6 +475,7 @@
       "tabs.general": "Allgemein",
       "tabs.terminals": "Terminals",
       "tabs.grants": "Berechtigte Benutzer",
+      "tabs.tokens": "Aktivierungs-Token",
       "tabs.sessions": "Schichten",
       "validation.incomplete": "Fehlende Angaben",
       "terminalsEnabled": "Terminal-Nutzung",
@@ -480,7 +485,25 @@
       "maxSessionLifetime": "Absolutes Maximum (Minuten)",
       "maxSessionLifetimeHint": "Die harte Obergrenze, über die auch ein Refresh nie hinaus verlängert (1440 = 24 Stunden).",
       "lifetimePositive": "Laufzeiten müssen positiv sein.",
-      "lifetimeCeiling": "Die Session-Laufzeit darf das absolute Maximum nicht überschreiten."
+      "lifetimeCeiling": "Die Session-Laufzeit darf das absolute Maximum nicht überschreiten.",
+      "activationProofRequired": "Mindestens einen Aktivierungsnachweis auswählen.",
+      "deviceBindingRequired": "Mindestens eine Gerätebindung auswählen.",
+      "activationProofs": "Erlaubte Aktivierungsnachweise",
+      "activationProofsHint": "Wie eine Person nachweist, dass sie diese Position aktivieren darf.",
+      "activationProof": {
+        "personalPasskey": "Persönlicher Passkey",
+        "personalPassword": "Persönliches Passwort",
+        "personalEmailOtp": "Persönlicher E-Mail-Einmalcode",
+        "positionToken": "Positions-Token",
+        "teamSecret": "Team-Secret"
+      },
+      "proofReserved": "Reserviert; noch nicht implementiert.",
+      "deviceBindings": "Erlaubte Gerätebindungen",
+      "deviceBindingsHint": "Die beim Anlegen eines Terminal-Slots unveränderbar gewählte Bindung.",
+      "availableInPhase": "Verfügbar in Phase {phase}.",
+      "realmFloor": "Realm-Mindeststandard",
+      "thisPosition": "Diese Position",
+      "policyConsequencesConfirm": "Diese Änderung betrifft {terminals} Terminal-Slots und beendet sofort {sessions} aktive Staffing-Sessions. Fortfahren?"
     },
     "positionGrants": {
       "sectionTitle": "Berechtigte Benutzer",
@@ -510,6 +533,21 @@
       "locationPlaceholder": "Tor 3, …",
       "rpId": "WebAuthn RP-ID",
       "rpIdHint": "Die RP-ID, gegen die Personal-Passkeys geprüft werden — üblicherweise für alle Terminals der konsumierenden App gleich.",
+      "binding": "Gerätebindung",
+      "bindingOption": {
+        "dpop": {
+          "label": "DPoP-Schlüssel",
+          "hint": "Geräteschlüssel und sendergebundene Tokens"
+        },
+        "clientSecret": {
+          "label": "Client-Secret",
+          "hint": "Vertraulicher Client mit einmalig sichtbarem Secret"
+        },
+        "none": {
+          "label": "Keine Gerätebindung",
+          "hint": "Nur Admin-Freigabe; keine nachweisbare Geräteidentität"
+        }
+      },
       "createButton": "Slot anlegen",
       "empty": "Noch keine Terminal-Slots.",
       "statusActive": "Aktiv",
@@ -520,7 +558,27 @@
       "reactivateButton": "Reaktivieren",
       "revokeButton": "Widerrufen",
       "revokeTitle": "Terminal widerrufen?",
-      "revokeConfirm": "Der Widerruf ist endgültig: das Gerät wird sofort abgeschnitten und braucht einen komplett neuen Slot (mit frischem Enrollment), um je zurückzukehren."
+      "revokeConfirm": "Der Widerruf ist endgültig: das Gerät wird sofort abgeschnitten und braucht einen komplett neuen Slot (mit frischem Enrollment), um je zurückzukehren.",
+      "allowedPositions": "Auf diesem Terminal verfügbare Positionen",
+      "allowedPositionsHint": "Wähle vor dem Enrollment alle kompatiblen Positionen. Eine weitere Position nachträglich hinzuzufügen erfordert einen neuen Terminal-Slot und eine neue Device-Flow-Freigabe.",
+      "noCompatibleAdditionalPositions": "Keine andere aktive Position erlaubt derzeit diese Gerätebindung.",
+      "noneWarning": "Ohne Bindung besitzt das Terminal keine nachweisbare Geräteidentität. Die Admin-Freigabe beim Enrollment ist die einzige Ausgabebarriere.",
+      "secretOnce": "Client-Secret jetzt kopieren — es wird nicht wieder angezeigt.",
+      "secretsOnce": "Position angelegt. Client-Secrets jetzt kopieren — sie werden nicht wieder angezeigt.",
+      "positions": "Position(en)",
+      "editPositions": "Positionen",
+      "enrolledAssignmentHint": "Dieses Terminal ist bereits enrollt. Bestehende Positionen können entfernt werden; eine weitere Position erfordert einen neu angelegten und enrollten Multi-Positions-Slot.",
+      "currentAssignment": "Zugeordnet"
+    },
+    "activationTokens": {
+      "registrationHint": "Lege das logische Token hier an und ordne es zu. Registriere seine WebAuthn-Credential von einem enrollten Terminal aus, damit die Registrierung den RP-kompatiblen Origin der Terminal-Anwendung verwendet.",
+      "label": "Token-Bezeichnung",
+      "create": "Token anlegen",
+      "empty": "Der Position sind noch keine eigenen Aktivierungs-Token zugeordnet.",
+      "notRegistered": "Noch an keiner RP registriert",
+      "revokeTitle": "Aktivierungs-Token widerrufen?",
+      "revokeConfirm": "Der Widerruf ist endgültig und beendet sofort alle Staffing-Sessions, die mit diesem Token aktiviert wurden.",
+      "token": "Token"
     },
     "staffingSessions": {
       "sectionTitle": "Staffing-Sessions",
@@ -543,7 +601,9 @@
         "passkeyDeleted": "Passkey gelöscht",
         "grantSuspended": "Berechtigung ausgesetzt",
         "grantRevoked": "Berechtigung widerrufen",
-        "clientDisabled": "OAuth-Client deaktiviert"
+        "clientDisabled": "OAuth-Client deaktiviert",
+        "policyTightened": "Sicherheitsrichtlinie verschärft",
+        "credentialInvalidated": "Aktivierungs-Credential ungültig geworden"
       }
     },
     "serviceAccountCredentials": {
@@ -1136,6 +1196,9 @@
       "webAuthnRpIdHint": "Optional. Eigene Relying-Party-Domain für native Passkeys dieser App (z. B. app.example.com). Leer = Realm-Domain. Achtung: Eine Änderung macht alle bereits registrierten Passkeys dieser App ungültig.",
       "clientSecret": "Client Secret (leer = generieren)",
       "clientSecretHint": "Leer lassen, um beim Erstellen ein starkes einmalig sichtbares Secret zu erzeugen.",
+      "position": "Zugehörige Position",
+      "position.placeholder": "Position wählen…",
+      "positionHint": "Wähle genau eine terminalfähige Position oder lege sie zusammen mit diesem Client neu an.",
       "enabled": "Aktiv",
       "redirectCount": "Redirects",
       "grantCount": "Grants",
@@ -1180,7 +1243,18 @@
         "noServiceAccount": "client_credentials benötigt einen Service Account.",
         "newServiceAccountNameRequired": "Für den neuen Service Account ist ein Account-Name erforderlich.",
         "newServiceAccountNameInvalid": "Der Account-Name des neuen Service Accounts ist ungültig.",
-        "noAuthorizationCodeRedirect": "authorization_code benötigt mindestens eine Redirect-URI."
+        "noAuthorizationCodeRedirect": "authorization_code benötigt mindestens eine Redirect-URI.",
+        "incompleteShort": "Konfiguration unvollständig ({count})",
+        "invalidTerminalGrants": "staffing kann nicht mit anderen Grants kombiniert werden. device_code und refresh_token werden beim Erstellen technisch ergänzt.",
+        "noPosition": "Das Terminalprofil benötigt eine bestehende oder neue Position.",
+        "noTerminalName": "Für den Terminal-Slot ist ein Anzeigename erforderlich.",
+        "noTerminalRpId": "Für Personal-Passkeys ist eine WebAuthn RP-ID erforderlich.",
+        "positionBindingMismatch": "Die gewählte Position erlaubt diese Gerätebindung nicht.",
+        "newPositionNameRequired": "Für die neue Position ist ein Account-Name erforderlich.",
+        "newPositionNameInvalid": "Der Account-Name der neuen Position ist ungültig.",
+        "newPositionTerminalsDisabled": "Bei der neuen Position muss die Terminal-Nutzung aktiviert sein.",
+        "newPositionBindingMismatch": "Die neue Position erlaubt die gewählte Gerätebindung nicht.",
+        "terminalBindingBelowRealmFloor": "Die Gerätebindung erfüllt die Sicherheitsvorgabe des Realms nicht."
       },
       "tabs": {
         "general": "Allgemein",
@@ -1194,6 +1268,7 @@
         "lifetimes": "Token-Laufzeiten",
         "tokensAndSessions": "Tokens & Sessions",
         "security": "Sicherheit",
+        "terminal": "Terminal",
         "dcr": "Registrierungs-Info"
       },
       "lifetimesHint": "Werte in Sekunden. Leer = Default des IdP.",
@@ -1244,6 +1319,8 @@
       "grantTypes.helpSpa": "SPA / Mobile",
       "grantTypes.helpMachine": "Server-zu-Server",
       "grantTypes.helpDevice": "TV / CLI / Gerät ohne Browser",
+      "grantTypes.helpTerminal": "Geteiltes Arbeitsplatz-Terminal",
+      "grantTypes.helpTerminalProfile": "staffing + Position; technische Grants werden automatisch ergänzt",
       "grantTypes.helpSelectionTitle": "Mehrfachauswahl",
       "grantTypes.helpMulti": "Strg/Cmd + Klick wählt einzelne Einträge.",
       "grantTypes.helpRange": "Shift + Klick wählt einen Bereich.",
@@ -1267,6 +1344,40 @@
       "newServiceAccount.noPurpose": "Kein Verwendungszweck angegeben",
       "newServiceAccount.useExisting": "Vorhandenen auswählen",
       "newServiceAccount.invalidName": "2–64 Zeichen; nur Kleinbuchstaben, Ziffern, Punkt, Bindestrich und Unterstrich.",
+      "newPosition.button": "Neu anlegen",
+      "newPosition.discard": "Verwerfen",
+      "newPosition.noPurpose": "Kein Verwendungszweck angegeben",
+      "terminal": {
+        "name": "Terminalname",
+        "nameHint": "Benennung des physischen Slots, z. B. „Tor links“.",
+        "location": "Standort",
+        "locationHint": "Optionale Ortsangabe für Administration und Audit.",
+        "rpId": "WebAuthn RP-ID",
+        "rpIdHint": "Hostname, gegen den die Passkeys des Personals geprüft werden.",
+        "rpIdCreateHint": "Für Staffing erforderlich. Diese RP-ID bindet die Personal-Passkeys an den angegebenen Host.",
+        "binding": "Gerätebindung",
+        "bindingHint": "Legt das unveränderbare Authentifizierungsprofil dieses Terminal-Slots fest.",
+        "atomicHintShort": "Position, Terminal-Slot und OAuth-Client werden gemeinsam erstellt.",
+        "atomicHint": "Die Anlage erfolgt atomar: Schlägt ein Teil fehl, wird nichts gespeichert.",
+        "bindingMismatchShort": "Die Gerätebindung passt nicht zur Position.",
+        "bindingMismatch": "Die gewählte Position erlaubt diese Gerätebindung nicht. Wähle eine andere Bindung oder passe die Position an.",
+        "noneWarningShort": "Keine Gerätebindung ausgewählt.",
+        "noneWarning": "Ohne Gerätebindung besitzt das Terminal keine nachweisbare Geräteidentität; die Admin-Freigabe ist dann die einzige Ausgabebarriere.",
+        "identityProfileNoticeShort": "Staffing legt Client-Typ und Aktivstatus fest.",
+        "identityProfileNotice": "Client ID und Display Name bleiben frei wählbar. Client-Typ und Aktivstatus werden aus Gerätebindung und Terminal-Lifecycle abgeleitet.",
+        "loginProfileNoticeShort": "Staffing verwendet implizite Zustimmung.",
+        "loginProfileNotice": "Die WebAuthn RP-ID bleibt konfigurierbar, weil sie festlegt, gegen welchen Host die Personal-Passkeys geprüft werden.",
+        "appsProfileNoticeShort": "Staffing-Clients haben keine App-Zuordnung.",
+        "appsProfileNotice": "Ihr fachlicher Besitzer ist der zugeordnete Terminal-Slot der Position.",
+        "scopesProfileNoticeShort": "Staffing-Clients haben keine frei wählbaren Scopes.",
+        "scopesProfileNotice": "Ihre Berechtigungen entstehen aus Position, Besetzung und Ziel-API.",
+        "urlsProfileNoticeShort": "Staffing benötigt keine Redirect- oder CORS-Adressen.",
+        "urlsProfileNotice": "Staffing nutzt den Device Flow. Redirect-, Post-Logout- und CORS-Adressen sind deshalb für dieses Clientprofil nicht konfigurierbar.",
+        "securityProfileNoticeShort": "Die Gerätebindung legt Secret und DPoP fest.",
+        "securityProfileNotice": "Secret- und DPoP-Einstellungen werden aus der Gerätebindung abgeleitet. Das Client-Secret wird bei Bedarf sicher vom Server erzeugt.",
+        "lifetimesProfileNoticeShort": "Staffing verwendet Reference-Tokens und geerbte Laufzeiten.",
+        "lifetimesProfileNotice": "Token- und Session-Laufzeiten werden aus den übergeordneten App-/Realm- und Positionsrichtlinien übernommen."
+      },
       "postLogoutRedirectUri": {
         "placeholder": "https://app.example.com/signout-callback-oidc"
       },
@@ -1716,6 +1827,36 @@
         "rotateConfirmMessage": "Ein frischer Schlüssel wird sofort aktiv. Der aktuelle Schlüssel wird in das 30-Tage-Overlap-Fenster stillgelegt. Das kann nicht rückgängig gemacht werden.",
         "rotated": "Signing-Schlüssel rotiert (neuer kid {kid}). Der bisherige Schlüssel bleibt während des Overlap-Fensters für laufende Tokens gültig."
       },
+      "positionSecurity": {
+        "title": "Sicherheits-Mindeststandard für Positions-Terminals",
+        "hint": "Jede von einer Position erlaubte Aktivierungsmethode und Terminal-Bindung muss alle ausgewählten Eigenschaften erfüllen. Eine Verschärfung wird vor dem Wirksamwerden mit ihren Folgen angezeigt.",
+        "proofCapabilities": "Erforderliche Eigenschaften des Aktivierungsnachweises",
+        "bindingCapabilities": "Erforderliche Eigenschaften der Gerätebindung",
+        "capability": {
+          "identifiedActor": {
+            "label": "Identifizierte Person",
+            "hint": "Die Aktivierung identifiziert eine konkrete Person."
+          },
+          "phishingResistant": {
+            "label": "Phishing-resistent",
+            "hint": "Der Nachweis widersteht Credential-Weitergabe und Phishing."
+          },
+          "individuallyRevocable": {
+            "label": "Einzeln widerrufbar",
+            "hint": "Die konkrete Aktivierungs-Credential kann eigenständig widerrufen werden."
+          },
+          "deviceIdentity": {
+            "label": "Geräteidentität",
+            "hint": "Das Terminal besitzt eine individuelle Geräteidentität."
+          },
+          "senderConstrained": {
+            "label": "Sendergebunden",
+            "hint": "Tokens können nur mit dem enrollten Sender-Schlüssel verwendet werden."
+          }
+        },
+        "warning": "Eine bestätigte Verschärfung beendet betroffene Staffing-Sessions sofort. Nicht konforme Slots können erst wieder aktiviert werden, wenn die Richtlinie ihrer Position korrigiert wurde.",
+        "confirm": "Dieser Mindeststandard macht {positions} Positionen und {terminals} Terminal-Slots nicht konform und beendet sofort {sessions} aktive Staffing-Sessions. Fortfahren?"
+      },
       "deletion": {
         "hint": "Steuert den Konto-Löschungs-Lebenszyklus dieses Realms. Selbst-Löschungen erhalten eine Karenzzeit, in der der Benutzer abbrechen kann; Admin-Löschungen landen im Papierkorb, der nach Ablauf der Aufbewahrung automatisch geleert wird.",
         "graceDays": "Karenzzeit Selbst-Löschung (Tage)",
@@ -1960,9 +2101,12 @@
       "terminal": "Terminal",
       "location": "Standort",
       "client": "OAuth-Client",
+      "binding": "Gerätebindung",
       "fingerprint": "Geräteschlüssel",
       "noKey": "fehlt",
       "warning": "Dieses Gerät wird dauerhaft als Terminal dieser Position registriert. Die Registrierung allein erlaubt noch keinen Alarmzugriff.",
+      "clientSecretHint": "Das Gerät authentifiziert sich mit seinem einmalig angezeigten Client-Secret. Die Freigabe bindet diesen Client trotzdem an den Terminal-Slot.",
+      "noneHint": "Dieses Terminal besitzt keine Geräteidentität. Die Admin-Freigabe ist die einzige Ausgabebarriere; schütze die Client ID und beschränke, wo das Control-Token verwendet werden darf.",
       "noKeyHint": "Die Geräte-Anfrage enthielt keinen Geräteschlüssel — die Registrierung wird abgelehnt. Starte die Registrierung auf dem Terminal neu.",
       "approve": "Terminal registrieren",
       "approvedTitle": "Terminal registriert",

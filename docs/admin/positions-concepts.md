@@ -84,13 +84,16 @@ moment, its own flow — and answers a different question.
 | Link | Question it answers | When & how |
 |---|---|---|
 | ① Person ↔ Position | **Who** may staff this post? | A simple list on the position ("authorized users"). Grant, suspend, revoke — takes effect immediately. |
-| ② Terminal ↔ Position | **Where** may this post be staffed? | Created when you add a terminal to the position. At its core an authorization: "the gate may be activated on this slot." |
-| ③ Device ↔ Terminal | **Which hardware** actually stands there? | At installation, exactly once. From then on exactly this device *is* "left terminal" — a replacement device needs a fresh slot. |
+| ② Terminal ↔ Position | **Where** may this post be staffed? | An authorization assignment. One terminal may carry several positions, selected for each shift. |
+| ③ Device ↔ Terminal | **Which hardware** actually stands there? | At installation, exactly once. DPoP pins a device key, client-secret identifies its holder, while `none` deliberately leaves this link unproven. |
 
 ::: tip Mnemonic
 Link ① says *who*, ② says *where*, ③ says *with what*. The daily unlock is
 not a fourth link — it is the moment all three are checked at once.
 :::
+
+The realm security floor decides how strong links ① and ③ must be. A weaker
+position policy cannot silently undercut that floor.
 
 > For engineers: ① is the *grant*, ② is the *terminal slot* with its
 > auto-created OAuth client, ③ is the *enrollment* (device key binding). The
@@ -152,13 +155,14 @@ in front of it.</p>
 
 ## A position never authenticates — it gets activated
 
-A position owns no credentials of its own (that is the difference to a
+A position has no login credential of its own (that is the difference to a
 [service account](/admin/service-accounts), which identifies *itself*, from
-anywhere). Every position token starts with someone — an authorized person —
-proving themselves **at an enrolled terminal**. The chain is strict:
+anywhere). Every position token starts with an allowed activation proof — a
+person proving themselves or a position-owned hardware token — **at an enrolled
+terminal**. The chain is strict:
 
 ```
-Position → terminal slot → enrolled device → unlock by an authorized person → session
+Position → terminal assignment → enrolled device → allowed activation proof → session
 ```
 
 No slot → no device → no unlock → never a token. A position without terminals
@@ -193,9 +197,10 @@ Who *actually clicked* the alarm at 07:15 is not recorded — if Anna was on a
 break and a colleague clicked, the log still shows Anna's shift. That is not a
 gap; it is the nature of every shared device. What the model guarantees:
 **only authorized people can unlock, and who unlocked is cleanly recorded.**
-Accountability is **session-level, not action-level**. If a use case ever
-needs per-action attribution, a step-up proof per critical action is the
-designed extension point — not a new system.
+Accountability is **session-level, not action-level**. For a critical action,
+the consumer can request a fresh step-up proof. Modgud then returns a separate
+access token valid for at most 60 seconds; it may be bound to an action and
+consumer nonce and is intended to be consumed once by `jti`.
 
 ## Which principal for which job?
 
@@ -210,30 +215,25 @@ person, the post, or the machine?"* One concept per answer, and no fourth is
 needed. (A **group** is none of the three — it distributes rights, it never
 acts.)
 
-## Where the model can go — design direction
+## Policy choices and guard rails
 
-::: warning Roadmap, not current behavior
-Today only the strictest configuration exists: personal passkey for the
-unlock, cryptographic device binding (DPoP) for the terminal. Everything in
-this section is the **accepted design direction** (ADR 0003) — implemented
-when a concrete consumer needs it.
-:::
+How people and devices prove themselves is a per-position policy. Multiple
+activation classes can be enabled together; DPoP + personal passkey remains
+the recommended default.
 
-The flows above are normative; **how** person and device prove themselves is
-planned to become per-position policy, chosen from a curated menu with the
-current behavior as the recommended default — and every downgrade shown as an
-explicit, informed operator decision:
-
-- **Unlock proof:** personal passkey *(default)* → personal PIN / password →
-  **position-owned tokens** (FIDO2 sticks registered on the *position*; the
-  customer hands them out, the audit says "unlocked with token #2", each
-  stick individually revocable) → shared team PIN *(weakest — the audit knows
-  no name)*. Multiple classes can be allowed at once on one position.
-- **Device binding:** DPoP key *(default)* → client secret (for devices that
-  cannot do DPoP) → none *(only defensible behind physical access control or
-  in test realms — there is no device identity left)*.
-- **Realm guard rails:** the realm sets minimum tiers ("production: nothing
-  below DPoP + personal proof"); a test realm may allow everything for POCs.
-- **Multi-position terminals:** one device serving several positions
-  ("reception" by day, "night gate" after hours) — the assignment is an
-  authorization, so it can be a list; still one active shift per terminal.
+- **Activation proof:** personal passkey, personal password, personal e-mail
+  OTP, or a **position-owned activation token**. The token is a logical,
+  individually revocable object with an RP-bound WebAuthn credential; the audit
+  names the token rather than a person. `team-secret` is reserved for a future
+  feature and is deliberately unavailable today.
+- **Device binding:** DPoP key, client secret, or none. Client-secret and none
+  still run the complete admin-approved Device Flow; `none` only removes a
+  cryptographic device identity and is appropriate only where the physical and
+  network controls justify it.
+- **Realm guard rails:** the realm declares required proof and binding
+  capabilities. Tightening a floor first previews affected positions and, when
+  confirmed, immediately ends sessions that no longer comply.
+- **Multi-position terminals:** one device may serve several positions
+  ("reception" by day, "night gate" after hours). New assignments are fixed
+  before enrollment; adding one later requires a replacement slot and fresh
+  approval. Exactly one active shift still exists per terminal.

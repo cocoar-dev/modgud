@@ -63,7 +63,8 @@ const positionNameById = computed(() => {
 })
 
 function positionNameFor(client: OAuthClientDto): string | null {
-  if (!client.LinkedPositionPrincipalId) return null
+  if (!client.LinkedPositionPrincipalId)
+    return client.ManagedTerminalEnrollmentId ? `Terminal ${client.ManagedTerminalEnrollmentId}` : null
   return positionNameById.value.get(client.LinkedPositionPrincipalId) ?? client.LinkedPositionPrincipalId
 }
 
@@ -185,6 +186,10 @@ function openClient(client: OAuthClientDto) {
   }
   if (client.LinkedPositionPrincipalId) {
     router.push(`/admin/positions#${client.LinkedPositionPrincipalId}`)
+    return
+  }
+  if (client.ManagedTerminalEnrollmentId) {
+    navigateToModal(client.Id)
     return
   }
   navigateToModal(client.Id)

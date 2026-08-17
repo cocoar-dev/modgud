@@ -95,6 +95,7 @@ public static class PasswordResetEndpoints
             ResetPasswordRequest request,
             UserManager<ApplicationUser> userManager,
             Modgud.Authentication.Sessions.IUserAccessRevoker accessRevoker,
+            Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker,
             IAuthSettings appSettings) =>
         {
             if (appSettings.AuthenticationMinimumLevel >= 2)
@@ -127,6 +128,9 @@ public static class PasswordResetEndpoints
             // live reference access token + session rows alive. Revoke everything.
             // (Anonymous request → no acting session to RefreshSignIn.)
             await accessRevoker.RevokeAllAccessAsync(user.Id, Modgud.Authentication.Sessions.AccessRevocationReason.ForceSignOut);
+            await staffingRevoker.EndAllForUserAsync(
+                user.Id,
+                Modgud.Domain.PositionTerminals.StaffingSessionEndReason.ActivationCredentialInvalidated);
 
             return Results.Ok(new { Message = "Passwort wurde erfolgreich zurückgesetzt." });
         })

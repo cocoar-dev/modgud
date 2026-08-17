@@ -18,6 +18,11 @@ public class PositionPrincipalDto
     public bool IsActive { get; set; } = true;
     public EntityStatus Status { get; set; } = EntityStatus.Active;
     public required PositionTerminalPolicyDto TerminalPolicy { get; set; }
+
+    /// <summary>Only populated by the create endpoint when terminal slots were
+    /// staged with the position. This is the sole response in which a generated
+    /// client secret can be returned; ordinary reads leave it null.</summary>
+    public IReadOnlyList<TerminalDto>? CreatedTerminals { get; set; }
 }
 
 /// <summary>
@@ -27,6 +32,8 @@ public class PositionPrincipalDto
 public class PositionTerminalPolicyDto
 {
     public bool Enabled { get; set; }
+    public IReadOnlyList<string> AllowedActivationProofs { get; set; } = [];
+    public IReadOnlyList<string> AllowedDeviceBindings { get; set; } = [];
     public int StaffingSessionLifetimeMinutes { get; set; }
     public int MaximumStaffingSessionLifetimeMinutes { get; set; }
 }
@@ -67,12 +74,22 @@ public class PositionUpdateDto
     public string? Purpose { get; set; }
     public bool? IsActive { get; set; }
     public PositionTerminalPolicyUpdateDto? TerminalPolicy { get; set; }
+    public bool ConfirmTerminalPolicyConsequences { get; set; }
 }
 
 /// <summary>Partial policy update — null fields keep the persisted value.</summary>
 public class PositionTerminalPolicyUpdateDto
 {
     public bool? Enabled { get; set; }
+    public IReadOnlyList<string>? AllowedActivationProofs { get; set; }
+    public IReadOnlyList<string>? AllowedDeviceBindings { get; set; }
     public int? StaffingSessionLifetimeMinutes { get; set; }
     public int? MaximumStaffingSessionLifetimeMinutes { get; set; }
+}
+
+public sealed record PositionTerminalPolicyConsequencesDto
+{
+    public IReadOnlyList<string> TerminalIds { get; init; } = [];
+    public IReadOnlyList<string> StaffingSessionIds { get; init; } = [];
+    public bool HasConsequences => TerminalIds.Count > 0 || StaffingSessionIds.Count > 0;
 }

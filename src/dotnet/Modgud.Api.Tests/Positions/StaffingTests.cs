@@ -6,15 +6,27 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using BuildingBlocks.Helper;
 using Marten;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
+using Modgud.Api.Features.Positions;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.Positions;
 using Modgud.Application.DTOs.User;
 using Modgud.Authentication.Domain;
+using Microsoft.AspNetCore.Identity;
 using Modgud.Domain.PositionTerminals;
+using Microsoft.Extensions.Options;
+using Modgud.Infrastructure.Email;
 using Modgud.Infrastructure.OpenIddict.Dpop;
+using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Infrastructure.Realms;
 using Microsoft.Extensions.DependencyInjection;
+using OpenIddict.Abstractions;
+using OpenIddict.Server;
+using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace Modgud.Api.Tests.Positions;
 
@@ -73,6 +85,9 @@ public class StaffingTests : IntegrationTestBase
         Assert.Equal(StaffingSessionStatus.Active, staffing.Status);
         Assert.Equal(setup.UserId, staffing.ActivatedByUserId);
         Assert.Equal(setup.PositionId, staffing.PositionPrincipalId);
+        Assert.Equal("personal-passkey", staffing.Evidence.MethodId);
+        Assert.Equal("dpop", staffing.Evidence.Binding);
+        Assert.Equal(setup.UserId, staffing.Evidence.UserId);
         Assert.Equal(setup.DeviceKey.Jkt, staffing.DpopJkt);
         Assert.False(string.IsNullOrEmpty(staffing.OAuthAuthorizationId));
         Assert.True(staffing.AbsoluteExpiresAt > DateTimeOffset.UtcNow.AddHours(15));
@@ -82,13 +97,585 @@ public class StaffingTests : IntegrationTestBase
 
         // Event-sourced: session stream = started; terminal stream gained the
         // activation event (created + enrolled + activated).
-        Assert.Single(await session.Events.FetchStreamAsync(staffing.Id, token: ct));
+        var staffingStream = await session.Events.FetchStreamAsync(staffing.Id, token: ct);
+        var started = Assert.IsType<StaffingSessionStartedV2>(Assert.Single(staffingStream).Data);
+        Assert.Equal(staffing.Evidence, started.Evidence);
         Assert.Equal(3, (await session.Events.FetchStreamAsync(setup.TerminalId, token: ct)).Count);
 
         // The ceremony is single-use — a replay of the same ceremony_id fails.
         var replay = await RedeemStaffingAsync(setup, begin.CeremonyId, assertion);
         Assert.False(replay.IsSuccessStatusCode);
         Assert.Contains("invalid_grant", await replay.Content.ReadAsStringAsync(ct));
+    }
+
+    [Theory]
+    [InlineData(DeviceBindingIds.ClientSecret)]
+    [InlineData(DeviceBindingIds.None)]
+    public async Task Weaker_terminal_bindings_can_staff_and_refresh_without_dpop(string binding)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync(
+            $"fn-staff-{binding}", ct, binding);
+
+        using var tokens = await TapAsync(setup, ct);
+        Assert.Equal("Bearer", tokens.RootElement.GetProperty("token_type").GetString());
+        var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(refreshToken));
+
+        var refresh = await PostTokenForBindingAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = refreshToken!,
+            ["client_id"] = setup.ClientId,
+        }, setup);
+        var refreshBody = await refresh.Content.ReadAsStringAsync(ct);
+        Assert.True(refresh.IsSuccessStatusCode,
+            $"{binding} refresh failed ({(int)refresh.StatusCode}): {refreshBody}");
+        using var refreshed = JsonDocument.Parse(refreshBody);
+        Assert.Equal("Bearer", refreshed.RootElement.GetProperty("token_type").GetString());
+
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+        var staffing = Assert.Single(await session.Query<StaffingSession>()
+            .Where(item => item.TerminalEnrollmentId == setup.TerminalId).ToListAsync(ct));
+        Assert.Equal(binding, staffing.Evidence.Binding);
+        Assert.Null(staffing.DpopJkt);
+    }
+
+    [Fact]
+    public async Task Legacy_v1_control_chain_survives_f4_until_the_terminal_assignment_is_widened()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-legacy-control", ct);
+
+        await RewriteAsLegacyControlTokenAsync(setup.EnrollmentAccessToken, setup.PositionId, ct);
+        await RewriteAsLegacyControlTokenAsync(setup.EnrollmentRefreshToken, setup.PositionId, ct);
+
+        // The pre-F4 chain remains usable while its original singleton
+        // position assignment has not changed.
+        var begin = await BeginStaffingAsync(setup, ct);
+        Assert.Equal(RpId, begin.Options.GetProperty("rpId").GetString());
+        var refresh = await PostTokenAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = setup.EnrollmentRefreshToken,
+            ["client_id"] = setup.ClientId,
+        }, setup.DeviceKey);
+        var refreshBody = await refresh.Content.ReadAsStringAsync(ct);
+        Assert.True(refresh.IsSuccessStatusCode, refreshBody);
+        using var refreshed = JsonDocument.Parse(refreshBody);
+        var refreshedAccessToken = refreshed.RootElement.GetProperty("access_token").GetString()!;
+        var refreshedRefreshToken = refreshed.RootElement.GetProperty("refresh_token").GetString()!;
+        await AssertLegacyControlTokenAsync(refreshedAccessToken, setup.PositionId, setup.TerminalId, ct);
+
+        var secondResponse = await Client.PostAsJsonAsync("/api/position", new
+        {
+            AccountName = "fn-legacy-control-second",
+            TerminalPolicy = new { Enabled = true },
+        }, JsonOptions, ct);
+        Assert.True(secondResponse.IsSuccessStatusCode, await secondResponse.Content.ReadAsStringAsync(ct));
+        var secondPositionId = new ShortGuid(
+            (await secondResponse.Content.ReadFromJsonAsync<PositionPrincipalDto>(JsonOptions, ct))!.Id).Guid;
+
+        // Public administration requires a fresh slot for this operation. The
+        // event simulates an upgraded data set whose assignment has already
+        // been widened, so both legacy-token entry points must still fail shut.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var docs = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            docs.Events.Append(setup.TerminalId, new TerminalAllowedPositionsChanged(
+                setup.TerminalId, [setup.PositionId, secondPositionId], Guid.NewGuid(), DateTimeOffset.UtcNow));
+            await docs.SaveChangesAsync(ct);
+        }
+
+        var rejectedBegin = new HttpRequestMessage(HttpMethod.Post, "/connect/staffing/begin");
+        rejectedBegin.Headers.Authorization = new AuthenticationHeaderValue("Bearer", refreshedAccessToken);
+        rejectedBegin.Headers.Add(DpopConstants.HeaderName, setup.DeviceKey.CreateProof(
+            "POST", BeginEndpoint, DateTimeOffset.UtcNow, refreshedAccessToken));
+        var rejectedBeginResponse = await Factory.CreateClient().SendAsync(rejectedBegin, ct);
+        Assert.Equal(HttpStatusCode.Forbidden, rejectedBeginResponse.StatusCode);
+        Assert.Contains("Staffing.LegacyControlToken",
+            await rejectedBeginResponse.Content.ReadAsStringAsync(ct));
+
+        var rejectedRefresh = await PostTokenAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = refreshedRefreshToken,
+            ["client_id"] = setup.ClientId,
+        }, setup.DeviceKey);
+        Assert.False(rejectedRefresh.IsSuccessStatusCode);
+        Assert.Contains("requires re-enrollment",
+            await rejectedRefresh.Content.ReadAsStringAsync(ct), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Step_up_is_session_bound_action_bound_short_lived_and_cannot_widen_scopes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-step-up", ct);
+
+        using var staffingTokens = await TapAsync(setup, ct, signCount: 1);
+        var staffingAccessToken = staffingTokens.RootElement.GetProperty("access_token").GetString()!;
+
+        const string action = "alarm:acknowledge";
+        const string nonce = "operation-123";
+        var stepUpUrl = $"/connect/staffing/{setup.TerminalId}/step-up";
+        var beginRequest = new HttpRequestMessage(HttpMethod.Post, stepUpUrl)
+        {
+            Content = JsonContent.Create(new
+            {
+                MethodId = ActivationProofMethodIds.PersonalPasskey,
+                Action = action,
+                Nonce = nonce,
+            }),
+        };
+        beginRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", staffingAccessToken);
+        beginRequest.Headers.Add(DpopConstants.HeaderName, setup.DeviceKey.CreateProof(
+            "POST", $"http://localhost{stepUpUrl}", DateTimeOffset.UtcNow, staffingAccessToken));
+        var beginResponse = await Factory.CreateClient().SendAsync(beginRequest, ct);
+        var beginBody = await beginResponse.Content.ReadAsStringAsync(ct);
+        Assert.True(beginResponse.IsSuccessStatusCode, beginBody);
+        using var begin = JsonDocument.Parse(beginBody);
+        var ceremonyId = begin.RootElement.GetProperty("ceremonyId").GetString()!;
+        var publicKey = begin.RootElement.GetProperty("publicKey");
+        var assertion = setup.Authenticator.CreateAssertionJson(
+            publicKey.GetProperty("challenge").GetString()!, RpId, $"https://{RpId}", signCount: 2);
+
+        var form = StaffingForm(setup.ClientId, ceremonyId, assertion);
+        form["step_up"] = "true";
+        // Adversarial input: the exchange must ignore request scopes and use
+        // the scope snapshot pinned from the current staffing session.
+        form["scope"] = Scopes.OfflineAccess;
+        var response = await PostTokenAsync(form, setup.DeviceKey);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        Assert.True(response.IsSuccessStatusCode, body);
+        using var tokens = JsonDocument.Parse(body);
+        Assert.Equal("DPoP", tokens.RootElement.GetProperty("token_type").GetString());
+        Assert.False(tokens.RootElement.TryGetProperty("refresh_token", out _));
+
+        var accessToken = tokens.RootElement.GetProperty("access_token").GetString()!;
+        using var scope = Factory.Services.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictTokenManager>();
+        var token = await manager.FindByReferenceIdAsync(accessToken, ct);
+        Assert.NotNull(token);
+        var payload = await manager.GetPayloadAsync(token!, ct);
+        Assert.False(string.IsNullOrWhiteSpace(payload));
+        var jwt = new JsonWebToken(payload);
+        Assert.Equal(PositionTokenUses.StaffingStepUp,
+            jwt.GetClaim(PositionTokenClaimTypes.TokenUse).Value);
+        Assert.Equal(PositionAuthenticationContextReferences.StaffingStepUp,
+            jwt.GetClaim(Claims.AuthenticationContextReference).Value);
+        Assert.Equal(action, jwt.GetClaim(PositionTokenClaimTypes.StepUpAction).Value);
+        Assert.Equal(nonce, jwt.GetClaim(PositionTokenClaimTypes.StepUpNonce).Value);
+        Assert.Equal(setup.PositionId.ToString(), jwt.GetClaim(Claims.Subject).Value);
+        Assert.Equal(setup.TerminalId.ToString(),
+            jwt.GetClaim(PositionTokenClaimTypes.TerminalId).Value);
+        Assert.Equal(ActivationProofMethodIds.PersonalPasskey,
+            jwt.GetClaim(PositionTokenClaimTypes.ActivationProof).Value);
+        Assert.DoesNotContain(jwt.Claims,
+            claim => claim.Type == Claims.Scope && claim.Value.Contains(Scopes.OfflineAccess, StringComparison.Ordinal));
+        var creationDate = await manager.GetCreationDateAsync(token!, ct);
+        var expirationDate = await manager.GetExpirationDateAsync(token!, ct);
+        Assert.NotNull(creationDate);
+        Assert.NotNull(expirationDate);
+        Assert.InRange(expirationDate!.Value - creationDate!.Value,
+            TimeSpan.Zero, TimeSpan.FromSeconds(60));
+    }
+
+    [Fact]
+    public async Task Multi_position_candidates_are_disclosed_only_after_proof_and_selection_is_single_use()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-proof-first-a", ct);
+
+        var secondResponse = await Client.PostAsJsonAsync("/api/position", new
+        {
+            AccountName = "fn-proof-first-b",
+            DisplayName = "Proof-only position B",
+            TerminalPolicy = new { Enabled = true },
+        }, JsonOptions, ct);
+        Assert.True(secondResponse.IsSuccessStatusCode, await secondResponse.Content.ReadAsStringAsync(ct));
+        var second = new ShortGuid(
+            (await secondResponse.Content.ReadFromJsonAsync<PositionPrincipalDto>(JsonOptions, ct))!.Id).Guid;
+        var secondGrant = await Client.PostAsJsonAsync($"/api/position/{new ShortGuid(second)}/grants",
+            new { UserId = new ShortGuid(setup.UserId).ToString() }, JsonOptions, ct);
+        Assert.True(secondGrant.IsSuccessStatusCode, await secondGrant.Content.ReadAsStringAsync(ct));
+
+        // This test shortcut projects the assignment as if both positions had
+        // been selected before enrollment. The public API separately verifies
+        // that an active slot cannot be widened without re-enrollment.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var docs = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            docs.Events.Append(setup.TerminalId, new TerminalAllowedPositionsChanged(
+                setup.TerminalId, [setup.PositionId, second], Guid.NewGuid(), DateTimeOffset.UtcNow));
+            await docs.SaveChangesAsync(ct);
+        }
+
+        var bypassRequest = new HttpRequestMessage(HttpMethod.Post, "/connect/staffing/begin")
+        {
+            Content = JsonContent.Create(new { PositionId = new ShortGuid(second).ToString() }),
+        };
+        bypassRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", setup.EnrollmentAccessToken);
+        bypassRequest.Headers.Add(DpopConstants.HeaderName, setup.DeviceKey.CreateProof(
+            "POST", BeginEndpoint, DateTimeOffset.UtcNow, setup.EnrollmentAccessToken));
+        var bypass = await Factory.CreateClient().SendAsync(bypassRequest, ct);
+        Assert.Equal(HttpStatusCode.Forbidden, bypass.StatusCode);
+        Assert.Contains("Staffing.ProofRequiredBeforeSelection", await bypass.Content.ReadAsStringAsync(ct));
+
+        var beginRequest = new HttpRequestMessage(HttpMethod.Post, "/connect/staffing/begin");
+        beginRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", setup.EnrollmentAccessToken);
+        beginRequest.Headers.Add(DpopConstants.HeaderName, setup.DeviceKey.CreateProof(
+            "POST", BeginEndpoint, DateTimeOffset.UtcNow, setup.EnrollmentAccessToken));
+        var beginResponse = await Factory.CreateClient().SendAsync(beginRequest, ct);
+        var beginBody = await beginResponse.Content.ReadAsStringAsync(ct);
+        Assert.True(beginResponse.IsSuccessStatusCode, beginBody);
+        Assert.DoesNotContain(new ShortGuid(setup.PositionId).ToString(), beginBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(new ShortGuid(second).ToString(), beginBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Proof-only position B", beginBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("selectionRequired", beginBody, StringComparison.OrdinalIgnoreCase);
+        using var begin = JsonDocument.Parse(beginBody);
+        var initialCeremony = begin.RootElement.GetProperty("ceremonyId").GetString()!;
+        var publicKey = begin.RootElement.GetProperty("publicKey");
+        var assertion = setup.Authenticator.CreateAssertionJson(
+            publicKey.GetProperty("challenge").GetString()!, RpId, $"https://{RpId}", signCount: 1);
+
+        var proofResponse = await PostTokenAsync(
+            StaffingForm(setup.ClientId, initialCeremony, assertion), setup.DeviceKey);
+        var proofBody = await proofResponse.Content.ReadAsStringAsync(ct);
+        Assert.True(proofResponse.IsSuccessStatusCode, proofBody);
+        using var proof = JsonDocument.Parse(proofBody);
+        Assert.True(proof.RootElement.TryGetProperty("selectionRequired", out var selectionRequired), proofBody);
+        Assert.True(selectionRequired.GetBoolean());
+        var continuation = proof.RootElement.GetProperty("ceremonyId").GetString()!;
+        var candidates = proof.RootElement.GetProperty("candidates").EnumerateArray().ToArray();
+        Assert.Equal(2, candidates.Length);
+        Assert.Contains(candidates,
+            candidate => candidate.GetProperty("id").GetString() == new ShortGuid(setup.PositionId).ToString());
+        Assert.Contains(candidates,
+            candidate => candidate.GetProperty("id").GetString() == new ShortGuid(second).ToString());
+
+        var selectionForm = new Dictionary<string, string>
+        {
+            ["grant_type"] = PositionGrantTypes.StaffingSession,
+            ["client_id"] = setup.ClientId,
+            ["ceremony_id"] = continuation,
+            ["position_id"] = new ShortGuid(second).ToString(),
+        };
+        var selection = await PostTokenAsync(selectionForm, setup.DeviceKey);
+        Assert.True(selection.IsSuccessStatusCode, await selection.Content.ReadAsStringAsync(ct));
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var query = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            var staffing = Assert.Single(await query.Query<StaffingSession>()
+                .Where(item => item.TerminalEnrollmentId == setup.TerminalId).ToListAsync(ct));
+            Assert.Equal(second, staffing.PositionPrincipalId);
+            Assert.Equal(setup.UserId, staffing.Evidence.UserId);
+        }
+
+        var replay = await PostTokenAsync(selectionForm, setup.DeviceKey);
+        Assert.False(replay.IsSuccessStatusCode);
+        Assert.Contains("invalid_grant", await replay.Content.ReadAsStringAsync(ct));
+    }
+
+    [Fact]
+    public async Task Password_activation_records_method_evidence_and_refresh_revalidates_its_credential_version()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-password", ct);
+        const string password = "PositionPass1234!";
+        string accountName;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var user = await users.FindByIdAsync(setup.UserId.ToString());
+            Assert.NotNull(user);
+            Assert.True((await users.AddPasswordAsync(user!, password)).Succeeded);
+            accountName = user!.UserName!;
+        }
+
+        var policy = await Client.PutAsJsonAsync($"/api/position/{new ShortGuid(setup.PositionId)}", new
+        {
+            TerminalPolicy = new
+            {
+                AllowedActivationProofs = new[] { ActivationProofMethodIds.PersonalPassword },
+            },
+        }, JsonOptions, ct);
+        Assert.True(policy.IsSuccessStatusCode, await policy.Content.ReadAsStringAsync(ct));
+
+        var begin = new HttpRequestMessage(HttpMethod.Post, "/connect/staffing/begin")
+        {
+            Content = JsonContent.Create(new
+            {
+                MethodId = ActivationProofMethodIds.PersonalPassword,
+                AccountName = accountName,
+            }),
+        };
+        begin.Headers.Authorization = new AuthenticationHeaderValue("Bearer", setup.EnrollmentAccessToken);
+        begin.Headers.Add(DpopConstants.HeaderName,
+            setup.DeviceKey.CreateProof("POST", BeginEndpoint, DateTimeOffset.UtcNow, setup.EnrollmentAccessToken));
+        var beginResponse = await Factory.CreateClient().SendAsync(begin, ct);
+        var beginBody = await beginResponse.Content.ReadAsStringAsync(ct);
+        Assert.True(beginResponse.IsSuccessStatusCode, beginBody);
+        using var challenge = JsonDocument.Parse(beginBody);
+        Assert.Equal(ActivationProofMethodIds.PersonalPassword,
+            challenge.RootElement.GetProperty("methodId").GetString());
+        var ceremonyId = challenge.RootElement.GetProperty("ceremonyId").GetString()!;
+
+        var redeem = await PostTokenAsync(StaffingForm(
+            setup.ClientId, ceremonyId, JsonSerializer.Serialize(new { password })), setup.DeviceKey);
+        var redeemBody = await redeem.Content.ReadAsStringAsync(ct);
+        Assert.True(redeem.IsSuccessStatusCode, redeemBody);
+        using var tokens = JsonDocument.Parse(redeemBody);
+        var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            var staffing = Assert.Single(await session.Query<StaffingSession>()
+                .Where(s => s.TerminalEnrollmentId == setup.TerminalId).ToListAsync(ct));
+            Assert.Equal(ActivationProofMethodIds.PersonalPassword, staffing.Evidence.MethodId);
+            Assert.Equal(setup.UserId, staffing.Evidence.UserId);
+            Assert.Equal(new ShortGuid(setup.GrantId).Guid, staffing.Evidence.GrantId);
+            Assert.NotNull(staffing.Evidence.CredentialId);
+        }
+
+        // A password reset/change rotates the security stamp. Even if an
+        // immediate lifecycle hook were missed, refresh must fail closed.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var user = await users.FindByIdAsync(setup.UserId.ToString());
+            Assert.True((await users.UpdateSecurityStampAsync(user!)).Succeeded);
+        }
+
+        var staleRefresh = await PostTokenAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = refreshToken,
+            ["client_id"] = setup.ClientId,
+        }, setup.DeviceKey);
+        Assert.False(staleRefresh.IsSuccessStatusCode);
+        await AssertSessionEndedAsync(
+            setup.TerminalId, StaffingSessionEndReason.ActivationCredentialInvalidated, ct);
+    }
+
+    [Fact]
+    public async Task Email_otp_activation_opens_a_session_and_refresh_revalidates_the_method()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        const string accountName = "fn-email-otp";
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync(accountName, ct);
+        string loginName;
+        string email;
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var user = await users.FindByIdAsync(setup.UserId.ToString());
+            Assert.NotNull(user);
+            user!.EmailOtpEnabled = true;
+            user.EmailConfirmed = true;
+            Assert.True((await users.UpdateAsync(user)).Succeeded);
+            loginName = user.UserName!;
+            email = user.Email!;
+        }
+
+        var policy = await Client.PutAsJsonAsync($"/api/position/{new ShortGuid(setup.PositionId)}", new
+        {
+            TerminalPolicy = new
+            {
+                AllowedActivationProofs = new[] { ActivationProofMethodIds.PersonalEmailOtp },
+            },
+        }, JsonOptions, ct);
+        Assert.True(policy.IsSuccessStatusCode, await policy.Content.ReadAsStringAsync(ct));
+
+        var begin = new HttpRequestMessage(HttpMethod.Post, "/connect/staffing/begin")
+        {
+            Content = JsonContent.Create(new
+            {
+                MethodId = ActivationProofMethodIds.PersonalEmailOtp,
+                AccountName = loginName,
+            }),
+        };
+        begin.Headers.Authorization = new AuthenticationHeaderValue("Bearer", setup.EnrollmentAccessToken);
+        begin.Headers.Add(DpopConstants.HeaderName,
+            setup.DeviceKey.CreateProof("POST", BeginEndpoint, DateTimeOffset.UtcNow, setup.EnrollmentAccessToken));
+        var beginResponse = await Factory.CreateClient().SendAsync(begin, ct);
+        var beginBody = await beginResponse.Content.ReadAsStringAsync(ct);
+        Assert.True(beginResponse.IsSuccessStatusCode, beginBody);
+        using var challenge = JsonDocument.Parse(beginBody);
+        Assert.Equal(ActivationProofMethodIds.PersonalEmailOtp,
+            challenge.RootElement.GetProperty("methodId").GetString());
+        var ceremonyId = challenge.RootElement.GetProperty("ceremonyId").GetString()!;
+
+        var mailbox = Factory.Services.GetRequiredService<InMemoryEmailService>();
+        var message = mailbox.GetLastEmailTo(email);
+        Assert.NotNull(message);
+        var match = System.Text.RegularExpressions.Regex.Match(message!.HtmlBody, @"(\d{6})");
+        Assert.True(match.Success, "No six-digit staffing OTP was found in the captured e-mail.");
+
+        var redeem = await PostTokenAsync(StaffingForm(setup.ClientId, ceremonyId,
+            JsonSerializer.Serialize(new { code = match.Groups[1].Value })), setup.DeviceKey);
+        var redeemBody = await redeem.Content.ReadAsStringAsync(ct);
+        Assert.True(redeem.IsSuccessStatusCode, redeemBody);
+        using var tokens = JsonDocument.Parse(redeemBody);
+        var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            var staffing = Assert.Single(await session.Query<StaffingSession>()
+                .Where(item => item.TerminalEnrollmentId == setup.TerminalId).ToListAsync(ct));
+            Assert.Equal(ActivationProofMethodIds.PersonalEmailOtp, staffing.Evidence.MethodId);
+            Assert.Equal(setup.UserId, staffing.Evidence.UserId);
+            Assert.Equal(new ShortGuid(setup.GrantId).Guid, staffing.Evidence.GrantId);
+        }
+
+        // Even if an immediate invalidation hook were ever missed, refresh
+        // must fail closed after the user disables this activation method.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var user = await users.FindByIdAsync(setup.UserId.ToString());
+            user!.EmailOtpEnabled = false;
+            Assert.True((await users.UpdateAsync(user)).Succeeded);
+        }
+
+        var staleRefresh = await PostTokenAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = refreshToken,
+            ["client_id"] = setup.ClientId,
+        }, setup.DeviceKey);
+        Assert.False(staleRefresh.IsSuccessStatusCode);
+        await AssertSessionEndedAsync(
+            setup.TerminalId, StaffingSessionEndReason.ActivationCredentialInvalidated, ct);
+    }
+
+    [Fact]
+    public async Task Position_token_registers_staffs_refreshes_and_revocation_cuts_the_chain()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync("fn-position-token", ct);
+
+        var policy = await Client.PutAsJsonAsync($"/api/position/{new ShortGuid(setup.PositionId)}", new
+        {
+            TerminalPolicy = new
+            {
+                AllowedActivationProofs = new[] { ActivationProofMethodIds.PositionToken },
+            },
+        }, JsonOptions, ct);
+        Assert.True(policy.IsSuccessStatusCode, await policy.Content.ReadAsStringAsync(ct));
+
+        var create = await Client.PostAsJsonAsync(
+            $"/api/position/{new ShortGuid(setup.PositionId)}/activation-tokens",
+            new { Label = "Staffing position key" }, JsonOptions, ct);
+        var createBody = await create.Content.ReadAsStringAsync(ct);
+        Assert.True(create.IsSuccessStatusCode, createBody);
+        var token = JsonSerializer.Deserialize<ActivationTokenDto>(createBody, JsonOptions)!;
+        var tokenGuid = new ShortGuid(token.Id).Guid;
+
+        using var authenticator = new SoftwareWebAuthnAuthenticator(
+            Encoding.UTF8.GetBytes(tokenGuid.ToString()));
+        var registrationBeginUrl = $"/connect/activation-token/{token.Id}/register/begin";
+        var registrationBegin = new HttpRequestMessage(HttpMethod.Post, registrationBeginUrl);
+        registrationBegin.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", setup.EnrollmentAccessToken);
+        registrationBegin.Headers.Add(DpopConstants.HeaderName, setup.DeviceKey.CreateProof(
+            "POST", $"http://localhost{registrationBeginUrl}", DateTimeOffset.UtcNow,
+            setup.EnrollmentAccessToken));
+        var registrationBeginResponse = await Factory.CreateClient().SendAsync(registrationBegin, ct);
+        var registrationBeginBody = await registrationBeginResponse.Content.ReadAsStringAsync(ct);
+        Assert.True(registrationBeginResponse.IsSuccessStatusCode, registrationBeginBody);
+        using var registration = JsonDocument.Parse(registrationBeginBody);
+        var registrationCeremonyId = registration.RootElement.GetProperty("ceremonyId").GetString()!;
+        var options = registration.RootElement.GetProperty("options");
+        var attestation = authenticator.CreateAttestationJson(
+            options.GetProperty("challenge").GetString()!, RpId, $"https://{RpId}");
+        using var attestationDocument = JsonDocument.Parse(attestation);
+
+        var registrationCompleteUrl = $"/connect/activation-token/{token.Id}/register";
+        var registrationComplete = new HttpRequestMessage(HttpMethod.Post, registrationCompleteUrl)
+        {
+            Content = JsonContent.Create(new
+            {
+                ceremonyId = registrationCeremonyId,
+                attestation = attestationDocument.RootElement.Clone(),
+            }),
+        };
+        registrationComplete.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", setup.EnrollmentAccessToken);
+        registrationComplete.Headers.Add(DpopConstants.HeaderName, setup.DeviceKey.CreateProof(
+            "POST", $"http://localhost{registrationCompleteUrl}", DateTimeOffset.UtcNow,
+            setup.EnrollmentAccessToken));
+        var registrationCompleteResponse = await Factory.CreateClient().SendAsync(registrationComplete, ct);
+        Assert.True(registrationCompleteResponse.IsSuccessStatusCode,
+            await registrationCompleteResponse.Content.ReadAsStringAsync(ct));
+
+        var begin = new HttpRequestMessage(HttpMethod.Post, "/connect/staffing/begin")
+        {
+            Content = JsonContent.Create(new { MethodId = ActivationProofMethodIds.PositionToken }),
+        };
+        begin.Headers.Authorization = new AuthenticationHeaderValue("Bearer", setup.EnrollmentAccessToken);
+        begin.Headers.Add(DpopConstants.HeaderName,
+            setup.DeviceKey.CreateProof("POST", BeginEndpoint, DateTimeOffset.UtcNow, setup.EnrollmentAccessToken));
+        var beginResponse = await Factory.CreateClient().SendAsync(begin, ct);
+        var beginBody = await beginResponse.Content.ReadAsStringAsync(ct);
+        Assert.True(beginResponse.IsSuccessStatusCode, beginBody);
+        using var challenge = JsonDocument.Parse(beginBody);
+        var ceremonyId = challenge.RootElement.GetProperty("ceremonyId").GetString()!;
+        var publicKey = challenge.RootElement.GetProperty("publicKey");
+        var assertion = authenticator.CreateAssertionJson(
+            publicKey.GetProperty("challenge").GetString()!, RpId, $"https://{RpId}");
+
+        var redeem = await PostTokenAsync(
+            StaffingForm(setup.ClientId, ceremonyId, assertion), setup.DeviceKey);
+        var redeemBody = await redeem.Content.ReadAsStringAsync(ct);
+        Assert.True(redeem.IsSuccessStatusCode, redeemBody);
+        using var staffingTokens = JsonDocument.Parse(redeemBody);
+        var refreshToken = staffingTokens.RootElement.GetProperty("refresh_token").GetString()!;
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var query = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+            var staffing = Assert.Single(await query.Query<StaffingSession>()
+                .Where(item => item.TerminalEnrollmentId == setup.TerminalId).ToListAsync(ct));
+            Assert.Equal(ActivationProofMethodIds.PositionToken, staffing.Evidence.MethodId);
+            Assert.Equal(tokenGuid, staffing.Evidence.ActivationTokenId);
+            Assert.NotNull(staffing.Evidence.CredentialId);
+            Assert.Null(staffing.Evidence.UserId);
+            Assert.Null(staffing.Evidence.GrantId);
+        }
+
+        var validRefresh = await PostTokenAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = refreshToken,
+            ["client_id"] = setup.ClientId,
+        }, setup.DeviceKey);
+        Assert.True(validRefresh.IsSuccessStatusCode, await validRefresh.Content.ReadAsStringAsync(ct));
+
+        var revoke = await Client.PostAsync($"/api/activation-token/{token.Id}/revoke", null, ct);
+        Assert.True(revoke.IsSuccessStatusCode, await revoke.Content.ReadAsStringAsync(ct));
+        await AssertSessionEndedAsync(
+            setup.TerminalId, StaffingSessionEndReason.ActivationTokenRevoked, ct);
+
+        var staleRefresh = await PostTokenAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = refreshToken,
+            ["client_id"] = setup.ClientId,
+        }, setup.DeviceKey);
+        Assert.False(staleRefresh.IsSuccessStatusCode);
     }
 
     [Fact]
@@ -195,6 +782,33 @@ public class StaffingTests : IntegrationTestBase
         var prooflessResp = await Factory.CreateClient().SendAsync(proofless, ct);
         Assert.Equal(HttpStatusCode.Forbidden, prooflessResp.StatusCode);
         Assert.Contains("DPoP", await prooflessResp.Content.ReadAsStringAsync(ct));
+
+        // A structurally valid resource proof without ath is still invalid:
+        // the proof has to be bound to this exact reference access token.
+        var noAth = new HttpRequestMessage(HttpMethod.Post, "/connect/staffing/begin");
+        noAth.Headers.Authorization = new AuthenticationHeaderValue("Bearer", setup.EnrollmentAccessToken);
+        noAth.Headers.Add(DpopConstants.HeaderName,
+            setup.DeviceKey.CreateProof("POST", BeginEndpoint, DateTimeOffset.UtcNow));
+        var noAthResponse = await Factory.CreateClient().SendAsync(noAth, ct);
+        Assert.Equal(HttpStatusCode.Forbidden, noAthResponse.StatusCode);
+
+        // A proof jti is one-shot across the realm, including resource
+        // endpoints (the token endpoint already enforces the same store).
+        var replayProof = setup.DeviceKey.CreateProof(
+            "POST", BeginEndpoint, DateTimeOffset.UtcNow, setup.EnrollmentAccessToken);
+        var firstUse = new HttpRequestMessage(HttpMethod.Post, "/connect/staffing/begin");
+        firstUse.Headers.Authorization = new AuthenticationHeaderValue("Bearer", setup.EnrollmentAccessToken);
+        firstUse.Headers.Add(DpopConstants.HeaderName, replayProof);
+        var firstUseResponse = await Factory.CreateClient().SendAsync(firstUse, ct);
+        Assert.True(firstUseResponse.IsSuccessStatusCode,
+            await firstUseResponse.Content.ReadAsStringAsync(ct));
+
+        var replay = new HttpRequestMessage(HttpMethod.Post, "/connect/staffing/begin");
+        replay.Headers.Authorization = new AuthenticationHeaderValue("Bearer", setup.EnrollmentAccessToken);
+        replay.Headers.Add(DpopConstants.HeaderName, replayProof);
+        var replayResponse = await Factory.CreateClient().SendAsync(replay, ct);
+        Assert.Equal(HttpStatusCode.Forbidden, replayResponse.StatusCode);
+        Assert.Contains("Staffing.DpopReplay", await replayResponse.Content.ReadAsStringAsync(ct));
 
         // Flag off → the surface does not exist.
         SetFeatureFlag(false);
@@ -540,7 +1154,7 @@ public class StaffingTests : IntegrationTestBase
         var request = new HttpRequestMessage(HttpMethod.Post, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         request.Headers.Add(DpopConstants.HeaderName,
-            key.CreateProof("POST", $"http://localhost{url}", DateTimeOffset.UtcNow));
+            key.CreateProof("POST", $"http://localhost{url}", DateTimeOffset.UtcNow, accessToken));
         return await Factory.CreateClient().SendAsync(request, TestContext.Current.CancellationToken);
     }
 
@@ -565,24 +1179,40 @@ public class StaffingTests : IntegrationTestBase
         Guid UserId,
         string GrantId,
         string EnrollmentAccessToken,
+        string EnrollmentRefreshToken,
         DpopProofBuilder DeviceKey,
-        SoftwareWebAuthnAuthenticator Authenticator);
+        SoftwareWebAuthnAuthenticator Authenticator,
+        string Binding,
+        string? ClientSecret);
 
     /// <summary>Position (policy on) + granted user with a seeded RP-ID
     /// passkey + terminal slot enrolled via the full MG-FT-04 device flow.</summary>
-    private async Task<StaffingSetup> SetUpEnrolledTerminalWithGrantedUserAsync(string accountName, CancellationToken ct)
+    private async Task<StaffingSetup> SetUpEnrolledTerminalWithGrantedUserAsync(
+        string accountName,
+        CancellationToken ct,
+        string binding = DeviceBindingIds.Dpop)
     {
         // Position + terminal slot via the admin API.
         var fnResp = await Client.PostAsJsonAsync("/api/position", new
         {
             AccountName = accountName,
-            TerminalPolicy = new { Enabled = true },
+            TerminalPolicy = new
+            {
+                Enabled = true,
+                AllowedDeviceBindings = new[] { binding },
+            },
         }, JsonOptions, ct);
         Assert.True(fnResp.IsSuccessStatusCode, await fnResp.Content.ReadAsStringAsync(ct));
         var fnId = new ShortGuid((await fnResp.Content.ReadFromJsonAsync<PositionPrincipalDto>(JsonOptions, ct))!.Id).Guid;
 
         var termResp = await Client.PostAsJsonAsync($"/api/position/{new ShortGuid(fnId)}/terminals",
-            new { DisplayName = "Staff-Terminal", Location = "Tor 1", WebAuthnRpId = RpId }, JsonOptions, ct);
+            new
+            {
+                DisplayName = "Staff-Terminal",
+                Location = "Tor 1",
+                WebAuthnRpId = RpId,
+                Binding = binding,
+            }, JsonOptions, ct);
         Assert.True(termResp.IsSuccessStatusCode, await termResp.Content.ReadAsStringAsync(ct));
         var terminal = (await termResp.Content.ReadFromJsonAsync<TerminalDto>(JsonOptions, ct))!;
         var terminalId = new ShortGuid(terminal.Id).Guid;
@@ -627,25 +1257,30 @@ public class StaffingTests : IntegrationTestBase
         // Enroll the terminal via the MG-FT-04 device flow.
         var deviceKey = new DpopProofBuilder();
         var (deviceCode, userCode) = await RequestDeviceCodeAsync(
-            terminal.ClientId, deviceKey.CreateProof("POST", DeviceEndpoint, DateTimeOffset.UtcNow));
+            terminal.ClientId,
+            binding == DeviceBindingIds.Dpop
+                ? deviceKey.CreateProof("POST", DeviceEndpoint, DateTimeOffset.UtcNow)
+                : null,
+            terminal.ClientSecret);
         var admin = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
         await OpenVerificationAsync(admin, userCode);
         var approve = await SubmitDecisionAsync(admin, userCode);
         Assert.True((int)approve.StatusCode < 400,
             $"approve failed ({(int)approve.StatusCode}): {await approve.Content.ReadAsStringAsync(ct)}");
-        var poll = await PostTokenAsync(new Dictionary<string, string>
+        var poll = await PostTokenForBindingAsync(new Dictionary<string, string>
         {
             ["grant_type"] = DeviceCodeGrant,
             ["device_code"] = deviceCode,
             ["client_id"] = terminal.ClientId,
-        }, deviceKey);
+        }, binding, deviceKey, terminal.ClientSecret);
         var pollBody = await poll.Content.ReadAsStringAsync(ct);
         Assert.True(poll.IsSuccessStatusCode, $"enrollment poll failed ({(int)poll.StatusCode}): {pollBody}");
         using var tokens = JsonDocument.Parse(pollBody);
         var accessToken = tokens.RootElement.GetProperty("access_token").GetString()!;
+        var refreshToken = tokens.RootElement.GetProperty("refresh_token").GetString()!;
 
         return new StaffingSetup(fnId, terminalId, terminal.ClientId, userId, grantId,
-            accessToken, deviceKey, authenticator);
+            accessToken, refreshToken, deviceKey, authenticator, binding, terminal.ClientSecret);
     }
 
     // ─── flow helpers ─────────────────────────────────────────────────────
@@ -656,8 +1291,10 @@ public class StaffingTests : IntegrationTestBase
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "/connect/staffing/begin");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", setup.EnrollmentAccessToken);
-        request.Headers.Add(DpopConstants.HeaderName,
-            setup.DeviceKey.CreateProof("POST", BeginEndpoint, DateTimeOffset.UtcNow));
+        if (setup.Binding == DeviceBindingIds.Dpop)
+            request.Headers.Add(DpopConstants.HeaderName,
+                setup.DeviceKey.CreateProof("POST", BeginEndpoint, DateTimeOffset.UtcNow,
+                    setup.EnrollmentAccessToken));
         var resp = await Factory.CreateClient().SendAsync(request, ct);
         var body = await resp.Content.ReadAsStringAsync(ct);
         Assert.True(resp.IsSuccessStatusCode, $"staffing begin failed ({(int)resp.StatusCode}): {body}");
@@ -668,7 +1305,7 @@ public class StaffingTests : IntegrationTestBase
     }
 
     private Task<HttpResponseMessage> RedeemStaffingAsync(StaffingSetup setup, string ceremonyId, string assertion) =>
-        PostTokenAsync(StaffingForm(setup.ClientId, ceremonyId, assertion), setup.DeviceKey);
+        PostTokenForBindingAsync(StaffingForm(setup.ClientId, ceremonyId, assertion), setup);
 
     private static Dictionary<string, string> StaffingForm(string clientId, string ceremonyId, string assertion) => new()
     {
@@ -690,26 +1327,55 @@ public class StaffingTests : IntegrationTestBase
         return JsonDocument.Parse(body);
     }
 
-    private async Task<HttpResponseMessage> PostTokenAsync(Dictionary<string, string> form, DpopProofBuilder key)
+    private Task<HttpResponseMessage> PostTokenAsync(
+        Dictionary<string, string> form,
+        DpopProofBuilder key) =>
+        PostTokenForBindingAsync(form, DeviceBindingIds.Dpop, key, clientSecret: null);
+
+    private Task<HttpResponseMessage> PostTokenForBindingAsync(
+        Dictionary<string, string> form,
+        StaffingSetup setup) =>
+        PostTokenForBindingAsync(form, setup.Binding, setup.DeviceKey, setup.ClientSecret);
+
+    private async Task<HttpResponseMessage> PostTokenForBindingAsync(
+        Dictionary<string, string> form,
+        string binding,
+        DpopProofBuilder key,
+        string? clientSecret)
     {
+        var values = form.ToList();
+        if (binding == DeviceBindingIds.ClientSecret)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(clientSecret));
+            values.Add(new KeyValuePair<string, string>("client_secret", clientSecret!));
+        }
         var request = new HttpRequestMessage(HttpMethod.Post, "/connect/token")
         {
-            Content = new FormUrlEncodedContent(form),
+            Content = new FormUrlEncodedContent(values),
         };
-        request.Headers.Add(DpopConstants.HeaderName, key.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow));
+        if (binding == DeviceBindingIds.Dpop)
+            request.Headers.Add(DpopConstants.HeaderName,
+                key.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow));
         return await Factory.CreateClient().SendAsync(request, TestContext.Current.CancellationToken);
     }
 
-    private async Task<(string DeviceCode, string UserCode)> RequestDeviceCodeAsync(string clientId, string dpopProof)
+    private async Task<(string DeviceCode, string UserCode)> RequestDeviceCodeAsync(
+        string clientId,
+        string? dpopProof,
+        string? clientSecret = null)
     {
+        var values = new List<KeyValuePair<string, string>>
+        {
+            new("client_id", clientId),
+        };
+        if (clientSecret is not null)
+            values.Add(new KeyValuePair<string, string>("client_secret", clientSecret));
         var request = new HttpRequestMessage(HttpMethod.Post, "/connect/device")
         {
-            Content = new FormUrlEncodedContent(new List<KeyValuePair<string, string>>
-            {
-                new("client_id", clientId),
-            }),
+            Content = new FormUrlEncodedContent(values),
         };
-        request.Headers.Add(DpopConstants.HeaderName, dpopProof);
+        if (dpopProof is not null)
+            request.Headers.Add(DpopConstants.HeaderName, dpopProof);
         var resp = await Factory.CreateClient().SendAsync(request, TestContext.Current.CancellationToken);
         var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.True(resp.IsSuccessStatusCode, $"/connect/device failed ({(int)resp.StatusCode}): {body}");
@@ -733,6 +1399,83 @@ public class StaffingTests : IntegrationTestBase
             new("decision", "approve"),
         }), TestContext.Current.CancellationToken);
 
+    private async Task RewriteAsLegacyControlTokenAsync(
+        string referenceToken,
+        Guid positionId,
+        CancellationToken ct)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictTokenManager>();
+        var token = await manager.FindByReferenceIdAsync(referenceToken, ct);
+        Assert.NotNull(token);
+        var descriptor = new OpenIddictTokenDescriptor();
+        await manager.PopulateAsync(descriptor, token!, ct);
+        Assert.False(string.IsNullOrWhiteSpace(descriptor.Payload));
+
+        var current = new JsonWebToken(descriptor.Payload);
+        var keyStore = scope.ServiceProvider.GetRequiredService<IRealmKeyStore>();
+        var serverOptions = scope.ServiceProvider
+            .GetRequiredService<IOptionsMonitor<OpenIddictServerOptions>>().CurrentValue;
+        var verificationKeys = (await keyStore.GetVerificationKeysAsync(
+                TenantConstants.SystemTenantId, ct))
+            .Concat(serverOptions.SigningCredentials.Select(item => item.Key))
+            .ToArray();
+        var handler = new JsonWebTokenHandler();
+        var validation = await handler.ValidateTokenAsync(descriptor.Payload, new TokenValidationParameters
+        {
+            IssuerSigningKeys = verificationKeys,
+            TokenDecryptionKeys = serverOptions.EncryptionCredentials.Select(item => item.Key),
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = false,
+            RequireExpirationTime = false,
+        });
+        Assert.True(validation.IsValid, validation.Exception?.ToString());
+        var validated = Assert.IsType<JsonWebToken>(validation.SecurityToken);
+        var inner = validated.InnerToken ?? validated;
+        var payloadJson = Encoding.UTF8.GetString(Base64Url.DecodeFromChars(inner.EncodedPayload));
+        var payload = JsonNode.Parse(payloadJson)!.AsObject();
+        payload[Claims.Subject] = positionId.ToString();
+        payload[PositionTokenClaimTypes.PrincipalType] = PositionPrincipalTypes.Position;
+
+        var signingCredentials = serverOptions.SigningCredentials.FirstOrDefault(
+            item => string.Equals(item.Key.KeyId, inner.Kid, StringComparison.Ordinal))
+            ?? await keyStore.GetActiveSigningCredentialsAsync(TenantConstants.SystemTenantId, ct);
+        var headers = new Dictionary<string, object>();
+        if (!string.IsNullOrWhiteSpace(current.Typ))
+            headers["typ"] = current.Typ;
+        var innerHeaders = new Dictionary<string, object>();
+        if (!string.IsNullOrWhiteSpace(inner.Typ))
+            innerHeaders["typ"] = inner.Typ;
+        descriptor.Payload = current.IsEncrypted
+            ? handler.CreateToken(payload.ToJsonString(), signingCredentials,
+                serverOptions.EncryptionCredentials[0], CompressionAlgorithms.Deflate,
+                headers, innerHeaders)
+            : handler.CreateToken(payload.ToJsonString(), signingCredentials, innerHeaders);
+        descriptor.Subject = positionId.ToString();
+        await manager.UpdateAsync(token!, descriptor, ct);
+    }
+
+    private async Task AssertLegacyControlTokenAsync(
+        string referenceToken,
+        Guid positionId,
+        Guid terminalId,
+        CancellationToken ct)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictTokenManager>();
+        var token = await manager.FindByReferenceIdAsync(referenceToken, ct);
+        Assert.NotNull(token);
+        var payload = await manager.GetPayloadAsync(token!, ct);
+        Assert.False(string.IsNullOrWhiteSpace(payload));
+        var jwt = new JsonWebToken(payload);
+        Assert.Equal(positionId.ToString(), jwt.GetClaim(Claims.Subject).Value);
+        Assert.Equal(PositionPrincipalTypes.Position,
+            jwt.GetClaim(PositionTokenClaimTypes.PrincipalType).Value);
+        Assert.Equal(terminalId.ToString(),
+            jwt.GetClaim(PositionTokenClaimTypes.TerminalId).Value);
+    }
+
     // Minimal ES256 DPoP proof factory — same shape as the enrollment tests'.
     internal sealed class DpopProofBuilder : IDisposable
     {
@@ -748,7 +1491,7 @@ public class StaffingTests : IntegrationTestBase
             Jkt = JwkThumbprint.ForEc("P-256", p.Q.X!, p.Q.Y!);
         }
 
-        public string CreateProof(string htm, string htu, DateTimeOffset iat)
+        public string CreateProof(string htm, string htu, DateTimeOffset iat, string? accessToken = null)
         {
             var p = _ec.ExportParameters(false);
             var jwk = new { kty = "EC", crv = "P-256", x = B64(p.Q.X!), y = B64(p.Q.Y!) };
@@ -760,6 +1503,9 @@ public class StaffingTests : IntegrationTestBase
                 ["htu"] = htu,
                 ["iat"] = iat.ToUnixTimeSeconds(),
             };
+            if (accessToken is not null)
+                payload["ath"] = Base64Url.EncodeToString(
+                    SHA256.HashData(Encoding.ASCII.GetBytes(accessToken)));
             var signingInput = $"{Seg(header)}.{Seg(payload)}";
             var sig = _ec.SignData(
                 Encoding.ASCII.GetBytes(signingInput),

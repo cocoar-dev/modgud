@@ -20,7 +20,8 @@ public static class StaffingPrincipal
         PositionPrincipal position,
         TerminalEnrollment terminal,
         Guid staffingSessionId,
-        DateTimeOffset authTime)
+        DateTimeOffset authTime,
+        string activationProof)
     {
         var identity = new ClaimsIdentity(
             authenticationType: "Bearer",
@@ -33,8 +34,16 @@ public static class StaffingPrincipal
         identity.SetClaim(PositionTokenClaimTypes.TokenUse, PositionTokenUses.StaffingSession);
         identity.SetClaim(PositionTokenClaimTypes.TerminalId, terminal.Id.ToString());
         identity.SetClaim(PositionTokenClaimTypes.StaffingSessionId, staffingSessionId.ToString());
+        identity.SetClaim(PositionTokenClaimTypes.ActivationProof, activationProof);
+        identity.SetClaim(PositionTokenClaimTypes.TerminalBinding, terminal.Binding);
         identity.SetClaim(Claims.AuthenticationTime, authTime.ToUnixTimeSeconds());
-        identity.SetClaims(Claims.AuthenticationMethodReference, ["webauthn"]);
+        identity.SetClaims(Claims.AuthenticationMethodReference,
+            [activationProof switch
+            {
+                ActivationProofMethodIds.PersonalPassword => "pwd",
+                ActivationProofMethodIds.PersonalEmailOtp => "otp",
+                _ => "webauthn",
+            }]);
 
         var principal = new ClaimsPrincipal(identity);
         // Scopes/resources are applied by the exchange (they depend on the

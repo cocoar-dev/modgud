@@ -99,6 +99,7 @@ export interface OAuthClientDto {
    * grid and the deep-link into the position modal.
    */
   LinkedPositionPrincipalId?: string | null
+  ManagedTerminalEnrollmentId?: string | null
 }
 
 export interface CreateOAuthClientDto {
@@ -164,6 +165,7 @@ export interface CreateOAuthClientDto {
   TerminalDisplayName?: string | null
   /** Optional physical location of that slot ("Gate 3"). */
   TerminalLocation?: string | null
+  TerminalBinding?: 'dpop' | 'client-secret' | 'none'
 }
 
 export interface UpdateOAuthClientDto {

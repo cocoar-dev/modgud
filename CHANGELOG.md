@@ -11,6 +11,14 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Pre-1.0 development. See the [Roadmap](./docs/roadmap.md) for current
-status, shipped features, and what's intentionally out of scope.
-Day-to-day commit history lives in `git log`.
+### Added
+
+- Feature-flagged Positions and shared terminals (MG-FT-FLEX), including
+  multi-position terminal enrollment, configurable activation proofs and
+  device bindings, realm security floors, staffing/refresh/step-up lifecycle,
+  activation-token administration, and the matching admin UI and consumer
+  contract. `PositionTerminals` remains off by default and is enabled with
+  `AppSettings__Features__PositionTerminals=true`.
+
+See the [Roadmap](./docs/roadmap.md) for the full pre-1.0 product snapshot and
+what remains intentionally out of scope. Day-to-day history lives in `git log`.

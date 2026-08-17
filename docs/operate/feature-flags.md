@@ -24,6 +24,9 @@ Configure via `configuration.local.json` (gitignored) or an environment variable
 ```bash
 # or via env (double-underscore as section separator; casing is not significant):
 AppSettings__Features__PageBuilder=true
+
+# enable Positions and shared terminals (default is false):
+AppSettings__Features__PositionTerminals=true
 ```
 
 Flags are read at startup; no hot-reload. A flip requires a restart.

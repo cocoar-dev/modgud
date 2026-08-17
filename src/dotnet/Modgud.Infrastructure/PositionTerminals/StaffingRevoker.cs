@@ -63,6 +63,12 @@ public sealed class StaffingRevoker : IStaffingRevoker
     public Task<int> EndAllForGrantAsync(Guid grantId, StaffingSessionEndReason reason, CancellationToken ct = default) =>
         EndWhereAsync(s => s.PositionGrantId == grantId, reason, ct);
 
+    public Task<int> EndAllForActivationTokenAsync(Guid activationTokenId, StaffingSessionEndReason reason, CancellationToken ct = default) =>
+        EndWhereAsync(s => s.Evidence.ActivationTokenId == activationTokenId, reason, ct);
+
+    public Task<int> EndAllForActivationTokenAndPositionAsync(Guid activationTokenId, Guid positionId, StaffingSessionEndReason reason, CancellationToken ct = default) =>
+        EndWhereAsync(s => s.Evidence.ActivationTokenId == activationTokenId && s.PositionPrincipalId == positionId, reason, ct);
+
     private async Task<int> EndWhereAsync(
         System.Linq.Expressions.Expression<Func<StaffingSession, bool>> selector,
         StaffingSessionEndReason reason,

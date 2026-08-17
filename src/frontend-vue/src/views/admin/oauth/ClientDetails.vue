@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
   CoarNotice,
   CoarTextInput,
@@ -22,17 +22,21 @@ import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import EditableStringList from '@/components/EditableStringList.vue'
 import ServiceAccountDetails from '@/views/admin/serviceAccount/ServiceAccountDetails.vue'
+import PositionDetails from '@/views/admin/position/PositionDetails.vue'
 import { useOAuthClientStore } from '@/stores/oauthClient.store'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useRealmSettingsStore } from '@/stores/realmSettings.store'
 import { useServiceAccountStore } from '@/stores/serviceAccount.store'
+import { usePositionStore } from '@/stores/position.store'
+import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useClone, CLIENT_CLONE } from '@/composables/useClone'
 import { useModalOverlay } from '@/composables/useModalOverlay'
 import { MODAL_MD } from '@/router/modal-sizes'
 import { useRouter } from 'vue-router'
 import type { OAuthClientDto, CreateOAuthClientDto, UpdateOAuthClientDto, AccessTokenType } from '@/models/oauth'
 import type { ServiceAccountCreateDto } from '@/models/serviceAccount'
+import type { PositionCreateDto } from '@/models/position'
 
 const { t } = useI18n()
 
@@ -46,6 +50,8 @@ const scopeStore = useOAuthScopeStore()
 const applicationsStore = useApplicationsStore()
 const realmSettingsStore = useRealmSettingsStore()
 const serviceAccountStore = useServiceAccountStore()
+const positionStore = usePositionStore()
+const appConfig = useAppConfigStore()
 const modalOverlay = useModalOverlay()
 const router = useRouter()
 const { consume } = useClone()
@@ -60,7 +66,7 @@ const error = ref<string | null>(null)
 // and Security are regular tabs instead of a permanently visible side column,
 // so every section gets the width it needs without turning the modal into a
 // near-full-screen workspace.
-type ClientTab = 'general' | 'login' | 'apps' | 'grants' | 'scopes' | 'urls' | 'lifetimes' | 'security' | 'dcr'
+type ClientTab = 'general' | 'login' | 'apps' | 'grants' | 'terminal' | 'scopes' | 'urls' | 'lifetimes' | 'security' | 'dcr'
 const activeTab = ref<ClientTab>('general')
 type UrlListTab = 'redirect' | 'post-logout' | 'cors'
 const activeUrlList = ref<UrlListTab>('redirect')
@@ -143,12 +149,13 @@ const hasNativeGrantWithRealmOff = computed(
   () => !nativeGrantsEnabled.value
     && form.value.AllowedGrantTypes.some((g) => cocoarGrantValues.has(g)))
 
-// MG-FT — the staffing grant marks a terminal-managed client of a Position.
-// It is never OFFERED here (terminal clients are born via the position modal
-// or the API, with a server-pinned profile); the option exists only so an
-// existing terminal client's grant list renders instead of silently hiding
-// the selection.
+// MG-FT — staffing is selected like every other grant. The server expands it
+// to the fixed technical terminal profile (device_code + refresh_token +
+// staffing); the UI keeps the regular picker visible and reports mixed modes
+// through the same validation notice used by client_credentials.
 const STAFFING_GRANT = 'urn:cocoar:params:oauth:grant-type:staffing'
+const DEVICE_CODE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code'
+const TERMINAL_GRANT_PROFILE = [DEVICE_CODE_GRANT, 'refresh_token', STAFFING_GRANT] as const
 const staffingGrantTypeOptions = computed(() => [
   { value: STAFFING_GRANT, label: 'urn:cocoar:…:staffing',
     subtitle: t('admin.oauthClients.grantTypes.staffingDescription', {}, 'Terminal-Client einer Position — Personal aktiviert per Passkey-Tap'),
@@ -159,7 +166,8 @@ const grantTypeOptions = computed(() => {
   const selected = new Set(form.value.AllowedGrantTypes)
   const cocoar = cocoarGrantTypeOptions.value.filter(
     (o) => nativeGrantsEnabled.value || selected.has(o.value))
-  const staffing = staffingGrantTypeOptions.value.filter((o) => selected.has(o.value))
+  const staffing = staffingGrantTypeOptions.value.filter(
+    (o) => appConfig.config.Features.PositionTerminals || selected.has(o.value))
   return [...standardGrantTypeOptions.value, ...cocoar, ...staffing]
 })
 
@@ -228,6 +236,39 @@ const serviceAccountOptions = computed(() => [
     })),
 ])
 
+const positionOptions = computed(() => [
+  {
+    value: '',
+    label: t('admin.oauthClients.position.placeholder', {}, 'Position wählen…'),
+  },
+  ...positionStore.entities
+    .filter((position) => position.IsActive && position.TerminalPolicy.Enabled)
+    .sort((left, right) => left.AccountName.localeCompare(right.AccountName))
+    .map((position) => ({
+      value: position.Id,
+      label: position.AccountName,
+      subtitle: position.Purpose ?? undefined,
+    })),
+])
+
+const terminalBindingOptions = computed(() => [
+  {
+    value: 'dpop',
+    label: t('admin.positionTerminals.bindingOption.dpop.label', {}, 'DPoP key'),
+    subtitle: t('admin.positionTerminals.bindingOption.dpop.hint', {}, 'Device key and sender-constrained tokens'),
+  },
+  {
+    value: 'client-secret',
+    label: t('admin.positionTerminals.bindingOption.clientSecret.label', {}, 'Client secret'),
+    subtitle: t('admin.positionTerminals.bindingOption.clientSecret.hint', {}, 'Confidential client with a secret shown once'),
+  },
+  {
+    value: 'none',
+    label: t('admin.positionTerminals.bindingOption.none.label', {}, 'No device binding'),
+    subtitle: t('admin.positionTerminals.bindingOption.none.hint', {}, 'Admin approval only; no verifiable device identity'),
+  },
+])
+
 interface FormState {
   ClientId: string
   DisplayName: string
@@ -265,6 +306,11 @@ interface FormState {
   LinkedServiceAccountId: string
   /** Set on terminal-managed clients (read-only viewer; editor = position modal). */
   LinkedPositionPrincipalId: string
+  ManagedTerminalEnrollmentId: string
+  /** Create-only slot metadata for the staffing terminal profile. */
+  TerminalDisplayName: string
+  TerminalLocation: string
+  TerminalBinding: 'dpop' | 'client-secret' | 'none'
 }
 
 const SCOPE_PERMISSION_PREFIX = 'scp:'
@@ -308,6 +354,10 @@ function emptyForm(): FormState {
     AppIds: [],
     LinkedServiceAccountId: '',
     LinkedPositionPrincipalId: '',
+    ManagedTerminalEnrollmentId: '',
+    TerminalDisplayName: '',
+    TerminalLocation: '',
+    TerminalBinding: 'dpop',
   }
 }
 
@@ -363,12 +413,122 @@ function discardNewServiceAccountDraft() {
   newServiceAccountForm.value = { AccountName: '', Purpose: '', IsActive: true }
 }
 
-// ── Terminal client (MG-FT) — terminal-managed clients are born via the
-// position modal (or the API's staffing-grant path) and are read-only here:
-// this modal degrades to a viewer with a deep-link to the owning position.
-// The grid normally redirects before this modal even opens; the viewer
-// covers direct fragment deep-links.
-const isTerminalManaged = computed(() => !!form.value.LinkedPositionPrincipalId)
+// ── Terminal client (MG-FT) ───────────────────────────────────────────────
+// In create mode the staffing grant opens the same choose-or-create ownership
+// pattern as client_credentials + ServiceAccount. Persisted terminal clients
+// remain read-only here because their lifecycle belongs to the Position modal.
+const hasStaffingGrant = computed(() => form.value.AllowedGrantTypes.includes(STAFFING_GRANT))
+const newPositionDraft = ref<PositionCreateDto | null>(null)
+const terminalProfileSnapshot = ref<Partial<FormState> | null>(null)
+
+const selectedPosition = computed(() => positionStore.entities.find(
+  (position) => position.Id === form.value.LinkedPositionPrincipalId))
+
+const selectedPositionAllowsBinding = computed(() => !selectedPosition.value
+  || selectedPosition.value.TerminalPolicy.AllowedDeviceBindings.includes(form.value.TerminalBinding))
+
+const newPositionAllowsBinding = computed(() => !newPositionDraft.value
+  || (newPositionDraft.value.TerminalPolicy?.AllowedDeviceBindings ?? []).includes(form.value.TerminalBinding))
+
+async function openNewPositionModal() {
+  const initial: PositionCreateDto = newPositionDraft.value ?? {
+    AccountName: '',
+    Purpose: undefined,
+    IsActive: true,
+    TerminalPolicy: {
+      Enabled: true,
+      AllowedActivationProofs: ['personal-passkey'],
+      AllowedDeviceBindings: [form.value.TerminalBinding],
+      StaffingSessionLifetimeMinutes: 16 * 60,
+      MaximumStaffingSessionLifetimeMinutes: 24 * 60,
+    },
+  }
+  const draft = await modalOverlay.open<PositionCreateDto>(
+    PositionDetails,
+    MODAL_MD,
+    { id: 'create', draftOnly: true, initial },
+  )
+  if (!draft) return
+
+  form.value.LinkedPositionPrincipalId = ''
+  newPositionDraft.value = draft
+}
+
+function discardNewPositionDraft() {
+  newPositionDraft.value = null
+}
+
+watch(hasStaffingGrant, (enabled, wasEnabled) => {
+  if (!isCreate.value) return
+  if (!enabled) {
+    if (activeTab.value === 'terminal') activeTab.value = 'grants'
+    // Selecting Staffing temporarily replaces only the profile-owned values.
+    // Restore the admin's previous draft if they remove the grant again.
+    if (wasEnabled && terminalProfileSnapshot.value)
+      Object.assign(form.value, terminalProfileSnapshot.value)
+    terminalProfileSnapshot.value = null
+    return
+  }
+
+  if (!wasEnabled) {
+    terminalProfileSnapshot.value = {
+      ClientType: form.value.ClientType,
+      ClientSecret: form.value.ClientSecret,
+      ConsentType: form.value.ConsentType,
+      Enabled: form.value.Enabled,
+      Scopes: [...form.value.Scopes],
+      AccessTokenType: form.value.AccessTokenType,
+      RedirectUris: [...form.value.RedirectUris],
+      PostLogoutRedirectUris: [...form.value.PostLogoutRedirectUris],
+      AllowedCorsOrigins: [...form.value.AllowedCorsOrigins],
+      RequirePushedAuthorizationRequests: form.value.RequirePushedAuthorizationRequests,
+      RequireDpop: form.value.RequireDpop,
+      RequireDpopNonce: form.value.RequireDpopNonce,
+      IdentityTokenLifetime: form.value.IdentityTokenLifetime,
+      AccessTokenLifetime: form.value.AccessTokenLifetime,
+      AuthorizationCodeLifetime: form.value.AuthorizationCodeLifetime,
+      SlidingRefreshTokenLifetime: form.value.SlidingRefreshTokenLifetime,
+      ClientSessionIdleLifetime: form.value.ClientSessionIdleLifetime,
+      ClientSessionAbsoluteLifetime: form.value.ClientSessionAbsoluteLifetime,
+      AppIds: [...form.value.AppIds],
+    }
+  }
+
+  // The selected grant itself remains in the ordinary dual list. Only values
+  // that the terminal profile truly owns are normalized and locked.
+  Object.assign(form.value, {
+    ClientType: form.value.TerminalBinding === 'client-secret' ? 'confidential' : 'public',
+    ClientSecret: '',
+    ConsentType: 'implicit',
+    Enabled: true,
+    Scopes: [],
+    AccessTokenType: 'Reference',
+    RedirectUris: [],
+    PostLogoutRedirectUris: [],
+    AllowedCorsOrigins: [],
+    RequirePushedAuthorizationRequests: false,
+    RequireDpop: form.value.TerminalBinding === 'dpop',
+    RequireDpopNonce: false,
+    IdentityTokenLifetime: null,
+    AccessTokenLifetime: null,
+    AuthorizationCodeLifetime: null,
+    SlidingRefreshTokenLifetime: null,
+    ClientSessionIdleLifetime: null,
+    ClientSessionAbsoluteLifetime: null,
+    AppIds: [],
+  })
+})
+
+watch(() => form.value.TerminalBinding, (binding) => {
+  if (!hasStaffingGrant.value || !isCreate.value) return
+  form.value.ClientType = binding === 'client-secret' ? 'confidential' : 'public'
+  form.value.RequireDpop = binding === 'dpop'
+  form.value.RequireDpopNonce = false
+  if (binding !== 'client-secret') form.value.ClientSecret = ''
+})
+
+const isTerminalManaged = computed(() => !isCreate.value
+  && (!!form.value.ManagedTerminalEnrollmentId || !!form.value.LinkedPositionPrincipalId))
 
 function goToPosition() {
   // Deliberately NOT props.close(): the routed-modal plumbing reacts to a
@@ -405,6 +565,10 @@ function fromDto(dto: OAuthClientDto): FormState {
     AppIds: [...(dto.AppIds ?? [])],
     LinkedServiceAccountId: dto.LinkedServiceAccountId ?? '',
     LinkedPositionPrincipalId: dto.LinkedPositionPrincipalId ?? '',
+    ManagedTerminalEnrollmentId: dto.ManagedTerminalEnrollmentId ?? '',
+    TerminalDisplayName: '',
+    TerminalLocation: '',
+    TerminalBinding: dto.ClientType === 'confidential' ? 'client-secret' : dto.RequireDpop ? 'dpop' : 'none',
   }
 }
 
@@ -414,6 +578,13 @@ const modalTitle = computed(() => {
 })
 
 const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.ClientId)
+
+const terminalBindingMeetsRealmFloor = computed(() => {
+  const required = realmSettingsStore.settings?.PositionSecurity?.RequiredBindingCapabilities ?? []
+  if (required.includes('SenderConstrained') && form.value.TerminalBinding !== 'dpop') return false
+  if (required.includes('DeviceIdentity') && form.value.TerminalBinding === 'none') return false
+  return true
+})
 
 // Create-time guard rails: a client with no grants can't mint any token, and an
 // authorization_code client with no redirect URI can't complete the flow. Block
@@ -435,6 +606,32 @@ const flowIssues = computed<string[]>(() => {
     errs.push(t('admin.oauthClients.validation.newServiceAccountNameInvalid', {}, 'Der Account-Name des neuen Service Accounts ist ungültig.'))
   else if (hasClientCredentials && !form.value.LinkedServiceAccountId && !useNewServiceAccountDraft.value)
     errs.push(t('admin.oauthClients.validation.noServiceAccount', {}, 'client_credentials benötigt einen Service Account.'))
+  if (hasStaffingGrant.value && grants.some((grant) => grant !== STAFFING_GRANT))
+    errs.push(t('admin.oauthClients.validation.invalidTerminalGrants', {}, 'staffing kann nicht mit anderen Grants kombiniert werden. device_code und refresh_token werden beim Erstellen technisch ergänzt.'))
+  return errs
+})
+
+const terminalIssues = computed<string[]>(() => {
+  if (!isCreate.value || !hasStaffingGrant.value) return []
+  const errs: string[] = []
+    if (!form.value.LinkedPositionPrincipalId && !newPositionDraft.value)
+      errs.push(t('admin.oauthClients.validation.noPosition', {}, 'Das Terminalprofil benötigt eine bestehende oder neue Position.'))
+    if (!form.value.TerminalDisplayName.trim())
+      errs.push(t('admin.oauthClients.validation.noTerminalName', {}, 'Für den Terminal-Slot ist ein Anzeigename erforderlich.'))
+    if (!form.value.WebAuthnRpId.trim())
+      errs.push(t('admin.oauthClients.validation.noTerminalRpId', {}, 'Für Personal-Passkeys ist eine WebAuthn RP-ID erforderlich.'))
+    if (selectedPosition.value && !selectedPositionAllowsBinding.value)
+      errs.push(t('admin.oauthClients.validation.positionBindingMismatch', {}, 'Die gewählte Position erlaubt diese Gerätebindung nicht.'))
+    if (newPositionDraft.value && !newPositionDraft.value.AccountName.trim())
+      errs.push(t('admin.oauthClients.validation.newPositionNameRequired', {}, 'Für die neue Position ist ein Account-Name erforderlich.'))
+    else if (newPositionDraft.value && !serviceAccountNamePattern.test(newPositionDraft.value.AccountName.trim()))
+      errs.push(t('admin.oauthClients.validation.newPositionNameInvalid', {}, 'Der Account-Name der neuen Position ist ungültig.'))
+    if (newPositionDraft.value && newPositionDraft.value.TerminalPolicy?.Enabled !== true)
+      errs.push(t('admin.oauthClients.validation.newPositionTerminalsDisabled', {}, 'Bei der neuen Position muss die Terminalnutzung aktiviert sein.'))
+    if (!newPositionAllowsBinding.value)
+      errs.push(t('admin.oauthClients.validation.newPositionBindingMismatch', {}, 'Die neue Position erlaubt die gewählte Gerätebindung nicht.'))
+    if (!terminalBindingMeetsRealmFloor.value)
+      errs.push(t('admin.oauthClients.validation.terminalBindingBelowRealmFloor', {}, 'Die Gerätebindung erfüllt die Sicherheitsvorgabe des Realms nicht.'))
   return errs
 })
 
@@ -445,7 +642,7 @@ const redirectIssues = computed<string[]>(() => {
   return []
 })
 
-const createBlockers = computed(() => [...flowIssues.value, ...redirectIssues.value])
+const createBlockers = computed(() => [...flowIssues.value, ...terminalIssues.value, ...redirectIssues.value])
 
 const footerButton = computed(() => {
   // After a successful create we only offer "Done" (copy-the-secret then close)
@@ -487,6 +684,8 @@ onMounted(async () => {
   // Realm settings gate whether the native passwordless grants appear in the
   // grant-type picker. Cheap singleton GET; skip if already in the store.
   if (!realmSettingsStore.loaded) realmSettingsStore.load().catch(() => {})
+  if (appConfig.config.Features.PositionTerminals && positionStore.entities.length === 0)
+    positionStore.loadAll().catch(() => {})
   if (isCreate.value) {
     // Clone: prefill the whole form (ClientId blank, secret dropped → a fresh
     // one is minted on create).
@@ -517,6 +716,8 @@ async function save() {
       const created = await store.create(buildCreateDto())
       if (created.CreatedServiceAccount)
         serviceAccountStore.setStoreEntities([created.CreatedServiceAccount])
+      if (created.CreatedPosition)
+        positionStore.setStoreEntities([created.CreatedPosition])
       newSecret.value = created.ClientSecret ?? null
       if (newSecret.value) {
         // Keep the modal open so the admin can copy the cleartext secret, and
@@ -577,6 +778,34 @@ function buildCreateDto(): CreateOAuthClientDto {
     } else if (form.value.LinkedServiceAccountId) {
       dto.LinkedServiceAccountId = form.value.LinkedServiceAccountId
     }
+  }
+  if (hasStaffingGrant.value) {
+    // Keep the wire request explicit even though the server pins this profile
+    // independently. This prevents UI changes from accidentally reintroducing
+    // a mixed-grant terminal client.
+    dto.AllowedGrantTypes = [...TERMINAL_GRANT_PROFILE]
+    dto.ClientType = form.value.TerminalBinding === 'client-secret' ? 'confidential' : 'public'
+    dto.AccessTokenType = 'Reference'
+    dto.RequireDpop = form.value.TerminalBinding === 'dpop'
+    dto.RequireDpopNonce = false
+    dto.LinkedPositionPrincipalId = form.value.LinkedPositionPrincipalId || undefined
+    dto.NewPosition = newPositionDraft.value
+      ? {
+          AccountName: newPositionDraft.value.AccountName.trim(),
+          Purpose: newPositionDraft.value.Purpose?.trim() || undefined,
+          IsActive: newPositionDraft.value.IsActive ?? true,
+          TerminalPolicy: newPositionDraft.value.TerminalPolicy
+            ? {
+                ...newPositionDraft.value.TerminalPolicy,
+                AllowedActivationProofs: [...(newPositionDraft.value.TerminalPolicy.AllowedActivationProofs ?? [])],
+                AllowedDeviceBindings: [...(newPositionDraft.value.TerminalPolicy.AllowedDeviceBindings ?? [])],
+              }
+            : undefined,
+        }
+      : undefined
+    dto.TerminalDisplayName = form.value.TerminalDisplayName.trim()
+    dto.TerminalLocation = form.value.TerminalLocation.trim() || undefined
+    dto.TerminalBinding = form.value.TerminalBinding
   }
   return dto
 }
@@ -667,7 +896,7 @@ async function copySecret() {
           <span class="min-w-0 flex-1">
             {{ t('admin.oauthClients.terminal.managedHint', {}, 'Terminal-Client einer Position — Verwaltung (deaktivieren, reaktivieren, widerrufen) erfolgt im Positions-Modal; diese Ansicht ist schreibgeschützt.') }}
           </span>
-          <CoarButton size="s" variant="secondary" icon-start="briefcase" class="shrink-0" @click="goToPosition">
+          <CoarButton v-if="form.LinkedPositionPrincipalId" size="s" variant="secondary" icon-start="briefcase" class="shrink-0" @click="goToPosition">
             {{ t('admin.oauthClients.terminal.goToPosition', {}, 'Zur Position') }}
           </CoarButton>
         </div>
@@ -690,6 +919,19 @@ async function copySecret() {
                 class="tab-issue"
                 role="img"
                 :aria-label="flowIssues.join(' ')">
+                <CoarIcon name="circle-alert" size="s" />
+              </span>
+            </span>
+          </CoarTab>
+          <CoarTab v-if="hasStaffingGrant" id="terminal">
+            <span class="tab-label">
+              {{ t('admin.oauthClients.tabs.terminal', {}, 'Terminal') }}
+              <span
+                v-if="terminalIssues.length"
+                v-tooltip="{ content: terminalIssues.join(' · '), placement: 'bottom' }"
+                class="tab-issue"
+                role="img"
+                :aria-label="terminalIssues.join(' ')">
                 <CoarIcon name="circle-alert" size="s" />
               </span>
             </span>
@@ -717,6 +959,12 @@ async function copySecret() {
 
         <!-- General — stable identity, client profile and operational status. -->
         <div v-show="activeTab === 'general'" class="tab-content tab-content--form">
+          <CoarNotice v-if="hasStaffingGrant" truncate variant="info">
+            {{ t('admin.oauthClients.terminal.identityProfileNoticeShort', {}, 'Staffing legt Client-Typ und Aktivstatus fest.') }}
+            <template #details>
+              {{ t('admin.oauthClients.terminal.identityProfileNotice', {}, 'Client ID und Display Name bleiben frei wählbar. Client-Typ und Aktivstatus werden aus Gerätebindung und Terminal-Lifecycle abgeleitet.') }}
+            </template>
+          </CoarNotice>
           <div class="client-form">
             <section class="form-section">
               <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
@@ -743,7 +991,7 @@ async function copySecret() {
                   class="col-half"
                   :label="t('admin.oauthClients.type', {}, 'Client Type')"
                   :hint="t('admin.oauthClients.typeHint', {}, 'Public Clients können kein Secret sicher verwahren; Confidential Clients schon.')">
-                  <CoarSelect v-model="form.ClientType" :options="clientTypeOptions" :disabled="!isCreate" />
+                  <CoarSelect v-model="form.ClientType" :options="clientTypeOptions" :disabled="!isCreate || hasStaffingGrant" />
                 </CoarFormField>
                 <CoarFormField
                   class="col-half client-enabled-field"
@@ -751,7 +999,7 @@ async function copySecret() {
                   :hint="t('admin.oauthClients.enabledHint', {}, 'Inaktive Clients können keine Token-Flows starten oder abschließen.')"
                   layout="inline"
                   label-position="after">
-                  <CoarCheckbox v-model="form.Enabled" />
+                  <CoarCheckbox v-model="form.Enabled" :disabled="hasStaffingGrant" />
                 </CoarFormField>
               </div>
             </section>
@@ -761,6 +1009,12 @@ async function copySecret() {
         <!-- Login & consent — user-facing policy, separate from client
              authentication and protocol hardening. -->
         <div v-show="activeTab === 'login'" class="tab-content tab-content--form">
+          <CoarNotice v-if="hasStaffingGrant" truncate variant="info">
+            {{ t('admin.oauthClients.terminal.loginProfileNoticeShort', {}, 'Staffing verwendet implizite Zustimmung.') }}
+            <template #details>
+              {{ t('admin.oauthClients.terminal.loginProfileNotice', {}, 'Die WebAuthn RP-ID bleibt konfigurierbar, weil sie festlegt, gegen welchen Host die Personal-Passkeys geprüft werden.') }}
+            </template>
+          </CoarNotice>
           <div class="client-form">
             <section class="form-section">
               <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
@@ -773,7 +1027,7 @@ async function copySecret() {
                   class="col-half"
                   :label="t('admin.oauthClients.consentType', {}, 'Consent Type')"
                   :hint="t('admin.oauthClients.consentTypeHint', {}, 'Legt fest, ob und wie Benutzer angeforderte Scopes bestätigen.')">
-                  <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" />
+                  <CoarSelect v-model="form.ConsentType" :options="consentTypeOptions" :disabled="hasStaffingGrant" />
                 </CoarFormField>
               </div>
             </section>
@@ -793,7 +1047,9 @@ async function copySecret() {
                     clearable
                     :placeholder="t('admin.oauthClients.webAuthnRpIdPlaceholder', {}, 'leer = Realm-Domain')" />
                   <p class="field-hint">
-                    {{ t('admin.oauthClients.webAuthnRpIdHint', {}, 'Optional. Eine Änderung macht bereits registrierte Passkeys dieses Clients ungültig.') }}
+                    {{ hasStaffingGrant
+                      ? t('admin.oauthClients.terminal.rpIdCreateHint', {}, 'Für Staffing erforderlich. Diese RP-ID bindet die Personal-Passkeys an den angegebenen Host.')
+                      : t('admin.oauthClients.webAuthnRpIdHint', {}, 'Optional. Eine Änderung macht bereits registrierte Passkeys dieses Clients ungültig.') }}
                   </p>
                 </CoarFormField>
               </div>
@@ -805,6 +1061,12 @@ async function copySecret() {
              Empty selection = realm-wide (cross-app, OIDC standard scopes
              only). -->
         <div v-show="activeTab === 'apps'" class="tab-content">
+          <CoarNotice v-if="hasStaffingGrant" truncate variant="info">
+            {{ t('admin.oauthClients.terminal.appsProfileNoticeShort', {}, 'Staffing-Clients haben keine App-Zuordnung.') }}
+            <template #details>
+              {{ t('admin.oauthClients.terminal.appsProfileNotice', {}, 'Ihr fachlicher Besitzer ist der zugeordnete Terminal-Slot der Position.') }}
+            </template>
+          </CoarNotice>
           <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
             <div class="section-divider__label">
               <CoarPopover class="inline-info-popover" mode="both" :offset="8">
@@ -849,6 +1111,7 @@ async function copySecret() {
               class="flex-1 min-h-0"
               v-model="form.AppIds"
               :options="appOptions"
+              :disabled="hasStaffingGrant"
               drag-drop
               sort-options="asc"
               :search-fields="['label', 'subtitle', 'group']"
@@ -861,6 +1124,12 @@ async function copySecret() {
         <!-- Scopes — explicitly opt-in. OpenIddict rejects /connect/authorize
              and /connect/token requests for any scope not on this list. -->
         <div v-show="activeTab === 'scopes'" class="tab-content">
+          <CoarNotice v-if="hasStaffingGrant" truncate variant="info">
+            {{ t('admin.oauthClients.terminal.scopesProfileNoticeShort', {}, 'Staffing-Clients haben keine frei wählbaren Scopes.') }}
+            <template #details>
+              {{ t('admin.oauthClients.terminal.scopesProfileNotice', {}, 'Ihre Berechtigungen entstehen aus Position, Besetzung und Ziel-API.') }}
+            </template>
+          </CoarNotice>
           <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
             <div class="section-divider__label">
               <CoarPopover class="inline-info-popover" mode="both" :offset="8">
@@ -898,6 +1167,7 @@ async function copySecret() {
               class="flex-1 min-h-0"
               v-model="form.Scopes"
               :options="scopeOptions"
+              :disabled="hasStaffingGrant"
               drag-drop
               sort-options="asc"
               :search-fields="['label', 'subtitle', 'group']"
@@ -910,11 +1180,13 @@ async function copySecret() {
         <!-- Flows — grant selection and its dependent M2M owner live together.
              Empty selection produces a client that cannot mint tokens. -->
         <div v-show="activeTab === 'grants'" class="tab-content">
-            <CoarNotice v-if="flowIssues.length" variant="warning" class="flow-issues-notice">
-              <span v-if="flowIssues.length === 1">{{ flowIssues[0] }}</span>
-              <ul v-else>
+            <CoarNotice v-if="flowIssues.length" truncate variant="warning" class="flow-issues-notice">
+              {{ t('admin.oauthClients.validation.incompleteShort', { count: flowIssues.length }, `Konfiguration unvollständig (${flowIssues.length})`) }}
+              <template #details>
+                <ul>
                 <li v-for="issue in flowIssues" :key="issue">{{ issue }}</li>
-              </ul>
+                </ul>
+              </template>
             </CoarNotice>
 
             <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
@@ -943,6 +1215,7 @@ async function copySecret() {
                         <li><strong>{{ t('admin.oauthClients.grantTypes.helpSpa', {}, 'SPA / Mobile') }}:</strong> authorization_code + refresh_token</li>
                         <li><strong>{{ t('admin.oauthClients.grantTypes.helpMachine', {}, 'Server-zu-Server') }}:</strong> client_credentials + Service Account</li>
                         <li><strong>{{ t('admin.oauthClients.grantTypes.helpDevice', {}, 'TV / CLI / Gerät ohne Browser') }}:</strong> device_code + refresh_token</li>
+                        <li><strong>{{ t('admin.oauthClients.grantTypes.helpTerminal', {}, 'Geteiltes Arbeitsplatz-Terminal') }}:</strong> {{ t('admin.oauthClients.grantTypes.helpTerminalProfile', {}, 'staffing + Position; technische Grants werden automatisch ergänzt') }}</li>
                       </ul>
                     </section>
 
@@ -1042,8 +1315,125 @@ async function copySecret() {
             </div>
         </div>
 
+        <!-- Terminal — appears only for the staffing grant. Keeping slot and
+             position metadata out of Flows preserves the compact grant picker
+             while giving terminal-specific validation its own destination. -->
+        <div v-show="activeTab === 'terminal' && hasStaffingGrant" class="tab-content tab-content--form">
+          <CoarNotice v-if="terminalIssues.length" truncate variant="warning" class="flow-issues-notice">
+            {{ t('admin.oauthClients.validation.incompleteShort', { count: terminalIssues.length }, `Konfiguration unvollständig (${terminalIssues.length})`) }}
+            <template #details>
+              <ul>
+                <li v-for="issue in terminalIssues" :key="issue">{{ issue }}</li>
+              </ul>
+            </template>
+          </CoarNotice>
+
+          <div class="client-form flow-terminal">
+            <div class="service-account-picker">
+              <CoarFormField
+                class="service-account-picker__select"
+                :label="t('admin.oauthClients.position', {}, 'Zugehörige Position')"
+                :hint="t('admin.oauthClients.positionHint', {}, 'Wähle genau eine terminalfähige Position oder lege sie zusammen mit diesem Client neu an.')">
+                <CoarSelect
+                  v-if="!newPositionDraft"
+                  v-model="form.LinkedPositionPrincipalId"
+                  :options="positionOptions"
+                  :disabled="!isCreate" />
+                <div v-else class="service-account-draft">
+                  <div class="service-account-draft__identity">
+                    <CoarIcon name="briefcase" size="m" />
+                    <div class="service-account-draft__text">
+                      <div class="flex items-center gap-2">
+                        <strong>{{ newPositionDraft.AccountName }}</strong>
+                        <CoarTag :variant="newPositionDraft.IsActive === false ? 'warning' : 'success'">
+                          {{ newPositionDraft.IsActive === false
+                            ? t('common.inactive', {}, 'Inaktiv')
+                            : t('common.active', {}, 'Aktiv') }}
+                        </CoarTag>
+                      </div>
+                      <span>{{ newPositionDraft.Purpose || t('admin.oauthClients.newPosition.noPurpose', {}, 'Kein Verwendungszweck angegeben') }}</span>
+                    </div>
+                  </div>
+                  <div class="service-account-draft__actions">
+                    <CoarButton size="s" variant="tertiary" @click="openNewPositionModal">
+                      {{ t('common.edit', {}, 'Bearbeiten') }}
+                    </CoarButton>
+                    <CoarButton size="s" variant="tertiary" @click="discardNewPositionDraft">
+                      {{ t('admin.oauthClients.newPosition.discard', {}, 'Verwerfen') }}
+                    </CoarButton>
+                  </div>
+                </div>
+              </CoarFormField>
+              <CoarButton
+                v-if="isCreate && !newPositionDraft"
+                size="s"
+                variant="secondary"
+                icon-start="plus"
+                class="service-account-picker__create"
+                @click="openNewPositionModal">
+                {{ t('admin.oauthClients.newPosition.button', {}, 'Neu anlegen') }}
+              </CoarButton>
+            </div>
+
+            <div class="modal-form-grid terminal-fields">
+              <CoarFormField
+                class="col-half"
+                required
+                :label="t('admin.oauthClients.terminal.name', {}, 'Terminalname')"
+                :hint="t('admin.oauthClients.terminal.nameHint', {}, 'Benennung des physischen Slots, z. B. „Tor links“.')">
+                <CoarTextInput v-model="form.TerminalDisplayName" clearable placeholder="Tor links" :disabled="!isCreate" />
+              </CoarFormField>
+              <CoarFormField
+                class="col-half"
+                :label="t('admin.oauthClients.terminal.location', {}, 'Standort')"
+                :hint="t('admin.oauthClients.terminal.locationHint', {}, 'Optionale Ortsangabe für Administration und Audit.')">
+                <CoarTextInput v-model="form.TerminalLocation" clearable placeholder="Tor 3" :disabled="!isCreate" />
+              </CoarFormField>
+              <CoarFormField
+                class="col-half"
+                required
+                :label="t('admin.oauthClients.terminal.rpId', {}, 'WebAuthn RP-ID')"
+                :hint="t('admin.oauthClients.terminal.rpIdHint', {}, 'Hostname, gegen den die Passkeys des Personals geprüft werden.')">
+                <CoarTextInput v-model="form.WebAuthnRpId" clearable placeholder="alerthub.example.com" :disabled="!isCreate" />
+              </CoarFormField>
+              <CoarFormField
+                class="col-half"
+                required
+                :label="t('admin.oauthClients.terminal.binding', {}, 'Gerätebindung')"
+                :hint="t('admin.oauthClients.terminal.bindingHint', {}, 'Legt das unveränderbare Authentifizierungsprofil dieses Terminal-Slots fest.')">
+                <CoarSelect v-model="form.TerminalBinding" :options="terminalBindingOptions" :disabled="!isCreate" />
+              </CoarFormField>
+            </div>
+
+            <CoarNotice truncate variant="info">
+              {{ t('admin.oauthClients.terminal.atomicHintShort', {}, 'Position, Terminal-Slot und OAuth-Client werden gemeinsam erstellt.') }}
+              <template #details>
+                {{ t('admin.oauthClients.terminal.atomicHint', {}, 'Die Anlage erfolgt atomar: Schlägt ein Teil fehl, wird nichts gespeichert.') }}
+              </template>
+            </CoarNotice>
+            <CoarNotice v-if="!selectedPositionAllowsBinding || !newPositionAllowsBinding" truncate variant="warning">
+              {{ t('admin.oauthClients.terminal.bindingMismatchShort', {}, 'Die Gerätebindung passt nicht zur Position.') }}
+              <template #details>
+                {{ t('admin.oauthClients.terminal.bindingMismatch', {}, 'Die gewählte Position erlaubt diese Gerätebindung nicht. Wähle eine andere Bindung oder passe die Position an.') }}
+              </template>
+            </CoarNotice>
+            <CoarNotice v-if="form.TerminalBinding === 'none'" truncate variant="warning">
+              {{ t('admin.oauthClients.terminal.noneWarningShort', {}, 'Keine Gerätebindung ausgewählt.') }}
+              <template #details>
+                {{ t('admin.oauthClients.terminal.noneWarning', {}, 'Ohne Gerätebindung besitzt das Terminal keine nachweisbare Geräteidentität; die Admin-Freigabe ist dann die einzige Ausgabebarriere.') }}
+              </template>
+            </CoarNotice>
+          </div>
+        </div>
+
         <!-- Redirects & CORS — browser-facing endpoint allow-lists only. -->
         <div v-show="activeTab === 'urls'" class="tab-content tab-content--form">
+          <CoarNotice v-if="hasStaffingGrant" truncate variant="info">
+            {{ t('admin.oauthClients.terminal.urlsProfileNoticeShort', {}, 'Staffing benötigt keine Redirect- oder CORS-Adressen.') }}
+            <template #details>
+              {{ t('admin.oauthClients.terminal.urlsProfileNotice', {}, 'Staffing nutzt den Device Flow. Redirect-, Post-Logout- und CORS-Adressen sind deshalb für dieses Clientprofil nicht konfigurierbar.') }}
+            </template>
+          </CoarNotice>
           <div class="client-form url-configurator">
             <nav
               class="url-list-nav"
@@ -1081,6 +1471,7 @@ async function copySecret() {
               <EditableStringList
                 v-show="activeUrlList === 'redirect'"
                 v-model="form.RedirectUris"
+                :disabled="hasStaffingGrant"
                 appearance="panel-grid"
                 min-height="100%"
                 :search-placeholder="t('common.search', {}, 'Search…')"
@@ -1088,6 +1479,7 @@ async function copySecret() {
               <EditableStringList
                 v-show="activeUrlList === 'post-logout'"
                 v-model="form.PostLogoutRedirectUris"
+                :disabled="hasStaffingGrant"
                 appearance="panel-grid"
                 min-height="100%"
                 :search-placeholder="t('common.search', {}, 'Search…')"
@@ -1095,6 +1487,7 @@ async function copySecret() {
               <EditableStringList
                 v-show="activeUrlList === 'cors'"
                 v-model="form.AllowedCorsOrigins"
+                :disabled="hasStaffingGrant"
                 appearance="panel-grid"
                 min-height="100%"
                 :search-placeholder="t('common.search', {}, 'Search…')"
@@ -1106,6 +1499,12 @@ async function copySecret() {
         <!-- Security — credentials and protocol hardening stay fully editable
              before the first save. -->
         <div v-show="activeTab === 'security'" class="tab-content tab-content--form">
+          <CoarNotice v-if="hasStaffingGrant" truncate variant="info">
+            {{ t('admin.oauthClients.terminal.securityProfileNoticeShort', {}, 'Die Gerätebindung legt Secret und DPoP fest.') }}
+            <template #details>
+              {{ t('admin.oauthClients.terminal.securityProfileNotice', {}, 'Secret- und DPoP-Einstellungen werden aus der Gerätebindung abgeleitet. Das Client-Secret wird bei Bedarf sicher vom Server erzeugt.') }}
+            </template>
+          </CoarNotice>
           <div class="client-form security-form">
             <section class="security-section">
               <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
@@ -1119,7 +1518,7 @@ async function copySecret() {
                   class="col-half"
                   :label="t('admin.oauthClients.clientSecret', {}, 'Client Secret (empty = generate)')"
                   :hint="t('admin.oauthClients.clientSecretHint', {}, 'Leer lassen, um beim Erstellen ein starkes einmalig sichtbares Secret zu erzeugen.')">
-                  <CoarPasswordInput v-model="form.ClientSecret" clearable />
+                  <CoarPasswordInput v-model="form.ClientSecret" clearable :disabled="hasStaffingGrant" />
                 </CoarFormField>
                 <div
                   v-else-if="isExistingClient && form.ClientType === 'confidential' && !form.LinkedServiceAccountId"
@@ -1173,6 +1572,7 @@ async function copySecret() {
                   </div>
                   <CoarCheckbox
                     v-model="form.RequirePushedAuthorizationRequests"
+                    :disabled="hasStaffingGrant"
                     :label="t('admin.oauthClients.requirePar', {}, 'Require Pushed Authorization Requests (PAR)')" />
                 </div>
 
@@ -1204,9 +1604,11 @@ async function copySecret() {
                   <div class="security-policy-card__toggles">
                     <CoarCheckbox
                       v-model="form.RequireDpop"
+                      :disabled="hasStaffingGrant"
                       :label="t('admin.oauthClients.requireDpop', {}, 'Require DPoP')" />
                     <CoarCheckbox
                       v-model="form.RequireDpopNonce"
+                      :disabled="hasStaffingGrant"
                       :label="t('admin.oauthClients.requireDpopNonce', {}, 'Require DPoP nonce')" />
                   </div>
                 </div>
@@ -1218,6 +1620,12 @@ async function copySecret() {
 
         <!-- Tokens & Sessions — token representation and all time-based policy. -->
         <div v-show="activeTab === 'lifetimes'" class="tab-content tab-content--form">
+          <CoarNotice v-if="hasStaffingGrant" truncate variant="info">
+            {{ t('admin.oauthClients.terminal.lifetimesProfileNoticeShort', {}, 'Staffing verwendet Reference-Tokens und geerbte Laufzeiten.') }}
+            <template #details>
+              {{ t('admin.oauthClients.terminal.lifetimesProfileNotice', {}, 'Token- und Session-Laufzeiten werden aus den übergeordneten App-/Realm- und Positionsrichtlinien übernommen.') }}
+            </template>
+          </CoarNotice>
           <div class="client-form lifetime-form">
             <section class="lifetime-section">
               <CoarDivider
@@ -1232,7 +1640,7 @@ async function copySecret() {
               <CoarFormField
                 :label="t('admin.oauthClients.accessTokenType', {}, 'Access-Token-Typ')"
                 :hint="t('admin.oauthClients.accessTokenType.hint', {}, 'Reference-Tokens werden per Introspection aufgelöst; JWTs werden lokal anhand der Signatur validiert.')">
-                <CoarSelect v-model="form.AccessTokenType" :options="accessTokenTypeOptions" class="input-enum" />
+                <CoarSelect v-model="form.AccessTokenType" :options="accessTokenTypeOptions" :disabled="hasStaffingGrant" class="input-enum" />
               </CoarFormField>
             </section>
 
@@ -1266,6 +1674,7 @@ async function copySecret() {
                   <CoarNumberInput
                     v-model="form.IdentityTokenLifetime"
                     v-bind="lifetimeInputBounds.shortToken"
+                    :disabled="hasStaffingGrant"
                     stepper-buttons="both"
                     clearable
                     class="input-number" />
@@ -1274,6 +1683,7 @@ async function copySecret() {
                   <CoarNumberInput
                     v-model="form.AccessTokenLifetime"
                     v-bind="lifetimeInputBounds.shortToken"
+                    :disabled="hasStaffingGrant"
                     stepper-buttons="both"
                     clearable
                     class="input-number" />
@@ -1282,6 +1692,7 @@ async function copySecret() {
                   <CoarNumberInput
                     v-model="form.AuthorizationCodeLifetime"
                     v-bind="lifetimeInputBounds.authorizationCode"
+                    :disabled="hasStaffingGrant"
                     stepper-buttons="both"
                     clearable
                     class="input-number" />
@@ -1290,6 +1701,7 @@ async function copySecret() {
                   <CoarNumberInput
                     v-model="form.SlidingRefreshTokenLifetime"
                     v-bind="lifetimeInputBounds.refreshToken"
+                    :disabled="hasStaffingGrant"
                     stepper-buttons="both"
                     clearable
                     class="input-number" />
@@ -1328,6 +1740,7 @@ async function copySecret() {
                   <CoarNumberInput
                     v-model="form.ClientSessionIdleLifetime"
                     v-bind="lifetimeInputBounds.clientSession"
+                    :disabled="hasStaffingGrant"
                     stepper-buttons="both"
                     clearable
                     class="input-number" />
@@ -1336,6 +1749,7 @@ async function copySecret() {
                   <CoarNumberInput
                     v-model="form.ClientSessionAbsoluteLifetime"
                     v-bind="lifetimeInputBounds.clientSession"
+                    :disabled="hasStaffingGrant"
                     stepper-buttons="both"
                     clearable
                     class="input-number" />
@@ -1505,6 +1919,21 @@ async function copySecret() {
 .flow-service-account {
   width: 100%;
   flex-shrink: 0;
+}
+
+.flow-terminal {
+  display: flex;
+  width: 100%;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 0.25rem;
+}
+
+.terminal-fields {
+  padding: 1rem;
+  border: 1px solid var(--coar-border-neutral-subtle, #d4d8e1);
+  border-radius: var(--coar-radius-m, 4px);
 }
 
 .flex-section.flex-section--with-service-account {

@@ -59,6 +59,14 @@ public static class RealmSettingsEndpoints
         .WithName("RealmSettings_Patch")
         .RequiresPermission("realm-settings:write");
 
+        group.MapPost("position-security/preview", async (
+            UpdatePositionSecuritySettingsDto dto,
+            IRealmSettingsService svc,
+            CancellationToken ct) =>
+                Results.Ok(await svc.PreviewPositionSecurityAsync(dto, ct)))
+        .WithName("RealmSettings_PositionSecurityPreview")
+        .RequiresPermission("realm-settings:write");
+
         // Manual signing-key rotation for the calling realm. Generates a fresh
         // RSA keypair, retires the previous active key into the verification
         // overlap window (so in-flight tokens stay valid for ~30 days), and

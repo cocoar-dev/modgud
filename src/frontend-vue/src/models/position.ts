@@ -7,6 +7,8 @@ import type { EntityStatus } from './common'
 
 export interface PositionTerminalPolicyDto {
   Enabled: boolean
+  AllowedActivationProofs: string[]
+  AllowedDeviceBindings: string[]
   StaffingSessionLifetimeMinutes: number
   MaximumStaffingSessionLifetimeMinutes: number
 }
@@ -18,6 +20,7 @@ export interface PositionPrincipalDto {
   IsActive: boolean
   Status: EntityStatus
   TerminalPolicy: PositionTerminalPolicyDto
+  CreatedTerminals?: TerminalDto[] | null
 }
 
 export interface PositionCreateDto {
@@ -35,6 +38,8 @@ export interface TerminalCreateDto {
   DisplayName: string
   Location?: string
   WebAuthnRpId: string
+  Binding?: string
+  AllowedPositionIds?: string[]
 }
 
 export interface PositionUpdateDto {
@@ -42,13 +47,22 @@ export interface PositionUpdateDto {
   Purpose?: string | null
   IsActive?: boolean
   TerminalPolicy?: PositionTerminalPolicyUpdateDto
+  ConfirmTerminalPolicyConsequences?: boolean
 }
 
 /** Partial policy update — omitted fields keep the persisted value. */
 export interface PositionTerminalPolicyUpdateDto {
   Enabled?: boolean
+  AllowedActivationProofs?: string[]
+  AllowedDeviceBindings?: string[]
   StaffingSessionLifetimeMinutes?: number
   MaximumStaffingSessionLifetimeMinutes?: number
+}
+
+export interface PositionTerminalPolicyConsequencesDto {
+  TerminalIds: string[]
+  StaffingSessionIds: string[]
+  HasConsequences: boolean
 }
 
 // ── Terminal slots (MG-FT-03) ────────────────────────────────────────────
@@ -58,16 +72,20 @@ export type TerminalStatus = 'Pending' | 'Active' | 'Disabled' | 'Revoked'
 export interface TerminalDto {
   Id: string
   PositionId: string
+  AllowedPositionIds: string[]
   DisplayName: string
   Location?: string | null
   ClientId: string
   WebAuthnRpId: string
+  Binding: string
   Status: TerminalStatus
   Enrolled: boolean
   CreatedAt: string
   EnrolledAt?: string | null
   DisabledAt?: string | null
   RevokedAt?: string | null
+  /** Only returned once, on creation of a client-secret terminal. */
+  ClientSecret?: string | null
 }
 
 // ── Activation grants (MG-FT-02) ─────────────────────────────────────────
@@ -95,10 +113,23 @@ export type StaffingSessionStatus = 'Active' | 'Ended'
 export interface StaffingSessionDto {
   Id: string
   TerminalId: string
-  ActivatedByUserId: string
+  ActivatedByUserId?: string | null
+  ActivationProof: string
+  ActivationTokenId?: string | null
   Status: StaffingSessionStatus
   StartedAt: string
   AbsoluteExpiresAt: string
   EndedAt?: string | null
   EndReason?: string | null
+}
+
+export type ActivationTokenStatus = 'PendingRegistration' | 'Active' | 'Disabled' | 'Revoked'
+
+export interface ActivationTokenDto {
+  Id: string
+  Label: string
+  Status: ActivationTokenStatus
+  AssignedPositionIds: string[]
+  RegisteredRpIds: string[]
+  CreatedAt: string
 }

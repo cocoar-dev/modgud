@@ -32,4 +32,16 @@ public partial class PositionGrantProjection : SingleStreamProjection<PositionGr
         grant.RevokedAt = e.RevokedAt;
         grant.RevokedByUserId = e.RevokedByUserId;
     }
+
+    public void Apply(PositionGrantActivationFailed e, PositionGrant grant)
+    {
+        grant.ActivationFailedCount++;
+        grant.ActivationLockoutEnd = e.LockedUntil;
+    }
+
+    public void Apply(PositionGrantActivationSucceeded e, PositionGrant grant)
+    {
+        grant.ActivationFailedCount = 0;
+        grant.ActivationLockoutEnd = null;
+    }
 }

@@ -10,6 +10,7 @@ export interface RealmSettingsDto {
   NativeGrants: NativeGrantSettingsDto
   BrowserSessions: BrowserSessionPolicyDto
   ClientSessions: ClientSessionPolicyDto
+  PositionSecurity: PositionSecuritySettingsDto
   AuthRateLimits: AuthRateLimitsDto
   Branding: BrandingSettingsDto
   EmailBranding: EmailBrandingSettingsDto
@@ -28,12 +29,39 @@ export interface UpdateRealmSettingsDto {
   NativeGrants?: UpdateNativeGrantSettingsDto | null
   BrowserSessions?: UpdateBrowserSessionPolicyDto | null
   ClientSessions?: UpdateClientSessionPolicyDto | null
+  PositionSecurity?: UpdatePositionSecuritySettingsDto | null
+  ConfirmPositionSecurityConsequences?: boolean
   AuthRateLimits?: UpdateAuthRateLimitsDto | null
   Branding?: UpdateBrandingSettingsDto | null
   EmailBranding?: UpdateEmailBrandingSettingsDto | null
   RegistrationFields?: UpdateRegistrationFieldsSettingsDto | null
   Deletion?: UpdateDeletionSettingsDto | null
   Audit?: UpdateAuditSettingsDto | null
+}
+
+export type ProofCapability = 'IdentifiedActor' | 'PhishingResistant' | 'IndividuallyRevocable'
+export type BindingCapability = 'DeviceIdentity' | 'SenderConstrained'
+
+export interface PositionSecuritySettingsDto {
+  RequiredProofCapabilities?: ProofCapability[] | null
+  RequiredBindingCapabilities?: BindingCapability[] | null
+}
+
+export interface UpdatePositionSecuritySettingsDto {
+  RequiredProofCapabilities?: ProofCapability[] | null
+  RequiredBindingCapabilities?: BindingCapability[] | null
+}
+
+export interface PositionSecurityConsequencesDto {
+  Positions: Array<{
+    Id: string
+    AccountName: string
+    ViolatingActivationProofs: string[]
+    ViolatingDeviceBindings: string[]
+  }>
+  TerminalIds: string[]
+  StaffingSessionIds: string[]
+  HasConsequences: boolean
 }
 
 export interface BrowserSessionPolicyDto {

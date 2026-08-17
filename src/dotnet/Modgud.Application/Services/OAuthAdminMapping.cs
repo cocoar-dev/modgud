@@ -585,6 +585,9 @@ internal static class OAuthAdminMapping
             LinkedPositionPrincipalId = s.LinkedPositionPrincipalId is null
                 ? null
                 : new ShortGuid(s.LinkedPositionPrincipalId.Value).ToString(),
+            ManagedTerminalEnrollmentId = s.ManagedTerminalEnrollmentId is null
+                ? null
+                : new ShortGuid(s.ManagedTerminalEnrollmentId.Value).ToString(),
         };
     }
 
@@ -772,7 +775,8 @@ internal static class OAuthAdminMapping
         Guid? linkedServiceAccountId,
         Guid? linkedPositionPrincipalId,
         Guid? managedTerminalEnrollmentId,
-        string? webAuthnRpId)
+        string? webAuthnRpId,
+        string binding = "dpop")
     {
         var hasPosition = linkedPositionPrincipalId.HasValue;
         var hasTerminal = managedTerminalEnrollmentId.HasValue;
@@ -786,16 +790,19 @@ internal static class OAuthAdminMapping
             return OAuthErrors.InvalidPositionTerminalClient(
                 "a terminal-managed client cannot also be ServiceAccount-linked (one client = one auth mode).");
 
-        if (!string.Equals(clientType, OAuthClientTypes.Public, StringComparison.Ordinal))
-            return OAuthErrors.InvalidPositionTerminalClient("the client must be public.");
-
-        if (requireClientSecret)
+        var profileValid = binding switch
+        {
+            "dpop" => string.Equals(clientType, OAuthClientTypes.Public, StringComparison.Ordinal)
+                      && !requireClientSecret && requireDpop,
+            "client-secret" => string.Equals(clientType, OAuthClientTypes.Confidential, StringComparison.Ordinal)
+                               && requireClientSecret && !requireDpop,
+            "none" => string.Equals(clientType, OAuthClientTypes.Public, StringComparison.Ordinal)
+                      && !requireClientSecret && !requireDpop,
+            _ => false,
+        };
+        if (!profileValid)
             return OAuthErrors.InvalidPositionTerminalClient(
-                "the client must not carry a client secret — the device is bound via DPoP, not a shared secret.");
-
-        if (!requireDpop)
-            return OAuthErrors.InvalidPositionTerminalClient(
-                "DPoP is mandatory — terminal tokens must be sender-constrained to the enrolled device key.");
+                $"the OAuth authentication profile is inconsistent with terminal binding '{binding}'.");
 
         if (accessTokenType != AccessTokenType.Reference)
             return OAuthErrors.InvalidPositionTerminalClient(

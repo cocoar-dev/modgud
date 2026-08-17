@@ -8,6 +8,7 @@ using Modgud.Domain.PositionTerminals;
 using Modgud.Infrastructure.PositionTerminals;
 using Modgud.Infrastructure.OpenIddict;
 using Marten;
+using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Api.Features.Positions;
 
@@ -36,10 +37,9 @@ public static class PositionTerminalsEndpoints
                 if (await LoadPositionAsync(settings, session, positionId.Guid, ct) is not { } _)
                     return Results.NotFound();
 
-                var terminals = await session.Query<TerminalEnrollment>()
-                    .Where(x => x.PositionPrincipalId == positionId.Guid)
-                    .OrderBy(x => x.DisplayName)
-                    .ToListAsync(ct);
+                var terminals = (await session.Query<TerminalEnrollment>().ToListAsync(ct))
+                    .Where(x => x.EffectiveAllowedPositionIds.Contains(positionId.Guid))
+                    .OrderBy(x => x.DisplayName);
                 return Results.Ok(terminals.Select(ToDto));
             })
             .WithName("V2_PositionTerminals_List")
@@ -61,25 +61,70 @@ public static class PositionTerminalsEndpoints
                 // Plan §4.1 — slots exist only while the position is opted into
                 // terminal use.
                 if (!fn.TerminalPolicy.Enabled)
-                    return Results.BadRequest(new { Error = "Terminal.TerminalPolicyDisabled",
-                        Message = "Enable terminal use on the position before creating terminal slots." });
+                    return Results.BadRequest(new
+                    {
+                        Error = "Terminal.TerminalPolicyDisabled",
+                        Message = "Enable terminal use on the position before creating terminal slots."
+                    });
 
                 var displayName = dto.DisplayName?.Trim() ?? string.Empty;
                 if (string.IsNullOrEmpty(displayName))
-                    return Results.BadRequest(new { Error = "Terminal.DisplayNameRequired",
-                        Message = "A display name is required." });
+                    return Results.BadRequest(new
+                    {
+                        Error = "Terminal.DisplayNameRequired",
+                        Message = "A display name is required."
+                    });
+
+                var binding = string.IsNullOrWhiteSpace(dto.Binding) ? DeviceBindingIds.Dpop : dto.Binding;
+                if (!PositionTerminalSecurity.TryGetWritableBinding(binding, out _))
+                    return Results.BadRequest(new
+                    {
+                        Error = "Terminal.UnknownDeviceBinding",
+                        Message = $"Device binding '{binding}' is unknown or unavailable."
+                    });
+                if (!fn.TerminalPolicy.AllowedDeviceBindings.Contains(binding, StringComparer.Ordinal))
+                    return Results.BadRequest(new
+                    {
+                        Error = "Terminal.DeviceBindingNotAllowed",
+                        Message = $"Device binding '{binding}' is not allowed by the position policy."
+                    });
+                var realm = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+                var requiredBinding = realm?.PositionSecurity?.RequiredBindingCapabilities ?? BindingCapability.None;
+                if (!PositionTerminalSecurity.BindingMeetsFloor(binding, requiredBinding))
+                    return Results.BadRequest(new
+                    {
+                        Error = "Terminal.DeviceBindingBelowRealmFloor",
+                        Message = $"Device binding '{binding}' does not meet the realm capability floor."
+                    });
+
+                var allowedPositionIds = new HashSet<Guid> { positionId.Guid };
+                foreach (var rawId in dto.AllowedPositionIds ?? [])
+                {
+                    if (!ShortGuid.TryParse(rawId, out Guid allowedId))
+                        return Results.BadRequest(new { Error = "Terminal.InvalidPositionId", Message = $"Position id '{rawId}' is invalid." });
+                    allowedPositionIds.Add(allowedId);
+                }
+                foreach (var allowedId in allowedPositionIds)
+                {
+                    var allowed = await session.LoadAsync<PositionPrincipal>(allowedId, ct);
+                    if (allowed is null || allowed.IsDeleted || !allowed.IsActive || !allowed.TerminalPolicy.Enabled)
+                        return Results.BadRequest(new { Error = "Terminal.PositionUnavailable", Message = $"Position '{ShortGuid.Encode(allowedId)}' is unavailable for terminal use." });
+                    if (!allowed.TerminalPolicy.AllowedDeviceBindings.Contains(binding, StringComparer.Ordinal) ||
+                        !PositionTerminalSecurity.BindingMeetsFloor(binding, requiredBinding))
+                        return Results.BadRequest(new { Error = "Terminal.DeviceBindingNotAllowed", Message = $"Device binding '{binding}' is not allowed for every assigned position." });
+                }
 
                 var enrollmentId = Guid.NewGuid();
                 var applicationId = Guid.NewGuid();
                 // Same convention as SA credentials: {owner}.{kind}.{8-char id} —
                 // unique, and the audit log reads the owning position off it.
-                var clientId = $"{fn.AccountName}.terminal.{new ShortGuid(Guid.NewGuid()).ToString()[..8]}";
+                var clientId = $"terminal.{new ShortGuid(Guid.NewGuid()).ToString()[..8]}";
 
                 // Stage the terminal-managed client (validated against the fixed
                 // profile) ...
                 var clientError = oauth.StageCreateTerminalClient(
                     applicationId, clientId, $"{fn.DisplayName} — {displayName}",
-                    positionId.Guid, enrollmentId, dto.WebAuthnRpId);
+                    positionId.Guid, enrollmentId, dto.WebAuthnRpId, binding, out var clientSecret);
                 if (clientError is not null)
                     return Results.BadRequest(new { Error = clientError.Value.Code, Message = clientError.Value.Description });
 
@@ -89,10 +134,12 @@ public static class PositionTerminalsEndpoints
                     enrollmentId, positionId.Guid, displayName,
                     string.IsNullOrWhiteSpace(dto.Location) ? null : dto.Location.Trim(),
                     applicationId, clientId, dto.WebAuthnRpId.Trim().ToLowerInvariant(),
-                    PositionGrantsEndpoints.RequireActor(httpContext), DateTimeOffset.UtcNow));
+                    PositionGrantsEndpoints.RequireActor(httpContext), DateTimeOffset.UtcNow, binding,
+                    allowedPositionIds.ToArray()));
                 await session.SaveChangesAsync(ct);
 
                 var created = await LoadDtoAsync(session, enrollmentId, ct);
+                created.ClientSecret = clientSecret;
                 dispatcher.DispatchCreatedEvent("Terminal", created, session.TenantId);
                 return Results.Ok(created);
             })
@@ -113,8 +160,11 @@ public static class PositionTerminalsEndpoints
 
                 var displayName = dto.DisplayName?.Trim();
                 if (displayName is not null && displayName.Length == 0)
-                    return Results.BadRequest(new { Error = "Terminal.DisplayNameRequired",
-                        Message = "A display name is required." });
+                    return Results.BadRequest(new
+                    {
+                        Error = "Terminal.DisplayNameRequired",
+                        Message = "A display name is required."
+                    });
 
                 session.Events.Append(terminal.Id, new TerminalEnrollmentDetailsChanged(
                     terminal.Id,
@@ -129,6 +179,67 @@ public static class PositionTerminalsEndpoints
                 return Results.Ok(updated);
             })
             .WithName("V2_PositionTerminals_Update")
+            .RequiresPermission("position:write");
+
+        group.MapPut("{terminalId}/positions", async (
+                ShortGuid positionId,
+                ShortGuid terminalId,
+                TerminalAllowedPositionsUpdateDto dto,
+                AppSettings settings,
+                IDocumentSession session,
+                IStaffingRevoker staffingRevoker,
+                HttpContext context,
+                CancellationToken ct) =>
+            {
+                if (await LoadTerminalAsync(settings, session, positionId.Guid, terminalId.Guid, ct) is not { } terminal)
+                    return Results.NotFound();
+
+                var ids = new HashSet<Guid>();
+                foreach (var rawId in dto.AllowedPositionIds)
+                {
+                    if (!ShortGuid.TryParse(rawId, out Guid id))
+                        return Results.BadRequest(new { Error = "Terminal.InvalidPositionId", Message = $"Position id '{rawId}' is invalid." });
+                    ids.Add(id);
+                }
+                if (ids.Count == 0)
+                    return Results.BadRequest(new { Error = "Terminal.PositionRequired", Message = "A terminal must allow at least one position." });
+
+                var realm = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+                var requiredBinding = realm?.PositionSecurity?.RequiredBindingCapabilities ?? BindingCapability.None;
+                foreach (var id in ids)
+                {
+                    var position = await session.LoadAsync<PositionPrincipal>(id, ct);
+                    if (position is null || position.IsDeleted || !position.IsActive || !position.TerminalPolicy.Enabled ||
+                        !position.TerminalPolicy.AllowedDeviceBindings.Contains(terminal.Binding, StringComparer.Ordinal) ||
+                        !PositionTerminalSecurity.BindingMeetsFloor(terminal.Binding, requiredBinding))
+                        return Results.BadRequest(new { Error = "Terminal.PositionUnavailable", Message = $"Position '{ShortGuid.Encode(id)}' is not compatible with this terminal." });
+                }
+
+                var previous = terminal.EffectiveAllowedPositionIds.ToHashSet();
+                if (terminal.EnrollmentAuthorizationId is not null && ids.Except(previous).Any())
+                    return Results.Conflict(new
+                    {
+                        Error = "Terminal.ReenrollmentRequired",
+                        Message = "Adding a position to an enrolled terminal requires a fresh multi-position slot and enrollment."
+                    });
+
+                session.Events.Append(terminal.Id, new TerminalAllowedPositionsChanged(
+                    terminal.Id, ids.ToArray(), PositionGrantsEndpoints.RequireActor(context), DateTimeOffset.UtcNow));
+                await session.SaveChangesAsync(ct);
+
+                foreach (var removedPositionId in previous.Except(ids))
+                {
+                    var active = await session.Query<StaffingSession>()
+                        .Where(s => s.TerminalEnrollmentId == terminal.Id &&
+                                    s.PositionPrincipalId == removedPositionId &&
+                                    s.Status == StaffingSessionStatus.Active)
+                        .ToListAsync(ct);
+                    foreach (var staffing in active)
+                        await staffingRevoker.EndSessionAsync(staffing.Id, StaffingSessionEndReason.PolicyTightened, ct);
+                }
+                return Results.Ok(await LoadDtoAsync(session, terminal.Id, ct));
+            })
+            .WithName("V2_PositionTerminals_SetPositions")
             .RequiresPermission("position:write");
 
         group.MapPost("{terminalId}/disable", (ShortGuid positionId, ShortGuid terminalId, AppSettings settings,
@@ -185,8 +296,11 @@ public static class PositionTerminalsEndpoints
         {
             return targetStatus == TerminalEnrollmentStatus.Revoked
                 ? Results.Ok(ToDto(terminal)) // idempotent no-op
-                : Results.Conflict(new { Error = "Terminal.Revoked",
-                    Message = "A revoked terminal cannot change state; create a new slot instead." });
+                : Results.Conflict(new
+                {
+                    Error = "Terminal.Revoked",
+                    Message = "A revoked terminal cannot change state; create a new slot instead."
+                });
         }
 
         if (targetStatus == TerminalEnrollmentStatus.Disabled)
@@ -252,7 +366,7 @@ public static class PositionTerminalsEndpoints
     {
         if (await LoadPositionAsync(settings, session, positionId, ct) is null) return null;
         var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
-        return terminal is null || terminal.PositionPrincipalId != positionId ? null : terminal;
+        return terminal is null || !terminal.EffectiveAllowedPositionIds.Contains(positionId) ? null : terminal;
     }
 
     internal static async Task<TerminalDto> LoadDtoAsync(IDocumentSession session, Guid terminalId, CancellationToken ct)
@@ -262,12 +376,14 @@ public static class PositionTerminalsEndpoints
     {
         Id = new ShortGuid(t.Id).ToString(),
         PositionId = new ShortGuid(t.PositionPrincipalId).ToString(),
+        AllowedPositionIds = t.EffectiveAllowedPositionIds.Select(ShortGuid.Encode).ToArray(),
         DisplayName = t.DisplayName,
         Location = t.Location,
         ClientId = t.ClientId,
         WebAuthnRpId = t.WebAuthnRpId,
+        Binding = t.Binding,
         Status = t.Status,
-        Enrolled = t.DpopJkt is not null,
+        Enrolled = t.EnrollmentAuthorizationId is not null,
         CreatedAt = t.CreatedAt,
         EnrolledAt = t.EnrolledAt,
         DisabledAt = t.DisabledAt,

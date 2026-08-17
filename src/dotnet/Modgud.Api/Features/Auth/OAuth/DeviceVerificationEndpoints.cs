@@ -334,9 +334,13 @@ public static class DeviceVerificationEndpoints
                 return null;
             }
 
-            var binding = await session.Query<DeviceCodeDpopBinding>()
-                .Where(b => b.UserCodeHash == DeviceCodeDpopBindingKeyForVerification(userCode))
-                .FirstOrDefaultAsync(cancellationToken);
+            DeviceCodeDpopBinding? dpopBinding = null;
+            if (string.Equals(target.Terminal.Binding, DeviceBindingIds.Dpop, StringComparison.Ordinal))
+            {
+                dpopBinding = await session.Query<DeviceCodeDpopBinding>()
+                    .Where(b => b.UserCodeHash == DeviceCodeDpopBindingKeyForVerification(userCode))
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
 
             terminalInfo = new TerminalConsentInfo
             {
@@ -344,7 +348,8 @@ public static class DeviceVerificationEndpoints
                 TerminalName = target.Terminal.DisplayName,
                 Location = target.Terminal.Location,
                 ClientId = target.Terminal.ClientId,
-                DpopFingerprint = binding is { } b && b.ExpiresAt > DateTimeOffset.UtcNow
+                Binding = target.Terminal.Binding,
+                DpopFingerprint = dpopBinding is { } b && b.ExpiresAt > DateTimeOffset.UtcNow
                     ? TerminalEnrollmentPrincipal.Fingerprint(b.Jkt)
                     : null,
             };
@@ -449,13 +454,18 @@ public static class DeviceVerificationEndpoints
         if (!target.Position.TerminalPolicy.Enabled)
             return Refuse("Terminal use is disabled for this position.");
 
-        // Check 7 — the initial device request must have been DPoP-proofed:
-        // without a bound key there is nothing to pin the enrollment to.
-        var binding = await session.Query<DeviceCodeDpopBinding>()
-            .Where(b => b.UserCodeHash == DeviceCodeDpopBindingKeyForVerification(normalizedUserCode))
-            .FirstOrDefaultAsync(cancellationToken);
-        if (binding is null || binding.ExpiresAt <= DateTimeOffset.UtcNow)
-            return Refuse("The device request was not DPoP-bound; terminal enrollment requires a device key.");
+        // Check 7 is binding-dependent. DPoP enrollment must prove the key in
+        // the initial device request; client-secret authenticates the client at
+        // both protocol endpoints, while `none` intentionally relies on this
+        // explicit administrator approval only.
+        if (string.Equals(target.Terminal.Binding, DeviceBindingIds.Dpop, StringComparison.Ordinal))
+        {
+            var dpopBinding = await session.Query<DeviceCodeDpopBinding>()
+                .Where(b => b.UserCodeHash == DeviceCodeDpopBindingKeyForVerification(normalizedUserCode))
+                .FirstOrDefaultAsync(cancellationToken);
+            if (dpopBinding is null || dpopBinding.ExpiresAt <= DateTimeOffset.UtcNow)
+                return Refuse("The device request was not DPoP-bound; terminal enrollment requires a device key.");
+        }
 
         // Check 8 — the user code still resolves to a redeemable device grant.
         var status = await tokenManager.GetStatusAsync(userCodeToken, cancellationToken);
@@ -486,7 +496,7 @@ public static class DeviceVerificationEndpoints
         // the terminal's poll then reaches the token-endpoint enrollment
         // exchange (§11.6) with token_use=terminal_enrollment.
         return Results.SignIn(
-            TerminalEnrollmentPrincipal.Create(target.Position, target.Terminal),
+            TerminalEnrollmentPrincipal.CreateV2(target.Terminal),
             properties: null,
             OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
@@ -597,6 +607,7 @@ public record TerminalConsentInfo
     public required string TerminalName { get; init; }
     public string? Location { get; init; }
     public required string ClientId { get; init; }
+    public required string Binding { get; init; }
     /// <summary>Null when the device request carried no DPoP proof — approval
     /// is refused in that case (rule 7).</summary>
     public string? DpopFingerprint { get; init; }

@@ -115,6 +115,7 @@ public record OAuthClientDto
     /// grid and the read-only modal that deep-links into the position editor.
     /// </summary>
     public string? LinkedPositionPrincipalId { get; init; }
+    public string? ManagedTerminalEnrollmentId { get; init; }
 }
 
 public record OAuthClientClaimDto
@@ -220,6 +221,8 @@ public record CreateOAuthClientDto
 
     /// <summary>Optional physical location of that slot ("Gate 3").</summary>
     public string? TerminalLocation { get; init; }
+    /// <summary>Binding selected for the terminal slot. Omitted = dpop.</summary>
+    public string TerminalBinding { get; init; } = "dpop";
 }
 
 public record UpdateOAuthClientDto

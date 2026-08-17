@@ -18,6 +18,7 @@ public record RealmSettingsDto
     public NativeGrantSettingsDto NativeGrants { get; init; } = new();
     public BrowserSessionPolicyDto BrowserSessions { get; init; } = new();
     public ClientSessionPolicyDto ClientSessions { get; init; } = new();
+    public PositionSecuritySettingsDto PositionSecurity { get; init; } = new();
     public AuthRateLimitsDto AuthRateLimits { get; init; } = new();
     public BrandingSettingsDto Branding { get; init; } = new();
     public EmailBrandingSettingsDto EmailBranding { get; init; } = new();
@@ -42,6 +43,8 @@ public record UpdateRealmSettingsDto
     public UpdateNativeGrantSettingsDto? NativeGrants { get; init; }
     public UpdateBrowserSessionPolicyDto? BrowserSessions { get; init; }
     public UpdateClientSessionPolicyDto? ClientSessions { get; init; }
+    public UpdatePositionSecuritySettingsDto? PositionSecurity { get; init; }
+    public bool ConfirmPositionSecurityConsequences { get; init; }
     public UpdateAuthRateLimitsDto? AuthRateLimits { get; init; }
     public UpdateBrandingSettingsDto? Branding { get; init; }
     public UpdateEmailBrandingSettingsDto? EmailBranding { get; init; }

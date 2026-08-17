@@ -45,6 +45,28 @@ in a changelog that ages between releases.
   and per-RS subset narrowing; native via the
   `Modgud.AspNetCore.ResourceServer` NuGet package
 
+**Positions and shared terminals (Technical Preview)**
+
+- Feature-flagged position principals for shared workplace terminals:
+  administrators assign people to positions, terminals are bound to one or
+  more positions, and the person currently staffing a terminal receives the
+  position's effective authorization without turning the device into a user
+  account
+- Flexible activation proofs (personal passkey, password, email OTP, or an
+  individually revocable position token) and immutable terminal-binding
+  profiles (DPoP key, client secret, or explicitly unbound), constrained by
+  realm security floors and position policy
+- Complete enrollment and staffing lifecycle: RFC 8628 admin approval,
+  refresh-time policy revalidation, targeted invalidation cascades, bounded
+  step-up tokens, V1-to-multi-position control-token compatibility, and an
+  admin UI for positions, terminal slots, activation tokens, and Staffing
+  OAuth clients
+- Ships **off by default**. Operators enable it with
+  `AppSettings__Features__PositionTerminals=true`; see
+  [Feature flags](./operate/feature-flags), the
+  [admin guide](./admin/positions), and the
+  [consumer contract](./integrate/position-terminals)
+
 **OAuth 2.0 / OpenID Connect (OpenIddict 7)**
 
 - Authorization Code + PKCE, Client Credentials, Refresh Token,

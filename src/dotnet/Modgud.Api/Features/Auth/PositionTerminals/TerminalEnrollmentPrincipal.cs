@@ -10,14 +10,40 @@ namespace Modgud.Api.Features.Auth.PositionTerminals;
 
 /// <summary>
 /// Builds the claims principal for terminal-ENROLLMENT tokens (MG-FT-04, plan
-/// §11.5). Deliberately NOT <c>CreateClaimsPrincipalAsync</c>: the subject is
-/// the POSITION, not a person — no user claims, no security stamp, no group
-/// bake. The token authorizes exactly one thing: driving the terminal-control
-/// surface (begin a staffing ceremony, MG-FT-05). It carries no business
-/// audience and no business scopes (MG-FT-04 done criterion).
+/// §11.5). Deliberately NOT <c>CreateClaimsPrincipalAsync</c>: V2 makes the
+/// terminal the subject, while refresh chains issued by V1 retain the original
+/// position subject during the compatibility window. Neither form represents
+/// a person, so neither carries user claims, security stamps, or group grants.
+/// The token authorizes only the terminal-control surface and carries no
+/// business audience or business scopes (MG-FT-04 done criterion).
 /// </summary>
 public static class TerminalEnrollmentPrincipal
 {
+    /// <summary>Control-plane V2: the terminal is the subject. Business
+    /// position selection is deferred to the staffing ceremony.</summary>
+    public static ClaimsPrincipal CreateV2(TerminalEnrollment terminal)
+    {
+        var identity = new ClaimsIdentity(
+            authenticationType: "Bearer",
+            nameType: Claims.Name,
+            roleType: Claims.Role);
+
+        identity.SetClaim(Claims.Subject, terminal.Id.ToString());
+        identity.SetClaim(Claims.Name, terminal.DisplayName);
+        identity.SetClaim(PositionTokenClaimTypes.PrincipalType, PositionPrincipalTypes.Terminal);
+        identity.SetClaim(PositionTokenClaimTypes.TokenUse, PositionTokenUses.TerminalEnrollment);
+        identity.SetClaim(PositionTokenClaimTypes.TerminalId, terminal.Id.ToString());
+        identity.SetClaim(PositionTokenClaimTypes.TerminalBinding, terminal.Binding);
+
+        var principal = new ClaimsPrincipal(identity);
+        principal.SetScopes(Scopes.OfflineAccess, PositionTerminalControl.Scope);
+        principal.SetResources(PositionTerminalControl.Audience);
+        principal.SetDestinations(_ => [Destinations.AccessToken]);
+        return principal;
+    }
+
+    /// <summary>Legacy Control-plane V1; retained for refresh chains issued
+    /// before F4 while the slot still has exactly its original position.</summary>
     public static ClaimsPrincipal Create(PositionPrincipal position, TerminalEnrollment terminal)
     {
         var identity = new ClaimsIdentity(
@@ -30,6 +56,7 @@ public static class TerminalEnrollmentPrincipal
         identity.SetClaim(PositionTokenClaimTypes.PrincipalType, PositionPrincipalTypes.Position);
         identity.SetClaim(PositionTokenClaimTypes.TokenUse, PositionTokenUses.TerminalEnrollment);
         identity.SetClaim(PositionTokenClaimTypes.TerminalId, terminal.Id.ToString());
+        identity.SetClaim(PositionTokenClaimTypes.TerminalBinding, terminal.Binding);
 
         var principal = new ClaimsPrincipal(identity);
         // offline_access keeps the enrollment chain refreshable (the terminal
