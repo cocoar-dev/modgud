@@ -100,6 +100,7 @@ public static class PositionsEndpoints
                         Message = "A display name is required."
                     });
                 var stagedAllowedPositionIds = new List<Guid[]>();
+                var stagedTerminalAccess = new List<TerminalClientAccessConfiguration>();
                 foreach (var terminal in stagedTerminals)
                 {
                     var binding = string.IsNullOrWhiteSpace(terminal.Binding)
@@ -132,6 +133,15 @@ public static class PositionsEndpoints
                             return Results.BadRequest(new { Error = "Terminal.PositionUnavailable", Message = $"Position '{ShortGuid.Encode(allowedId)}' is not compatible with this terminal." });
                     }
                     stagedAllowedPositionIds.Add(allowedIds.ToArray());
+
+                    var accessResult = await oauth.ValidateTerminalClientAccessAsync(
+                        terminal.Scopes, terminal.AppIds, ct);
+                    if (accessResult.IsError)
+                    {
+                        var error = accessResult.FirstError;
+                        return Results.BadRequest(new { Error = error.Code, Message = error.Description });
+                    }
+                    stagedTerminalAccess.Add(accessResult.Value);
                 }
 
                 // Staged grants (rule 5: the entity is creatable completely) —
@@ -206,7 +216,7 @@ public static class PositionsEndpoints
                         applicationId, clientId, $"{fn.DisplayName} — {terminal.DisplayName.Trim()}",
                         fn.Id, enrollmentId, terminal.WebAuthnRpId,
                         string.IsNullOrWhiteSpace(terminal.Binding) ? DeviceBindingIds.Dpop : terminal.Binding,
-                        out var clientSecret);
+                        stagedTerminalAccess[terminalIndex], out var clientSecret);
                     if (clientError is not null)
                         return Results.BadRequest(new { Error = clientError.Value.Code, Message = clientError.Value.Description });
 

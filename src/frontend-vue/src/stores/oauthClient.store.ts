@@ -10,6 +10,7 @@ import type {
   OAuthClientCreatedDto,
   ClientSecretDto,
 } from '@/models/oauth'
+import type { TerminalOAuthAccessUpdateDto } from '@/models/position'
 
 interface OAuthDataEvent {
   Subject: string
@@ -96,6 +97,18 @@ export const useOAuthClientStore = defineStore('oauth-client', () => {
     return updated
   }
 
+  async function updateTerminalAccess(
+    clientId: string,
+    terminalId: string,
+    dto: TerminalOAuthAccessUpdateDto,
+  ): Promise<OAuthClientDto> {
+    const updated = await useHttpClient('/api/position-terminal')
+      .addPath(terminalId, 'oauth-access')
+      .put<OAuthClientDto>(dto)
+    clients.value = upsert(clients.value, { ...updated, Id: updated.Id || clientId })
+    return updated
+  }
+
   async function remove(id: string): Promise<void> {
     await http.addPath(id).delete()
     clients.value = clients.value.filter((c) => c.Id !== id)
@@ -114,6 +127,7 @@ export const useOAuthClientStore = defineStore('oauth-client', () => {
     loadOne,
     create,
     update,
+    updateTerminalAccess,
     remove,
     regenerateSecret,
   }

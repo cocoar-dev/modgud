@@ -76,10 +76,40 @@ assigned to several compatible positions before enrollment.
 | `client_secret` | creation response | only for `client-secret`; shown once |
 | device P-256 key | terminal | only for `dpop`; ideally non-exportable |
 | RP-ID | slot response | WebAuthn RP for personal passkeys and position-token credentials |
+| target App(s) | managed OAuth client | owns the business scopes and APIs this terminal may call |
+| allowed business scope(s) | managed OAuth client | each scope's `Resources` become possible staffing-token audiences |
 
 Changing a binding, losing a key/secret, or adding a position after enrollment
 means a fresh slot and Device Flow. Removing an assignment is immediate and
 ends a running session for that position.
+
+Apps, business scopes, and the OAuth-client display name remain editable under
+**Admin → OAuth Clients**. The terminal lifecycle, grants, binding, RP-ID, and
+reference-token profile remain terminal-owned and locked. Changing Apps or
+scopes ends any current staffing session with `PolicyTightened`; the terminal
+stays enrolled and the next tap starts a token chain under the new profile.
+
+### Wiring a consumer API into `aud`
+
+Audience and authorization are deliberately two separate inputs:
+
+1. Register the consumer as an OAuth API, preferably with an absolute URI such
+   as `https://alerthub.example.com/api`, assigned to the AlertHub App.
+2. Register an enabled business scope, for example `alerthub-terminal`, whose
+   `Resources` contains `https://alerthub.example.com/api` and whose App is the
+   AlertHub App.
+3. On the terminal-managed OAuth client, select that App and allow that scope.
+4. Give the **Position** the AlertHub roles/permissions through normal groups
+   and roles.
+5. Request `scope=alerthub-terminal` when redeeming the staffing proof.
+
+The result contains `aud: https://alerthub.example.com/api`. Its
+`resource_access["https://alerthub.example.com/api"]` block contains the
+selected Position's AlertHub roles and permissions. An optional
+`resource=https://alerthub.example.com/api` parameter may narrow the
+scope-derived resource set, but it never grants an audience by itself. RFC 8707
+requires `resource` values to be absolute URIs. A legacy bare API identifier
+can still appear in `aud` via the scope, but must not be sent as `resource`.
 
 ## Terminal flows
 
@@ -122,6 +152,8 @@ grant_type=urn:cocoar:params:oauth:grant-type:staffing
 client_id=<terminal client>
 ceremony_id=<id>
 assertion=<method response JSON>
+scope=alerthub-terminal
+resource=https://alerthub.example.com/api
 ```
 
 For password, assertion is `{"password":"..."}`; for e-mail OTP it is
@@ -147,6 +179,8 @@ grant_type=urn:cocoar:params:oauth:grant-type:staffing
 client_id=<terminal client>
 ceremony_id=<single-use-selection-ticket>
 position_id=<candidate short guid>
+scope=alerthub-terminal
+resource=https://alerthub.example.com/api
 ```
 
 Both proof and selection ceremonies are single-use and bound to terminal,
