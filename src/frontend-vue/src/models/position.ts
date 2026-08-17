@@ -40,6 +40,10 @@ export interface TerminalCreateDto {
   WebAuthnRpId: string
   Binding?: string
   AllowedPositionIds?: string[]
+  /** Business scopes whose resources become staffing-token audiences. */
+  Scopes?: string[]
+  /** Apps owning the selected business scopes/APIs. */
+  AppIds?: string[]
 }
 
 export interface PositionUpdateDto {
@@ -78,6 +82,8 @@ export interface TerminalDto {
   ClientId: string
   WebAuthnRpId: string
   Binding: string
+  Scopes: string[]
+  AppIds: string[]
   Status: TerminalStatus
   Enrolled: boolean
   CreatedAt: string
@@ -86,6 +92,12 @@ export interface TerminalDto {
   RevokedAt?: string | null
   /** Only returned once, on creation of a client-secret terminal. */
   ClientSecret?: string | null
+}
+
+export interface TerminalOAuthAccessUpdateDto {
+  DisplayName?: string | null
+  Scopes: string[]
+  AppIds: string[]
 }
 
 // ── Activation grants (MG-FT-02) ─────────────────────────────────────────

@@ -67,9 +67,10 @@ staffing sessions and revokes the session tokens.
 
 **Position detail → Terminals** (or the same tab while creating the
 position). One slot per physical device.
-Each slot atomically creates its own locked-down OAuth client (reference
-tokens; the generic OAuth admin surface is read-only for it). The selected
-binding fixes the client profile:
+Each slot atomically creates its own managed OAuth client. Binding, grants,
+lifecycle and reference-token profile stay locked to the terminal contract;
+Display Name, target Apps and business scopes remain configurable in the OAuth
+client editor. The selected binding fixes the security profile:
 
 | Binding | Client | Device identity |
 |---|---|---|
@@ -110,10 +111,15 @@ from the chosen binding (reference tokens; public + DPoP, confidential + client
 secret, or public + no binding) and generates the `client_id`
 (`terminal.{suffix}`).
 
-After creation, terminal clients stay visible in the **OAuth Clients grid** as
-inventory. Their lifecycle is managed from the Position detail, so opening an
-existing terminal client is read-only and links back to its slot — the same
-ownership rule that SA-managed clients follow with the Service-Account editor.
+After creation, terminal clients stay visible in the **OAuth Clients grid**.
+Opening one allows exactly the resource-facing settings to change: **Display
+Name**, **Apps**, and **Scopes**. Select the consumer App and an enabled
+business scope whose Resources contain the consumer OAuth API. Those resources
+become possible staffing-token audiences; the Position's groups/roles provide
+the corresponding `resource_access` content. Lifecycle, grants, binding,
+RP-ID, URLs, token lifetimes and security flags remain locked and are managed
+from the Position/terminal contract. Saving an App/scope change immediately
+ends a running staffing session so old token rights cannot survive the change.
 
 For automation, the same contract is available through
 `POST /api/admin/oauth/clients`: reference an existing position

@@ -915,9 +915,8 @@ public static class AuthorizationEndpoints
         if (resourceAccess is not null)
             principal.SetClaim("resource_access", JsonSerializer.SerializeToElement(resourceAccess));
 
-        // StaffingPrincipal assigned destinations before the step-up-specific
-        // claims above replaced/added claims. Re-apply them here so token_use,
-        // acr and optional action/nonce are actually present on the wire.
+        // Claims are complete now: mark the whole principal for the access
+        // token, including the step-up action/nonce and resource_access.
         principal.SetDestinations(_ => [Destinations.AccessToken]);
 
         var lifetime = staffing.AbsoluteExpiresAt - now;
@@ -1188,6 +1187,7 @@ public static class AuthorizationEndpoints
         {
             principal.SetClaim("resource_access", JsonSerializer.SerializeToElement(resourceAccess));
         }
+        principal.SetDestinations(_ => [Destinations.AccessToken]);
 
         // §7.4 — short access tokens; the refresh chain lives exactly as long
         // as the session's absolute end, which no refresh ever moves.
@@ -1462,6 +1462,7 @@ public static class AuthorizationEndpoints
         {
             principal.SetClaim("resource_access", JsonSerializer.SerializeToElement(resourceAccess));
         }
+        principal.SetDestinations(_ => [Destinations.AccessToken]);
 
         // §14.4 — the chain can never outlive the shift: the rotated refresh
         // token's lifetime is exactly the time to the fixed absolute end.

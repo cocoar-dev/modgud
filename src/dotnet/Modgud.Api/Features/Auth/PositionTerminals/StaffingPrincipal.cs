@@ -45,10 +45,10 @@ public static class StaffingPrincipal
                 _ => "webauthn",
             }]);
 
-        var principal = new ClaimsPrincipal(identity);
-        // Scopes/resources are applied by the exchange (they depend on the
-        // request); every claim goes to the access token only.
-        principal.SetDestinations(_ => [Destinations.AccessToken]);
-        return principal;
+        // Scopes/resources and resource_access are applied by the exchange
+        // because they depend on the concrete request. The exchange marks
+        // destinations only after those claims exist; doing it here would
+        // silently omit every claim added later.
+        return new ClaimsPrincipal(identity);
     }
 }

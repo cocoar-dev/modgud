@@ -181,24 +181,31 @@ const scopeOptions = computed(() => {
     permissions: t('admin.oauthClients.scopes.permissionsDescription', {}, 'Aufgelöste Berechtigungen im Token'),
     offline_access: t('admin.oauthClients.scopes.offlineAccessDescription', {}, 'Erlaubt die Ausgabe von Refresh-Tokens'),
   }
-  return scopeStore.scopes.map((s) => {
-    const isStandard = standardOidc.has(s.Name)
-    const appLabel = s.AppId
-      ? applicationsStore.apps.find((a) => a.Id === s.AppId)?.DisplayName ?? s.AppId
-      : null
-    const subtitleParts = [standardDescriptions[s.Name] ?? s.DisplayName, appLabel].filter(Boolean)
-    return {
-      value: s.Name,
-      label: s.Name,
-      subtitle: subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined,
-      icon: 'tag',
-      group: isStandard
-        ? t('admin.oauthClients.scopes.groupStandard', {}, 'Realm-weit (OIDC-Standard)')
-        : appLabel
-          ? t('admin.oauthClients.scopes.groupApp', { app: appLabel }, `App: ${appLabel}`)
-          : t('admin.oauthClients.scopes.groupRealm', {}, 'Realm-weit'),
-    }
-  })
+  return scopeStore.scopes
+    .filter((s) => !hasStaffingGrant.value
+      || (s.Enabled && s.Resources.length > 0)
+      || form.value.Scopes.includes(s.Name))
+    .map((s) => {
+      const isStandard = standardOidc.has(s.Name)
+      const appLabel = s.AppId
+        ? applicationsStore.apps.find((a) => a.Id === s.AppId)?.DisplayName ?? s.AppId
+        : null
+      const resourceLabel = hasStaffingGrant.value && s.Resources.length > 0
+        ? `aud: ${s.Resources.join(', ')}`
+        : null
+      const subtitleParts = [standardDescriptions[s.Name] ?? s.DisplayName, appLabel, resourceLabel].filter(Boolean)
+      return {
+        value: s.Name,
+        label: s.Name,
+        subtitle: subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined,
+        icon: 'tag',
+        group: isStandard
+          ? t('admin.oauthClients.scopes.groupStandard', {}, 'Realm-weit (OIDC-Standard)')
+          : appLabel
+            ? t('admin.oauthClients.scopes.groupApp', { app: appLabel }, `App: ${appLabel}`)
+            : t('admin.oauthClients.scopes.groupRealm', {}, 'Realm-weit'),
+      }
+    })
 })
 
 // App-link DualListbox (n:m). Empty Linked = realm-wide. Multiple
@@ -416,7 +423,8 @@ function discardNewServiceAccountDraft() {
 // ── Terminal client (MG-FT) ───────────────────────────────────────────────
 // In create mode the staffing grant opens the same choose-or-create ownership
 // pattern as client_credentials + ServiceAccount. Persisted terminal clients
-// remain read-only here because their lifecycle belongs to the Position modal.
+// keep their lifecycle fields locked, while their business-resource access is
+// edited through the dedicated terminal-owned endpoint.
 const hasStaffingGrant = computed(() => form.value.AllowedGrantTypes.includes(STAFFING_GRANT))
 const newPositionDraft = ref<PositionCreateDto | null>(null)
 const terminalProfileSnapshot = ref<Partial<FormState> | null>(null)
@@ -501,7 +509,6 @@ watch(hasStaffingGrant, (enabled, wasEnabled) => {
     ClientSecret: '',
     ConsentType: 'implicit',
     Enabled: true,
-    Scopes: [],
     AccessTokenType: 'Reference',
     RedirectUris: [],
     PostLogoutRedirectUris: [],
@@ -515,7 +522,6 @@ watch(hasStaffingGrant, (enabled, wasEnabled) => {
     SlidingRefreshTokenLifetime: null,
     ClientSessionIdleLifetime: null,
     ClientSessionAbsoluteLifetime: null,
-    AppIds: [],
   })
 })
 
@@ -612,8 +618,9 @@ const flowIssues = computed<string[]>(() => {
 })
 
 const terminalIssues = computed<string[]>(() => {
-  if (!isCreate.value || !hasStaffingGrant.value) return []
+  if (!hasStaffingGrant.value) return []
   const errs: string[] = []
+  if (isCreate.value) {
     if (!form.value.LinkedPositionPrincipalId && !newPositionDraft.value)
       errs.push(t('admin.oauthClients.validation.noPosition', {}, 'Das Terminalprofil benötigt eine bestehende oder neue Position.'))
     if (!form.value.TerminalDisplayName.trim())
@@ -632,6 +639,12 @@ const terminalIssues = computed<string[]>(() => {
       errs.push(t('admin.oauthClients.validation.newPositionBindingMismatch', {}, 'Die neue Position erlaubt die gewählte Gerätebindung nicht.'))
     if (!terminalBindingMeetsRealmFloor.value)
       errs.push(t('admin.oauthClients.validation.terminalBindingBelowRealmFloor', {}, 'Die Gerätebindung erfüllt die Sicherheitsvorgabe des Realms nicht.'))
+  }
+  for (const scopeName of form.value.Scopes) {
+    const scope = scopeStore.scopes.find((candidate) => candidate.Name === scopeName)
+    if (scope?.AppId && !form.value.AppIds.includes(scope.AppId))
+      errs.push(t('admin.oauthClients.validation.terminalScopeAppMissing', { scope: scopeName }, `Für Scope ${scopeName} muss dessen App ausgewählt sein.`))
+  }
   return errs
 })
 
@@ -655,16 +668,13 @@ const footerButton = computed(() => {
       loading: false,
       onClick: () => props.close(),
     }
-  // Terminal-managed clients are a viewer here (modal-contract Viewer kind):
-  // every mutation path lives in the position modal, so there is nothing to
-  // save — only close.
   if (isTerminalManaged.value)
     return {
       visible: true,
-      text: t('common.close', {}, 'Schließen'),
-      disabled: false,
-      loading: false,
-      onClick: () => props.close(),
+      text: t('common.save', {}, 'Save'),
+      disabled: loading.value || terminalIssues.value.length > 0,
+      loading: loading.value,
+      onClick: save,
     }
   return {
     visible: true,
@@ -729,6 +739,13 @@ async function save() {
       } else {
         props.close()
       }
+    } else if (isTerminalManaged.value && form.value.ManagedTerminalEnrollmentId) {
+      await store.updateTerminalAccess(props.id, form.value.ManagedTerminalEnrollmentId, {
+        DisplayName: form.value.DisplayName.trim() || null,
+        Scopes: [...form.value.Scopes],
+        AppIds: [...form.value.AppIds],
+      })
+      props.close()
     } else {
       await store.update(props.id, buildUpdateDto())
       props.close()
@@ -888,18 +905,20 @@ async function copySecret() {
         {{ error }}
       </CoarNotice>
 
-      <!-- Terminal-managed client — this modal is a viewer (modal-contract
-           Viewer kind): the authoritative editor is the position modal, same
-           rule as SA-managed clients and their SA editor. -->
-      <CoarNotice v-if="isTerminalManaged" variant="info" class="secret-banner">
+      <!-- Terminal lifecycle stays position-owned. The OAuth resource profile
+           (Display Name, Apps, Scopes) remains editable here. -->
+      <CoarNotice v-if="isTerminalManaged" truncate variant="info" class="secret-banner">
         <div class="flex items-center gap-3">
           <span class="min-w-0 flex-1">
-            {{ t('admin.oauthClients.terminal.managedHint', {}, 'Terminal-Client einer Position — Verwaltung (deaktivieren, reaktivieren, widerrufen) erfolgt im Positions-Modal; diese Ansicht ist schreibgeschützt.') }}
+            {{ t('admin.oauthClients.terminal.managedHintShort', {}, 'Terminal-Lifecycle und Sicherheitsprofil werden über Positionen verwaltet.') }}
           </span>
           <CoarButton v-if="form.LinkedPositionPrincipalId" size="s" variant="secondary" icon-start="briefcase" class="shrink-0" @click="goToPosition">
             {{ t('admin.oauthClients.terminal.goToPosition', {}, 'Zur Position') }}
           </CoarButton>
         </div>
+        <template #details>
+          {{ t('admin.oauthClients.terminal.managedHint', {}, 'Display Name, Apps und Scopes können hier geändert werden. Grants, Gerätebindung, RP-ID und Lifecycle bleiben an den Terminal-Slot gebunden.') }}
+        </template>
       </CoarNotice>
 
       <!-- Full-object expert editor. Every tab participates in the same local
@@ -1012,7 +1031,7 @@ async function copySecret() {
           <CoarNotice v-if="hasStaffingGrant" truncate variant="info">
             {{ t('admin.oauthClients.terminal.loginProfileNoticeShort', {}, 'Staffing verwendet implizite Zustimmung.') }}
             <template #details>
-              {{ t('admin.oauthClients.terminal.loginProfileNotice', {}, 'Die WebAuthn RP-ID bleibt konfigurierbar, weil sie festlegt, gegen welchen Host die Personal-Passkeys geprüft werden.') }}
+              {{ t('admin.oauthClients.terminal.loginProfileNotice', {}, 'Die WebAuthn RP-ID wird beim Erstellen festgelegt, weil sie bestimmt, gegen welchen Host Personal-Passkeys geprüft werden. Eine spätere Änderung erfordert einen neuen Terminal-Slot und erneutes Enrollment.') }}
             </template>
           </CoarNotice>
           <div class="client-form">
@@ -1045,6 +1064,7 @@ async function copySecret() {
                   <CoarTextInput
                     v-model="form.WebAuthnRpId"
                     clearable
+                    :disabled="isTerminalManaged"
                     :placeholder="t('admin.oauthClients.webAuthnRpIdPlaceholder', {}, 'leer = Realm-Domain')" />
                   <p class="field-hint">
                     {{ hasStaffingGrant
@@ -1062,9 +1082,9 @@ async function copySecret() {
              only). -->
         <div v-show="activeTab === 'apps'" class="tab-content">
           <CoarNotice v-if="hasStaffingGrant" truncate variant="info">
-            {{ t('admin.oauthClients.terminal.appsProfileNoticeShort', {}, 'Staffing-Clients haben keine App-Zuordnung.') }}
+            {{ t('admin.oauthClients.terminal.appsProfileNoticeShort', {}, 'Apps begrenzen die fachlichen Ressourcen dieses Staffing-Clients.') }}
             <template #details>
-              {{ t('admin.oauthClients.terminal.appsProfileNotice', {}, 'Ihr fachlicher Besitzer ist der zugeordnete Terminal-Slot der Position.') }}
+              {{ t('admin.oauthClients.terminal.appsProfileNotice', {}, 'Wähle die Apps, zu denen die erlaubten Business-Scopes und Ziel-APIs gehören. Position und Besetzung bleiben davon getrennt.') }}
             </template>
           </CoarNotice>
           <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
@@ -1111,7 +1131,6 @@ async function copySecret() {
               class="flex-1 min-h-0"
               v-model="form.AppIds"
               :options="appOptions"
-              :disabled="hasStaffingGrant"
               drag-drop
               sort-options="asc"
               :search-fields="['label', 'subtitle', 'group']"
@@ -1125,9 +1144,9 @@ async function copySecret() {
              and /connect/token requests for any scope not on this list. -->
         <div v-show="activeTab === 'scopes'" class="tab-content">
           <CoarNotice v-if="hasStaffingGrant" truncate variant="info">
-            {{ t('admin.oauthClients.terminal.scopesProfileNoticeShort', {}, 'Staffing-Clients haben keine frei wählbaren Scopes.') }}
+            {{ t('admin.oauthClients.terminal.scopesProfileNoticeShort', {}, 'Scope-Ressourcen werden zu Audiences des Staffing-Tokens.') }}
             <template #details>
-              {{ t('admin.oauthClients.terminal.scopesProfileNotice', {}, 'Ihre Berechtigungen entstehen aus Position, Besetzung und Ziel-API.') }}
+              {{ t('admin.oauthClients.terminal.scopesProfileNotice', {}, 'Der Terminal-Client darf nur ausgewählte Business-Scopes anfordern. Deren API-Ressourcen erzeugen aud; Position-Rollen und -Berechtigungen erzeugen resource_access.') }}
             </template>
           </CoarNotice>
           <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
@@ -1167,7 +1186,6 @@ async function copySecret() {
               class="flex-1 min-h-0"
               v-model="form.Scopes"
               :options="scopeOptions"
-              :disabled="hasStaffingGrant"
               drag-drop
               sort-options="asc"
               :search-fields="['label', 'subtitle', 'group']"
@@ -1405,7 +1423,7 @@ async function copySecret() {
               </CoarFormField>
             </div>
 
-            <CoarNotice truncate variant="info">
+            <CoarNotice v-if="isCreate" truncate variant="info">
               {{ t('admin.oauthClients.terminal.atomicHintShort', {}, 'Position, Terminal-Slot und OAuth-Client werden gemeinsam erstellt.') }}
               <template #details>
                 {{ t('admin.oauthClients.terminal.atomicHint', {}, 'Die Anlage erfolgt atomar: Schlägt ein Teil fehl, wird nichts gespeichert.') }}

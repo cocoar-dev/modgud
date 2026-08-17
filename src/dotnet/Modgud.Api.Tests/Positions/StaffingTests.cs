@@ -13,11 +13,15 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Modgud.Api.Features.Positions;
 using Modgud.Api.Tests.Infrastructure;
+using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.DTOs.Positions;
+using Modgud.Application.Services;
 using Modgud.Application.DTOs.User;
 using Modgud.Authentication.Domain;
+using Modgud.Authorization.Apps;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Domain.PositionTerminals;
+using Modgud.Domain.OAuth.Apis;
 using Microsoft.Extensions.Options;
 using Modgud.Infrastructure.Email;
 using Modgud.Infrastructure.OpenIddict.Dpop;
@@ -106,6 +110,76 @@ public class StaffingTests : IntegrationTestBase
         var replay = await RedeemStaffingAsync(setup, begin.CeremonyId, assertion);
         Assert.False(replay.IsSuccessStatusCode);
         Assert.Contains("invalid_grant", await replay.Content.ReadAsStringAsync(ct));
+    }
+
+    [Fact]
+    public async Task A_staffing_scope_creates_the_consumer_audience_and_position_resource_access()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        const string appSlug = "staffing-audience-app";
+        const string audience = "https://alerthub.localhost/api";
+        const string scopeName = "alerthub-terminal";
+        var app = await CreateStaffingBusinessResourceAsync(appSlug, audience, scopeName, ct);
+        var setup = await SetUpEnrolledTerminalWithGrantedUserAsync(
+            "fn-staff-audience", ct,
+            businessScopes: [scopeName],
+            appIds: [new ShortGuid(app.Id).ToString()]);
+
+        var positionRole = await Factory.CreateTestRoleAsync(
+            $"StaffingAlarmRead_{Guid.NewGuid():N}",
+            [("alarm", "read")], appSlug: appSlug);
+        await Factory.CreateTestGroupAsync(
+            $"StaffingPosition_{Guid.NewGuid():N}",
+            [setup.PositionId], [positionRole.Id], boundTo: [appSlug]);
+
+        var begin = await BeginStaffingAsync(setup, ct);
+        var assertion = setup.Authenticator.CreateAssertionJson(
+            begin.Options.GetProperty("challenge").GetString()!, RpId, $"https://{RpId}");
+        var form = StaffingForm(setup.ClientId, begin.CeremonyId, assertion);
+        form["scope"] = scopeName;
+        form["resource"] = audience;
+        var response = await PostTokenForBindingAsync(form, setup);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        Assert.True(response.IsSuccessStatusCode, body);
+        using var tokens = JsonDocument.Parse(body);
+        var accessToken = tokens.RootElement.GetProperty("access_token").GetString()!;
+
+        using var serviceScope = Factory.Services.CreateScope();
+        var manager = serviceScope.ServiceProvider.GetRequiredService<IOpenIddictTokenManager>();
+        var token = await manager.FindByReferenceIdAsync(accessToken, ct);
+        Assert.NotNull(token);
+        var payload = await manager.GetPayloadAsync(token!, ct);
+        Assert.False(string.IsNullOrWhiteSpace(payload));
+        var jwt = new JsonWebToken(payload);
+        Assert.Contains(audience, jwt.Audiences);
+
+        var payloadJson = Encoding.UTF8.GetString(Base64Url.DecodeFromChars(jwt.EncodedPayload));
+        using var payloadDocument = JsonDocument.Parse(payloadJson);
+        var resource = payloadDocument.RootElement
+            .GetProperty("resource_access")
+            .GetProperty(audience);
+        Assert.Contains("alarm:read",
+            resource.GetProperty("permissions").EnumerateArray().Select(item => item.GetString()));
+        Assert.NotEmpty(resource.GetProperty("roles").EnumerateArray());
+
+        // The terminal stays enrolled, but changing its audience profile must
+        // kill the already-minted staffing chain immediately.
+        var update = await Client.PutAsJsonAsync(
+            $"/api/position-terminal/{new ShortGuid(setup.TerminalId)}/oauth-access",
+            new { DisplayName = "No business audience", Scopes = Array.Empty<string>(), AppIds = Array.Empty<string>() },
+            JsonOptions, ct);
+        Assert.True(update.IsSuccessStatusCode, await update.Content.ReadAsStringAsync(ct));
+
+        using var verificationScope = Factory.Services.CreateScope();
+        var query = verificationScope.ServiceProvider.GetRequiredService<IQuerySession>();
+        var staffing = Assert.Single(await query.Query<StaffingSession>()
+            .Where(item => item.TerminalEnrollmentId == setup.TerminalId).ToListAsync(ct));
+        Assert.Equal(StaffingSessionStatus.Ended, staffing.Status);
+        Assert.Equal(StaffingSessionEndReason.PolicyTightened, staffing.EndReason);
+        var terminal = await query.LoadAsync<TerminalEnrollment>(setup.TerminalId, ct);
+        Assert.Equal(TerminalEnrollmentStatus.Active, terminal!.Status);
+        Assert.Null(terminal.ActiveStaffingSessionId);
     }
 
     [Theory]
@@ -1190,7 +1264,9 @@ public class StaffingTests : IntegrationTestBase
     private async Task<StaffingSetup> SetUpEnrolledTerminalWithGrantedUserAsync(
         string accountName,
         CancellationToken ct,
-        string binding = DeviceBindingIds.Dpop)
+        string binding = DeviceBindingIds.Dpop,
+        IReadOnlyList<string>? businessScopes = null,
+        IReadOnlyList<string>? appIds = null)
     {
         // Position + terminal slot via the admin API.
         var fnResp = await Client.PostAsJsonAsync("/api/position", new
@@ -1212,6 +1288,8 @@ public class StaffingTests : IntegrationTestBase
                 Location = "Tor 1",
                 WebAuthnRpId = RpId,
                 Binding = binding,
+                Scopes = businessScopes ?? [],
+                AppIds = appIds ?? [],
             }, JsonOptions, ct);
         Assert.True(termResp.IsSuccessStatusCode, await termResp.Content.ReadAsStringAsync(ct));
         var terminal = (await termResp.Content.ReadFromJsonAsync<TerminalDto>(JsonOptions, ct))!;
@@ -1281,6 +1359,38 @@ public class StaffingTests : IntegrationTestBase
 
         return new StaffingSetup(fnId, terminalId, terminal.ClientId, userId, grantId,
             accessToken, refreshToken, deviceKey, authenticator, binding, terminal.ClientSecret);
+    }
+
+    private async Task<App> CreateStaffingBusinessResourceAsync(
+        string appSlug, string audience, string scopeName, CancellationToken ct)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+        var appId = Guid.NewGuid();
+        var permission = new AppPermission(Guid.NewGuid(), "alarm", "read", null);
+        session.Events.StartStream<App>(appId, new AppCreatedEvent(
+            appId, appSlug, appSlug, null, [permission], IsSystem: false));
+        await session.SaveChangesAsync(ct);
+
+        var apiId = Guid.NewGuid();
+        var (api, created) = OAuthApiAggregate.Create(
+            apiId, audience, audience, description: null, enabled: true, scopes: []);
+        session.Events.StartStream<OAuthApiAggregate>(apiId, created);
+        session.Events.Append(apiId, api.SetAppId(appId));
+        session.Events.Append(apiId, api.SetPermissionIds([permission.Id]));
+        await session.SaveChangesAsync(ct);
+
+        var oauth = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
+        var scopeResult = await oauth.CreateScopeAsync(new CreateOAuthScopeDto
+        {
+            Name = scopeName,
+            DisplayName = scopeName,
+            Resources = [audience],
+            AppId = new ShortGuid(appId).ToString(),
+        }, ct);
+        Assert.False(scopeResult.IsError,
+            string.Join(", ", scopeResult.Errors.Select(error => error.Description)));
+        return (await session.LoadAsync<App>(appId, ct))!;
     }
 
     // ─── flow helpers ─────────────────────────────────────────────────────

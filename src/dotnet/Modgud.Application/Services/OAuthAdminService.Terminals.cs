@@ -4,15 +4,31 @@ using Marten;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.DTOs.Positions;
 using Modgud.Application.Errors;
+using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Authorization.Principals;
+using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.PositionTerminals;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
+using Modgud.Domain.OAuth.Scopes;
 using static Modgud.Application.Services.OAuthAdminMapping;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Application.Services;
+
+/// <summary>
+/// Validated business-resource access attached to a terminal-managed OAuth
+/// client. Scopes create token audiences through their Resources relation;
+/// AppIds authorize the client to request app-scoped scopes. Position RBAC is
+/// intentionally separate and is rendered into resource_access at staffing
+/// token issuance.
+/// </summary>
+public sealed record TerminalClientAccessConfiguration(
+    IReadOnlyList<string> Scopes,
+    IReadOnlyList<Guid> AppIds);
+
+public sealed record TerminalClientConfigurationChange(bool Changed, bool AccessChanged);
 
 /// <summary>
 /// MG-FT-03 — the terminal-managed client half of the OAuth admin service. All
@@ -258,13 +274,17 @@ public partial class OAuthAdminService
             ? $"{position.DisplayName} — {terminalDisplayName}"
             : dto.DisplayName.Trim();
 
+        var accessResult = await ValidateTerminalClientAccessAsync(dto.Scopes, dto.AppIds, ct);
+        if (accessResult.IsError)
+            return accessResult.Errors;
+
         // ── Stage client + enrollment, commit once ─────────────────────────
         var enrollmentId = Guid.NewGuid();
         var applicationId = Guid.NewGuid();
         var clientError = StageCreateTerminalClient(
             applicationId, clientId, clientDisplayName,
             position.Id, enrollmentId, dto.WebAuthnRpId ?? string.Empty,
-            binding, out var clientSecret);
+            binding, accessResult.Value, out var clientSecret);
         if (clientError is not null)
             return clientError.Value;
 
@@ -311,6 +331,7 @@ public partial class OAuthAdminService
         Guid terminalEnrollmentId,
         string webAuthnRpId,
         string binding,
+        TerminalClientAccessConfiguration access,
         out string? clientSecret)
     {
         clientSecret = null;
@@ -335,7 +356,7 @@ public partial class OAuthAdminService
                 webAuthnRpId, binding) is { } invariantError)
             return invariantError;
 
-        var permissions = BuildClientPermissions(grants, scopes: [], clientType);
+        var permissions = BuildClientPermissions(grants, access.Scopes, clientType);
         var (aggregate, createdEvent) = OAuthApplicationAggregate.Create(
             applicationId,
             clientId,
@@ -367,6 +388,9 @@ public partial class OAuthAdminService
         _session.Events.Append(applicationId,
             aggregate.SetPositionTerminalLink(positionPrincipalId: null, terminalEnrollmentId));
 
+        if (access.AppIds.Count > 0)
+            _session.Events.Append(applicationId, aggregate.SetAppIds(access.AppIds));
+
         if (requireSecret)
         {
             clientSecret = GenerateSecret();
@@ -376,6 +400,115 @@ public partial class OAuthAdminService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Resolves and validates the business scopes/apps for a managed terminal
+    /// client. Unlike a normal OAuth client, a terminal client may only carry
+    /// registered, enabled scopes that actually resolve to an enabled API
+    /// resource. This prevents a UI selection that can never produce an aud.
+    /// </summary>
+    public async Task<ErrorOr<TerminalClientAccessConfiguration>> ValidateTerminalClientAccessAsync(
+        IReadOnlyList<string>? requestedScopes,
+        IReadOnlyList<string>? requestedAppIds,
+        CancellationToken ct)
+    {
+        var appIds = new List<Guid>();
+        foreach (var raw in requestedAppIds?
+                     .Where(value => !string.IsNullOrWhiteSpace(value))
+                     .Select(value => value.Trim())
+                     .Distinct(StringComparer.Ordinal) ?? [])
+        {
+            if (!ShortGuid.TryParse(raw, out Guid appId))
+                return Error.Validation("Terminal.InvalidAppId", $"AppId '{raw}' is not a valid Guid or ShortGuid.");
+            var app = await _session.LoadAsync<App>(appId, ct);
+            if (app is null || app.IsDeleted)
+                return Error.Validation("Terminal.AppNotFound", $"App '{raw}' does not exist.");
+            appIds.Add(appId);
+        }
+
+        var scopes = requestedScopes?
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList() ?? [];
+        if (scopes.Count == 0)
+            return new TerminalClientAccessConfiguration([], appIds);
+
+        var scopeStates = await _session.Query<OAuthScopeState>()
+            .Where(scope => scopes.Contains(scope.Name) && !scope.IsDeleted)
+            .ToListAsync(ct);
+        var byName = scopeStates.ToDictionary(scope => scope.Name, StringComparer.Ordinal);
+        foreach (var scopeName in scopes)
+        {
+            if (!byName.TryGetValue(scopeName, out var scope))
+                return Error.Validation("Terminal.ScopeNotFound", $"Scope '{scopeName}' does not exist.");
+            if (!scope.Enabled)
+                return Error.Validation("Terminal.ScopeDisabled", $"Scope '{scopeName}' is disabled.");
+            if (scope.Resources.Count == 0)
+                return Error.Validation("Terminal.ScopeHasNoResource",
+                    $"Scope '{scopeName}' is not linked to an OAuth API and cannot create a staffing-token audience.");
+            if (scope.AppId is Guid scopeAppId && !appIds.Contains(scopeAppId))
+                return Error.Validation("Terminal.ScopeAppNotSelected",
+                    $"Scope '{scopeName}' belongs to an App that is not assigned to this terminal client.");
+
+            foreach (var resource in scope.Resources.Distinct(StringComparer.Ordinal))
+            {
+                var api = await _session.Query<OAuthApiState>()
+                    .FirstOrDefaultAsync(candidate => candidate.Name == resource && !candidate.IsDeleted, ct);
+                if (api is null || !api.Enabled)
+                    return Error.Validation("Terminal.ApiUnavailable",
+                        $"Scope '{scopeName}' targets unavailable OAuth API '{resource}'.");
+                if (api.AppId is Guid apiAppId && !appIds.Contains(apiAppId))
+                    return Error.Validation("Terminal.ApiAppNotSelected",
+                        $"OAuth API '{resource}' belongs to an App that is not assigned to this terminal client.");
+            }
+        }
+
+        return new TerminalClientAccessConfiguration(scopes, appIds);
+    }
+
+    /// <summary>
+    /// Stages an access-profile update through the terminal-owned mutation
+    /// path. The generic OAuth PUT remains forbidden for managed clients, so
+    /// grant/binding/link invariants cannot drift.
+    /// </summary>
+    public async Task<ErrorOr<TerminalClientConfigurationChange>> StageSetTerminalClientAccessAsync(
+        Guid applicationId,
+        Guid terminalEnrollmentId,
+        string? displayName,
+        TerminalClientAccessConfiguration access,
+        CancellationToken ct)
+    {
+        var aggregate = await _session.Events.AggregateStreamAsync<OAuthApplicationAggregate>(applicationId, token: ct);
+        if (aggregate is null || aggregate.IsDeleted)
+            return OAuthErrors.ClientNotFound(applicationId.ToString());
+        if (aggregate.ManagedTerminalEnrollmentId != terminalEnrollmentId)
+            return OAuthErrors.CannotMutateTerminalManagedClient(aggregate.ClientId);
+
+        var currentScopes = ExtractScopes(aggregate.Permissions);
+        var displayNameChanged = displayName != aggregate.DisplayName;
+        var scopesChanged = !currentScopes.ToHashSet(StringComparer.Ordinal).SetEquals(access.Scopes);
+        var appsChanged = !aggregate.AppIds.ToHashSet().SetEquals(access.AppIds);
+        if (!displayNameChanged && !scopesChanged && !appsChanged)
+            return new TerminalClientConfigurationChange(Changed: false, AccessChanged: false);
+
+        if (displayNameChanged)
+            _session.Events.Append(applicationId, aggregate.SetDisplayName(displayName));
+        if (scopesChanged)
+        {
+            var permissions = BuildClientPermissions(
+                TerminalGrantTypes.ToArray(),
+                access.Scopes,
+                aggregate.ClientType ?? OAuthClientTypes.Public);
+            _session.Events.Append(applicationId, aggregate.SetPermissions(permissions));
+        }
+        if (appsChanged)
+            _session.Events.Append(applicationId, aggregate.SetAppIds(access.AppIds));
+
+        return new TerminalClientConfigurationChange(
+            Changed: true,
+            AccessChanged: scopesChanged || appsChanged);
     }
 
     /// <summary>

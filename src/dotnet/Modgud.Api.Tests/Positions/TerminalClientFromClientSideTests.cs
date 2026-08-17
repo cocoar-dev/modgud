@@ -5,9 +5,13 @@ using BuildingBlocks.Helper;
 using Marten;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.Positions;
+using Modgud.Application.DTOs.OAuth;
+using Modgud.Application.Services;
 using Modgud.Application.DTOs.User;
+using Modgud.Authorization.Apps;
 using Modgud.Domain.PositionTerminals;
 using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Common;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -110,6 +114,122 @@ public class TerminalClientFromClientSideTests : IntegrationTestBase
             "gt:" + PositionGrantTypes.StaffingSession,
             "gt:urn:ietf:params:oauth:grant-type:device_code",
         ], client.Permissions.Where(p => p.StartsWith("gt:")).OrderBy(p => p, StringComparer.Ordinal).ToList());
+    }
+
+    [Fact]
+    public async Task A_staffing_client_can_be_created_with_a_business_scope_and_target_app()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var app = await CreateBusinessResourceAsync(
+            "tc-alert-app", "tc-alert-api", "tc-alert-terminal", ct);
+        var positionId = await CreatePositionAsync("tc-resource-create", terminalEnabled: true, ct);
+
+        var resp = await PostClientAsync(new
+        {
+            ClientId = "tc-resource-client",
+            DisplayName = "Alert terminal",
+            ClientType = "public",
+            AllowedGrantTypes = new[] { StaffingGrant },
+            LinkedPositionPrincipalId = positionId,
+            TerminalDisplayName = "Alert terminal left",
+            WebAuthnRpId = RpId,
+            Scopes = new[] { "tc-alert-terminal" },
+            AppIds = new[] { new ShortGuid(app.Id).ToString() },
+        }, ct);
+        var body = await resp.Content.ReadAsStringAsync(ct);
+        Assert.True(resp.IsSuccessStatusCode, body);
+        var created = JsonSerializer.Deserialize<JsonElement>(body).GetProperty("Client");
+
+        Assert.Contains("scp:tc-alert-terminal",
+            created.GetProperty("Permissions").EnumerateArray().Select(item => item.GetString()));
+        Assert.Contains(StaffingGrant,
+            created.GetProperty("AllowedGrantTypes").EnumerateArray().Select(item => item.GetString()));
+        Assert.Equal(new ShortGuid(app.Id).ToString(),
+            Assert.Single(created.GetProperty("AppIds").EnumerateArray()).GetString());
+
+        var terminalId = JsonSerializer.Deserialize<JsonElement>(body)
+            .GetProperty("CreatedTerminalId").GetString()!;
+        var slots = await Client.GetFromJsonAsync<List<TerminalDto>>(
+            $"/api/position/{positionId}/terminals", JsonOptions, ct);
+        var terminal = Assert.Single(slots!);
+        Assert.Equal(terminalId, terminal.Id);
+        Assert.Equal(["tc-alert-terminal"], terminal.Scopes);
+        Assert.Equal([new ShortGuid(app.Id).ToString()], terminal.AppIds);
+    }
+
+    [Fact]
+    public async Task A_terminal_owned_update_changes_only_display_name_apps_and_scopes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var app = await CreateBusinessResourceAsync(
+            "tc-update-app", "tc-update-api", "tc-update-terminal", ct);
+        var positionId = await CreatePositionAsync("tc-resource-update", terminalEnabled: true, ct);
+        var create = await PostClientAsync(new
+        {
+            ClientId = "tc-resource-update-client",
+            DisplayName = "Before",
+            ClientType = "public",
+            AllowedGrantTypes = new[] { StaffingGrant },
+            LinkedPositionPrincipalId = positionId,
+            TerminalDisplayName = "Slot stays fixed",
+            WebAuthnRpId = RpId,
+        }, ct);
+        var createBody = await create.Content.ReadAsStringAsync(ct);
+        Assert.True(create.IsSuccessStatusCode, createBody);
+        var created = JsonSerializer.Deserialize<JsonElement>(createBody);
+        var terminalId = created.GetProperty("CreatedTerminalId").GetString()!;
+        var clientId = created.GetProperty("Client").GetProperty("Id").GetString()!;
+
+        var update = await Client.PutAsJsonAsync(
+            $"/api/position-terminal/{terminalId}/oauth-access",
+            new
+            {
+                DisplayName = "After",
+                Scopes = new[] { "tc-update-terminal" },
+                AppIds = new[] { new ShortGuid(app.Id).ToString() },
+            }, JsonOptions, ct);
+        var updateBody = await update.Content.ReadAsStringAsync(ct);
+        Assert.True(update.IsSuccessStatusCode, updateBody);
+        var updated = await update.Content.ReadFromJsonAsync<OAuthClientDto>(JsonOptions, ct);
+
+        Assert.Equal(clientId, updated!.Id);
+        Assert.Equal("After", updated.DisplayName);
+        Assert.Contains("scp:tc-update-terminal", updated.Permissions);
+        Assert.Contains(StaffingGrant, updated.AllowedGrantTypes);
+        Assert.Equal([new ShortGuid(app.Id).ToString()], updated.AppIds);
+
+        var terminal = Assert.Single((await Client.GetFromJsonAsync<List<TerminalDto>>(
+            $"/api/position/{positionId}/terminals", JsonOptions, ct))!);
+        Assert.Equal("Slot stays fixed", terminal.DisplayName);
+        Assert.Equal(["tc-update-terminal"], terminal.Scopes);
+        Assert.Equal([new ShortGuid(app.Id).ToString()], terminal.AppIds);
+    }
+
+    [Fact]
+    public async Task A_business_scope_is_rejected_when_its_app_is_not_selected()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        await CreateBusinessResourceAsync(
+            "tc-missing-app", "tc-missing-api", "tc-missing-terminal", ct);
+        var positionId = await CreatePositionAsync("tc-resource-invalid", terminalEnabled: true, ct);
+
+        var resp = await PostClientAsync(new
+        {
+            ClientId = "tc-resource-invalid-client",
+            ClientType = "public",
+            AllowedGrantTypes = new[] { StaffingGrant },
+            LinkedPositionPrincipalId = positionId,
+            TerminalDisplayName = "Invalid",
+            WebAuthnRpId = RpId,
+            Scopes = new[] { "tc-missing-terminal" },
+            AppIds = Array.Empty<string>(),
+        }, ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        Assert.Contains("App that is not assigned", await resp.Content.ReadAsStringAsync(ct));
     }
 
     [Fact]
@@ -439,6 +559,40 @@ public class TerminalClientFromClientSideTests : IntegrationTestBase
         }, JsonOptions, ct);
         Assert.True(resp.IsSuccessStatusCode, await resp.Content.ReadAsStringAsync(ct));
         return (await resp.Content.ReadFromJsonAsync<UserDto>(JsonOptions, ct))!.Id!;
+    }
+
+    private async Task<App> CreateBusinessResourceAsync(
+        string appSlug, string audience, string scopeName, CancellationToken ct)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+        var appId = Guid.NewGuid();
+        session.Events.StartStream<App>(appId, new AppCreatedEvent(
+            appId, appSlug, appSlug, null,
+            [new AppPermission(Guid.NewGuid(), "alarm", "read", null)],
+            IsSystem: false));
+        await session.SaveChangesAsync(ct);
+
+        var apiId = Guid.NewGuid();
+        var (api, created) = OAuthApiAggregate.Create(
+            apiId, audience, audience, description: null, enabled: true, scopes: []);
+        session.Events.StartStream<OAuthApiAggregate>(apiId, created);
+        session.Events.Append(apiId, api.SetAppId(appId));
+        session.Events.Append(apiId, api.SetPermissionIds(
+            (await session.LoadAsync<App>(appId, ct))!.Permissions.Select(item => item.Id).ToArray()));
+        await session.SaveChangesAsync(ct);
+
+        var oauth = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
+        var scopeResult = await oauth.CreateScopeAsync(new CreateOAuthScopeDto
+        {
+            Name = scopeName,
+            DisplayName = scopeName,
+            Resources = [audience],
+            AppId = new ShortGuid(appId).ToString(),
+        }, ct);
+        Assert.False(scopeResult.IsError,
+            string.Join(", ", scopeResult.Errors.Select(error => error.Description)));
+        return (await session.LoadAsync<App>(appId, ct))!;
     }
 
     /// <summary>Marten hands persisted boolean properties back as a boxed bool

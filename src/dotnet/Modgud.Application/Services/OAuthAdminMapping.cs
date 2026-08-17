@@ -129,6 +129,7 @@ internal static class OAuthAdminMapping
         // were never positional — no server flow) maps to null here, so it is
         // dropped from the DTO and stripped on the next save.
         OAuthPermissions.GrantTypes.DeviceCode => "urn:ietf:params:oauth:grant-type:device_code",
+        OAuthPermissions.GrantTypes.Staffing => Modgud.Domain.PositionTerminals.PositionGrantTypes.StaffingSession,
         OAuthPermissions.GrantTypes.CocoarOtp => CocoarGrantTypes.Otp,
         OAuthPermissions.GrantTypes.CocoarMagic => CocoarGrantTypes.Magic,
         OAuthPermissions.GrantTypes.CocoarPasskey => CocoarGrantTypes.Passkey,

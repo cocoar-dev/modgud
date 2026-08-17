@@ -4,6 +4,8 @@ using Modgud.Application.DTOs.Positions;
 using Modgud.Application.Services;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Principals;
+using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.PositionTerminals;
 using Modgud.Infrastructure.PositionTerminals;
 using Modgud.Infrastructure.OpenIddict;
@@ -40,7 +42,10 @@ public static class PositionTerminalsEndpoints
                 var terminals = (await session.Query<TerminalEnrollment>().ToListAsync(ct))
                     .Where(x => x.EffectiveAllowedPositionIds.Contains(positionId.Guid))
                     .OrderBy(x => x.DisplayName);
-                return Results.Ok(terminals.Select(ToDto));
+                var result = new List<TerminalDto>();
+                foreach (var terminal in terminals)
+                    result.Add(await LoadDtoAsync(session, terminal.Id, ct));
+                return Results.Ok(result);
             })
             .WithName("V2_PositionTerminals_List")
             .RequiresPermission("position:read");
@@ -120,11 +125,19 @@ public static class PositionTerminalsEndpoints
                 // unique, and the audit log reads the owning position off it.
                 var clientId = $"terminal.{new ShortGuid(Guid.NewGuid()).ToString()[..8]}";
 
+                var accessResult = await oauth.ValidateTerminalClientAccessAsync(dto.Scopes, dto.AppIds, ct);
+                if (accessResult.IsError)
+                {
+                    var error = accessResult.FirstError;
+                    return Results.BadRequest(new { Error = error.Code, Message = error.Description });
+                }
+
                 // Stage the terminal-managed client (validated against the fixed
                 // profile) ...
                 var clientError = oauth.StageCreateTerminalClient(
                     applicationId, clientId, $"{fn.DisplayName} — {displayName}",
-                    positionId.Guid, enrollmentId, dto.WebAuthnRpId, binding, out var clientSecret);
+                    positionId.Guid, enrollmentId, dto.WebAuthnRpId, binding,
+                    accessResult.Value, out var clientSecret);
                 if (clientError is not null)
                     return Results.BadRequest(new { Error = clientError.Value.Code, Message = clientError.Value.Description });
 
@@ -269,6 +282,78 @@ public static class PositionTerminalsEndpoints
             .WithName("V2_PositionTerminals_Revoke")
             .RequiresPermission("position:write");
 
+        // OAuth access is a property of the terminal-managed client, not of a
+        // particular allowed position. This global terminal route therefore
+        // remains unambiguous after the n:m transition where a terminal can
+        // serve more than one position.
+        application.MapPut($"{path}/position-terminal/{{terminalId}}/oauth-access", async (
+                ShortGuid terminalId,
+                TerminalOAuthAccessUpdateDto dto,
+                AppSettings settings,
+                IDocumentSession session,
+                OAuthAdminService oauth,
+                DataEventDispatcher dispatcher,
+                IStaffingRevoker staffingRevoker,
+                CancellationToken ct) =>
+            {
+                if (!settings.Features.PositionTerminals) return Results.NotFound();
+
+                var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId.Guid, ct);
+                if (terminal is null) return Results.NotFound();
+                if (terminal.Status == TerminalEnrollmentStatus.Revoked)
+                    return Results.Conflict(new
+                    {
+                        Error = "Terminal.Revoked",
+                        Message = "A revoked terminal client cannot be reconfigured."
+                    });
+
+                var accessResult = await oauth.ValidateTerminalClientAccessAsync(dto.Scopes, dto.AppIds, ct);
+                if (accessResult.IsError)
+                {
+                    var error = accessResult.FirstError;
+                    return Results.BadRequest(new { Error = error.Code, Message = error.Description });
+                }
+
+                var updateResult = await oauth.StageSetTerminalClientAccessAsync(
+                    terminal.OAuthApplicationId, terminal.Id,
+                    string.IsNullOrWhiteSpace(dto.DisplayName) ? null : dto.DisplayName.Trim(),
+                    accessResult.Value, ct);
+                if (updateResult.IsError)
+                {
+                    var error = updateResult.FirstError;
+                    return Results.BadRequest(new { Error = error.Code, Message = error.Description });
+                }
+
+                if (updateResult.Value.Changed)
+                {
+                    await session.SaveChangesAsync(ct);
+                }
+                if (updateResult.Value.AccessChanged)
+                {
+                    // A running staffing session was minted against the old
+                    // audience/scope policy and must not survive tightening or
+                    // widening that profile. The terminal stays enrolled; the
+                    // next person starts a fresh staffing session.
+                    await staffingRevoker.EndAllForTerminalAsync(
+                        terminal.Id, StaffingSessionEndReason.PolicyTightened, ct);
+                }
+
+                var client = await oauth.GetClientByIdAsync(terminal.OAuthApplicationId.ToString(), ct);
+                if (client is null) return Results.NotFound();
+                if (updateResult.Value.Changed)
+                {
+                    dispatcher.DispatchUpdatedEvent("OAuthClient", client, session.TenantId);
+                    dispatcher.DispatchUpdatedEvent(
+                        "Terminal", await LoadDtoAsync(session, terminal.Id, ct), session.TenantId);
+                }
+                return Results.Ok(client);
+            })
+            .WithName("V2_PositionTerminal_SetOAuthAccess")
+            .WithTags("Position Terminals")
+            .RequireAuthorization()
+            .RequiresPermission("position:write")
+            .RequiresPermission("oauth-client:write");
+
         return application;
     }
 
@@ -295,7 +380,7 @@ public static class PositionTerminalsEndpoints
         if (terminal.Status == TerminalEnrollmentStatus.Revoked)
         {
             return targetStatus == TerminalEnrollmentStatus.Revoked
-                ? Results.Ok(ToDto(terminal)) // idempotent no-op
+                ? Results.Ok(await LoadDtoAsync(session, terminal.Id, ct)) // idempotent no-op
                 : Results.Conflict(new
                 {
                     Error = "Terminal.Revoked",
@@ -306,7 +391,7 @@ public static class PositionTerminalsEndpoints
         if (targetStatus == TerminalEnrollmentStatus.Disabled)
         {
             if (terminal.Status == TerminalEnrollmentStatus.Disabled)
-                return Results.Ok(ToDto(terminal));
+                return Results.Ok(await LoadDtoAsync(session, terminal.Id, ct));
 
             session.Events.Append(terminal.Id, new TerminalEnrollmentDisabled(terminal.Id, actor, now));
             if (await oauth.StageSetTerminalClientEnabledAsync(terminal.OAuthApplicationId, enabled: false, ct) is { } disableErr)
@@ -315,7 +400,7 @@ public static class PositionTerminalsEndpoints
         else if (targetStatus is null) // reactivate
         {
             if (terminal.Status != TerminalEnrollmentStatus.Disabled)
-                return Results.Ok(ToDto(terminal));
+                return Results.Ok(await LoadDtoAsync(session, terminal.Id, ct));
 
             session.Events.Append(terminal.Id, new TerminalEnrollmentReactivated(terminal.Id, actor, now));
             if (await oauth.StageSetTerminalClientEnabledAsync(terminal.OAuthApplicationId, enabled: true, ct) is { } enableErr)
@@ -370,9 +455,13 @@ public static class PositionTerminalsEndpoints
     }
 
     internal static async Task<TerminalDto> LoadDtoAsync(IDocumentSession session, Guid terminalId, CancellationToken ct)
-        => ToDto((await session.LoadAsync<TerminalEnrollment>(terminalId, ct))!);
+    {
+        var terminal = (await session.LoadAsync<TerminalEnrollment>(terminalId, ct))!;
+        var client = await session.LoadAsync<OAuthApplicationState>(terminal.OAuthApplicationId, ct);
+        return ToDto(terminal, client);
+    }
 
-    private static TerminalDto ToDto(TerminalEnrollment t) => new()
+    private static TerminalDto ToDto(TerminalEnrollment t, OAuthApplicationState? client = null) => new()
     {
         Id = new ShortGuid(t.Id).ToString(),
         PositionId = new ShortGuid(t.PositionPrincipalId).ToString(),
@@ -382,6 +471,11 @@ public static class PositionTerminalsEndpoints
         ClientId = t.ClientId,
         WebAuthnRpId = t.WebAuthnRpId,
         Binding = t.Binding,
+        Scopes = client?.Permissions
+            .Where(permission => permission.StartsWith(OAuthPermissions.Prefixes.Scope, StringComparison.Ordinal))
+            .Select(permission => permission[OAuthPermissions.Prefixes.Scope.Length..])
+            .ToArray() ?? [],
+        AppIds = client?.AppIds.Select(ShortGuid.Encode).ToArray() ?? [],
         Status = t.Status,
         Enrolled = t.EnrollmentAuthorizationId is not null,
         CreatedAt = t.CreatedAt,
