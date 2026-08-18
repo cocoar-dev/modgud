@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using BuildingBlocks.Helper;
 using ErrorOr;
 using Marten;
@@ -105,6 +108,55 @@ public partial class OAuthAdminService
         var terminalDisplayName = (dto.TerminalDisplayName ?? string.Empty).Trim();
         if (terminalDisplayName.Length == 0)
             return OAuthErrors.TerminalDisplayNameRequired;
+
+        // Provisioning is consumer-addressed. The client id is both the OAuth
+        // protocol identifier and the natural idempotency key; the server must
+        // never invent it for this generic create surface.
+        var clientId = (dto.ClientId ?? string.Empty).Trim();
+        string? provisioningFingerprint = null;
+        if (clientId.Length > 0)
+        {
+            provisioningFingerprint = ComputeTerminalProvisioningFingerprint(dto, binding);
+            var existingClient = await _session.Query<OAuthApplicationState>()
+                .FirstOrDefaultAsync(x => !x.IsDeleted && x.ClientId == clientId, ct);
+            if (existingClient is not null)
+            {
+                if (!string.Equals(
+                        ReadStringProperty(existingClient.Properties,
+                            OAuthApplicationPropertyKeys.TerminalProvisioningFingerprint),
+                        provisioningFingerprint,
+                        StringComparison.Ordinal) ||
+                    existingClient.ManagedTerminalEnrollmentId is not { } existingTerminalId)
+                {
+                    return OAuthErrors.ClientIdAlreadyExists(clientId);
+                }
+
+                var existingTerminal = await _session.LoadAsync<TerminalEnrollment>(existingTerminalId, ct);
+                if (existingTerminal is null)
+                    return Error.Conflict("OAuth.TerminalProvisioningStateMissing",
+                        $"OAuth client '{clientId}' has no corresponding terminal enrollment.");
+
+                PositionPrincipalDto? replayedPosition = null;
+                if (dto.NewPosition is not null)
+                {
+                    var replayPosition = await _session.LoadAsync<PositionPrincipal>(
+                        existingTerminal.PositionPrincipalId, ct);
+                    if (replayPosition is null || replayPosition.IsDeleted)
+                        return Error.Conflict("OAuth.TerminalProvisioningStateMissing",
+                            $"OAuth client '{clientId}' has no corresponding Position.");
+                    replayedPosition = MapPosition(replayPosition);
+                }
+
+                return new OAuthClientCreatedDto
+                {
+                    Client = MapClient(existingClient),
+                    ClientSecret = null,
+                    CreatedPosition = replayedPosition,
+                    CreatedTerminalId = new ShortGuid(existingTerminalId).ToString(),
+                    WasAlreadyProvisioned = true,
+                };
+            }
+        }
 
         var realm = await _session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
         var proofFloor = realm?.PositionSecurity?.RequiredProofCapabilities ?? ProofCapability.None;
@@ -219,21 +271,7 @@ public partial class OAuthAdminService
             _session.Events.StartStream<PositionPrincipal>(position.Id, new PositionPrincipalCreatedEvent(
                 position.Id, position.AccountName, position.Purpose, position.IsActive, position.TerminalPolicy));
 
-            createdPosition = new PositionPrincipalDto
-            {
-                Id = new ShortGuid(position.Id).ToString(),
-                AccountName = position.AccountName,
-                Purpose = position.Purpose,
-                IsActive = position.IsActive,
-                TerminalPolicy = new PositionTerminalPolicyDto
-                {
-                    Enabled = position.TerminalPolicy.Enabled,
-                    AllowedActivationProofs = position.TerminalPolicy.AllowedActivationProofs,
-                    AllowedDeviceBindings = position.TerminalPolicy.AllowedDeviceBindings,
-                    StaffingSessionLifetimeMinutes = (int)position.TerminalPolicy.StaffingSessionLifetime.TotalMinutes,
-                    MaximumStaffingSessionLifetimeMinutes = (int)position.TerminalPolicy.MaximumStaffingSessionLifetime.TotalMinutes,
-                },
-            };
+            createdPosition = MapPosition(position);
         }
 
         if (!position.TerminalPolicy.Enabled)
@@ -245,31 +283,6 @@ public partial class OAuthAdminService
             return OAuthErrors.InvalidPositionTerminalClient(
                 $"device binding '{binding}' does not meet the realm security floor.");
 
-        // The generic OAuth-client surface owns the client identity just like
-        // it does for client_credentials + ServiceAccount. Keep generation as
-        // a backwards-compatible fallback for older callers that omit the id
-        // (the position/terminal endpoints still use that convention), but do
-        // not overwrite an explicit admin choice.
-        var clientId = (dto.ClientId ?? string.Empty).Trim();
-        if (clientId.Length == 0)
-        {
-            for (var attempt = 0; attempt < 8; attempt++)
-            {
-                var candidate = $"terminal.{new ShortGuid(Guid.NewGuid()).ToString()[..8]}";
-                var clash = await _session.Query<OAuthApplicationState>()
-                    .AnyAsync(x => !x.IsDeleted && x.ClientId == candidate, ct);
-                if (!clash) { clientId = candidate; break; }
-            }
-            if (clientId.Length == 0)
-                return Error.Conflict("OAuth.ClientIdAutoGenerationFailed",
-                    "Could not generate a unique client_id for the terminal client after 8 attempts.");
-        }
-        else if (await _session.Query<OAuthApplicationState>()
-                     .AnyAsync(x => !x.IsDeleted && x.ClientId == clientId, ct))
-        {
-            return OAuthErrors.ClientIdAlreadyExists(clientId);
-        }
-
         var clientDisplayName = string.IsNullOrWhiteSpace(dto.DisplayName)
             ? $"{position.DisplayName} — {terminalDisplayName}"
             : dto.DisplayName.Trim();
@@ -278,13 +291,25 @@ public partial class OAuthAdminService
         if (accessResult.IsError)
             return accessResult.Errors;
 
+        // Preserve the established validation order for malformed terminal
+        // drafts, then enforce the provisioning identity immediately before
+        // anything can be committed.
+        if (string.IsNullOrWhiteSpace(dto.WebAuthnRpId))
+            return OAuthErrors.InvalidPositionTerminalClient(
+                "a WebAuthn RP ID is required — the staffing tap verifies staff passkeys against it.");
+        if (ValidateWebAuthnRpId(dto.WebAuthnRpId) is { } rpIdError)
+            return rpIdError;
+        if (clientId.Length == 0)
+            return Error.Validation("OAuth.TerminalClientIdRequired",
+                "A terminal-provisioning request requires a caller-selected client id.");
+
         // ── Stage client + enrollment, commit once ─────────────────────────
         var enrollmentId = Guid.NewGuid();
         var applicationId = Guid.NewGuid();
         var clientError = StageCreateTerminalClient(
             applicationId, clientId, clientDisplayName,
             position.Id, enrollmentId, dto.WebAuthnRpId ?? string.Empty,
-            binding, accessResult.Value, out var clientSecret);
+            binding, accessResult.Value, out var clientSecret, provisioningFingerprint!);
         if (clientError is not null)
             return clientError.Value;
 
@@ -332,7 +357,8 @@ public partial class OAuthAdminService
         string webAuthnRpId,
         string binding,
         TerminalClientAccessConfiguration access,
-        out string? clientSecret)
+        out string? clientSecret,
+        string? provisioningFingerprint = null)
     {
         clientSecret = null;
         var grants = TerminalGrantTypes.ToList();
@@ -376,11 +402,15 @@ public partial class OAuthAdminService
             [OAuthApplicationSettingKeys.WebAuthnRpId] = webAuthnRpId.Trim().ToLowerInvariant(),
         }));
 
-        _session.Events.Append(applicationId, aggregate.SetProperties(BuildClientProperties(
+        var properties = BuildClientProperties(
             enabled: true, allowBrowser: false, requireSecret: requireSecret, enableLocal: false,
             requireConsent: false, allowRemember: false, corsOrigins: [],
             alwaysSend: false, updateClaims: false, claims: [], roles: [],
-            requireDpop: requireDpop, requireDpopNonce: false)));
+            requireDpop: requireDpop, requireDpopNonce: false);
+        if (!string.IsNullOrEmpty(provisioningFingerprint))
+            properties[OAuthApplicationPropertyKeys.TerminalProvisioningFingerprint] =
+                provisioningFingerprint;
+        _session.Events.Append(applicationId, aggregate.SetProperties(properties));
 
         // V2 links the client to the terminal only. The position set belongs to
         // the slot and may change independently; legacy streams retain their
@@ -400,6 +430,104 @@ public partial class OAuthAdminService
         }
 
         return null;
+    }
+
+    private static PositionPrincipalDto MapPosition(PositionPrincipal position) => new()
+    {
+        Id = new ShortGuid(position.Id).ToString(),
+        AccountName = position.AccountName,
+        Purpose = position.Purpose,
+        IsActive = position.IsActive,
+        TerminalPolicy = new PositionTerminalPolicyDto
+        {
+            Enabled = position.TerminalPolicy.Enabled,
+            AllowedActivationProofs = position.TerminalPolicy.AllowedActivationProofs,
+            AllowedDeviceBindings = position.TerminalPolicy.AllowedDeviceBindings,
+            StaffingSessionLifetimeMinutes =
+                (int)position.TerminalPolicy.StaffingSessionLifetime.TotalMinutes,
+            MaximumStaffingSessionLifetimeMinutes =
+                (int)position.TerminalPolicy.MaximumStaffingSessionLifetime.TotalMinutes,
+        },
+    };
+
+    private static string ComputeTerminalProvisioningFingerprint(
+        CreateOAuthClientDto dto,
+        string binding)
+    {
+        var newPosition = dto.NewPosition;
+        var policy = newPosition?.TerminalPolicy;
+        var normalized = new
+        {
+            Version = 1,
+            ClientId = (dto.ClientId ?? string.Empty).Trim(),
+            DisplayName = NormalizeOptional(dto.DisplayName),
+            ClientType = dto.ClientType,
+            LinkedPositionPrincipalId = NormalizeIdentifier(dto.LinkedPositionPrincipalId),
+            NewPosition = newPosition is null ? null : new
+            {
+                AccountName = (newPosition.AccountName ?? string.Empty).Trim().ToLowerInvariant(),
+                Purpose = NormalizeOptional(newPosition.Purpose),
+                newPosition.IsActive,
+                GrantUserIds = NormalizeIdentifiers(newPosition.GrantUserIds),
+                TerminalPolicy = policy is null ? null : new
+                {
+                    policy.Enabled,
+                    AllowedActivationProofs = NormalizeStrings(policy.AllowedActivationProofs),
+                    AllowedDeviceBindings = NormalizeStrings(policy.AllowedDeviceBindings),
+                    policy.StaffingSessionLifetimeMinutes,
+                    policy.MaximumStaffingSessionLifetimeMinutes,
+                },
+            },
+            TerminalDisplayName = (dto.TerminalDisplayName ?? string.Empty).Trim(),
+            TerminalLocation = NormalizeOptional(dto.TerminalLocation),
+            WebAuthnRpId = (dto.WebAuthnRpId ?? string.Empty).Trim().ToLowerInvariant(),
+            Binding = binding,
+            Scopes = NormalizeStrings(dto.Scopes),
+            AppIds = NormalizeIdentifiers(dto.AppIds),
+        };
+
+        var json = JsonSerializer.Serialize(normalized);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
+        return $"v1:{Convert.ToHexString(hash).ToLowerInvariant()}";
+    }
+
+    private static string? NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string? NormalizeIdentifier(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        return ShortGuid.TryParse(value.Trim(), out Guid id)
+            ? id.ToString("D")
+            : value.Trim();
+    }
+
+    private static string[] NormalizeIdentifiers(IEnumerable<string>? values) =>
+        values?.Select(NormalizeIdentifier)
+            .Where(value => value is not null)
+            .Select(value => value!)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray() ?? [];
+
+    private static string[] NormalizeStrings(IEnumerable<string>? values) =>
+        values?.Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray() ?? [];
+
+    private static string? ReadStringProperty(
+        IReadOnlyDictionary<string, object?> properties,
+        string key)
+    {
+        if (!properties.TryGetValue(key, out var value)) return null;
+        return value switch
+        {
+            string text => text,
+            JsonElement { ValueKind: JsonValueKind.String } json => json.GetString(),
+            _ => null,
+        };
     }
 
     /// <summary>

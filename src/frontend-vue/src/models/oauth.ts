@@ -225,6 +225,8 @@ export interface OAuthClientCreatedDto {
   Client: OAuthClientDto
   ClientSecret?: string | null
   CreatedServiceAccount?: ServiceAccountDto | null
+  /** True when the same consumer-selected ClientId and provisioning request were replayed. */
+  WasAlreadyProvisioned?: boolean
   /** Position created inline via NewPosition — the terminal counterpart of CreatedServiceAccount. */
   CreatedPosition?: PositionPrincipalDto | null
   /** ShortGuid of the terminal slot created alongside a terminal-managed client. */

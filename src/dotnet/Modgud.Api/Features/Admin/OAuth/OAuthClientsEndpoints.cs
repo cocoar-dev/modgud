@@ -1,6 +1,7 @@
 using BuildingBlocks.EventDispatcher;
 using BuildingBlocks.Helper;
 using Marten;
+using Modgud.Api.Features.Management;
 using Modgud.Api.Features.Positions;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Services;
@@ -42,14 +43,20 @@ public static class OAuthClientsEndpoints
         .WithName("OAuth_Clients_Get")
         .RequiresPermission("oauth-client:read");
 
-        group.MapPost("", async (CreateOAuthClientDto dto, HttpContext http, AppSettings settings, IPermissionService permissions, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
+        // Client creation is deliberately exposed through the Management API:
+        // it is the generic provisioning seam for both ordinary clients and
+        // terminal-managed clients. The remaining group stays cookie-only.
+        app.MapPost($"{path}/admin/oauth/clients", async (CreateOAuthClientDto dto, HttpContext http, AppSettings settings, IPermissionService permissions, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
         {
-            if (dto.NewServiceAccount is not null)
+            var actorId = ResolveActorId(http);
+            if (actorId is null) return Results.Unauthorized();
+
+            if (dto.NewServiceAccount is not null ||
+                !string.IsNullOrWhiteSpace(dto.LinkedServiceAccountId))
             {
-                var userId = http.GetUserId();
-                if (userId is null || !await permissions.HasPermissionAsync(
-                        userId.Value, AppSlugs.Modgud, "service-account:write", ct))
-                    return Results.Forbid();
+                if (!await permissions.HasPermissionAsync(
+                        actorId.Value, AppSlugs.Modgud, "service-account:write", ct))
+                    return ManagementForbidden("service-account:write");
             }
 
             // MG-FT — terminal-managed create: 404 while the feature flag is off
@@ -58,16 +65,15 @@ public static class OAuthClientsEndpoints
             if (OAuthAdminService.HasTerminalClientIntent(dto))
             {
                 if (!settings.Features.PositionTerminals) return Results.NotFound();
-                var userId = http.GetUserId();
-                if (userId is null || !await permissions.HasPermissionAsync(
-                        userId.Value, AppSlugs.Modgud, "position:write", ct))
-                    return Results.Forbid();
+                if (!await permissions.HasPermissionAsync(
+                        actorId.Value, AppSlugs.Modgud, "position:write", ct))
+                    return ManagementForbidden("position:write");
             }
 
             var result = await svc.CreateClientAsync(
-                dto, dcrMetadata: null, enlistInTransaction: null, actorId: http.GetUserId(), ct);
+                dto, dcrMetadata: null, enlistInTransaction: null, actorId: actorId.Value, ct);
             // Broadcast only the client view (never the one-time secret in the wrapper).
-            if (!result.IsError)
+            if (!result.IsError && !result.Value.WasAlreadyProvisioned)
             {
                 dispatcher.DispatchCreatedEvent("OAuthClient", result.Value.Client, session.TenantId);
                 if (result.Value.CreatedServiceAccount is { } serviceAccount)
@@ -78,10 +84,13 @@ public static class OAuthClientsEndpoints
                     dispatcher.DispatchCreatedEvent("Terminal",
                         await PositionTerminalsEndpoints.LoadDtoAsync(session, terminalGuid, ct), session.TenantId);
             }
-            return result.ToResult(created => Results.Created($"{path}/admin/oauth/clients/{created.Client.Id}", created));
+            return result.ToResult(created => created.WasAlreadyProvisioned
+                ? Results.Ok(created)
+                : Results.Created($"{path}/admin/oauth/clients/{created.Client.Id}", created));
         })
         .WithName("OAuth_Clients_Create")
-        .RequiresPermission("oauth-client:write");
+        .WithTags("OAuth Clients")
+        .RequiresManagementPermission("oauth-client:write");
 
         group.MapPut("{id}", async (string id, UpdateOAuthClientDto dto, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
         {
@@ -115,4 +124,23 @@ public static class OAuthClientsEndpoints
 
         return app;
     }
+
+    private static Guid? ResolveActorId(HttpContext http)
+    {
+        var nameIdentifier = http.GetUserId();
+        if (nameIdentifier.HasValue) return nameIdentifier;
+
+        var subject = http.User.FindFirst("sub")?.Value;
+        return Guid.TryParse(subject, out var principalId) ? principalId : null;
+    }
+
+    private static IResult ManagementForbidden(string permission) =>
+        Results.Problem(
+            statusCode: StatusCodes.Status403Forbidden,
+            title: "Forbidden",
+            detail: $"Missing the required permission '{permission}' (app '{AppSlugs.Modgud}').",
+            extensions: new Dictionary<string, object?>
+            {
+                ["code"] = "Management.PermissionDenied",
+            });
 }

@@ -39,6 +39,16 @@ public static class OAuthApplicationPropertyKeys
     public const string Roles = "modgud:roles";
 
     /// <summary>
+    /// Versioned hash of the normalized terminal-provisioning request. The
+    /// caller-chosen client id is the natural idempotency key: the same request
+    /// may safely be replayed, while a different request for that id conflicts.
+    /// This is server-owned metadata and is never accepted from generic client
+    /// property input.
+    /// </summary>
+    public const string TerminalProvisioningFingerprint =
+        "modgud:terminal_provisioning_fingerprint";
+
+    /// <summary>
     /// RFC 9449 (#118) — boolean. When <c>true</c>, this client MUST present a
     /// valid DPoP proof at <c>/connect/token</c>; a tokenless request is rejected
     /// with <c>invalid_dpop_proof</c>. Off by default (DPoP stays offered-not-
