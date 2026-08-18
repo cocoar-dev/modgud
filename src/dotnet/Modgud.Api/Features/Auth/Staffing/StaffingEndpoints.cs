@@ -55,7 +55,10 @@ public static class StaffingEndpoints
         // access token); DPoP-proofed with the slot's enrolled key. Path note:
         // under /connect like the other terminal-control surfaces (the plan
         // sketch shows it root-level).
-        application.MapPost("/connect/staffing/{terminalId:guid}/lock", LockAsync)
+        // ShortGuid is Modgud's public admin-wire representation; accept both
+        // it and the canonical Guid so the provisioning response can be used
+        // directly without consumer-side identifier conversion.
+        application.MapPost("/connect/staffing/{terminalId}/lock", LockAsync)
             .WithName("Staffing_Lock")
             .WithTags("Position Staffing")
             .DisableAntiforgery()
@@ -64,7 +67,7 @@ public static class StaffingEndpoints
                 AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
             });
 
-        application.MapPost("/connect/staffing/{terminalId:guid}/step-up", StepUpBeginAsync)
+        application.MapPost("/connect/staffing/{terminalId}/step-up", StepUpBeginAsync)
             .WithName("Staffing_StepUpBegin")
             .WithTags("Position Staffing")
             .DisableAntiforgery()
@@ -101,7 +104,7 @@ public static class StaffingEndpoints
     }
 
     private static async Task<IResult> StepUpBeginAsync(
-        Guid terminalId,
+        ShortGuid terminalId,
         StepUpBeginInput input,
         HttpContext context,
         AppSettings settings,
@@ -111,12 +114,13 @@ public static class StaffingEndpoints
         CancellationToken ct)
     {
         if (!settings.Features.PositionTerminals) return Results.NotFound();
+        var terminalGuid = terminalId.Guid;
         var principal = context.User;
         if (!string.Equals(principal.GetClaim(PositionTokenClaimTypes.TokenUse),
                 PositionTokenUses.StaffingSession, StringComparison.Ordinal) ||
             !Guid.TryParse(principal.GetClaim(Claims.Subject), out var positionId) ||
             !Guid.TryParse(principal.GetClaim(PositionTokenClaimTypes.TerminalId), out var tokenTerminalId) ||
-            tokenTerminalId != terminalId ||
+            tokenTerminalId != terminalGuid ||
             !Guid.TryParse(principal.GetClaim(PositionTokenClaimTypes.StaffingSessionId), out var staffingSessionId))
             return Forbidden("Staffing.InvalidToken", "An active staffing access token is required.");
 
@@ -130,11 +134,11 @@ public static class StaffingEndpoints
             });
 
         var staffing = await session.LoadAsync<StaffingSession>(staffingSessionId, ct);
-        var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
+        var terminal = await session.LoadAsync<TerminalEnrollment>(terminalGuid, ct);
         var position = await session.LoadAsync<PositionPrincipal>(positionId, ct);
         if (staffing is not { Status: StaffingSessionStatus.Active } ||
             staffing.AbsoluteExpiresAt <= DateTimeOffset.UtcNow ||
-            staffing.TerminalEnrollmentId != terminalId || staffing.PositionPrincipalId != positionId ||
+            staffing.TerminalEnrollmentId != terminalGuid || staffing.PositionPrincipalId != positionId ||
             terminal is not { Status: TerminalEnrollmentStatus.Active } ||
             terminal.ActiveStaffingSessionId != staffing.Id ||
             !terminal.EffectiveAllowedPositionIds.Contains(positionId) ||
@@ -238,7 +242,7 @@ public static class StaffingEndpoints
     }
 
     private static async Task<IResult> LockAsync(
-        Guid terminalId,
+        ShortGuid terminalId,
         HttpContext context,
         AppSettings settings,
         IDocumentSession session,
@@ -247,6 +251,7 @@ public static class StaffingEndpoints
         CancellationToken ct)
     {
         if (!settings.Features.PositionTerminals) return Results.NotFound();
+        var terminalGuid = terminalId.Guid;
 
         var principal = context.User;
         var tokenUse = principal.GetClaim(PositionTokenClaimTypes.TokenUse);
@@ -257,12 +262,12 @@ public static class StaffingEndpoints
 
         // Own terminal only — the token's terminal claim must be the route's.
         if (!Guid.TryParse(principal.GetClaim(PositionTokenClaimTypes.TerminalId), out var tokenTerminalId) ||
-            tokenTerminalId != terminalId)
+            tokenTerminalId != terminalGuid)
         {
             return Forbidden("Staffing.ForeignTerminal", "The token does not belong to this terminal.");
         }
 
-        var terminal = await session.LoadAsync<TerminalEnrollment>(terminalId, ct);
+        var terminal = await session.LoadAsync<TerminalEnrollment>(terminalGuid, ct);
         if (terminal is null)
             return Forbidden("Staffing.InvalidToken", "A position terminal token is required.");
 
@@ -295,7 +300,7 @@ public static class StaffingEndpoints
             }
         }
 
-        var ended = await revoker.EndAllForTerminalAsync(terminalId, StaffingSessionEndReason.LocalLock, ct);
+        var ended = await revoker.EndAllForTerminalAsync(terminalGuid, StaffingSessionEndReason.LocalLock, ct);
         return Results.Ok(new { Ended = ended });
     }
 

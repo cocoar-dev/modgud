@@ -306,6 +306,14 @@ public record OAuthClientCreatedDto
     public ServiceAccountDto? CreatedServiceAccount { get; init; }
 
     /// <summary>
+    /// True when a terminal-provisioning retry used the same caller-selected
+    /// client id and the same normalized request. A one-time client secret is
+    /// never repeated; callers using the client-secret binding must rotate it
+    /// if the original successful response was lost.
+    /// </summary>
+    public bool WasAlreadyProvisioned { get; init; }
+
+    /// <summary>
     /// The Position created inline via <see cref="CreateOAuthClientDto.NewPosition"/> —
     /// the terminal counterpart of <see cref="CreatedServiceAccount"/>. Null when the
     /// client referenced an existing position or is not terminal-managed.

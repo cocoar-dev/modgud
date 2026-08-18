@@ -40,7 +40,8 @@ scope.
 Use this flow when no person is present:
 
 1. Create a role containing only the required Modgud permissions. For the
-   currently exposed Position reads, grant `position:read`.
+   Position reads, grant `position:read`. Terminal provisioning needs both
+   `position:write` and `oauth-client:write`.
 2. Create or choose a group, attach the role, and add the Service Account as a
    member.
 3. On that Service Account, issue a credential and allow the
@@ -69,6 +70,72 @@ curl https://idp.example.com/api/position \
 The token's `sub` is the Service Account id. A token from an unlinked or
 differently linked client is rejected even if its claims were otherwise
 well-formed.
+
+## Provision a terminal in one call
+
+`POST /api/admin/oauth/clients` is the generic client-provisioning operation.
+When the request carries the staffing grant, Modgud atomically creates the
+terminal-managed OAuth client and terminal slot, and either links an existing
+Position or creates one inline. Nothing is committed if any part fails.
+
+The consumer MUST choose a stable `clientId`; Modgud does not generate one on
+this path. For an existing Position:
+
+```http
+POST /api/admin/oauth/clients
+Authorization: Bearer <management-access-token>
+Content-Type: application/json
+
+{
+  "clientId": "alerthub-gate-3",
+  "displayName": "AlertHub terminal: Gate 3",
+  "clientType": "public",
+  "allowedGrantTypes": [
+    "urn:cocoar:params:oauth:grant-type:staffing"
+  ],
+  "linkedPositionPrincipalId": "<position-guid-or-short-guid>",
+  "terminalDisplayName": "Gate terminal left",
+  "terminalLocation": "Gate 3",
+  "terminalBinding": "dpop",
+  "webAuthnRpId": "terminal.example.com",
+  "scopes": ["alerthub-terminal"],
+  "appIds": ["<app-guid-or-short-guid>"]
+}
+```
+
+To create the Position in the same transaction, omit
+`linkedPositionPrincipalId` and send `newPosition` instead:
+
+```json
+{
+  "accountName": "gate-3",
+  "purpose": "Gatehouse response position",
+  "terminalPolicy": {
+    "enabled": true
+  }
+}
+```
+
+The first successful request returns `201 Created` with `client`,
+`createdTerminalId`, and—only for inline creation—`createdPosition`.
+`client-secret` binding also returns `clientSecret` once. The returned terminal
+ShortGuid is accepted directly by the terminal routes; consumers do not need to
+convert it to a canonical GUID.
+
+The caller-selected `clientId` is the retry key:
+
+- the same normalized request returns `200 OK`, the same terminal id, and
+  `wasAlreadyProvisioned: true`;
+- a different request under the same `clientId` returns `409 Conflict`;
+- a replay never repeats a one-time `clientSecret`. If its original response
+  was lost, rotate that secret deliberately. DPoP provisioning has no secret to
+  recover.
+
+Terminal provisioning evaluates both `oauth-client:write` and
+`position:write`. Generic client creation needs `oauth-client:write`; linking
+or inline-creating a Service Account additionally needs
+`service-account:write`. This prevents a client administrator from minting a
+credential for a more privileged machine identity.
 
 ## Delegated-person setup
 
@@ -116,11 +183,14 @@ scheme does not turn every cookie-only admin route into a remote API.
 |---|---|---|---|
 | `GET` | `/api/position` | `position:read` | `PositionTerminals` enabled |
 | `GET` | `/api/position/{id}` | `position:read` | `PositionTerminals` enabled |
+| `POST` | `/api/admin/oauth/clients` | `oauth-client:write` | `position:write` for terminal provisioning; `service-account:write` for an SA link |
 
-Position creation, mutation, deletion, grants, terminal enrollment, and all
-other admin resources remain cookie-only until their contracts are deliberately
-added and tested. The [Admin endpoint reference](/reference/admin-api) is the
-source of truth for the exposed surface.
+Direct Position creation, mutation, deletion, grants, terminal enrollment, and
+all other admin resources remain cookie-only until their contracts are
+deliberately added and tested. The atomic OAuth-client create above is the
+supported remote terminal-provisioning path. The
+[Admin endpoint reference](/reference/admin-api) is the source of truth for the
+exposed surface.
 
 ## Security rules for consumers
 

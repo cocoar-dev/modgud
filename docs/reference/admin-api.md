@@ -186,16 +186,18 @@ rejects mutating them directly).
 ## OAuth clients
 
 Deletes are gated by `oauth-client:write` — there is no
-`oauth-client:delete` tier.
+`oauth-client:delete` tier. Client creation is also a **Management API** route.
+Terminal intent additionally requires `position:write`; linking or creating a
+Service Account additionally requires `service-account:write`.
 
-| Method | Path | Permission |
-|---|---|---|
-| `GET` | `/api/admin/oauth/clients` | `oauth-client:read` |
-| `GET` | `/api/admin/oauth/clients/{id}` | `oauth-client:read` |
-| `POST` | `/api/admin/oauth/clients` | `oauth-client:write` |
-| `PUT` | `/api/admin/oauth/clients/{id}` | `oauth-client:write` |
-| `DELETE` | `/api/admin/oauth/clients/{id}` | `oauth-client:write` |
-| `POST` | `/api/admin/oauth/clients/{id}/regenerate-secret` | `oauth-client:write` |
+| Method | Path | Permission | Authentication |
+|---|---|---|---|
+| `GET` | `/api/admin/oauth/clients` | `oauth-client:read` | Cookie only |
+| `GET` | `/api/admin/oauth/clients/{id}` | `oauth-client:read` | Cookie only |
+| `POST` | `/api/admin/oauth/clients` | `oauth-client:write` plus conditional resource permission | Cookie or Management API bearer |
+| `PUT` | `/api/admin/oauth/clients/{id}` | `oauth-client:write` | Cookie only |
+| `DELETE` | `/api/admin/oauth/clients/{id}` | `oauth-client:write` | Cookie only |
+| `POST` | `/api/admin/oauth/clients/{id}/regenerate-secret` | `oauth-client:write` | Cookie only |
 
 ## OAuth scopes
 

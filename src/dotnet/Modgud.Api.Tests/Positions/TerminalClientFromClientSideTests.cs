@@ -43,7 +43,7 @@ public class TerminalClientFromClientSideTests : IntegrationTestBase
         SetFeatureFlag(false);
         var resp = await PostClientAsync(new
         {
-            ClientId = "",
+            ClientId = "tc-inline-client",
             ClientType = "public",
             AllowedGrantTypes = new[] { StaffingGrant },
             NewPosition = new { AccountName = "tc-dark", TerminalPolicy = new { Enabled = true } },
@@ -240,7 +240,7 @@ public class TerminalClientFromClientSideTests : IntegrationTestBase
 
         var resp = await PostClientAsync(new
         {
-            ClientId = "",
+            ClientId = "tc-inline-client",
             ClientType = "public",
             AllowedGrantTypes = new[] { StaffingGrant, "refresh_token" },
             NewPosition = new
@@ -274,7 +274,7 @@ public class TerminalClientFromClientSideTests : IntegrationTestBase
         var slots = await Client.GetFromJsonAsync<List<TerminalDto>>($"/api/position/{positionId}/terminals", JsonOptions, ct);
         var slot = Assert.Single(slots!);
         Assert.Equal("Empfang", slot.DisplayName);
-        Assert.StartsWith("terminal.", slot.ClientId);
+        Assert.Equal("tc-inline-client", slot.ClientId);
         Assert.Equal(created.GetProperty("Client").GetProperty("ClientId").GetString(), slot.ClientId);
     }
 
@@ -286,7 +286,7 @@ public class TerminalClientFromClientSideTests : IntegrationTestBase
 
         var resp = await PostClientAsync(new
         {
-            ClientId = "",
+            ClientId = "tc-invalid-policy-client",
             ClientType = "public",
             AllowedGrantTypes = new[] { StaffingGrant },
             NewPosition = new
@@ -316,7 +316,7 @@ public class TerminalClientFromClientSideTests : IntegrationTestBase
 
         var resp = await PostClientAsync(new
         {
-            ClientId = "",
+            ClientId = "tc-grants-client",
             ClientType = "public",
             AllowedGrantTypes = new[] { StaffingGrant },
             NewPosition = new
