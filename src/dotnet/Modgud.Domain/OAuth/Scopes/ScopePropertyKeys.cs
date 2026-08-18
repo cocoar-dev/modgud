@@ -1,3 +1,5 @@
+using Modgud.Domain.OAuth.Management;
+
 namespace Modgud.Domain.OAuth.Scopes;
 
 /// <summary>Custom property keys stored on scope Properties (JSON-element values).</summary>
@@ -21,8 +23,9 @@ public static class ScopePropertyKeys
 /// <summary>
 /// Constants for the system-managed scopes seeded into every realm — the OIDC
 /// core set (<c>openid</c>, <c>email</c>, <c>profile</c>, <c>phone</c>,
-/// <c>address</c>, <c>offline_access</c>) plus the two Cocoar-defined
-/// authorization-claim gates (<c>roles</c>, <c>permissions</c>).
+/// <c>address</c>, <c>offline_access</c>), the two Cocoar-defined
+/// authorization-claim gates (<c>roles</c>, <c>permissions</c>), and the
+/// coarse Modgud management-API selector (<c>modgud.management</c>).
 ///
 /// <para>Membership in <see cref="All"/> drives two pieces of behaviour:</para>
 /// <list type="bullet">
@@ -55,9 +58,16 @@ public static class StandardScopes
     /// </summary>
     public const string Permissions = "permissions";
 
+    /// <summary>
+    /// Selects Modgud's own management API as the target resource. This is a
+    /// coarse client capability only; every endpoint still requires a live
+    /// permission from the system App catalog.
+    /// </summary>
+    public const string Management = ModgudManagementApi.Scope;
+
     public static readonly IReadOnlyCollection<string> All = new[]
     {
-        OpenId, Email, Profile, Phone, Address, Roles, OfflineAccess, Permissions,
+        OpenId, Email, Profile, Phone, Address, Roles, OfflineAccess, Permissions, Management,
     };
 
     public static bool IsStandard(string? name) =>

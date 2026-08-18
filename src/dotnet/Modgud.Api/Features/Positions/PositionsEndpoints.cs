@@ -1,6 +1,8 @@
 using System.Text.RegularExpressions;
 using BuildingBlocks.EventDispatcher;
 using BuildingBlocks.Helper;
+using Marten;
+using Modgud.Api.Features.Management;
 using Modgud.Application.DTOs.Positions;
 using Modgud.Application.Services;
 using Modgud.Authorization.AspNetCore;
@@ -8,9 +10,8 @@ using Modgud.Authorization.Events;
 using Modgud.Authorization.Principals;
 using Modgud.Domain.PositionTerminals;
 using Modgud.Domain.ValueObjects;
-using Modgud.Infrastructure.PositionTerminals;
 using Modgud.Infrastructure.OpenIddict;
-using Marten;
+using Modgud.Infrastructure.PositionTerminals;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Api.Features.Positions;
@@ -32,8 +33,7 @@ public static class PositionsEndpoints
     public static WebApplication MapPositionsEndpoints(this WebApplication application, string path)
     {
         var group = application.MapGroup($"{path}/position")
-            .WithTags("Positions")
-            .RequireAuthorization();
+            .WithTags("Positions");
 
         group.MapGet("", async (AppSettings settings, IDocumentSession session) =>
             {
@@ -47,7 +47,7 @@ public static class PositionsEndpoints
                 return Results.Ok(rows.Select(ToDto));
             })
             .WithName("V2_Position_GetAll")
-            .RequiresPermission("position:read");
+            .RequiresManagementPermission("position:read");
 
         group.MapGet("{id}", async (ShortGuid id, AppSettings settings, IDocumentSession session, CancellationToken ct) =>
             {
@@ -57,7 +57,7 @@ public static class PositionsEndpoints
                 return fn is null || fn.IsDeleted ? Results.NotFound() : Results.Ok(ToDto(fn));
             })
             .WithName("V2_Position_Get")
-            .RequiresPermission("position:read");
+            .RequiresManagementPermission("position:read");
 
         group.MapPost("", async (
                 PositionCreateDto dto,
@@ -248,6 +248,7 @@ public static class PositionsEndpoints
                 return Results.Ok(created);
             })
             .WithName("V2_Position_Create")
+            .RequireAuthorization()
             .RequiresPermission("position:write");
 
         group.MapPut("{id}", async (
@@ -355,6 +356,7 @@ public static class PositionsEndpoints
                 return Results.Ok(updated);
             })
             .WithName("V2_Position_Update")
+            .RequireAuthorization()
             .RequiresPermission("position:write");
 
         group.MapPost("{id}/terminal-policy/preview", async (
@@ -376,6 +378,7 @@ public static class PositionsEndpoints
                     session, position.Id, position.TerminalPolicy, policy, ct));
             })
             .WithName("V2_Position_TerminalPolicyPreview")
+            .RequireAuthorization()
             .RequiresPermission("position:write");
 
         group.MapDelete("{id}", async (
@@ -457,6 +460,7 @@ public static class PositionsEndpoints
                 return Results.Ok();
             })
             .WithName("V2_Position_Delete")
+            .RequireAuthorization()
             .RequiresPermission("position:write");
 
         return application;

@@ -17,6 +17,9 @@ protocol-specific pages.
 - [SaaS app walkthrough](./saas-walkthrough) — full
   user-facing-app integration: client registration, login redirect,
   resource_access claims, role-based gating.
+- [Modgud Management API](./management-api) — let a backend Service Account or
+  delegated administrator read deliberately exposed Modgud resources using the
+  same live permissions as the first-party admin UI.
 
 ## Protocol pages
 

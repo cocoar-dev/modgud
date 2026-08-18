@@ -4,6 +4,7 @@ using Modgud.Api.Tests.Infrastructure;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authorization.Apps;
+using Modgud.Domain.OAuth.Management;
 using Modgud.Domain.OAuth.Scopes;
 using Modgud.Infrastructure.Realms;
 
@@ -55,8 +56,14 @@ public class ColdStartBootTests(ColdStartFixture fixture) : ColdStartTestBase(fi
         // Standard OIDC scopes.
         var scopes = await session.Query<OAuthScopeState>().Where(s => !s.IsDeleted).ToListAsync(ct);
         var scopeNames = scopes.Select(s => s.Name).ToList();
-        foreach (var expected in new[] { "openid", "email", "profile", "roles", "permissions", "offline_access" })
+        foreach (var expected in new[]
+                 {
+                     "openid", "email", "profile", "roles", "permissions", "offline_access",
+                     "modgud.management",
+                 })
             Assert.Contains(expected, scopeNames);
+        var management = scopes.Single(scope => scope.Name == ModgudManagementApi.Scope);
+        Assert.Equal([ModgudManagementApi.Audience], management.Resources);
 
         // The built-in Internal login provider.
         var providers = await session.Query<LoginProvider>().ToListAsync(ct);

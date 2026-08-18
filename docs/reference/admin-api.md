@@ -4,12 +4,15 @@ Endpoints under `/api/admin/...` (or `/api/...` for resource reads
 without the `admin/` prefix). The realm is resolved via the Host
 header.
 
-Most endpoints are gated through
+Most endpoints are cookie-only and gated through
 `.RequiresPermission("<resource>:<action>")`, and those permission
 strings are exactly the same as in the frontend sidebar. A few
 endpoints are gated by authentication only (e.g. the principal/lookup
 pickers) or are public (the anonymous SPA-bootstrap reads); these are
-called out per-row below.
+called out per-row below. Routes marked **Management API** additionally
+accept an OAuth bearer token with scope `modgud.management`, audience
+`urn:modgud:management-api`, and the same live permission. See the
+[Management API guide](/integrate/management-api).
 
 ## Users
 
@@ -149,6 +152,21 @@ cascade-deletes its credentials and revokes their outstanding tokens.
 | `POST` | `/api/service-account` | `service-account:write` |
 | `PUT` | `/api/service-account/{id}` | `service-account:write` |
 | `DELETE` | `/api/service-account/{id}` | `service-account:write` |
+
+## Positions
+
+Position reads are the first general Management API surface. They accept the
+normal Modgud admin cookie or a management bearer token; the remaining Position
+and terminal routes are cookie-only. Every route returns 404 while the
+`PositionTerminals` feature flag is disabled.
+
+| Method | Path | Permission | Authentication |
+|---|---|---|---|
+| `GET` | `/api/position` | `position:read` | Cookie or Management API bearer |
+| `GET` | `/api/position/{id}` | `position:read` | Cookie or Management API bearer |
+| `POST` | `/api/position` | `position:write` | Cookie only |
+| `PUT` | `/api/position/{id}` | `position:write` | Cookie only |
+| `DELETE` | `/api/position/{id}` | `position:write` | Cookie only |
 
 ### Service account credentials
 

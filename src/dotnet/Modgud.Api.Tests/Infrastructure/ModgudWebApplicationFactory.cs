@@ -575,12 +575,18 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
                 keyStore.ClearCachesForReset();
             }
 
-            // Re-seed the system App + Control-Plane App inside the exclusive reset
-            // window so no projection barrier can observe half-seeded state.
+            // Re-seed the system App + Control-Plane App and the realm-owned OAuth
+            // defaults inside the exclusive reset window so no projection barrier
+            // can observe half-seeded state. The management API scope is a runtime
+            // contract just like the App permission catalog and must survive the
+            // same reset discipline in behavioural tests.
             await Modgud.Infrastructure.Authorization.AppRealmSeeder.SeedAsync(
                 Services,
                 tenantId: "system",
                 isControlPlane: true);
+            await Modgud.Infrastructure.OAuth.OAuthRealmSeeder.SeedAsync(
+                Services,
+                tenantId: "system");
         }, cancellation);
     }
 

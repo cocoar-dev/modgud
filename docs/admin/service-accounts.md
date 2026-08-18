@@ -136,6 +136,13 @@ For an SA-issued token:
 
 The downstream API validates the token, reads `sub`, and gates access exactly the same way it does for a Person — the permission evaluator doesn't care whether the principal is a Person or a ServiceAccount.
 
+To let a Service Account administer selected Modgud resources itself, issue a
+credential carrying the protected `modgud.management` scope and grant the SA
+the corresponding Modgud permissions through its groups and roles. The first
+supported operations are Position reads. See the
+[Management API integration guide](/integrate/management-api) for the fixed
+audience, token request, and complete authorization contract.
+
 ## Group and role membership
 
 A Service Account can be added to any group from `/admin/groups` the same way a Person can. JsEval auto-membership scripts can target SAs too: they receive `principal.type == "service-account"` and can branch on `accountName`, `purpose`, or any group/permission predicate.
@@ -169,4 +176,5 @@ For each un-linked `client_credentials` client the command auto-provisions a Ser
 - [OAuth Clients](./oauth-clients) — the global grid that lists user-facing clients alongside SA-managed credentials with an M2M column linking back here.
 - [Groups](./groups) — where SAs pick up roles and permissions.
 - [Applications](./applications) and [OAuth Scopes](./oauth-scopes) — the resources and scopes a credential's tokens can target.
+- [Management API](/integrate/management-api) — use an SA credential to call selected Modgud administration endpoints.
 - [Auth Log](./auth-log) — filter for the SA's account name to see every action it has taken.
