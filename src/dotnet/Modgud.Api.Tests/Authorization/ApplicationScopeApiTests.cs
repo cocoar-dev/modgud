@@ -67,15 +67,30 @@ public class ApplicationScopeApiTests : IntegrationTestBase
 
         Assert.NotNull(first);
         Assert.Equal("scope-test", first.AppSlug);
-        Assert.Collection(first.RootGroups, root =>
+        var ownRoot = Assert.Single(
+            first.RootGroups,
+            root => root.Id == new ShortGuid(rootId).ToString());
+        Assert.False(ownRoot.HasPermissions);
+
+        var expectedPrincipals = new Dictionary<Guid, string>
         {
-            Assert.Equal(new ShortGuid(rootId).ToString(), root.Id);
-            Assert.False(root.HasPermissions);
-        });
-        Assert.Equal(
-            new[] { "group", "group", "person", "position", "service-account" },
-            first.Principals.Select(p => p.Type).OrderBy(x => x, StringComparer.Ordinal));
-        Assert.Single(first.Principals, p => p.IsScopeRoot);
+            [rootId] = "group",
+            [nestedId] = "group",
+            [DefaultUser!.Id] = "person",
+            [positionId] = "position",
+            [serviceAccount.Id] = "service-account",
+        };
+        foreach (var (principalId, principalType) in expectedPrincipals)
+        {
+            var principal = Assert.Single(
+                first.Principals,
+                candidate => candidate.Id == new ShortGuid(principalId).ToString());
+            Assert.Equal(principalType, principal.Type);
+        }
+
+        Assert.True(Assert.Single(
+            first.Principals,
+            principal => principal.Id == new ShortGuid(rootId).ToString()).IsScopeRoot);
 
         var secondServiceAccount = new ServiceAccount
         {
