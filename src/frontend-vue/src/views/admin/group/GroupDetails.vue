@@ -626,7 +626,7 @@ async function save() {
               ? t('admin.groupDetails.boundTo.wildcardHint', {}, '★ &quot;All applications&quot; selected — this group is active in every application in the realm. Typical for the realm-admin group.')
               : isDormantBoundTo
               ? t('admin.groupDetails.boundTo.dormantHint', {}, 'No applications selected — the group is dormant for permissions. It can still receive mail and have members, but its roles grant nothing.')
-              : t('admin.groupDetails.boundTo.scopedHint', {}, 'The assigned roles contribute only when the requesting application is selected here.')">
+              : t('admin.groupDetails.boundTo.scopedHint', {}, 'The group and its effective members belong to the selected application scopes. Assigned roles contribute only there.')">
             <CoarMultiSelect
               v-model="form.BoundTo"
               :options="boundToOptions"
@@ -642,6 +642,9 @@ async function save() {
               {{ t('admin.groupDetails.roles', {}, 'Roles') }}
             </h3>
           </CoarDivider>
+          <CoarNotice v-if="form.RoleIds.length === 0" variant="info">
+            {{ t('admin.groupDetails.noPermissions', {}, 'This group grants no permissions.') }}
+          </CoarNotice>
           <CoarDualListbox
             class="flex-1 min-h-0"
             v-model="form.RoleIds"

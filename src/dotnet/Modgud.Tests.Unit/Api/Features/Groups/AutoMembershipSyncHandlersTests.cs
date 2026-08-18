@@ -189,6 +189,24 @@ public class AutoMembershipSyncHandlersTests
             public new bool ShouldSync(UserDeletedEvent @event) => base.ShouldSync(@event);
         }
 
+        private sealed class TestablePositionCreated : AutoMembershipOnPositionCreatedHandler
+        {
+            public TestablePositionCreated() : base(new ThrowingRecalculator(), NullLogger<AutoMembershipOnPositionCreatedHandler>.Instance) { }
+            public new bool ShouldSync(PositionPrincipalCreatedEvent @event) => base.ShouldSync(@event);
+        }
+
+        private sealed class TestablePositionUpdated : AutoMembershipOnPositionUpdatedHandler
+        {
+            public TestablePositionUpdated() : base(new ThrowingRecalculator(), NullLogger<AutoMembershipOnPositionUpdatedHandler>.Instance) { }
+            public new bool ShouldSync(PositionPrincipalUpdatedEvent @event) => base.ShouldSync(@event);
+        }
+
+        private sealed class TestablePositionDeleted : AutoMembershipOnPositionDeletedHandler
+        {
+            public TestablePositionDeleted() : base(new ThrowingRecalculator(), NullLogger<AutoMembershipOnPositionDeletedHandler>.Instance) { }
+            public new bool ShouldSync(PositionPrincipalDeletedEvent @event) => base.ShouldSync(@event);
+        }
+
         private sealed class TestableGroupUpdated : AutoMembershipOnGroupUpdatedHandler
         {
             public TestableGroupUpdated() : base(new ThrowingRecalculator(), NullLogger<AutoMembershipOnGroupUpdatedHandler>.Instance) { }
@@ -240,6 +258,21 @@ public class AutoMembershipSyncHandlersTests
         [Fact]
         public void UserDeleted_always_syncs() =>
             Assert.True(new TestableDeleted().ShouldSync(new UserDeletedEvent(Guid.NewGuid())));
+
+        [Fact]
+        public void PositionCreated_always_syncs() =>
+            Assert.True(new TestablePositionCreated().ShouldSync(new PositionPrincipalCreatedEvent(
+                Guid.NewGuid(), "gate", null, true, PositionTerminalPolicy.Disabled)));
+
+        [Fact]
+        public void PositionUpdated_always_syncs() =>
+            Assert.True(new TestablePositionUpdated().ShouldSync(new PositionPrincipalUpdatedEvent(
+                Guid.NewGuid(), "gate", "updated", true, PositionTerminalPolicy.Disabled)));
+
+        [Fact]
+        public void PositionDeleted_always_syncs() =>
+            Assert.True(new TestablePositionDeleted().ShouldSync(
+                new PositionPrincipalDeletedEvent(Guid.NewGuid())));
 
         [Fact]
         public void GroupUpdated_always_syncs()

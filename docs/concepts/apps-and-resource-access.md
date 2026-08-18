@@ -52,8 +52,15 @@ is the organisational clamp.**
 
 Every artefact below the realm sits on one of these axes. App-scoped
 artefacts (`PermissionRole.AppId`, `OAuthScope.AppId`,
-`OAuthApi.AppId`) reach back up to the App; `Group.BoundTo` is the
-activation switch ("is this group active in app X?").
+`OAuthApi.AppId`) reach back up to the App. `Group.BoundTo` assigns a
+group to one or more Apps: its effective members belong to those Apps'
+Principal scopes, and its roles are active there.
+
+This also supports pure assignment groups. A group with `BoundTo =
+["acme"]` and no roles grants no permission, but its effective members
+still belong to Acme's Principal scope. Modgud therefore needs no second
+per-user or per-position App-assignment list. The `"*"` binding assigns
+the group to every App in the realm.
 
 ## The App's second facet: a login experience (ADR-0011)
 

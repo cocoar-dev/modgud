@@ -35,10 +35,10 @@ public class Group : Principal, IPrincipalWithMembers, IPrincipalEmailAddressabl
     public List<Guid> RoleIds { get; set; } = [];
 
     /// <summary>
-    /// App slugs in which this group is <i>active</i>. When a permission
-    /// check resolves <c>(User, App)</c>, only groups with the requested
-    /// app in <see cref="BoundTo"/> contribute to the user's effective
-    /// permissions in that app.
+    /// App slugs to which this group is assigned. The group and its effective
+    /// members form part of each assigned Application's Principal scope, even
+    /// when <see cref="RoleIds"/> is empty. When a permission check resolves
+    /// <c>(User, App)</c>, only groups assigned to that app contribute roles.
     ///
     /// <para>An empty list means the group is dormant for permission
     /// purposes (organisation-only — e.g. a distribution list). Removing

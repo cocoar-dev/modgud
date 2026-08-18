@@ -1,6 +1,7 @@
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Modgud.Authorization.Membership;
+using Modgud.Authorization.Apps;
 using Modgud.Authorization.Resources;
 using Modgud.Authorization.Services;
 
@@ -26,6 +27,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IResourceRegistry>(options.ResourceRegistry);
 
         services.AddScoped<IPermissionService, PermissionService>();
+        services.AddScoped<IApplicationScopeResolver, ApplicationScopeResolver>();
         services.AddScoped<IEffectiveGroupsResolver, EffectiveGroupsResolver>();
         services.AddScoped<ILoginTimeMembershipDeriver, LoginTimeMembershipDeriver>();
         services.AddScoped<IMembershipEvaluator, MembershipEvaluator>();

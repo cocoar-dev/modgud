@@ -797,6 +797,11 @@
       "description": "Beschreibung",
       "members": "Mitglieder",
       "roles": "Rollen",
+      "permissions": "Berechtigungen",
+      "permissionsTag": {
+        "true": "Berechtigungen zugewiesen",
+        "false": "Keine Berechtigungen"
+      },
       "membershipMode": "Typ",
       "membership": {
         "Manual": "Manuell",
@@ -840,6 +845,7 @@
       "type": "Typ",
       "selectMembers": "Mitglieder auswählen...",
       "roles": "Rollen",
+      "noPermissions": "Diese Gruppe vergibt keine Berechtigungen.",
       "selectRoles": "Rollen auswählen...",
       "examples": "Beispiele",
       "examplesIntro": "Leer = keine Einschränkung. Beispiele für Einschränkungen:",
@@ -881,8 +887,8 @@
       "boundTo": "In welchen Anwendungen aktiv",
       "boundTo.dormantHint": "Keine Anwendung ausgewählt — die Gruppe ist für Berechtigungen ruhend (z. B. reine Organisations-Gruppe / Verteiler). Sie erhält weiterhin E-Mails und erscheint in Mitglieder-Ansichten, aber ihre Rollen vergeben nichts.",
       "boundTo.placeholder": "Anwendungen wählen…",
-      "boundTo.scopedHint": "Trägt nur zur Berechtigungsauflösung bei, wenn die anfragende Anwendung hier ausgewählt ist. An diese Gruppe gebundene Rollen greifen nur in diesen Anwendungen.",
-      "boundTo.wildcardHint": "★ „Alle Anwendungen“ ausgewählt — diese Gruppe ist in jeder Anwendung des Realms aktiv. Typisch für die realm-admin-Gruppe.",
+      "boundTo.scopedHint": "Die Gruppe und ihre effektiven Mitglieder gehören zum Scope der ausgewählten Anwendungen. Zugewiesene Rollen greifen nur dort.",
+      "boundTo.wildcardHint": "★ „Alle Anwendungen“ ausgewählt — die Gruppe und ihre effektiven Mitglieder gehören zum Scope jeder Anwendung im Realm. Typisch für die realm-admin-Gruppe.",
       "boundTo.wildcardOption": "★ Alle Anwendungen (*) — realm-weit",
       "email": "E-Mail-Adresse",
       "validation": {

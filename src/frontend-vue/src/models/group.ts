@@ -20,10 +20,10 @@ export interface GroupDto {
   Email?: string
   EmailMode: EmailMode
   /**
-   * App slugs in which this group is *active*. When permission resolution
-   * runs against a given app, only groups whose BoundTo contains that app
-   * (or the wildcard "*") contribute. Empty = dormant (organisation-only
-   * group, e.g. a distribution list).
+   * App slugs to which this group is assigned. Its effective members belong
+   * to those Application scopes even when RoleIds is empty. During permission
+   * resolution, its roles contribute only for those apps. "*" means every
+   * Application; empty means organisation-only/dormant.
    */
   BoundTo: string[]
 }
