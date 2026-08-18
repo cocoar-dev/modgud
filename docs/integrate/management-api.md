@@ -41,12 +41,15 @@ Use this flow when no person is present:
 
 1. Create a role containing only the required Modgud permissions. For the
    Position reads, grant `position:read`. Terminal provisioning needs both
-   `position:write` and `oauth-client:write`.
+   `position:write` and `oauth-client:write`. Reading an Application's complete
+   Principal scope needs `app-scope:read`.
 2. Create or choose a group, attach the role, and add the Service Account as a
    member.
 3. On that Service Account, issue a credential and allow the
    `modgud.management` scope. Modgud pins the resulting OAuth client to
-   `client_credentials` and to that Service Account.
+   `client_credentials` and to that Service Account. Assign the OAuth client to
+   each Application whose scope it may read; scope reads never treat an empty
+   `AppIds` list as permission to read every Application.
 4. Store the one-time client secret in the consumer's secret store.
 
 Request a token with the standard OAuth wire format:
@@ -137,6 +140,68 @@ or inline-creating a Service Account additionally needs
 `service-account:write`. This prevents a client administrator from minting a
 credential for a more privileged machine identity.
 
+## Read an Application's Principal scope
+
+`GET /api/app/{appId}/scope` returns one consistent full read of the Principals
+assigned to an Application. It requires `app-scope:read` and accepts the App id
+as a Guid or ShortGuid. A bearer caller may only target Applications listed in
+its OAuth client's `AppIds`; an empty assignment grants no scope access. A
+cookie-authenticated administrator with the same permission may read any
+Application in the realm.
+
+There is no separate scope configuration. Modgud derives the result from the
+existing group graph:
+
+1. Every active group whose `BoundTo` contains the App slug or `*` is a scope
+   root.
+2. Each root, its nested groups, and every transitive active member belong to
+   the scope.
+3. All Principal kinds use the same rule: Person, Position, Service Account,
+   and Group.
+
+A group may deliberately have no roles. It then grants no permission while
+still assigning its members to the selected Application scopes. The admin UI
+marks such a group as **No permissions**.
+
+The response includes an opaque `scopeVersion`, the contributing root groups,
+and the typed Principal records:
+
+```json
+{
+  "appId": "<short-guid>",
+  "appSlug": "alert-hub",
+  "scopeVersion": "v1-<opaque-hash>",
+  "rootGroups": [
+    {
+      "id": "<short-guid>",
+      "name": "AlertHub principals",
+      "hasPermissions": false
+    }
+  ],
+  "principals": [
+    {
+      "id": "<short-guid>",
+      "type": "person",
+      "displayName": "AP | Alice Person",
+      "isActive": true,
+      "isScopeRoot": false,
+      "accountName": "alice",
+      "firstname": "Alice",
+      "lastname": "Person",
+      "acronym": "AP",
+      "email": "alice@example.com"
+    }
+  ]
+}
+```
+
+`scopeVersion` versions the **definition**, not every member. Adding or removing
+an App binding, changing the nested-group structure, or changing an automatic
+membership predicate changes it and tells a consumer to perform a new full
+read. Ordinary direct membership/profile changes leave it stable; the resumable
+change stream can therefore represent those as individual changes. Consumers
+must treat the version as opaque and compare it for equality only.
+
 ## Delegated-person setup
 
 Use this flow when the consumer should act with the permissions of a signed-in
@@ -183,6 +248,7 @@ scheme does not turn every cookie-only admin route into a remote API.
 |---|---|---|---|
 | `GET` | `/api/position` | `position:read` | `PositionTerminals` enabled |
 | `GET` | `/api/position/{id}` | `position:read` | `PositionTerminals` enabled |
+| `GET` | `/api/app/{id}/scope` | `app-scope:read` | Full `BoundTo`-derived Principal snapshot |
 | `POST` | `/api/admin/oauth/clients` | `oauth-client:write` | `position:write` for terminal provisioning; `service-account:write` for an SA link |
 
 Direct Position creation, mutation, deletion, grants, terminal enrollment, and

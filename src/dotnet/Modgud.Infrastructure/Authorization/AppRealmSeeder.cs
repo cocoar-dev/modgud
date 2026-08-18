@@ -33,6 +33,7 @@ public static class AppRealmSeeder
         // into this realm). The system app modgud is seeded
         // automatically and cannot be deleted.
         ("app", ["admin", "read", "write"]),
+        ("app-scope", ["read"]),
 
         // Identity / directory
         ("user", ["read", "write"]),

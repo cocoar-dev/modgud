@@ -4,8 +4,10 @@ using Modgud.Application.DTOs.Applications;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Services;
 using Modgud.Authentication.Applications;
+using Modgud.Api.Features.Management;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.AspNetCore;
+using Modgud.Authorization.Principals;
 using Marten;
 
 namespace Modgud.Api.Features.Admin.Apps;
@@ -166,6 +168,40 @@ public static class AppsEndpoints
             .WithName("V2_App_Delete")
             .RequiresPermission("app:write");
 
+        // Deliberately mapped outside appGroup: that group is cookie-authenticated,
+        // while this read is also part of the explicitly exposed OAuth Management
+        // API. The management filter selects cookie or bearer and evaluates the
+        // same live app-scope:read permission for both. Bearer callers are also
+        // constrained to the target Apps assigned to their OAuth client.
+        application.MapGet($"{path}/app/{{id}}/scope", async (
+                ShortGuid id,
+                IApplicationScopeResolver resolver,
+                CancellationToken ct) =>
+            {
+                var snapshot = await resolver.ResolveAsync(id.Guid, ct);
+                if (snapshot is null) return Results.NotFound();
+
+                var rootIds = snapshot.RootGroups.Select(g => g.Id).ToHashSet();
+                return Results.Ok(new
+                {
+                    AppId = new ShortGuid(snapshot.AppId).ToString(),
+                    snapshot.AppSlug,
+                    snapshot.ScopeVersion,
+                    RootGroups = snapshot.RootGroups.Select(g => new
+                    {
+                        Id = new ShortGuid(g.Id).ToString(),
+                        g.Name,
+                        HasPermissions = g.RoleIds.Count > 0,
+                    }),
+                    Principals = snapshot.Principals.Select(p => MapScopePrincipal(p, rootIds)),
+                });
+            })
+            .WithTags("Apps")
+            .WithName("V2_App_GetScope")
+            .RequiresManagementPermission(
+                "app-scope:read",
+                clientAppRouteParameter: "id");
+
         return application;
     }
 
@@ -189,6 +225,31 @@ public static class AppsEndpoints
         a.IsSystem,
         Settings = settings,
     };
+
+    private static object MapScopePrincipal(Principal principal, IReadOnlySet<Guid> rootGroupIds)
+    {
+        var person = principal as Person;
+        var group = principal as Group;
+        var serviceAccount = principal as ServiceAccount;
+        var position = principal as PositionPrincipal;
+
+        return new
+        {
+            Id = new ShortGuid(principal.Id).ToString(),
+            principal.Type,
+            principal.DisplayName,
+            principal.IsActive,
+            IsScopeRoot = rootGroupIds.Contains(principal.Id),
+            AccountName = person?.AccountName ?? serviceAccount?.AccountName ?? position?.AccountName,
+            person?.Firstname,
+            person?.Lastname,
+            person?.Acronym,
+            person?.Email,
+            Name = group?.Name,
+            Description = group?.Description,
+            Purpose = serviceAccount?.Purpose ?? position?.Purpose,
+        };
+    }
 
     // Renders an AppAdminService ErrorOr error with the error code in the body. The shared
     // ErrorOrExtensions.ToResult collapses to { error: description } (no code) — the app

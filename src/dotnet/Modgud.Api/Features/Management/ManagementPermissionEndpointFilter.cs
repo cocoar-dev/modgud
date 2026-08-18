@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Json;
+using BuildingBlocks.Helper;
 using Marten;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -22,7 +23,9 @@ namespace Modgud.Api.Features.Management;
 /// the management API; the system-App permission remains the single source of
 /// fine-grained authorization for both Persons and ServiceAccounts.
 /// </summary>
-public sealed class ManagementPermissionEndpointFilter(string permission) : IEndpointFilter
+public sealed class ManagementPermissionEndpointFilter(
+    string permission,
+    string? clientAppRouteParameter = null) : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(
         EndpointFilterInvocationContext context,
@@ -63,6 +66,13 @@ public sealed class ManagementPermissionEndpointFilter(string permission) : IEnd
         if (bearerRequest && principal is Person &&
             await ValidateDelegatedClientAsync(http, caller) is { } delegatedClientError)
             return delegatedClientError;
+
+        if (bearerRequest && clientAppRouteParameter is not null &&
+            await ValidateClientAppBoundaryAsync(http, caller, clientAppRouteParameter)
+                is { } appBoundaryError)
+        {
+            return appBoundaryError;
+        }
 
         var permissionService = http.RequestServices.GetRequiredService<IPermissionService>();
         if (!await permissionService.HasPermissionAsync(
@@ -168,6 +178,37 @@ public sealed class ManagementPermissionEndpointFilter(string permission) : IEnd
         return null;
     }
 
+    private static async Task<IResult?> ValidateClientAppBoundaryAsync(
+        HttpContext http,
+        ClaimsPrincipal caller,
+        string routeParameter)
+    {
+        var raw = http.Request.RouteValues.TryGetValue(routeParameter, out var value)
+            ? value?.ToString()
+            : null;
+        if (raw is null || !ShortGuid.TryParse(raw, out Guid targetAppId))
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Invalid Application id",
+                detail: $"The route value '{{{routeParameter}}}' is not a valid Application id.",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "Management.InvalidTargetApp",
+                });
+        }
+
+        var client = await LoadClientAsync(http, caller);
+        if (client is null || !client.AppIds.Contains(targetAppId))
+        {
+            return Forbidden(
+                "Management.ClientAppMismatch",
+                $"The OAuth client is not assigned to Application '{new ShortGuid(targetAppId)}'.");
+        }
+
+        return null;
+    }
+
     private static async Task<OAuthApplicationState?> LoadClientAsync(
         HttpContext http,
         ClaimsPrincipal caller)
@@ -230,13 +271,16 @@ public static class ManagementPermissionEndpointExtensions
     /// </summary>
     public static RouteHandlerBuilder RequiresManagementPermission(
         this RouteHandlerBuilder builder,
-        string permission)
+        string permission,
+        string? clientAppRouteParameter = null)
     {
         builder.RequireAuthorization(new AuthorizeAttribute
         {
             AuthenticationSchemes = AuthenticationSchemes,
         });
-        builder.AddEndpointFilter(new ManagementPermissionEndpointFilter(permission));
+        builder.AddEndpointFilter(new ManagementPermissionEndpointFilter(
+            permission,
+            clientAppRouteParameter));
         return builder;
     }
 }

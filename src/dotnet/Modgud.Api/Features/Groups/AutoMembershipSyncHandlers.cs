@@ -132,6 +132,46 @@ public class AutoMembershipOnUserDeletedHandler(
 }
 
 /// <summary>
+/// Position principals participate in the same group graph as Persons and
+/// Service Accounts. Keeping their auto-membership materialized is therefore
+/// required for BoundTo-derived Application scopes as well as authorization.
+/// Position events are full-state events, so the safe dependency signal is
+/// null (re-evaluate every auto group).
+/// </summary>
+public class AutoMembershipOnPositionCreatedHandler(
+    IAutoMembershipRecalculator recalculator,
+    ILogger<AutoMembershipOnPositionCreatedHandler> logger)
+    : ReferenceSyncHandler<PositionPrincipalCreatedEvent>(logger)
+{
+    protected override bool ShouldSync(PositionPrincipalCreatedEvent @event) => true;
+
+    protected override Task SyncAsync(PositionPrincipalCreatedEvent @event, IDocumentSession session)
+        => recalculator.RecalculateForPrincipalAsync(@event.Id, session, changedPaths: null);
+}
+
+public class AutoMembershipOnPositionUpdatedHandler(
+    IAutoMembershipRecalculator recalculator,
+    ILogger<AutoMembershipOnPositionUpdatedHandler> logger)
+    : ReferenceSyncHandler<PositionPrincipalUpdatedEvent>(logger)
+{
+    protected override bool ShouldSync(PositionPrincipalUpdatedEvent @event) => true;
+
+    protected override Task SyncAsync(PositionPrincipalUpdatedEvent @event, IDocumentSession session)
+        => recalculator.RecalculateForPrincipalAsync(@event.Id, session, changedPaths: null);
+}
+
+public class AutoMembershipOnPositionDeletedHandler(
+    IAutoMembershipRecalculator recalculator,
+    ILogger<AutoMembershipOnPositionDeletedHandler> logger)
+    : ReferenceSyncHandler<PositionPrincipalDeletedEvent>(logger)
+{
+    protected override bool ShouldSync(PositionPrincipalDeletedEvent @event) => true;
+
+    protected override Task SyncAsync(PositionPrincipalDeletedEvent @event, IDocumentSession session)
+        => recalculator.RecalculateForPrincipalAsync(@event.Id, session, changedPaths: null);
+}
+
+/// <summary>
 /// Reacts to UserExternalIdentityLinkedEvent / ...UnlinkedEvent — linking or
 /// unlinking an external identity mutates <c>Person.ExternalIdentities</c>, which
 /// a membership script may read (e.g. "is a member of any federated IdP", or a

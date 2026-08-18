@@ -44,9 +44,12 @@ const selectedAppSlug = computed(() => {
   if (!id) return null
   return appsStore.apps.find((a) => a.Id === id)?.Slug ?? null
 })
-const groups = computed(() =>
+type GroupListRow = GroupDto & { HasPermissions: boolean }
+
+const groups = computed<GroupListRow[]>(() =>
   groupStore.groups.filter((g) =>
-    appCtx.matchesBoundToSlugs(g.BoundTo, selectedAppSlug.value)))
+    appCtx.matchesBoundToSlugs(g.BoundTo, selectedAppSlug.value))
+    .map((g) => ({ ...g, HasPermissions: g.RoleIds.length > 0 })))
 
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
@@ -54,7 +57,7 @@ const selectedIds = ref<string[]>([])
 
 const showEmpty = computed(() => groupStore.loaded && groupStore.groups.length === 0)
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<GroupDto>(), { openable: true })
+const builder = applyListGridDefaults(CoarGridBuilder.create<GroupListRow>(), { openable: true })
   .persistColumnState('admin-groups')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(groups)
@@ -68,7 +71,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<GroupDto>(), { open
       event.api.deselectAll()
       event.node.setSelected(true)
     }
-    selectedIds.value = event.api.getSelectedRows().map((r: GroupDto) => r.Id)
+    selectedIds.value = event.api.getSelectedRows().map((r: GroupListRow) => r.Id)
     cellMenu.open(event.event as MouseEvent)
   })
   .onViewportContextMenu(($event) => {
@@ -84,8 +87,10 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<GroupDto>(), { open
       .option('valueGetter', (p: any) => p.data?.MembershipLastError ? 'Error' : p.data?.MembershipMode),
     (col) => col.field('MemberIds').header('Members', 'admin.groups.members').width(120)
       .option('valueGetter', (p: any) => (p.data?.MemberIds || []).length),
-    (col) => col.field('RoleIds').header('Roles', 'admin.groups.roles').width(120)
-      .option('valueGetter', (p: any) => (p.data?.RoleIds || []).length),
+    (col) => col.tag('HasPermissions', {
+      variantMap: { true: 'info', false: 'neutral' },
+      i18nPrefix: 'admin.groups.permissionsTag.',
+    }).header('Permissions', 'admin.groups.permissions').width(180),
   ])
 
 async function deleteSelected() {

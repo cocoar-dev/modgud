@@ -221,6 +221,10 @@ public static class DependencyInjection
             // into this realm). The system app modgud is seeded
             // automatically and cannot be deleted.
             opt.RegisterResource(app, "app", "admin", "read", "write");
+            // Read the complete, BoundTo-derived Principal slice of one App.
+            // Kept separate from app:read because the snapshot contains
+            // directory/profile data, not merely Application configuration.
+            opt.RegisterResource(app, "app-scope", "read");
 
             // Identity / directory
             opt.RegisterResource(app, "user", "read", "write");
