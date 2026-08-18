@@ -19,6 +19,7 @@ public class StandardScopesTests
         [InlineData("roles")]
         [InlineData("offline_access")]
         [InlineData("permissions")]
+        [InlineData("modgud.management")]
         public void Recognises_each_standard_scope(string scope) =>
             Assert.True(StandardScopes.IsStandard(scope));
 
@@ -46,11 +47,12 @@ public class StandardScopesTests
     public class AllSet
     {
         [Fact]
-        public void Contains_eight_scopes()
+        public void Contains_nine_scopes()
         {
             // OIDC core (openid + email + profile + phone + address + offline_access)
-            // plus the Cocoar-specific authz-claim gates (roles + permissions).
-            Assert.Equal(8, StandardScopes.All.Count);
+            // plus the Cocoar-specific authz-claim gates (roles + permissions)
+            // and the protected Modgud management-API capability.
+            Assert.Equal(9, StandardScopes.All.Count);
         }
 
         [Fact]

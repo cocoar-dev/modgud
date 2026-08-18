@@ -260,6 +260,7 @@ export const baseConfig = {
           items: [
             { text: 'Resource server (.NET)', link: '/integrate/resource-server' },
             { text: 'SaaS app walkthrough', link: '/integrate/saas-walkthrough' },
+            { text: 'Modgud Management API', link: '/integrate/management-api' },
             { text: 'Secure an MCP server', link: '/integrate/mcp-server' },
             { text: 'Native apps (iOS / mobile)', link: '/integrate/native-apps' },
             { text: 'OAuth / OpenIddict', link: '/integrate/oauth' },
