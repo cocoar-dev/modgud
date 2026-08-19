@@ -581,7 +581,9 @@ internal sealed class MigrateCcCredentialsCommand : IRecoveryCommand
                     Purpose = $"Auto-provisioned by migrate-cc-credentials for OAuth client '{client.ClientId}'.",
                     IsActive = true,
                 };
-                session.Store(sa);
+                session.Events.StartStream<ServiceAccount>(sa.Id,
+                    new Modgud.Authorization.Events.ServiceAccountCreatedEvent(
+                        sa.Id, sa.AccountName, sa.Purpose, sa.IsActive));
                 saCreated++;
             }
 

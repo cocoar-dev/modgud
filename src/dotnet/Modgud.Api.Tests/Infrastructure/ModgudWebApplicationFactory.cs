@@ -620,8 +620,8 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>
-    /// Rebuilds both event-sourced Principal subtypes with subtype-scoped cleanup,
-    /// preserving directly stored ServiceAccount rows in mt_doc_principal.
+    /// Rebuilds every event-sourced Principal subtype with subtype-scoped cleanup,
+    /// preserving legacy document-only ServiceAccount rows in mt_doc_principal.
     /// </summary>
     public async Task RebuildPrincipalProjectionsAsync(
         string tenantId = TenantConstants.SystemTenantId,

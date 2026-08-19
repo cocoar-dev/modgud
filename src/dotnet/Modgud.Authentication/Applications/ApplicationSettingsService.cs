@@ -165,6 +165,14 @@ public sealed class ApplicationSettingsService(
             doc.RegistrationFields = r.Value;
         }
 
+        if (dto.ChangeFeed is not null)
+        {
+            var r = MapChangeFeed(dto.ChangeFeed);
+            if (r.IsError) return r.FirstError;
+            StageChangeFeedConfigurationEvent(applicationId, doc.ChangeFeed, r.Value);
+            doc.ChangeFeed = r.Value;
+        }
+
         // Origin / subdomain is special: it also drives the GLOBAL host→App routing
         // map, validated for child-of-primary-domain + cross-realm uniqueness.
         if (dto.Origin is not null)
@@ -230,6 +238,11 @@ public sealed class ApplicationSettingsService(
 
         if (dto.RegistrationFields is null) doc.RegistrationFields = null;
         else { var r = MapRegistrationFields(dto.RegistrationFields); if (r.IsError) return r.FirstError; doc.RegistrationFields = r.Value; }
+
+        var oldChangeFeed = doc.ChangeFeed;
+        if (dto.ChangeFeed is null) doc.ChangeFeed = null;
+        else { var r = MapChangeFeed(dto.ChangeFeed); if (r.IsError) return r.FirstError; doc.ChangeFeed = r.Value; }
+        StageChangeFeedConfigurationEvent(applicationId, oldChangeFeed, doc.ChangeFeed);
 
         doc.UpdatedAt = DateTimeOffset.UtcNow;
         session.Store(doc);   // enrolled on the shared session; the caller commits.
@@ -417,6 +430,40 @@ public sealed class ApplicationSettingsService(
             Firstname = firstname.Value,
             Lastname = lastname.Value,
         };
+    }
+
+    private static ErrorOr<ApplicationChangeFeedSettings> MapChangeFeed(ApplicationChangeFeedDto dto)
+    {
+        if (dto.MinimumRetentionAgeDays is < 1 or > 3650)
+            return Error.Validation("Application.ChangeFeed.InvalidRetentionAge",
+                "MinimumRetentionAgeDays must be between 1 and 3650.");
+        if (dto.MinimumEventCount is < 1 or > 1_000_000)
+            return Error.Validation("Application.ChangeFeed.InvalidEventCount",
+                "MinimumEventCount must be between 1 and 1000000.");
+
+        return new ApplicationChangeFeedSettings
+        {
+            Enabled = dto.Enabled,
+            MinimumRetentionAge = TimeSpan.FromDays(dto.MinimumRetentionAgeDays),
+            MinimumEventCount = dto.MinimumEventCount,
+        };
+    }
+
+    private void StageChangeFeedConfigurationEvent(
+        Guid applicationId,
+        ApplicationChangeFeedSettings? previous,
+        ApplicationChangeFeedSettings? current)
+    {
+        var oldValue = previous ?? ApplicationChangeFeedSettings.Disabled;
+        var newValue = current ?? ApplicationChangeFeedSettings.Disabled;
+        if (oldValue == newValue) return;
+
+        session.Events.Append(applicationId, new ApplicationChangeFeedConfiguredEvent(
+            applicationId,
+            newValue.Enabled,
+            (int)newValue.MinimumRetentionAge.TotalDays,
+            newValue.MinimumEventCount,
+            DateTimeOffset.UtcNow));
     }
 
     private static ErrorOr<FieldRequirement?> ParseRequirement(string field, string? raw)
@@ -679,6 +726,12 @@ public sealed class ApplicationSettingsService(
                 Username = doc.RegistrationFields.Username?.ToString(),
                 Firstname = doc.RegistrationFields.Firstname?.ToString(),
                 Lastname = doc.RegistrationFields.Lastname?.ToString(),
+            },
+            ChangeFeed = doc.ChangeFeed is null ? null : new ApplicationChangeFeedDto
+            {
+                Enabled = doc.ChangeFeed.Enabled,
+                MinimumRetentionAgeDays = (int)doc.ChangeFeed.MinimumRetentionAge.TotalDays,
+                MinimumEventCount = doc.ChangeFeed.MinimumEventCount,
             },
         };
     }

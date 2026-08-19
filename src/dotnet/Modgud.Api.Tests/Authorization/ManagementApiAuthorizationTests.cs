@@ -12,10 +12,13 @@ using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.DTOs.Positions;
 using Modgud.Application.DTOs.ServiceAccount;
 using Modgud.Application.Services;
+using Modgud.Authorization.Apps;
+using Modgud.Authorization.Events;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.OAuth.Management;
 using Modgud.Domain.OAuth.Scopes;
+using Modgud.Infrastructure.ChangeFeed;
 using Modgud.Infrastructure.OAuth;
 using OpenIddict.Abstractions;
 
@@ -201,6 +204,124 @@ public class ManagementApiAuthorizationTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task App_change_feed_requires_both_live_permission_and_client_app_assignment()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var appId = Guid.CreateVersion7();
+        var otherAppId = Guid.CreateVersion7();
+        await using (var arrange = GetTenantedDocumentSession())
+        {
+            arrange.Events.StartStream<App>(appId, new AppCreatedEvent(
+                appId, $"management-feed-{Guid.NewGuid():N}", "Management feed", null, [], false));
+            arrange.Events.StartStream<App>(otherAppId, new AppCreatedEvent(
+                otherAppId, $"management-feed-other-{Guid.NewGuid():N}", "Other app", null, [], false));
+            arrange.Store(new AppChangeFeedState
+            {
+                Id = appId,
+                Enabled = true,
+                Generation = 1,
+                ScopeVersion = "v1-management-test",
+                LastProcessedSequence = 1,
+            });
+            await arrange.SaveChangesAsync(ct);
+        }
+
+        var serviceAccount = await CreateServiceAccountAsync("management-feed-reader");
+        Assert.True(ShortGuid.TryParse(serviceAccount.Id, out Guid serviceAccountId));
+        await GrantAppScopeReadAsync(serviceAccountId);
+
+        var allowedClientId = $"management-feed-allowed-{Guid.NewGuid():N}";
+        await CreateClientCredentialsClientAsync(
+            allowedClientId,
+            serviceAccount.Id,
+            [ModgudManagementApi.Scope],
+            appIds: [appId]);
+        var allowedToken = await IssueClientCredentialsTokenAsync(
+            allowedClientId, ModgudManagementApi.Scope, ModgudManagementApi.Audience);
+
+        string snapshotCursor;
+        using (var allowed = await SendManagementGetAsync(
+                   allowedToken,
+                   $"/api/app/{ShortGuid.Encode(appId)}/change-feed/snapshot"))
+        {
+            var body = await allowed.Content.ReadAsStringAsync(ct);
+            Assert.True(allowed.IsSuccessStatusCode,
+                $"assigned feed GET failed ({(int)allowed.StatusCode}): {body}");
+            using var snapshot = JsonDocument.Parse(body);
+            snapshotCursor = snapshot.RootElement.GetProperty("Cursor").GetString()!;
+        }
+
+        var feedEntityId = Guid.CreateVersion7();
+        await using (var append = GetTenantedDocumentSession())
+        {
+            var state = await append.LoadAsync<AppChangeFeedState>(appId, ct);
+            state!.LastProcessedSequence = 2;
+            append.Store(state);
+            append.Store(new AppChangeFeedEntry
+            {
+                Id = Guid.CreateVersion7(),
+                AppId = appId,
+                Generation = 1,
+                SourceSequence = 2,
+                Ordinal = 0,
+                ScopeVersion = state.ScopeVersion,
+                OriginatedAt = DateTimeOffset.UtcNow,
+                RecordedAt = DateTimeOffset.UtcNow,
+                ChangeKind = "Upsert",
+                EntityKind = "principal",
+                EntityId = feedEntityId,
+                PayloadJson = "{\"DisplayName\":\"SSE principal\"}",
+            });
+            await append.SaveChangesAsync(ct);
+        }
+
+        using (var streamCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            streamCts.CancelAfter(TimeSpan.FromSeconds(10));
+            using var streamClient = Factory.CreateClient();
+            using var streamRequest = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"/api/app/{ShortGuid.Encode(appId)}/change-feed/stream");
+            streamRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", allowedToken);
+            streamRequest.Headers.Accept.ParseAdd("text/event-stream");
+            streamRequest.Headers.TryAddWithoutValidation("Last-Event-ID", snapshotCursor);
+            using var streamResponse = await streamClient.SendAsync(
+                streamRequest, HttpCompletionOption.ResponseHeadersRead, streamCts.Token);
+            Assert.Equal(HttpStatusCode.OK, streamResponse.StatusCode);
+            Assert.Equal("text/event-stream", streamResponse.Content.Headers.ContentType?.MediaType);
+
+            await using var body = await streamResponse.Content.ReadAsStreamAsync(streamCts.Token);
+            using var reader = new StreamReader(body);
+            var idLine = await reader.ReadLineAsync(streamCts.Token);
+            var eventLine = await reader.ReadLineAsync(streamCts.Token);
+            var dataLine = await reader.ReadLineAsync(streamCts.Token);
+            Assert.StartsWith("id: ", idLine);
+            Assert.Equal("event: change", eventLine);
+            Assert.StartsWith("data: ", dataLine);
+            using var message = JsonDocument.Parse(dataLine!["data: ".Length..]);
+            Assert.Equal("Change", message.RootElement.GetProperty("Kind").GetString());
+            Assert.Equal(ShortGuid.Encode(feedEntityId),
+                message.RootElement.GetProperty("EntityId").GetString());
+        }
+
+        var deniedClientId = $"management-feed-denied-{Guid.NewGuid():N}";
+        await CreateClientCredentialsClientAsync(
+            deniedClientId,
+            serviceAccount.Id,
+            [ModgudManagementApi.Scope],
+            appIds: [otherAppId]);
+        var deniedToken = await IssueClientCredentialsTokenAsync(
+            deniedClientId, ModgudManagementApi.Scope, ModgudManagementApi.Audience);
+
+        using var denied = await SendManagementGetAsync(
+            deniedToken,
+            $"/api/app/{ShortGuid.Encode(appId)}/change-feed/snapshot");
+        var deniedBody = await denied.Content.ReadAsStringAsync(ct);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.Contains("Management.ClientAppMismatch", deniedBody);
+    }
+
+    [Fact]
     public async Task Realm_seeder_reconciles_a_legacy_management_scope_collision()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -281,11 +402,20 @@ public class ManagementApiAuthorizationTests : IntegrationTestBase
             $"ManagementPositionReaders_{Guid.NewGuid():N}", [principalId], [role.Id]);
     }
 
+    private async Task GrantAppScopeReadAsync(Guid principalId)
+    {
+        var role = await Factory.CreateTestRoleAsync(
+            $"ManagementAppScopeReader_{Guid.NewGuid():N}", [("app-scope", "read")]);
+        await Factory.CreateTestGroupAsync(
+            $"ManagementAppScopeReaders_{Guid.NewGuid():N}", [principalId], [role.Id]);
+    }
+
     private async Task CreateClientCredentialsClientAsync(
         string clientId,
         string serviceAccountId,
         List<string> scopes,
-        AccessTokenType accessTokenType = AccessTokenType.Jwt)
+        AccessTokenType accessTokenType = AccessTokenType.Jwt,
+        List<Guid>? appIds = null)
     {
         using var scope = Factory.Services.CreateScope();
         var oauth = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
@@ -302,7 +432,7 @@ public class ManagementApiAuthorizationTests : IntegrationTestBase
             AllowedGrantTypes = ["client_credentials"],
             RequireConsent = false,
             AccessTokenType = accessTokenType,
-            AppIds = [],
+            AppIds = appIds?.Select(ShortGuid.Encode).ToList() ?? [],
             LinkedServiceAccountId = serviceAccountId,
         }, TestContext.Current.CancellationToken);
         if (result.IsError)
@@ -442,9 +572,11 @@ public class ManagementApiAuthorizationTests : IntegrationTestBase
                 $"CreateScopeAsync failed: {string.Join(", ", result.Errors.Select(error => $"{error.Code}: {error.Description}"))}");
     }
 
-    private async Task<HttpResponseMessage> SendManagementGetAsync(string token)
+    private async Task<HttpResponseMessage> SendManagementGetAsync(
+        string token,
+        string path = "/api/position")
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/position");
+        var request = new HttpRequestMessage(HttpMethod.Get, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var client = Factory.CreateClient();
         return await client.SendAsync(request, TestContext.Current.CancellationToken);

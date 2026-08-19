@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   CoarNotice,
-  CoarTextInput, CoarFormField, CoarCheckbox, CoarSelect, CoarButton, useDialog,
+  CoarTextInput, CoarNumberInput, CoarFormField, CoarCheckbox, CoarSelect, CoarButton, useDialog,
   CoarTabGroup, CoarTab, CoarMultiSelect,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
@@ -34,7 +34,7 @@ const props = defineProps<{
 const groupStore = useGroupStore()
 const loginProviderStore = useLoginProviderStore()
 const appConfig = useAppConfigStore()
-const activeTab = ref<'origin' | 'registration' | 'sessions' | 'grants' | 'oauth' | 'pages'>('origin')
+const activeTab = ref<'origin' | 'registration' | 'sessions' | 'grants' | 'oauth' | 'sync' | 'pages'>('origin')
 
 const groupOptions = ref<{ value: string; label: string }[]>([])
 const loginProviderOptions = ref<{ value: string; label: string }[]>([])
@@ -80,6 +80,11 @@ const f = reactive({
     reservedNames: [] as string[], perIp: '', perRealm: '',
   },
   cimd: { override: false, enabled: false, access: '', refresh: '' },
+  changeFeed: {
+    enabled: false,
+    retentionAgeDays: 7 as number | null,
+    minimumEventCount: 1000 as number | null,
+  },
 })
 
 const postureOptions = [
@@ -219,6 +224,7 @@ function resetForm() {
   f.dcr.override = false; f.dcr.enabled = false; f.dcr.access = ''; f.dcr.refresh = ''
   f.dcr.reservedNames = []; f.dcr.perIp = ''; f.dcr.perRealm = ''
   f.cimd.override = false; f.cimd.enabled = false; f.cimd.access = ''; f.cimd.refresh = ''
+  f.changeFeed.enabled = false; f.changeFeed.retentionAgeDays = 7; f.changeFeed.minimumEventCount = 1000
 }
 
 function populate(s?: ApplicationSettingsDto | null) {
@@ -303,6 +309,11 @@ function populate(s?: ApplicationSettingsDto | null) {
     f.cimd.enabled = s.Cimd.Enabled ?? false
     f.cimd.access = numStr(s.Cimd.AccessTokenLifetimeMinutes)
     f.cimd.refresh = numStr(s.Cimd.RefreshTokenLifetimeDays)
+  }
+  if (s.ChangeFeed) {
+    f.changeFeed.enabled = s.ChangeFeed.Enabled
+    f.changeFeed.retentionAgeDays = s.ChangeFeed.MinimumRetentionAgeDays ?? 7
+    f.changeFeed.minimumEventCount = s.ChangeFeed.MinimumEventCount ?? 1000
   }
 }
 
@@ -457,6 +468,11 @@ function build(): ApplicationSettingsDto {
     Cimd: f.cimd.override
       ? { Enabled: f.cimd.enabled, AccessTokenLifetimeMinutes: parseNum(f.cimd.access), RefreshTokenLifetimeDays: parseNum(f.cimd.refresh) }
       : null,
+    ChangeFeed: {
+      Enabled: f.changeFeed.enabled,
+      MinimumRetentionAgeDays: f.changeFeed.retentionAgeDays ?? 7,
+      MinimumEventCount: f.changeFeed.minimumEventCount ?? 1000,
+    },
   }
 }
 
@@ -545,6 +561,7 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
       <CoarTab id="sessions">{{ t('admin.appSettings.tabs.sessions', {}, 'Sessions') }}</CoarTab>
       <CoarTab id="grants">{{ t('admin.appSettings.tabs.grants', {}, 'Native Grants') }}</CoarTab>
       <CoarTab id="oauth">{{ t('admin.appSettings.tabs.oauth', {}, 'OAuth (DCR/CIMD)') }}</CoarTab>
+      <CoarTab id="sync">{{ t('admin.appSettings.tabs.sync', {}, 'Sync') }}</CoarTab>
       <CoarTab v-if="appConfig.config.Features.PageBuilder" id="pages">
         {{ t('admin.appSettings.tabs.pages', {}, 'Pages') }}
       </CoarTab>
@@ -802,6 +819,41 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         </CoarFormField>
         <CoarFormField :label="t('admin.appSettings.refresh', {}, 'Refresh-Token (Tage, 1–30)')">
           <CoarTextInput v-bind="fieldBind('cimd', 'refresh')" clearable placeholder="7" />
+        </CoarFormField>
+      </div>
+    </div>
+
+    <!-- Consumer change feed -->
+    <div v-show="activeTab === 'sync'" class="tab-content">
+      <CoarNotice truncate variant="info">
+        {{ t('admin.appSettings.changeFeed.hintShort', {}, 'Expose this app\'s current scope through a resumable consumer change feed.') }}
+        <template #details>
+          {{ t('admin.appSettings.changeFeed.hint', {}, 'Authorized OAuth clients assigned to this application can take a full snapshot and then resume changes through SSE or the polling endpoint. The feed contains a short-lived integration projection, not raw event-store events.') }}
+        </template>
+      </CoarNotice>
+      <CoarCheckbox
+        v-model="f.changeFeed.enabled"
+        :label="t('admin.appSettings.changeFeed.enabled', {}, 'Enable consumer change feed')" />
+      <div class="grid grid-cols-2 gap-3">
+        <CoarFormField
+          :label="t('admin.appSettings.changeFeed.retentionAge', {}, 'Minimum retention age (days)')"
+          :hint="t('admin.appSettings.changeFeed.retentionAgeHint', {}, 'Keep all changes inside this age window.')">
+          <CoarNumberInput
+            v-model="f.changeFeed.retentionAgeDays"
+            :min="1"
+            :max="3650"
+            :step="1"
+            placeholder="7" />
+        </CoarFormField>
+        <CoarFormField
+          :label="t('admin.appSettings.changeFeed.minimumEvents', {}, 'Minimum retained changes')"
+          :hint="t('admin.appSettings.changeFeed.minimumEventsHint', {}, 'Also keep at least this many newest changes, even for quiet applications.')">
+          <CoarNumberInput
+            v-model="f.changeFeed.minimumEventCount"
+            :min="1"
+            :max="1000000"
+            :step="1"
+            placeholder="1000" />
         </CoarFormField>
       </div>
     </div>

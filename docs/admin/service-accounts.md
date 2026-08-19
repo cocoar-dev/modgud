@@ -171,6 +171,13 @@ dotnet Modgud.Api.dll recover migrate-cc-credentials [--realm <slug>]
 
 For each un-linked `client_credentials` client the command auto-provisions a Service Account named `legacy.{clientId}`, links the client to it, and leaves a re-runnable trail (already-linked clients are skipped; existing `legacy.*` SAs are re-used). Defaults to the `system` realm; pass `--realm` to scope to a specific tenant. After migration, rename the SA from the admin UI or merge it into a properly-named one.
 
+## Event history and existing accounts
+
+Service Account create, update, and delete operations are event-sourced. A
+legacy document-only account is upgraded lazily on its first mutation by
+seeding its current snapshot as the stream's creation event; operators do not
+need a one-time data migration.
+
 ## Related
 
 - [OAuth Clients](./oauth-clients) — the global grid that lists user-facing clients alongside SA-managed credentials with an M2M column linking back here.

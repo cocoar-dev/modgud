@@ -13,8 +13,8 @@ public partial class GroupProjection : SingleStreamProjection<Group, Guid>
 {
     public GroupProjection()
     {
-        // Group shares mt_doc_principal with Person and the non-event-sourced
-        // ServiceAccount subtype. A normal Marten teardown would truncate that
+        // Group shares mt_doc_principal with the other Principal subtypes. A
+        // normal Marten teardown would truncate that
         // entire root table. Cleanup is therefore coordinated explicitly by the
         // authentication slice's PrincipalProjectionRebuilder.
         Options.TeardownDataOnRebuild = false;

@@ -133,6 +133,43 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task Change_Feed_Settings_Roundtrip_And_Emit_Only_Effective_Changes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await SeedAppAsync("as-change-feed");
+        var appShort = ShortGuid.Encode(app.Id);
+        var enabled = new ApplicationSettingsDto
+        {
+            ChangeFeed = new ApplicationChangeFeedDto
+            {
+                Enabled = true,
+                MinimumRetentionAgeDays = 14,
+                MinimumEventCount = 10_000,
+            },
+        };
+
+        (await PutSettingsAsync(appShort, enabled, ct)).EnsureSuccessStatusCode();
+        // Repeating the same full-replace settings is idempotent and must not
+        // wake feed consumers with a spurious policy-change event.
+        (await PutSettingsAsync(appShort, enabled, ct)).EnsureSuccessStatusCode();
+
+        var read = (await GetAppAsync(appShort, ct)).Settings!.ChangeFeed!;
+        Assert.True(read.Enabled);
+        Assert.Equal(14, read.MinimumRetentionAgeDays);
+        Assert.Equal(10_000, read.MinimumEventCount);
+
+        await using var query = GetTenantedSession();
+        var events = await query.Events.FetchStreamAsync(app.Id, token: ct);
+        var configured = events.Select(x => x.Data)
+            .OfType<ApplicationChangeFeedConfiguredEvent>()
+            .ToList();
+        var change = Assert.Single(configured);
+        Assert.True(change.Enabled);
+        Assert.Equal(14, change.MinimumRetentionAgeDays);
+        Assert.Equal(10_000, change.MinimumEventCount);
+    }
+
+    [Fact]
     public async Task Update_Rejects_Invalid_Values()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -150,6 +187,17 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
         // Out-of-bounds token lifetime.
         Assert.Equal(HttpStatusCode.BadRequest, (await PutSettingsAsync(appShort,
             new ApplicationSettingsDto { NativeGrants = new ApplicationNativeGrantsDto { AccessTokenLifetimeMinutes = 9999 } }, ct)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await PutSettingsAsync(appShort,
+            new ApplicationSettingsDto
+            {
+                ChangeFeed = new ApplicationChangeFeedDto { Enabled = true, MinimumRetentionAgeDays = 0 },
+            }, ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await PutSettingsAsync(appShort,
+            new ApplicationSettingsDto
+            {
+                ChangeFeed = new ApplicationChangeFeedDto { Enabled = true, MinimumEventCount = 1_000_001 },
+            }, ct)).StatusCode);
 
         // Page theme values are allowlisted CSS colors and bounded radii, never
         // arbitrary style declarations.

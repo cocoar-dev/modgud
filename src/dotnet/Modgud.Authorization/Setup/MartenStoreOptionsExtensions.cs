@@ -73,6 +73,7 @@ public static class MartenStoreOptionsExtensions
         martenOpts.Projections.Add<PermissionRoleProjection>(ProjectionLifecycle.Inline);
         martenOpts.Projections.Add<AppProjection>(ProjectionLifecycle.Inline);
         martenOpts.Projections.Add<GroupProjection>(ProjectionLifecycle.Inline);
+        martenOpts.Projections.Add<ServiceAccountProjection>(ProjectionLifecycle.Inline);
         martenOpts.Projections.Add<PositionPrincipalProjection>(ProjectionLifecycle.Inline);
 
         // Stable event-type aliases. Marten resolves events through these, so the
@@ -86,6 +87,10 @@ public static class MartenStoreOptionsExtensions
         martenOpts.Events.MapEventType<PositionPrincipalCreatedEvent>("authorization_position_created");
         martenOpts.Events.MapEventType<PositionPrincipalUpdatedEvent>("authorization_position_updated");
         martenOpts.Events.MapEventType<PositionPrincipalDeletedEvent>("authorization_position_deleted");
+
+        martenOpts.Events.MapEventType<ServiceAccountCreatedEvent>("authorization_service_account_created");
+        martenOpts.Events.MapEventType<ServiceAccountUpdatedEvent>("authorization_service_account_updated");
+        martenOpts.Events.MapEventType<ServiceAccountDeletedEvent>("authorization_service_account_deleted");
 
         martenOpts.Events.MapEventType<PermissionRoleCreatedEvent>("permission_role_created");
         martenOpts.Events.MapEventType<PermissionRoleUpdatedEvent>("permission_role_updated");

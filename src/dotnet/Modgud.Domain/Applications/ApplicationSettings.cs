@@ -87,6 +87,15 @@ public class ApplicationSettings
     /// while an Enterprise App in the same tenant requires given/family name.</summary>
     public ApplicationRegistrationFieldsOverrides? RegistrationFields { get; set; }
 
+    /// <summary>
+    /// Consumer-facing, resumable Application change feed. This is an explicit
+    /// per-App opt-in: <c>null</c> and <see cref="ApplicationChangeFeedSettings.Enabled"/>
+    /// <c>false</c> both mean that no remote consumer may subscribe. Retention
+    /// keeps the union of the age window and the newest event count, so a quiet
+    /// App never loses its last known resume window merely because time passed.
+    /// </summary>
+    public ApplicationChangeFeedSettings? ChangeFeed { get; set; }
+
     /// <summary>LEGACY (pre-ADR-0001): single per-Application PageBuilder
     /// schema per slot. Retained only for <see cref="MigratePagesToSlots"/> to
     /// convert on load; cleared on the next save. New reads/writes use
@@ -225,4 +234,17 @@ public record ApplicationRegistrationFieldsOverrides
     public FieldRequirement? Username { get; init; }
     public FieldRequirement? Firstname { get; init; }
     public FieldRequirement? Lastname { get; init; }
+}
+
+/// <summary>
+/// Per-Application retention and enablement policy for the resumable change
+/// feed. Defaults are deliberately conservative and may be tuned per App.
+/// </summary>
+public sealed record ApplicationChangeFeedSettings
+{
+    public bool Enabled { get; init; }
+    public TimeSpan MinimumRetentionAge { get; init; } = TimeSpan.FromDays(7);
+    public int MinimumEventCount { get; init; } = 1_000;
+
+    public static ApplicationChangeFeedSettings Disabled { get; } = new();
 }

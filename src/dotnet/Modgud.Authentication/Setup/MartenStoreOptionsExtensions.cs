@@ -9,6 +9,7 @@ using Modgud.Authentication.Events;
 using Modgud.Authentication.Gdpr;
 using Modgud.Domain.Common;
 using Modgud.Domain.Users.Events;
+using Modgud.Domain.Applications;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 using Modgud.Authentication.Domain.Saml;
 using Modgud.Authentication.Identity.ExternalAuth;
@@ -203,6 +204,8 @@ public static class MartenStoreOptionsExtensions
         // EffectiveSettings/IApplicationSettingsResolver.
         options.Schema.For<Modgud.Domain.Applications.ApplicationSettings>()
             .Identity(x => x.Id);
+
+        options.Events.MapEventType<ApplicationChangeFeedConfiguredEvent>("application_change_feed_configured");
 
         // Tenant-scoped singleton — per-realm SAML SP certificate state
         // (PFX bytes DataProtection-encrypted, active + previous slots for

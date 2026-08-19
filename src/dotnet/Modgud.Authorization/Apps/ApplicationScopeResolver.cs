@@ -43,7 +43,7 @@ public sealed class ApplicationScopeResolver(IQuerySession session) : IApplicati
         return BuildSnapshot(app, principals);
     }
 
-    internal static ApplicationScopeSnapshot BuildSnapshot(
+    public static ApplicationScopeSnapshot BuildSnapshot(
         App app,
         IReadOnlyCollection<Principal> directory)
     {

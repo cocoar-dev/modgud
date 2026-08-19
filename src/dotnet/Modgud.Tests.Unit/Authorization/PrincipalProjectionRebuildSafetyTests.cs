@@ -14,6 +14,8 @@ public class PrincipalProjectionRebuildSafetyTests
     {
         Assert.False(new PersonProjection().Options.TeardownDataOnRebuild);
         Assert.False(new GroupProjection().Options.TeardownDataOnRebuild);
+        Assert.False(new PositionPrincipalProjection().Options.TeardownDataOnRebuild);
+        Assert.False(new ServiceAccountProjection().Options.TeardownDataOnRebuild);
     }
 
     [Fact]
@@ -44,11 +46,33 @@ public class PrincipalProjectionRebuildSafetyTests
             typeof(GroupDeletedEvent),
         ];
 
+        var positionProjection = new PositionPrincipalProjection();
+        Type[] expectedPositionEvents =
+        [
+            typeof(PositionPrincipalCreatedEvent),
+            typeof(PositionPrincipalUpdatedEvent),
+            typeof(PositionPrincipalDeletedEvent),
+        ];
+
+        var serviceAccountProjection = new ServiceAccountProjection();
+        Type[] expectedServiceAccountEvents =
+        [
+            typeof(ServiceAccountCreatedEvent),
+            typeof(ServiceAccountUpdatedEvent),
+            typeof(ServiceAccountDeletedEvent),
+        ];
+
         Assert.Equal(
             expectedPersonEvents.OrderBy(type => type.FullName),
             personProjection.IncludedEventTypes.OrderBy(type => type.FullName));
         Assert.Equal(
             expectedGroupEvents.OrderBy(type => type.FullName),
             groupProjection.IncludedEventTypes.OrderBy(type => type.FullName));
+        Assert.Equal(
+            expectedPositionEvents.OrderBy(type => type.FullName),
+            positionProjection.IncludedEventTypes.OrderBy(type => type.FullName));
+        Assert.Equal(
+            expectedServiceAccountEvents.OrderBy(type => type.FullName),
+            serviceAccountProjection.IncludedEventTypes.OrderBy(type => type.FullName));
     }
 }

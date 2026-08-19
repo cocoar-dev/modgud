@@ -269,6 +269,9 @@ try
         );
     });
 
+    builder.Services.AddScoped<Modgud.Api.Features.ChangeFeed.AppChangeFeedQueryService>();
+    builder.Services.AddScoped<Modgud.Api.Features.Management.ManagementBearerAuthorizationService>();
+
 
     builder.Services.AddSingleton<DataEventDispatcher>();
 
@@ -773,6 +776,7 @@ try
             options.UseModgudAuthentication();
             options.UseModgudOAuth();
             options.UseModgudPositionTerminals();
+            options.Events.Subscribe(new Modgud.Api.Features.ChangeFeed.AppChangeFeedSubscription());
         },
         // The behavioural integration suite owns projection progress explicitly:
         // each consistency boundary runs a fresh interactive daemon. Running the
@@ -1368,6 +1372,7 @@ try
     // An App is one resource: AppsEndpoints carries the per-App ADR-0011 settings override
     // inline (POST/PUT/GET /api/app), so there is no separate /settings endpoint.
     Modgud.Api.Features.Admin.Apps.AppsEndpoints.MapAppsEndpoints(app, "api");
+    Modgud.Api.Features.ChangeFeed.AppChangeFeedEndpoints.MapAppChangeFeedEndpoints(app, "api");
     // ADR-0012 — app-scoped invite codes (dual-auth: invite:write scope or invite-code:write permission).
     Modgud.Api.Features.InviteCodes.InviteCodeEndpoints.MapInviteCodeEndpoints(app, "api");
 

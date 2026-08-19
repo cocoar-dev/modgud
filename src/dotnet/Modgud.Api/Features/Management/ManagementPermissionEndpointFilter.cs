@@ -1,16 +1,11 @@
 using System.Net.Http.Headers;
 using System.Security.Claims;
-using System.Text.Json;
 using BuildingBlocks.Helper;
-using Marten;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Authorization.Apps;
-using Modgud.Authorization.Principals;
 using Modgud.Authorization.Services;
-using Modgud.Domain.OAuth.Applications;
-using Modgud.Domain.OAuth.Management;
 using OpenIddict.Abstractions;
 using OpenIddict.Validation.AspNetCore;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -42,8 +37,40 @@ public sealed class ManagementPermissionEndpointFilter(
             return Results.Unauthorized();
 
         var caller = authentication.Principal;
-        if (bearerRequest && await ValidateBearerCallerAsync(http, caller) is { } bearerError)
-            return bearerError;
+        if (bearerRequest)
+        {
+            Guid? targetAppId = null;
+            if (clientAppRouteParameter is not null)
+            {
+                var raw = http.Request.RouteValues.TryGetValue(
+                    clientAppRouteParameter, out var value)
+                    ? value?.ToString()
+                    : null;
+                if (raw is null || !ShortGuid.TryParse(raw, out Guid parsedAppId))
+                {
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status400BadRequest,
+                        title: "Invalid Application id",
+                        detail: $"The route value '{{{clientAppRouteParameter}}}' is not a valid Application id.",
+                        extensions: new Dictionary<string, object?>
+                        {
+                            ["code"] = "Management.InvalidTargetApp",
+                        });
+                }
+                targetAppId = parsedAppId;
+            }
+
+            var authorization = http.RequestServices
+                .GetRequiredService<ManagementBearerAuthorizationService>();
+            var denied = await authorization.AuthorizeAsync(
+                caller, targetAppId, permission, http.RequestAborted);
+            if (denied is not null) return BearerDenied(denied);
+
+            // Downstream handlers and audit helpers must see the explicitly
+            // selected bearer identity, never an accidental cookie merge.
+            http.User = caller;
+            return await next(context);
+        }
 
         var subject = caller.GetClaim(Claims.Subject)
                       ?? caller.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -54,25 +81,6 @@ public sealed class ManagementPermissionEndpointFilter(
         var principal = await principalLookup.GetByIdAsync(principalId, http.RequestAborted);
         if (principal is null || !principal.IsActive)
             return Results.Unauthorized();
-
-        if (bearerRequest && principal is not Person and not ServiceAccount)
-            return Forbidden("Management.UnsupportedPrincipal",
-                "Management access tokens must represent a Person or Service Account.");
-
-        if (bearerRequest && principal is ServiceAccount serviceAccount &&
-            await ValidateServiceAccountClientAsync(http, caller, serviceAccount) is { } clientError)
-            return clientError;
-
-        if (bearerRequest && principal is Person &&
-            await ValidateDelegatedClientAsync(http, caller) is { } delegatedClientError)
-            return delegatedClientError;
-
-        if (bearerRequest && clientAppRouteParameter is not null &&
-            await ValidateClientAppBoundaryAsync(http, caller, clientAppRouteParameter)
-                is { } appBoundaryError)
-        {
-            return appBoundaryError;
-        }
 
         var permissionService = http.RequestServices.GetRequiredService<IPermissionService>();
         if (!await permissionService.HasPermissionAsync(
@@ -88,159 +96,27 @@ public sealed class ManagementPermissionEndpointFilter(
         return await next(context);
     }
 
-    private static async Task<IResult?> ValidateBearerCallerAsync(
-        HttpContext http,
-        ClaimsPrincipal caller)
+    private static IResult BearerDenied(ManagementBearerAuthorizationError error)
     {
-        if (!caller.GetAudiences().Contains(ModgudManagementApi.Audience, StringComparer.Ordinal))
-        {
-            return Forbidden("Management.InvalidAudience",
-                $"The access token is not intended for '{ModgudManagementApi.Audience}'.");
-        }
-
-        if (!caller.HasScope(ModgudManagementApi.Scope))
-        {
-            return Forbidden("Management.MissingScope",
-                $"The access token is missing the '{ModgudManagementApi.Scope}' scope.");
-        }
-
-        return string.IsNullOrWhiteSpace(ResolveClientId(caller))
-            ? Results.Unauthorized()
-            : null;
-    }
-
-    private static async Task<IResult?> ValidateServiceAccountClientAsync(
-        HttpContext http,
-        ClaimsPrincipal caller,
-        ServiceAccount serviceAccount)
-    {
-        var client = await LoadClientAsync(http, caller);
-        if (ValidateRegisteredClient(client) is { } registrationError)
-            return registrationError;
-
-        if (client!.LinkedServiceAccountId != serviceAccount.Id)
-        {
-            return Forbidden("Management.ServiceAccountClientMismatch",
-                "The OAuth client is not linked to the Service Account represented by the token.");
-        }
-
-        return null;
-    }
-
-    private static async Task<IResult?> ValidateDelegatedClientAsync(
-        HttpContext http,
-        ClaimsPrincipal caller)
-    {
-        var client = await LoadClientAsync(http, caller);
-        if (ValidateRegisteredClient(client) is { } registrationError)
-            return registrationError;
-
-        // Grant separation is an issuance invariant, and is repeated here so a
-        // stale or malformed token can never turn an M2M credential into a
-        // delegated-user management client.
-        if (client!.LinkedServiceAccountId.HasValue)
-        {
-            return Forbidden("Management.DelegatedClientRequired",
-                "A delegated user token must be issued to a user-flow OAuth client.");
-        }
-
-        return null;
-    }
-
-    private static IResult? ValidateRegisteredClient(OAuthApplicationState? client)
-    {
-        if (client is null ||
-            !GetBooleanProperty(client, OAuthApplicationPropertyKeys.Enabled, defaultValue: true))
-        {
+        if (error.Code is "invalid_client" or "invalid_subject" or "inactive_subject"
+            or "token_expired")
             return Results.Unauthorized();
-        }
 
-        // Management clients are an administrator-issued trust decision. DCR
-        // already prevents opting into the protected scope; repeat the invariant
-        // at the resource boundary so malformed legacy events cannot bypass it.
-        if (GetBooleanProperty(
-                client,
-                OAuthApplicationPropertyKeys.DcrIsDynamicallyRegistered,
-                defaultValue: false))
+        var publicCode = error.Code switch
         {
-            return Forbidden("Management.AdminRegisteredClientRequired",
-                "Dynamically registered clients cannot call the Modgud management API.");
-        }
-
-        var managementScopePermission =
-            OpenIddictConstants.Permissions.Prefixes.Scope + ModgudManagementApi.Scope;
-        if (!client.Permissions.Contains(managementScopePermission, StringComparer.Ordinal))
-        {
-            return Forbidden("Management.ClientScopeRevoked",
-                $"The OAuth client is no longer allowed to request '{ModgudManagementApi.Scope}'.");
-        }
-
-        return null;
-    }
-
-    private static async Task<IResult?> ValidateClientAppBoundaryAsync(
-        HttpContext http,
-        ClaimsPrincipal caller,
-        string routeParameter)
-    {
-        var raw = http.Request.RouteValues.TryGetValue(routeParameter, out var value)
-            ? value?.ToString()
-            : null;
-        if (raw is null || !ShortGuid.TryParse(raw, out Guid targetAppId))
-        {
-            return Results.Problem(
-                statusCode: StatusCodes.Status400BadRequest,
-                title: "Invalid Application id",
-                detail: $"The route value '{{{routeParameter}}}' is not a valid Application id.",
-                extensions: new Dictionary<string, object?>
-                {
-                    ["code"] = "Management.InvalidTargetApp",
-                });
-        }
-
-        var client = await LoadClientAsync(http, caller);
-        if (client is null || !client.AppIds.Contains(targetAppId))
-        {
-            return Forbidden(
-                "Management.ClientAppMismatch",
-                $"The OAuth client is not assigned to Application '{new ShortGuid(targetAppId)}'.");
-        }
-
-        return null;
-    }
-
-    private static async Task<OAuthApplicationState?> LoadClientAsync(
-        HttpContext http,
-        ClaimsPrincipal caller)
-    {
-        var clientId = ResolveClientId(caller);
-        if (string.IsNullOrWhiteSpace(clientId)) return null;
-
-        var session = http.RequestServices.GetRequiredService<IQuerySession>();
-        return await session.Query<OAuthApplicationState>()
-            .FirstOrDefaultAsync(
-                candidate => candidate.ClientId == clientId && !candidate.IsDeleted,
-                http.RequestAborted);
-    }
-
-    private static string? ResolveClientId(ClaimsPrincipal caller) =>
-        caller.GetClaim(Claims.ClientId) ?? caller.GetClaim(Claims.AuthorizedParty);
-
-    private static bool GetBooleanProperty(
-        OAuthApplicationState client,
-        string key,
-        bool defaultValue)
-    {
-        if (!client.Properties.TryGetValue(key, out var raw) || raw is null)
-            return defaultValue;
-
-        return raw switch
-        {
-            bool value => value,
-            JsonElement { ValueKind: JsonValueKind.True } => true,
-            JsonElement { ValueKind: JsonValueKind.False } => false,
-            _ => defaultValue,
+            "invalid_audience" => "Management.InvalidAudience",
+            "missing_scope" => "Management.MissingScope",
+            "unsupported_subject" => "Management.UnsupportedPrincipal",
+            "admin_registered_client_required" => "Management.AdminRegisteredClientRequired",
+            "client_scope_revoked" => "Management.ClientScopeRevoked",
+            "service_account_client_mismatch" => "Management.ServiceAccountClientMismatch",
+            "delegated_client_required" => "Management.DelegatedClientRequired",
+            "client_app_mismatch" => "Management.ClientAppMismatch",
+            "permission_denied" => "Management.PermissionDenied",
+            _ => "Management.Forbidden",
         };
+
+        return Forbidden(publicCode, error.Detail);
     }
 
     private static bool IsBearerRequest(HttpRequest request)
@@ -272,11 +148,14 @@ public static class ManagementPermissionEndpointExtensions
     public static RouteHandlerBuilder RequiresManagementPermission(
         this RouteHandlerBuilder builder,
         string permission,
-        string? clientAppRouteParameter = null)
+        string? clientAppRouteParameter = null,
+        bool bearerOnly = false)
     {
         builder.RequireAuthorization(new AuthorizeAttribute
         {
-            AuthenticationSchemes = AuthenticationSchemes,
+            AuthenticationSchemes = bearerOnly
+                ? OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme
+                : AuthenticationSchemes,
         });
         builder.AddEndpointFilter(new ManagementPermissionEndpointFilter(
             permission,

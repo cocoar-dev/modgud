@@ -249,6 +249,9 @@ scheme does not turn every cookie-only admin route into a remote API.
 | `GET` | `/api/position` | `position:read` | `PositionTerminals` enabled |
 | `GET` | `/api/position/{id}` | `position:read` | `PositionTerminals` enabled |
 | `GET` | `/api/app/{id}/scope` | `app-scope:read` | Full `BoundTo`-derived Principal snapshot |
+| `GET` | `/api/app/{id}/change-feed/snapshot` | `app-scope:read` | Feed enabled; full public synchronization snapshot |
+| `GET` | `/api/app/{id}/change-feed` | `app-scope:read` | Feed enabled; resumable HTTP read using an opaque cursor |
+| `GET` | `/api/app/{id}/change-feed/stream` | `app-scope:read` | Feed enabled; bearer-only resumable SSE stream using the same cursor and envelope |
 | `POST` | `/api/admin/oauth/clients` | `oauth-client:write` | `position:write` for terminal provisioning; `service-account:write` for an SA link |
 
 Direct Position creation, mutation, deletion, grants, terminal enrollment, and
@@ -275,6 +278,8 @@ exposed surface.
 - [Service Accounts](/admin/service-accounts) — machine identity, credentials,
   rotation, and group membership
 - [Permissions & gating](/concepts/permissions) — the live authorization model
+- [Application change feed](./application-change-feed) — full sync, cursor,
+  retention, SSE, and HTTP fallback
 - [OAuth / OpenIddict](./oauth) — token flows and RFC 8707 resource indicators
 - [Positions & Terminals](/admin/positions) — administering the first exposed
   resource

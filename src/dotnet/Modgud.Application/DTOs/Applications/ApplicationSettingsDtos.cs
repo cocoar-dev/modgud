@@ -21,6 +21,7 @@ public record ApplicationSettingsDto
     public ApplicationDcrDto? Dcr { get; init; }
     public ApplicationCimdDto? Cimd { get; init; }
     public ApplicationRegistrationFieldsDto? RegistrationFields { get; init; }
+    public ApplicationChangeFeedDto? ChangeFeed { get; init; }
 }
 
 public record ApplicationOriginDto
@@ -126,4 +127,16 @@ public record ApplicationRegistrationFieldsDto
     public string? Username { get; init; }
     public string? Firstname { get; init; }
     public string? Lastname { get; init; }
+}
+
+/// <summary>
+/// Explicit per-App opt-in and retention policy for the resumable consumer
+/// change feed. Retention keeps both the complete age window and at least the
+/// newest event count.
+/// </summary>
+public record ApplicationChangeFeedDto
+{
+    public bool Enabled { get; init; }
+    public int MinimumRetentionAgeDays { get; init; } = 7;
+    public int MinimumEventCount { get; init; } = 1_000;
 }

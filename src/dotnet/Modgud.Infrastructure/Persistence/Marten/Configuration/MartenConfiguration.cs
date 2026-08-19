@@ -5,6 +5,7 @@ using Marten;
 using Modgud.Domain.Common;
 using Modgud.Domain.Users.Events;
 using Weasel.Core;
+using Modgud.Infrastructure.ChangeFeed;
 
 namespace Modgud.Infrastructure.Persistence.Marten.Configuration;
 
@@ -47,6 +48,7 @@ public static class MartenConfiguration
         // UseSystemTextJsonForSerialization above so the existing configured serializer
         // is extended (not replaced).
         options.UseModgudAuthorization();
+        options.UseAppChangeFeed();
 
         // Per-tenant RealmSigningKey storage. Keys live IN the tenant DB (not
         // the master DB) so a master-DB compromise — or a Realm registry leak
