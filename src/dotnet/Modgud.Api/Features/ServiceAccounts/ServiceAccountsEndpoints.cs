@@ -7,6 +7,7 @@ using Modgud.Application.Services;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Principals;
+using Modgud.Authorization.Events;
 using Modgud.Domain.ValueObjects;
 using Modgud.Domain.OAuth.Common;
 using Modgud.Infrastructure.OpenIddict;
@@ -135,7 +136,8 @@ public static class ServiceAccountsEndpoints
                     Purpose = string.IsNullOrWhiteSpace(dto.Purpose) ? null : dto.Purpose.Trim(),
                     IsActive = dto.IsActive,
                 };
-                session.Store(sa);
+                session.Events.StartStream<ServiceAccount>(sa.Id, new ServiceAccountCreatedEvent(
+                    sa.Id, sa.AccountName, sa.Purpose, sa.IsActive));
                 await session.SaveChangesAsync(ct);
 
                 var created = ToDto(sa);
@@ -150,7 +152,11 @@ public static class ServiceAccountsEndpoints
                 var sa = await session.LoadAsync<ServiceAccount>(id.Guid, ct);
                 if (sa is null || sa.IsDeleted) return Results.NotFound();
 
-                // Prior active-state, read from the persisted record (not the request).
+                // Preserve the persisted snapshot before applying the request.
+                // A legacy document-only account needs this exact state as its
+                // creation event, followed by the real update event below.
+                var previousAccountName = sa.AccountName;
+                var previousPurpose = sa.Purpose;
                 var wasActive = sa.IsActive;
 
                 if (dto.AccountName is { } rawAccountName)
@@ -190,7 +196,23 @@ public static class ServiceAccountsEndpoints
                 if (dto.IsActive.HasValue)
                     sa.IsActive = dto.IsActive.Value;
 
-                session.Store(sa);
+                var stream = await session.Events.FetchStreamStateAsync(sa.Id, ct);
+                if (stream is null)
+                {
+                    // Legacy document-only account: establish its event history
+                    // from the persisted snapshot, then preserve this request as
+                    // a distinct mutation instead of folding it into creation.
+                    session.Events.StartStream<ServiceAccount>(sa.Id,
+                        new ServiceAccountCreatedEvent(
+                            sa.Id, previousAccountName, previousPurpose, wasActive),
+                        new ServiceAccountUpdatedEvent(
+                            sa.Id, sa.AccountName, sa.Purpose, sa.IsActive));
+                }
+                else
+                {
+                    session.Events.Append(sa.Id, new ServiceAccountUpdatedEvent(
+                        sa.Id, sa.AccountName, sa.Purpose, sa.IsActive));
+                }
                 await session.SaveChangesAsync(ct);
 
                 // Audit #6 — deactivating an SA must cut off its live M2M access, not
@@ -231,24 +253,27 @@ public static class ServiceAccountsEndpoints
                 if (sa is null || sa.IsDeleted) return Results.NotFound();
 
                 // Phase 2C — cascade-delete every credential owned by this SA
-                // PLUS soft-delete the SA itself in one unit of work. The SA
-                // delete is queued via the strongly-typed Delete<T> overload
-                // (Marten translates this into a soft-delete on the polymorphic
-                // mt_doc_principal table without triggering an optimistic
-                // concurrency check against the in-memory ServiceAccount
-                // instance we loaded above — which Store(sa) would have).
+                // plus soft-delete the SA itself in one unit of work.
                 var deletedCredentialCount = await oauth
                     .StageDeleteAllServiceAccountCredentialsAsync(id.Guid, ct);
 
-                // We want soft-delete semantics (IsDeleted=true) so audit /
-                // group-membership references stay resolvable. Mutate the
-                // loaded instance + Update — Marten's Update path skips the
-                // Store identity-map concurrency dance that Store + Append
-                // mix-mode runs into. (See Marten 8 polymorphic-store +
-                // events.Append in one session.)
-                sa.IsDeleted = true;
-                session.Update(sa);
+                var stream = await session.Events.FetchStreamStateAsync(sa.Id, ct);
+                if (stream is null)
+                {
+                    // Legacy document-only account: seed its history from the
+                    // persisted snapshot before recording deletion.
+                    session.Events.StartStream<ServiceAccount>(sa.Id,
+                        new ServiceAccountCreatedEvent(sa.Id, sa.AccountName, sa.Purpose, sa.IsActive),
+                        new ServiceAccountDeletedEvent(sa.Id));
+                }
+                else
+                {
+                    session.Events.Append(sa.Id, new ServiceAccountDeletedEvent(sa.Id));
+                }
                 await session.SaveChangesAsync(ct);
+
+                sa.IsDeleted = true;
+                sa.IsActive = false;
 
                 // Audit #7 — deleting an SA cascade-deletes its credential clients,
                 // but a deleted client document does NOT invalidate already-issued

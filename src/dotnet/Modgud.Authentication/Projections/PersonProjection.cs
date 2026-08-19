@@ -20,7 +20,7 @@ public partial class PersonProjection : SingleStreamProjection<Person, Guid>
         // mt_doc_principal table. Marten's default projection teardown truncates
         // the root table, so rebuilding PersonProjection by itself would also
         // delete every Group and directly stored ServiceAccount. The supported
-        // PrincipalProjectionRebuilder replays both event-sourced principal
+        // PrincipalProjectionRebuilder replays all event-sourced principal
         // projections in place, then performs subtype-scoped stale-row cleanup.
         Options.TeardownDataOnRebuild = false;
 

@@ -141,6 +141,12 @@ export interface ApplicationRegistrationFieldsOverrideDto {
   Lastname?: string | null
 }
 
+export interface ApplicationChangeFeedDto {
+  Enabled: boolean
+  MinimumRetentionAgeDays: number
+  MinimumEventCount: number
+}
+
 export interface ApplicationSettingsDto {
   Origin?: ApplicationOriginDto | null
   Branding?: ApplicationBrandingSettingsDto | null
@@ -153,4 +159,5 @@ export interface ApplicationSettingsDto {
   Dcr?: ApplicationDcrOverrideDto | null
   Cimd?: ApplicationGrantOverrideDto | null
   RegistrationFields?: ApplicationRegistrationFieldsOverrideDto | null
+  ChangeFeed?: ApplicationChangeFeedDto | null
 }

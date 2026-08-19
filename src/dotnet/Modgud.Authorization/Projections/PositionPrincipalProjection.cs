@@ -14,8 +14,8 @@ public partial class PositionPrincipalProjection : SingleStreamProjection<Positi
 {
     public PositionPrincipalProjection()
     {
-        // PositionPrincipal shares mt_doc_principal with Person, Group, and the
-        // (still) non-event-sourced ServiceAccount subtype. A normal Marten
+        // PositionPrincipal shares mt_doc_principal with the other Principal
+        // subtypes. A normal Marten
         // teardown would truncate that entire root table; cleanup is coordinated
         // explicitly by the authentication slice's PrincipalProjectionRebuilder.
         Options.TeardownDataOnRebuild = false;

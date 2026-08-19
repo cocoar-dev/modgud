@@ -8,6 +8,7 @@ using Modgud.Application.DTOs.ServiceAccount;
 using Modgud.Application.Errors;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
+using Modgud.Authorization.Events;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
@@ -180,7 +181,12 @@ public partial class OAuthAdminService
                     : dto.NewServiceAccount.Purpose.Trim(),
                 IsActive = dto.NewServiceAccount.IsActive,
             };
-            _session.Store(serviceAccount);
+            _session.Events.StartStream<ServiceAccount>(serviceAccount.Id,
+                new ServiceAccountCreatedEvent(
+                    serviceAccount.Id,
+                    serviceAccount.AccountName,
+                    serviceAccount.Purpose,
+                    serviceAccount.IsActive));
             linkedServiceAccountId = serviceAccount.Id;
             createdServiceAccount = new ServiceAccountDto
             {

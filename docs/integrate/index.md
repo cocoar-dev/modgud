@@ -20,6 +20,9 @@ protocol-specific pages.
 - [Modgud Management API](./management-api) — let a backend Service Account or
   delegated administrator read deliberately exposed Modgud resources using the
   same live permissions as the first-party admin UI.
+- [Application change feed](./application-change-feed) — bootstrap an
+  Application's current Principal/Position scope and resume its public changes
+  over SSE or HTTP polling.
 
 ## Protocol pages
 

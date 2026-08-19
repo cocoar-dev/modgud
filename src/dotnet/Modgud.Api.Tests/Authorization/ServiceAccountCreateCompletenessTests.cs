@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.ServiceAccount;
 using Modgud.Application.DTOs.OAuth;
+using Modgud.Authorization.Events;
 using Modgud.Authorization.Principals;
 using Modgud.Domain.OAuth.Applications;
 
@@ -54,6 +55,10 @@ public class ServiceAccountCreateCompletenessTests(SharedPostgresFixture fixture
         Assert.False(serviceAccount!.IsActive);
         Assert.Contains(OAuthApplicationPropertyKeys.Enabled, credential.Properties.Keys);
         Assert.Equal("900", credential.Settings[OAuthApplicationSettingKeys.AccessTokenLifetime]);
+        var stream = await query.Events.FetchStreamAsync(serviceAccountId, token: ct);
+        var createdEvent = Assert.IsType<ServiceAccountCreatedEvent>(Assert.Single(stream).Data);
+        Assert.Equal(accountName, createdEvent.AccountName);
+        Assert.False(createdEvent.IsActive);
     }
 
     [Fact]
@@ -116,5 +121,52 @@ public class ServiceAccountCreateCompletenessTests(SharedPostgresFixture fixture
         var query = scope.ServiceProvider.GetRequiredService<IQuerySession>();
         var serviceAccount = await query.LoadAsync<ServiceAccount>(serviceAccountId, ct);
         Assert.False(serviceAccount!.IsActive);
+        var stream = await query.Events.FetchStreamAsync(serviceAccountId, token: ct);
+        Assert.IsType<ServiceAccountCreatedEvent>(Assert.Single(stream).Data);
+    }
+
+    [Fact]
+    public async Task First_update_of_legacy_account_seeds_old_snapshot_then_records_update()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var legacy = new ServiceAccount
+        {
+            Id = Guid.CreateVersion7(),
+            AccountName = $"legacy-{Guid.NewGuid():N}"[..31],
+            Purpose = "Before event sourcing",
+            IsActive = true,
+        };
+        await using (var arrange = GetTenantedDocumentSession())
+        {
+            arrange.Store(legacy);
+            await arrange.SaveChangesAsync(ct);
+        }
+
+        var response = await Client.PutAsJsonAsync(
+            $"/api/service-account/{ShortGuid.Encode(legacy.Id)}",
+            new { Purpose = "After event sourcing", IsActive = false },
+            ct);
+        response.EnsureSuccessStatusCode();
+
+        await using var query = GetTenantedSession();
+        var stream = await query.Events.FetchStreamAsync(legacy.Id, token: ct);
+        Assert.Collection(
+            stream,
+            item =>
+            {
+                var created = Assert.IsType<ServiceAccountCreatedEvent>(item.Data);
+                Assert.Equal("Before event sourcing", created.Purpose);
+                Assert.True(created.IsActive);
+            },
+            item =>
+            {
+                var updated = Assert.IsType<ServiceAccountUpdatedEvent>(item.Data);
+                Assert.Equal("After event sourcing", updated.Purpose);
+                Assert.False(updated.IsActive);
+            });
+
+        var persisted = await query.LoadAsync<ServiceAccount>(legacy.Id, ct);
+        Assert.Equal("After event sourcing", persisted!.Purpose);
+        Assert.False(persisted.IsActive);
     }
 }
