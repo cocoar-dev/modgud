@@ -37,7 +37,12 @@ Staffing and step-up tokens also carry `terminal_id`, `staffing_session_id`,
 currently `dpop`, `client-secret`, or `none`. `cnf.jkt` is present only for
 DPoP-bound terminals. Activating user id/name/e-mail, grant id, credential id,
 and logical activation-token id are internal security evidence and never
-travel in business tokens or integration events.
+travel in business tokens or the V1 staffing notification events described on
+this page. The separately authorized
+[Application change feed](./application-change-feed) may expose an in-scope
+`ActivatedByUserId` and the open activation `MethodId` in its current-state
+projection. Those fields are synchronization context only: the Position remains
+the business actor and token subject.
 
 ### Control V1 transition
 
