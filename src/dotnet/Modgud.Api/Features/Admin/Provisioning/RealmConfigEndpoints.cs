@@ -1,7 +1,7 @@
 using ErrorOr;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
-using Modgud.Authorization.AspNetCore;
+using Modgud.Api.Features.Management;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Permissions;
 
@@ -27,11 +27,7 @@ public static class RealmConfigEndpoints
     public static WebApplication MapRealmConfigEndpoints(this WebApplication application, string path)
     {
         var group = application.MapGroup($"{path}/admin/realm-config")
-            .WithTags("Realm Config")
-            .RequireAuthorization()
-            // realm:admin in the CURRENT realm (the modgud app's realm-wide bypass). Not the
-            // control-plane app — this surface is the realm's own, not cross-realm.
-            .RequiresPermission(PermissionEvaluator.RealmAdminPermission);
+            .WithTags("Realm Config");
 
         // The manifest JSON Schema (identical to the control-plane one) so a realm admin / agent
         // can fetch the contract without control-plane access.
@@ -42,7 +38,10 @@ public static class RealmConfigEndpoints
                 schema.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
                 "application/json");
         })
-        .WithName("RealmConfig_ManifestSchema");
+        .WithName("RealmConfig_ManifestSchema")
+        // Explicit dual-mode gate: realm-admin cookie or a Management API
+        // bearer whose Person/ServiceAccount holds realm:admin live.
+        .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
 
         // Export THIS realm's config as a structure-only manifest (never secrets / hashes).
         group.MapGet("export", async (RealmManifestExporter exporter, CancellationToken ct) =>
@@ -50,7 +49,8 @@ public static class RealmConfigEndpoints
             var result = await exporter.ExportRealmAsync(TenantContext.Current, ct);
             return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
         })
-        .WithName("RealmConfig_Export");
+        .WithName("RealmConfig_Export")
+        .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
 
         // Apply a manifest to THIS realm: in-place merge/upsert. ?prune=true makes it a full
         // sync (deletes entities absent from the manifest) — bounded to this realm, protections
@@ -79,7 +79,8 @@ public static class RealmConfigEndpoints
             var result = await applier.UpdateRealmAsync(scoped, prune, ct);
             return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
         })
-        .WithName("RealmConfig_Apply");
+        .WithName("RealmConfig_Apply")
+        .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
 
         return application;
     }
