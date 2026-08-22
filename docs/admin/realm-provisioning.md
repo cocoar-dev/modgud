@@ -198,9 +198,13 @@ To grant someone management of exactly one realm:
 
 1. **Create the realm** (control-plane: `import`, or the admin UI).
 2. **In that realm, give the principal `realm:admin`** — either a **user** (interactive)
-   or a **service account** (machine / agent, `client_credentials`). Both work; the only
-   requirement is that the credential carries `realm:admin` in that realm.
-3. They call `/api/admin/realm-config/*` against the realm's host with that credential.
+   or a **service account** (machine / agent, `client_credentials`). Both work. For a
+   bearer caller, Modgud evaluates `realm:admin` live from the principal's current groups
+   and roles; the permission is not copied into the token.
+3. For machine access, allow the protected `modgud.management` scope on the linked
+   Service Account credential and request a token for resource
+   `urn:modgud:management-api`.
+4. Call `/api/admin/realm-config/*` against the realm's host with that cookie or bearer.
 
 That credential can do everything to *its* realm's config and **nothing** to any other
 realm — and cannot create or delete realms.
@@ -214,6 +218,24 @@ curl -c cookies.txt -X POST "$REALM/api/account/login" \
 curl -b cookies.txt "$REALM/api/admin/realm-config/export"             # current config
 curl -b cookies.txt -X POST "$REALM/api/admin/realm-config/apply" \
   -H 'Content-Type: application/json' -d @manifest.json                # apply edits (+ ?prune=true)
+```
+
+For unattended provisioning, use the fixed [Management API contract](../integrate/management-api)
+instead of an admin cookie:
+
+```bash
+TOKEN=$(curl -sS -X POST "$REALM/connect/token" \
+  -d 'grant_type=client_credentials' \
+  -d 'client_id=<linked-service-account-client>' \
+  -d 'client_secret=<secret>' \
+  -d 'scope=modgud.management' \
+  -d 'resource=urn:modgud:management-api' | jq -r '.access_token')
+
+curl -H "Authorization: Bearer $TOKEN" \
+  "$REALM/api/admin/realm-config/export"
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d @manifest.json \
+  "$REALM/api/admin/realm-config/apply"
 ```
 
 ## Provisioning from a .NET test suite

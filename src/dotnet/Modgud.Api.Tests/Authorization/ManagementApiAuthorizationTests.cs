@@ -14,6 +14,7 @@ using Modgud.Application.DTOs.ServiceAccount;
 using Modgud.Application.Services;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
+using Modgud.Authorization.Services;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.OAuth.Management;
@@ -201,6 +202,101 @@ public class ManagementApiAuthorizationTests : IntegrationTestBase
         using var response = await bearerClient.SendAsync(request, ct);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Realm_config_accepts_management_bearer_with_live_realm_admin()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var serviceAccount = await CreateServiceAccountAsync("realm-config-management-admin");
+        Assert.True(ShortGuid.TryParse(serviceAccount.Id, out Guid serviceAccountId));
+        await GrantRealmAdminAsync(serviceAccountId);
+
+        var clientId = $"realm-config-management-{Guid.NewGuid():N}";
+        await CreateClientCredentialsClientAsync(
+            clientId,
+            serviceAccount.Id,
+            [ModgudManagementApi.Scope],
+            AccessTokenType.Reference);
+        var token = await IssueClientCredentialsTokenAsync(
+            clientId, ModgudManagementApi.Scope, ModgudManagementApi.Audience);
+
+        using var bearerClient = Factory.CreateClient();
+        bearerClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
+
+        using (var schema = await bearerClient.GetAsync(
+                   "/api/admin/realm-config/manifest-schema", ct))
+        {
+            var body = await schema.Content.ReadAsStringAsync(ct);
+            Assert.True(schema.IsSuccessStatusCode,
+                $"realm-config schema failed ({(int)schema.StatusCode}): {body}");
+        }
+
+        var appSlug = $"realm-config-management-{Guid.NewGuid():N}";
+        var manifest = new
+        {
+            Realm = new { },
+            Apps = new[]
+            {
+                new
+                {
+                    Slug = appSlug,
+                    DisplayName = "Management Bearer Realm Config",
+                    Permissions = Array.Empty<object>(),
+                },
+            },
+        };
+        using (var apply = await bearerClient.PostAsJsonAsync(
+                   "/api/admin/realm-config/apply", manifest, JsonOptions, ct))
+        {
+            var body = await apply.Content.ReadAsStringAsync(ct);
+            Assert.True(apply.IsSuccessStatusCode,
+                $"realm-config apply failed ({(int)apply.StatusCode}): {body}");
+        }
+
+        using (var export = await bearerClient.GetAsync(
+                   "/api/admin/realm-config/export", ct))
+        {
+            var body = await export.Content.ReadAsStringAsync(ct);
+            Assert.True(export.IsSuccessStatusCode,
+                $"realm-config export failed ({(int)export.StatusCode}): {body}");
+            Assert.Contains(appSlug, body);
+        }
+
+        using var foreignApply = await bearerClient.PostAsJsonAsync(
+            "/api/admin/realm-config/apply",
+            new
+            {
+                Realm = new { Slug = $"foreign-{Guid.NewGuid():N}" },
+                Apps = Array.Empty<object>(),
+            },
+            JsonOptions,
+            ct);
+        var foreignBody = await foreignApply.Content.ReadAsStringAsync(ct);
+        Assert.Equal(HttpStatusCode.BadRequest, foreignApply.StatusCode);
+        Assert.Contains("Manifest.SlugMismatch", foreignBody);
+    }
+
+    [Fact]
+    public async Task Realm_config_rejects_management_bearer_without_live_realm_admin()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var serviceAccount = await CreateServiceAccountAsync("realm-config-management-denied");
+        var clientId = $"realm-config-management-denied-{Guid.NewGuid():N}";
+        await CreateClientCredentialsClientAsync(
+            clientId,
+            serviceAccount.Id,
+            [ModgudManagementApi.Scope]);
+        var token = await IssueClientCredentialsTokenAsync(
+            clientId, ModgudManagementApi.Scope, ModgudManagementApi.Audience);
+
+        using var response = await SendManagementGetAsync(
+            token, "/api/admin/realm-config/manifest-schema");
+        var body = await response.Content.ReadAsStringAsync(ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains("Management.PermissionDenied", body);
     }
 
     [Fact]
@@ -408,6 +504,17 @@ public class ManagementApiAuthorizationTests : IntegrationTestBase
             $"ManagementAppScopeReader_{Guid.NewGuid():N}", [("app-scope", "read")]);
         await Factory.CreateTestGroupAsync(
             $"ManagementAppScopeReaders_{Guid.NewGuid():N}", [principalId], [role.Id]);
+    }
+
+    private async Task GrantRealmAdminAsync(Guid principalId)
+    {
+        var role = await Factory.CreateTestRoleAsync(
+            $"ManagementRealmAdmin_{Guid.NewGuid():N}", isRealmAdmin: true);
+        await Factory.CreateTestGroupAsync(
+            $"ManagementRealmAdmins_{Guid.NewGuid():N}",
+            [principalId],
+            [role.Id],
+            boundTo: [PermissionService.AllAppsWildcard]);
     }
 
     private async Task CreateClientCredentialsClientAsync(
