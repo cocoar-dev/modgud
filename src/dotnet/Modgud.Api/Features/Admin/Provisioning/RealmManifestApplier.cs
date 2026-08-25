@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BuildingBlocks.Helper;
 using ErrorOr;
 using Marten;
@@ -10,9 +11,13 @@ using Modgud.Api.Features.Users.Commands;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.DTOs.User;
 using Modgud.Application.Services;
+using Modgud.Authentication.Api.Admin.LoginProviders.Commands;
 using Modgud.Authentication.Api.Users;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Domain.LoginProviders;
+using Modgud.Authentication.Identity.LoginProviders;
+using Modgud.Authentication.Identity.LoginProviders.Saml;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Authentication.Sessions;
 using Modgud.Authorization.Apps;
@@ -24,6 +29,7 @@ using Modgud.Authorization.Services;
 using Modgud.Domain.Common;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.OAuth.Scopes;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
@@ -51,7 +57,7 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// roles → users → groups. Keys (app slug, role/user key, <c>resource:action</c>) are
 /// mapped to ids as each entity is created.</para>
 /// </summary>
-public sealed class RealmManifestApplier(
+public sealed partial class RealmManifestApplier(
     IRealmProvisioningService realms,
     IServiceScopeFactory scopeFactory,
     ILogger<RealmManifestApplier> logger)
@@ -79,9 +85,10 @@ public sealed class RealmManifestApplier(
         {
             var secrets = await ApplyTenantConfigAsync(slug, manifest, ct);
             logger.LogInformation(
-                "Imported realm {Slug}: {Apps} apps, {Apis} apis, {Scopes} scopes, {Clients} clients, {Roles} roles, {Users} users, {Groups} groups.",
+                "Imported realm {Slug}: {Apps} apps, {Apis} apis, {Scopes} scopes, {Clients} clients, {Roles} roles, {Users} users, {Groups} groups, {Providers} login providers, {Positions} positions.",
                 slug, manifest.Apps.Count, manifest.Apis.Count, manifest.Scopes.Count,
-                manifest.Clients.Count, manifest.Roles.Count, manifest.Users.Count, manifest.Groups.Count);
+                manifest.Clients.Count, manifest.Roles.Count, manifest.Users.Count, manifest.Groups.Count,
+                manifest.LoginProviders.Count, manifest.Positions.Count);
             return new RealmImportResult
             {
                 Slug = slug,
@@ -143,9 +150,10 @@ public sealed class RealmManifestApplier(
         {
             var secrets = await ApplyTenantUpdateAsync(slug, manifest, prune, ct);
             logger.LogInformation(
-                "Updated realm {Slug}: {Apps} apps, {Apis} apis, {Scopes} scopes, {Clients} clients, {Roles} roles, {Users} users, {Groups} groups (in-place merge).",
+                "Updated realm {Slug}: {Apps} apps, {Apis} apis, {Scopes} scopes, {Clients} clients, {Roles} roles, {Users} users, {Groups} groups, {Providers} login providers, {Positions} positions (in-place merge).",
                 slug, manifest.Apps.Count, manifest.Apis.Count, manifest.Scopes.Count,
-                manifest.Clients.Count, manifest.Roles.Count, manifest.Users.Count, manifest.Groups.Count);
+                manifest.Clients.Count, manifest.Roles.Count, manifest.Users.Count, manifest.Groups.Count,
+                manifest.LoginProviders.Count, manifest.Positions.Count);
             return new RealmImportResult
             {
                 Slug = slug,
@@ -187,7 +195,8 @@ public sealed class RealmManifestApplier(
         foreach (var app in manifest.Apps)
         {
             var dto = new CreateAppDto(app.Slug, app.DisplayName, app.Description,
-                app.Permissions.Select(p => new AppPermissionDto(null, p.Resource, p.Action, p.Description)).ToList());
+                app.Permissions.Select(p => new AppPermissionDto(null, p.Resource, p.Action, p.Description)).ToList(),
+                app.Settings);
             var created = await appAdmin.CreateAppAsync(dto, ct);
             EnsureOk(created, $"app '{app.Slug}'");
             apps[app.Slug] = created.Value;
@@ -233,27 +242,19 @@ public sealed class RealmManifestApplier(
         // ── OAuth clients ─────────────────────────────────────────────────────────
         foreach (var c in manifest.Clients)
         {
-            var created = await oauth.CreateClientAsync(new CreateOAuthClientDto
-            {
-                ClientId = c.ClientId,
-                DisplayName = c.DisplayName,
-                ClientType = c.ClientType,
-                ClientSecret = c.ClientSecret,
-                RedirectUris = c.RedirectUris,
-                PostLogoutRedirectUris = c.PostLogoutRedirectUris,
-                Scopes = c.Scopes,
-                AllowedGrantTypes = c.AllowedGrantTypes,
-                Roles = c.Roles,
-                WebAuthnRpId = c.WebAuthnRpId,
-                Enabled = c.Enabled ?? true,
-                RequireConsent = c.RequireConsent ?? false,
-                AppIds = c.Apps.Count == 0
-                    ? null
-                    : c.Apps.Select(appSlug => ResolveAppId(apps, appSlug, $"client '{c.ClientId}'")!).ToList(),
-            }, ct);
+            var created = await oauth.CreateClientAsync(
+                BuildClientCreateDto(c, apps, $"client '{c.ClientId}'"), ct);
             EnsureOk(created, $"client '{c.ClientId}'");
             if (created.Value.ClientSecret is not null)
                 secrets[c.ClientId] = created.Value.ClientSecret;
+        }
+
+        // ── Login providers — canonical handler on the manifest's tenant session ──
+        foreach (var lp in manifest.LoginProviders)
+        {
+            var ctx = $"login provider '{lp.Slug}'";
+            EnsureOk(await BuildCreateProviderHandler(sp).Handle(
+                BuildCreateProviderCommand(lp, ctx), ct), ctx);
         }
 
         // ── Roles (app-scoped or realm-admin) ─────────────────────────────────────
@@ -319,6 +320,9 @@ public sealed class RealmManifestApplier(
             }
         }
 
+        // ── Positions (MG-FT) — after users so grants can resolve their keys ──────
+        await ApplyPositionsAsync(sp, manifest, userIds, ct);
+
         return secrets;
     }
 
@@ -368,7 +372,7 @@ public sealed class RealmManifestApplier(
                         : null,
                     p.Resource, p.Action, p.Description)).ToList();
                 var updated = await appAdmin.UpdateAppAsync(current.Id,
-                    new UpdateAppDto(app.DisplayName, app.Description, permissions), ct);
+                    new UpdateAppDto(app.DisplayName, app.Description, permissions, app.Settings), ct);
                 EnsureOk(updated, $"app '{app.Slug}'");
                 result = updated.Value;
             }
@@ -377,7 +381,7 @@ public sealed class RealmManifestApplier(
                 var permissions = app.Permissions
                     .Select(p => new AppPermissionDto(null, p.Resource, p.Action, p.Description)).ToList();
                 var created = await appAdmin.CreateAppAsync(
-                    new CreateAppDto(app.Slug, app.DisplayName, app.Description, permissions), ct);
+                    new CreateAppDto(app.Slug, app.DisplayName, app.Description, permissions, app.Settings), ct);
                 EnsureOk(created, $"app '{app.Slug}'");
                 result = created.Value;
             }
@@ -470,23 +474,7 @@ public sealed class RealmManifestApplier(
                 .FirstOrDefaultAsync(x => x.ClientId == c.ClientId && !x.IsDeleted, ct);
             if (existing is null)
             {
-                var created = await oauth.CreateClientAsync(new CreateOAuthClientDto
-                {
-                    ClientId = c.ClientId,
-                    DisplayName = c.DisplayName,
-                    ClientType = c.ClientType,
-                    ClientSecret = c.ClientSecret,
-                    RedirectUris = c.RedirectUris,
-                    PostLogoutRedirectUris = c.PostLogoutRedirectUris,
-                    Scopes = c.Scopes,
-                    AllowedGrantTypes = c.AllowedGrantTypes,
-                    Roles = c.Roles,
-                    WebAuthnRpId = c.WebAuthnRpId,
-                    Enabled = c.Enabled ?? true,
-                    RequireConsent = c.RequireConsent ?? false,
-                    AppIds = c.Apps.Count == 0 ? null
-                        : c.Apps.Select(appSlug => ResolveAppId(apps, appSlug, ctx)!).ToList(),
-                }, ct);
+                var created = await oauth.CreateClientAsync(BuildClientCreateDto(c, apps, ctx), ct);
                 EnsureOk(created, ctx);
                 if (created.Value.ClientSecret is not null)
                     secrets[c.ClientId] = created.Value.ClientSecret;
@@ -495,20 +483,77 @@ public sealed class RealmManifestApplier(
             {
                 // ClientType + secret are immutable through the canonical update path; an
                 // existing client keeps its secret (rotate via the dedicated endpoint).
-                EnsureOk(await oauth.UpdateClientAsync(existing.Id.ToString(), new UpdateOAuthClientDto
-                {
-                    DisplayName = c.DisplayName,
-                    RedirectUris = NullIfEmpty(c.RedirectUris),
-                    PostLogoutRedirectUris = NullIfEmpty(c.PostLogoutRedirectUris),
-                    Scopes = NullIfEmpty(c.Scopes),
-                    AllowedGrantTypes = NullIfEmpty(c.AllowedGrantTypes),
-                    Roles = NullIfEmpty(c.Roles),
-                    WebAuthnRpId = c.WebAuthnRpId,
-                    Enabled = c.Enabled,
-                    RequireConsent = c.RequireConsent,
-                    AppIds = c.Apps.Count == 0 ? null
-                        : c.Apps.Select(appSlug => ResolveAppId(apps, appSlug, ctx)!).ToList(),
-                }, ct), ctx);
+                EnsureOk(await oauth.UpdateClientAsync(
+                    existing.Id.ToString(), BuildClientUpdateDto(c, apps, ctx), ct), ctx);
+            }
+        }
+
+        // ── Login providers (natural key = Slug) ───────────────────────────────────
+        foreach (var lp in manifest.LoginProviders)
+        {
+            var ctx = $"login provider '{lp.Slug}'";
+            var existing = await session.Query<LoginProvider>()
+                .FirstOrDefaultAsync(x => x.Slug == lp.Slug && !x.IsDeleted, ct);
+            if (existing is null)
+            {
+                EnsureOk(await BuildCreateProviderHandler(sp).Handle(
+                    BuildCreateProviderCommand(lp, ctx), ct), ctx);
+                continue;
+            }
+
+            if (existing.IsBuiltIn)
+                throw new ManifestApplyException(ctx, [Error.Validation("Manifest.InternalProviderReserved",
+                    $"{ctx} is the seeded built-in provider — it cannot be managed through a manifest.")]);
+
+            // Type + Flavor are immutable after create (they own the provider's URL and
+            // config shape) — a differing manifest value is a contract error, not a merge.
+            var manifestType = lp.Type is null
+                ? existing.Type
+                : ParseEnum<LoginProviderType>(lp.Type, $"{ctx} type");
+            if (manifestType != existing.Type)
+                throw new ManifestApplyException(ctx, [Error.Validation("Manifest.ImmutableField",
+                    $"{ctx}: Type is immutable (stored '{existing.Type}', manifest '{lp.Type}'). Delete and recreate the provider to change it.")]);
+            if (!string.Equals(lp.Flavor, existing.Flavor, StringComparison.OrdinalIgnoreCase))
+                throw new ManifestApplyException(ctx, [Error.Validation("Manifest.ImmutableField",
+                    $"{ctx}: Flavor is immutable (stored '{existing.Flavor}', manifest '{lp.Flavor}'). Delete and recreate the provider to change it.")]);
+
+            var updateProvider = new UpdateLoginProviderHandler(
+                session,
+                sp.GetRequiredService<LoginProviderFlavorRegistry>(),
+                sp.GetRequiredService<SamlFlavorRegistry>(),
+                sp.GetRequiredService<TimeProvider>());
+            EnsureOk(await updateProvider.Handle(new UpdateLoginProviderCommand(
+                Id: existing.Id,
+                DisplayName: new Optional<string>(lp.DisplayName),
+                Description: lp.Description is null ? default : new Optional<string?>(lp.Description),
+                ClientId: lp.ClientId is null ? default : new Optional<string>(lp.ClientId),
+                Scopes: lp.Scopes.Count == 0 ? default : new Optional<List<string>>(lp.Scopes),
+                UserUpdateScript: lp.UserUpdateScript is null ? default : new Optional<string>(lp.UserUpdateScript),
+                StoreRawClaims: OptBool(lp.StoreRawClaims),
+                RawClaimsRetentionDays: lp.RawClaimsRetentionDays is null ? default : new Optional<int?>(lp.RawClaimsRetentionDays),
+                AutoCreateUsers: OptBool(lp.AutoCreateUsers),
+                AllowLinking: OptBool(lp.AllowLinking),
+                TrustForEmailLink: OptBool(lp.TrustForEmailLink),
+                AllowedEmailDomains: lp.AllowedEmailDomains is { Count: > 0 }
+                    ? new Optional<List<string>?>(lp.AllowedEmailDomains) : default,
+                IconName: lp.IconName is null ? default : new Optional<string?>(lp.IconName),
+                ButtonColorHex: lp.ButtonColorHex is null ? default : new Optional<string?>(lp.ButtonColorHex),
+                FlavorData: lp.FlavorData.HasValue
+                    ? new Optional<JsonDocument>(JsonDocument.Parse(lp.FlavorData.Value.GetRawText())) : default,
+                Enabled: OptBool(lp.Enabled),
+                TrustForAuthorization: OptBool(lp.TrustForAuthorization),
+                AuthoritativeForProfile: OptBool(lp.AuthoritativeForProfile)), ct), ctx);
+
+            // A manifest secret on an EXISTING provider ROTATES it (mirrors the user
+            // Password semantics — this is what makes export → edit → "set the secret"
+            // → apply work). New providers store it at create via InitialClientSecret.
+            if (!string.IsNullOrWhiteSpace(lp.ClientSecret))
+            {
+                var rotate = new RotateLoginProviderSecretHandler(
+                    session, sp.GetRequiredService<LoginProviderSecretStore>(),
+                    sp.GetRequiredService<TimeProvider>());
+                EnsureOk(await rotate.Handle(new RotateLoginProviderSecretCommand(
+                    existing.Id, lp.ClientSecret, RotatedByUserId: null), ct), $"{ctx} secret");
             }
         }
 
@@ -629,6 +674,9 @@ public sealed class RealmManifestApplier(
             }
         }
 
+        // ── Positions (MG-FT) — after users so grants can resolve their keys ──────
+        await ApplyPositionsAsync(sp, manifest, userIds, ct);
+
         // ── Prune: full-sync removal of entities absent from the manifest. Runs AFTER the
         //    upsert so the protection checks see the realm's desired (post-merge) role graph.
         if (prune)
@@ -666,12 +714,29 @@ public sealed class RealmManifestApplier(
     {
         var perms = sp.GetRequiredService<IPermissionService>();
 
-        // ── Clients (natural key = ClientId) — keep SA-linked (auto-managed, not modelled). ──
+        // ── Positions (natural key = AccountName) — first: pruning a position cascades its
+        //    terminal slots + their terminal-managed clients (see the Positions partial). ─────
+        await PrunePositionsAsync(sp, session, oauth, manifest, ct);
+
+        // ── Clients (natural key = ClientId) — keep SA-linked and terminal-managed clients
+        //    (both are auto-managed credential material the manifest doesn't model). ─────────
         var keepClients = manifest.Clients.Select(c => c.ClientId).ToHashSet(StringComparer.Ordinal);
         foreach (var c in await session.Query<OAuthApplicationState>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepClients.Contains(c.ClientId) || c.LinkedServiceAccountId.HasValue) continue;
+            if (keepClients.Contains(c.ClientId)
+                || c.LinkedServiceAccountId.HasValue
+                || c.LinkedPositionPrincipalId.HasValue) continue;
             EnsureOk(await oauth.DeleteClientAsync(c.Id.ToString(), ct), $"prune client '{c.ClientId}'");
+        }
+
+        // ── Login providers (natural key = Slug) — keep the built-in Internal provider. ──────
+        var keepProviders = manifest.LoginProviders.Select(p => p.Slug).ToHashSet(StringComparer.Ordinal);
+        var deleteProvider = new DeleteLoginProviderHandler(session, sp.GetRequiredService<TimeProvider>());
+        foreach (var p in await session.Query<LoginProvider>().Where(x => !x.IsDeleted).ToListAsync(ct))
+        {
+            if (keepProviders.Contains(p.Slug) || p.IsBuiltIn) continue;
+            EnsureOk(await deleteProvider.Handle(new DeleteLoginProviderCommand(p.Id), ct),
+                $"prune login provider '{p.Slug}'");
         }
 
         // ── Scopes (natural key = Name) — keep auto-seeded standard scopes. ──────────────────
@@ -737,6 +802,151 @@ public sealed class RealmManifestApplier(
             EnsureOk(await appAdmin.DeleteAppAsync(a.Id, ct), $"prune app '{a.Slug}'");
         }
     }
+
+    /// <summary>
+    /// Manifest client → canonical create DTO. Every optional field falls back to the SAME
+    /// shipped default the admin API applies on create, so the manifest path and the manual
+    /// path can never diverge (guarded by RealmManifestParityTests).
+    /// </summary>
+    private static CreateOAuthClientDto BuildClientCreateDto(
+        RealmManifestClient c, IReadOnlyDictionary<string, App> apps, string ctx) => new()
+    {
+        ClientId = c.ClientId,
+        DisplayName = c.DisplayName,
+        ClientType = c.ClientType,
+        ClientSecret = c.ClientSecret,
+        ConsentType = c.ConsentType ?? "implicit",
+        RedirectUris = c.RedirectUris,
+        PostLogoutRedirectUris = c.PostLogoutRedirectUris,
+        Scopes = c.Scopes,
+        AllowedGrantTypes = c.AllowedGrantTypes,
+        AllowedCorsOrigins = c.AllowedCorsOrigins,
+        Roles = c.Roles,
+        WebAuthnRpId = c.WebAuthnRpId,
+        Enabled = c.Enabled ?? true,
+        RequireConsent = c.RequireConsent ?? false,
+        AllowRememberConsent = c.AllowRememberConsent ?? true,
+        AllowAccessTokensViaBrowser = c.AllowAccessTokensViaBrowser ?? false,
+        RequireClientSecret = c.RequireClientSecret ?? true,
+        EnableLocalLogin = c.EnableLocalLogin ?? true,
+        RequirePushedAuthorizationRequests = c.RequirePushedAuthorizationRequests ?? false,
+        RequireDpop = c.RequireDpop ?? false,
+        RequireDpopNonce = c.RequireDpopNonce ?? false,
+        AccessTokenType = ParseOptionalEnum<AccessTokenType>(c.AccessTokenType, $"{ctx} accessTokenType")
+            ?? AccessTokenType.Reference,
+        IdentityTokenLifetime = c.IdentityTokenLifetime,
+        AccessTokenLifetime = c.AccessTokenLifetime,
+        AuthorizationCodeLifetime = c.AuthorizationCodeLifetime,
+        SlidingRefreshTokenLifetime = c.SlidingRefreshTokenLifetime,
+        ClientSessionIdleLifetime = c.ClientSessionIdleLifetime,
+        ClientSessionAbsoluteLifetime = c.ClientSessionAbsoluteLifetime,
+        Claims = c.Claims.Select(cl => new OAuthClientClaimDto { Type = cl.Type, Value = cl.Value }).ToList(),
+        ClientClaimsPrefix = c.ClientClaimsPrefix,
+        AlwaysSendClientClaims = c.AlwaysSendClientClaims ?? false,
+        UpdateAccessTokenClaimsOnRefresh = c.UpdateAccessTokenClaimsOnRefresh ?? false,
+        AppIds = c.Apps.Count == 0
+            ? null
+            : c.Apps.Select(appSlug => ResolveAppId(apps, appSlug, ctx)!).ToList(),
+    };
+
+    /// <summary>
+    /// Manifest client → canonical update DTO (patch semantics): omitted scalars/bools stay
+    /// null (no change), empty lists collapse to null (no change — UpdateRealm never clears
+    /// a list), a non-empty list replaces. Lifetimes can be set/changed but not cleared.
+    /// </summary>
+    private static UpdateOAuthClientDto BuildClientUpdateDto(
+        RealmManifestClient c, IReadOnlyDictionary<string, App> apps, string ctx) => new()
+    {
+        DisplayName = c.DisplayName,
+        ConsentType = c.ConsentType,
+        RedirectUris = NullIfEmpty(c.RedirectUris),
+        PostLogoutRedirectUris = NullIfEmpty(c.PostLogoutRedirectUris),
+        Scopes = NullIfEmpty(c.Scopes),
+        AllowedGrantTypes = NullIfEmpty(c.AllowedGrantTypes),
+        AllowedCorsOrigins = NullIfEmpty(c.AllowedCorsOrigins),
+        Roles = NullIfEmpty(c.Roles),
+        WebAuthnRpId = c.WebAuthnRpId,
+        Enabled = c.Enabled,
+        RequireConsent = c.RequireConsent,
+        AllowRememberConsent = c.AllowRememberConsent,
+        AllowAccessTokensViaBrowser = c.AllowAccessTokensViaBrowser,
+        RequireClientSecret = c.RequireClientSecret,
+        EnableLocalLogin = c.EnableLocalLogin,
+        RequirePushedAuthorizationRequests = c.RequirePushedAuthorizationRequests,
+        RequireDpop = c.RequireDpop,
+        RequireDpopNonce = c.RequireDpopNonce,
+        AccessTokenType = ParseOptionalEnum<AccessTokenType>(c.AccessTokenType, $"{ctx} accessTokenType"),
+        IdentityTokenLifetime = c.IdentityTokenLifetime,
+        AccessTokenLifetime = c.AccessTokenLifetime,
+        AuthorizationCodeLifetime = c.AuthorizationCodeLifetime,
+        SlidingRefreshTokenLifetime = c.SlidingRefreshTokenLifetime,
+        ClientSessionIdleLifetime = c.ClientSessionIdleLifetime,
+        ClientSessionAbsoluteLifetime = c.ClientSessionAbsoluteLifetime,
+        Claims = c.Claims.Count == 0
+            ? null
+            : c.Claims.Select(cl => new OAuthClientClaimDto { Type = cl.Type, Value = cl.Value }).ToList(),
+        ClientClaimsPrefix = c.ClientClaimsPrefix,
+        AlwaysSendClientClaims = c.AlwaysSendClientClaims,
+        UpdateAccessTokenClaimsOnRefresh = c.UpdateAccessTokenClaimsOnRefresh,
+        AppIds = c.Apps.Count == 0
+            ? null
+            : c.Apps.Select(appSlug => ResolveAppId(apps, appSlug, ctx)!).ToList(),
+    };
+
+    /// <summary>
+    /// The canonical create handler for login providers, on the manifest's tenant session.
+    /// Same direct-invocation pattern as users/groups: sequential dispatch with the handler
+    /// result surfaced immediately for contextual import errors.
+    /// </summary>
+    private static CreateLoginProviderHandler BuildCreateProviderHandler(IServiceProvider sp) => new(
+        sp.GetRequiredService<IDocumentSession>(),
+        sp.GetRequiredService<LoginProviderFlavorRegistry>(),
+        sp.GetRequiredService<SamlFlavorRegistry>(),
+        sp.GetRequiredService<LoginProviderSecretStore>(),
+        sp.GetRequiredService<TimeProvider>());
+
+    /// <summary>
+    /// Manifest login provider → canonical create command. The seeded Internal provider is
+    /// reserved infrastructure (like the system app / standard scopes) — a manifest that
+    /// declares one is a contract error.
+    /// </summary>
+    private static CreateLoginProviderCommand BuildCreateProviderCommand(
+        RealmManifestLoginProvider lp, string ctx)
+    {
+        var type = lp.Type is null
+            ? LoginProviderType.Oidc
+            : ParseEnum<LoginProviderType>(lp.Type, $"{ctx} type");
+        if (type == LoginProviderType.Internal)
+            throw new ManifestApplyException(ctx, [Error.Validation("Manifest.InternalProviderReserved",
+                $"{ctx}: the Internal provider is seeded automatically and cannot be declared in a manifest.")]);
+
+        return new CreateLoginProviderCommand(
+            Flavor: lp.Flavor,
+            DisplayName: lp.DisplayName,
+            Slug: lp.Slug,
+            FlavorData: lp.FlavorData.HasValue ? JsonDocument.Parse(lp.FlavorData.Value.GetRawText()) : null,
+            Type: type,
+            Description: lp.Description,
+            Enabled: lp.Enabled,
+            ClientId: lp.ClientId,
+            Scopes: NullIfEmpty(lp.Scopes),
+            UserUpdateScript: lp.UserUpdateScript,
+            StoreRawClaims: lp.StoreRawClaims,
+            RawClaimsRetentionDays: lp.RawClaimsRetentionDays,
+            AutoCreateUsers: lp.AutoCreateUsers,
+            AllowLinking: lp.AllowLinking,
+            TrustForEmailLink: lp.TrustForEmailLink,
+            AllowedEmailDomains: lp.AllowedEmailDomains is { Count: > 0 } ? lp.AllowedEmailDomains : null,
+            IconName: lp.IconName,
+            ButtonColorHex: lp.ButtonColorHex,
+            TrustForAuthorization: lp.TrustForAuthorization,
+            AuthoritativeForProfile: lp.AuthoritativeForProfile,
+            InitialClientSecret: lp.ClientSecret);
+    }
+
+    /// <summary>Nullable bool → PATCH optional: null = omitted (no change).</summary>
+    private static Optional<bool> OptBool(bool? value)
+        => value is { } b ? new Optional<bool>(b) : default;
 
     /// <summary>Wraps a manifest string in a "some" optional, or "none" when null — the
     /// UpdateUserCommand semantics: a null manifest field leaves the stored value unchanged
@@ -812,6 +1022,11 @@ public sealed class RealmManifestApplier(
                 [Error.Validation("Manifest.UnknownReference", $"{context} references an unknown key.")]);
         return id;
     }
+
+    /// <summary>Null stays null — the manifest's "omitted = no change on apply / shipped
+    /// default on create" semantics for optional enum fields.</summary>
+    private static TEnum? ParseOptionalEnum<TEnum>(string? value, string context) where TEnum : struct, Enum
+        => value is null ? null : ParseEnum<TEnum>(value, context);
 
     private static TEnum ParseEnum<TEnum>(string value, string context) where TEnum : struct, Enum
     {

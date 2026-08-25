@@ -72,15 +72,15 @@ public static class PositionsEndpoints
 
                 var normalised = (dto.AccountName ?? string.Empty).Trim().ToLowerInvariant();
                 var validation = ValidateAccountName(normalised);
-                if (validation is not null) return validation;
+                if (validation is not null) return validation.ToResult();
 
                 if (await AccountNameTakenAsync(session, normalised, excludeId: null, ct) is { } conflict)
-                    return conflict;
+                    return conflict.ToResult();
 
                 var policy = ApplyPolicy(PositionTerminalPolicy.Disabled, dto.TerminalPolicy, out var policyError);
-                if (policyError is not null) return policyError;
+                if (policyError is not null) return policyError.ToResult();
                 if (await ValidatePolicyAgainstRealmFloorAsync(session, policy, ct) is { } floorError)
-                    return floorError;
+                    return floorError.ToResult();
 
                 // Staged terminal slots — same up-front validation as the grants
                 // below. Plan §4.1 still holds: slots exist only while the
@@ -276,10 +276,10 @@ public static class PositionsEndpoints
                     if (normalised != fn.AccountName)
                     {
                         var validation = ValidateAccountName(normalised);
-                        if (validation is not null) return validation;
+                        if (validation is not null) return validation.ToResult();
 
                         if (await AccountNameTakenAsync(session, normalised, excludeId: id.Guid, ct) is { } conflict)
-                            return conflict;
+                            return conflict.ToResult();
 
                         fn.AccountName = normalised;
                     }
@@ -299,9 +299,9 @@ public static class PositionsEndpoints
                     fn.TerminalPolicy,
                     dto.TerminalPolicy ?? new PositionTerminalPolicyUpdateDto(),
                     out var policyError);
-                if (policyError is not null) return policyError;
+                if (policyError is not null) return policyError.ToResult();
                 if (await ValidatePolicyAgainstRealmFloorAsync(session, policy, ct) is { } floorError)
-                    return floorError;
+                    return floorError.ToResult();
 
                 if (dto.TerminalPolicy is not null)
                 {
@@ -371,9 +371,9 @@ public static class PositionsEndpoints
                 if (position is null || position.IsDeleted) return Results.NotFound();
 
                 var policy = ApplyPolicy(position.TerminalPolicy, dto, out var policyError);
-                if (policyError is not null) return policyError;
+                if (policyError is not null) return policyError.ToResult();
                 if (await ValidatePolicyAgainstRealmFloorAsync(session, policy, ct) is { } floorError)
-                    return floorError;
+                    return floorError.ToResult();
                 return Results.Ok(await PreviewPolicyConsequencesAsync(
                     session, position.Id, position.TerminalPolicy, policy, ct));
             })
@@ -471,7 +471,7 @@ public static class PositionsEndpoints
     /// PositionPrincipal share the account-name namespace (any of the three can
     /// surface as a token subject / login handle downstream).
     /// </summary>
-    private static async Task<IResult?> AccountNameTakenAsync(
+    internal static async Task<PositionOpError?> AccountNameTakenAsync(
         IDocumentSession session, string normalised, Guid? excludeId, CancellationToken ct)
     {
         if (await session.Query<Person>().AnyAsync(p => !p.IsDeleted && p.AccountName == normalised, ct))
@@ -485,8 +485,8 @@ public static class PositionsEndpoints
             : await session.Query<PositionPrincipal>().AnyAsync(f => !f.IsDeleted && f.AccountName == normalised, ct);
         return fnTaken ? Conflict($"Account name '{normalised}' is already in use.") : null;
 
-        static IResult Conflict(string message) =>
-            Results.Conflict(new { Error = "Position.AccountNameTaken", Message = message });
+        static PositionOpError Conflict(string message) =>
+            PositionOpError.Conflict("Position.AccountNameTaken", message);
     }
 
     /// <summary>
@@ -495,8 +495,8 @@ public static class PositionsEndpoints
     /// absolute maximum — the maximum is the ceiling a refresh can never push
     /// past (plan §4.1 / token model).
     /// </summary>
-    private static PositionTerminalPolicy ApplyPolicy(
-        PositionTerminalPolicy current, PositionTerminalPolicyUpdateDto? update, out IResult? error)
+    internal static PositionTerminalPolicy ApplyPolicy(
+        PositionTerminalPolicy current, PositionTerminalPolicyUpdateDto? update, out PositionOpError? error)
     {
         error = null;
         if (update is null) return current;
@@ -520,11 +520,8 @@ public static class PositionsEndpoints
 
         if (merged.Enabled && (merged.AllowedActivationProofs.Count == 0 || merged.AllowedDeviceBindings.Count == 0))
         {
-            error = Results.BadRequest(new
-            {
-                Error = "Position.InvalidTerminalPolicy",
-                Message = "An enabled terminal policy requires at least one activation proof and one device binding."
-            });
+            error = PositionOpError.BadRequest("Position.InvalidTerminalPolicy",
+                "An enabled terminal policy requires at least one activation proof and one device binding.");
             return current;
         }
 
@@ -532,11 +529,8 @@ public static class PositionsEndpoints
             id => !PositionTerminalSecurity.TryGetWritableProof(id, out _));
         if (unknownProof is not null)
         {
-            error = Results.BadRequest(new
-            {
-                Error = "Position.UnknownActivationProof",
-                Message = $"Activation proof '{unknownProof}' is unknown or unavailable."
-            });
+            error = PositionOpError.BadRequest("Position.UnknownActivationProof",
+                $"Activation proof '{unknownProof}' is unknown or unavailable.");
             return current;
         }
 
@@ -544,57 +538,42 @@ public static class PositionsEndpoints
             id => !PositionTerminalSecurity.TryGetWritableBinding(id, out _));
         if (unknownBinding is not null)
         {
-            error = Results.BadRequest(new
-            {
-                Error = "Position.UnknownDeviceBinding",
-                Message = $"Device binding '{unknownBinding}' is unknown or unavailable."
-            });
+            error = PositionOpError.BadRequest("Position.UnknownDeviceBinding",
+                $"Device binding '{unknownBinding}' is unknown or unavailable.");
             return current;
         }
 
         if (merged.StaffingSessionLifetime <= TimeSpan.Zero || merged.MaximumStaffingSessionLifetime <= TimeSpan.Zero)
         {
-            error = Results.BadRequest(new
-            {
-                Error = "Position.InvalidTerminalPolicy",
-                Message = "Staffing session lifetimes must be positive."
-            });
+            error = PositionOpError.BadRequest("Position.InvalidTerminalPolicy",
+                "Staffing session lifetimes must be positive.");
             return current;
         }
 
         if (merged.StaffingSessionLifetime > merged.MaximumStaffingSessionLifetime)
         {
-            error = Results.BadRequest(new
-            {
-                Error = "Position.InvalidTerminalPolicy",
-                Message = "The staffing session lifetime must not exceed the absolute maximum lifetime."
-            });
+            error = PositionOpError.BadRequest("Position.InvalidTerminalPolicy",
+                "The staffing session lifetime must not exceed the absolute maximum lifetime.");
             return current;
         }
 
         return merged;
     }
 
-    private static IResult? ValidateAccountName(string normalised)
+    internal static PositionOpError? ValidateAccountName(string normalised)
     {
         if (string.IsNullOrWhiteSpace(normalised))
-            return Results.BadRequest(new
-            {
-                Error = "Position.AccountNameRequired",
-                Message = "Account name is required."
-            });
+            return PositionOpError.BadRequest("Position.AccountNameRequired",
+                "Account name is required.");
 
         if (!AccountNamePattern.IsMatch(normalised))
-            return Results.BadRequest(new
-            {
-                Error = "Position.InvalidAccountName",
-                Message = "Account name must be 2-64 chars, start with a letter or digit, and contain only lowercase letters, digits, dots, hyphens, or underscores."
-            });
+            return PositionOpError.BadRequest("Position.InvalidAccountName",
+                "Account name must be 2-64 chars, start with a letter or digit, and contain only lowercase letters, digits, dots, hyphens, or underscores.");
 
         return null;
     }
 
-    private static async Task<IResult?> ValidatePolicyAgainstRealmFloorAsync(
+    internal static async Task<PositionOpError?> ValidatePolicyAgainstRealmFloorAsync(
         IDocumentSession session, PositionTerminalPolicy policy, CancellationToken ct)
     {
         var realm = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
@@ -609,16 +588,20 @@ public static class PositionsEndpoints
             .ToArray();
         if (violatingProofs.Length == 0 && violatingBindings.Length == 0) return null;
 
-        return Results.BadRequest(new
-        {
-            Error = "Position.TerminalPolicyBelowRealmFloor",
-            Message = "Every allowed activation proof and device binding must meet the realm capability floor.",
-            ViolatingActivationProofs = violatingProofs,
-            ViolatingDeviceBindings = violatingBindings,
-        });
+        return new PositionOpError(
+            StatusCodes.Status400BadRequest,
+            "Position.TerminalPolicyBelowRealmFloor",
+            "Every allowed activation proof and device binding must meet the realm capability floor.",
+            new
+            {
+                Error = "Position.TerminalPolicyBelowRealmFloor",
+                Message = "Every allowed activation proof and device binding must meet the realm capability floor.",
+                ViolatingActivationProofs = violatingProofs,
+                ViolatingDeviceBindings = violatingBindings,
+            });
     }
 
-    private static async Task<PositionTerminalPolicyConsequencesDto> PreviewPolicyConsequencesAsync(
+    internal static async Task<PositionTerminalPolicyConsequencesDto> PreviewPolicyConsequencesAsync(
         IDocumentSession session,
         Guid positionId,
         PositionTerminalPolicy previous,
@@ -664,7 +647,7 @@ public static class PositionsEndpoints
         };
     }
 
-    private static PositionPrincipalDto ToDto(PositionPrincipal fn) => new()
+    internal static PositionPrincipalDto ToDto(PositionPrincipal fn) => new()
     {
         Id = new ShortGuid(fn.Id).ToString(),
         AccountName = fn.AccountName,
@@ -680,4 +663,25 @@ public static class PositionsEndpoints
             MaximumStaffingSessionLifetimeMinutes = (int)fn.TerminalPolicy.MaximumStaffingSessionLifetime.TotalMinutes,
         },
     };
+}
+
+/// <summary>
+/// A position write-validation failure shared between the HTTP endpoints and the
+/// realm-manifest applier. <see cref="ToResult"/> renders the EXACT wire body the
+/// endpoints have always returned (status + <c>{ Error, Message, ... }</c>);
+/// <see cref="ToError"/> maps to an ErrorOr error for the manifest path.
+/// </summary>
+internal sealed record PositionOpError(int StatusCode, string Code, string Message, object Body)
+{
+    public static PositionOpError BadRequest(string code, string message) =>
+        new(StatusCodes.Status400BadRequest, code, message, new { Error = code, Message = message });
+
+    public static PositionOpError Conflict(string code, string message) =>
+        new(StatusCodes.Status409Conflict, code, message, new { Error = code, Message = message });
+
+    public IResult ToResult() => Results.Json(Body, statusCode: StatusCode);
+
+    public ErrorOr.Error ToError() => StatusCode == StatusCodes.Status409Conflict
+        ? ErrorOr.Error.Conflict(Code, Message)
+        : ErrorOr.Error.Validation(Code, Message);
 }

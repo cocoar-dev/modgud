@@ -51,6 +51,9 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
                     RedirectUris = ["https://ex.test/cb"],
                     Scopes = ["openid"],
                     AllowedGrantTypes = ["authorization_code", "refresh_token"],
+                    AccessTokenType = "Jwt",
+                    RequireDpop = true,
+                    AccessTokenLifetime = 600,
                     Apps = ["ex-app"],
                 },
             ],
@@ -68,6 +71,9 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
         Assert.Null(exClient.ClientSecret);
         Assert.Contains("openid", exClient.Scopes);
         Assert.Contains("ex-app", exClient.Apps);
+        Assert.Equal("Jwt", exClient.AccessTokenType); // token format round-trips through export
+        Assert.Equal(true, exClient.RequireDpop);
+        Assert.Equal(600, exClient.AccessTokenLifetime);
         var exUser = Assert.Single(m.Users, u => u.UserName == "bob");
         Assert.Null(exUser.Password);
 
@@ -80,6 +86,9 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
         Assert.NotNull(m.Settings);
         Assert.Equal("Optional", m.Settings!.RegistrationFields!.Username); // shipped default
         Assert.Null(m.Settings.SelfRegistration!.CaptchaSecret);            // write-only — never exported
+        Assert.NotNull(m.Settings.BrowserSessions);                         // session policies export too
+        Assert.NotNull(m.Settings.ClientSessions);
+        Assert.NotNull(m.Settings.PositionSecurity);
 
         // ── Re-apply the UNEDITED export = idempotent ──────────────────────────
         Assert.False((await applier.UpdateRealmAsync(m, ct: ct)).IsError);

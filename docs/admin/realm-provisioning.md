@@ -84,6 +84,8 @@ A manifest is one object with a required `Realm` plus optional entity lists.
 - Permissions are addressed as **`resource:action`** (e.g. `invoice:read`).
 - Groups list **`Members`** (user keys) and **`Roles`** (role keys). Group
   membership is the *only* way users get roles.
+- Login providers are keyed by their **`Slug`** (the one in the provider's
+  callback URLs); positions list **`Grants`** as user keys.
 
 ```jsonc
 {
@@ -93,9 +95,10 @@ A manifest is one object with a required `Realm` plus optional entity lists.
     "Domains": ["acme.example.com"],
     "InitialAdmin": { "UserName": "admin", "Email": "admin@acme.example.com" }
   },
-  "Settings": { /* optional realm-settings patch (self-reg, native grants, …) */ },
+  "Settings": { /* optional realm-settings patch (self-reg, sessions, native grants, …) */ },
   "Apps":    [ { "Slug": "acme", "DisplayName": "Acme",
-                 "Permissions": [ { "Resource": "invoice", "Action": "read" } ] } ],
+                 "Permissions": [ { "Resource": "invoice", "Action": "read" } ],
+                 "Settings": { /* optional per-App override: Origin (host routing), branding, … */ } } ],
   "Apis":    [ { "Name": "acme-api", "App": "acme",
                  "Permissions": [ { "Resource": "invoice", "Action": "read" } ] } ],
   "Scopes":  [ { "Name": "invoice.read", "App": "acme", "Resources": ["acme-api"] } ],
@@ -107,9 +110,22 @@ A manifest is one object with a required `Realm` plus optional entity lists.
   "Roles":   [ { "Key": "acme-admin", "Name": "acme-admin", "App": "acme",
                  "Permissions": [ { "Resource": "invoice", "Action": "read" } ] } ],
   "Users":   [ { "Key": "alice", "Email": "alice@acme.example.com", "UserName": "alice" } ],
-  "Groups":  [ { "Name": "Admins", "Members": ["alice"], "Roles": ["acme-admin"] } ]
+  "Groups":  [ { "Name": "Admins", "Members": ["alice"], "Roles": ["acme-admin"] } ],
+  "LoginProviders": [ { "Slug": "corp-idp", "Flavor": "GenericOidc", "DisplayName": "Corp IdP",
+                        "ClientId": "modgud", "ClientSecret": "<from the upstream IdP>",
+                        "FlavorData": { "MetadataUri": "https://idp.example.com/.well-known/openid-configuration" } } ],
+  "Positions": [ { "AccountName": "gate.porter", "Grants": ["alice"],
+                   "TerminalPolicy": { "Enabled": true,
+                                       "AllowedActivationProofs": ["personal-passkey"],
+                                       "AllowedDeviceBindings": ["dpop"],
+                                       "StaffingSessionLifetimeMinutes": 60,
+                                       "MaximumStaffingSessionLifetimeMinutes": 480 } } ]
 }
 ```
+
+Positions require the `PositionTerminals` feature flag; terminal **slots** (device
+enrollments and their one-time-secret clients) are credential material, not config —
+provision them through the position/terminal admin APIs after import.
 
 See the [schema](#discover-the-schema) for every field and its meaning.
 
@@ -156,19 +172,22 @@ clients keep their secret across `apply`.
 Add **`?prune=true`** to make it a full sync: after the merge, entities in the realm
 that are *absent* from the manifest are deleted (in dependency order). To prevent a
 manifest from locking a realm out, prune **never deletes** the system app, auto-seeded
-standard scopes, service-account-linked clients, or anything conferring `realm:admin`
-(a realm-admin role, any current admin user, or an admin-conferring group).
+standard scopes, service-account-linked and terminal-managed clients, the built-in
+Internal login provider, or anything conferring `realm:admin` (a realm-admin role, any
+current admin user, or an admin-conferring group).
 
 ## Export
 
 `GET /{slug}/export` returns the realm as a manifest — the inverse of import. It is
-**structure-only**: it never emits client secrets or password hashes (those are
-one-way), and it omits auto-seeded standard scopes / system apps / SA-linked clients.
-This is deliberate — it is *not* a backup (a real backup needs the whole tenant
-database). Its purpose is **get-config → edit → re-apply**: export a realm, add a user
-password or tweak a setting, and `POST` it back to `/{slug}/apply`. Because confidential
-clients regenerate a secret on import and users can be created passwordless, a
-structure-only manifest still re-applies into a fully working realm.
+**structure-only**: it never emits client secrets, login-provider secrets, or password
+hashes (those are one-way or encrypted), and it omits auto-seeded standard scopes /
+system apps / the built-in Internal login provider / SA-linked and terminal-managed
+clients / terminal slots. This is deliberate — it is *not* a backup (a real backup
+needs the whole tenant database). Its purpose is **get-config → edit → re-apply**:
+export a realm, add a user password or a provider secret, tweak a setting, and `POST`
+it back to `/{slug}/apply`. Because confidential clients regenerate a secret on import
+and users can be created passwordless, a structure-only manifest still re-applies into
+a fully working realm.
 
 ## Per-realm self-service
 

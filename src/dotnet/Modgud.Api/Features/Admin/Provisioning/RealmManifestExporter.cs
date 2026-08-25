@@ -2,15 +2,19 @@ using BuildingBlocks.Helper;
 using ErrorOr;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
+using Modgud.Application.DTOs.Applications;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Application.Services;
+using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
+using Modgud.Domain.Applications;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 
@@ -64,14 +68,30 @@ public sealed class RealmManifestExporter(
                 permKeyById[p.Id] = new RealmManifestPermission(p.Resource, p.Action, p.Description);
 
         // System apps are auto-seeded — not part of a realm's authored config.
-        var manifestApps = apps.Where(a => !a.IsSystem).Select(a => new RealmManifestApp
+        // Settings: only apps that HAVE an override doc export one — an app without an
+        // override inherits the realm everywhere, and exporting the (empty) effective DTO
+        // would materialize a needless override on re-apply.
+        var appSettingsSvc = sp.GetRequiredService<IApplicationSettingsService>();
+        var manifestApps = new List<RealmManifestApp>();
+        foreach (var a in apps.Where(a => !a.IsSystem))
         {
-            Slug = a.Slug,
-            DisplayName = a.DisplayName,
-            Description = a.Description,
-            Permissions = a.Permissions
-                .Select(p => new RealmManifestPermission(p.Resource, p.Action, p.Description)).ToList(),
-        }).ToList();
+            ApplicationSettingsDto? appSettings = null;
+            if (await session.LoadAsync<ApplicationSettings>(a.Id, ct) is not null)
+            {
+                var loaded = await appSettingsSvc.GetAsync(a.Id, ct);
+                appSettings = loaded.IsError ? null : loaded.Value;
+            }
+
+            manifestApps.Add(new RealmManifestApp
+            {
+                Slug = a.Slug,
+                DisplayName = a.DisplayName,
+                Description = a.Description,
+                Permissions = a.Permissions
+                    .Select(p => new RealmManifestPermission(p.Resource, p.Action, p.Description)).ToList(),
+                Settings = appSettings,
+            });
+        }
 
         // ── APIs / scopes / clients via the admin DTOs (flags already resolved) ──────
         var apis = (await oauth.GetApisAsync(new PaginationRequest { PageSize = 1000 }, ct)).Items;
@@ -105,24 +125,77 @@ public sealed class RealmManifestExporter(
         }).ToList();
 
         // Service-account-linked clients are M2M credentials the manifest can't model — skip.
+        // Terminal-managed clients (position slots) are likewise credential material bound to
+        // a device enrollment: exporting them would produce a manifest whose staffing grant
+        // fails the position-link invariant on re-apply, so they are skipped too.
         var clients = (await oauth.GetClientsAsync(new PaginationRequest { PageSize = 1000 }, ct))
-            .Items.Where(c => c.LinkedServiceAccountId is null);
+            .Items.Where(c => c.LinkedServiceAccountId is null && c.LinkedPositionPrincipalId is null);
         var manifestClients = clients.Select(c => new RealmManifestClient
         {
             ClientId = c.ClientId,
             DisplayName = c.DisplayName,
             ClientType = c.ClientType,
             // No ClientSecret — it's a hash; a re-import generates a fresh one.
+            ConsentType = c.ConsentType,
             RedirectUris = c.RedirectUris,
             PostLogoutRedirectUris = c.PostLogoutRedirectUris,
             Scopes = c.Permissions.Where(p => p.StartsWith(ScopePrefix, StringComparison.Ordinal))
                 .Select(p => p[ScopePrefix.Length..]).ToList(),
             AllowedGrantTypes = c.AllowedGrantTypes,
+            AllowedCorsOrigins = c.AllowedCorsOrigins,
             Apps = c.AppIds.Select(id => SlugOfShort(appSlugById, id)).Where(s => s is not null).Select(s => s!).ToList(),
             Roles = c.Roles,
             WebAuthnRpId = c.WebAuthnRpId,
             Enabled = c.Enabled,
             RequireConsent = c.RequireConsent,
+            AllowRememberConsent = c.AllowRememberConsent,
+            AllowAccessTokensViaBrowser = c.AllowAccessTokensViaBrowser,
+            RequireClientSecret = c.RequireClientSecret,
+            EnableLocalLogin = c.EnableLocalLogin,
+            RequirePushedAuthorizationRequests = c.RequirePushedAuthorizationRequests,
+            RequireDpop = c.RequireDpop,
+            RequireDpopNonce = c.RequireDpopNonce,
+            AccessTokenType = c.AccessTokenType.ToString(),
+            IdentityTokenLifetime = c.IdentityTokenLifetime,
+            AccessTokenLifetime = c.AccessTokenLifetime,
+            AuthorizationCodeLifetime = c.AuthorizationCodeLifetime,
+            SlidingRefreshTokenLifetime = c.SlidingRefreshTokenLifetime,
+            ClientSessionIdleLifetime = c.ClientSessionIdleLifetime,
+            ClientSessionAbsoluteLifetime = c.ClientSessionAbsoluteLifetime,
+            Claims = c.Claims.Select(cl => new RealmManifestClientClaim(cl.Type, cl.Value)).ToList(),
+            ClientClaimsPrefix = c.ClientClaimsPrefix,
+            AlwaysSendClientClaims = c.AlwaysSendClientClaims,
+            UpdateAccessTokenClaimsOnRefresh = c.UpdateAccessTokenClaimsOnRefresh,
+        }).ToList();
+
+        // ── Login providers — the seeded built-in Internal provider is infra, not authored
+        //    config; secrets are DataProtection-encrypted and never exported (add one to a
+        //    provider before re-applying to rotate it). ────────────────────────────────────
+        var providers = await session.Query<LoginProvider>()
+            .Where(p => !p.IsDeleted && !p.IsBuiltIn).ToListAsync(ct);
+        var manifestProviders = providers.Select(p => new RealmManifestLoginProvider
+        {
+            Slug = p.Slug,
+            Type = p.Type.ToString(),
+            Flavor = p.Flavor,
+            DisplayName = p.DisplayName,
+            Description = p.Description,
+            Enabled = p.Enabled,
+            ClientId = string.IsNullOrEmpty(p.ClientId) ? null : p.ClientId,
+            // No ClientSecret — encrypted at rest; set one before re-applying to rotate.
+            Scopes = p.Scopes,
+            FlavorData = p.FlavorData?.RootElement.Clone(),
+            UserUpdateScript = string.IsNullOrEmpty(p.UserUpdateScript) ? null : p.UserUpdateScript,
+            StoreRawClaims = p.StoreRawClaims,
+            RawClaimsRetentionDays = p.RawClaimsRetentionDays,
+            AutoCreateUsers = p.AutoCreateUsers,
+            AllowLinking = p.AllowLinking,
+            TrustForEmailLink = p.TrustForEmailLink,
+            TrustForAuthorization = p.TrustForAuthorization,
+            AuthoritativeForProfile = p.AuthoritativeForProfile,
+            AllowedEmailDomains = p.AllowedEmailDomains,
+            IconName = p.IconName,
+            ButtonColorHex = p.ButtonColorHex,
         }).ToList();
 
         // ── Roles (raw — ids are Guids) ──────────────────────────────────────────────
@@ -177,6 +250,36 @@ public sealed class RealmManifestExporter(
             ExternallyDrivable = g.ExternallyDrivable,
         }).ToList();
 
+        // ── Positions (MG-FT) — policy + grants are authored config; terminal SLOTS are
+        //    device-bound credential material (their clients are excluded above) and are
+        //    not exported. Grants reverse to user keys; revoked grants are history. ──────
+        var positions = await session.Query<PositionPrincipal>().Where(p => !p.IsDeleted).ToListAsync(ct);
+        var manifestPositions = new List<RealmManifestPosition>();
+        if (positions.Count > 0)
+        {
+            var liveGrants = (await session.Query<Modgud.Domain.PositionTerminals.PositionGrant>()
+                    .Where(g => g.Status != Modgud.Domain.PositionTerminals.PositionGrantStatus.Revoked)
+                    .ToListAsync(ct))
+                .ToLookup(g => g.PositionPrincipalId);
+            manifestPositions = positions.Select(p => new RealmManifestPosition
+            {
+                AccountName = p.AccountName,
+                Purpose = p.Purpose,
+                IsActive = p.IsActive,
+                TerminalPolicy = new Application.DTOs.Positions.PositionTerminalPolicyUpdateDto
+                {
+                    Enabled = p.TerminalPolicy.Enabled,
+                    AllowedActivationProofs = p.TerminalPolicy.AllowedActivationProofs.ToList(),
+                    AllowedDeviceBindings = p.TerminalPolicy.AllowedDeviceBindings.ToList(),
+                    StaffingSessionLifetimeMinutes = (int)p.TerminalPolicy.StaffingSessionLifetime.TotalMinutes,
+                    MaximumStaffingSessionLifetimeMinutes = (int)p.TerminalPolicy.MaximumStaffingSessionLifetime.TotalMinutes,
+                },
+                Grants = liveGrants[p.Id]
+                    .Where(g => userKeyById.ContainsKey(g.UserId))
+                    .Select(g => userKeyById[g.UserId]).ToList(),
+            }).ToList();
+        }
+
         return new RealmManifest
         {
             Realm = new CreateRealmDto
@@ -196,6 +299,8 @@ public sealed class RealmManifestExporter(
             Roles = manifestRoles,
             Users = manifestUsers,
             Groups = manifestGroups,
+            LoginProviders = manifestProviders,
+            Positions = manifestPositions,
         };
     }
 
@@ -241,6 +346,24 @@ public sealed class RealmManifestExporter(
             Enabled = s.NativeGrants.Enabled,
             AccessTokenLifetimeMinutes = s.NativeGrants.AccessTokenLifetimeMinutes,
             RefreshTokenLifetimeDays = s.NativeGrants.RefreshTokenLifetimeDays,
+        },
+        BrowserSessions = new UpdateBrowserSessionPolicyDto
+        {
+            IdleLifetimeMinutes = s.BrowserSessions.IdleLifetimeMinutes,
+            AbsoluteLifetimeMinutes = s.BrowserSessions.AbsoluteLifetimeMinutes,
+            AllowRememberMe = s.BrowserSessions.AllowRememberMe,
+        },
+        ClientSessions = new UpdateClientSessionPolicyDto
+        {
+            IdleLifetimeDays = s.ClientSessions.IdleLifetimeDays,
+            AbsoluteLifetimeDays = s.ClientSessions.AbsoluteLifetimeDays,
+        },
+        // Re-applying the exported (unchanged) values yields no consequences, so the
+        // ConfirmPositionSecurityConsequences gate stays quiet on an idempotent re-apply.
+        PositionSecurity = new UpdatePositionSecuritySettingsDto
+        {
+            RequiredProofCapabilities = s.PositionSecurity.RequiredProofCapabilities,
+            RequiredBindingCapabilities = s.PositionSecurity.RequiredBindingCapabilities,
         },
         AuthRateLimits = new UpdateAuthRateLimitsDto
         {
