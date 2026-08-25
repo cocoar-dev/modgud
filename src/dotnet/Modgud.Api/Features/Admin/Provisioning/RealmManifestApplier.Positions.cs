@@ -154,13 +154,20 @@ public sealed partial class RealmManifestApplier
                     staffingSessionId, StaffingSessionEndReason.PolicyTightened, ct);
         }
 
-        if (wasActive && !existing.IsActive)
+        // Gate the revocation cascade on the PERSISTED active→inactive transition (same as
+        // the PUT endpoint): the decision reads what the projection actually wrote, never
+        // the manifest value directly.
+        if (wasActive)
         {
-            await staffingRevoker.EndAllForPositionAsync(
-                existing.Id, StaffingSessionEndReason.PositionDisabled, ct);
-            var subject = existing.Id.ToString();
-            await revoker.RevokeTokensBySubjectAsync(subject, ct);
-            await revoker.RevokeAuthorizationsBySubjectAsync(subject, ct);
+            var persisted = await session.LoadAsync<PositionPrincipal>(existing.Id, ct);
+            if (persisted is { IsActive: false })
+            {
+                await staffingRevoker.EndAllForPositionAsync(
+                    persisted.Id, StaffingSessionEndReason.PositionDisabled, ct);
+                var subject = persisted.Id.ToString();
+                await revoker.RevokeTokensBySubjectAsync(subject, ct);
+                await revoker.RevokeAuthorizationsBySubjectAsync(subject, ct);
+            }
         }
 
         // ── Grants: desired-set reconciliation (non-empty replaces, empty = no change,
