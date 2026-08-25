@@ -7,6 +7,7 @@ using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Application.Services;
 using Modgud.Authorization.Apps;
+using Modgud.Domain.OAuth.Common;
 using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Api.Tests.ColdStart;
@@ -49,8 +50,16 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
                 RedirectUris = ["https://parity.test/cb"],
                 Scopes = ["openid"],
                 AllowedGrantTypes = ["authorization_code", "refresh_token"],
+                AllowedCorsOrigins = ["https://parity.test"],
                 Enabled = true,
                 RequireConsent = false,
+                AccessTokenType = AccessTokenType.Jwt,
+                RequirePushedAuthorizationRequests = true,
+                RequireDpop = true,
+                AccessTokenLifetime = 300,
+                Claims = [new OAuthClientClaimDto { Type = "tenant", Value = "parity" }],
+                ClientClaimsPrefix = "client_",
+                AlwaysSendClientClaims = true,
                 AppIds = [new ShortGuid(appId).ToString()],
             }, ct);
             Assert.False(created.IsError, created.IsError ? created.FirstError.Description : string.Empty);
@@ -69,6 +78,14 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
                     RedirectUris = ["https://parity.test/cb"],
                     Scopes = ["openid"],
                     AllowedGrantTypes = ["authorization_code", "refresh_token"],
+                    AllowedCorsOrigins = ["https://parity.test"],
+                    AccessTokenType = "Jwt",
+                    RequirePushedAuthorizationRequests = true,
+                    RequireDpop = true,
+                    AccessTokenLifetime = 300,
+                    Claims = [new RealmManifestClientClaim("tenant", "parity")],
+                    ClientClaimsPrefix = "client_",
+                    AlwaysSendClientClaims = true,
                     Apps = ["parity-app"],
                 },
             ],
@@ -90,8 +107,17 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
         string PostLogoutRedirectUris,
         string AllowedGrantTypes,
         string Permissions,
+        string CorsOrigins,
         bool Enabled,
         bool RequireConsent,
+        AccessTokenType AccessTokenType,
+        bool RequirePushedAuthorizationRequests,
+        bool RequireDpop,
+        bool RequireDpopNonce,
+        int? AccessTokenLifetime,
+        string Claims,
+        string? ClientClaimsPrefix,
+        bool AlwaysSendClientClaims,
         string AppSlugs);
 
     private static async Task<ClientShape> GetClientShapeAsync(
@@ -120,8 +146,17 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
                 Join(client.PostLogoutRedirectUris),
                 Join(client.AllowedGrantTypes),
                 Join(client.Permissions),
+                Join(client.AllowedCorsOrigins),
                 client.Enabled,
                 client.RequireConsent,
+                client.AccessTokenType,
+                client.RequirePushedAuthorizationRequests,
+                client.RequireDpop,
+                client.RequireDpopNonce,
+                client.AccessTokenLifetime,
+                Join(client.Claims.Select(c => $"{c.Type}={c.Value}")),
+                client.ClientClaimsPrefix,
+                client.AlwaysSendClientClaims,
                 Join(slugs));
         });
         return shape;

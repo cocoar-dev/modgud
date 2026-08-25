@@ -9,6 +9,7 @@ using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.OAuth.Scopes;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
@@ -321,6 +322,66 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             Assert.False(client.Enabled, "the omitted Enabled bool must not flip the disabled client back on");
             Assert.Contains("https://bp.test/cb2", client.RedirectUris);
         });
+    }
+
+    [Fact]
+    public async Task Import_and_update_apply_the_client_access_token_type()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "tokentype";
+        RealmManifestClient Client(string? accessTokenType) => new()
+        {
+            ClientId = "tt-web",
+            ClientType = "confidential",
+            RedirectUris = ["https://tt.test/cb"],
+            Scopes = ["openid"],
+            AllowedGrantTypes = ["authorization_code", "refresh_token"],
+            AccessTokenType = accessTokenType,
+        };
+        var manifest = new RealmManifest
+        {
+            Realm = new CreateRealmDto
+            {
+                Slug = slug,
+                DisplayName = slug,
+                Domains = [$"{slug}.localhost"],
+                InitialAdmin = new InitialAdminDto { UserName = "admin", Email = $"admin@{slug}.test" },
+            },
+            Clients = [Client("Jwt")],
+        };
+        Assert.False((await applier.ImportNewRealmAsync(manifest, ct)).IsError);
+
+        async Task<AccessTokenType> GetTokenTypeAsync()
+        {
+            var tokenType = default(AccessTokenType);
+            await InTenantAsync(factory, slug, async sp =>
+            {
+                tokenType = (await sp.GetRequiredService<OAuthAdminService>()
+                    .GetClientsAsync(new PaginationRequest { PageSize = 200 }, ct))
+                    .Items.Single(c => c.ClientId == "tt-web").AccessTokenType;
+            });
+            return tokenType;
+        }
+
+        // Import applied the manifest value instead of silently falling back to Reference.
+        Assert.Equal(AccessTokenType.Jwt, await GetTokenTypeAsync());
+
+        // Apply with the field OMITTED: no change (same patch semantics as the bool flags).
+        Assert.False((await applier.UpdateRealmAsync(manifest with { Clients = [Client(null)] }, ct: ct)).IsError);
+        Assert.Equal(AccessTokenType.Jwt, await GetTokenTypeAsync());
+
+        // Apply with an explicit 'Reference': the merge flips it back.
+        Assert.False((await applier.UpdateRealmAsync(manifest with { Clients = [Client("Reference")] }, ct: ct)).IsError);
+        Assert.Equal(AccessTokenType.Reference, await GetTokenTypeAsync());
+
+        // An invalid value is a contextual validation error, not a silent default.
+        var invalid = await applier.UpdateRealmAsync(manifest with { Clients = [Client("Bogus")] }, ct: ct);
+        Assert.True(invalid.IsError);
+        Assert.Equal("Manifest.InvalidEnum", invalid.FirstError.Code);
     }
 
     [Fact]

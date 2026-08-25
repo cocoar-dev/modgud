@@ -1,4 +1,7 @@
 using System.ComponentModel;
+using System.Text.Json;
+using Modgud.Application.DTOs.Applications;
+using Modgud.Application.DTOs.Positions;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Application.DTOs.RealmSettings;
 
@@ -49,6 +52,12 @@ public sealed record RealmManifest
 
     [Description("Groups. The ONLY way users get roles: a user is a group member, the group carries roles. Members/Roles are keys, not ids.")]
     public List<RealmManifestGroup> Groups { get; init; } = [];
+
+    [Description("External login providers (OIDC/SAML federation). The built-in Internal provider is seeded automatically and cannot be declared here. Slug is the natural key; Type and Flavor are immutable after create.")]
+    public List<RealmManifestLoginProvider> LoginProviders { get; init; } = [];
+
+    [Description("Position principals (shared-terminal staffing identities). Requires the PositionTerminals feature flag. AccountName is the natural key. Terminal SLOTS (device enrollments + their OAuth clients) are credential material and are NOT modelled — provision them via the position/terminal admin APIs after import.")]
+    public List<RealmManifestPosition> Positions { get; init; } = [];
 }
 
 /// <summary>A permission catalog entry referenced by <c>resource:action</c>.</summary>
@@ -72,6 +81,9 @@ public sealed record RealmManifestApp
 
     [Description("The app's permission catalog — the set of 'resource:action' permissions roles/APIs can grant from this app.")]
     public List<RealmManifestPermission> Permissions { get; init; } = [];
+
+    [Description("Optional per-App settings override (ADR-0011): Origin (host→app routing subdomain), Branding, PageTheme, EmailBranding, LoginExperience, SelfRegistration, NativeGrants, ClientSessions, DCR, CIMD, RegistrationFields, ChangeFeed. Patch semantics — only the sections you include change; omit to keep the App inheriting the realm settings.")]
+    public ApplicationSettingsDto? Settings { get; init; }
 }
 
 /// <summary>An OAuth resource server (API). <see cref="App"/> is a slug; <see cref="Permissions"/> resolve into the linked app's catalog.</summary>
@@ -187,9 +199,72 @@ public sealed record RealmManifestClient
     [Description("Optional. Force the consent screen even for first-party clients. Omit = no change / default false.")]
     public bool? RequireConsent { get; init; }
 
-    [Description("Optional access token format: 'Jwt' (self-contained) or reference (default). Omit for the server default.")]
+    [Description("Optional access token format: 'Jwt' (self-contained) or 'Reference' (opaque, introspected). Omit = no change on apply / default 'Reference' on create.")]
     public string? AccessTokenType { get; init; }
+
+    [Description("Optional OpenIddict consent type: 'explicit', 'implicit', 'external' or 'systematic'. Omit = no change / default 'implicit' on create.")]
+    public string? ConsentType { get; init; }
+
+    [Description("Browser origins allowed to call the token endpoint cross-origin (CORS).")]
+    public List<string> AllowedCorsOrigins { get; init; } = [];
+
+    [Description("Optional. RFC 9126: this client MUST use Pushed Authorization Requests. Omit = no change / default false.")]
+    public bool? RequirePushedAuthorizationRequests { get; init; }
+
+    [Description("Optional. RFC 9449: this client MUST present a DPoP proof at the token endpoint. Omit = no change / default false.")]
+    public bool? RequireDpop { get; init; }
+
+    [Description("Optional. RFC 9449 §8-9: DPoP proofs MUST carry a server-issued nonce. Omit = no change / default false.")]
+    public bool? RequireDpopNonce { get; init; }
+
+    [Description("Optional. Allow access tokens to be delivered via the browser. Omit = no change / default false.")]
+    public bool? AllowAccessTokensViaBrowser { get; init; }
+
+    [Description("Optional. Require the client secret at the token endpoint. Omit = no change / default true.")]
+    public bool? RequireClientSecret { get; init; }
+
+    [Description("Optional. Allow local (username/password) login for this client. Omit = no change / default true.")]
+    public bool? EnableLocalLogin { get; init; }
+
+    [Description("Optional. Allow the user to persist their consent decision. Omit = no change / default true.")]
+    public bool? AllowRememberConsent { get; init; }
+
+    [Description("Optional identity token lifetime in SECONDS. Omit = no change / provider default. Cannot be cleared via manifest — use the admin API.")]
+    public int? IdentityTokenLifetime { get; init; }
+
+    [Description("Optional access token lifetime in SECONDS. Omit = no change / provider default. Cannot be cleared via manifest — use the admin API.")]
+    public int? AccessTokenLifetime { get; init; }
+
+    [Description("Optional authorization code lifetime in SECONDS. Omit = no change / provider default.")]
+    public int? AuthorizationCodeLifetime { get; init; }
+
+    [Description("Optional sliding refresh token lifetime in SECONDS. Omit = no change / provider default.")]
+    public int? SlidingRefreshTokenLifetime { get; init; }
+
+    [Description("Optional client session idle lifetime in SECONDS. Omit = no change / realm policy default.")]
+    public int? ClientSessionIdleLifetime { get; init; }
+
+    [Description("Optional client session absolute lifetime in SECONDS. Omit = no change / realm policy default.")]
+    public int? ClientSessionAbsoluteLifetime { get; init; }
+
+    [Description("Static claims stamped onto this client's tokens. A non-empty list replaces the stored set on apply; empty/omitted = no change.")]
+    public List<RealmManifestClientClaim> Claims { get; init; } = [];
+
+    [Description("Optional prefix prepended to the client claim types. Omit = no change / no prefix on create.")]
+    public string? ClientClaimsPrefix { get; init; }
+
+    [Description("Optional. Always attach the client claims, even on user-flow tokens. Omit = no change / default false.")]
+    public bool? AlwaysSendClientClaims { get; init; }
+
+    [Description("Optional. Re-evaluate access-token claims on refresh. Omit = no change / default false.")]
+    public bool? UpdateAccessTokenClaimsOnRefresh { get; init; }
 }
+
+/// <summary>A static claim stamped onto a client's tokens.</summary>
+[Description("A static claim (Type + Value) stamped onto the client's tokens.")]
+public sealed record RealmManifestClientClaim(
+    [property: Description("Claim type, e.g. 'tenant'.")] string Type,
+    [property: Description("Claim value.")] string Value);
 
 /// <summary>A role. <see cref="App"/> is a slug; <see cref="Permissions"/> resolve into the linked app's catalog. <see cref="Key"/> (default <see cref="Name"/>) is how groups reference it.</summary>
 public sealed record RealmManifestRole
@@ -277,6 +352,93 @@ public sealed record RealmManifestGroup
 
     [Description("Allow an external IdP (federation) to drive this group's membership. A realm:admin-conferring group can never be externally drivable. Default false.")]
     public bool ExternallyDrivable { get; init; }
+}
+
+/// <summary>An external login provider (OIDC/SAML). <see cref="Slug"/> is the natural key.</summary>
+public sealed record RealmManifestLoginProvider
+{
+    [Description("URL-stable identifier — the natural key (appears in /signin-oidc/{slug} and /saml/{slug}/... URLs). Immutable after create.")]
+    public required string Slug { get; init; }
+
+    [Description("Provider type: 'Oidc' (default) or 'Saml'. 'Internal' is reserved (seeded automatically). Immutable after create.")]
+    public string? Type { get; init; }
+
+    [Description("Flavor key, e.g. 'generic-oidc', 'entra-id', or a SAML flavor. Owns the FlavorData shape. Immutable after create.")]
+    public required string Flavor { get; init; }
+
+    [Description("Admin-facing name + login-page button label.")]
+    public required string DisplayName { get; init; }
+
+    [Description("Optional description shown on admin screens.")]
+    public string? Description { get; init; }
+
+    [Description("Optional. Enable the provider on the login page. Omit = no change / flavor default on create. Enabling validates readiness (e.g. SAML metadata present).")]
+    public bool? Enabled { get; init; }
+
+    [Description("OAuth client_id issued by the upstream IdP (OIDC).")]
+    public string? ClientId { get; init; }
+
+    [Description("Optional client secret from the upstream IdP. At create it is stored (encrypted); on apply to an EXISTING provider a non-empty value ROTATES the stored secret (mirrors user Password semantics). Never exported.")]
+    public string? ClientSecret { get; init; }
+
+    [Description("OIDC scopes to request upstream. Non-empty replaces; empty/omitted = no change / flavor default on create.")]
+    public List<string> Scopes { get; init; } = [];
+
+    [Description("Flavor-specific config object (e.g. { \"TenantId\": ... } for Entra, { \"MetadataUri\": ... } for generic OIDC, SAML metadata fields). Shape is owned by the Flavor.")]
+    public JsonElement? FlavorData { get; init; }
+
+    [Description("JsEval user-update script '(claims) => ({ firstname, lastname, email, acronym })' run on every login through this provider. Omit = no change / flavor default on create.")]
+    public string? UserUpdateScript { get; init; }
+
+    [Description("Optional. Persist the raw IdP claims alongside each login (PII-sensitive). Omit = no change / flavor default on create.")]
+    public bool? StoreRawClaims { get; init; }
+
+    [Description("Optional retention cap in days for the raw-claims snapshot. Omit = no change / keep-forever on create.")]
+    public int? RawClaimsRetentionDays { get; init; }
+
+    [Description("Optional. Auto-create a Modgud user for an unseen subject (JIT provisioning). Omit = no change / flavor default on create.")]
+    public bool? AutoCreateUsers { get; init; }
+
+    [Description("Optional. Allow users to link this provider from their profile. Omit = no change / default true on create.")]
+    public bool? AllowLinking { get; init; }
+
+    [Description("Optional. DANGEROUS: auto-link an unseen subject to an existing user by matching email. Enable only for tenant-controlled enterprise IdPs. Omit = no change / default false.")]
+    public bool? TrustForEmailLink { get; init; }
+
+    [Description("Optional. Federation: this provider's claims may drive externally-drivable group membership at login. Omit = no change / default false.")]
+    public bool? TrustForAuthorization { get; init; }
+
+    [Description("Optional. Federation: this provider is authoritative for the four profile fields. Omit = no change / default false.")]
+    public bool? AuthoritativeForProfile { get; init; }
+
+    [Description("Optional email-domain allowlist (e.g. ['acme.com']). Non-empty replaces; empty/omitted = no change / no filter on create.")]
+    public List<string>? AllowedEmailDomains { get; init; }
+
+    [Description("Optional login-button icon name.")]
+    public string? IconName { get; init; }
+
+    [Description("Optional login-button color (hex).")]
+    public string? ButtonColorHex { get; init; }
+}
+
+/// <summary>A position principal (MG-FT). <see cref="AccountName"/> is the natural key;
+/// <see cref="Grants"/> are user keys.</summary>
+public sealed record RealmManifestPosition
+{
+    [Description("Account name — the natural key (2-64 chars, lowercase letters/digits/dots/hyphens/underscores, starts with a letter or digit). Shares the account-name namespace with users and service accounts.")]
+    public required string AccountName { get; init; }
+
+    [Description("Optional purpose/description of the position.")]
+    public string? Purpose { get; init; }
+
+    [Description("Optional. Omit = no change / default true on create. Deactivating on apply revokes the position's outstanding tokens and ends its running staffing sessions.")]
+    public bool? IsActive { get; init; }
+
+    [Description("Optional partial terminal policy (patch semantics: omitted fields keep the stored/default value). Omitted entirely = terminal use stays disabled on create / unchanged on apply. Tightening the policy on apply ends affected staffing sessions (declarative apply auto-confirms the consequences).")]
+    public PositionTerminalPolicyUpdateDto? TerminalPolicy { get; init; }
+
+    [Description("User keys (RealmManifestUser.Key — NOT ids) authorized to staff this position. Non-empty replaces the live grant set (missing grants are issued, absent ones revoked — revoking ends that user's running shifts); empty/omitted = no change.")]
+    public List<string> Grants { get; init; } = [];
 }
 
 /// <summary>The outcome of a successful import.</summary>

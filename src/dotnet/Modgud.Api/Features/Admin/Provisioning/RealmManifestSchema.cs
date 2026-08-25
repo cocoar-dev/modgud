@@ -100,6 +100,19 @@ public static class RealmManifestSchema
           ],
           "Groups": [
             { "Name": "Acme Admins", "Members": ["alice"], "Roles": ["acme-admin"], "BoundTo": ["acme"] }
+          ],
+          "LoginProviders": [
+            { "Slug": "corp-idp", "Flavor": "GenericOidc", "DisplayName": "Corp IdP",
+              "ClientId": "modgud", "ClientSecret": "secret-from-the-upstream-idp",
+              "FlavorData": { "MetadataUri": "https://idp.example.com/.well-known/openid-configuration" } }
+          ],
+          "Positions": [
+            { "AccountName": "gate.porter", "Grants": ["alice"],
+              "TerminalPolicy": { "Enabled": true,
+                                  "AllowedActivationProofs": ["personal-passkey"],
+                                  "AllowedDeviceBindings": ["dpop"],
+                                  "StaffingSessionLifetimeMinutes": 60,
+                                  "MaximumStaffingSessionLifetimeMinutes": 480 } }
           ]
         }
         """)!;
