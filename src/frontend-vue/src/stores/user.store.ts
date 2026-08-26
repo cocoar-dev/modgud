@@ -65,7 +65,9 @@ export const useUserStore = defineStore('user', () => {
     apiPath: '/api/user',
     entityName: 'User',
     enableSignalR: true,
-    loadOnInit: false,
+    // The list needs an initial REST snapshot. SignalR only carries changes
+    // after that point and reconnects trigger a separate drift correction.
+    loadOnInit: true,
   })
 
   const http = useHttpClient('/api/user')

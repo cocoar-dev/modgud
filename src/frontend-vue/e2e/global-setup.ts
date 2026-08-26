@@ -197,32 +197,58 @@ export default async function globalSetup(_config: FullConfig) {
     `-e EMAIL__SMTP__FROMNAME="Modgud E2E" ` +
     `-e MAGICLINK__RATELIMITMINUTES=0 ` +
     `-e EMAILOTP__RATELIMITMINUTES=0 ` +
+    `-e AppSettings__Features__PositionTerminals=true ` +
     `${APP_IMAGE}`)
 
   const baseURL = `http://localhost:${APP_HOST_PORT}`
-  console.log(`[e2e] App starting, polling ${baseURL}/api/health ...`)
+  console.log(`[e2e] App starting, polling ${baseURL}/health/ready ...`)
   await waitFor(async () => {
     try {
-      const res = await fetch(`${baseURL}/api/health`)
+      const res = await fetch(`${baseURL}/health/ready`)
       return res.ok
     } catch { return false }
   }, 60_000, 'App healthy')
 
-  // Post-cutover (C15 reform) there is no anonymous /setup endpoint to
-  // mint the first admin — the recovery CLI is the supported path.
-  // Exec into the live container, run the bootstrap-admin command, and
-  // proceed once the credentials are in place. Idempotent on a fresh
-  // DB; harmless if re-run with a different password (creates a new
-  // admin user with a unique username).
-  console.log(`[e2e] Bootstrapping first admin via recovery CLI ...`)
+  // Post-cutover (C15 reform) a zero-realm deployment must be installed with
+  // an operator-issued, single-use token. Exercise the same contract as
+  // production: issue the token inside the container, then complete the
+  // installation through the public HTTP API.
+  console.log(`[e2e] Installing first realm via recovery token ...`)
   try {
-    docker(`exec ${APP_NAME} dotnet Modgud.Api.dll recover bootstrap-admin ` +
-      `--email ${E2E_ADMIN_EMAIL} --username ${E2E_ADMIN_USER} ` +
-      `--firstname E2E --lastname Admin --password "${E2E_ADMIN_PASSWORD}"`)
+    const issued = docker(`exec ${APP_NAME} dotnet Modgud.Api.dll recover install-link ` +
+      `--base-url ${baseURL} --minutes 10 --json`)
+    const jsonLine = issued.split(/\r?\n/).filter(Boolean).at(-1)
+    const token = jsonLine ? JSON.parse(jsonLine).token as string | undefined : undefined
+    if (!token) throw new Error('install-link returned no token')
+
+    const complete = await fetch(`${baseURL}/api/install/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        Token: token,
+        Realm: {
+          Slug: 'e2e',
+          DisplayName: 'Modgud E2E',
+          Description: 'Isolated Playwright test realm',
+          Domains: ['localhost'],
+          PrimaryDomain: 'localhost',
+        },
+        Admin: {
+          UserName: E2E_ADMIN_USER,
+          Email: E2E_ADMIN_EMAIL,
+          Firstname: 'E2E',
+          Lastname: 'Admin',
+          Password: E2E_ADMIN_PASSWORD,
+        },
+      }),
+    })
+    if (!complete.ok) {
+      throw new Error(`installation returned ${complete.status}: ${await complete.text()}`)
+    }
   } catch (err) {
     throw new Error(
-      `[e2e] bootstrap-admin failed. The CLI is invoked inside the app ` +
-      `container; check 'docker logs ${APP_NAME}' for the underlying error. ${err}`)
+      `[e2e] first installation failed. Check 'docker logs ${APP_NAME}' ` +
+      `for the underlying error. ${err}`)
   }
 
   // Persist state so specs and teardown can find the rig.

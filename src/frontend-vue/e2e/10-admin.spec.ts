@@ -38,7 +38,12 @@ test.beforeEach(async ({ page }) => {
 
 test.describe('§6 Users (admin CRUD)', () => {
   test('UI list page renders and shows the admin row', async ({ page }) => {
+    const initialSnapshot = page.waitForResponse(response =>
+      response.request().method() === 'GET'
+      && new URL(response.url()).pathname === '/api/user',
+    )
     await page.goto('/admin/users')
+    expect((await initialSnapshot).ok()).toBeTruthy()
     // AG-Grid column header is sufficient evidence the grid loaded; the
     // admin row's username appears as a cell.
     await expect(page.getByRole('columnheader', { name: /Benutzername|Username/i }).first()).toBeVisible({ timeout: 10_000 })
@@ -80,6 +85,24 @@ test.describe('§6 Users (admin CRUD)', () => {
     expect(body.Lastname).toBe('Name')
     expect(body.UserName).toBe(userName) // unchanged
   })
+})
+
+test.describe('§6a SignalR-backed entity lists', () => {
+  for (const entry of [
+    { name: 'service accounts', route: '/admin/service-accounts', apiPath: '/api/service-account' },
+    { name: 'positions', route: '/admin/positions', apiPath: '/api/position' },
+  ]) {
+    test(`${entry.name} fetch their initial REST snapshot`, async ({ page }) => {
+      const initialSnapshot = page.waitForResponse(response =>
+        response.request().method() === 'GET'
+        && new URL(response.url()).pathname === entry.apiPath,
+      )
+
+      await page.goto(entry.route)
+
+      expect((await initialSnapshot).ok()).toBeTruthy()
+    })
+  }
 })
 
 test.describe('§7 Roles (admin CRUD)', () => {
