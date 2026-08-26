@@ -135,6 +135,7 @@ export function useEntityService<
 
   const httpClient = useHttpClient(resolvedConfig.apiPath);
   const signalr = useSignalR();
+  let signalrSubscribed = false;
 
   // ---------------------------------------------------------------------------
   // Store mutations
@@ -281,17 +282,19 @@ export function useEntityService<
   // ---------------------------------------------------------------------------
 
   async function initialize(): Promise<void> {
-    if (resolvedConfig.enableSignalR) {
-      signalr.runOnEveryReconnect(
-        () => {
-          subscribeToSignalR();
-          // Reload from REST on reconnect (unless using FullSync)
-          if (!resolvedConfig.handleFullSync) {
-            loadAll();
-          }
-        },
-        `${resolvedConfig.entityName}Actions.Subscribe`,
-      );
+    if (resolvedConfig.enableSignalR && !signalrSubscribed) {
+      signalrSubscribed = true;
+      subscribeToSignalR();
+
+      // useSignalR restores active streams itself. Only the REST drift correction
+      // belongs in the reconnect callback; subscribing here again would multiply
+      // identical streams after every transient disconnect.
+      if (!resolvedConfig.handleFullSync) {
+        signalr.runOnReconnect(
+          () => void loadAll(),
+          `${resolvedConfig.entityName}Actions.Reload`,
+        );
+      }
     }
 
     if (resolvedConfig.loadOnInit) {

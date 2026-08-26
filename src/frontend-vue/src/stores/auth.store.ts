@@ -27,32 +27,30 @@ export const useAuthStore = defineStore('auth', () => {
 
   // Live-refresh `user` when anything updates the current user on the server
   // (admin editing profile fields, IdP user-update-script, SCIM later, …).
-  // Subscribes once on first successful fetchMe and re-subscribes on every
-  // SignalR reconnect. Payload.Id from the UserHub is the same ShortGuid as
-  // user.Id, so a straight string-compare is enough to filter.
+  // Subscribes once on first successful fetchMe. useSignalR restores the active
+  // stream after reconnect. Payload.Id from the UserHub is the same ShortGuid
+  // as user.Id, so a straight string-compare is enough to filter.
   let signalrSubscribed = false
   function ensureUserUpdateSubscription() {
     if (signalrSubscribed) return
     signalrSubscribed = true
-    signalr.runOnEveryReconnect(() => {
-      signalr.stream<UserHubEvent>('UserActions.Subscribe').subscribe({
-        next: (ev) => {
-          if (ev.Action !== 'Updated' && ev.Action !== 'Created') return
-          const myId = user.value?.Id
-          if (!myId) return
-          const match = ev.Payload.some(
-            (p) => typeof p === 'object' && p !== null && 'Id' in p && p.Id === myId
-          )
-          if (match) {
-            // Refetch /me rather than trying to merge UserDto → AuthUser —
-            // the shapes diverge (AuthUser has Permissions, Has2FA, etc.)
-            // and /me is the authoritative view.
-            fetchMe()
-          }
-        },
-        error: (err) => console.error('[auth.store] UserActions stream error:', err),
-      })
-    }, 'auth.store.UserActions.Subscribe')
+    signalr.stream<UserHubEvent>('UserActions.Subscribe').subscribe({
+      next: (ev) => {
+        if (ev.Action !== 'Updated' && ev.Action !== 'Created') return
+        const myId = user.value?.Id
+        if (!myId) return
+        const match = ev.Payload.some(
+          (p) => typeof p === 'object' && p !== null && 'Id' in p && p.Id === myId
+        )
+        if (match) {
+          // Refetch /me rather than trying to merge UserDto → AuthUser —
+          // the shapes diverge (AuthUser has Permissions, Has2FA, etc.)
+          // and /me is the authoritative view.
+          fetchMe()
+        }
+      },
+      error: (err) => console.error('[auth.store] UserActions stream error:', err),
+    })
   }
 
   /**

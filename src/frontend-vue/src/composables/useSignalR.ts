@@ -12,8 +12,7 @@
  * - `stream<T>()` — subscribe to a SignalR streaming hub method
  * - `invoke<T>()` — call a hub method and await its result
  * - `state`       — reactive `Ref<string>` reflecting connection state
- * - `runOnEveryReconnect()` — register a callback that fires on first connect
- *                              and on every subsequent reconnect
+ * - `runOnReconnect()` — register a callback that fires after every reconnect
  * - `ensureConnected()` — returns a Promise that resolves once connected
  * - `connect()`   — idempotent: starts the connection if not already connected
  */
@@ -36,6 +35,7 @@ interface StreamSubscription<T> {
     complete?: () => void;
   };
   dispose: (() => void) | null;
+  hasSubscribed: boolean;
 }
 
 interface SubscribeOptions<T> {
@@ -65,12 +65,16 @@ const reconnectCallbacks: Array<{ callback: () => void; identifier?: string }> =
 const activeSubscriptions: StreamSubscription<any>[] = [];
 let connectionStartedResolve: (() => void) | null = null;
 let connectionStartedPromise: Promise<void> | null = null;
+let hasConnectedOnce = false;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function resetConnectionPromise(): void {
+  // Keep existing waiters attached when onReconnecting is followed by onClose.
+  if (connectionStartedResolve) return;
+
   connectionStartedPromise = new Promise<void>((resolve) => {
     connectionStartedResolve = resolve;
   });
@@ -96,21 +100,29 @@ function unsubscribeAllStreams(): void {
   }
 }
 
-function resubscribeAllStreams(): void {
-  if (!connection) return;
+function subscribeStream(sub: StreamSubscription<unknown>): void {
+  if (!connection || sub.dispose || !activeSubscriptions.includes(sub)) return;
 
+  try {
+    const stream = connection.stream(sub.methodName, ...sub.args);
+    const handle = stream.subscribe({
+      next: (item: unknown) => sub.callbacks.next(item),
+      error: (err: unknown) => sub.callbacks.error?.(err),
+      complete: () => sub.callbacks.complete?.(),
+    });
+    sub.dispose = () => handle.dispose();
+    sub.hasSubscribed = true;
+  } catch (err) {
+    console.error(`[SignalR] Failed to subscribe to ${sub.methodName}:`, err);
+    sub.callbacks.error?.(err);
+  }
+}
+
+function resubscribeAllStreams(): void {
   for (const sub of activeSubscriptions) {
-    try {
-      const stream = connection.stream(sub.methodName, ...sub.args);
-      const handle = stream.subscribe({
-        next: (item: unknown) => sub.callbacks.next(item as never),
-        error: (err: unknown) => sub.callbacks.error?.(err),
-        complete: () => sub.callbacks.complete?.(),
-      });
-      sub.dispose = () => handle.dispose();
-    } catch (err) {
-      console.error(`[SignalR] Failed to re-subscribe to ${sub.methodName}:`, err);
-    }
+    // A subscription added while disconnected is still waiting on
+    // ensureConnected(); restoring it here as well would create it twice.
+    if (sub.hasSubscribed) subscribeStream(sub);
   }
 }
 
@@ -139,18 +151,20 @@ function initConnection(): void {
 
   connection.onReconnecting(() => {
     (state as Ref<ConnectionState>).value = 'Reconnecting';
+    resetConnectionPromise();
     unsubscribeAllStreams();
   });
 
   connection.onClose(() => {
     (state as Ref<ConnectionState>).value = 'Disconnected';
+    resetConnectionPromise();
     unsubscribeAllStreams();
   });
 
   connection.onReconnected(() => {
     (state as Ref<ConnectionState>).value = 'Connected';
-    resolveConnectionPromise();
     resubscribeAllStreams();
+    resolveConnectionPromise();
     invokeReconnectCallbacks();
   });
 }
@@ -158,10 +172,22 @@ function initConnection(): void {
 async function startConnection(): Promise<void> {
   if (!connection) return;
   try {
+    const isRestart = hasConnectedOnce;
     (state as Ref<ConnectionState>).value = 'Connecting';
     await connection.start();
     (state as Ref<ConnectionState>).value = 'Connected';
+
+    // start() is also used after automatic reconnect has given up. Existing
+    // streams then need the same restoration as onReconnected; subscriptions
+    // created during the outage are started by their ensureConnected waiter.
+    if (isRestart) {
+      resubscribeAllStreams();
+    }
+    hasConnectedOnce = true;
     resolveConnectionPromise();
+    if (isRestart) {
+      invokeReconnectCallbacks();
+    }
   } catch (err) {
     console.error('[SignalR] Error starting connection:', err);
     // Reset to Disconnected so the next connect() call can retry. `withAutomaticReconnect`
@@ -196,25 +222,14 @@ function stream<T>(methodName: string, ...args: unknown[]) {
         args,
         callbacks,
         dispose: null,
+        hasSubscribed: false,
       };
 
       activeSubscriptions.push(sub);
 
       // Start the actual SignalR stream once connected
       ensureConnected().then(() => {
-        if (!connection) return;
-        try {
-          const handle = connection.stream<T>(methodName, ...args);
-          const signalrSub = handle.subscribe({
-            next: (item) => callbacks.next(item),
-            error: (err) => callbacks.error?.(err),
-            complete: () => callbacks.complete?.(),
-          });
-          sub.dispose = () => signalrSub.dispose();
-        } catch (err) {
-          console.error(`[SignalR] Failed to subscribe to ${methodName}:`, err);
-          callbacks.error?.(err);
-        }
+        subscribeStream(sub as StreamSubscription<unknown>);
       });
 
       // Return unsubscribe function
@@ -243,7 +258,7 @@ async function invoke<T>(methodName: string, ...args: unknown[]): Promise<T> {
   return connection.invoke<T>(methodName, ...args);
 }
 
-function runOnEveryReconnect(callback: () => void, identifier?: string): void {
+function runOnReconnect(callback: () => void, identifier?: string): void {
   // De-duplicate by identifier
   if (identifier) {
     const exists = reconnectCallbacks.some((entry) => entry.identifier === identifier);
@@ -255,15 +270,6 @@ function runOnEveryReconnect(callback: () => void, identifier?: string): void {
   if (existsByRef) return;
 
   reconnectCallbacks.push({ callback, identifier });
-
-  // Fire immediately once connected
-  ensureConnected().then(() => {
-    try {
-      callback();
-    } catch (err) {
-      console.error('[SignalR] Initial reconnect callback error:', err);
-    }
-  });
 }
 
 /**
@@ -285,7 +291,7 @@ export function useSignalR() {
     stream,
     invoke,
     state: state as Ref<string>,
-    runOnEveryReconnect,
+    runOnReconnect,
     ensureConnected,
     connect,
   };

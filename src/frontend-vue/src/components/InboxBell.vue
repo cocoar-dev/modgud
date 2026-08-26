@@ -17,7 +17,7 @@ onMounted(async () => {
       await inboxStore.initialize()
       // initialize() with loadOnInit:false skips loadAll; we want the data,
       // so trigger explicitly here. Future reconnects re-fetch automatically
-      // via runOnEveryReconnect inside useEntityService.
+      // via the reconnect handling inside useEntityService.
       await inboxStore.loadAll()
     } catch (err) {
       // Non-fatal — bell will just be empty until next reconnect.

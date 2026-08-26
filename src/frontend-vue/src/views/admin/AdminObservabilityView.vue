@@ -49,6 +49,8 @@ const activity = ref<ActivityItem[]>([])
 const errors = ref<ErrorItem[]>([])
 const lastUpdate = ref<Date | null>(null)
 let driftRefreshHandle: ReturnType<typeof setInterval> | null = null
+let unsubscribeActivity: (() => void) | null = null
+let unsubscribeErrors: (() => void) | null = null
 
 // Initial state + drift-correction: REST snapshot delivers the rolling-
 // window aggregates and sparkline buckets pre-bucketed by the server.
@@ -99,23 +101,21 @@ onMounted(() => {
   refreshSnapshot()
   driftRefreshHandle = setInterval(refreshSnapshot, 30_000)
 
-  signalr.runOnEveryReconnect(() => {
-    signalr.stream<ActivityItem>('Observability.Subscribe').subscribe({
-      next: applyLiveEvent,
-      error: (err) => console.error('[observability] stream error', err),
-    })
-  }, 'AdminObservabilityView.Observability.Subscribe')
+  unsubscribeActivity = signalr.stream<ActivityItem>('Observability.Subscribe').subscribe({
+    next: applyLiveEvent,
+    error: (err) => console.error('[observability] stream error', err),
+  })
 
-  signalr.runOnEveryReconnect(() => {
-    signalr.stream<ErrorItem>('Observability.LogsSubscribe').subscribe({
-      next: applyLiveError,
-      error: (err) => console.error('[observability] logs stream error', err),
-    })
-  }, 'AdminObservabilityView.Observability.LogsSubscribe')
+  unsubscribeErrors = signalr.stream<ErrorItem>('Observability.LogsSubscribe').subscribe({
+    next: applyLiveError,
+    error: (err) => console.error('[observability] logs stream error', err),
+  })
 })
 
 onUnmounted(() => {
   if (driftRefreshHandle) clearInterval(driftRefreshHandle)
+  unsubscribeActivity?.()
+  unsubscribeErrors?.()
 })
 
 // KPI cards — pulled from the LoginByOutcome breakdown.
