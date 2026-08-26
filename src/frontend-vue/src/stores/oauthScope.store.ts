@@ -29,6 +29,7 @@ export const useOAuthScopeStore = defineStore('oauth-scope', () => {
   const scopes = ref<OAuthScopeDto[]>([])
   const loaded = ref(false)
   const totalCount = ref(0)
+  let signalrSubscribed = false
 
   async function loadAll(): Promise<OAuthScopeDto[]> {
     const res = await http
@@ -42,14 +43,13 @@ export const useOAuthScopeStore = defineStore('oauth-scope', () => {
   }
 
   async function initialize() {
-    // Live updates (implicit scope-per-API, other admins/tabs). Mirrors
-    // useEntityService: (re)subscribe + REST re-sync on every (re)connect,
-    // de-duped by the stream key. The explicit initial loadAll below fills the
-    // grid before SignalR is even connected.
-    signalr.runOnEveryReconnect(() => {
+    // Live updates (implicit scope-per-API, other admins/tabs). The SignalR
+    // composable restores the active stream; reconnect only needs a REST re-sync.
+    if (!signalrSubscribed) {
+      signalrSubscribed = true
       subscribeToSignalR()
-      loadAll()
-    }, 'OAuthScopeActions.Subscribe')
+      signalr.runOnReconnect(() => void loadAll(), 'OAuthScopeActions.Reload')
+    }
 
     if (!loaded.value) await loadAll()
   }

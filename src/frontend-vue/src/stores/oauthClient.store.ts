@@ -34,6 +34,7 @@ export const useOAuthClientStore = defineStore('oauth-client', () => {
   const clients = ref<OAuthClientDto[]>([])
   const loaded = ref(false)
   const totalCount = ref(0)
+  let signalrSubscribed = false
 
   async function loadAll(): Promise<OAuthClientDto[]> {
     const res = await http
@@ -47,14 +48,13 @@ export const useOAuthClientStore = defineStore('oauth-client', () => {
   }
 
   async function initialize() {
-    // Live updates (DCR, other admins/tabs). Mirrors useEntityService:
-    // (re)subscribe + REST re-sync on every (re)connect, de-duped by the stream
-    // key. The explicit initial loadAll below fills the grid before SignalR is
-    // even connected.
-    signalr.runOnEveryReconnect(() => {
+    // Live updates (DCR, other admins/tabs). The SignalR composable restores an
+    // active stream after reconnect; only the REST re-sync must run again.
+    if (!signalrSubscribed) {
+      signalrSubscribed = true
       subscribeToSignalR()
-      loadAll()
-    }, 'OAuthClientActions.Subscribe')
+      signalr.runOnReconnect(() => void loadAll(), 'OAuthClientActions.Reload')
+    }
 
     if (!loaded.value) await loadAll()
   }

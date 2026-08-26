@@ -52,12 +52,10 @@ export const useInviteCodeStore = defineStore('invite-code', () => {
   function initialize() {
     if (!subscribed) {
       subscribed = true
-      // (Re)subscribe + re-sync on every (re)connect; codes minted/revoked
-      // out-of-band (M2M backend, another admin/tab) appear without a manual reload.
-      signalr.runOnEveryReconnect(() => {
-        subscribeToSignalR()
-        void loadAll()
-      }, 'InviteCodeActions.Subscribe')
+      // Codes minted/revoked out-of-band (M2M backend, another admin/tab)
+      // appear without a manual reload. useSignalR restores the stream itself.
+      subscribeToSignalR()
+      signalr.runOnReconnect(() => void loadAll(), 'InviteCodeActions.Reload')
     }
     if (!loaded.value) void loadAll()
   }

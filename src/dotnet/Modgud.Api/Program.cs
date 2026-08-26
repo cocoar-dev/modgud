@@ -7,7 +7,6 @@ using Cocoar.Configuration.AspNetCore;
 using Cocoar.Configuration.DI;
 using Cocoar.Configuration.DI.Extensions;
 using Cocoar.Configuration.Providers;
-using Cocoar.SignalARRR.Server.ExtensionMethods;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -1386,7 +1385,7 @@ try
 
     app.UseEndpoints(e => { });
 
-    app.MapHARRRController<UIHub>("/signalr/ui");
+    app.MapSignalARRRHub<UIHub>("/signalr/ui");
 
     // ResourceRegistry is now instance-based and configured via AddModgudAuthorization
     // in AddInfrastructure — no static init required.
