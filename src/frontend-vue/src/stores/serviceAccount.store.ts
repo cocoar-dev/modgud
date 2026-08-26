@@ -7,7 +7,9 @@ export const useServiceAccountStore = defineStore('serviceAccount', () => {
     apiPath: '/api/service-account',
     entityName: 'ServiceAccount',
     enableSignalR: true,
-    loadOnInit: false,
+    // The list needs an initial REST snapshot. SignalR only carries changes
+    // after that point and reconnects trigger a separate drift correction.
+    loadOnInit: true,
   })
 
   return { ...service }
