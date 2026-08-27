@@ -4,6 +4,7 @@ using Marten;
 using JasperFx;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.Sessions;
 
@@ -15,6 +16,7 @@ namespace Modgud.Authentication.Sessions;
 /// </summary>
 public class SessionService(
     IDocumentSession session,
+    ITenantSessionFactory sessionFactory,
     IDeviceInfoService deviceInfo,
     IRealmSettingsService realmSettings,
     IBrowserSessionConnectionRegistry connections) : ISessionService
@@ -94,15 +96,30 @@ public class SessionService(
         {
             var policy = await GetPolicyAsync(ct);
             entity.Touch(now, policy.IdleLifetime);
-            session.Store(entity);
+            // This is an update of an authoritative row, never an upsert. If a
+            // targeted revoke deleted the row after we loaded it, Update must
+            // fail optimistic concurrency instead of resurrecting the session.
+            session.Update(entity);
             try
             {
                 await session.SaveChangesAsync(ct);
             }
             catch (ConcurrencyException)
             {
-                // A concurrent targeted revoke wins. Never re-insert a deleted row.
-                return null;
+                // A parallel request may have touched the same active session
+                // after both requests loaded the same document version. That is
+                // not a revocation and must never turn into a false 401. Re-read
+                // through a fresh query session so the committed winner is
+                // authoritative: an active row means the concurrent touch won;
+                // a missing/expired row means a targeted revoke really won.
+                await using var retry = sessionFactory.OpenQuerySession();
+                var current = await retry.LoadAsync<UserSession>(sessionId, ct);
+                var retryNow = DateTimeOffset.UtcNow;
+                return current is not null
+                       && current.UserId == userId
+                       && current.IsActive(retryNow)
+                    ? current
+                    : null;
             }
         }
 
@@ -149,7 +166,9 @@ public class SessionService(
         if (entity is null) return;
         var policy = await GetPolicyAsync(ct);
         entity.Touch(DateTimeOffset.UtcNow, policy.IdleLifetime);
-        session.Store(entity);
+        // Same revoke-wins guarantee as ValidateSessionAsync: a delayed touch
+        // must not re-insert a session that was concurrently deleted.
+        session.Update(entity);
         try
         {
             await session.SaveChangesAsync(ct);
