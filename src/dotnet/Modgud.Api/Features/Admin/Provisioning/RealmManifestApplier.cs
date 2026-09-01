@@ -60,6 +60,7 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 public sealed partial class RealmManifestApplier(
     IRealmProvisioningService realms,
     IServiceScopeFactory scopeFactory,
+    IDocumentStore store,
     ILogger<RealmManifestApplier> logger)
 {
     /// <summary>
@@ -124,9 +125,14 @@ public sealed partial class RealmManifestApplier(
     /// for that). Client secrets are only minted at create; an existing client keeps its
     /// secret (rotate via the dedicated endpoint).</para>
     ///
-    /// <para>Unlike import there is no all-or-nothing rollback: each canonical op commits its
-    /// own unit of work, so a mid-apply failure leaves the earlier successful writes in place.
-    /// The upserts are safe to re-apply after fixing the manifest.</para>
+    /// <para>Atomicity (ADR-0005 Phase 0): the whole update runs inside ONE
+    /// <see cref="TenantApplyTransaction"/> on the tenant database — every canonical op's
+    /// SaveChanges flushes into that shared transaction without committing it, and a failure
+    /// anywhere rolls the entire apply back, leaving the realm untouched. Consequence actions
+    /// (token revocation, staffing-session termination — see the <c>Deferring*</c> revoker
+    /// decorators) are collected during the apply and executed only after the commit; on
+    /// rollback they are discarded. The upserts remain idempotent, so re-applying after a
+    /// fixed manifest is still safe.</para>
     ///
     /// <para>When <paramref name="prune"/> is set the merge becomes a full sync (k8s
     /// <c>apply --prune</c>): after the upsert, every entity that exists in the realm but is
@@ -163,11 +169,11 @@ public sealed partial class RealmManifestApplier(
         }
         catch (ManifestApplyException ex)
         {
-            // In-place update never drops the realm DB. A partial failure leaves the writes
-            // that committed before it in place; surface the error so the caller can fix the
-            // manifest and re-apply (every step is an idempotent upsert).
+            // The apply transaction rolled back — the realm is exactly as it was before the
+            // apply, and no deferred consequence ran. Surface the error so the caller can
+            // fix the manifest and re-apply.
             logger.LogError(ex,
-                "Manifest update failed for realm {Slug} ({What}); the realm is left partially updated.",
+                "Manifest update failed for realm {Slug} ({What}); the apply transaction was rolled back.",
                 slug, ex.What);
             return ex.Errors;
         }
@@ -336,11 +342,36 @@ public sealed partial class RealmManifestApplier(
         string slug, RealmManifest manifest, bool prune, CancellationToken ct)
     {
         var secrets = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        using var _ = TenantContext.Enter(slug);
+
+        // ADR-0005 Phase 0: one transaction for the whole apply. Activate() installs
+        // the ambient marker synchronously so TenantedSessionFactory binds every
+        // session below to this transaction and the Deferring* revokers collect
+        // their cascades instead of running them. Commit happens after the last
+        // section; any ManifestApplyException unwinds through the usings and the
+        // DisposeAsync rolls everything back.
+        await using var applyTx = await TenantApplyTransaction.BeginAsync(store, slug, ct);
+        using (applyTx.Activate())
+        {
+            await ApplyTenantUpdateSectionsAsync(manifest, prune, secrets, ct);
+            await applyTx.CommitAsync(ct);
+        }
+
+        // Consequences (token revocation, staffing-session termination) run only now,
+        // in fresh scopes against the committed state; the ambient marker is gone.
+        await applyTx.RunDeferredAsync(scopeFactory, logger, ct);
+
+        return secrets;
+    }
+
+    private async Task ApplyTenantUpdateSectionsAsync(
+        RealmManifest manifest, bool prune, Dictionary<string, string> secrets, CancellationToken ct)
+    {
         var apps = new Dictionary<string, App>(StringComparer.Ordinal);        // slug → App (id + catalog)
         var roleIds = new Dictionary<string, Guid>(StringComparer.Ordinal);    // role key → id (for groups)
         var userIds = new Dictionary<string, Guid>(StringComparer.Ordinal);    // user key → id (for groups)
 
-        using var _ = TenantContext.Enter(slug);
         using var scope = scopeFactory.CreateScope();
         var sp = scope.ServiceProvider;
         var session = sp.GetRequiredService<IDocumentSession>();
@@ -681,8 +712,6 @@ public sealed partial class RealmManifestApplier(
         //    upsert so the protection checks see the realm's desired (post-merge) role graph.
         if (prune)
             await PruneAsync(sp, session, manifest, appAdmin, oauth, roleAdmin, ct);
-
-        return secrets;
     }
 
     /// <summary>

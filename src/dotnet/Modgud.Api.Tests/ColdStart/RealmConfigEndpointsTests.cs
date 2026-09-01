@@ -77,6 +77,58 @@ public class RealmConfigEndpointsTests(ColdStartFixture fixture) : ColdStartTest
     }
 
     [Fact]
+    public async Task Apply_is_atomic_a_failing_section_rolls_back_earlier_writes()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var client = await factory.CreateRealmAdminAndLoginAsync();
+
+        // Apps apply before roles. The role references an unknown app, so the apply
+        // fails AFTER the app section already ran — ADR-0005 Phase 0 demands the
+        // whole transaction rolls back and the app never materializes.
+        var manifest = new
+        {
+            Realm = new { },
+            Apps = new[]
+            {
+                new { Slug = "atomic-app", DisplayName = "Atomic App",
+                      Permissions = new[] { new { Resource = "atomic", Action = "read" } } },
+            },
+            Roles = new[]
+            {
+                new { Name = "Broken Role", App = "no-such-app", Permissions = new object[0] },
+            },
+        };
+
+        var resp = await client.PostAsJsonAsync(
+            "/api/admin/realm-config/apply", manifest, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        Assert.Contains("Manifest.UnknownApp", await resp.Content.ReadAsStringAsync(ct));
+
+        await InTenantAsync(factory, TenantConstants.SystemTenantId, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            Assert.False(await session.Query<App>().AnyAsync(a => !a.IsDeleted && a.Slug == "atomic-app", ct),
+                "the failing apply must roll back the app created earlier in the same run");
+        });
+
+        // The realm is untouched, so the SAME manifest minus the broken role applies cleanly.
+        var fixedManifest = new
+        {
+            Realm = new { },
+            Apps = new[]
+            {
+                new { Slug = "atomic-app", DisplayName = "Atomic App",
+                      Permissions = new[] { new { Resource = "atomic", Action = "read" } } },
+            },
+        };
+        var retry = await client.PostAsJsonAsync(
+            "/api/admin/realm-config/apply", fixedManifest, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+    }
+
+    [Fact]
     public async Task Surface_is_gated_for_an_unauthenticated_caller()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();

@@ -745,14 +745,21 @@ try
     // User-lifecycle access "kill switch" — revokes OAuth grants + sessions +
     // security stamp on delete/deactivate/force-logout. The OAuth half lives in
     // Infrastructure so the Authentication slice stays OpenIddict-free.
+    // The interfaces resolve to apply-scope-aware Deferring* decorators (ADR-0005
+    // Phase 0): outside a TenantApplyTransaction they pass straight through; inside
+    // one they defer the cascade until after the apply committed. The concrete
+    // implementations stay registered — the deferred replay re-resolves them.
+    builder.Services.AddScoped<Modgud.Infrastructure.OpenIddict.OpenIddictGrantRevoker>();
     builder.Services.AddScoped<Modgud.Infrastructure.OpenIddict.IOAuthGrantRevoker,
-        Modgud.Infrastructure.OpenIddict.OpenIddictGrantRevoker>();
+        Modgud.Infrastructure.OpenIddict.DeferringOAuthGrantRevoker>();
+    builder.Services.AddScoped<Modgud.Authentication.Sessions.UserAccessRevoker>();
     builder.Services.AddScoped<Modgud.Authentication.Sessions.IUserAccessRevoker,
-        Modgud.Authentication.Sessions.UserAccessRevoker>();
+        Modgud.Authentication.Sessions.DeferringUserAccessRevoker>();
     // MG-FT-07 — the staffing-session kill switch: locks + every revocation
     // cascade (user/passkey/grant/terminal/position) end sessions through it.
+    builder.Services.AddScoped<Modgud.Infrastructure.PositionTerminals.StaffingRevoker>();
     builder.Services.AddScoped<Modgud.Infrastructure.PositionTerminals.IStaffingRevoker,
-        Modgud.Infrastructure.PositionTerminals.StaffingRevoker>();
+        Modgud.Infrastructure.PositionTerminals.DeferringStaffingRevoker>();
     builder.Services.AddScoped<Modgud.Api.Features.Auth.Staffing.IActivationProof,
         Modgud.Api.Features.Auth.Staffing.PersonalPasskeyActivationProof>();
     builder.Services.AddScoped<Modgud.Api.Features.Auth.Staffing.IActivationProof,
