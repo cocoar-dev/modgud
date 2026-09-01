@@ -169,6 +169,18 @@ public static class RealmConfigEndpoints
         .WithName("RealmConfig_Drafts_ClearSecret")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
 
+        // Rebase = "keep mine": baseline := current export, remaining differences
+        // become intentional staged changes and stop flagging as conflicts.
+        drafts.MapPost("{id:guid}/rebase", async (
+            Guid id, HttpContext http, RealmDraftService service, CancellationToken ct) =>
+        {
+            var result = await service.RebaseAsync(
+                id, TenantContext.Current, RequireUserId(http), UserName(http), ct);
+            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+        })
+        .WithName("RealmConfig_Drafts_Rebase")
+        .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
+
         // Plan with the draft's baseline: the response carries three-way conflicts.
         drafts.MapPost("{id:guid}/plan", async (
             Guid id, HttpContext http, RealmDraftService service, CancellationToken ct, bool prune = false) =>

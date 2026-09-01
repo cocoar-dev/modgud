@@ -154,6 +154,31 @@ public sealed class RealmDraftService(
         return ToDto(draft, userId);
     }
 
+    /// <summary>
+    /// Rebases the draft onto the CURRENT live state: baseline := fresh export. This
+    /// is the "keep mine" side of conflict resolution — after per-field "take live"
+    /// edits, rebasing declares every remaining draft-vs-live difference intentional,
+    /// so bothChanged/staleOverwrite conflicts clear while the staged changes stay.
+    /// </summary>
+    public async Task<ErrorOr<RealmDraftDto>> RebaseAsync(
+        Guid id, string slug, Guid userId, string userName, CancellationToken ct)
+    {
+        var draft = await LoadVisibleAsync(id, userId, ct);
+        if (draft is null) return NotFound;
+
+        var exportResult = await exporter.ExportRealmAsync(slug, ct);
+        if (exportResult.IsError) return exportResult.Errors;
+
+        draft.Baseline = exportResult.Value;
+        draft.LastModifiedBy = userId;
+        draft.LastModifiedByName = userName;
+        draft.LastModifiedAt = time.GetUtcNow();
+        draft.Version++;
+        session.Store(draft);
+        await session.SaveChangesAsync(ct);
+        return ToDto(draft, userId);
+    }
+
     // ── Plan / apply ─────────────────────────────────────────────────────────────
 
     public async Task<ErrorOr<RealmPlanResult>> PlanAsync(

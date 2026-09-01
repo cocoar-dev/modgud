@@ -89,6 +89,9 @@ const sections = computed<SectionDef[]>(() => [
       { label: 'admin.apps.title', labelEn: 'Applications', icon: 'layout-grid', to: '/admin/apps', requirePermissions: ['app:read'] },
       { label: 'admin.realms.title', labelEn: 'Realms', icon: 'globe', to: '/admin/realms', requirePermissions: ['realm:read'] },
       { label: 'admin.realmSettings.title', labelEn: 'Realm Settings', icon: 'sliders-horizontal', to: '/admin/realm-settings', requirePermissions: ['realm-settings:read'] },
+      // The draft workspace (ADR-0005) is gated on realm:admin only — the
+      // backend endpoints require it (RealmConfigEndpoints), no resource perm fits.
+      { label: 'admin.realmConfig.title', labelEn: 'Configuration Drafts', icon: 'file-json', to: '/admin/realm-config', requirePermissions: ['realm:admin'] },
       { label: 'admin.logs.title', labelEn: 'Logs', icon: 'scroll-text', to: '/admin/logs', requirePermissions: ['auth-log:read', 'audit-log:read', 'platform-audit:read'] },
       { label: 'admin.scheduledJobs.title', labelEn: 'Scheduled Jobs', icon: 'clock', to: '/admin/scheduled-jobs', requirePermissions: ['scheduled-job:read'] },
       { label: 'admin.changeRequests.title', labelEn: 'Change Requests', icon: 'inbox', to: '/admin/change-requests', requirePermissions: ['user:write'] },
