@@ -122,6 +122,7 @@ public sealed class RealmManifestExporter(
             Required = s.Required,
             Emphasize = s.Emphasize,
             ShowInDiscoveryDocument = s.ShowInDiscoveryDocument,
+            AllowDynamicRegistrationClients = s.AllowDynamicRegistrationClients,
         }).ToList();
 
         // Service-account-linked clients are M2M credentials the manifest can't model — skip.

@@ -241,6 +241,7 @@ public sealed partial class RealmManifestApplier(
                 Required = s.Required ?? false,
                 Emphasize = s.Emphasize ?? false,
                 ShowInDiscoveryDocument = s.ShowInDiscoveryDocument ?? true,
+                AllowDynamicRegistrationClients = s.AllowDynamicRegistrationClients ?? false,
                 AppId = ResolveAppId(apps, s.App, $"scope '{s.Name}'"),
             }, ct), $"scope '{s.Name}'");
         }
@@ -477,6 +478,7 @@ public sealed partial class RealmManifestApplier(
                     Required = s.Required ?? false,
                     Emphasize = s.Emphasize ?? false,
                     ShowInDiscoveryDocument = s.ShowInDiscoveryDocument ?? true,
+                    AllowDynamicRegistrationClients = s.AllowDynamicRegistrationClients ?? false,
                     AppId = ResolveAppId(apps, s.App, ctx),
                 }, ct), ctx);
             }
@@ -492,6 +494,7 @@ public sealed partial class RealmManifestApplier(
                     Required = s.Required,
                     Emphasize = s.Emphasize,
                     ShowInDiscoveryDocument = s.ShowInDiscoveryDocument,
+                    AllowDynamicRegistrationClients = s.AllowDynamicRegistrationClients,
                     AppId = s.App is null ? null : ResolveAppId(apps, s.App, ctx),
                 }, ct), ctx);
             }

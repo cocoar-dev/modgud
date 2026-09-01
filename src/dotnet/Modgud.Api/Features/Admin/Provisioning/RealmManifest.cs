@@ -153,6 +153,9 @@ public sealed record RealmManifestScope
 
     [Description("Optional. List the scope in the discovery document. Omit = no change / default true.")]
     public bool? ShowInDiscoveryDocument { get; init; }
+
+    [Description("Optional. Allow dynamically registered (DCR) clients to request this scope. Omit = no change / default false.")]
+    public bool? AllowDynamicRegistrationClients { get; init; }
 }
 
 /// <summary>An OAuth client. <see cref="Apps"/> are slugs; <see cref="Scopes"/> are scope names.</summary>
