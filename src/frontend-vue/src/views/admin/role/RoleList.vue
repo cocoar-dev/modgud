@@ -15,6 +15,7 @@ import { useAppContextStore } from '@/stores/appContext.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, ROLE_CLONE } from '@/composables/useClone'
+import { useDraftListOverlay, type DraftRow } from '@/composables/useDraftStaging'
 import type { RoleDto } from '@/models/role'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -37,17 +38,41 @@ watch(language, () => ui.set((ctx) => {
 // Roles with IsRealmAdmin=true (e.g. System Admin) are kept in the
 // 'global' bucket alongside roles that have no AppId — both are
 // realm-scoped from the admin's perspective.
-const roles = computed(() =>
+const liveRoles = computed(() =>
   roleStore.roles.filter((r) =>
     appCtx.matchesSingleAppId(r.IsRealmAdmin ? null : r.AppId)))
+
+// ADR-0005: draft-merged roster — the staged key resolves Key ?? Name, so a
+// staged rename still overlays its live row.
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const roles = useDraftListOverlay<RoleDto>({
+  section: 'roles',
+  rows: liveRoles,
+  matchLive: (row, e) => row.Name === (str(e.Key) || str(e.Name)),
+  overlay: (row, e) => ({
+    ...row,
+    Name: str(e.Name) || row.Name,
+    Description: str(e.Description) || row.Description,
+    IsRealmAdmin: e.IsRealmAdmin === true,
+  }),
+  synthesize: (key, e) => ({
+    Id: `draft__${key}`,
+    Name: str(e.Name) || key,
+    Description: str(e.Description) || null,
+    IsRealmAdmin: e.IsRealmAdmin === true,
+    AppId: null,
+    // Pseudo-ids: the grid only shows the count.
+    PermissionIds: (Array.isArray(e.Permissions) ? e.Permissions : []).map((_, i) => String(i)),
+  } as unknown as RoleDto),
+})
 
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 
-const showEmpty = computed(() => roleStore.loaded && roleStore.roles.length === 0)
+const showEmpty = computed(() => roleStore.loaded && roles.value.length === 0)
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<RoleDto>(), { openable: true })
+const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<RoleDto>>(), { openable: true })
   .persistColumnState('admin-roles')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(roles)
@@ -72,6 +97,14 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<RoleDto>(), { opena
     (col) => col.field('IsRealmAdmin').header('Realm Admin', 'admin.roles.isRealmAdmin').width(120)
       .option('valueGetter', (p: any) => p.data?.IsRealmAdmin ? '✓' : ''),
     (col) => col.field('Description').header('Description', 'admin.roles.description').flex(1),
+    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
+        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
+        : p.data?.DraftStaged === 'update'
+          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
+          : '')
+      .width(120)
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged),
     (col) => col.field('PermissionIds').header('Grants', 'admin.roles.permissions').flex(2)
       .option('valueGetter', (p: any) => {
         const r = p.data
@@ -135,3 +168,10 @@ onMounted(() => roleStore.initialize())
     </CoarContextMenu>
   </div>
 </template>
+
+<style scoped>
+:deep(.draft-staged-cell) {
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+</style>

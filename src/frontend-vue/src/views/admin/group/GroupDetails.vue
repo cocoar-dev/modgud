@@ -6,6 +6,8 @@ import { useUserStore } from '@/stores/user.store'
 import { usePrincipalStore } from '@/stores/principal.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, GROUP_CLONE } from '@/composables/useClone'
+import { useDraftStaging } from '@/composables/useDraftStaging'
+import type { ManifestEntity } from '@/stores/realmDraft.store'
 import {
   CoarTextInput,
   CoarFormField,
@@ -49,6 +51,19 @@ const principalStore = usePrincipalStore()
 const applicationsStore = useApplicationsStore()
 const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
+
+// ── ADR-0005 staging: group saves commit onto the active draft. The manifest
+// models group members as USER keys only — a Manual group whose members include
+// nested groups or service accounts cannot round-trip through the draft (apply
+// would strip them), so those groups keep the live path.
+const staging = useDraftStaging('groups')
+const isDraftRow = computed(() => staging.isDraftId(props.id))
+const membersAreUsersOnly = computed(() =>
+  form.value.MembershipMode === 'Auto'
+  || form.value.MemberIds.every((id) =>
+    principalStore.lookupEntities.find((p) => p.Id === id)?.Type === 'person'))
+const stagedSave = computed(() => staging.stagingActive.value && membersAreUsersOnly.value)
+
 const initialLoad = ref(false)
 const saving = ref(false)
 const saveError = ref<string | null>(null)
@@ -89,6 +104,59 @@ const form = ref({
   // "active in every app" (typical for the realm-admin group).
   BoundTo: [] as string[],
 })
+
+/** Loads the staged manifest entity into the form (user keys → principal ids,
+ * role names → role ids — both need the lookups loaded first). */
+function fromStagedInto(e: ManifestEntity) {
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  const arr = (v: unknown) => (Array.isArray(v) ? [...(v as string[])] : [])
+  const memberIds = arr(e.Members)
+    .map((key) => principalStore.lookupEntities
+      .find((p) => p.Type === 'person' && (p.UserName === key || p.Email === key))?.Id)
+    .filter((id): id is string => !!id)
+  const roleIds = arr(e.Roles)
+    .map((name) => roleStore.roles.find((r) => r.Name === name)?.Id)
+    .filter((id): id is string => !!id)
+  form.value = {
+    Name: str(e.Name),
+    Description: str(e.Description),
+    MemberIds: memberIds,
+    RoleIds: roleIds,
+    MembershipMode: (str(e.MembershipMode) || 'Manual') as MembershipMode,
+    MembershipScript: str(e.MembershipScript),
+    MembershipLastError: null,
+    ExternallyDrivable: e.ExternallyDrivable === true,
+    Email: str(e.Email),
+    EmailMode: (str(e.EmailMode) || 'Shared') as EmailMode,
+    BoundTo: arr(e.BoundTo),
+  }
+}
+
+function toStaged(): ManifestEntity {
+  const isAuto = form.value.MembershipMode === 'Auto'
+  const entity: ManifestEntity = {
+    Name: form.value.Name.trim(),
+    MembershipMode: form.value.MembershipMode,
+    EmailMode: form.value.EmailMode,
+    ExternallyDrivable: isAuto && form.value.ExternallyDrivable && !hasRealmAdminRole.value,
+    Members: isAuto ? [] : form.value.MemberIds
+      .map((id) => {
+        const p = principalStore.lookupEntities.find((x) => x.Id === id)
+        return p ? (p.UserName || p.Email || null) : null
+      })
+      .filter((key): key is string => !!key),
+    Roles: form.value.RoleIds
+      .map((id) => roleStore.roles.find((r) => r.Id === id)?.Name)
+      .filter((name): name is string => !!name),
+    // Explicit — empty list = dormant, matching the UI semantics (an omitted
+    // BoundTo would default to ['modgud'] on a staged CREATE).
+    BoundTo: [...form.value.BoundTo],
+  }
+  if (form.value.Description.trim()) entity.Description = form.value.Description.trim()
+  if (isAuto && form.value.MembershipScript.trim()) entity.MembershipScript = form.value.MembershipScript
+  if (form.value.EmailMode === 'Shared' && form.value.Email?.trim()) entity.Email = form.value.Email.trim()
+  return entity
+}
 
 // "*" wildcard is a synthetic option — not a real app slug, but a valid
 // BoundTo value the backend recognises. Listed first so it's discoverable.
@@ -182,7 +250,9 @@ watch(isAutoMode, (auto) => {
 
 const footerButton = computed(() => ({
   visible: true,
-  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
+  text: stagedSave.value
+    ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+    : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: generalIssues.value.length > 0 || scriptIssues.value.length > 0 || saving.value,
   loading: saving.value,
   onClick: save,
@@ -330,6 +400,12 @@ onMounted(async () => {
       applicationsStore.initialize(),
     ])
 
+    if (isDraftRow.value) {
+      // Draft-created group: the staged manifest entity IS the state.
+      const entity = staging.findStaged(staging.draftKeyOf(props.id))
+      if (entity) fromStagedInto(entity)
+      return
+    }
     if (isCreate.value) {
       // Clone: prefill from the staged source with the Name blanked. Members,
       // roles, script and BoundTo clone 1:1; the source's last script error is
@@ -367,6 +443,11 @@ onMounted(async () => {
           EmailMode: group.EmailMode || 'Shared',
           BoundTo: [...(group.BoundTo ?? [])],
         }
+        // Staging overlay: show the STAGED group state when the draft carries it.
+        if (stagedSave.value && staging.draftStore.current) {
+          const entity = staging.findStaged(group.Name)
+          if (entity) fromStagedInto(entity)
+        }
       }
     }
   } finally {
@@ -380,6 +461,12 @@ async function save() {
   saving.value = true
   saveError.value = null
   try {
+    // ADR-0005: commit onto the active draft instead of writing live.
+    if (stagedSave.value) {
+      await staging.stage(form.value.Name.trim(), toStaged())
+      props.close()
+      return
+    }
     const dto = {
       Name: form.value.Name.trim(),
       Description: form.value.Description.trim() || undefined,
@@ -435,6 +522,10 @@ async function save() {
 <template>
   <ModalLayout :close="close" :title="modalTitle" icon="users" :footer-button="footerButton">
     <div v-if="!initialLoad" class="flex flex-col min-w-0 min-h-0 flex-1">
+      <p v-if="stagedSave" class="staged-hint">
+        <CoarIcon name="file-json" size="s" />
+        {{ t('admin.realmConfig.stagedHint', {}, 'Änderungen werden in den Draft übernommen — wirksam erst mit „Draft anwenden“.') }}
+      </p>
       <CoarTabGroup v-model="activeTab" class="tab-bar">
         <CoarTab id="general">
           <span class="tab-label">
@@ -725,6 +816,16 @@ async function save() {
 </template>
 
 <style scoped>
+.staged-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 8px;
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-size: 0.76rem;
+  flex-shrink: 0;
+}
+
 .section-heading {
   font-size: 0.8rem;
   font-weight: 600;

@@ -16,6 +16,7 @@ import { useApplicationsStore } from '@/stores/applications.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, GROUP_CLONE } from '@/composables/useClone'
+import { useDraftListOverlay, type DraftRow } from '@/composables/useDraftStaging'
 import type { GroupDto } from '@/models/group'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -46,18 +47,46 @@ const selectedAppSlug = computed(() => {
 })
 type GroupListRow = GroupDto & { HasPermissions: boolean }
 
-const groups = computed<GroupListRow[]>(() =>
+const liveGroups = computed<GroupListRow[]>(() =>
   groupStore.groups.filter((g) =>
     appCtx.matchesBoundToSlugs(g.BoundTo, selectedAppSlug.value))
     .map((g) => ({ ...g, HasPermissions: g.RoleIds.length > 0 })))
+
+// ADR-0005: draft-merged roster (natural key = the group name).
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
+const groups = useDraftListOverlay<GroupListRow>({
+  section: 'groups',
+  rows: liveGroups,
+  matchLive: (row, e) => row.Name === str(e.Name),
+  overlay: (row, e) => ({
+    ...row,
+    Description: str(e.Description) || row.Description,
+    MembershipMode: (str(e.MembershipMode) || row.MembershipMode) as GroupDto['MembershipMode'],
+    // Pseudo-ids: the grid only shows the count (manifest members are user keys).
+    MemberIds: str(e.MembershipMode) === 'Auto' ? row.MemberIds : arr(e.Members),
+    HasPermissions: arr(e.Roles).length > 0,
+  }),
+  synthesize: (key, e) => ({
+    Id: `draft__${key}`,
+    Name: str(e.Name) || key,
+    Description: str(e.Description) || null,
+    MembershipMode: (str(e.MembershipMode) || 'Manual') as GroupDto['MembershipMode'],
+    MembershipLastError: null,
+    MemberIds: arr(e.Members),
+    RoleIds: [],
+    BoundTo: arr(e.BoundTo),
+    HasPermissions: arr(e.Roles).length > 0,
+  } as unknown as GroupListRow),
+})
 
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 
-const showEmpty = computed(() => groupStore.loaded && groupStore.groups.length === 0)
+const showEmpty = computed(() => groupStore.loaded && groups.value.length === 0)
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<GroupListRow>(), { openable: true })
+const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<GroupListRow>>(), { openable: true })
   .persistColumnState('admin-groups')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(groups)
@@ -80,6 +109,14 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<GroupListRow>(), { 
   .columns([
     (col) => col.field('Name').header('Name', 'admin.groups.name').flex(2).minWidth(180),
     (col) => col.field('Description').header('Description', 'admin.groups.description').flex(1),
+    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
+        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
+        : p.data?.DraftStaged === 'update'
+          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
+          : '')
+      .width(120)
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged),
     (col) => col.tag('MembershipMode', {
       variantMap: { Manual: 'neutral', Auto: 'info', Error: 'error' },
       i18nPrefix: 'admin.groups.membership.',
@@ -145,3 +182,10 @@ onMounted(() => groupStore.initialize())
     </CoarContextMenu>
   </div>
 </template>
+
+<style scoped>
+:deep(.draft-staged-cell) {
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+</style>

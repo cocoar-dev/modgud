@@ -14,6 +14,7 @@ import { useApplicationsStore } from '@/stores/applications.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, APP_CLONE } from '@/composables/useClone'
+import { useDraftListOverlay, type DraftRow } from '@/composables/useDraftStaging'
 import type { ApplicationDto } from '@/models/application'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -32,15 +33,42 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-const rows = computed(() => store.apps)
+const liveRows = computed(() => store.apps)
+
+// ADR-0005: draft-merged roster (natural key = the app slug).
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const stagedPerms = (e: Record<string, unknown>) =>
+  (Array.isArray(e.Permissions) ? (e.Permissions as Record<string, unknown>[]) : [])
+    // Transient ids — the grid only renders resource:action strings.
+    .map((p, i) => ({ Id: `staged-${i}`, Resource: str(p.Resource), Action: str(p.Action), Description: str(p.Description) || null }))
+const rows = useDraftListOverlay<ApplicationDto>({
+  section: 'apps',
+  rows: liveRows,
+  matchLive: (row, e) => row.Slug === str(e.Slug),
+  overlay: (row, e) => ({
+    ...row,
+    DisplayName: str(e.DisplayName) || row.DisplayName,
+    Description: str(e.Description) || row.Description,
+    Permissions: stagedPerms(e),
+  }),
+  synthesize: (key, e) => ({
+    Id: `draft__${key}`,
+    Slug: str(e.Slug) || key,
+    DisplayName: str(e.DisplayName) || key,
+    Description: str(e.Description) || null,
+    Permissions: stagedPerms(e),
+    IsSystem: false,
+  } as unknown as ApplicationDto),
+})
+
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 const selectedIsSystem = ref(false)
 
-const showEmpty = computed(() => store.loaded && store.apps.length === 0)
+const showEmpty = computed(() => store.loaded && rows.value.length === 0)
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<ApplicationDto>(), { openable: true })
+const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<ApplicationDto>>(), { openable: true })
   .persistColumnState('admin-apps')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -76,6 +104,14 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<ApplicationDto>(), 
       }),
     (col) => col.field('DisplayName').header('Display Name', 'admin.apps.displayName').flex(1).minWidth(180),
     (col) => col.field('Description').header('Description', 'common.description').flex(2),
+    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
+        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
+        : p.data?.DraftStaged === 'update'
+          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
+          : '')
+      .width(120)
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged),
     (col) => col.field('Permissions').header('Permissions', 'admin.apps.permissions').flex(2)
       .option('valueGetter', (p: any) => (p.data?.Permissions ?? [])
         .map((perm: any) => `${perm.Resource}:${perm.Action}`)
@@ -153,3 +189,10 @@ onMounted(() => store.initialize())
     </CoarContextMenu>
   </div>
 </template>
+
+<style scoped>
+:deep(.draft-staged-cell) {
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+</style>

@@ -11,6 +11,7 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
+import { useDraftListOverlay, type DraftRow } from '@/composables/useDraftStaging'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import type { LoginProviderDto, LoginProviderType } from '@/models/loginProvider'
@@ -30,7 +31,34 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-const rows = computed(() => store.providers)
+const liveRows = computed(() => store.providers)
+
+// ADR-0005: draft-merged roster (natural key = the provider slug).
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const rows = useDraftListOverlay<LoginProviderDto>({
+  section: 'loginProviders',
+  rows: liveRows,
+  matchLive: (row, e) => row.Slug === str(e.Slug),
+  overlay: (row, e) => ({
+    ...row,
+    DisplayName: str(e.DisplayName) || row.DisplayName,
+    Enabled: e.Enabled === true,
+    ClientId: str(e.ClientId) || row.ClientId,
+  }),
+  synthesize: (key, e) => ({
+    Id: `draft__${key}`,
+    Slug: str(e.Slug) || key,
+    DisplayName: str(e.DisplayName) || key,
+    Type: (str(e.Type) || 'Oidc') as LoginProviderType,
+    Flavor: str(e.Flavor),
+    Enabled: e.Enabled === true,
+    ClientId: str(e.ClientId),
+    HasClientSecret: false,
+    IsBuiltIn: false,
+    IconName: str(e.IconName) || null,
+  } as unknown as LoginProviderDto),
+})
+
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
@@ -47,9 +75,9 @@ function typeLabel(type: LoginProviderType): string {
   }
 }
 
-const showEmpty = computed(() => store.loaded && store.providers.length === 0)
+const showEmpty = computed(() => store.loaded && rows.value.length === 0)
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<LoginProviderDto>(), { openable: true })
+const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<LoginProviderDto>>(), { openable: true })
   .persistColumnState('admin-login-providers')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -87,6 +115,14 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<LoginProviderDto>()
           : base
       }),
     (col) => col.field('Flavor').header('Flavor', 'admin.loginProviders.flavor').width(140),
+    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
+        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
+        : p.data?.DraftStaged === 'update'
+          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
+          : '')
+      .width(120)
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged),
     (col) => col.tag('Enabled', {
       variantMap: { active: 'success', inactive: 'neutral' },
       i18nPrefix: 'common.statusTag.',
@@ -182,3 +218,10 @@ onMounted(() => store.initialize())
     </CoarContextMenu>
   </div>
 </template>
+
+<style scoped>
+:deep(.draft-staged-cell) {
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+</style>

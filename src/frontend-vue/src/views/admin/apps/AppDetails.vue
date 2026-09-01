@@ -7,6 +7,8 @@ import ModalLayout from '@/components/ModalLayout.vue'
 import AppSettingsSections from './AppSettingsSections.vue'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, APP_CLONE } from '@/composables/useClone'
+import { useDraftStaging } from '@/composables/useDraftStaging'
+import type { ManifestEntity } from '@/stores/realmDraft.store'
 import type {
   ApplicationDto,
   ApplicationPermissionInputDto,
@@ -166,6 +168,63 @@ const isSystem = computed(() => dto.value?.IsSystem === true)
 const activeTab = ref<'general' | 'catalog' | 'settings'>('general')
 const settingsRef = ref<InstanceType<typeof AppSettingsSections> | null>(null)
 
+// ── ADR-0005 staging: app saves commit onto the active draft. Two things the
+// manifest cannot express keep the live path: system apps (not authored
+// config) and id-stable catalog RENAMES (the manifest matches permissions by
+// resource:action, so a rename would become remove+add and lose the FK-stable
+// id the modal's rename affordance guarantees).
+const staging = useDraftStaging('apps')
+const isDraftRow = computed(() => staging.isDraftId(props.id))
+const stagedSave = computed(() =>
+  staging.stagingActive.value && !isSystem.value && renamedCount.value === 0)
+
+function fromStagedInto(e: ManifestEntity) {
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  form.value = {
+    Slug: str(e.Slug),
+    DisplayName: str(e.DisplayName),
+    Description: str(e.Description),
+  }
+  // Preserve live catalog-entry ids by resource:action (mirrors the applier)
+  // so the rename detection keeps working against the staged state.
+  const liveByKey = new Map((dto.value?.Permissions ?? [])
+    .map((p) => [`${p.Resource}:${p.Action}`, p.Id]))
+  catalog.value = (Array.isArray(e.Permissions) ? (e.Permissions as ManifestEntity[]) : [])
+    .map((p) => {
+      const key = `${str(p.Resource)}:${str(p.Action)}`
+      const liveId = liveByKey.get(key) ?? null
+      return {
+        _uid: liveId ?? newCatalogUid(),
+        id: liveId,
+        resource: str(p.Resource),
+        action: str(p.Action),
+        description: str(p.Description),
+        originalKey: liveId ? key : null,
+      }
+    })
+  clonePrefillSettings.value = (e.Settings as ApplicationSettingsDto | undefined) ?? null
+}
+
+function toStaged(settings: ApplicationSettingsDto | undefined): ManifestEntity {
+  const key = form.value.Slug.trim()
+  const entity: ManifestEntity = { ...(staging.findStaged(key) ?? {}) }
+  entity.Slug = key
+  entity.DisplayName = form.value.DisplayName.trim()
+  if (form.value.Description.trim()) entity.Description = form.value.Description.trim()
+  else delete entity.Description
+  entity.Permissions = catalog.value
+    .filter((r) => r.resource.trim() && r.action.trim())
+    .map((r) => ({
+      Resource: r.resource.trim(),
+      Action: r.action.trim(),
+      ...(r.description.trim() ? { Description: r.description.trim() } : {}),
+    }))
+  // Settings ride the same entity (ADR-0011: an App is ONE resource). Keep the
+  // previously staged override when the settings tab wasn't mounted/built.
+  if (settings !== undefined) entity.Settings = settings
+  return entity
+}
+
 /**
  * Per-cell visual cue for the resource/action validation surface. The
  * editor doesn't block invalid input — the save button is the gate
@@ -261,7 +320,9 @@ const displayNameError = computed(() => displayNameInvalid.value
 
 const footerButton = computed(() => ({
   visible: true,
-  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
+  text: stagedSave.value
+    ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+    : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: loading.value
     || displayNameInvalid.value
     || slugInvalid.value
@@ -273,6 +334,12 @@ const footerButton = computed(() => ({
 }))
 
 onMounted(async () => {
+  if (isDraftRow.value) {
+    // Draft-created app: the staged manifest entity IS the state.
+    const entity = staging.findStaged(staging.draftKeyOf(props.id))
+    if (entity) fromStagedInto(entity)
+    return
+  }
   if (isCreate.value) {
     // Clone: prefill identity + catalog (ids already nulled) + settings (Origin
     // dropped) from the staged source; fall back to one empty row otherwise.
@@ -299,6 +366,11 @@ onMounted(async () => {
     const parsed = fromDto(loaded)
     form.value = parsed.form
     catalog.value = parsed.catalog
+    // Staging overlay: show the STAGED app state when the draft carries it.
+    if (stagedSave.value && staging.draftStore.current) {
+      const entity = staging.findStaged(loaded.Slug)
+      if (entity) fromStagedInto(entity)
+    }
   } finally {
     loading.value = false
   }
@@ -313,6 +385,12 @@ async function save() {
     // create/update payload (the backend writes it in one tenant transaction). System
     // apps carry no per-App settings, so omit it for them.
     const settings = isSystem.value ? undefined : settingsRef.value?.build()
+    // ADR-0005: commit onto the active draft instead of writing live.
+    if (stagedSave.value) {
+      await staging.stage(form.value.Slug.trim(), toStaged(settings))
+      props.close()
+      return
+    }
     if (isCreate.value) {
       await store.create({
         Slug: form.value.Slug.trim(),
@@ -377,6 +455,10 @@ async function save() {
       <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>
     </div>
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
+      <p v-if="stagedSave" class="staged-hint">
+        <CoarIcon name="file-json" size="s" />
+        {{ t('admin.realmConfig.stagedHint', {}, 'Änderungen werden in den Draft übernommen — wirksam erst mit „Draft anwenden“.') }}
+      </p>
       <CoarTabGroup v-model="activeTab" class="tab-bar">
         <CoarTab id="general">{{ t('admin.apps.tabs.general', {}, 'General') }}</CoarTab>
         <CoarTab id="catalog">{{ t('admin.apps.tabs.catalog', {}, 'Permission-Catalog') }}</CoarTab>
@@ -483,8 +565,8 @@ async function save() {
       <div v-if="!isSystem" v-show="activeTab === 'settings'" class="tab-content">
         <AppSettingsSections
           ref="settingsRef"
-          :model-value="isCreate ? clonePrefillSettings : dto?.Settings"
-          :application-id="isCreate ? undefined : id"
+          :model-value="clonePrefillSettings ?? dto?.Settings"
+          :application-id="isCreate || isDraftRow ? undefined : id"
           :application-name="form.DisplayName || form.Slug"
         />
       </div>
@@ -495,6 +577,16 @@ async function save() {
 </template>
 
 <style scoped>
+.staged-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-size: 0.76rem;
+  flex-shrink: 0;
+}
+
 .tab-bar {
   margin-bottom: 12px;
 }

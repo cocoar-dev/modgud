@@ -297,6 +297,18 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     }
   }
 
+  /** All manifest entities of a section in the ACTIVE draft (settings = [Settings]). */
+  function sectionEntities(section: string): ManifestEntity[] {
+    if (!current.value) return []
+    const meta = SECTION_META[section]
+    if (!meta) return []
+    if (meta.collection === null) {
+      const settings = current.value.Manifest.Settings
+      return settings ? [settings as ManifestEntity] : []
+    }
+    return (current.value.Manifest[meta.collection] as ManifestEntity[] | undefined) ?? []
+  }
+
   function findEntity(section: string, key: string): ManifestEntity | null {
     if (!current.value) return null
     const meta = SECTION_META[section]
@@ -366,7 +378,7 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     listLoading, planning, saving, applying, error, applyOutcome,
     planIsFresh, planHasErrors, canApply, pendingCount,
     loadDrafts, loadActive, createDraft, openDraft, closeDraft, deleteDraft,
-    replan, updateDraft, upsertEntity, removeEntity, findEntity,
+    replan, updateDraft, upsertEntity, removeEntity, findEntity, sectionEntities,
     rebase, clearSecret, apply,
   }
 })

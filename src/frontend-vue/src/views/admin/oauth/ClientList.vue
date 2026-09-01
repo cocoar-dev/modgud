@@ -19,6 +19,7 @@ import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, CLIENT_CLONE } from '@/composables/useClone'
+import { useDraftListOverlay, type DraftRow } from '@/composables/useDraftStaging'
 import { useRouter } from 'vue-router'
 import type { OAuthClientDto } from '@/models/oauth'
 import GridEmptyState from '@/components/GridEmptyState.vue'
@@ -77,17 +78,49 @@ watch(language, () => ui.set((ctx) => {
 }), { immediate: true })
 
 const showDcrOnly = ref(false)
-const rows = computed(() =>
+const liveRows = computed(() =>
   store.clients
     .filter((c) => appCtx.matchesAppIdList(c.AppIds))
     .filter((c) => !showDcrOnly.value || c.IsDynamicallyRegistered))
+
+// ADR-0005: draft-merged roster — staged edits overlay their live rows,
+// draft-created clients appear as synthetic rows (natural key = client_id).
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
+const rows = useDraftListOverlay<OAuthClientDto>({
+  section: 'clients',
+  rows: liveRows,
+  matchLive: (row, e) => row.ClientId === str(e.ClientId),
+  overlay: (row, e) => ({
+    ...row,
+    DisplayName: str(e.DisplayName) || row.DisplayName,
+    ClientType: str(e.ClientType) || row.ClientType,
+    Enabled: e.Enabled !== false,
+    RedirectUris: arr(e.RedirectUris),
+    AllowedGrantTypes: arr(e.AllowedGrantTypes),
+  }),
+  synthesize: (key, e) => ({
+    Id: `draft__${key}`,
+    ClientId: str(e.ClientId) || key,
+    DisplayName: str(e.DisplayName) || null,
+    ClientType: str(e.ClientType) || 'confidential',
+    Enabled: e.Enabled !== false,
+    RedirectUris: arr(e.RedirectUris),
+    AllowedGrantTypes: arr(e.AllowedGrantTypes),
+    AppIds: [],
+    LinkedServiceAccountId: null,
+    LinkedPositionPrincipalId: null,
+    ManagedTerminalEnrollmentId: null,
+    IsDynamicallyRegistered: false,
+  } as unknown as OAuthClientDto),
+})
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 
-const showEmpty = computed(() => store.loaded && store.clients.length === 0)
+const showEmpty = computed(() => store.loaded && rows.value.length === 0)
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthClientDto>(), { openable: true })
+const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthClientDto>>(), { openable: true })
   .persistColumnState('admin-oauth-clients')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -119,6 +152,14 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthClientDto>(), 
     // stays countable at a glance without opening each position.
     (col) => col.field('LinkedPositionPrincipalId').header('Terminal', 'admin.oauthClients.terminal').width(180)
       .option('valueGetter', (p: any) => p.data ? (positionNameFor(p.data as OAuthClientDto) ?? '') : ''),
+    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
+        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
+        : p.data?.DraftStaged === 'update'
+          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
+          : '')
+      .width(120)
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged),
     (col) => col.field('IsDynamicallyRegistered').header('DCR', 'admin.oauthClients.dcr').width(80)
       .option('valueGetter', (p: any) => p.data?.IsDynamicallyRegistered ? '●' : '')
       .option('cellStyle', { textAlign: 'center', color: 'var(--coar-accent-primary, #6366f1)' }),
@@ -244,3 +285,10 @@ function openClient(client: OAuthClientDto) {
     </CoarContextMenu>
   </div>
 </template>
+
+<style scoped>
+:deep(.draft-staged-cell) {
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+</style>

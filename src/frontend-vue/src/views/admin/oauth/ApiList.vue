@@ -11,6 +11,7 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useOAuthApiStore } from '@/stores/oauthApi.store'
+import { useDraftListOverlay, type DraftRow } from '@/composables/useDraftStaging'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
@@ -34,15 +35,44 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-const rows = computed(() =>
+const liveRows = computed(() =>
   store.apis.filter((a) => appCtx.matchesSingleAppId(a.AppId)))
+
+// ADR-0005: draft-merged roster (natural key = the immutable audience/Name).
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
+const rows = useDraftListOverlay<OAuthApiDto>({
+  section: 'apis',
+  rows: liveRows,
+  matchLive: (row, e) => row.Name === str(e.Name),
+  overlay: (row, e) => ({
+    ...row,
+    DisplayName: str(e.DisplayName) || row.DisplayName,
+    Description: str(e.Description) || row.Description,
+    Scopes: arr(e.Scopes).length ? arr(e.Scopes) : row.Scopes,
+    Enabled: typeof e.Enabled === 'boolean' ? e.Enabled : row.Enabled,
+  }),
+  synthesize: (key, e): OAuthApiDto => ({
+    Id: `draft__${key}`,
+    Name: str(e.Name) || key,
+    DisplayName: str(e.DisplayName) || null,
+    Description: str(e.Description) || null,
+    Enabled: e.Enabled !== false,
+    Scopes: arr(e.Scopes),
+    UserClaims: arr(e.UserClaims),
+    AppId: null,
+    PermissionIds: [],
+    AllowDynamicRegistration: e.AllowDynamicRegistration === true,
+    HasImplicitScope: false,
+  } as OAuthApiDto),
+})
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 
-const showEmpty = computed(() => store.loaded && store.apis.length === 0)
+const showEmpty = computed(() => store.loaded && rows.value.length === 0)
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthApiDto>(), { openable: true })
+const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthApiDto>>(), { openable: true })
   .persistColumnState('admin-oauth-apis')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -66,6 +96,14 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthApiDto>(), { o
     (col) => col.field('Description').header('Description', 'common.description').flex(2),
     (col) => col.field('Scopes').header('Scopes', 'admin.oauthApis.scopes').width(110)
       .option('valueGetter', (p: any) => (p.data?.Scopes ?? []).length),
+    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
+        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
+        : p.data?.DraftStaged === 'update'
+          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
+          : '')
+      .width(120)
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged),
     (col) => col.tag('Enabled', {
       variantMap: { active: 'success', inactive: 'neutral' },
       i18nPrefix: 'common.statusTag.',
@@ -135,3 +173,10 @@ onMounted(() => store.initialize())
     </CoarContextMenu>
   </div>
 </template>
+
+<style scoped>
+:deep(.draft-staged-cell) {
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+</style>

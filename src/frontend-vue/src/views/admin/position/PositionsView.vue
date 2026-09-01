@@ -5,6 +5,7 @@ import { CoarButton, useContextMenu, CoarContextMenu, CoarMenuItem, CoarMenuDivi
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { usePositionStore } from '@/stores/position.store'
+import { useDraftListOverlay, type DraftRow } from '@/composables/useDraftStaging'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import type { PositionPrincipalDto } from '@/models/position'
@@ -24,7 +25,34 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-const rows = computed(() => store.entities)
+const liveRows = computed(() => store.entities)
+
+// ADR-0005: draft-merged roster (natural key = the lowercased account name).
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const rows = useDraftListOverlay<PositionPrincipalDto>({
+  section: 'positions',
+  rows: liveRows,
+  matchLive: (row, e) => row.AccountName.trim().toLowerCase() === str(e.AccountName).trim().toLowerCase(),
+  overlay: (row, e) => ({
+    ...row,
+    AccountName: str(e.AccountName) || row.AccountName,
+    Purpose: str(e.Purpose) || row.Purpose,
+    IsActive: e.IsActive !== false,
+    TerminalPolicy: {
+      ...row.TerminalPolicy,
+      Enabled: (e.TerminalPolicy as Record<string, unknown> | undefined)?.Enabled === true,
+    },
+  }),
+  synthesize: (key, e) => ({
+    Id: `draft__${key}`,
+    AccountName: str(e.AccountName) || key,
+    Purpose: str(e.Purpose) || null,
+    IsActive: e.IsActive !== false,
+    TerminalPolicy: {
+      Enabled: (e.TerminalPolicy as Record<string, unknown> | undefined)?.Enabled === true,
+    },
+  } as unknown as PositionPrincipalDto),
+})
 
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
@@ -32,7 +60,7 @@ const selectedIds = ref<string[]>([])
 
 const showEmpty = computed(() => store.allLoaded && rows.value.length === 0)
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<PositionPrincipalDto>(), { openable: true })
+const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<PositionPrincipalDto>>(), { openable: true })
   .persistColumnState('admin-positions')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -55,6 +83,14 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<PositionPrincipalDt
   .columns([
     (col) => col.field('AccountName').header('Account name', 'admin.positions.accountName').width(220).pinned('left').cellClass('account-name-cell'),
     (col) => col.field('Purpose').header('Purpose', 'admin.positions.purpose').flex(1),
+    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
+        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
+        : p.data?.DraftStaged === 'update'
+          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
+          : '')
+      .width(120)
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged),
     (col) => col.icon('TerminalPolicy', { color: '#0284c7', size: 's' })
       .option('valueGetter', (p: any) => p.data?.TerminalPolicy?.Enabled ? 'monitor-smartphone' : '')
       .option('tooltipValueGetter', () => null)
@@ -107,6 +143,11 @@ onMounted(() => {
 </template>
 
 <style scoped>
+:deep(.draft-staged-cell) {
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+
 :deep(.account-name-cell) {
   font-weight: 600;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
