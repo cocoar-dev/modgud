@@ -1804,6 +1804,14 @@
       "deleteDraftConfirm": "Die gestagten Änderungen werden verworfen. Der Realm selbst bleibt unberührt.",
       "discardDraft": "Draft verwerfen",
       "backToList": "Drafts",
+      "parkToList": "Parken & zur Liste",
+      "bar": {
+        "pending": "{count} gestaged",
+        "clean": "keine Änderungen",
+        "conflicts": "Konflikte",
+        "view": "Ansehen",
+        "park": "Parken"
+      },
       "shareToggle": "Mit Realm-Admins teilen",
       "planning": "Änderungsplan wird berechnet…",
       "prune": "Prune — Entitäten löschen, die im Draft fehlen",
@@ -1812,6 +1820,7 @@
       "rebase": "Verbleibende Abweichungen bestätigen (Rebase)",
       "planErrors": "Der Plan enthält Einträge, an denen das Anwenden scheitern würde (mit „Fehler“ markiert). Vor dem Anwenden korrigieren.",
       "apply": "Draft anwenden",
+      "applyCount": "Draft anwenden ({count})",
       "applyConfirmTitle": "Diesen Draft anwenden?",
       "applyConfirm": "Die gestagten Änderungen werden in EINER Transaktion auf diesen Realm angewendet — alles oder nichts.",
       "applyConfirmPrune": "Die gestagten Änderungen werden angewendet UND fehlende Entitäten gelöscht (vollständiger Abgleich). Eine Transaktion — alles oder nichts.",

@@ -2,13 +2,6 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
 
-/** Deep-clones a manifest for mutation. Deliberately the JSON clone —
- * structuredClone throws on Vue's reactive proxies, and the manifest is plain
- * JSON by construction, so the JSON round-trip is exact. */
-function cloneManifest(manifest: DraftManifest): DraftManifest {
-  return JSON.parse(JSON.stringify(manifest)) as DraftManifest
-}
-
 /**
  * ADR-0005 Phase 1: named server-side configuration drafts. The store owns the
  * open draft + its plan and funnels EVERY draft mutation through the same path:
@@ -147,6 +140,15 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
   const canApply = computed(() =>
     planIsFresh.value && !planHasErrors.value && plan.value !== null && !plan.value.HasConflicts)
 
+  /** Entries the apply would actually touch — the staging bar's badge. */
+  const pendingCount = computed(() => {
+    let count = 0
+    for (const section of plan.value?.Sections ?? [])
+      for (const entry of section.Entries)
+        if (entry.Action === 'create' || entry.Action === 'update' || entry.Action === 'delete') count++
+    return count
+  })
+
   async function loadDrafts() {
     listLoading.value = true
     error.value = null
@@ -167,27 +169,53 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     return dto
   }
 
+  /** Loads the admin's active draft (the checkout) — called once when the admin
+   * shell mounts, so the staging bar reflects reality after a reload. */
+  async function loadActive() {
+    try {
+      const dto = await draftsHttp.addPath('active').get<DraftDto | null>()
+      if (dto) {
+        current.value = dto
+        await replan()
+      }
+    } catch (e) {
+      error.value = draftErrorMessage(e)
+    }
+  }
+
+  /** Checkout: switching sets the server-side active pointer. */
   async function openDraft(id: string) {
     error.value = null
     applyOutcome.value = null
-    current.value = await draftsHttp.addPath(id).get<DraftDto>()
+    current.value = await draftsHttp.addPath('active', 'switch', id).post<DraftDto>({})
     plan.value = null
     plannedVersion.value = null
     await replan()
   }
 
-  function closeDraft() {
+  /** Parking: clears the checkout, keeps the branch. */
+  async function closeDraft() {
+    try {
+      await draftsHttp.addPath('active', 'park').post<void>({})
+    } catch (e) {
+      error.value = draftErrorMessage(e)
+    }
     current.value = null
     plan.value = null
     plannedVersion.value = null
     applyOutcome.value = null
-    error.value = null
+    await loadDrafts()
   }
 
   async function deleteDraft(id: string) {
     error.value = null
     await draftsHttp.addPath(id).delete<void>()
-    if (current.value?.Id === id) closeDraft()
+    // Deleting the active draft already cleared the server-side pointer.
+    if (current.value?.Id === id) {
+      current.value = null
+      plan.value = null
+      plannedVersion.value = null
+    }
     await loadDrafts()
   }
 
@@ -233,33 +261,40 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     }
   }
 
-  /** Replaces (or inserts) one entity in its manifest collection and saves. */
-  async function upsertEntity(section: string, key: string, entity: ManifestEntity) {
-    if (!current.value) return
-    const meta = SECTION_META[section]
-    if (!meta) return
-    const manifest = cloneManifest(current.value.Manifest)
-    if (meta.collection === null) {
-      manifest.Settings = entity
-    } else {
-      const list = (manifest[meta.collection] as ManifestEntity[] | undefined) ?? []
-      const index = list.findIndex((e) => meta.key(e) === key)
-      if (index >= 0) list[index] = entity
-      else list.push(entity)
-      manifest[meta.collection] = list
+  /** The "commit": stages one entity into the ACTIVE draft via the server-side
+   * seam — implicitly creating an auto-named draft when none is active. The
+   * natural key is computed server-side; edits with a renamed key stage the
+   * renamed entity alongside the old one (rename = create + prune delete). */
+  async function upsertEntity(section: string, _key: string, entity: ManifestEntity) {
+    saving.value = true
+    error.value = null
+    try {
+      current.value = await draftsHttp
+        .addPath('active', 'entities', section)
+        .put<DraftDto>(entity)
+      await replan()
+    } catch (e) {
+      error.value = draftErrorMessage(e)
+    } finally {
+      saving.value = false
     }
-    await updateDraft({ Manifest: manifest })
   }
 
-  /** Removes one entity from its manifest collection and saves. */
+  /** Removes one entity from the active draft (staged delete / create undo). */
   async function removeEntity(section: string, key: string) {
-    if (!current.value) return
-    const meta = SECTION_META[section]
-    if (!meta || meta.collection === null) return
-    const manifest = cloneManifest(current.value.Manifest)
-    const list = (manifest[meta.collection] as ManifestEntity[] | undefined) ?? []
-    manifest[meta.collection] = list.filter((e) => meta.key(e) !== key)
-    await updateDraft({ Manifest: manifest })
+    saving.value = true
+    error.value = null
+    try {
+      current.value = await draftsHttp
+        .addPath('active', 'entities', section)
+        .setQueryParameter('key', key)
+        .delete<DraftDto>()
+      await replan()
+    } catch (e) {
+      error.value = draftErrorMessage(e)
+    } finally {
+      saving.value = false
+    }
   }
 
   function findEntity(section: string, key: string): ManifestEntity | null {
@@ -329,8 +364,8 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
   return {
     drafts, current, plan, prune,
     listLoading, planning, saving, applying, error, applyOutcome,
-    planIsFresh, planHasErrors, canApply,
-    loadDrafts, createDraft, openDraft, closeDraft, deleteDraft,
+    planIsFresh, planHasErrors, canApply, pendingCount,
+    loadDrafts, loadActive, createDraft, openDraft, closeDraft, deleteDraft,
     replan, updateDraft, upsertEntity, removeEntity, findEntity,
     rebase, clearSecret, apply,
   }

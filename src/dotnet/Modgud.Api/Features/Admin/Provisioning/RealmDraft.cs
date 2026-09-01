@@ -49,6 +49,19 @@ public sealed class RealmDraft
     public int Version { get; set; }
 }
 
+/// <summary>
+/// Per-admin active-draft pointer (ADR-0005: "each admin has an active-draft
+/// pointer"). Document id = the admin's user id; lives in the tenant DB so the
+/// pointer is per realm automatically. Parking clears <see cref="ActiveDraftId"/>
+/// (the draft itself stays); the pointer also clears lazily when the draft it
+/// references was applied or deleted.
+/// </summary>
+public sealed class RealmDraftPointer
+{
+    public Guid Id { get; set; }
+    public Guid? ActiveDraftId { get; set; }
+}
+
 /// <summary>List row for the draft picker.</summary>
 public sealed record RealmDraftSummaryDto(
     Guid Id,

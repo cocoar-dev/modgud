@@ -399,7 +399,7 @@ function formatDate(value: string): string {
       <template v-else>
         <div class="workspace-header">
           <CoarButton size="s" variant="ghost" icon-start="chevron-right" class="back-button" @click="store.closeDraft()">
-            {{ t('admin.realmConfig.backToList', {}, 'Drafts') }}
+            {{ t('admin.realmConfig.parkToList', {}, 'Park & back to list') }}
           </CoarButton>
           <CoarIcon name="file-json" size="s" />
           <span class="draft-name">{{ store.current.Name }}</span>
@@ -447,8 +447,10 @@ function formatDate(value: string): string {
               :variant="store.prune ? 'danger' : 'primary'"
               size="s"
               :loading="store.applying"
-              :disabled="!store.canApply">
-              {{ t('admin.realmConfig.apply', {}, 'Apply draft') }}
+              :disabled="!store.canApply || store.pendingCount === 0">
+              {{ store.pendingCount > 0
+                ? t('admin.realmConfig.applyCount', { count: store.pendingCount }, `Apply draft (${store.pendingCount})`)
+                : t('admin.realmConfig.apply', {}, 'Apply draft') }}
             </CoarButton>
           </CoarPopconfirm>
         </div>

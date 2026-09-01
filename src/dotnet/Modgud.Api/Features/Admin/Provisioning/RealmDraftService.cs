@@ -132,8 +132,19 @@ public sealed class RealmDraftService(
         var draft = await LoadVisibleAsync(id, userId, ct);
         if (draft is null) return NotFound;
         session.Delete(draft);
+        await ClearPointerIfActiveAsync(id, userId, ct);
         await session.SaveChangesAsync(ct);
         return Result.Deleted;
+    }
+
+    /// <summary>Own pointer housekeeping on apply/delete; other admins' pointers at a
+    /// shared draft heal lazily in <see cref="GetActiveAsync"/>.</summary>
+    private async Task ClearPointerIfActiveAsync(Guid draftId, Guid userId, CancellationToken ct)
+    {
+        var pointer = await session.LoadAsync<RealmDraftPointer>(userId, ct);
+        if (pointer?.ActiveDraftId != draftId) return;
+        pointer.ActiveDraftId = null;
+        session.Store(pointer);
     }
 
     /// <summary>Clears one staged secret slot (write-only fields have no other way
@@ -152,6 +163,159 @@ public sealed class RealmDraftService(
         session.Store(draft);
         await session.SaveChangesAsync(ct);
         return ToDto(draft, userId);
+    }
+
+    // ── Active draft (ADR-0005: implicit branches) ───────────────────────────────
+
+    /// <summary>The admin's active draft, or null. Lazily heals a pointer whose
+    /// draft was applied/deleted or turned invisible.</summary>
+    public async Task<RealmDraftDto?> GetActiveAsync(Guid userId, CancellationToken ct)
+    {
+        var pointer = await session.LoadAsync<RealmDraftPointer>(userId, ct);
+        if (pointer?.ActiveDraftId is not { } draftId) return null;
+        var draft = await LoadVisibleAsync(draftId, userId, ct);
+        if (draft is null)
+        {
+            pointer.ActiveDraftId = null;
+            session.Store(pointer);
+            await session.SaveChangesAsync(ct);
+            return null;
+        }
+        return ToDto(draft, userId);
+    }
+
+    /// <summary>Parking = branch switch away: the pointer clears, the draft stays.</summary>
+    public async Task ParkAsync(Guid userId, CancellationToken ct)
+    {
+        var pointer = await session.LoadAsync<RealmDraftPointer>(userId, ct);
+        if (pointer?.ActiveDraftId is null) return;
+        pointer.ActiveDraftId = null;
+        session.Store(pointer);
+        await session.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Checkout of an existing (visible) draft.</summary>
+    public async Task<ErrorOr<RealmDraftDto>> SwitchAsync(Guid id, Guid userId, CancellationToken ct)
+    {
+        var draft = await LoadVisibleAsync(id, userId, ct);
+        if (draft is null) return NotFound;
+        session.Store(new RealmDraftPointer { Id = userId, ActiveDraftId = id });
+        await session.SaveChangesAsync(ct);
+        return ToDto(draft, userId);
+    }
+
+    /// <summary>
+    /// The staging seam (ADR-0005 Increment A/B): upserts ONE entity into the active
+    /// draft's manifest — the "commit". With no active draft, one is created
+    /// implicitly (auto-named, manifest = baseline = current export) and made active;
+    /// the admin never creates a draft explicitly. The entity's natural key is
+    /// computed server-side; secrets inside are extracted into write-only slots.
+    /// </summary>
+    public async Task<ErrorOr<RealmDraftDto>> StageEntityAsync(
+        string section, JsonObject entity, string slug, Guid userId, string userName, CancellationToken ct)
+    {
+        if (DraftSectionRegistry.Resolve(section) is not { } meta)
+            return Error.Validation("Draft.UnknownSection", $"Unknown manifest section '{section}'.");
+        var key = meta.Key(entity);
+        if (string.IsNullOrEmpty(key))
+            return Error.Validation("Draft.KeyMissing",
+                "The entity needs its natural key (slug / name / id) before it can be staged.");
+
+        var draftResult = await GetOrCreateActiveAsync(slug, userId, userName, ct);
+        if (draftResult.IsError) return draftResult.Errors;
+        var draft = draftResult.Value;
+
+        var json = jsonOptions.Value.SerializerOptions;
+        var root = JsonSerializer.SerializeToNode(draft.Manifest, json)!.AsObject();
+        if (meta.Collection is null)
+        {
+            root["Settings"] = entity.DeepClone();
+        }
+        else
+        {
+            if (root[meta.Collection] is not JsonArray list)
+                root[meta.Collection] = list = [];
+            var index = list.OfType<JsonObject>().ToList()
+                .FindIndex(e => meta.Key(e) == key);
+            if (index >= 0) list[index] = entity.DeepClone();
+            else list.Add(entity.DeepClone());
+        }
+
+        draft.Manifest = SanitizeManifest(
+            PinSlug(root.Deserialize<RealmManifest>(json)!, slug), draft.Secrets);
+        Touch(draft, userId, userName);
+        session.Store(draft);
+        await session.SaveChangesAsync(ct);
+        return ToDto(draft, userId);
+    }
+
+    /// <summary>Removes one entity from the active draft's manifest (staged delete /
+    /// undo of a staged create). No active draft = nothing to remove.</summary>
+    public async Task<ErrorOr<RealmDraftDto>> UnstageEntityAsync(
+        string section, string key, string slug, Guid userId, string userName, CancellationToken ct)
+    {
+        if (DraftSectionRegistry.Resolve(section) is not { } meta || meta.Collection is null)
+            return Error.Validation("Draft.UnknownSection", $"Unknown or non-removable manifest section '{section}'.");
+
+        var pointer = await session.LoadAsync<RealmDraftPointer>(userId, ct);
+        if (pointer?.ActiveDraftId is not { } draftId) return NotFound;
+        var draft = await LoadVisibleAsync(draftId, userId, ct);
+        if (draft is null) return NotFound;
+
+        var json = jsonOptions.Value.SerializerOptions;
+        var root = JsonSerializer.SerializeToNode(draft.Manifest, json)!.AsObject();
+        if (root[meta.Collection] is JsonArray list)
+        {
+            var index = list.OfType<JsonObject>().ToList().FindIndex(e => meta.Key(e) == key);
+            if (index >= 0) list.RemoveAt(index);
+        }
+
+        draft.Manifest = SanitizeManifest(root.Deserialize<RealmManifest>(json)!, draft.Secrets);
+        Touch(draft, userId, userName);
+        session.Store(draft);
+        await session.SaveChangesAsync(ct);
+        return ToDto(draft, userId);
+    }
+
+    private async Task<ErrorOr<RealmDraft>> GetOrCreateActiveAsync(
+        string slug, Guid userId, string userName, CancellationToken ct)
+    {
+        var pointer = await session.LoadAsync<RealmDraftPointer>(userId, ct);
+        if (pointer?.ActiveDraftId is { } draftId &&
+            await LoadVisibleAsync(draftId, userId, ct) is { } active)
+            return active;
+
+        var exportResult = await exporter.ExportRealmAsync(slug, ct);
+        if (exportResult.IsError) return exportResult.Errors;
+        var baseline = exportResult.Value;
+
+        var now = time.GetUtcNow();
+        var draft = new RealmDraft
+        {
+            Id = Guid.NewGuid(),
+            // Generated name (ADR: author + timestamp) — renameable later via update.
+            Name = $"{userName} · {now:yyyy-MM-dd HH:mm}",
+            Manifest = baseline,
+            Baseline = baseline,
+            CreatedBy = userId,
+            CreatedByName = userName,
+            CreatedAt = now,
+            LastModifiedBy = userId,
+            LastModifiedByName = userName,
+            LastModifiedAt = now,
+            Version = 1,
+        };
+        session.Store(draft);
+        session.Store(new RealmDraftPointer { Id = userId, ActiveDraftId = draft.Id });
+        return draft;
+    }
+
+    private void Touch(RealmDraft draft, Guid userId, string userName)
+    {
+        draft.LastModifiedBy = userId;
+        draft.LastModifiedByName = userName;
+        draft.LastModifiedAt = time.GetUtcNow();
+        draft.Version++;
     }
 
     /// <summary>
@@ -214,6 +378,7 @@ public sealed class RealmDraftService(
         if (applyResult.IsError) return applyResult.Errors;
 
         session.Delete(draft);
+        await ClearPointerIfActiveAsync(id, userId, ct);
         await session.SaveChangesAsync(ct);
         return new RealmDraftApplyResult { Refused = false, Result = applyResult.Value };
     }

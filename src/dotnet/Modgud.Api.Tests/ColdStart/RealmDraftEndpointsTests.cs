@@ -156,6 +156,64 @@ public class RealmDraftEndpointsTests(ColdStartFixture fixture) : ColdStartTestB
     }
 
     [Fact]
+    public async Task Implicit_active_draft_lifecycle_commit_park_switch_apply()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var client = await factory.CreateRealmAdminAndLoginAsync();
+
+        // No active draft to begin with.
+        await AssertNoActiveDraftAsync(client, ct);
+
+        // First "commit": staging one entity implicitly creates an auto-named draft.
+        var stage = await client.PutAsJsonAsync("/api/admin/realm-config/drafts/active/entities/users",
+            new { Email = "implicit@example.com", UserName = "implicit", Firstname = "Auto" },
+            factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, stage.StatusCode);
+        var draft = JsonNode.Parse(await stage.Content.ReadAsStringAsync(ct))!;
+        var draftId = draft["Id"]!.GetValue<Guid>();
+        Assert.Contains("·", draft["Name"]!.GetValue<string>());
+        Assert.Contains(draft["Manifest"]!["Users"]!.AsArray(),
+            u => u!["UserName"]?.GetValue<string>() == "implicit");
+
+        // Parking clears the checkout but keeps the branch.
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync(
+            "/api/admin/realm-config/drafts/active/park", new { }, factory.JsonOptions, ct)).StatusCode);
+        await AssertNoActiveDraftAsync(client, ct);
+
+        // A commit while parked starts a SECOND implicit draft (the quick-fix branch)...
+        var quickFix = await client.PutAsJsonAsync("/api/admin/realm-config/drafts/active/entities/apps",
+            new { Slug = "quickfix-app", DisplayName = "Quick Fix",
+                  Permissions = new[] { new { Resource = "qf", Action = "read" } } },
+            factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, quickFix.StatusCode);
+        var quickFixId = JsonNode.Parse(await quickFix.Content.ReadAsStringAsync(ct))!["Id"]!.GetValue<Guid>();
+        Assert.NotEqual(draftId, quickFixId);
+
+        // ...which applies and clears the pointer (push + merge to main).
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(
+            $"/api/admin/realm-config/drafts/{quickFixId}/apply", new { }, factory.JsonOptions, ct)).StatusCode);
+        await AssertNoActiveDraftAsync(client, ct);
+
+        // Switch back to the parked branch — its staged user is still there — and apply it.
+        var switched = await client.PostAsJsonAsync(
+            $"/api/admin/realm-config/drafts/active/switch/{draftId}", new { }, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, switched.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(
+            $"/api/admin/realm-config/drafts/{draftId}/apply", new { }, factory.JsonOptions, ct)).StatusCode);
+
+        await InTenantAsync(factory, TenantConstants.SystemTenantId, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            Assert.True(await session.Query<Person>()
+                .AnyAsync(p => !p.IsDeleted && p.AccountName == "implicit", ct));
+            Assert.True(await session.Query<Modgud.Authorization.Apps.App>()
+                .AnyAsync(a => !a.IsDeleted && a.Slug == "quickfix-app", ct));
+        });
+    }
+
+    [Fact]
     public async Task Concurrent_edits_hit_the_optimistic_version_gate()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
@@ -177,6 +235,13 @@ public class RealmDraftEndpointsTests(ColdStartFixture fixture) : ColdStartTestB
             new { ExpectedVersion = 1, Name = "Lost update" }, factory.JsonOptions, ct);
         Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
         Assert.Contains("Draft.VersionConflict", await stale.Content.ReadAsStringAsync(ct));
+    }
+
+    private static async Task AssertNoActiveDraftAsync(HttpClient client, CancellationToken ct)
+    {
+        // Results.Ok(null) renders an empty body; a JSON "null" is equally fine.
+        var body = (await client.GetStringAsync("/api/admin/realm-config/drafts/active", ct)).Trim();
+        Assert.True(body is "" or "null", $"expected no active draft, got: {body}");
     }
 
     private static async Task InTenantAsync(

@@ -169,6 +169,53 @@ public static class RealmConfigEndpoints
         .WithName("RealmConfig_Drafts_ClearSecret")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
 
+        // ── Active draft (implicit branches): the admin's checkout. ─────────────────
+        drafts.MapGet("active", async (HttpContext http, RealmDraftService service, CancellationToken ct) =>
+            Results.Ok(await service.GetActiveAsync(RequireUserId(http), ct)))
+        .WithName("RealmConfig_Drafts_Active")
+        .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
+
+        drafts.MapPost("active/park", async (HttpContext http, RealmDraftService service, CancellationToken ct) =>
+        {
+            await service.ParkAsync(RequireUserId(http), ct);
+            return Results.NoContent();
+        })
+        .WithName("RealmConfig_Drafts_Park")
+        .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
+
+        drafts.MapPost("active/switch/{id:guid}", async (
+            Guid id, HttpContext http, RealmDraftService service, CancellationToken ct) =>
+        {
+            var result = await service.SwitchAsync(id, RequireUserId(http), ct);
+            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+        })
+        .WithName("RealmConfig_Drafts_Switch")
+        .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
+
+        // The staging seam: upserts one entity ("commit") into the active draft —
+        // implicitly creating an auto-named draft when none is active. Body = the
+        // manifest entity; the natural key is computed server-side.
+        drafts.MapPut("active/entities/{section}", async (
+            string section, System.Text.Json.Nodes.JsonObject entity,
+            HttpContext http, RealmDraftService service, CancellationToken ct) =>
+        {
+            var result = await service.StageEntityAsync(
+                section, entity, TenantContext.Current, RequireUserId(http), UserName(http), ct);
+            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+        })
+        .WithName("RealmConfig_Drafts_StageEntity")
+        .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
+
+        drafts.MapDelete("active/entities/{section}", async (
+            string section, string key, HttpContext http, RealmDraftService service, CancellationToken ct) =>
+        {
+            var result = await service.UnstageEntityAsync(
+                section, key, TenantContext.Current, RequireUserId(http), UserName(http), ct);
+            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+        })
+        .WithName("RealmConfig_Drafts_UnstageEntity")
+        .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
+
         // Rebase = "keep mine": baseline := current export, remaining differences
         // become intentional staged changes and stop flagging as conflicts.
         drafts.MapPost("{id:guid}/rebase", async (

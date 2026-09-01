@@ -4,6 +4,7 @@ import { RouterView } from 'vue-router'
 import { useI18n } from '@cocoar/vue-localization'
 import SubNavLayoutGrouped from '@/layouts/SubNavLayoutGrouped.vue'
 import type { SubNavGroup, SubNavItem } from '@/layouts/sub-nav-types'
+import DraftStagingBar from '@/views/admin/realm-config/DraftStagingBar.vue'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 
@@ -109,6 +110,11 @@ const adminGroups = computed<SubNavGroup[]>(() =>
 
 <template>
   <SubNavLayoutGrouped :groups="adminGroups">
-    <RouterView class="flex-1 min-h-0" />
+    <div class="flex flex-col flex-1 min-h-0 min-w-0">
+      <!-- ADR-0005: the staging bar spans the whole admin area whenever a
+           draft is checked out — every save commits onto it, apply merges. -->
+      <DraftStagingBar v-if="authStore.hasPermission('realm:admin')" />
+      <RouterView class="flex-1 min-h-0" />
+    </div>
   </SubNavLayoutGrouped>
 </template>
