@@ -1805,6 +1805,8 @@
       "discardDraft": "Draft verwerfen",
       "backToList": "Drafts",
       "parkToList": "Parken & zur Liste",
+      "showUnchanged": "Unveränderte anzeigen",
+      "noChanges": "Noch keine gestagten Änderungen — bearbeite Entities im Admin-Bereich (oder blende „Unveränderte anzeigen“ ein, um alles zu durchstöbern).",
       "bar": {
         "pending": "{count} gestaged",
         "clean": "keine Änderungen",

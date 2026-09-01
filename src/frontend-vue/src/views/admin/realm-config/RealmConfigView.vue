@@ -221,8 +221,17 @@ const conflictCount = computed(() =>
   (store.plan?.Sections ?? []).reduce(
     (sum, s) => sum + s.Entries.reduce((n, e) => n + e.Conflicts.length, 0), 0))
 
+// The review page shows what the apply WOULD DO — unchanged entries only on
+// demand, otherwise a large realm drowns the actual diff.
+const showUnchanged = ref(false)
+
+function entryVisible(entry: PlanEntry): boolean {
+  return showUnchanged.value || entry.Action !== 'unchanged' || entry.Conflicts.length > 0
+}
+
 const visibleSections = computed(() => (store.plan?.Sections ?? [])
-  .filter((s) => s.Entries.length > 0 || s.Name !== 'settings'))
+  .map((s) => ({ ...s, Entries: s.Entries.filter(entryVisible) }))
+  .filter((s) => s.Entries.length > 0 || showUnchanged.value))
 
 /** Minimal skeletons for "add entity" — the modal's JSON editor fills the rest. */
 const NEW_ENTITY_TEMPLATES: Record<string, ManifestEntity> = {
@@ -433,6 +442,9 @@ function formatDate(value: string): string {
           </template>
           <span class="toolbar-spacer" />
           <CoarCheckbox
+            v-model="showUnchanged"
+            :label="t('admin.realmConfig.showUnchanged', {}, 'Show unchanged')" />
+          <CoarCheckbox
             v-model="store.prune"
             :label="t('admin.realmConfig.prune', {}, 'Prune — also delete entities missing from the draft')"
             @update:model-value="store.replan()" />
@@ -476,6 +488,9 @@ function formatDate(value: string): string {
         </CoarNotice>
 
         <div class="workspace-scroll">
+          <div v-if="!store.planning && visibleSections.length === 0" class="muted">
+            {{ t('admin.realmConfig.noChanges', {}, 'No staged changes yet — edit entities in the admin area (or enable “Show unchanged” to browse everything).') }}
+          </div>
           <section v-for="section in visibleSections" :key="section.Name" class="plan-section">
             <h2 class="section-title">
               <CoarIcon :name="SECTION_ICONS[section.Name] ?? 'file-json'" size="s" />
