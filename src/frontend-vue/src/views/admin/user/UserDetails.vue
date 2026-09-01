@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useUserStore, type UserGroupDto, type InheritedUserGroupDto, type EffectiveGroupDto, type EffectiveGroupDiagnostic } from '@/stores/user.store'
+import { useAuthStore } from '@/stores/auth.store'
+import { useRealmDraftStore, type ManifestEntity } from '@/stores/realmDraft.store'
 import { useGroupStore } from '@/stores/group.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import { CoarNotice, CoarTextInput, CoarPasswordInput, CoarNumberInput, CoarFormField, CoarIcon, CoarTabGroup, CoarTab, CoarListbox, CoarDualListbox, CoarButton, CoarCheckbox, CoarTag, CoarDivider, CoarPopover } from '@cocoar/vue-ui'
@@ -19,6 +21,43 @@ const userStore = useUserStore()
 const groupStore = useGroupStore()
 const appConfig = useAppConfigStore()
 const isCreate = computed(() => props.id === 'create')
+
+// ── ADR-0005 staging (Increment B) ────────────────────────────────────────────
+// For realm admins the admin UI is always in staging mode: profile saves commit
+// onto the active draft (implicitly creating one) instead of writing live.
+// Rows created in a draft open with a "draft__<key>" id and edit the manifest
+// entity directly. Live-only concerns (active state, 2FA policy, groups) keep
+// their immediate behavior on existing users and are hidden on staged creates.
+const authStore = useAuthStore()
+const draftStore = useRealmDraftStore()
+const isDraftRow = computed(() => props.id.startsWith('draft__'))
+const draftKey = computed(() => (isDraftRow.value ? props.id.slice('draft__'.length) : null))
+const stagingActive = computed(() => authStore.hasPermission('realm:admin'))
+/** Manifest Key for the staged upsert — pinned to the ORIGINAL identity so a
+ * username edit replaces the right entry instead of duplicating it. */
+const stagedKey = ref<string | null>(null)
+/** Snapshot of the loaded profile — staging only commits when it changed. */
+const profileBaseline = ref('')
+const stagedCreateHidesLiveControls = computed(() =>
+  (isCreate.value && stagingActive.value) || isDraftRow.value)
+
+function profileSnapshot(): string {
+  return JSON.stringify({ ...form.value, emailConfirmed: emailConfirmed.value })
+}
+
+function buildStagedEntity(): ManifestEntity {
+  const entity: ManifestEntity = {
+    Email: form.value.Email.trim(),
+    EmailConfirmed: emailConfirmed.value,
+  }
+  if (stagedKey.value) entity.Key = stagedKey.value
+  if (form.value.Firstname.trim()) entity.Firstname = form.value.Firstname.trim()
+  if (form.value.Lastname.trim()) entity.Lastname = form.value.Lastname.trim()
+  if (form.value.Acronym.trim()) entity.Acronym = form.value.Acronym.trim()
+  if (form.value.UserName.trim()) entity.UserName = form.value.UserName.trim()
+  if (initialPassword.value) entity.Password = initialPassword.value
+  return entity
+}
 const loading = ref(false)
 const activeTab = ref<'general' | 'groups' | 'effective' | 'security'>('general')
 
@@ -91,6 +130,7 @@ const effectiveDiagnostics = ref<EffectiveGroupDiagnostic[]>([])
 const groupsLoaded = ref(false)
 
 async function loadGroups() {
+  if (isDraftRow.value) { groupsLoaded.value = true; return }
   // On create there is nothing to read yet — the user has no memberships and
   // no id. The picker still works: it stages against an empty baseline and the
   // save commits the additions once the id exists.
@@ -268,7 +308,11 @@ const modalTitle = computed(() => {
 
 const footerButton = computed(() => ({
   visible: true,
-  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
+  text: isDraftRow.value || (isCreate.value && stagingActive.value)
+    ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+    : stagingActive.value
+      ? t('admin.userDetails.stageSave', {}, 'Speichern (Draft)')
+      : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   // Email is always required (the anchor). Username + first/last name follow the
   // configurable (App⊕realm) policy — required ones must be filled, defaulting to
   // the lenient "all Optional" behaviour when the realm never configured it.
@@ -284,6 +328,26 @@ const footerButton = computed(() => ({
 onMounted(async () => {
   // Ensure the field policy is available (idempotent; usually already loaded at boot).
   appConfig.load()
+
+  // Draft-created user: no live id exists — the form IS the manifest entity.
+  if (isDraftRow.value) {
+    const entity = draftStore.findEntity('users', draftKey.value!)
+    if (entity) {
+      const str = (v: unknown) => (typeof v === 'string' ? v : '')
+      form.value = {
+        Firstname: str(entity.Firstname),
+        Lastname: str(entity.Lastname),
+        Acronym: str(entity.Acronym),
+        Email: str(entity.Email),
+        UserName: str(entity.UserName),
+      }
+      emailConfirmed.value = entity.EmailConfirmed === true
+      stagedKey.value = str(entity.Key) || draftKey.value
+    }
+    profileBaseline.value = profileSnapshot()
+    return
+  }
+
   if (isCreate.value) {
     // The group picker needs the assignable-groups list on create too.
     await groupStore.initialize()
@@ -312,6 +376,26 @@ onMounted(async () => {
       exemptLocal.value = sec.TwoFactorExempt
       originalOverride.value = sec.GracePeriodDaysOverride
       originalExempt.value = sec.TwoFactorExempt
+
+      // Staging overlay: when the active draft already carries this user, the
+      // form shows the STAGED profile (the draft is the working state).
+      if (stagingActive.value && draftStore.current) {
+        stagedKey.value = user.UserName || user.Email || null
+        const entity = stagedKey.value ? draftStore.findEntity('users', stagedKey.value) : null
+        if (entity) {
+          const str = (v: unknown) => (typeof v === 'string' ? v : '')
+          form.value = {
+            Firstname: str(entity.Firstname) || '',
+            Lastname: str(entity.Lastname) || '',
+            Acronym: str(entity.Acronym) || '',
+            Email: str(entity.Email) || form.value.Email,
+            UserName: str(entity.UserName) || form.value.UserName,
+          }
+        }
+      } else {
+        stagedKey.value = user.UserName || user.Email || null
+      }
+      profileBaseline.value = profileSnapshot()
     } finally {
       loading.value = false
     }
@@ -322,6 +406,20 @@ async function save() {
   if (!form.value.Email.trim() || emailInvalid.value) return
   loading.value = true
   try {
+    // ── Staged paths (ADR-0005): the save is a COMMIT onto the active draft. ──
+    if (isDraftRow.value) {
+      await draftStore.upsertEntity('users', draftKey.value!, buildStagedEntity())
+      props.close()
+      return
+    }
+    if (isCreate.value && stagingActive.value) {
+      const entity = buildStagedEntity()
+      const key = (form.value.UserName.trim() || form.value.Email.trim())
+      await draftStore.upsertEntity('users', key, entity)
+      props.close()
+      return
+    }
+
     if (isCreate.value) {
       // One request and one backend transaction create the complete user:
       // profile, credentials, status, memberships and per-user 2FA policy.
@@ -355,20 +453,33 @@ async function save() {
         }])
       }
 
-      // Single request — profile + active state + email-verified override.
-      // Only emit EmailConfirmed when the admin actually changed it; otherwise
-      // a no-op PUT could still rewrite (and audit-log) the flag.
-      await userStore.httpClient.addPath(props.id).put({
-        Firstname: form.value.Firstname,
-        Lastname: form.value.Lastname,
-        Acronym: form.value.Acronym || undefined,
-        Email: form.value.Email || undefined,
-        // Username left blank on edit = no change (a user must keep a username);
-        // the email-default only applies on create.
-        UserName: form.value.UserName || undefined,
-        IsActive: isActive.value !== originalActive.value ? isActive.value : undefined,
-        EmailConfirmed: emailConfirmed.value !== originalEmailConfirmed.value ? emailConfirmed.value : undefined,
-      })
+      if (stagingActive.value) {
+        // Profile edits are STAGED (commit onto the active draft) — pinned to
+        // the original identity key so a username change replaces, not clones.
+        if (profileSnapshot() !== profileBaseline.value) {
+          await draftStore.upsertEntity('users', stagedKey.value ?? form.value.Email, buildStagedEntity())
+        }
+        // Active state stays a live operation (deactivation is an action with
+        // a revocation cascade — the manifest does not model it).
+        if (isActive.value !== originalActive.value) {
+          await userStore.httpClient.addPath(props.id).put({ IsActive: isActive.value })
+        }
+      } else {
+        // Single request — profile + active state + email-verified override.
+        // Only emit EmailConfirmed when the admin actually changed it; otherwise
+        // a no-op PUT could still rewrite (and audit-log) the flag.
+        await userStore.httpClient.addPath(props.id).put({
+          Firstname: form.value.Firstname,
+          Lastname: form.value.Lastname,
+          Acronym: form.value.Acronym || undefined,
+          Email: form.value.Email || undefined,
+          // Username left blank on edit = no change (a user must keep a username);
+          // the email-default only applies on create.
+          UserName: form.value.UserName || undefined,
+          IsActive: isActive.value !== originalActive.value ? isActive.value : undefined,
+          EmailConfirmed: emailConfirmed.value !== originalEmailConfirmed.value ? emailConfirmed.value : undefined,
+        })
+      }
 
       // Grace policy (per-user override + exempt). Only write when something changed,
       // since this hits a separate endpoint and we don't want noise in the auth log.
@@ -443,13 +554,19 @@ watch(() => form.value.UserName, () => {
             </CoarPopover>
           </span>
         </CoarTab>
-        <CoarTab id="groups">{{ t('admin.userDetails.tabs.groups', {}, 'Direct Groups') }}</CoarTab>
-        <CoarTab v-if="!isCreate" id="effective">{{ t('admin.userDetails.tabs.effective', {}, 'Effektiv') }}</CoarTab>
-        <CoarTab id="security">{{ t('admin.userDetails.tabs.security', {}, 'Security') }}</CoarTab>
+        <CoarTab v-if="!stagedCreateHidesLiveControls" id="groups">{{ t('admin.userDetails.tabs.groups', {}, 'Direct Groups') }}</CoarTab>
+        <CoarTab v-if="!isCreate && !isDraftRow" id="effective">{{ t('admin.userDetails.tabs.effective', {}, 'Effektiv') }}</CoarTab>
+        <CoarTab v-if="!stagedCreateHidesLiveControls" id="security">{{ t('admin.userDetails.tabs.security', {}, 'Security') }}</CoarTab>
       </CoarTabGroup>
 
       <!-- Tab: General -->
       <div v-show="activeTab === 'general'" class="tab-content">
+        <p v-if="stagingActive" class="staged-hint">
+          <CoarIcon name="file-json" size="s" />
+          {{ isDraftRow || isCreate
+            ? t('admin.userDetails.stagedCreateHint', {}, 'Dieser Benutzer wird im Draft angelegt — wirksam erst mit „Draft anwenden“.')
+            : t('admin.userDetails.stagedEditHint', {}, 'Profil-Änderungen werden in den Draft übernommen — wirksam erst mit „Draft anwenden“.') }}
+        </p>
         <div class="modal-form">
           <!-- Section: Identity -->
           <section class="form-section">
@@ -495,7 +612,10 @@ watch(() => form.value.UserName, () => {
                 :hint="t('admin.userDetails.initialPasswordHint', {}, 'Optional. Leave empty for an account that signs in via magic link, passkey or an external identity provider.')">
                 <CoarPasswordInput v-model="initialPassword" autocomplete="new-password" />
               </CoarFormField>
+              <!-- Not manifest-modeled (deactivation is a live action with a
+                   revocation cascade) — hidden on staged creates / draft rows. -->
               <CoarFormField
+                v-if="!stagedCreateHidesLiveControls"
                 class="col-half account-flag-field"
                 :label="t('admin.userDetails.activeCheckbox', {}, 'Benutzer aktiv')"
                 :hint="t('admin.userDetails.activeHint', {}, 'Deaktivierte Benutzer können sich nicht anmelden.')"
@@ -744,6 +864,15 @@ watch(() => form.value.UserName, () => {
 </template>
 
 <style scoped>
+.staged-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.75rem;
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-size: 0.76rem;
+}
+
 .claim-row {
   display: grid;
   grid-template-columns: 7rem 1fr;
