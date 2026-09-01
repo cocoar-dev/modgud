@@ -11,7 +11,7 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useOAuthApiStore } from '@/stores/oauthApi.store'
-import { useDraftListOverlay, type DraftRow } from '@/composables/useDraftStaging'
+import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
@@ -39,11 +39,13 @@ const liveRows = computed(() =>
   store.apis.filter((a) => appCtx.matchesSingleAppId(a.AppId)))
 
 // ADR-0005: draft-merged roster (natural key = the immutable audience/Name).
+const staging = useDraftStaging('apis')
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
 const rows = useDraftListOverlay<OAuthApiDto>({
   section: 'apis',
   rows: liveRows,
+  liveKey: (row) => row.Name,
   matchLive: (row, e) => row.Name === str(e.Name),
   overlay: (row, e) => ({
     ...row,
@@ -69,6 +71,7 @@ const rows = useDraftListOverlay<OAuthApiDto>({
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
+const selectedDeleteStaged = ref(false)
 
 const showEmpty = computed(() => store.loaded && rows.value.length === 0)
 
@@ -86,7 +89,9 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthApiDt
       event.api.deselectAll()
       event.node.setSelected(true)
     }
-    selectedIds.value = event.api.getSelectedRows().map((r: OAuthApiDto) => r.Id)
+    const selected = event.api.getSelectedRows() as DraftRow<OAuthApiDto>[]
+    selectedIds.value = selected.map((r) => r.Id)
+    selectedDeleteStaged.value = selected.some((r) => r.DraftStaged === 'delete')
     cellMenu.open(event.event as MouseEvent)
   })
   .onViewportContextMenu(($event) => viewportMenu.open($event))
@@ -101,9 +106,12 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthApiDt
         ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
         : p.data?.DraftStaged === 'update'
           ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
-          : '')
+          : p.data?.DraftStaged === 'delete'
+            ? t('admin.realmConfig.gridTag.delete', {}, 'Staged (delete)')
+            : '')
       .width(120)
-      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged),
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged && p.data.DraftStaged !== 'delete')
+      .classRule('draft-staged-cell-delete', (p: any) => p.data?.DraftStaged === 'delete'),
     (col) => col.tag('Enabled', {
       variantMap: { active: 'success', inactive: 'neutral' },
       i18nPrefix: 'common.statusTag.',
@@ -115,6 +123,16 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthApiDt
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
+  // ADR-0005 staged deletes: draft-created rows unstage, live rows stage their
+  // deletion, a second click on a staged-delete row undoes it.
+  if (staging.stagingActive.value) {
+    if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))
+    const row = rows.value.find((r) => r.Id === id)
+    if (!row) return
+    if (row.DraftStaged === 'delete') return staging.unstageDelete(row.Name)
+    if (!confirm(t('admin.oauthApis.confirmDelete', {}, 'Really delete this API?'))) return
+    return staging.stageDelete(row.Name)
+  }
   if (!confirm(t('admin.oauthApis.confirmDelete', {}, 'Really delete this API?'))) return
   try { await store.remove(id) } catch (e: any) { alert(e?.message ?? String(e)) }
 }
@@ -164,7 +182,12 @@ onMounted(() => store.initialize())
       <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy"
         @clicked="cloneSelected" />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteSelected" />
+      <CoarMenuItem
+        :label="selectedDeleteStaged
+          ? t('admin.realmConfig.undelete', {}, 'Undo delete')
+          : t('common.delete', {}, 'Delete')"
+        :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
+        @clicked="deleteSelected" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">
@@ -177,6 +200,11 @@ onMounted(() => store.initialize())
 <style scoped>
 :deep(.draft-staged-cell) {
   color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+
+:deep(.draft-staged-cell-delete) {
+  color: var(--coar-text-semantic-error, #dc2626);
   font-weight: 600;
 }
 </style>

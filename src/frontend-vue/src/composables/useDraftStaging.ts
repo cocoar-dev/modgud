@@ -47,7 +47,24 @@ export function useDraftStaging(section: string) {
     await draftStore.removeEntity(section, key)
   }
 
-  return { draftStore, stagingActive, isDraftId, draftKeyOf, findStaged, stage, unstage }
+  /** Stages the deletion of a LIVE entity (targeted prune counterpart). */
+  async function stageDelete(key: string): Promise<void> {
+    await draftStore.stageDelete(section, key)
+  }
+
+  /** Undoes a staged deletion — the entity is restored from the baseline. */
+  async function unstageDelete(key: string): Promise<void> {
+    await draftStore.unstageDelete(section, key)
+  }
+
+  function isDeleteStaged(key: string): boolean {
+    return draftStore.isDeleteStaged(section, key)
+  }
+
+  return {
+    draftStore, stagingActive, isDraftId, draftKeyOf, findStaged,
+    stage, unstage, stageDelete, unstageDelete, isDeleteStaged,
+  }
 }
 
 export interface DraftOverlayOptions<TRow extends { Id: string }> {
@@ -59,9 +76,12 @@ export interface DraftOverlayOptions<TRow extends { Id: string }> {
   overlay: (row: TRow, entity: ManifestEntity) => TRow
   /** Builds the synthetic row for an entity created in the draft. */
   synthesize: (key: string, entity: ManifestEntity, draft: DraftDto) => TRow
+  /** The live row's natural key — enables marking rows whose DELETION is
+   * staged (the entity is gone from the manifest, so only the key matches). */
+  liveKey?: (row: TRow) => string
 }
 
-export type DraftStagedMark = 'create' | 'update'
+export type DraftStagedMark = 'create' | 'update' | 'delete'
 export type DraftRow<TRow> = TRow & { DraftStaged?: DraftStagedMark }
 
 /**
@@ -106,7 +126,16 @@ export function useDraftListOverlay<TRow extends { Id: string }>(
       }
     }
 
+    // Staged deletions come from the draft itself (not the plan): the entity is
+    // gone from the manifest, so only the natural key can match the live row.
+    const deletions = new Set(
+      (draft.Deletions ?? [])
+        .filter((d) => d.Section === options.section)
+        .map((d) => d.Key))
+
     const rows = base.map((row) => {
+      if (options.liveKey && deletions.has(options.liveKey(row)))
+        return { ...row, DraftStaged: 'delete' as const }
       const entity = overlays.get(row.Id)
       if (!entity) return row
       return { ...options.overlay(row, entity), DraftStaged: 'update' as const }

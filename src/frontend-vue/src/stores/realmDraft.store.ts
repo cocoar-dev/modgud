@@ -42,9 +42,15 @@ export interface DraftSummary {
   Version: number
 }
 
+export interface DraftDeletion {
+  Section: string
+  Key: string
+}
+
 export interface DraftDto extends DraftSummary {
   Manifest: DraftManifest
   SecretSlots: string[]
+  Deletions: DraftDeletion[]
 }
 
 export interface PlanChange {
@@ -280,7 +286,7 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     }
   }
 
-  /** Removes one entity from the active draft (staged delete / create undo). */
+  /** Removes one entity from the active draft (undo of a staged create/edit). */
   async function removeEntity(section: string, key: string) {
     saving.value = true
     error.value = null
@@ -295,6 +301,47 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     } finally {
       saving.value = false
     }
+  }
+
+  /** Stages the DELETION of one live entity (ADR-0005 staged deletes) — the
+   * targeted counterpart of prune; implicitly creates a draft when none is
+   * active. Applied through the same canonical delete ops on "Draft anwenden". */
+  async function stageDelete(section: string, key: string) {
+    saving.value = true
+    error.value = null
+    try {
+      current.value = await draftsHttp
+        .addPath('active', 'deletions', section)
+        .setQueryParameter('key', key)
+        .put<DraftDto>({})
+      await replan()
+    } catch (e) {
+      error.value = draftErrorMessage(e)
+    } finally {
+      saving.value = false
+    }
+  }
+
+  /** Undoes a staged deletion — the entity is restored from the draft's baseline. */
+  async function unstageDelete(section: string, key: string) {
+    saving.value = true
+    error.value = null
+    try {
+      current.value = await draftsHttp
+        .addPath('active', 'deletions', section)
+        .setQueryParameter('key', key)
+        .delete<DraftDto>()
+      await replan()
+    } catch (e) {
+      error.value = draftErrorMessage(e)
+    } finally {
+      saving.value = false
+    }
+  }
+
+  /** Whether the active draft stages the deletion of (section, key). */
+  function isDeleteStaged(section: string, key: string): boolean {
+    return current.value?.Deletions?.some((d) => d.Section === section && d.Key === key) === true
   }
 
   /** All manifest entities of a section in the ACTIVE draft (settings = [Settings]). */
@@ -379,6 +426,7 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     planIsFresh, planHasErrors, canApply, pendingCount,
     loadDrafts, loadActive, createDraft, openDraft, closeDraft, deleteDraft,
     replan, updateDraft, upsertEntity, removeEntity, findEntity, sectionEntities,
+    stageDelete, unstageDelete, isDeleteStaged,
     rebase, clearSecret, apply,
   }
 })

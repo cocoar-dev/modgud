@@ -213,7 +213,8 @@ public sealed partial class RealmManifestApplier
     /// </summary>
     private static async Task PrunePositionsAsync(
         IServiceProvider sp, IDocumentSession session, OAuthAdminService oauth,
-        RealmManifest manifest, CancellationToken ct)
+        RealmManifest manifest, bool prune, IReadOnlyDictionary<string, HashSet<string>>? targeted,
+        CancellationToken ct)
     {
         // Feature dark → the realm cannot contain positions; nothing to prune.
         if (!sp.GetRequiredService<AppSettings>().Features.PositionTerminals) return;
@@ -221,6 +222,9 @@ public sealed partial class RealmManifestApplier
         var keep = manifest.Positions
             .Select(p => p.AccountName.Trim().ToLowerInvariant())
             .ToHashSet(StringComparer.Ordinal);
+        // Targeted (staged) deletions restrict the sweep to their keys (lowercased
+        // account names — normalized by the caller); full prune deletes everything.
+        var targetedPositions = targeted?.GetValueOrDefault("positions");
         var staffingRevoker = sp.GetRequiredService<IStaffingRevoker>();
         var revoker = sp.GetRequiredService<IOAuthGrantRevoker>();
         var now = DateTimeOffset.UtcNow;
@@ -228,6 +232,7 @@ public sealed partial class RealmManifestApplier
         foreach (var fn in await session.Query<PositionPrincipal>().Where(p => !p.IsDeleted).ToListAsync(ct))
         {
             if (keep.Contains(fn.AccountName)) continue;
+            if (!prune && targetedPositions?.Contains(fn.AccountName) != true) continue;
             var ctx = $"prune position '{fn.AccountName}'";
 
             var slots = (await session.Query<TerminalEnrollment>().ToListAsync(ct))

@@ -214,6 +214,97 @@ public class RealmDraftEndpointsTests(ColdStartFixture fixture) : ColdStartTestB
     }
 
     [Fact]
+    public async Task Staged_deletes_stage_undo_apply_and_protect_admin_targets()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var client = await factory.CreateRealmAdminAndLoginAsync();
+
+        // Seed two scopes live — one to delete, one that must survive the targeted apply.
+        var seed = new
+        {
+            Realm = new { },
+            Scopes = new[]
+            {
+                new { Name = "sd-doomed", DisplayName = "Doomed" },
+                new { Name = "sd-survivor", DisplayName = "Survivor" },
+            },
+        };
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(
+            "/api/admin/realm-config/apply", seed, factory.JsonOptions, ct)).StatusCode);
+
+        // Staging a deletion implicitly creates the draft: the entity leaves the
+        // manifest and the (section, key) is recorded.
+        var staged = await client.PutAsJsonAsync(
+            "/api/admin/realm-config/drafts/active/deletions/scopes?key=sd-doomed",
+            new { }, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, staged.StatusCode);
+        var draft = JsonNode.Parse(await staged.Content.ReadAsStringAsync(ct))!;
+        var draftId = draft["Id"]!.GetValue<Guid>();
+        Assert.Contains(draft["Deletions"]!.AsArray(),
+            d => d!["Key"]!.GetValue<string>() == "sd-doomed");
+        Assert.DoesNotContain(draft["Manifest"]!["Scopes"]!.AsArray(),
+            s => s!["Name"]!.GetValue<string>() == "sd-doomed");
+
+        // The plan shows the targeted delete without prune, conflict-free.
+        var plan = await PlanAsync(client, factory, draftId, ct);
+        var doomed = SectionEntry(plan, "scopes", "sd-doomed");
+        Assert.Equal("delete", doomed["Action"]!.GetValue<string>());
+        Assert.False(plan["HasConflicts"]!.GetValue<bool>());
+
+        // Undo restores the entity from the baseline — the plan reads unchanged again.
+        Assert.Equal(HttpStatusCode.OK, (await client.DeleteAsync(
+            "/api/admin/realm-config/drafts/active/deletions/scopes?key=sd-doomed", ct)).StatusCode);
+        plan = await PlanAsync(client, factory, draftId, ct);
+        Assert.Equal("unchanged", SectionEntry(plan, "scopes", "sd-doomed")["Action"]!.GetValue<string>());
+
+        // Re-stage and apply: exactly the targeted scope is gone, the survivor stays.
+        Assert.Equal(HttpStatusCode.OK, (await client.PutAsJsonAsync(
+            "/api/admin/realm-config/drafts/active/deletions/scopes?key=sd-doomed",
+            new { }, factory.JsonOptions, ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(
+            $"/api/admin/realm-config/drafts/{draftId}/apply", new { }, factory.JsonOptions, ct)).StatusCode);
+
+        var export = JsonNode.Parse(await client.GetStringAsync("/api/admin/realm-config/export", ct))!;
+        var scopeNames = export["Scopes"]!.AsArray().Select(s => s!["Name"]!.GetValue<string>()).ToList();
+        Assert.DoesNotContain("sd-doomed", scopeNames);
+        Assert.Contains("sd-survivor", scopeNames);
+
+        // A staged deletion of a protected entity (a realm-admin role) is an apply
+        // ERROR — the admin explicitly asked for something the applier will never do.
+        var adminRole = export["Roles"]!.AsArray()
+            .First(r => r!["IsRealmAdmin"]!.GetValue<bool>())!["Name"]!.GetValue<string>();
+        var protectedStage = await client.PutAsJsonAsync(
+            $"/api/admin/realm-config/drafts/active/deletions/roles?key={Uri.EscapeDataString(adminRole)}",
+            new { }, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, protectedStage.StatusCode);
+        var protectedDraftId = JsonNode.Parse(
+            await protectedStage.Content.ReadAsStringAsync(ct))!["Id"]!.GetValue<Guid>();
+
+        plan = await PlanAsync(client, factory, protectedDraftId, ct);
+        Assert.Equal("error", SectionEntry(plan, "roles", adminRole)["Action"]!.GetValue<string>());
+        var refused = await client.PostAsJsonAsync(
+            $"/api/admin/realm-config/drafts/{protectedDraftId}/apply", new { }, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Contains("Draft.ApplyRefused", await refused.Content.ReadAsStringAsync(ct));
+    }
+
+    private static async Task<JsonNode> PlanAsync(
+        HttpClient client, ColdStartWebApplicationFactory factory, Guid draftId, CancellationToken ct)
+    {
+        var resp = await client.PostAsJsonAsync(
+            $"/api/admin/realm-config/drafts/{draftId}/plan", new { }, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        return JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct))!;
+    }
+
+    private static JsonNode SectionEntry(JsonNode plan, string section, string key)
+        => plan["Sections"]!.AsArray()
+            .Single(s => s!["Name"]!.GetValue<string>() == section)!["Entries"]!.AsArray()
+            .Single(e => e!["Key"]!.GetValue<string>() == key)!;
+
+    [Fact]
     public async Task Concurrent_edits_hit_the_optimistic_version_gate()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();

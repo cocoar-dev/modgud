@@ -751,7 +751,8 @@
       "name": "Name",
       "resourceType": "Resource",
       "description": "Beschreibung",
-      "permissions": "Berechtigungen"
+      "permissions": "Berechtigungen",
+      "cannotDeleteRealmAdmin": "Realm-Admin-Rollen können nicht gelöscht werden (Aussperr-Schutz)."
     },
     "roleDetails": {
       "createTitle": "Rolle erstellen",
@@ -1814,6 +1815,13 @@
         "view": "Ansehen",
         "park": "Parken"
       },
+      "gridCol": "Draft",
+      "gridTag": {
+        "create": "Gestaged (neu)",
+        "update": "Gestaged",
+        "delete": "Gestaged (löschen)"
+      },
+      "undelete": "Löschen zurücknehmen",
       "shareToggle": "Mit Realm-Admins teilen",
       "planning": "Änderungsplan wird berechnet…",
       "prune": "Prune — Entitäten löschen, die im Draft fehlen",

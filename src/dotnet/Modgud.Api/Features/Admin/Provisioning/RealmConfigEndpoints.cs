@@ -62,7 +62,7 @@ public static class RealmConfigEndpoints
             var currentSlug = TenantContext.Current;
             if (SlugMismatch(manifest, currentSlug) is { } mismatch) return mismatch;
             var scoped = manifest with { Realm = manifest.Realm with { Slug = currentSlug } };
-            var result = await planner.PlanAsync(scoped, prune, baseline: null, ct);
+            var result = await planner.PlanAsync(scoped, prune, baseline: null, deletions: null, ct);
             return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Plan")
@@ -94,7 +94,7 @@ public static class RealmConfigEndpoints
             // Pin the manifest to the current realm (covers an empty slug in the body). The
             // realm shell (domains/display name) is not mutated by apply — only in-realm config.
             var scoped = manifest with { Realm = manifest.Realm with { Slug = currentSlug } };
-            var result = await applier.UpdateRealmAsync(scoped, prune, ct);
+            var result = await applier.UpdateRealmAsync(scoped, prune, deletions: null, ct);
             return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Apply")
@@ -214,6 +214,29 @@ public static class RealmConfigEndpoints
             return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Drafts_UnstageEntity")
+        .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
+
+        // Staged deletes (ADR-0005): PUT stages the deletion of one LIVE entity —
+        // implicitly creating an auto-named draft when none is active; DELETE undoes
+        // it (the entity is restored from the draft's baseline).
+        drafts.MapPut("active/deletions/{section}", async (
+            string section, string key, HttpContext http, RealmDraftService service, CancellationToken ct) =>
+        {
+            var result = await service.StageDeleteAsync(
+                section, key, TenantContext.Current, RequireUserId(http), UserName(http), ct);
+            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+        })
+        .WithName("RealmConfig_Drafts_StageDelete")
+        .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
+
+        drafts.MapDelete("active/deletions/{section}", async (
+            string section, string key, HttpContext http, RealmDraftService service, CancellationToken ct) =>
+        {
+            var result = await service.UnstageDeleteAsync(
+                section, key, TenantContext.Current, RequireUserId(http), UserName(http), ct);
+            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+        })
+        .WithName("RealmConfig_Drafts_UnstageDelete")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
 
         // Rebase = "keep mine": baseline := current export, remaining differences

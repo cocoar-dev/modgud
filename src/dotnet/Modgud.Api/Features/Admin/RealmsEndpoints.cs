@@ -348,7 +348,7 @@ public static class RealmsEndpoints
                     Message = $"Route slug '{slug}' does not match the manifest realm slug '{manifest.Realm.Slug}'.",
                 });
 
-            var result = await applier.UpdateRealmAsync(manifest, prune, ct);
+            var result = await applier.UpdateRealmAsync(manifest, prune, deletions: null, ct);
             if (!result.IsError)
             {
                 await RecordControlPlaneRealmOperationAsync(

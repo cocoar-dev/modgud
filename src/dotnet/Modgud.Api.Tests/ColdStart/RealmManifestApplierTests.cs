@@ -477,7 +477,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             Groups = [full.Groups[0]],
         };
 
-        var pruned = await applier.UpdateRealmAsync(keepOnly, prune: true, ct);
+        var pruned = await applier.UpdateRealmAsync(keepOnly, prune: true, deletions: null, ct);
         Assert.False(pruned.IsError, pruned.IsError ? pruned.FirstError.Description : string.Empty);
 
         // The realm DB was never dropped.

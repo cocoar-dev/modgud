@@ -200,6 +200,14 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<UserRow>(), { opena
   ])
 
 async function deleteUsers() {
+  // Draft-created rows exist only in the staged manifest — "delete" = unstage
+  // the create. Live user deletion stays the recycle-bin lifecycle (its own
+  // reversible staging with grace + restore), deliberately NOT a draft delete.
+  const first = selectedIds.value[0]
+  if (first?.startsWith('draft__')) {
+    await draftStore.removeEntity('users', first.slice('draft__'.length))
+    return
+  }
   if (selectedIds.value.length > 0 && confirm(t('admin.users.confirmBin', {},
       'Move to the recycle bin? The user is deactivated and scheduled for deletion, but can be restored until it is permanently erased.'))) {
     await userStore.binUsers(selectedIds.value)

@@ -19,7 +19,7 @@ import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, CLIENT_CLONE } from '@/composables/useClone'
-import { useDraftListOverlay, type DraftRow } from '@/composables/useDraftStaging'
+import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
 import { useRouter } from 'vue-router'
 import type { OAuthClientDto } from '@/models/oauth'
 import GridEmptyState from '@/components/GridEmptyState.vue'
@@ -85,11 +85,13 @@ const liveRows = computed(() =>
 
 // ADR-0005: draft-merged roster — staged edits overlay their live rows,
 // draft-created clients appear as synthetic rows (natural key = client_id).
+const staging = useDraftStaging('clients')
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
 const rows = useDraftListOverlay<OAuthClientDto>({
   section: 'clients',
   rows: liveRows,
+  liveKey: (row) => row.ClientId,
   matchLive: (row, e) => row.ClientId === str(e.ClientId),
   overlay: (row, e) => ({
     ...row,
@@ -117,6 +119,7 @@ const rows = useDraftListOverlay<OAuthClientDto>({
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
+const selectedDeleteStaged = ref(false)
 
 const showEmpty = computed(() => store.loaded && rows.value.length === 0)
 
@@ -134,7 +137,9 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthClien
       event.api.deselectAll()
       event.node.setSelected(true)
     }
-    selectedIds.value = event.api.getSelectedRows().map((r: OAuthClientDto) => r.Id)
+    const selected = event.api.getSelectedRows() as DraftRow<OAuthClientDto>[]
+    selectedIds.value = selected.map((r) => r.Id)
+    selectedDeleteStaged.value = selected.some((r) => r.DraftStaged === 'delete')
     cellMenu.open(event.event as MouseEvent)
   })
   .onViewportContextMenu(($event) => viewportMenu.open($event))
@@ -157,9 +162,12 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthClien
         ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
         : p.data?.DraftStaged === 'update'
           ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
-          : '')
+          : p.data?.DraftStaged === 'delete'
+            ? t('admin.realmConfig.gridTag.delete', {}, 'Staged (delete)')
+            : '')
       .width(120)
-      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged),
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged && p.data.DraftStaged !== 'delete')
+      .classRule('draft-staged-cell-delete', (p: any) => p.data?.DraftStaged === 'delete'),
     (col) => col.field('IsDynamicallyRegistered').header('DCR', 'admin.oauthClients.dcr').width(80)
       .option('valueGetter', (p: any) => p.data?.IsDynamicallyRegistered ? '●' : '')
       .option('cellStyle', { textAlign: 'center', color: 'var(--coar-accent-primary, #6366f1)' }),
@@ -178,6 +186,18 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthClien
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
+  // ADR-0005 staged deletes — SA-linked and terminal-managed clients are not
+  // manifest-modeled and keep the live path.
+  if (staging.stagingActive.value) {
+    if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))
+    const row = rows.value.find((r) => r.Id === id)
+    if (row && !row.LinkedServiceAccountId && !row.LinkedPositionPrincipalId
+      && !row.ManagedTerminalEnrollmentId) {
+      if (row.DraftStaged === 'delete') return staging.unstageDelete(row.ClientId)
+      if (!confirm(t('common.confirmDelete', {}, 'Really delete?'))) return
+      return staging.stageDelete(row.ClientId)
+    }
+  }
   if (!confirm(t('common.confirmDelete', {}, 'Really delete?'))) return
   try {
     await store.remove(id)
@@ -276,7 +296,12 @@ function openClient(client: OAuthClientDto) {
       <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy"
         @clicked="cloneSelected" />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteSelected" />
+      <CoarMenuItem
+        :label="selectedDeleteStaged
+          ? t('admin.realmConfig.undelete', {}, 'Undo delete')
+          : t('common.delete', {}, 'Delete')"
+        :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
+        @clicked="deleteSelected" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">
@@ -289,6 +314,11 @@ function openClient(client: OAuthClientDto) {
 <style scoped>
 :deep(.draft-staged-cell) {
   color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+
+:deep(.draft-staged-cell-delete) {
+  color: var(--coar-text-semantic-error, #dc2626);
   font-weight: 600;
 }
 </style>

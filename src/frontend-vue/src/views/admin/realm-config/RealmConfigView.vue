@@ -283,7 +283,10 @@ async function addEntity(section: string) {
 async function handleModalResult(section: string, key: string, result?: DraftEntryModalResult) {
   if (!result) return
   if (result.action === 'remove') {
-    await store.removeEntity(section, key)
+    // A staged DELETION is undone through its own seam (restores the baseline
+    // entity); everything else unstages the entity from the manifest.
+    if (store.isDeleteStaged(section, key)) await store.unstageDelete(section, key)
+    else await store.removeEntity(section, key)
     return
   }
   if (result.entity) {

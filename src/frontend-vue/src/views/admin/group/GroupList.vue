@@ -16,7 +16,7 @@ import { useApplicationsStore } from '@/stores/applications.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, GROUP_CLONE } from '@/composables/useClone'
-import { useDraftListOverlay, type DraftRow } from '@/composables/useDraftStaging'
+import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
 import type { GroupDto } from '@/models/group'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -53,11 +53,13 @@ const liveGroups = computed<GroupListRow[]>(() =>
     .map((g) => ({ ...g, HasPermissions: g.RoleIds.length > 0 })))
 
 // ADR-0005: draft-merged roster (natural key = the group name).
+const staging = useDraftStaging('groups')
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
 const groups = useDraftListOverlay<GroupListRow>({
   section: 'groups',
   rows: liveGroups,
+  liveKey: (row) => row.Name,
   matchLive: (row, e) => row.Name === str(e.Name),
   overlay: (row, e) => ({
     ...row,
@@ -83,6 +85,7 @@ const groups = useDraftListOverlay<GroupListRow>({
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
+const selectedDeleteStaged = ref(false)
 
 const showEmpty = computed(() => groupStore.loaded && groups.value.length === 0)
 
@@ -100,7 +103,9 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<GroupListR
       event.api.deselectAll()
       event.node.setSelected(true)
     }
-    selectedIds.value = event.api.getSelectedRows().map((r: GroupListRow) => r.Id)
+    const selected = event.api.getSelectedRows() as DraftRow<GroupListRow>[]
+    selectedIds.value = selected.map((r) => r.Id)
+    selectedDeleteStaged.value = selected.some((r) => r.DraftStaged === 'delete')
     cellMenu.open(event.event as MouseEvent)
   })
   .onViewportContextMenu(($event) => {
@@ -114,9 +119,12 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<GroupListR
         ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
         : p.data?.DraftStaged === 'update'
           ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
-          : '')
+          : p.data?.DraftStaged === 'delete'
+            ? t('admin.realmConfig.gridTag.delete', {}, 'Staged (delete)')
+            : '')
       .width(120)
-      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged),
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged && p.data.DraftStaged !== 'delete')
+      .classRule('draft-staged-cell-delete', (p: any) => p.data?.DraftStaged === 'delete'),
     (col) => col.tag('MembershipMode', {
       variantMap: { Manual: 'neutral', Auto: 'info', Error: 'error' },
       i18nPrefix: 'admin.groups.membership.',
@@ -133,6 +141,16 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<GroupListR
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
+  // ADR-0005 staged deletes (admin-conferring groups are apply-guarded; the
+  // plan flags a staged deletion of one as an error).
+  if (staging.stagingActive.value) {
+    if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))
+    const row = groups.value.find((r) => r.Id === id)
+    if (!row) return
+    if (row.DraftStaged === 'delete') return staging.unstageDelete(row.Name)
+    if (!confirm(t('common.confirmDelete', {}, 'Really delete?'))) return
+    return staging.stageDelete(row.Name)
+  }
   if (confirm(t('common.confirmDelete', {}, 'Really delete?'))) {
     await groupStore.deleteGroup(id)
   }
@@ -174,7 +192,12 @@ onMounted(() => groupStore.initialize())
       <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus" @clicked="navigateToModal('create')" />
       <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy" @clicked="cloneSelected" />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteSelected" />
+      <CoarMenuItem
+        :label="selectedDeleteStaged
+          ? t('admin.realmConfig.undelete', {}, 'Undo delete')
+          : t('common.delete', {}, 'Delete')"
+        :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
+        @clicked="deleteSelected" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">
@@ -186,6 +209,11 @@ onMounted(() => groupStore.initialize())
 <style scoped>
 :deep(.draft-staged-cell) {
   color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+
+:deep(.draft-staged-cell-delete) {
+  color: var(--coar-text-semantic-error, #dc2626);
   font-weight: 600;
 }
 </style>

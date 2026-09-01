@@ -241,6 +241,86 @@ public sealed class RealmDraftService(
             else list.Add(entity.DeepClone());
         }
 
+        // Re-staging an entity revives it: a pending deletion of the same key is moot.
+        draft.Deletions.RemoveAll(d => d.Section == section && d.Key == key);
+
+        draft.Manifest = SanitizeManifest(
+            PinSlug(root.Deserialize<RealmManifest>(json)!, slug), draft.Secrets);
+        Touch(draft, userId, userName);
+        session.Store(draft);
+        await session.SaveChangesAsync(ct);
+        return ToDto(draft, userId);
+    }
+
+    /// <summary>
+    /// Stages the DELETION of one live entity (ADR-0005 staged deletes): removes it
+    /// from the active draft's manifest AND records the (section, key) so plan/apply
+    /// treat it as a targeted delete — prune's per-entity counterpart. With no active
+    /// draft, one is created implicitly (same as <see cref="StageEntityAsync"/>).
+    /// </summary>
+    public async Task<ErrorOr<RealmDraftDto>> StageDeleteAsync(
+        string section, string key, string slug, Guid userId, string userName, CancellationToken ct)
+    {
+        if (DraftSectionRegistry.Resolve(section) is not { } meta || meta.Collection is null)
+            return Error.Validation("Draft.UnknownSection",
+                $"Unknown or non-deletable manifest section '{section}'.");
+        if (string.IsNullOrEmpty(key))
+            return Error.Validation("Draft.KeyMissing", "A deletion needs the entity's natural key.");
+
+        var draftResult = await GetOrCreateActiveAsync(slug, userId, userName, ct);
+        if (draftResult.IsError) return draftResult.Errors;
+        var draft = draftResult.Value;
+
+        var json = jsonOptions.Value.SerializerOptions;
+        var root = JsonSerializer.SerializeToNode(draft.Manifest, json)!.AsObject();
+        if (root[meta.Collection] is JsonArray list)
+        {
+            var index = list.OfType<JsonObject>().ToList().FindIndex(e => meta.Key(e) == key);
+            if (index >= 0) list.RemoveAt(index);
+        }
+
+        if (!draft.Deletions.Any(d => d.Section == section && d.Key == key))
+            draft.Deletions.Add(new RealmDraftDeletion(section, key));
+
+        draft.Manifest = SanitizeManifest(root.Deserialize<RealmManifest>(json)!, draft.Secrets);
+        Touch(draft, userId, userName);
+        session.Store(draft);
+        await session.SaveChangesAsync(ct);
+        return ToDto(draft, userId);
+    }
+
+    /// <summary>Undoes a staged deletion: drops the (section, key) entry and restores
+    /// the entity from the baseline into the manifest, so the plan reads "unchanged"
+    /// again (the entity may since have changed live — that surfaces as a regular
+    /// staleOverwrite conflict, exactly like any other stale draft value).</summary>
+    public async Task<ErrorOr<RealmDraftDto>> UnstageDeleteAsync(
+        string section, string key, string slug, Guid userId, string userName, CancellationToken ct)
+    {
+        if (DraftSectionRegistry.Resolve(section) is not { } meta || meta.Collection is null)
+            return Error.Validation("Draft.UnknownSection",
+                $"Unknown or non-deletable manifest section '{section}'.");
+
+        var pointer = await session.LoadAsync<RealmDraftPointer>(userId, ct);
+        if (pointer?.ActiveDraftId is not { } draftId) return NotFound;
+        var draft = await LoadVisibleAsync(draftId, userId, ct);
+        if (draft is null) return NotFound;
+
+        if (draft.Deletions.RemoveAll(d => d.Section == section && d.Key == key) == 0)
+            return Error.NotFound("Draft.DeletionNotStaged",
+                $"No staged deletion for '{key}' in section '{section}'.");
+
+        var json = jsonOptions.Value.SerializerOptions;
+        var root = JsonSerializer.SerializeToNode(draft.Manifest, json)!.AsObject();
+        var baselineRoot = JsonSerializer.SerializeToNode(draft.Baseline, json)!.AsObject();
+        if (baselineRoot[meta.Collection] is JsonArray baselineList &&
+            baselineList.OfType<JsonObject>().FirstOrDefault(e => meta.Key(e) == key) is { } restored)
+        {
+            if (root[meta.Collection] is not JsonArray list)
+                root[meta.Collection] = list = [];
+            if (!list.OfType<JsonObject>().Any(e => meta.Key(e) == key))
+                list.Add(restored.DeepClone());
+        }
+
         draft.Manifest = SanitizeManifest(
             PinSlug(root.Deserialize<RealmManifest>(json)!, slug), draft.Secrets);
         Touch(draft, userId, userName);
@@ -351,7 +431,7 @@ public sealed class RealmDraftService(
         var draft = await LoadVisibleAsync(id, userId, ct);
         if (draft is null) return NotFound;
         var manifest = MergeSecrets(draft.Manifest, draft.Secrets);
-        return await planner.PlanAsync(manifest, prune, draft.Baseline, ct);
+        return await planner.PlanAsync(manifest, prune, draft.Baseline, draft.Deletions, ct);
     }
 
     /// <summary>
@@ -367,14 +447,14 @@ public sealed class RealmDraftService(
         if (draft is null) return NotFound;
         var manifest = MergeSecrets(draft.Manifest, draft.Secrets);
 
-        var planResult = await planner.PlanAsync(manifest, prune, draft.Baseline, ct);
+        var planResult = await planner.PlanAsync(manifest, prune, draft.Baseline, draft.Deletions, ct);
         if (planResult.IsError) return planResult.Errors;
         var plan = planResult.Value;
         var hasErrors = plan.Sections.Any(s => s.Entries.Any(e => e.Action == "error"));
         if (hasErrors || plan.HasConflicts)
             return new RealmDraftApplyResult { Refused = true, Plan = plan };
 
-        var applyResult = await applier.UpdateRealmAsync(manifest, prune, ct);
+        var applyResult = await applier.UpdateRealmAsync(manifest, prune, draft.Deletions, ct);
         if (applyResult.IsError) return applyResult.Errors;
 
         session.Delete(draft);
@@ -494,7 +574,8 @@ public sealed class RealmDraftService(
     private static RealmDraftDto ToDto(RealmDraft d, Guid userId) => new(
         d.Id, d.Name, d.Shared, d.CreatedBy == userId,
         d.CreatedByName, d.CreatedAt, d.LastModifiedByName, d.LastModifiedAt, d.Version,
-        d.Manifest, d.Secrets.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList());
+        d.Manifest, d.Secrets.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList(),
+        [.. d.Deletions]);
 }
 
 /// <summary>Apply outcome: either the manifest went through (Result set) or the

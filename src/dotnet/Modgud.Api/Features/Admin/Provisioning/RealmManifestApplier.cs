@@ -141,9 +141,16 @@ public sealed partial class RealmManifestApplier(
     /// auto-seeded standard scopes, service-account-linked clients, and anything conferring
     /// <c>realm:admin</c> (a realm-admin role, any user who currently holds realm:admin, and any
     /// admin-conferring group). Without the flag the additive merge above is unchanged.</para>
+    ///
+    /// <para><paramref name="deletions"/> (ADR-0005 staged deletes) are prune's per-entity
+    /// counterpart: only the listed (section, key) targets are deleted, through the SAME
+    /// canonical delete ops, guards and reverse-dependency order — inside the same apply
+    /// transaction. Protection violations throw (the draft plan gate flags them as errors
+    /// beforehand).</para>
     /// </summary>
     public async Task<ErrorOr<RealmImportResult>> UpdateRealmAsync(
-        RealmManifest manifest, bool prune = false, CancellationToken ct = default)
+        RealmManifest manifest, bool prune = false,
+        IReadOnlyCollection<RealmDraftDeletion>? deletions = null, CancellationToken ct = default)
     {
         var slug = manifest.Realm.Slug;
 
@@ -154,7 +161,7 @@ public sealed partial class RealmManifestApplier(
 
         try
         {
-            var secrets = await ApplyTenantUpdateAsync(slug, manifest, prune, ct);
+            var secrets = await ApplyTenantUpdateAsync(slug, manifest, prune, deletions, ct);
             logger.LogInformation(
                 "Updated realm {Slug}: {Apps} apps, {Apis} apis, {Scopes} scopes, {Clients} clients, {Roles} roles, {Users} users, {Groups} groups, {Providers} login providers, {Positions} positions (in-place merge).",
                 slug, manifest.Apps.Count, manifest.Apis.Count, manifest.Scopes.Count,
@@ -340,7 +347,8 @@ public sealed partial class RealmManifestApplier(
     /// it doesn't. See <see cref="UpdateRealmAsync"/> for the field-level merge semantics.
     /// </summary>
     private async Task<Dictionary<string, string>> ApplyTenantUpdateAsync(
-        string slug, RealmManifest manifest, bool prune, CancellationToken ct)
+        string slug, RealmManifest manifest, bool prune,
+        IReadOnlyCollection<RealmDraftDeletion>? deletions, CancellationToken ct)
     {
         var secrets = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -355,7 +363,7 @@ public sealed partial class RealmManifestApplier(
         await using var applyTx = await TenantApplyTransaction.BeginAsync(store, slug, ct);
         using (applyTx.Activate())
         {
-            await ApplyTenantUpdateSectionsAsync(manifest, prune, secrets, ct);
+            await ApplyTenantUpdateSectionsAsync(manifest, prune, deletions, secrets, ct);
             await applyTx.CommitAsync(ct);
         }
 
@@ -367,7 +375,8 @@ public sealed partial class RealmManifestApplier(
     }
 
     private async Task ApplyTenantUpdateSectionsAsync(
-        RealmManifest manifest, bool prune, Dictionary<string, string> secrets, CancellationToken ct)
+        RealmManifest manifest, bool prune, IReadOnlyCollection<RealmDraftDeletion>? deletions,
+        Dictionary<string, string> secrets, CancellationToken ct)
     {
         var apps = new Dictionary<string, App>(StringComparer.Ordinal);        // slug → App (id + catalog)
         var roleIds = new Dictionary<string, Guid>(StringComparer.Ordinal);    // role key → id (for groups)
@@ -711,11 +720,27 @@ public sealed partial class RealmManifestApplier(
         // ── Positions (MG-FT) — after users so grants can resolve their keys ──────
         await ApplyPositionsAsync(sp, manifest, userIds, ct);
 
-        // ── Prune: full-sync removal of entities absent from the manifest. Runs AFTER the
-        //    upsert so the protection checks see the realm's desired (post-merge) role graph.
-        if (prune)
-            await PruneAsync(sp, session, manifest, appAdmin, oauth, roleAdmin, ct);
+        // ── Prune / staged deletions: removal of entities absent from the manifest. Runs
+        //    AFTER the upsert so the protection checks see the desired (post-merge) role
+        //    graph. Prune sweeps everything; staged deletions target only their keys.
+        if (prune || deletions is { Count: > 0 })
+            await PruneAsync(sp, session, manifest, appAdmin, oauth, roleAdmin, prune,
+                DeletionTargets(deletions), ct);
     }
+
+    /// <summary>Per-section key sets for targeted (staged) deletions; the positions
+    /// section normalizes to the lowercased account name (its natural key).</summary>
+    private static IReadOnlyDictionary<string, HashSet<string>>? DeletionTargets(
+        IReadOnlyCollection<RealmDraftDeletion>? deletions)
+        => deletions is not { Count: > 0 }
+            ? null
+            : deletions
+                .GroupBy(d => d.Section, StringComparer.Ordinal)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(d => g.Key == "positions" ? d.Key.Trim().ToLowerInvariant() : d.Key)
+                        .ToHashSet(StringComparer.Ordinal),
+                    StringComparer.Ordinal);
 
     /// <summary>
     /// Deletes every entity that exists in the realm but is absent from the manifest, each via
@@ -742,13 +767,20 @@ public sealed partial class RealmManifestApplier(
     private async Task PruneAsync(
         IServiceProvider sp, IDocumentSession session, RealmManifest manifest,
         AppAdminService appAdmin, OAuthAdminService oauth, RoleAdminService roleAdmin,
+        bool prune, IReadOnlyDictionary<string, HashSet<string>>? targeted,
         CancellationToken ct)
     {
         var perms = sp.GetRequiredService<IPermissionService>();
 
+        // Targeted (staged) deletions restrict the sweep to their keys; a full prune
+        // deletes every candidate. Everything else — keep-sets, infra/lockout guards,
+        // canonical delete ops, ordering — is byte-identical for both modes.
+        bool Wants(string section, string key)
+            => prune || (targeted?.TryGetValue(section, out var keys) == true && keys.Contains(key));
+
         // ── Positions (natural key = AccountName) — first: pruning a position cascades its
         //    terminal slots + their terminal-managed clients (see the Positions partial). ─────
-        await PrunePositionsAsync(sp, session, oauth, manifest, ct);
+        await PrunePositionsAsync(sp, session, oauth, manifest, prune, targeted, ct);
 
         // ── Clients (natural key = ClientId) — keep SA-linked and terminal-managed clients
         //    (both are auto-managed credential material the manifest doesn't model). ─────────
@@ -757,7 +789,8 @@ public sealed partial class RealmManifestApplier(
         {
             if (keepClients.Contains(c.ClientId)
                 || c.LinkedServiceAccountId.HasValue
-                || c.LinkedPositionPrincipalId.HasValue) continue;
+                || c.LinkedPositionPrincipalId.HasValue
+                || !Wants("clients", c.ClientId)) continue;
             EnsureOk(await oauth.DeleteClientAsync(c.Id.ToString(), ct), $"prune client '{c.ClientId}'");
         }
 
@@ -766,7 +799,7 @@ public sealed partial class RealmManifestApplier(
         var deleteProvider = new DeleteLoginProviderHandler(session, sp.GetRequiredService<TimeProvider>());
         foreach (var p in await session.Query<LoginProvider>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepProviders.Contains(p.Slug) || p.IsBuiltIn) continue;
+            if (keepProviders.Contains(p.Slug) || p.IsBuiltIn || !Wants("loginProviders", p.Slug)) continue;
             EnsureOk(await deleteProvider.Handle(new DeleteLoginProviderCommand(p.Id), ct),
                 $"prune login provider '{p.Slug}'");
         }
@@ -775,7 +808,8 @@ public sealed partial class RealmManifestApplier(
         var keepScopes = manifest.Scopes.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var s in await session.Query<OAuthScopeState>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepScopes.Contains(s.Name) || StandardScopes.IsStandard(s.Name)) continue;
+            if (keepScopes.Contains(s.Name) || StandardScopes.IsStandard(s.Name)
+                || !Wants("scopes", s.Name)) continue;
             EnsureOk(await oauth.DeleteScopeAsync(s.Id.ToString(), ct), $"prune scope '{s.Name}'");
         }
 
@@ -783,7 +817,7 @@ public sealed partial class RealmManifestApplier(
         var keepApis = manifest.Apis.Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var a in await session.Query<OAuthApiState>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepApis.Contains(a.Name)) continue;
+            if (keepApis.Contains(a.Name) || !Wants("apis", a.Name)) continue;
             EnsureOk(await oauth.DeleteApiAsync(a.Id.ToString(), ct), $"prune api '{a.Name}'");
         }
 
@@ -792,7 +826,7 @@ public sealed partial class RealmManifestApplier(
         var groupHandler = new DeleteGroupHandler(session);
         foreach (var g in await session.Query<Group>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepGroups.Contains(g.Name)) continue;
+            if (keepGroups.Contains(g.Name) || !Wants("groups", g.Name)) continue;
             if (await GroupMembershipGuards.GroupConfersRealmAdminAsync(session, perms, g, ct)) continue;
             EnsureOk(await groupHandler.Handle(new DeleteGroupCommand(g.Id), ct), $"prune group '{g.Name}'");
         }
@@ -803,6 +837,13 @@ public sealed partial class RealmManifestApplier(
             .Where(u => !string.IsNullOrEmpty(u.UserName))
             .Select(u => u.UserName!.ToLowerInvariant())
             .ToHashSet(StringComparer.Ordinal);
+        // A staged user deletion carries whatever key the list row showed (username
+        // or email) — match either, case-insensitively.
+        var targetedUsers = targeted?.GetValueOrDefault("users");
+        bool WantsUser(Person p)
+            => prune || (targetedUsers is not null && targetedUsers.Any(k =>
+                string.Equals(k, p.AccountName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(k.ToUpperInvariant(), p.NormalizedEmail, StringComparison.Ordinal)));
         var userHandler = new DeleteUsersHandler(
             session,
             sp.GetRequiredService<IUserAccessRevoker>(),
@@ -812,7 +853,8 @@ public sealed partial class RealmManifestApplier(
         foreach (var p in await session.Query<Person>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
             if (keepEmails.Contains(p.NormalizedEmail ?? string.Empty) ||
-                (p.AccountName is not null && keepUserNames.Contains(p.AccountName))) continue;
+                (p.AccountName is not null && keepUserNames.Contains(p.AccountName)) ||
+                !WantsUser(p)) continue;
             if (await perms.HasPermissionAsync(p.Id, AppSlugs.Modgud, PermissionEvaluator.RealmAdminPermission, ct))
                 continue;
             EnsureOk(await userHandler.Handle(new DeleteUsersCommand([p.Id]), ct), $"prune user '{p.AccountName ?? p.Id.ToString()}'");
@@ -822,7 +864,7 @@ public sealed partial class RealmManifestApplier(
         var keepRoles = manifest.Roles.Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var r in await session.Query<PermissionRole>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepRoles.Contains(r.Name) || r.IsRealmAdmin) continue;
+            if (keepRoles.Contains(r.Name) || r.IsRealmAdmin || !Wants("roles", r.Name)) continue;
             EnsureOk(await roleAdmin.DeleteRoleAsync(r.Id, ct), $"prune role '{r.Name}'");
         }
 
@@ -830,7 +872,7 @@ public sealed partial class RealmManifestApplier(
         var keepApps = manifest.Apps.Select(a => a.Slug).ToHashSet(StringComparer.Ordinal);
         foreach (var a in await session.Query<App>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepApps.Contains(a.Slug) || a.IsSystem) continue;
+            if (keepApps.Contains(a.Slug) || a.IsSystem || !Wants("apps", a.Slug)) continue;
             EnsureOk(await appAdmin.DeleteAppAsync(a.Id, ct), $"prune app '{a.Slug}'");
         }
     }

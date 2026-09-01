@@ -33,6 +33,12 @@ public sealed class RealmDraft
     /// <summary>Secret slot path → DataProtection-encrypted value.</summary>
     public Dictionary<string, string> Secrets { get; set; } = [];
 
+    /// <summary>Staged deletions (ADR-0005): live entities this draft removes on
+    /// apply — the targeted counterpart of prune's full sync. Staging a deletion
+    /// also removes the entity from <see cref="Manifest"/>; unstaging restores it
+    /// from <see cref="Baseline"/>.</summary>
+    public List<RealmDraftDeletion> Deletions { get; set; } = [];
+
     /// <summary>False (default): only the creator sees and edits the draft.
     /// True: every realm admin can see, edit and apply it (collaboration).</summary>
     public bool Shared { get; set; }
@@ -62,6 +68,10 @@ public sealed class RealmDraftPointer
     public Guid? ActiveDraftId { get; set; }
 }
 
+/// <summary>One staged deletion: a plan section plus the entity's natural key
+/// (the same key <see cref="DraftSectionRegistry"/> computes).</summary>
+public sealed record RealmDraftDeletion(string Section, string Key);
+
 /// <summary>List row for the draft picker.</summary>
 public sealed record RealmDraftSummaryDto(
     Guid Id,
@@ -87,7 +97,8 @@ public sealed record RealmDraftDto(
     DateTimeOffset LastModifiedAt,
     int Version,
     RealmManifest Manifest,
-    List<string> SecretSlots);
+    List<string> SecretSlots,
+    List<RealmDraftDeletion> Deletions);
 
 public sealed record CreateRealmDraftDto
 {
