@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
- * The global staging bar (ADR-0005 Increment A) — the always-visible pendant of
- * the OPNsense "apply changes" strip, rendered across the whole admin area
- * whenever a draft is checked out. Shows the active draft, its pending-change
- * count, and the branch verbs: view (workspace diff), park, apply.
+ * The global staging bar (ADR-0005 Increment A) — the pendant of the OPNsense
+ * "apply changes" strip, rendered footer-positioned by MainLayout across the
+ * whole admin area whenever a draft is checked out. Shows the active draft,
+ * its pending-change count, and the branch verbs: view (workspace diff),
+ * park, apply.
  *
  * The bar only appears once a draft exists — the first staged change creates one
  * implicitly, so an admin who never stages anything never sees it.
@@ -79,7 +80,7 @@ async function applyDraft() {
   align-items: center;
   gap: 0.5rem;
   padding: 0.4rem 1rem;
-  border-bottom: 1px solid var(--coar-border-neutral-subtle, #e5e7eb);
+  border-top: 1px solid var(--coar-border-neutral-subtle, #e5e7eb);
   background: var(--coar-background-neutral-secondary, #f7f8fa);
   flex-shrink: 0;
 }
