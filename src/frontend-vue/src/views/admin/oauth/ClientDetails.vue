@@ -1032,11 +1032,6 @@ async function copySecret() {
         {{ error }}
       </CoarNotice>
 
-      <p v-if="stagedSave" class="staged-hint">
-        <CoarIcon name="file-json" size="s" />
-        {{ t('admin.realmConfig.stagedHint', {}, 'Änderungen werden in den Draft übernommen — wirksam erst mit „Draft anwenden“.') }}
-      </p>
-
       <!-- Terminal lifecycle stays position-owned. The OAuth resource profile
            (Display Name, Apps, Scopes) remains editable here. -->
       <CoarNotice v-if="isTerminalManaged" truncate variant="info" class="secret-banner">
@@ -1944,15 +1939,6 @@ async function copySecret() {
   gap: 12px;
 }
 
-.staged-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin: 0;
-  color: var(--coar-text-semantic-info, #2563eb);
-  font-size: 0.76rem;
-  flex-shrink: 0;
-}
 
 .secret-banner {
   flex-shrink: 0;

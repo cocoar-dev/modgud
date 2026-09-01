@@ -561,12 +561,6 @@ watch(() => form.value.UserName, () => {
 
       <!-- Tab: General -->
       <div v-show="activeTab === 'general'" class="tab-content">
-        <p v-if="stagingActive" class="staged-hint">
-          <CoarIcon name="file-json" size="s" />
-          {{ isDraftRow || isCreate
-            ? t('admin.userDetails.stagedCreateHint', {}, 'Dieser Benutzer wird im Draft angelegt — wirksam erst mit „Draft anwenden“.')
-            : t('admin.userDetails.stagedEditHint', {}, 'Profil-Änderungen werden in den Draft übernommen — wirksam erst mit „Draft anwenden“.') }}
-        </p>
         <div class="modal-form">
           <!-- Section: Identity -->
           <section class="form-section">
@@ -864,14 +858,6 @@ watch(() => form.value.UserName, () => {
 </template>
 
 <style scoped>
-.staged-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin: 0 0 0.75rem;
-  color: var(--coar-text-semantic-info, #2563eb);
-  font-size: 0.76rem;
-}
 
 .claim-row {
   display: grid;

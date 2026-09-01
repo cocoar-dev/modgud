@@ -455,10 +455,6 @@ async function save() {
       <span class="text-gray-400">{{ t('common.loading', {}, 'Loading...') }}</span>
     </div>
     <div v-else class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
-      <p v-if="stagedSave" class="staged-hint">
-        <CoarIcon name="file-json" size="s" />
-        {{ t('admin.realmConfig.stagedHint', {}, 'Änderungen werden in den Draft übernommen — wirksam erst mit „Draft anwenden“.') }}
-      </p>
       <CoarTabGroup v-model="activeTab" class="tab-bar">
         <CoarTab id="general">{{ t('admin.apps.tabs.general', {}, 'General') }}</CoarTab>
         <CoarTab id="catalog">{{ t('admin.apps.tabs.catalog', {}, 'Permission-Catalog') }}</CoarTab>
@@ -577,16 +573,6 @@ async function save() {
 </template>
 
 <style scoped>
-.staged-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin: 0;
-  color: var(--coar-text-semantic-info, #2563eb);
-  font-size: 0.76rem;
-  flex-shrink: 0;
-}
-
 .tab-bar {
   margin-bottom: 12px;
 }

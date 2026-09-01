@@ -13,7 +13,6 @@ import {
   CoarTab,
   CoarPopconfirm,
   CoarDivider,
-  CoarIcon,
   useToast,
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
@@ -933,11 +932,6 @@ async function rotateSigningKey() {
         {{ t('admin.realmSettings.saved', {}, 'Saved.') }}
       </CoarNotice>
 
-      <p v-if="stagedSave && activeTab !== 'pages'" class="staged-hint">
-        <CoarIcon name="file-json" size="s" />
-        {{ t('admin.realmConfig.stagedHint', {}, 'Änderungen werden in den Draft übernommen — wirksam erst mit „Draft anwenden“.') }}
-      </p>
-
       <div v-if="initialLoad" class="text-sm text-gray-400">
         {{ t('common.loading', {}, 'Loading...') }}
       </div>
@@ -1371,16 +1365,6 @@ async function rotateSigningKey() {
 </template>
 
 <style scoped>
-.staged-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin: 0;
-  color: var(--coar-text-semantic-info, #2563eb);
-  font-size: 0.76rem;
-  flex-shrink: 0;
-}
-
 .realm-settings-page {
   display: flex;
   flex: 1;

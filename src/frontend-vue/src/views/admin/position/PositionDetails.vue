@@ -706,10 +706,6 @@ async function save() {
 <template>
   <ModalLayout :close="close" :title="modalTitle" icon="briefcase" :footer-button="footerButton">
     <div v-if="!loading || isCreate" class="position-editor">
-      <p v-if="stagedSave" class="staged-hint">
-        <CoarIcon name="file-json" size="s" />
-        {{ t('admin.realmConfig.stagedHint', {}, 'Änderungen werden in den Draft übernommen — wirksam erst mit „Draft anwenden“.') }}
-      </p>
       <CoarTabGroup v-model="activeTab" class="tab-bar">
         <CoarTab id="general">
           <span class="tab-label">
@@ -1237,16 +1233,6 @@ async function save() {
 </template>
 
 <style scoped>
-.staged-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin: 0 0 8px;
-  color: var(--coar-text-semantic-info, #2563eb);
-  font-size: 0.76rem;
-  flex-shrink: 0;
-}
-
 /* Pinned body height so the modal keeps ONE size across all tabs (no resize
    on tab switch) — same pattern as .user-edit-frame in UserDetails. Applies
    in create too, because create is tabbed as well. flex: 0 0 auto is required
