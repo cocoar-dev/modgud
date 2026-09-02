@@ -32,11 +32,13 @@ import {
   SECTION_META,
   draftErrorMessage,
   useRealmDraftStore,
+  type DraftManifest,
   type ManifestEntity,
   type PlanAction,
   type PlanEntry,
 } from '@/stores/realmDraft.store'
 import DraftEntryModal, { type DraftEntryModalResult } from './DraftEntryModal.vue'
+import SelectiveExportModal from './SelectiveExportModal.vue'
 
 const { t, language } = useI18n()
 const ui = useUI()
@@ -125,6 +127,17 @@ async function downloadSchema() {
   try {
     const schema = await configHttp.addPath('manifest-schema').get<unknown>()
     downloadBlob('realm-manifest-schema.json', JSON.stringify(schema, null, 2))
+  } catch (e) {
+    store.error = draftErrorMessage(e)
+  }
+}
+
+/** Cart export: fetch the full export, then pick entities in the modal —
+ * the dependency closure and the download happen entirely client-side. */
+async function openSelectiveExport() {
+  try {
+    const exported = await configHttp.addPath('export').get<DraftManifest>()
+    await modal.open(SelectiveExportModal, MODAL_LG, { manifest: exported })
   } catch (e) {
     store.error = draftErrorMessage(e)
   }
@@ -365,6 +378,9 @@ function formatDate(value: string): string {
           <span class="toolbar-spacer" />
           <CoarButton size="s" variant="ghost" icon-start="download" @click="downloadExport">
             {{ t('admin.realmConfig.downloadExport', {}, 'Download export') }}
+          </CoarButton>
+          <CoarButton size="s" variant="ghost" icon-start="list-checks" @click="openSelectiveExport">
+            {{ t('admin.realmConfig.selectiveExport', {}, 'Selective export') }}
           </CoarButton>
           <CoarButton size="s" variant="ghost" icon-start="download" @click="downloadSchema">
             {{ t('admin.realmConfig.downloadSchema', {}, 'Download schema') }}

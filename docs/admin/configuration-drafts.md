@@ -77,6 +77,7 @@ Secret-bearing fields — user passwords, client secrets, login-provider secrets
 - **Edit in place** — add entities directly to a draft, or open any entry as JSON for surgical edits.
 - **Start a draft from a manifest** — upload a JSON manifest (hand-written or machine-generated) as a new draft, review its plan, then apply. This is the interactive import path.
 - **Export** the current realm configuration and download the **manifest JSON Schema**.
+- **Selective export** — the cart: pick individual entities (an app, its clients, a group, …) and download a *partial* manifest. Whatever the selection references — transitively — is pulled in automatically and marked *Required*, so the file always applies cleanly; a "Select related" shortcut on an app grabs its clients, APIs, scopes and roles in one click. The target realm slug is written into the file, user references (group members, position grants) are excluded by default, and references that aren't part of the export (standard scopes, the system app) are assumed to exist on the target. See [moving config between realms](#moving-config-between-realms-and-instances).
 - **Prune** — opt-in full sync: the apply additionally deletes entities absent from the draft, with the same protections as [declarative provisioning](realm-provisioning#apply-merge-vs-prune).
 
 ## Drafts are manifests
@@ -84,6 +85,16 @@ Secret-bearing fields — user passwords, client secrets, login-provider secrets
 A draft's content *is* a [declarative provisioning manifest](realm-provisioning) — the same schema, the same apply engine, the same guarantees. That makes the draft workspace the **human review gate** in front of automation: an agent (or a colleague) authors a manifest against the published schema, you load it as a draft, read the plan, resolve anything unexpected, and apply. Conversely, everything you stage through the UI can be exported as a manifest and re-applied elsewhere.
 
 Manifests follow the platform-wide [merge-patch write semantics](/reference/#write-semantics): a field absent from the JSON stays unchanged, an explicit `null` clears the stored value, and `[]` clears a list — see [apply: merge-patch](realm-provisioning#apply-merge-vs-prune). The admin modals stage cleared fields as explicit `null`s automatically.
+
+## Moving config between realms and instances
+
+The dev → stage → prod workflow is: configure and test on dev, **Selective export** the app bundle you care about, then on the target open *Configuration Drafts* → **Start a draft from a manifest**, upload the file, review the plan, apply. Because manifests are merge-patches, the partial file only touches what it contains — everything else on the target stays untouched.
+
+Three rules for the transfer:
+
+- **Never apply a partial manifest with prune** — prune deletes everything absent from the manifest.
+- **Secrets don't travel**: confidential clients get a freshly generated secret on the target (shown once at apply); provider secrets and user passwords are added to the manifest by hand if needed.
+- **User references are per-realm**: group members and position grants are user keys that usually don't exist on the target — the selective export strips them by default (absent = unchanged over there).
 
 ## Current limits
 
