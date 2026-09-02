@@ -1,3 +1,4 @@
+using Modgud.Domain.Common;
 using Modgud.Domain.PositionTerminals;
 
 namespace Modgud.Application.DTOs.Positions;
@@ -64,8 +65,11 @@ public sealed class TerminalAllowedPositionsUpdateDto
 
 public class TerminalUpdateDto
 {
+    /// <summary>Absent/null = unchanged; blank is rejected (a slot always has a name).</summary>
     public string? DisplayName { get; set; }
-    public string? Location { get; set; }
+    /// <summary>v2 merge-patch: absent = unchanged, explicit null (or a blank
+    /// string) clears, value sets.</summary>
+    public Optional<string?> Location { get; set; }
 }
 
 /// <summary>OAuth access profile of a terminal-managed client. Kept separate

@@ -8,6 +8,12 @@ using Marten;
 
 namespace Modgud.Authorization.Commands;
 
+/// <summary>
+/// FULL-REPLACE command: the caller sends the group's complete desired state
+/// (the modal always does), so a null Description/Script/Email IS the new
+/// value. The one list with v2 merge-patch semantics is <see cref="BoundTo"/>:
+/// absent (null) = unchanged, [] = clear (dormant group), non-empty = replace.
+/// </summary>
 public record UpdateGroupCommand(
     Guid Id,
     string Name,

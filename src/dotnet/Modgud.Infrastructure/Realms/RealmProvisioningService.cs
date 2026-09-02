@@ -442,7 +442,10 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         }
 
         if (dto.DisplayName is not null) realm.DisplayName = dto.DisplayName;
-        if (dto.Description is not null) realm.Description = dto.Description;
+        // v2 merge-patch: absent = keep, explicit null/blank = clear, value = set.
+        if (dto.Description.HasValue)
+            realm.Description = string.IsNullOrWhiteSpace(dto.Description.Value)
+                ? null : dto.Description.Value.Trim();
         if (dto.Domains is not null) realm.Domains = dto.Domains;
 
         // The domain set after applying the patch — the basis for the

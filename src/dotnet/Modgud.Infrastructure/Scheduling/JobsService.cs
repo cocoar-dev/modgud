@@ -248,7 +248,11 @@ internal sealed class JobsService(
             CreatedAt = DateTime.UtcNow,
         }) with
         {
-            CronOverride = update.CronOverride,
+            // v2 merge-patch: absent = keep the override, explicit null (or a
+            // blank string) = clear back to the default cron, value = set.
+            CronOverride = !update.CronOverride.HasValue
+                ? existing?.CronOverride
+                : string.IsNullOrWhiteSpace(update.CronOverride.Value) ? null : update.CronOverride.Value,
             Enabled = update.Enabled ?? existing?.Enabled ?? true,
             Parameters = nextParams,
             UpdatedAt = DateTime.UtcNow,

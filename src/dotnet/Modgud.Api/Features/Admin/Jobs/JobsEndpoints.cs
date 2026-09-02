@@ -52,8 +52,10 @@ public static class JobsEndpoints
         group.MapPut("{key}", async (string key, [FromBody] JobUpdateDto body, IJobsService jobs, CancellationToken ct) =>
         {
             // Validate the cron expression up-front so the admin gets a clear
-            // 400 instead of a runtime scheduler failure later.
-            if (!string.IsNullOrWhiteSpace(body.CronOverride) && !CronExpression.IsValidExpression(body.CronOverride))
+            // 400 instead of a runtime scheduler failure later. Absent / null /
+            // blank carry no expression (keep or clear), nothing to validate.
+            if (body.CronOverride.HasValue && !string.IsNullOrWhiteSpace(body.CronOverride.Value)
+                && !CronExpression.IsValidExpression(body.CronOverride.Value))
                 return Results.BadRequest(new { error = "Invalid Quartz cron expression" });
 
             try

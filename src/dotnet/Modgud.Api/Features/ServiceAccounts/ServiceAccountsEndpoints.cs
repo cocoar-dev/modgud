@@ -190,8 +190,9 @@ public static class ServiceAccountsEndpoints
                     }
                 }
 
-                if (dto.Purpose is not null)
-                    sa.Purpose = string.IsNullOrWhiteSpace(dto.Purpose) ? null : dto.Purpose.Trim();
+                // v2 merge-patch: absent = keep, explicit null/blank = clear, value = set.
+                if (dto.Purpose.HasValue)
+                    sa.Purpose = string.IsNullOrWhiteSpace(dto.Purpose.Value) ? null : dto.Purpose.Value.Trim();
 
                 if (dto.IsActive.HasValue)
                     sa.IsActive = dto.IsActive.Value;

@@ -708,10 +708,11 @@ public partial class OAuthAdminService
         if (dto.AccessTokenLifetime.HasValue || dto.AccessTokenType.HasValue)
         {
             // Merge both into ONE settings revision — two separate SetSettings events
-            // built off the same base would clobber each other.
+            // built off the same base would clobber each other. v2 merge-patch: an
+            // explicit-null lifetime clears BOTH keys (display modgud:* and the
+            // OpenIddict tkn_lft:* override) back to the server default.
             var settings = new Dictionary<string, string>(aggregate.Settings);
-            if (dto.AccessTokenLifetime.HasValue)
-                settings[OAuthApplicationSettingKeys.AccessTokenLifetime] = dto.AccessTokenLifetime.Value.ToString();
+            ApplyIntSetting(settings, OAuthApplicationSettingKeys.AccessTokenLifetime, dto.AccessTokenLifetime);
             if (dto.AccessTokenType.HasValue)
                 settings[OAuthApplicationSettingKeys.AccessTokenType] = dto.AccessTokenType.Value.ToString();
 
@@ -721,10 +722,10 @@ public partial class OAuthAdminService
             // key above was updated and OpenIddict kept minting tokens off
             // whatever tkn_lft:act value IssueServiceAccountCredentialAsync
             // (via CreateClientAsync) wrote at creation time — an update was
-            // silently a no-op on the wire. PATCH semantics: the SA-update
-            // DTO has no identity/authorization-code/refresh fields, so
-            // those are passed null and stay untouched.
-            if (ApplyNativeTokenLifetimes(settings, default, SetOrOmit(dto.AccessTokenLifetime), default, default) is { } lifetimeError)
+            // silently a no-op on the wire. The SA-update DTO has no
+            // identity/authorization-code/refresh fields, so those stay
+            // absent (untouched).
+            if (ApplyNativeTokenLifetimes(settings, default, dto.AccessTokenLifetime, default, default) is { } lifetimeError)
                 return lifetimeError;
 
             if (!DictEquals(settings, aggregate.Settings))

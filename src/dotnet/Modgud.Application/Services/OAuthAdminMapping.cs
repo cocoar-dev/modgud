@@ -333,7 +333,7 @@ internal static class OAuthAdminMapping
 
     /// <summary>v2 merge-patch for one int-valued setting: absent = unchanged,
     /// explicit null = remove the key (fall back to the default), value = set.</summary>
-    private static void ApplyIntSetting(Dictionary<string, string> settings, string key, Optional<int?> value)
+    internal static void ApplyIntSetting(Dictionary<string, string> settings, string key, Optional<int?> value)
     {
         if (!value.HasValue) return;
         if (value.Value is { } v) settings[key] = v.ToString();

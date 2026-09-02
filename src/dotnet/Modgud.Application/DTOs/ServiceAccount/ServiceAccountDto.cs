@@ -1,3 +1,4 @@
+using Modgud.Domain.Common;
 using Modgud.Domain.ValueObjects;
 
 namespace Modgud.Application.DTOs.ServiceAccount;
@@ -35,6 +36,8 @@ public class ServiceAccountCreateDto
 public class ServiceAccountUpdateDto
 {
     public string? AccountName { get; set; }
-    public string? Purpose { get; set; }
+    /// <summary>v2 merge-patch: absent = unchanged, explicit null (or a blank
+    /// string) clears, value sets.</summary>
+    public Optional<string?> Purpose { get; set; }
     public bool? IsActive { get; set; }
 }

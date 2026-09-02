@@ -139,7 +139,9 @@ public record InitialAdminInviteDto
 public record UpdateRealmDto
 {
     public string? DisplayName { get; init; }
-    public string? Description { get; init; }
+    /// <summary>v2 merge-patch: absent = unchanged, explicit null (or a blank
+    /// string) clears, value sets.</summary>
+    public Optional<string?> Description { get; init; }
     public string[]? Domains { get; init; }
 
     /// <summary>

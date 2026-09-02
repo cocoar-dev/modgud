@@ -1,3 +1,4 @@
+using Modgud.Domain.Common;
 using Modgud.Domain.ValueObjects;
 
 namespace Modgud.Application.DTOs.Positions;
@@ -71,7 +72,9 @@ public class PositionCreateDto
 public class PositionUpdateDto
 {
     public string? AccountName { get; set; }
-    public string? Purpose { get; set; }
+    /// <summary>v2 merge-patch: absent = unchanged, explicit null (or a blank
+    /// string) clears, value sets.</summary>
+    public Optional<string?> Purpose { get; set; }
     public bool? IsActive { get; set; }
     public PositionTerminalPolicyUpdateDto? TerminalPolicy { get; set; }
     public bool ConfirmTerminalPolicyConsequences { get; set; }

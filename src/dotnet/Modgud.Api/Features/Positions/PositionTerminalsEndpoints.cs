@@ -179,12 +179,13 @@ public static class PositionTerminalsEndpoints
                         Message = "A display name is required."
                     });
 
+                // v2 merge-patch: absent = keep, explicit null/blank = clear, value = set.
                 session.Events.Append(terminal.Id, new TerminalEnrollmentDetailsChanged(
                     terminal.Id,
                     displayName ?? terminal.DisplayName,
-                    dto.Location is null
+                    !dto.Location.HasValue
                         ? terminal.Location
-                        : string.IsNullOrWhiteSpace(dto.Location) ? null : dto.Location.Trim()));
+                        : string.IsNullOrWhiteSpace(dto.Location.Value) ? null : dto.Location.Value.Trim()));
                 await session.SaveChangesAsync(ct);
 
                 var updated = await LoadDtoAsync(session, terminal.Id, ct);
