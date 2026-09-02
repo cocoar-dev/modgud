@@ -40,12 +40,18 @@ async function applyDraft() {
     <CoarTag v-else-if="store.pendingCount > 0" variant="info" size="s">
       {{ t('admin.realmConfig.bar.pending', { count: store.pendingCount }, `${store.pendingCount} staged`) }}
     </CoarTag>
-    <CoarTag v-else variant="neutral" size="s">
+    <CoarTag v-else-if="!store.planHasErrors" variant="neutral" size="s">
       {{ t('admin.realmConfig.bar.clean', {}, 'no changes') }}
     </CoarTag>
     <CoarTag v-if="store.plan?.HasConflicts" variant="warning" size="s">
       <CoarIcon name="shield-alert" size="s" />
       {{ t('admin.realmConfig.bar.conflicts', {}, 'conflicts') }}
+    </CoarTag>
+    <!-- Plan errors (e.g. a staged deletion of a lockout-protected entity)
+         block the apply — without this tag the bar would read "no changes". -->
+    <CoarTag v-if="!store.planning && store.planHasErrors" variant="error" size="s">
+      <CoarIcon name="circle-alert" size="s" />
+      {{ t('admin.realmConfig.bar.errors', {}, 'plan errors') }}
     </CoarTag>
 
     <span class="bar-spacer" />

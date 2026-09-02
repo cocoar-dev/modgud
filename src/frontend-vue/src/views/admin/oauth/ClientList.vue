@@ -183,6 +183,24 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthClien
       .option('valueGetter', (p: any) => (p.data?.AllowedGrantTypes ?? []).length),
   ])
 
+// The LIVE row behind the selection — the quick toggle must read the real
+// enabled state, not a staged overlay value.
+const liveSelected = computed(() =>
+  store.clients.find((c) => c.Id === selectedIds.value[0]) ?? null)
+
+// Live emergency lever (mirrors the login-provider grid toggle): the modal's
+// Enabled checkbox STAGES, this acts NOW — a disabled client stops
+// authenticating immediately. Deletion stays a staged config change.
+async function toggleEnabled() {
+  const client = liveSelected.value
+  if (!client) return
+  try {
+    await store.update(client.Id, { Enabled: !client.Enabled })
+  } catch (e: any) {
+    alert(e?.message ?? String(e))
+  }
+}
+
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
@@ -296,6 +314,12 @@ function openClient(client: OAuthClientDto) {
       <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy"
         @clicked="cloneSelected" />
       <CoarMenuDivider />
+      <CoarMenuItem v-if="liveSelected"
+        :label="liveSelected.Enabled
+          ? t('admin.oauthClients.disableNow', {}, 'Disable (immediate)')
+          : t('admin.oauthClients.enableNow', {}, 'Enable (immediate)')"
+        :icon="liveSelected.Enabled ? 'circle-pause' : 'circle-play'"
+        @clicked="toggleEnabled" />
       <CoarMenuItem
         :label="selectedDeleteStaged
           ? t('admin.realmConfig.undelete', {}, 'Undo delete')

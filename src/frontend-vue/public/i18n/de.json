@@ -414,6 +414,7 @@
       "restore": "Wiederherstellen",
       "forceDelete": "Endgültig löschen",
       "confirmBin": "In den Papierkorb verschieben? Der Benutzer wird deaktiviert und zur Löschung vorgemerkt, kann aber bis zur endgültigen Löschung wiederhergestellt werden.",
+      "confirmStagedBin": "Löschung in den Draft übernehmen? Beim Anwenden wandert der Benutzer in den Papierkorb (deaktiviert, zur Löschung vorgemerkt, bis zur endgültigen Löschung wiederherstellbar).",
       "confirmRestore": "Aus dem Papierkorb wiederherstellen? Die vorgemerkte Löschung wird abgebrochen und der Benutzer reaktiviert.",
       "forceDeleteReason": "Grund für die endgültige Löschung (wird im Audit-Log festgehalten):",
       "confirmForceDelete": "Diesen Benutzer jetzt endgültig löschen? Damit wird der Papierkorb für ihn geleert und kann NICHT rückgängig gemacht werden."
@@ -1194,6 +1195,8 @@
       "title": "OAuth-Clients",
       "emptyHint": "Ein OAuth-Client ist eine Anwendung, die Benutzer über diesen IdP anmeldet oder dessen APIs aufruft. Registriere deine erste App, um Client-ID und Secret zu erhalten.",
       "createTitle": "OAuth-Client erstellen",
+      "disableNow": "Deaktivieren (sofort)",
+      "enableNow": "Aktivieren (sofort)",
       "clientId": "Client ID",
       "displayName": "Display Name",
       "type": "Client-Typ",
@@ -1812,6 +1815,7 @@
         "pending": "{count} gestaged",
         "clean": "keine Änderungen",
         "conflicts": "Konflikte",
+        "errors": "Plan-Fehler",
         "view": "Ansehen",
         "park": "Parken"
       },

@@ -12,6 +12,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useUserStore } from '@/stores/user.store'
 import { useRealmDraftStore, type ManifestEntity } from '@/stores/realmDraft.store'
+import { useDraftStaging } from '@/composables/useDraftStaging'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
@@ -40,8 +41,9 @@ watch(language, () => ui.set((ctx) => {
 // synthetic rows (no live id yet). The plan (authoritative diff) drives which
 // rows are marked; live-only concerns (recycle bin, sessions) stay untouched.
 const draftStore = useRealmDraftStore()
+const staging = useDraftStaging('users')
 
-type UserRow = UserDto & { DraftStaged?: 'create' | 'update' }
+type UserRow = UserDto & { DraftStaged?: 'create' | 'update' | 'delete' }
 
 const users = computed(() => userStore.entities)
 
@@ -97,7 +99,15 @@ const displayUsers = computed<UserRow[]>(() => {
     })
   }
 
+  // Staged deletions come from the draft itself (the entity is gone from the
+  // manifest); the key is whatever the row showed — username or email.
+  const deletions = (draft.Deletions ?? []).filter((d) => d.Section === 'users')
+  const deleteStaged = (row: UserRow) => deletions.some((d) =>
+    d.Key === row.UserName ||
+    (!!row.Email && d.Key.toLowerCase() === row.Email.toLowerCase()))
+
   const rows = base.map((row) => {
+    if (deleteStaged(row)) return { ...row, DraftStaged: 'delete' as const }
     const overlay = overlays.get(row.Id)
     if (!overlay) return row
     const e = overlay.entity
@@ -122,6 +132,11 @@ const passwordModalUserId = ref<string | null>(null)
 const selectedUser = computed(() => {
   const id = selectedIds.value[0]
   return id ? users.value.find(u => u.Id === id) : null
+})
+
+const selectedDeleteStaged = computed(() => {
+  const id = selectedIds.value[0]
+  return !!id && displayUsers.value.find((r) => r.Id === id)?.DraftStaged === 'delete'
 })
 
 // Onboarding empty-state shows only when the realm genuinely has no users
@@ -176,9 +191,12 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<UserRow>(), { opena
         ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
         : p.data?.DraftStaged === 'update'
           ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
-          : '')
+          : p.data?.DraftStaged === 'delete'
+            ? t('admin.realmConfig.gridTag.delete', {}, 'Staged (delete)')
+            : '')
       .width(120)
-      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged),
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged && p.data.DraftStaged !== 'delete')
+      .classRule('draft-staged-cell-delete', (p: any) => p.data?.DraftStaged === 'delete'),
     // Lifecycle badge — only meaningful for pending-deletion rows (visible
     // when the recycle bin is revealed). Empty for normal active users.
     (col) => col.field('DeletionInitiator').header('Lifecycle', 'admin.users.lifecycle')
@@ -200,15 +218,26 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<UserRow>(), { opena
   ])
 
 async function deleteUsers() {
-  // Draft-created rows exist only in the staged manifest — "delete" = unstage
-  // the create. Live user deletion stays the recycle-bin lifecycle (its own
-  // reversible staging with grace + restore), deliberately NOT a draft delete.
   const first = selectedIds.value[0]
-  if (first?.startsWith('draft__')) {
-    await draftStore.removeEntity('users', first.slice('draft__'.length))
+  if (!first) return
+  // Draft-created rows exist only in the staged manifest — "delete" = unstage.
+  if (first.startsWith('draft__')) {
+    await staging.unstage(first.slice('draft__'.length))
     return
   }
-  if (selectedIds.value.length > 0 && confirm(t('admin.users.confirmBin', {},
+  // ADR-0005: ONE rule — deletes are always staged. Apply moves the user into
+  // the recycle bin (grace + restore unchanged); the live emergency lever is
+  // "deactivate", not delete. A second delete on a staged row undoes it.
+  if (staging.stagingActive.value) {
+    const row = displayUsers.value.find((r) => r.Id === first)
+    const key = row?.UserName || row?.Email
+    if (!row || !key) return
+    if (row.DraftStaged === 'delete') return staging.unstageDelete(key)
+    if (!confirm(t('admin.users.confirmStagedBin', {},
+        'Stage the deletion? On apply the user is moved to the recycle bin (deactivated, scheduled for deletion, restorable until erased).'))) return
+    return staging.stageDelete(key)
+  }
+  if (confirm(t('admin.users.confirmBin', {},
       'Move to the recycle bin? The user is deactivated and scheduled for deletion, but can be restored until it is permanently erased.'))) {
     await userStore.binUsers(selectedIds.value)
   }
@@ -304,7 +333,11 @@ onMounted(() => {
       <CoarMenuDivider />
       <!-- Active users → bin them; pending users → restore or permanently erase. -->
       <CoarMenuItem v-if="!selectedUser?.IsDeletionPending"
-        :label="t('admin.users.bin', {}, 'Delete (recycle bin)')" icon="trash-2" @clicked="deleteUsers" />
+        :label="selectedDeleteStaged
+          ? t('admin.realmConfig.undelete', {}, 'Undo delete')
+          : t('admin.users.bin', {}, 'Delete (recycle bin)')"
+        :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
+        @clicked="deleteUsers" />
       <template v-else>
         <CoarMenuItem :label="t('admin.users.restore', {}, 'Restore')" icon="rotate-ccw" @clicked="restoreSelected" />
         <CoarMenuItem :label="t('admin.users.forceDelete', {}, 'Delete permanently')" icon="trash-2" @clicked="forceDeleteSelected" />
@@ -333,6 +366,11 @@ onMounted(() => {
 <style scoped>
 :deep(.draft-staged-cell) {
   color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+
+:deep(.draft-staged-cell-delete) {
+  color: var(--coar-text-semantic-error, #dc2626);
   font-weight: 600;
 }
 
