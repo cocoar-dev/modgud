@@ -79,8 +79,9 @@ function toStaged(): ManifestEntity {
     ShowInDiscoveryDocument: form.value.ShowInDiscoveryDocument,
     AllowDynamicRegistrationClients: form.value.AllowDynamicRegistrationClients,
   }
-  if (form.value.DisplayName.trim()) entity.DisplayName = form.value.DisplayName.trim()
-  if (form.value.Description.trim()) entity.Description = form.value.Description.trim()
+  // v2 merge-patch: explicit null stages the clear (absent would keep live).
+  entity.DisplayName = form.value.DisplayName.trim() || null
+  entity.Description = form.value.Description.trim() || null
   const slug = appSlugOf(form.value.AppId)
   if (slug) entity.App = slug
   return entity

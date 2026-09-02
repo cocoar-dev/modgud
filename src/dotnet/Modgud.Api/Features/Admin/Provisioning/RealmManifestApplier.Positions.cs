@@ -35,7 +35,8 @@ public sealed partial class RealmManifestApplier
     /// <summary>
     /// Upserts every manifest position by AccountName (used by import AND apply — a fresh
     /// realm simply has no existing positions). Grants are user KEYS resolved like group
-    /// members; a non-empty grant list replaces the live grant set, empty = no change.
+    /// members; a present grant list replaces the live grant set ([] revokes all), an
+    /// absent list leaves the grants unchanged (v2 merge-patch).
     /// </summary>
     private static async Task ApplyPositionsAsync(
         IServiceProvider sp, RealmManifest manifest,
@@ -59,9 +60,13 @@ public sealed partial class RealmManifestApplier
             var ctx = $"position '{pos.AccountName}'";
             var normalised = pos.AccountName.Trim().ToLowerInvariant();
 
-            var grantUserIds = new List<Guid>(pos.Grants.Count);
-            foreach (var key in pos.Grants)
-                grantUserIds.Add(await ResolveUserRefAsync(session, userIds, key, $"{ctx} grant '{key}'", ct));
+            List<Guid>? grantUserIds = null;
+            if (pos.Grants is not null)
+            {
+                grantUserIds = new List<Guid>(pos.Grants.Count);
+                foreach (var key in pos.Grants)
+                    grantUserIds.Add(await ResolveUserRefAsync(session, userIds, key, $"{ctx} grant '{key}'", ct));
+            }
 
             var existing = await session.Query<PositionPrincipal>()
                 .FirstOrDefaultAsync(p => !p.IsDeleted && p.AccountName == normalised, ct);
@@ -77,7 +82,7 @@ public sealed partial class RealmManifestApplier
     /// same events, position + grant streams in ONE unit of work.</summary>
     private static async Task CreatePositionAsync(
         IDocumentSession session, RealmManifestPosition pos, string normalised,
-        List<Guid> grantUserIds, DateTimeOffset now, string ctx, CancellationToken ct)
+        List<Guid>? grantUserIds, DateTimeOffset now, string ctx, CancellationToken ct)
     {
         EnsureNoOpError(PositionsEndpoints.ValidateAccountName(normalised), ctx);
         EnsureNoOpError(await PositionsEndpoints.AccountNameTakenAsync(session, normalised, excludeId: null, ct), ctx);
@@ -86,21 +91,22 @@ public sealed partial class RealmManifestApplier
         EnsureNoOpError(policyError, ctx);
         EnsureNoOpError(await PositionsEndpoints.ValidatePolicyAgainstRealmFloorAsync(session, policy, ct), ctx);
 
-        foreach (var uid in grantUserIds)
+        foreach (var uid in grantUserIds ?? [])
             await EnsureGrantablePersonAsync(session, uid, ctx, ct);
 
+        var purpose = OrNull(pos.Purpose);
         var fn = new PositionPrincipal
         {
             Id = Guid.NewGuid(),
             AccountName = normalised,
-            Purpose = string.IsNullOrWhiteSpace(pos.Purpose) ? null : pos.Purpose.Trim(),
+            Purpose = string.IsNullOrWhiteSpace(purpose) ? null : purpose.Trim(),
             IsActive = pos.IsActive ?? true,
             TerminalPolicy = policy,
         };
         session.Events.StartStream<PositionPrincipal>(fn.Id, new PositionPrincipalCreatedEvent(
             fn.Id, fn.AccountName, fn.Purpose, fn.IsActive, fn.TerminalPolicy));
 
-        foreach (var uid in grantUserIds)
+        foreach (var uid in grantUserIds ?? [])
         {
             var grantId = Guid.NewGuid();
             session.Events.StartStream<PositionGrant>(grantId,
@@ -120,13 +126,13 @@ public sealed partial class RealmManifestApplier
     /// </summary>
     private static async Task UpdatePositionAsync(
         IDocumentSession session, IStaffingRevoker staffingRevoker, IOAuthGrantRevoker revoker,
-        PositionPrincipal existing, RealmManifestPosition pos, List<Guid> grantUserIds,
+        PositionPrincipal existing, RealmManifestPosition pos, List<Guid>? grantUserIds,
         DateTimeOffset now, string ctx, CancellationToken ct)
     {
         var wasActive = existing.IsActive;
 
-        if (pos.Purpose is not null)
-            existing.Purpose = string.IsNullOrWhiteSpace(pos.Purpose) ? null : pos.Purpose.Trim();
+        if (pos.Purpose.HasValue)
+            existing.Purpose = string.IsNullOrWhiteSpace(pos.Purpose.Value) ? null : pos.Purpose.Value.Trim();
         if (pos.IsActive.HasValue)
             existing.IsActive = pos.IsActive.Value;
 
@@ -170,10 +176,11 @@ public sealed partial class RealmManifestApplier
             }
         }
 
-        // ── Grants: desired-set reconciliation (non-empty replaces, empty = no change,
-        //    matching the manifest's list semantics). Revoking ends the user's shifts —
-        //    the same MG-FT-07 cascade the grants endpoint runs.
-        if (grantUserIds.Count == 0) return;
+        // ── Grants: desired-set reconciliation (a present list replaces — [] revokes
+        //    everything; an absent list = no change, per the v2 merge-patch contract).
+        //    Revoking ends the user's shifts — the same MG-FT-07 cascade the grants
+        //    endpoint runs.
+        if (grantUserIds is null) return;
 
         var live = await session.Query<PositionGrant>()
             .Where(g => g.PositionPrincipalId == existing.Id && g.Status != PositionGrantStatus.Revoked)

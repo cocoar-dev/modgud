@@ -207,8 +207,8 @@ public sealed partial class RealmManifestApplier(
         var appAdmin = sp.GetRequiredService<AppAdminService>();
         foreach (var app in manifest.Apps)
         {
-            var dto = new CreateAppDto(app.Slug, app.DisplayName, app.Description,
-                app.Permissions.Select(p => new AppPermissionDto(null, p.Resource, p.Action, p.Description)).ToList(),
+            var dto = new CreateAppDto(app.Slug, app.DisplayName, OrNull(app.Description),
+                (app.Permissions ?? []).Select(p => new AppPermissionDto(null, p.Resource, p.Action, p.Description)).ToList(),
                 app.Settings);
             var created = await appAdmin.CreateAppAsync(dto, ct);
             EnsureOk(created, $"app '{app.Slug}'");
@@ -223,11 +223,11 @@ public sealed partial class RealmManifestApplier(
             EnsureOk(await oauth.CreateApiAsync(new CreateOAuthApiDto
             {
                 Name = api.Name,
-                DisplayName = api.DisplayName,
-                Description = api.Description,
+                DisplayName = OrNull(api.DisplayName),
+                Description = OrNull(api.Description),
                 Enabled = api.Enabled ?? true,
-                Scopes = api.Scopes,
-                UserClaims = api.UserClaims,
+                Scopes = api.Scopes ?? [],
+                UserClaims = api.UserClaims ?? [],
                 AppId = ResolveAppId(apps, api.App, $"api '{api.Name}'"),
                 PermissionIds = ResolvePermissionIds(apps, api.App, api.Permissions, $"api '{api.Name}'"),
                 AllowDynamicRegistration = api.AllowDynamicRegistration ?? false,
@@ -240,10 +240,10 @@ public sealed partial class RealmManifestApplier(
             EnsureOk(await oauth.CreateScopeAsync(new CreateOAuthScopeDto
             {
                 Name = s.Name,
-                DisplayName = s.DisplayName,
-                Description = s.Description,
-                Resources = s.Resources,
-                UserClaims = s.UserClaims,
+                DisplayName = OrNull(s.DisplayName),
+                Description = OrNull(s.Description),
+                Resources = s.Resources ?? [],
+                UserClaims = s.UserClaims ?? [],
                 Enabled = s.Enabled ?? true,
                 Required = s.Required ?? false,
                 Emphasize = s.Emphasize ?? false,
@@ -277,9 +277,9 @@ public sealed partial class RealmManifestApplier(
         {
             var payload = new RolePayload(
                 r.Name,
-                r.Description,
+                OrNull(r.Description),
                 ResolveAppId(apps, r.App, $"role '{r.Name}'"),
-                r.IsRealmAdmin,
+                r.IsRealmAdmin ?? false,
                 ResolvePermissionIds(apps, r.App, r.Permissions, $"role '{r.Name}'"));
             // Control-plane provisioning is trusted, so the realm-admin guard is satisfied.
             var created = await roleAdmin.CreateRoleAsync(payload, callerIsRealmAdmin: true, ct);
@@ -298,8 +298,8 @@ public sealed partial class RealmManifestApplier(
             sp.GetRequiredService<IApplicationSettingsResolver>());
         foreach (var u in manifest.Users)
         {
-            var cmd = new CreateUserCommand(u.Firstname, u.Lastname, u.Acronym, u.Email,
-                u.UserName ?? string.Empty, u.Password, u.EmailConfirmed);
+            var cmd = new CreateUserCommand(OrNull(u.Firstname), OrNull(u.Lastname), OrNull(u.Acronym), u.Email,
+                u.UserName ?? string.Empty, u.Password, u.EmailConfirmed ?? false);
             var created = await createUser.Handle(cmd, ct);
             EnsureOk(created, $"user '{u.Email}'");
             if (ShortGuid.TryParse(created.Value.Id, out Guid uid))
@@ -318,18 +318,18 @@ public sealed partial class RealmManifestApplier(
 
             foreach (var g in manifest.Groups)
             {
-                var memberIds = g.Members.Select(m => ResolveRef(userIds, m, $"group '{g.Name}' member '{m}'")).ToList();
-                var groupRoleIds = g.Roles.Select(rk => ResolveRef(roleIds, rk, $"group '{g.Name}' role '{rk}'")).ToList();
+                var memberIds = (g.Members ?? []).Select(m => ResolveRef(userIds, m, $"group '{g.Name}' member '{m}'")).ToList();
+                var groupRoleIds = (g.Roles ?? []).Select(rk => ResolveRef(roleIds, rk, $"group '{g.Name}' role '{rk}'")).ToList();
                 var cmd = new CreateGroupCommand(
-                    g.Name, g.Description, memberIds, groupRoleIds,
-                    ParseEnum<MembershipMode>(g.MembershipMode, $"group '{g.Name}' membershipMode"),
-                    g.MembershipScript, g.Email,
-                    ParseEnum<EmailMode>(g.EmailMode, $"group '{g.Name}' emailMode"),
+                    g.Name, OrNull(g.Description), memberIds, groupRoleIds,
+                    ParseEnum<MembershipMode>(g.MembershipMode ?? "Manual", $"group '{g.Name}' membershipMode"),
+                    g.MembershipScript, OrNull(g.Email),
+                    ParseEnum<EmailMode>(g.EmailMode ?? "Shared", $"group '{g.Name}' emailMode"),
                     // Mirror the create endpoint's default (GroupEndpoints: dto.BoundTo ?? [Modgud])
                     // so a manifest group is bound to the IdP and actually confers its roles —
                     // CreateGroupHandler itself defaults null to [] (dormant), which would make an
                     // imported admin group silently grant nothing.
-                    g.BoundTo ?? [AppSlugs.Modgud], g.ExternallyDrivable, CallerIsRealmAdmin: true);
+                    g.BoundTo ?? [AppSlugs.Modgud], g.ExternallyDrivable ?? false, CallerIsRealmAdmin: true);
                 EnsureOk(await groupHandler.Handle(cmd, ct), $"group '{g.Name}'");
             }
         }
@@ -401,28 +401,32 @@ public sealed partial class RealmManifestApplier(
             App result;
             if (apps.TryGetValue(app.Slug, out var current))
             {
-                // Preserve existing catalog-entry ids by resource:action so an unchanged
-                // permission keeps its id — otherwise it would look "removed + re-added" and
-                // trip the catalog-delete block (which guards FK references from roles/RSes).
-                // Genuinely new entries carry a null id (minted fresh); genuinely removed ones
-                // are then correctly subject to the reference check.
+                // v2 merge-patch: an absent catalog keeps the current one verbatim; a
+                // present catalog (incl. []) replaces. Preserve existing catalog-entry
+                // ids by resource:action so an unchanged permission keeps its id —
+                // otherwise it would look "removed + re-added" and trip the
+                // catalog-delete block (which guards FK references from roles/RSes).
                 var byKey = current.Permissions.ToDictionary(p => $"{p.Resource}:{p.Action}", p => p.Id);
-                var permissions = app.Permissions.Select(p => new AppPermissionDto(
-                    byKey.TryGetValue($"{p.Resource}:{p.Action}", out var existingId)
-                        ? new ShortGuid(existingId).ToString()
-                        : null,
-                    p.Resource, p.Action, p.Description)).ToList();
+                var permissions = app.Permissions is null
+                    ? current.Permissions.Select(p => new AppPermissionDto(
+                        new ShortGuid(p.Id).ToString(), p.Resource, p.Action, p.Description)).ToList()
+                    : app.Permissions.Select(p => new AppPermissionDto(
+                        byKey.TryGetValue($"{p.Resource}:{p.Action}", out var existingId)
+                            ? new ShortGuid(existingId).ToString()
+                            : null,
+                        p.Resource, p.Action, p.Description)).ToList();
+                var description = app.Description.HasValue ? app.Description.Value : current.Description;
                 var updated = await appAdmin.UpdateAppAsync(current.Id,
-                    new UpdateAppDto(app.DisplayName, app.Description, permissions, app.Settings), ct);
+                    new UpdateAppDto(app.DisplayName, description, permissions, app.Settings), ct);
                 EnsureOk(updated, $"app '{app.Slug}'");
                 result = updated.Value;
             }
             else
             {
-                var permissions = app.Permissions
+                var permissions = (app.Permissions ?? [])
                     .Select(p => new AppPermissionDto(null, p.Resource, p.Action, p.Description)).ToList();
                 var created = await appAdmin.CreateAppAsync(
-                    new CreateAppDto(app.Slug, app.DisplayName, app.Description, permissions, app.Settings), ct);
+                    new CreateAppDto(app.Slug, app.DisplayName, OrNull(app.Description), permissions, app.Settings), ct);
                 EnsureOk(created, $"app '{app.Slug}'");
                 result = created.Value;
             }
@@ -442,11 +446,11 @@ public sealed partial class RealmManifestApplier(
                 EnsureOk(await oauth.CreateApiAsync(new CreateOAuthApiDto
                 {
                     Name = api.Name,
-                    DisplayName = api.DisplayName,
-                    Description = api.Description,
+                    DisplayName = OrNull(api.DisplayName),
+                    Description = OrNull(api.Description),
                     Enabled = api.Enabled ?? true,
-                    Scopes = api.Scopes,
-                    UserClaims = api.UserClaims,
+                    Scopes = api.Scopes ?? [],
+                    UserClaims = api.UserClaims ?? [],
                     AppId = ResolveAppId(apps, api.App, ctx),
                     PermissionIds = ResolvePermissionIds(apps, api.App, api.Permissions, ctx),
                     AllowDynamicRegistration = api.AllowDynamicRegistration ?? false,
@@ -454,15 +458,19 @@ public sealed partial class RealmManifestApplier(
             }
             else
             {
+                // v2 merge-patch: presence passes straight through — absent lists
+                // stay null (unchanged), [] clears; Optionals carry clears.
                 EnsureOk(await oauth.UpdateApiAsync(existing.Id.ToString(), new UpdateOAuthApiDto
                 {
                     DisplayName = api.DisplayName,
                     Description = api.Description,
                     Enabled = api.Enabled,
-                    Scopes = NullIfEmpty(api.Scopes),
-                    UserClaims = NullIfEmpty(api.UserClaims),
+                    Scopes = api.Scopes,
+                    UserClaims = api.UserClaims,
                     AppId = api.App is null ? null : ResolveAppId(apps, api.App, ctx),
-                    PermissionIds = NullIfEmpty(ResolvePermissionIds(apps, api.App, api.Permissions, ctx)),
+                    PermissionIds = api.Permissions is null
+                        ? null
+                        : ResolvePermissionIds(apps, api.App, api.Permissions, ctx),
                     AllowDynamicRegistration = api.AllowDynamicRegistration,
                 }, ct), ctx);
             }
@@ -479,10 +487,10 @@ public sealed partial class RealmManifestApplier(
                 EnsureOk(await oauth.CreateScopeAsync(new CreateOAuthScopeDto
                 {
                     Name = s.Name,
-                    DisplayName = s.DisplayName,
-                    Description = s.Description,
-                    Resources = s.Resources,
-                    UserClaims = s.UserClaims,
+                    DisplayName = OrNull(s.DisplayName),
+                    Description = OrNull(s.Description),
+                    Resources = s.Resources ?? [],
+                    UserClaims = s.UserClaims ?? [],
                     Enabled = s.Enabled ?? true,
                     Required = s.Required ?? false,
                     Emphasize = s.Emphasize ?? false,
@@ -493,12 +501,13 @@ public sealed partial class RealmManifestApplier(
             }
             else
             {
+                // v2 merge-patch: presence passes straight through.
                 EnsureOk(await oauth.UpdateScopeAsync(existing.Id.ToString(), new UpdateOAuthScopeDto
                 {
                     DisplayName = s.DisplayName,
                     Description = s.Description,
-                    Resources = NullIfEmpty(s.Resources),
-                    UserClaims = NullIfEmpty(s.UserClaims),
+                    Resources = s.Resources,
+                    UserClaims = s.UserClaims,
                     Enabled = s.Enabled,
                     Required = s.Required,
                     Emphasize = s.Emphasize,
@@ -565,22 +574,26 @@ public sealed partial class RealmManifestApplier(
                 sp.GetRequiredService<LoginProviderFlavorRegistry>(),
                 sp.GetRequiredService<SamlFlavorRegistry>(),
                 sp.GetRequiredService<TimeProvider>());
+            // v2 merge-patch: the manifest's Optionals map 1:1 onto the command's —
+            // absent stays None, an explicit null carries the clear through.
             EnsureOk(await updateProvider.Handle(new UpdateLoginProviderCommand(
                 Id: existing.Id,
                 DisplayName: new Optional<string>(lp.DisplayName),
-                Description: lp.Description is null ? default : new Optional<string?>(lp.Description),
+                Description: lp.Description,
                 ClientId: lp.ClientId is null ? default : new Optional<string>(lp.ClientId),
-                Scopes: lp.Scopes.Count == 0 ? default : new Optional<List<string>>(lp.Scopes),
+                Scopes: lp.Scopes is null ? default : new Optional<List<string>>(lp.Scopes),
                 UserUpdateScript: lp.UserUpdateScript is null ? default : new Optional<string>(lp.UserUpdateScript),
                 StoreRawClaims: OptBool(lp.StoreRawClaims),
-                RawClaimsRetentionDays: lp.RawClaimsRetentionDays is null ? default : new Optional<int?>(lp.RawClaimsRetentionDays),
+                RawClaimsRetentionDays: lp.RawClaimsRetentionDays,
                 AutoCreateUsers: OptBool(lp.AutoCreateUsers),
                 AllowLinking: OptBool(lp.AllowLinking),
                 TrustForEmailLink: OptBool(lp.TrustForEmailLink),
-                AllowedEmailDomains: lp.AllowedEmailDomains is { Count: > 0 }
-                    ? new Optional<List<string>?>(lp.AllowedEmailDomains) : default,
-                IconName: lp.IconName is null ? default : new Optional<string?>(lp.IconName),
-                ButtonColorHex: lp.ButtonColorHex is null ? default : new Optional<string?>(lp.ButtonColorHex),
+                AllowedEmailDomains: lp.AllowedEmailDomains.HasValue
+                    ? new Optional<List<string>?>(
+                        lp.AllowedEmailDomains.Value is { Count: > 0 } domains ? domains : null)
+                    : default,
+                IconName: lp.IconName,
+                ButtonColorHex: lp.ButtonColorHex,
                 FlavorData: lp.FlavorData.HasValue
                     ? new Optional<JsonDocument>(JsonDocument.Parse(lp.FlavorData.Value.GetRawText())) : default,
                 Enabled: OptBool(lp.Enabled),
@@ -605,14 +618,21 @@ public sealed partial class RealmManifestApplier(
         foreach (var r in manifest.Roles)
         {
             var ctx = $"role '{r.Name}'";
-            var payload = new RolePayload(
-                r.Name,
-                r.Description,
-                ResolveAppId(apps, r.App, ctx),
-                r.IsRealmAdmin,
-                ResolvePermissionIds(apps, r.App, r.Permissions, ctx));
             var existing = await session.Query<PermissionRole>()
                 .FirstOrDefaultAsync(x => x.Name == r.Name && !x.IsDeleted, ct);
+            // v2 merge-patch: absent fields keep the existing role's values (the
+            // canonical update is a full payload replace, so merge here).
+            var isRealmAdmin = r.IsRealmAdmin ?? existing?.IsRealmAdmin ?? false;
+            var payload = new RolePayload(
+                r.Name,
+                r.Description.HasValue ? r.Description.Value : existing?.Description,
+                r.App is null
+                    ? isRealmAdmin || existing?.AppId is not { } appId ? null : new ShortGuid(appId).ToString()
+                    : ResolveAppId(apps, r.App, ctx),
+                isRealmAdmin,
+                r.Permissions is null && existing is not null
+                    ? existing.PermissionIds.Select(pid => new ShortGuid(pid).ToString()).ToList()
+                    : ResolvePermissionIds(apps, r.App, r.Permissions ?? [], ctx));
             // Control-plane provisioning is trusted, so the realm-admin guard is satisfied.
             ErrorOr<PermissionRole> result = existing is null
                 ? await roleAdmin.CreateRoleAsync(payload, callerIsRealmAdmin: true, ct)
@@ -640,8 +660,8 @@ public sealed partial class RealmManifestApplier(
             Guid? uid;
             if (existing is null)
             {
-                var createCmd = new CreateUserCommand(u.Firstname, u.Lastname, u.Acronym, u.Email,
-                    u.UserName ?? string.Empty, u.Password, u.EmailConfirmed);
+                var createCmd = new CreateUserCommand(OrNull(u.Firstname), OrNull(u.Lastname), OrNull(u.Acronym),
+                    u.Email, u.UserName ?? string.Empty, u.Password, u.EmailConfirmed ?? false);
                 var created = await createUser.Handle(createCmd, ct);
                 EnsureOk(created, ctx);
                 uid = ShortGuid.TryParse(created.Value.Id, out Guid cid) ? cid : null;
@@ -650,8 +670,9 @@ public sealed partial class RealmManifestApplier(
             {
                 // UpdateUserCommand mutates only the profile fields. Password / EmailConfirmed
                 // / active-state are divergent inline ops (Stage 2) — left untouched here.
+                // v2 merge-patch: an explicit manifest null clears the profile field.
                 var updateCmd = new UpdateUserCommand(existing.Id,
-                    OptionalOf(u.Firstname), OptionalOf(u.Lastname), OptionalOf(u.Acronym),
+                    OptThrough(u.Firstname), OptThrough(u.Lastname), OptThrough(u.Acronym),
                     new Optional<string>(u.Email), OptionalOf(u.UserName));
                 // Direct invocation keeps the manifest update sequential and makes
                 // the canonical handler result available for contextual errors.
@@ -685,34 +706,61 @@ public sealed partial class RealmManifestApplier(
             foreach (var g in manifest.Groups)
             {
                 var ctx = $"group '{g.Name}'";
-                // Members/roles may reference entities created this run OR pre-existing ones,
-                // so fall back to a DB lookup by key when the in-run map misses.
-                var memberIds = new List<Guid>(g.Members.Count);
-                foreach (var m in g.Members)
-                    memberIds.Add(await ResolveUserRefAsync(session, userIds, m, $"{ctx} member '{m}'", ct));
-                var groupRoleIds = new List<Guid>(g.Roles.Count);
-                foreach (var rk in g.Roles)
-                    groupRoleIds.Add(await ResolveRoleRefAsync(session, roleIds, rk, $"{ctx} role '{rk}'", ct));
-
-                var mode = ParseEnum<MembershipMode>(g.MembershipMode, $"{ctx} membershipMode");
-                var emailMode = ParseEnum<EmailMode>(g.EmailMode, $"{ctx} emailMode");
-
                 var existing = await session.Query<Group>()
                     .FirstOrDefaultAsync(x => x.Name == g.Name && !x.IsDeleted, ct);
+
+                // v2 merge-patch: absent lists/fields keep the existing group's values
+                // (the canonical update is a full payload replace, so merge here).
+                // Members/roles may reference entities created this run OR pre-existing
+                // ones, so fall back to a DB lookup by key when the in-run map misses.
+                List<Guid> memberIds;
+                if (g.Members is null && existing is not null)
+                {
+                    memberIds = existing.MemberIds.ToList();
+                }
+                else
+                {
+                    memberIds = new List<Guid>((g.Members ?? []).Count);
+                    foreach (var m in g.Members ?? [])
+                        memberIds.Add(await ResolveUserRefAsync(session, userIds, m, $"{ctx} member '{m}'", ct));
+                }
+                List<Guid> groupRoleIds;
+                if (g.Roles is null && existing is not null)
+                {
+                    groupRoleIds = existing.RoleIds.ToList();
+                }
+                else
+                {
+                    groupRoleIds = new List<Guid>((g.Roles ?? []).Count);
+                    foreach (var rk in g.Roles ?? [])
+                        groupRoleIds.Add(await ResolveRoleRefAsync(session, roleIds, rk, $"{ctx} role '{rk}'", ct));
+                }
+
+                var mode = g.MembershipMode is null
+                    ? existing?.MembershipMode ?? MembershipMode.Manual
+                    : ParseEnum<MembershipMode>(g.MembershipMode, $"{ctx} membershipMode");
+                var emailMode = g.EmailMode is null
+                    ? existing?.EmailMode ?? EmailMode.Shared
+                    : ParseEnum<EmailMode>(g.EmailMode, $"{ctx} emailMode");
+                var description = g.Description.HasValue ? g.Description.Value : existing?.Description;
+                var email = g.Email.HasValue ? g.Email.Value : existing?.Email;
+                var script = g.MembershipScript ?? existing?.MembershipScript;
+                var externallyDrivable = g.ExternallyDrivable ?? existing?.ExternallyDrivable ?? false;
+
                 if (existing is null)
                 {
                     // Create-branch mirrors the create endpoint's BoundTo default (see import).
                     EnsureOk(await createHandler.Handle(new CreateGroupCommand(
-                        g.Name, g.Description, memberIds, groupRoleIds, mode,
-                        g.MembershipScript, g.Email, emailMode,
-                        g.BoundTo ?? [AppSlugs.Modgud], g.ExternallyDrivable, CallerIsRealmAdmin: true), ct), ctx);
+                        g.Name, description, memberIds, groupRoleIds, mode,
+                        script, email, emailMode,
+                        g.BoundTo ?? [AppSlugs.Modgud], externallyDrivable, CallerIsRealmAdmin: true), ct), ctx);
                 }
                 else
                 {
                     EnsureOk(await updateHandler.Handle(new UpdateGroupCommand(
-                        existing.Id, g.Name, g.Description, memberIds, groupRoleIds, mode,
-                        g.MembershipScript, g.Email, emailMode,
-                        g.BoundTo, g.ExternallyDrivable, CallerIsRealmAdmin: true), ct), ctx);
+                        existing.Id, g.Name, description, memberIds, groupRoleIds, mode,
+                        script, email, emailMode,
+                        g.BoundTo, externallyDrivable, CallerIsRealmAdmin: true), ct), ctx);
                 }
             }
         }
@@ -886,17 +934,17 @@ public sealed partial class RealmManifestApplier(
         RealmManifestClient c, IReadOnlyDictionary<string, App> apps, string ctx) => new()
     {
         ClientId = c.ClientId,
-        DisplayName = c.DisplayName,
+        DisplayName = OrNull(c.DisplayName),
         ClientType = c.ClientType,
         ClientSecret = c.ClientSecret,
         ConsentType = c.ConsentType ?? "implicit",
-        RedirectUris = c.RedirectUris,
-        PostLogoutRedirectUris = c.PostLogoutRedirectUris,
-        Scopes = c.Scopes,
-        AllowedGrantTypes = c.AllowedGrantTypes,
-        AllowedCorsOrigins = c.AllowedCorsOrigins,
-        Roles = c.Roles,
-        WebAuthnRpId = c.WebAuthnRpId,
+        RedirectUris = c.RedirectUris ?? [],
+        PostLogoutRedirectUris = c.PostLogoutRedirectUris ?? [],
+        Scopes = c.Scopes ?? [],
+        AllowedGrantTypes = c.AllowedGrantTypes ?? [],
+        AllowedCorsOrigins = c.AllowedCorsOrigins ?? [],
+        Roles = c.Roles ?? [],
+        WebAuthnRpId = OrNull(c.WebAuthnRpId),
         Enabled = c.Enabled ?? true,
         RequireConsent = c.RequireConsent ?? false,
         AllowRememberConsent = c.AllowRememberConsent ?? true,
@@ -908,37 +956,37 @@ public sealed partial class RealmManifestApplier(
         RequireDpopNonce = c.RequireDpopNonce ?? false,
         AccessTokenType = ParseOptionalEnum<AccessTokenType>(c.AccessTokenType, $"{ctx} accessTokenType")
             ?? AccessTokenType.Reference,
-        IdentityTokenLifetime = c.IdentityTokenLifetime,
-        AccessTokenLifetime = c.AccessTokenLifetime,
-        AuthorizationCodeLifetime = c.AuthorizationCodeLifetime,
-        SlidingRefreshTokenLifetime = c.SlidingRefreshTokenLifetime,
-        ClientSessionIdleLifetime = c.ClientSessionIdleLifetime,
-        ClientSessionAbsoluteLifetime = c.ClientSessionAbsoluteLifetime,
-        Claims = c.Claims.Select(cl => new OAuthClientClaimDto { Type = cl.Type, Value = cl.Value }).ToList(),
-        ClientClaimsPrefix = c.ClientClaimsPrefix,
+        IdentityTokenLifetime = OrNull(c.IdentityTokenLifetime),
+        AccessTokenLifetime = OrNull(c.AccessTokenLifetime),
+        AuthorizationCodeLifetime = OrNull(c.AuthorizationCodeLifetime),
+        SlidingRefreshTokenLifetime = OrNull(c.SlidingRefreshTokenLifetime),
+        ClientSessionIdleLifetime = OrNull(c.ClientSessionIdleLifetime),
+        ClientSessionAbsoluteLifetime = OrNull(c.ClientSessionAbsoluteLifetime),
+        Claims = (c.Claims ?? []).Select(cl => new OAuthClientClaimDto { Type = cl.Type, Value = cl.Value }).ToList(),
+        ClientClaimsPrefix = OrNull(c.ClientClaimsPrefix),
         AlwaysSendClientClaims = c.AlwaysSendClientClaims ?? false,
         UpdateAccessTokenClaimsOnRefresh = c.UpdateAccessTokenClaimsOnRefresh ?? false,
-        AppIds = c.Apps.Count == 0
+        AppIds = c.Apps is not { Count: > 0 }
             ? null
             : c.Apps.Select(appSlug => ResolveAppId(apps, appSlug, ctx)!).ToList(),
     };
 
     /// <summary>
-    /// Manifest client → canonical update DTO (patch semantics): omitted scalars/bools stay
-    /// null (no change), empty lists collapse to null (no change — UpdateRealm never clears
-    /// a list), a non-empty list replaces. Lifetimes can be set/changed but not cleared.
+    /// Manifest client → canonical update DTO. v2 merge-patch is a straight
+    /// pass-through: the update DTO shares the manifest's semantics — absent
+    /// Optionals/lists stay unchanged, explicit null clears, [] clears a list.
     /// </summary>
     private static UpdateOAuthClientDto BuildClientUpdateDto(
         RealmManifestClient c, IReadOnlyDictionary<string, App> apps, string ctx) => new()
     {
         DisplayName = c.DisplayName,
         ConsentType = c.ConsentType,
-        RedirectUris = NullIfEmpty(c.RedirectUris),
-        PostLogoutRedirectUris = NullIfEmpty(c.PostLogoutRedirectUris),
-        Scopes = NullIfEmpty(c.Scopes),
-        AllowedGrantTypes = NullIfEmpty(c.AllowedGrantTypes),
-        AllowedCorsOrigins = NullIfEmpty(c.AllowedCorsOrigins),
-        Roles = NullIfEmpty(c.Roles),
+        RedirectUris = c.RedirectUris,
+        PostLogoutRedirectUris = c.PostLogoutRedirectUris,
+        Scopes = c.Scopes,
+        AllowedGrantTypes = c.AllowedGrantTypes,
+        AllowedCorsOrigins = c.AllowedCorsOrigins,
+        Roles = c.Roles,
         WebAuthnRpId = c.WebAuthnRpId,
         Enabled = c.Enabled,
         RequireConsent = c.RequireConsent,
@@ -956,15 +1004,11 @@ public sealed partial class RealmManifestApplier(
         SlidingRefreshTokenLifetime = c.SlidingRefreshTokenLifetime,
         ClientSessionIdleLifetime = c.ClientSessionIdleLifetime,
         ClientSessionAbsoluteLifetime = c.ClientSessionAbsoluteLifetime,
-        Claims = c.Claims.Count == 0
-            ? null
-            : c.Claims.Select(cl => new OAuthClientClaimDto { Type = cl.Type, Value = cl.Value }).ToList(),
+        Claims = c.Claims?.Select(cl => new OAuthClientClaimDto { Type = cl.Type, Value = cl.Value }).ToList(),
         ClientClaimsPrefix = c.ClientClaimsPrefix,
         AlwaysSendClientClaims = c.AlwaysSendClientClaims,
         UpdateAccessTokenClaimsOnRefresh = c.UpdateAccessTokenClaimsOnRefresh,
-        AppIds = c.Apps.Count == 0
-            ? null
-            : c.Apps.Select(appSlug => ResolveAppId(apps, appSlug, ctx)!).ToList(),
+        AppIds = c.Apps?.Select(appSlug => ResolveAppId(apps, appSlug, ctx)!).ToList(),
     };
 
     /// <summary>
@@ -1000,19 +1044,20 @@ public sealed partial class RealmManifestApplier(
             Slug: lp.Slug,
             FlavorData: lp.FlavorData.HasValue ? JsonDocument.Parse(lp.FlavorData.Value.GetRawText()) : null,
             Type: type,
-            Description: lp.Description,
+            Description: OrNull(lp.Description),
             Enabled: lp.Enabled,
             ClientId: lp.ClientId,
-            Scopes: NullIfEmpty(lp.Scopes),
+            Scopes: lp.Scopes,
             UserUpdateScript: lp.UserUpdateScript,
             StoreRawClaims: lp.StoreRawClaims,
-            RawClaimsRetentionDays: lp.RawClaimsRetentionDays,
+            RawClaimsRetentionDays: OrNull(lp.RawClaimsRetentionDays),
             AutoCreateUsers: lp.AutoCreateUsers,
             AllowLinking: lp.AllowLinking,
             TrustForEmailLink: lp.TrustForEmailLink,
-            AllowedEmailDomains: lp.AllowedEmailDomains is { Count: > 0 } ? lp.AllowedEmailDomains : null,
-            IconName: lp.IconName,
-            ButtonColorHex: lp.ButtonColorHex,
+            AllowedEmailDomains: lp.AllowedEmailDomains.HasValue && lp.AllowedEmailDomains.Value is { Count: > 0 } domains
+                ? domains : null,
+            IconName: OrNull(lp.IconName),
+            ButtonColorHex: OrNull(lp.ButtonColorHex),
             TrustForAuthorization: lp.TrustForAuthorization,
             AuthoritativeForProfile: lp.AuthoritativeForProfile,
             InitialClientSecret: lp.ClientSecret);
@@ -1028,10 +1073,17 @@ public sealed partial class RealmManifestApplier(
     private static Optional<string> OptionalOf(string? value)
         => value is null ? Optional<string>.None : new Optional<string>(value);
 
-    /// <summary>Returns null for an empty list so a canonical PATCH op treats it as
-    /// "no change" rather than "clear" — UpdateRealm sets and changes lists but never
-    /// clears them to empty (that stays an admin-API operation).</summary>
-    private static List<string>? NullIfEmpty(List<string> list) => list.Count == 0 ? null : list;
+    /// <summary>Create-path unwrap: an absent Optional takes the shipped default (null).</summary>
+    private static string? OrNull(Optional<string?> value) => value.HasValue ? value.Value : null;
+
+    /// <summary>Create-path unwrap: an absent Optional takes the shipped default (null).</summary>
+    private static int? OrNull(Optional<int?> value) => value.HasValue ? value.Value : null;
+
+    /// <summary>Pass-through into a non-nullable <see cref="Optional{T}"/> command param:
+    /// absent stays None; explicit null carries the clear (Some(null)) — callers whose
+    /// command treats Some(null) differently must not use this for required fields.</summary>
+    private static Optional<string> OptThrough(Optional<string?> value)
+        => value.HasValue ? new Optional<string>(value.Value!) : default;
 
     private static async Task<Guid> ResolveUserRefAsync(
         IDocumentSession session, IReadOnlyDictionary<string, Guid> map, string key, string context, CancellationToken ct)
@@ -1069,9 +1121,9 @@ public sealed partial class RealmManifestApplier(
     }
 
     private static List<string> ResolvePermissionIds(
-        IReadOnlyDictionary<string, App> apps, string? appSlug, List<RealmManifestPermission> perms, string context)
+        IReadOnlyDictionary<string, App> apps, string? appSlug, List<RealmManifestPermission>? perms, string context)
     {
-        if (perms.Count == 0) return [];
+        if (perms is not { Count: > 0 }) return [];
         if (string.IsNullOrEmpty(appSlug) || !apps.TryGetValue(appSlug, out var app))
             throw new ManifestApplyException(context,
                 [Error.Validation("Manifest.PermissionsNeedApp", $"{context} lists permissions but has no resolvable app.")]);

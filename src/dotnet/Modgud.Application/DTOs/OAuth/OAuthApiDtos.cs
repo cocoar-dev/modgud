@@ -1,3 +1,5 @@
+using Modgud.Domain.Common;
+
 namespace Modgud.Application.DTOs.OAuth;
 
 public record OAuthApiDto
@@ -72,10 +74,12 @@ public record CreateOAuthApiDto
     public bool AllowDynamicRegistration { get; init; }
 }
 
+/// <summary>Merge-patch update (v2 semantics): absent = unchanged, explicit
+/// <c>null</c> clears, <c>[]</c> clears a list; booleans have no clear.</summary>
 public record UpdateOAuthApiDto
 {
-    public string? DisplayName { get; init; }
-    public string? Description { get; init; }
+    public Optional<string?> DisplayName { get; init; }
+    public Optional<string?> Description { get; init; }
     public bool? Enabled { get; init; }
     public List<string>? Scopes { get; init; }
     public List<string>? UserClaims { get; init; }

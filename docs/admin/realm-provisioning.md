@@ -164,12 +164,16 @@ clients keep their secret across `apply`.
 
 ## Apply: merge vs. prune
 
-`apply` is a desired-state merge **for the fields the manifest carries**:
+`apply` is a **merge-patch** (in the spirit of [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386)):
+a field **absent** from the manifest is left unchanged (it takes the shipped default
+only on create), while every **present** field is applied — an explicit `null` **clears**
+the stored value, and `[]` clears a list. Concretely:
 
-- Boolean flags are nullable — omit one to leave it unchanged (it takes the shipped
-  default only on create).
-- Scalar strings and non-empty lists replace; an omitted/empty value is left
-  unchanged (apply never clears a list or detaches a link).
+- Boolean flags have no clear — omit or `null` both mean "unchanged"; `true`/`false` sets.
+- Optional scalars (display names, descriptions, token lifetimes, …): omitted = unchanged,
+  `null` = clear back to the default, value = set.
+- Lists (redirect URIs, scopes, group members, position grants, …): omitted = unchanged,
+  `[]` = clear, non-empty = replace the full list.
 - App-catalog permission ids are preserved across updates, so unchanged permissions
   keep their grants.
 

@@ -152,9 +152,10 @@ function toStaged(): ManifestEntity {
     // BoundTo would default to ['modgud'] on a staged CREATE).
     BoundTo: [...form.value.BoundTo],
   }
-  if (form.value.Description.trim()) entity.Description = form.value.Description.trim()
+  // v2 merge-patch: explicit null stages the clear (absent would keep live).
+  entity.Description = form.value.Description.trim() || null
   if (isAuto && form.value.MembershipScript.trim()) entity.MembershipScript = form.value.MembershipScript
-  if (form.value.EmailMode === 'Shared' && form.value.Email?.trim()) entity.Email = form.value.Email.trim()
+  entity.Email = form.value.EmailMode === 'Shared' ? (form.value.Email?.trim() || null) : null
   return entity
 }
 

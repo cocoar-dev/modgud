@@ -15,6 +15,7 @@ using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
 using Modgud.Domain.Applications;
+using Modgud.Domain.Common;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 
@@ -86,7 +87,7 @@ public sealed class RealmManifestExporter(
             {
                 Slug = a.Slug,
                 DisplayName = a.DisplayName,
-                Description = a.Description,
+                Description = Opt(a.Description),
                 Permissions = a.Permissions
                     .Select(p => new RealmManifestPermission(p.Resource, p.Action, p.Description)).ToList(),
                 Settings = appSettings,
@@ -98,8 +99,8 @@ public sealed class RealmManifestExporter(
         var manifestApis = apis.Select(api => new RealmManifestApi
         {
             Name = api.Name,
-            DisplayName = api.DisplayName,
-            Description = api.Description,
+            DisplayName = Opt(api.DisplayName),
+            Description = Opt(api.Description),
             App = SlugOfShort(appSlugById, api.AppId),
             Scopes = api.Scopes,
             UserClaims = api.UserClaims,
@@ -113,8 +114,8 @@ public sealed class RealmManifestExporter(
         var manifestScopes = scopes.Select(s => new RealmManifestScope
         {
             Name = s.Name,
-            DisplayName = s.DisplayName,
-            Description = s.Description,
+            DisplayName = Opt(s.DisplayName),
+            Description = Opt(s.Description),
             App = SlugOfShort(appSlugById, s.AppId),
             Resources = s.Resources,
             UserClaims = s.UserClaims,
@@ -134,7 +135,7 @@ public sealed class RealmManifestExporter(
         var manifestClients = clients.Select(c => new RealmManifestClient
         {
             ClientId = c.ClientId,
-            DisplayName = c.DisplayName,
+            DisplayName = Opt(c.DisplayName),
             ClientType = c.ClientType,
             // No ClientSecret — it's a hash; a re-import generates a fresh one.
             ConsentType = c.ConsentType,
@@ -146,7 +147,7 @@ public sealed class RealmManifestExporter(
             AllowedCorsOrigins = c.AllowedCorsOrigins,
             Apps = c.AppIds.Select(id => SlugOfShort(appSlugById, id)).Where(s => s is not null).Select(s => s!).ToList(),
             Roles = c.Roles,
-            WebAuthnRpId = c.WebAuthnRpId,
+            WebAuthnRpId = Opt(c.WebAuthnRpId),
             Enabled = c.Enabled,
             RequireConsent = c.RequireConsent,
             AllowRememberConsent = c.AllowRememberConsent,
@@ -157,14 +158,14 @@ public sealed class RealmManifestExporter(
             RequireDpop = c.RequireDpop,
             RequireDpopNonce = c.RequireDpopNonce,
             AccessTokenType = c.AccessTokenType.ToString(),
-            IdentityTokenLifetime = c.IdentityTokenLifetime,
-            AccessTokenLifetime = c.AccessTokenLifetime,
-            AuthorizationCodeLifetime = c.AuthorizationCodeLifetime,
-            SlidingRefreshTokenLifetime = c.SlidingRefreshTokenLifetime,
-            ClientSessionIdleLifetime = c.ClientSessionIdleLifetime,
-            ClientSessionAbsoluteLifetime = c.ClientSessionAbsoluteLifetime,
+            IdentityTokenLifetime = Opt(c.IdentityTokenLifetime),
+            AccessTokenLifetime = Opt(c.AccessTokenLifetime),
+            AuthorizationCodeLifetime = Opt(c.AuthorizationCodeLifetime),
+            SlidingRefreshTokenLifetime = Opt(c.SlidingRefreshTokenLifetime),
+            ClientSessionIdleLifetime = Opt(c.ClientSessionIdleLifetime),
+            ClientSessionAbsoluteLifetime = Opt(c.ClientSessionAbsoluteLifetime),
             Claims = c.Claims.Select(cl => new RealmManifestClientClaim(cl.Type, cl.Value)).ToList(),
-            ClientClaimsPrefix = c.ClientClaimsPrefix,
+            ClientClaimsPrefix = Opt(c.ClientClaimsPrefix),
             AlwaysSendClientClaims = c.AlwaysSendClientClaims,
             UpdateAccessTokenClaimsOnRefresh = c.UpdateAccessTokenClaimsOnRefresh,
         }).ToList();
@@ -180,7 +181,7 @@ public sealed class RealmManifestExporter(
             Type = p.Type.ToString(),
             Flavor = p.Flavor,
             DisplayName = p.DisplayName,
-            Description = p.Description,
+            Description = Opt(p.Description),
             Enabled = p.Enabled,
             ClientId = string.IsNullOrEmpty(p.ClientId) ? null : p.ClientId,
             // No ClientSecret — encrypted at rest; set one before re-applying to rotate.
@@ -188,15 +189,16 @@ public sealed class RealmManifestExporter(
             FlavorData = p.FlavorData?.RootElement.Clone(),
             UserUpdateScript = string.IsNullOrEmpty(p.UserUpdateScript) ? null : p.UserUpdateScript,
             StoreRawClaims = p.StoreRawClaims,
-            RawClaimsRetentionDays = p.RawClaimsRetentionDays,
+            RawClaimsRetentionDays = Opt(p.RawClaimsRetentionDays),
             AutoCreateUsers = p.AutoCreateUsers,
             AllowLinking = p.AllowLinking,
             TrustForEmailLink = p.TrustForEmailLink,
             TrustForAuthorization = p.TrustForAuthorization,
             AuthoritativeForProfile = p.AuthoritativeForProfile,
-            AllowedEmailDomains = p.AllowedEmailDomains,
-            IconName = p.IconName,
-            ButtonColorHex = p.ButtonColorHex,
+            AllowedEmailDomains = p.AllowedEmailDomains is { Count: > 0 } domains
+                ? new Optional<List<string>?>(domains) : default,
+            IconName = Opt(p.IconName),
+            ButtonColorHex = Opt(p.ButtonColorHex),
         }).ToList();
 
         // ── Roles (raw — ids are Guids) ──────────────────────────────────────────────
@@ -205,7 +207,7 @@ public sealed class RealmManifestExporter(
         var manifestRoles = roles.Select(r => new RealmManifestRole
         {
             Name = r.Name,
-            Description = r.Description,
+            Description = Opt(r.Description),
             App = !r.IsRealmAdmin
                 && r.AppId is { } aid
                 && appSlugById.TryGetValue(aid, out var slugOf)
@@ -226,9 +228,9 @@ public sealed class RealmManifestExporter(
         var manifestUsers = persons.Select(p => new RealmManifestUser
         {
             Key = p.AccountName ?? p.Email,
-            Firstname = p.Firstname,
-            Lastname = p.Lastname,
-            Acronym = p.Acronym,
+            Firstname = Opt(p.Firstname),
+            Lastname = Opt(p.Lastname),
+            Acronym = Opt(p.Acronym),
             Email = p.Email ?? string.Empty,
             UserName = p.AccountName,
             // No Password — stored as a hash. Add one before re-applying to set it.
@@ -240,12 +242,12 @@ public sealed class RealmManifestExporter(
         var manifestGroups = groups.Select(g => new RealmManifestGroup
         {
             Name = g.Name,
-            Description = g.Description,
+            Description = Opt(g.Description),
             Members = g.MemberIds.Where(userKeyById.ContainsKey).Select(id => userKeyById[id]).ToList(),
             Roles = g.RoleIds.Where(roleKeyById.ContainsKey).Select(id => roleKeyById[id]).ToList(),
             MembershipMode = g.MembershipMode.ToString(),
             MembershipScript = g.MembershipScript,
-            Email = g.Email,
+            Email = Opt(g.Email),
             EmailMode = g.EmailMode.ToString(),
             BoundTo = g.BoundTo.Count == 0 ? null : g.BoundTo,
             ExternallyDrivable = g.ExternallyDrivable,
@@ -265,7 +267,7 @@ public sealed class RealmManifestExporter(
             manifestPositions = positions.Select(p => new RealmManifestPosition
             {
                 AccountName = p.AccountName,
-                Purpose = p.Purpose,
+                Purpose = Opt(p.Purpose),
                 IsActive = p.IsActive,
                 TerminalPolicy = new Application.DTOs.Positions.PositionTerminalPolicyUpdateDto
                 {
@@ -412,6 +414,17 @@ public sealed class RealmManifestExporter(
             SecurityRetentionDays = s.Audit.SecurityRetentionDays,
         },
     };
+
+    /// <summary>Export-side of the v2 merge-patch contract: a stored null exports as an
+    /// ABSENT field (None), never as an explicit null — an explicit null in a manifest
+    /// means "clear", and an export must round-trip as "no change". (Beware the implicit
+    /// T→Optional operator: a bare assignment would turn null into Some(null) = clear.)</summary>
+    private static Optional<string?> Opt(string? value)
+        => value is null ? default : new Optional<string?>(value);
+
+    /// <inheritdoc cref="Opt(string)"/>
+    private static Optional<int?> Opt(int? value)
+        => value is null ? default : new Optional<int?>(value);
 
     private static string? SlugOfShort(IReadOnlyDictionary<Guid, string> appSlugById, string? shortGuid)
         => !string.IsNullOrEmpty(shortGuid) && ShortGuid.TryParse(shortGuid, out Guid id)

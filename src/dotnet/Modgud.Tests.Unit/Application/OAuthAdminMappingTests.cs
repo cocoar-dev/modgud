@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Modgud.Application.DTOs.OAuth;
+using Modgud.Domain.Common;
 using Modgud.Application.Services;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
@@ -1065,20 +1066,22 @@ public class OAuthAdminMappingTests
         }
 
         [Fact]
-        public void ClientClaimsPrefix_treats_null_as_omitted_and_string_as_overwrite()
+        public void ClientClaimsPrefix_omitted_keeps_null_clears_and_string_overwrites()
         {
-            // Note: the DTO uses `string?` for prefix, not Optional/HasValue.
-            // Currently there's no way to clear an existing prefix via PATCH;
-            // null means "absent". Pin this so an "intentional clear" feature
-            // request later goes through a deliberate behaviour change.
+            // v2 merge-patch pin: default(Optional) = omitted (keep), an explicit
+            // null = Some(null) = clear, a string overwrites. Note the implicit
+            // operator makes a bare `= null` a CLEAR, not an omission.
             var current = new Dictionary<string, string>
             {
                 [OAuthApplicationSettingKeys.ClientClaimsPrefix] = "old_",
             };
 
-            var keepDto = new UpdateOAuthClientDto { ClientClaimsPrefix = null };
-            var keepMerged = OAuthAdminMapping.MergeClientSettings(current, keepDto);
+            var keepMerged = OAuthAdminMapping.MergeClientSettings(current, new UpdateOAuthClientDto());
             Assert.Equal("old_", keepMerged[OAuthApplicationSettingKeys.ClientClaimsPrefix]);
+
+            var clearDto = new UpdateOAuthClientDto { ClientClaimsPrefix = new Optional<string?>(null) };
+            var clearMerged = OAuthAdminMapping.MergeClientSettings(current, clearDto);
+            Assert.False(clearMerged.ContainsKey(OAuthApplicationSettingKeys.ClientClaimsPrefix));
 
             var setDto = new UpdateOAuthClientDto { ClientClaimsPrefix = "new_" };
             var setMerged = OAuthAdminMapping.MergeClientSettings(current, setDto);
@@ -1112,7 +1115,7 @@ public class OAuthAdminMappingTests
 
             var merged = OAuthAdminMapping.MergeClientSettings(current, new UpdateOAuthClientDto
             {
-                ClearClientSessionIdleLifetime = true,
+                ClientSessionIdleLifetime = new Optional<int?>(null), // explicit null = clear
                 ClientSessionAbsoluteLifetime = 315360000,
             });
 
@@ -1153,7 +1156,7 @@ public class OAuthAdminMappingTests
         {
             var settings = new Dictionary<string, string>();
 
-            var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, null, null, null);
+            var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, default, default, default, default);
 
             Assert.Null(err);
             Assert.Empty(settings);
@@ -1183,8 +1186,8 @@ public class OAuthAdminMappingTests
         {
             var settings = new Dictionary<string, string>();
 
-            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, 60, null, null));
-            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, 3600, null, null));
+            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, default, 60, default, default));
+            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, default, 3600, default, default));
         }
 
         [Theory]
@@ -1195,8 +1198,8 @@ public class OAuthAdminMappingTests
             var settings = new Dictionary<string, string>();
 
             var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(
-                settings, identityTokenLifetimeSeconds: null, accessTokenLifetimeSeconds: seconds,
-                authorizationCodeLifetimeSeconds: null, slidingRefreshTokenLifetimeSeconds: null);
+                settings, identityTokenLifetimeSeconds: default, accessTokenLifetimeSeconds: seconds,
+                authorizationCodeLifetimeSeconds: default, slidingRefreshTokenLifetimeSeconds: default);
 
             Assert.NotNull(err);
             Assert.Equal("OAuthClient.InvalidAccessTokenLifetime", err!.Value.Code);
@@ -1211,8 +1214,8 @@ public class OAuthAdminMappingTests
             var settings = new Dictionary<string, string>();
 
             var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(
-                settings, identityTokenLifetimeSeconds: seconds, accessTokenLifetimeSeconds: null,
-                authorizationCodeLifetimeSeconds: null, slidingRefreshTokenLifetimeSeconds: null);
+                settings, identityTokenLifetimeSeconds: seconds, accessTokenLifetimeSeconds: default,
+                authorizationCodeLifetimeSeconds: default, slidingRefreshTokenLifetimeSeconds: default);
 
             Assert.NotNull(err);
             Assert.Equal("OAuthClient.InvalidIdentityTokenLifetime", err!.Value.Code);
@@ -1224,8 +1227,8 @@ public class OAuthAdminMappingTests
         {
             var settings = new Dictionary<string, string>();
 
-            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, null, 60, null));
-            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, null, 600, null));
+            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, default, default, 60, default));
+            Assert.Null(OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, default, default, 600, default));
         }
 
         [Theory]
@@ -1236,8 +1239,8 @@ public class OAuthAdminMappingTests
             var settings = new Dictionary<string, string>();
 
             var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(
-                settings, identityTokenLifetimeSeconds: null, accessTokenLifetimeSeconds: null,
-                authorizationCodeLifetimeSeconds: seconds, slidingRefreshTokenLifetimeSeconds: null);
+                settings, identityTokenLifetimeSeconds: default, accessTokenLifetimeSeconds: default,
+                authorizationCodeLifetimeSeconds: seconds, slidingRefreshTokenLifetimeSeconds: default);
 
             Assert.NotNull(err);
             Assert.Equal("OAuthClient.InvalidAuthorizationCodeLifetime", err!.Value.Code);
@@ -1252,8 +1255,8 @@ public class OAuthAdminMappingTests
             var settings = new Dictionary<string, string>();
 
             var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(
-                settings, identityTokenLifetimeSeconds: null, accessTokenLifetimeSeconds: null,
-                authorizationCodeLifetimeSeconds: null, slidingRefreshTokenLifetimeSeconds: seconds);
+                settings, identityTokenLifetimeSeconds: default, accessTokenLifetimeSeconds: default,
+                authorizationCodeLifetimeSeconds: default, slidingRefreshTokenLifetimeSeconds: seconds);
 
             Assert.NotNull(err);
             Assert.Equal("OAuthClient.InvalidSlidingRefreshTokenLifetime", err!.Value.Code);
@@ -1290,10 +1293,27 @@ public class OAuthAdminMappingTests
                 [OAuthAdminMapping.OpenIddictAccessTokenLifetimeSettingKey] = "0.00:10:00",
             };
 
-            var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, null, null, null, null);
+            var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(settings, default, default, default, default);
 
             Assert.Null(err);
             Assert.Equal("0.00:10:00", settings[OAuthAdminMapping.OpenIddictAccessTokenLifetimeSettingKey]);
+        }
+
+        [Fact]
+        public void Explicit_null_clears_the_existing_key_back_to_the_server_default()
+        {
+            // v2 merge-patch pin: Some(null) removes the tkn_lft:* override so the
+            // client falls back to the server-wide lifetime again.
+            var settings = new Dictionary<string, string>
+            {
+                [OAuthAdminMapping.OpenIddictAccessTokenLifetimeSettingKey] = "0.00:10:00",
+            };
+
+            var err = OAuthAdminMapping.ApplyNativeTokenLifetimes(
+                settings, default, new Optional<int?>(null), default, default);
+
+            Assert.Null(err);
+            Assert.False(settings.ContainsKey(OAuthAdminMapping.OpenIddictAccessTokenLifetimeSettingKey));
         }
     }
 
@@ -1648,16 +1668,20 @@ public class OAuthAdminMappingTests
         }
 
         [Fact]
-        public void MergeClientSettings_null_preserves_existing()
+        public void MergeClientSettings_omitted_preserves_existing_and_null_clears()
         {
+            // v2 merge-patch: an OMITTED field preserves; an explicit null (which is
+            // what a bare `= null` becomes through the implicit operator) clears.
             var current = new Dictionary<string, string>
             {
                 [OAuthApplicationSettingKeys.WebAuthnRpId] = "app.example.com",
             };
 
-            var merged = OAuthAdminMapping.MergeClientSettings(current, new UpdateOAuthClientDto { WebAuthnRpId = null });
+            var kept = OAuthAdminMapping.MergeClientSettings(current, new UpdateOAuthClientDto());
+            Assert.Equal("app.example.com", kept[OAuthApplicationSettingKeys.WebAuthnRpId]);
 
-            Assert.Equal("app.example.com", merged[OAuthApplicationSettingKeys.WebAuthnRpId]);
+            var cleared = OAuthAdminMapping.MergeClientSettings(current, new UpdateOAuthClientDto { WebAuthnRpId = null });
+            Assert.DoesNotContain(OAuthApplicationSettingKeys.WebAuthnRpId, cleared.Keys);
         }
 
         [Fact]

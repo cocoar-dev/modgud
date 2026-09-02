@@ -210,8 +210,8 @@ function toStaged(settings: ApplicationSettingsDto | undefined): ManifestEntity 
   const entity: ManifestEntity = { ...(staging.findStaged(key) ?? {}) }
   entity.Slug = key
   entity.DisplayName = form.value.DisplayName.trim()
-  if (form.value.Description.trim()) entity.Description = form.value.Description.trim()
-  else delete entity.Description
+  // v2 merge-patch: explicit null stages the clear (absent would keep live).
+  entity.Description = form.value.Description.trim() || null
   entity.Permissions = catalog.value
     .filter((r) => r.resource.trim() && r.action.trim())
     .map((r) => ({

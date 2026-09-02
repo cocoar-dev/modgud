@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Schema;
+using Modgud.Domain.Common;
 
 namespace Modgud.Api.Features.Admin.Provisioning;
 
@@ -23,7 +24,8 @@ public static class RealmManifestSchema
         {
             // A non-nullable reference-typed property is a genuine "required" field.
             TreatNullObliviousAsNonNullable = true,
-            TransformSchemaNode = InjectDescriptions,
+            TransformSchemaNode = (context, schema) =>
+                InjectDescriptions(context, MapOptional(context, schema)),
         };
 
         var schema = serializerOptions.GetJsonSchemaAsNode(typeof(RealmManifest), exporterOptions);
@@ -35,6 +37,33 @@ public static class RealmManifestSchema
             root["examples"] = new JsonArray(Example());
         }
 
+        return schema;
+    }
+
+    /// <summary>
+    /// <see cref="Optional{T}"/> fields carry the manifest's merge-patch presence semantics
+    /// (absent = unchanged, explicit null = clear) through a custom converter the schema
+    /// exporter can't see into — it emits an accept-anything schema for them. Replace that
+    /// with the inner type's schema, nullable (the wire shape an author actually writes).
+    /// </summary>
+    private static JsonNode MapOptional(JsonSchemaExporterContext context, JsonNode schema)
+    {
+        var type = context.TypeInfo.Type;
+        if (!type.IsGenericType || type.GetGenericTypeDefinition() != typeof(Optional<>))
+            return schema;
+
+        var arg = type.GetGenericArguments()[0];
+        var inner = Nullable.GetUnderlyingType(arg) ?? arg;
+        if (inner == typeof(string))
+            return new JsonObject { ["type"] = new JsonArray("string", "null") };
+        if (inner == typeof(int))
+            return new JsonObject { ["type"] = new JsonArray("integer", "null") };
+        if (inner == typeof(List<string>))
+            return new JsonObject
+            {
+                ["type"] = new JsonArray("array", "null"),
+                ["items"] = new JsonObject { ["type"] = "string" },
+            };
         return schema;
     }
 

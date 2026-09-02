@@ -4,6 +4,7 @@ using System.Text.Json;
 using BuildingBlocks.Helper;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.Errors;
+using Modgud.Domain.Common;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
@@ -305,26 +306,44 @@ internal static class OAuthAdminMapping
     {
         var settings = new Dictionary<string, string>(current);
         if (dto.AccessTokenType.HasValue) settings[OAuthApplicationSettingKeys.AccessTokenType] = dto.AccessTokenType.Value.ToString();
-        if (dto.IdentityTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.IdentityTokenLifetime] = dto.IdentityTokenLifetime.Value.ToString();
-        if (dto.AccessTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.AccessTokenLifetime] = dto.AccessTokenLifetime.Value.ToString();
-        if (dto.AuthorizationCodeLifetime.HasValue) settings[OAuthApplicationSettingKeys.AuthorizationCodeLifetime] = dto.AuthorizationCodeLifetime.Value.ToString();
-        if (dto.SlidingRefreshTokenLifetime.HasValue) settings[OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime] = dto.SlidingRefreshTokenLifetime.Value.ToString();
-        if (dto.ClearClientSessionIdleLifetime) settings.Remove(OAuthApplicationSettingKeys.ClientSessionIdleLifetime);
-        if (dto.ClearClientSessionAbsoluteLifetime) settings.Remove(OAuthApplicationSettingKeys.ClientSessionAbsoluteLifetime);
-        if (dto.ClientSessionIdleLifetime.HasValue) settings[OAuthApplicationSettingKeys.ClientSessionIdleLifetime] = dto.ClientSessionIdleLifetime.Value.ToString();
-        if (dto.ClientSessionAbsoluteLifetime.HasValue) settings[OAuthApplicationSettingKeys.ClientSessionAbsoluteLifetime] = dto.ClientSessionAbsoluteLifetime.Value.ToString();
-        if (dto.ClientClaimsPrefix is not null) settings[OAuthApplicationSettingKeys.ClientClaimsPrefix] = dto.ClientClaimsPrefix;
-        // ADR-0009 PATCH: null = omit; empty/blank = clear back to realm-scoped;
-        // non-blank = set (normalized). Format is validated upstream.
-        if (dto.WebAuthnRpId is not null)
+        ApplyIntSetting(settings, OAuthApplicationSettingKeys.IdentityTokenLifetime, dto.IdentityTokenLifetime);
+        ApplyIntSetting(settings, OAuthApplicationSettingKeys.AccessTokenLifetime, dto.AccessTokenLifetime);
+        ApplyIntSetting(settings, OAuthApplicationSettingKeys.AuthorizationCodeLifetime, dto.AuthorizationCodeLifetime);
+        ApplyIntSetting(settings, OAuthApplicationSettingKeys.SlidingRefreshTokenLifetime, dto.SlidingRefreshTokenLifetime);
+        ApplyIntSetting(settings, OAuthApplicationSettingKeys.ClientSessionIdleLifetime, dto.ClientSessionIdleLifetime);
+        ApplyIntSetting(settings, OAuthApplicationSettingKeys.ClientSessionAbsoluteLifetime, dto.ClientSessionAbsoluteLifetime);
+        if (dto.ClientClaimsPrefix.HasValue)
         {
-            if (string.IsNullOrWhiteSpace(dto.WebAuthnRpId))
+            if (string.IsNullOrEmpty(dto.ClientClaimsPrefix.Value))
+                settings.Remove(OAuthApplicationSettingKeys.ClientClaimsPrefix);
+            else
+                settings[OAuthApplicationSettingKeys.ClientClaimsPrefix] = dto.ClientClaimsPrefix.Value;
+        }
+        // ADR-0009: absent = no change; explicit null or blank = clear back to
+        // realm-scoped; non-blank = set (normalized). Format validated upstream.
+        if (dto.WebAuthnRpId.HasValue)
+        {
+            if (string.IsNullOrWhiteSpace(dto.WebAuthnRpId.Value))
                 settings.Remove(OAuthApplicationSettingKeys.WebAuthnRpId);
             else
-                settings[OAuthApplicationSettingKeys.WebAuthnRpId] = dto.WebAuthnRpId.Trim().ToLowerInvariant();
+                settings[OAuthApplicationSettingKeys.WebAuthnRpId] = dto.WebAuthnRpId.Value.Trim().ToLowerInvariant();
         }
         return settings;
     }
+
+    /// <summary>v2 merge-patch for one int-valued setting: absent = unchanged,
+    /// explicit null = remove the key (fall back to the default), value = set.</summary>
+    private static void ApplyIntSetting(Dictionary<string, string> settings, string key, Optional<int?> value)
+    {
+        if (!value.HasValue) return;
+        if (value.Value is { } v) settings[key] = v.ToString();
+        else settings.Remove(key);
+    }
+
+    /// <summary>Create-path adapter: a plain nullable where null means "not
+    /// provided" (take the default) maps to an absent Optional.</summary>
+    internal static Optional<int?> SetOrOmit(int? value)
+        => value is null ? default : new Optional<int?>(value);
 
     // ───────────────────────────── Native token-lifetime wiring (issue #115) ──
     //
@@ -417,34 +436,37 @@ internal static class OAuthAdminMapping
     /// </summary>
     internal static Error? ApplyNativeTokenLifetimes(
         Dictionary<string, string> settings,
-        int? identityTokenLifetimeSeconds,
-        int? accessTokenLifetimeSeconds,
-        int? authorizationCodeLifetimeSeconds,
-        int? slidingRefreshTokenLifetimeSeconds)
+        Optional<int?> identityTokenLifetimeSeconds,
+        Optional<int?> accessTokenLifetimeSeconds,
+        Optional<int?> authorizationCodeLifetimeSeconds,
+        Optional<int?> slidingRefreshTokenLifetimeSeconds)
     {
-        if (identityTokenLifetimeSeconds.HasValue &&
-            ValidateShortLivedSeconds("IdentityTokenLifetime", identityTokenLifetimeSeconds.Value) is { } idErr)
+        if (identityTokenLifetimeSeconds is { HasValue: true, Value: { } idSeconds } &&
+            ValidateShortLivedSeconds("IdentityTokenLifetime", idSeconds) is { } idErr)
             return idErr;
-        if (accessTokenLifetimeSeconds.HasValue &&
-            ValidateShortLivedSeconds("AccessTokenLifetime", accessTokenLifetimeSeconds.Value) is { } atErr)
+        if (accessTokenLifetimeSeconds is { HasValue: true, Value: { } atSeconds } &&
+            ValidateShortLivedSeconds("AccessTokenLifetime", atSeconds) is { } atErr)
             return atErr;
-        if (authorizationCodeLifetimeSeconds.HasValue &&
-            ValidateAuthorizationCodeSeconds(authorizationCodeLifetimeSeconds.Value) is { } acErr)
+        if (authorizationCodeLifetimeSeconds is { HasValue: true, Value: { } acSeconds } &&
+            ValidateAuthorizationCodeSeconds(acSeconds) is { } acErr)
             return acErr;
-        if (slidingRefreshTokenLifetimeSeconds.HasValue &&
-            ValidateRefreshSeconds(slidingRefreshTokenLifetimeSeconds.Value) is { } rtErr)
+        if (slidingRefreshTokenLifetimeSeconds is { HasValue: true, Value: { } rtSeconds } &&
+            ValidateRefreshSeconds(rtSeconds) is { } rtErr)
             return rtErr;
 
-        if (identityTokenLifetimeSeconds.HasValue)
-            settings[OpenIddictIdentityTokenLifetimeSettingKey] = ToLifetimeString(identityTokenLifetimeSeconds.Value);
-        if (accessTokenLifetimeSeconds.HasValue)
-            settings[OpenIddictAccessTokenLifetimeSettingKey] = ToLifetimeString(accessTokenLifetimeSeconds.Value);
-        if (authorizationCodeLifetimeSeconds.HasValue)
-            settings[OpenIddictAuthorizationCodeLifetimeSettingKey] = ToLifetimeString(authorizationCodeLifetimeSeconds.Value);
-        if (slidingRefreshTokenLifetimeSeconds.HasValue)
-            settings[OpenIddictRefreshTokenLifetimeSettingKey] = ToLifetimeString(slidingRefreshTokenLifetimeSeconds.Value);
+        ApplyLifetime(settings, OpenIddictIdentityTokenLifetimeSettingKey, identityTokenLifetimeSeconds);
+        ApplyLifetime(settings, OpenIddictAccessTokenLifetimeSettingKey, accessTokenLifetimeSeconds);
+        ApplyLifetime(settings, OpenIddictAuthorizationCodeLifetimeSettingKey, authorizationCodeLifetimeSeconds);
+        ApplyLifetime(settings, OpenIddictRefreshTokenLifetimeSettingKey, slidingRefreshTokenLifetimeSeconds);
 
         return null;
+
+        static void ApplyLifetime(Dictionary<string, string> settings, string key, Optional<int?> value)
+        {
+            if (!value.HasValue) return;
+            if (value.Value is { } v) settings[key] = ToLifetimeString(v);
+            else settings.Remove(key);
+        }
     }
 
     private static Error? ValidateShortLivedSeconds(string field, int seconds) =>

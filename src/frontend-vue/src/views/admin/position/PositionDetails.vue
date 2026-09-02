@@ -128,8 +128,8 @@ function toStaged(): ManifestEntity {
   const entity: ManifestEntity = { ...(staging.findStaged(name.toLowerCase()) ?? {}) }
   entity.AccountName = name
   entity.IsActive = form.value.IsActive
-  if (form.value.Purpose.trim()) entity.Purpose = form.value.Purpose.trim()
-  else delete entity.Purpose
+  // v2 merge-patch: explicit null stages the clear (absent would keep live).
+  entity.Purpose = form.value.Purpose.trim() || null
   entity.TerminalPolicy = {
     Enabled: form.value.TerminalEnabled,
     AllowedActivationProofs: [...form.value.AllowedActivationProofs],

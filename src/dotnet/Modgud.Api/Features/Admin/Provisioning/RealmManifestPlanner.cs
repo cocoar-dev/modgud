@@ -20,12 +20,12 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// given manifest WOULD produce — a pure dry-run built by diffing the manifest against the
 /// realm's current <see cref="RealmManifestExporter"/> export. Nothing is written.
 ///
-/// <para>The diff mirrors the applier's field-level merge semantics per section: an omitted
-/// scalar / empty list is "no change" where the applier patches (APIs, scopes, clients,
-/// login providers, users, positions), while fields whose canonical update is a full
-/// replace (app catalog, role permissions, group members/roles) compare even when empty.
-/// Secret-bearing fields (user password, client/provider secret, captcha secret) never
-/// appear as change values — they surface as redacted notes.</para>
+/// <para>The diff mirrors the manifest's v2 merge-patch contract: a field ABSENT from the
+/// serialized manifest is "no change" (None Optionals and plain nulls are both stripped at
+/// serialization), while every PRESENT field carries intent — an explicit null clears a
+/// value, an empty list clears a list. Secret-bearing fields (user password,
+/// client/provider secret, captcha secret) never appear as change values — they surface as
+/// redacted notes.</para>
 ///
 /// <para>With prune the plan also lists delete candidates (current entities absent from the
 /// manifest) and marks the ones the applier's lockout/infra protection would keep. The
@@ -86,9 +86,6 @@ public sealed class RealmManifestPlanner(
             new SectionPolicy<RealmManifestApp>
             {
                 Skip = ["Slug"],
-                // UpdateApp replaces the whole identity + catalog, so these apply even
-                // when null/empty (an empty manifest catalog would drop every entry).
-                AlwaysApplied = ["Description", "Permissions"],
                 NestedPatch = ["Settings"],
                 DeleteNote = "Deleting fails at apply while the app is still referenced by a kept role, API or scope.",
             }));
@@ -145,9 +142,7 @@ public sealed class RealmManifestPlanner(
             new SectionPolicy<RealmManifestRole>
             {
                 Skip = ["Name", "Key"],
-                // Role update is a full payload replace — omitted permissions clear the set.
-                AlwaysApplied = ["Description", "App", "Permissions"],
-                Protect = r => Task.FromResult<string?>(r.IsRealmAdmin
+                Protect = r => Task.FromResult<string?>(r.IsRealmAdmin == true
                     ? "Realm-admin roles are never pruned (lockout protection)."
                     : null),
             }));
@@ -159,10 +154,6 @@ public sealed class RealmManifestPlanner(
             new SectionPolicy<RealmManifestGroup>
             {
                 Skip = ["Name"],
-                // Group update is a full replace: empty member/role lists clear them, a null
-                // description/script/email clears the stored value. BoundTo keeps the
-                // default patch rule (null = no change).
-                AlwaysApplied = ["Description", "Members", "Roles", "MembershipScript", "Email"],
                 Protect = async g =>
                 {
                     var doc = await session.Query<Group>()
@@ -303,10 +294,10 @@ public sealed class RealmManifestPlanner(
                     : "Password will be UPDATED for this existing user (value not shown).");
             else if (existing is null)
                 entry.Notes.Add("Created passwordless (no password in the manifest).");
-            // EmailConfirmed is non-nullable, so an omitted field arrives as false — only a
-            // manifest that explicitly ASKS for confirmation (true vs stored false) gets the
-            // "ignored" note; the false-vs-true case is indistinguishable from omission.
-            if (existing is not null && u.EmailConfirmed && !existing.EmailConfirmed)
+            // EmailConfirmed is never changed on apply (divergent inline op) — an explicit
+            // manifest value that differs from the stored one earns the "ignored" note.
+            if (existing is not null && u.EmailConfirmed is { } confirmed &&
+                confirmed != (existing.EmailConfirmed ?? false))
                 entry.Notes.Add("EmailConfirmed is not changed on apply — the differing manifest value is ignored.");
             if ((entry.Notes.Count > 0 || entry.Conflicts.Count > 0) && entry.Action == "unchanged")
                 entry = entry with { Action = "update" };
@@ -373,10 +364,6 @@ public sealed class RealmManifestPlanner(
     {
         /// <summary>Never diffed (natural keys, secret fields handled by hooks).</summary>
         public HashSet<string> Skip { get; init; } = [];
-
-        /// <summary>Compared even when null / empty — fields whose canonical update is a
-        /// full replace rather than a patch.</summary>
-        public HashSet<string> AlwaysApplied { get; init; } = [];
 
         /// <summary>Immutable via the canonical update: a differing value is silently
         /// ignored by the applier — noted, not a change.</summary>
@@ -520,7 +507,7 @@ public sealed class RealmManifestPlanner(
                 if (currentNode is null)
                 {
                     // Create path — immutability only bites on update; report the set value.
-                    if (Carries(value)) entry.Changes.Add(new RealmPlanChange(field, null, value?.DeepClone()));
+                    if (value is not null) entry.Changes.Add(new RealmPlanChange(field, null, value.DeepClone()));
                 }
                 else if (value is not null && !JsonEquivalent(value, currentValue, caseInsensitive: true))
                 {
@@ -537,7 +524,10 @@ public sealed class RealmManifestPlanner(
                 continue;
             }
 
-            if (!Carries(value) && !policy.AlwaysApplied.Contains(field)) continue;
+            // v2 merge-patch: every property PRESENT in the serialized manifest carries
+            // intent (absent ones were stripped — None Optionals and plain nulls alike).
+            // On create, an explicit null / empty list only restates the shipped default.
+            if (currentNode is null && !Carries(value)) continue;
 
             if (policy.NestedPatch.Contains(field))
             {
@@ -591,21 +581,21 @@ public sealed class RealmManifestPlanner(
             draftValue?.DeepClone()));
     }
 
-    /// <summary>Whether a manifest value carries a change under patch semantics:
-    /// null = omitted, an empty list = "no change" (the applier never clears via empty).</summary>
+    /// <summary>Create-path noise filter: an explicit null or empty list on a CREATE only
+    /// restates the shipped default — there is nothing to clear yet.</summary>
     private static bool Carries(JsonNode? value)
         => value is not null && value is not JsonArray { Count: 0 };
 
-    /// <summary>Recursive diff of an option-object with patch semantics: only non-null
-    /// properties are considered; nested objects recurse with a dotted path. With a
-    /// baseline (conflict mode) every emitted change is classified three-way.</summary>
+    /// <summary>Recursive diff of an option-object (v2 merge-patch: absent properties were
+    /// stripped at serialization, so every present one carries — an explicit null is a
+    /// clear); nested objects recurse with a dotted path. With a baseline (conflict mode)
+    /// every emitted change is classified three-way.</summary>
     private static void NestedPatchDiff(
         string path, JsonObject desired, JsonObject current, JsonObject? baseline,
         List<RealmPlanChange> changes, List<RealmPlanConflict> conflicts)
     {
         foreach (var (name, value) in desired)
         {
-            if (value is null) continue;
             var field = path.Length == 0 ? name : $"{path}.{name}";
             var currentValue = current[name];
             if (value is JsonObject nested)
@@ -616,7 +606,7 @@ public sealed class RealmManifestPlanner(
             }
             else if (!JsonEquivalent(value, currentValue))
             {
-                changes.Add(new RealmPlanChange(field, currentValue?.DeepClone(), value.DeepClone()));
+                changes.Add(new RealmPlanChange(field, currentValue?.DeepClone(), value?.DeepClone()));
                 if (baseline is not null)
                     ClassifyConflict(field, value, currentValue, baseline[name], conflicts);
             }

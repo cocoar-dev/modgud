@@ -66,7 +66,8 @@ function toStaged(): ManifestEntity {
     IsRealmAdmin: form.value.IsRealmAdmin,
   }
   if (stagedKey.value) entity.Key = stagedKey.value
-  if (form.value.Description.trim()) entity.Description = form.value.Description.trim()
+  // v2 merge-patch: explicit null stages the clear (absent would keep live).
+  entity.Description = form.value.Description.trim() || null
   const app = form.value.IsRealmAdmin
     ? undefined
     : applicationsStore.apps.find((a) => a.Id === form.value.AppId)

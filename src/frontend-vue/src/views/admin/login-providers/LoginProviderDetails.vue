@@ -136,10 +136,6 @@ function fromStagedInto(e: ManifestEntity) {
 function toStaged(): ManifestEntity {
   const key = form.value.Slug.trim()
   const entity: ManifestEntity = { ...(staging.findStaged(key) ?? {}) }
-  const setOrDrop = (field: string, value: unknown) => {
-    if (value === null || value === '') delete entity[field]
-    else entity[field] = value
-  }
   entity.Slug = key
   entity.Type = provider.value?.Type ?? flavor.value?.Type ?? 'Oidc'
   entity.Flavor = flavorKey.value
@@ -154,15 +150,17 @@ function toStaged(): ManifestEntity {
   entity.TrustForEmailLink = form.value.TrustForEmailLink
   entity.TrustForAuthorization = form.value.TrustForAuthorization
   entity.AuthoritativeForProfile = form.value.AuthoritativeForProfile
-  setOrDrop('Description', form.value.Description.trim() || null)
-  setOrDrop('ClientId', form.value.ClientId.trim() || null)
-  setOrDrop('RawClaimsRetentionDays', form.value.RawClaimsRetentionDays)
-  setOrDrop('IconName', form.value.IconName || null)
-  setOrDrop('ButtonColorHex', form.value.ButtonColorHex || null)
-  // Manifest limitation: an empty list means "no change", so an existing
-  // domain filter cannot be CLEARED through the draft (live edit clears it).
-  setOrDrop('AllowedEmailDomains',
-    form.value.AllowedEmailDomains.length > 0 ? [...form.value.AllowedEmailDomains] : null)
+  // v2 merge-patch: explicit null stages the clear (absent would keep live).
+  entity.Description = form.value.Description.trim() || null
+  entity.RawClaimsRetentionDays = form.value.RawClaimsRetentionDays ?? null
+  entity.IconName = form.value.IconName || null
+  entity.ButtonColorHex = form.value.ButtonColorHex || null
+  entity.AllowedEmailDomains =
+    form.value.AllowedEmailDomains.length > 0 ? [...form.value.AllowedEmailDomains] : null
+  // ClientId is plain-patch in the manifest (null = unchanged, never cleared) —
+  // only stage a non-empty value.
+  if (form.value.ClientId.trim()) entity.ClientId = form.value.ClientId.trim()
+  else delete entity.ClientId
   if (newSecret.value.trim()) entity.ClientSecret = newSecret.value.trim()
   return entity
 }

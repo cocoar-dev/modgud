@@ -51,9 +51,10 @@ function buildStagedEntity(): ManifestEntity {
     EmailConfirmed: emailConfirmed.value,
   }
   if (stagedKey.value) entity.Key = stagedKey.value
-  if (form.value.Firstname.trim()) entity.Firstname = form.value.Firstname.trim()
-  if (form.value.Lastname.trim()) entity.Lastname = form.value.Lastname.trim()
-  if (form.value.Acronym.trim()) entity.Acronym = form.value.Acronym.trim()
+  // v2 merge-patch: explicit null stages the clear (absent would keep live).
+  entity.Firstname = form.value.Firstname.trim() || null
+  entity.Lastname = form.value.Lastname.trim() || null
+  entity.Acronym = form.value.Acronym.trim() || null
   if (form.value.UserName.trim()) entity.UserName = form.value.UserName.trim()
   if (initialPassword.value) entity.Password = initialPassword.value
   return entity

@@ -1,3 +1,4 @@
+using Modgud.Domain.Common;
 using Modgud.Domain.OAuth.Common;
 using Modgud.Application.DTOs.ServiceAccount;
 
@@ -225,9 +226,17 @@ public record CreateOAuthClientDto
     public string TerminalBinding { get; init; } = "dpop";
 }
 
+/// <summary>
+/// Merge-patch update (v2 semantics): a field that is ABSENT from the JSON is
+/// unchanged; a present field is applied — an explicit <c>null</c> CLEARS the
+/// stored value (falling back to the provider/realm default), <c>[]</c> clears
+/// a list. Booleans have no clear (absent/null = unchanged). The
+/// <see cref="Optional{T}"/> wrapper carries the absent-vs-null distinction
+/// across the JSON boundary.
+/// </summary>
 public record UpdateOAuthClientDto
 {
-    public string? DisplayName { get; init; }
+    public Optional<string?> DisplayName { get; init; }
     public string? ConsentType { get; init; }
     public List<string>? RedirectUris { get; init; }
     public List<string>? PostLogoutRedirectUris { get; init; }
@@ -244,18 +253,18 @@ public record UpdateOAuthClientDto
     public List<string>? AllowedGrantTypes { get; init; }
     public List<string>? AllowedCorsOrigins { get; init; }
 
-    public int? IdentityTokenLifetime { get; init; }
-    public int? AccessTokenLifetime { get; init; }
-    public int? AuthorizationCodeLifetime { get; init; }
-    public int? SlidingRefreshTokenLifetime { get; init; }
-    public int? ClientSessionIdleLifetime { get; init; }
-    public int? ClientSessionAbsoluteLifetime { get; init; }
-    public bool ClearClientSessionIdleLifetime { get; init; }
-    public bool ClearClientSessionAbsoluteLifetime { get; init; }
+    // Lifetimes in seconds. Explicit null clears the per-client override back
+    // to the provider/realm default (replaces the former Clear* flags).
+    public Optional<int?> IdentityTokenLifetime { get; init; }
+    public Optional<int?> AccessTokenLifetime { get; init; }
+    public Optional<int?> AuthorizationCodeLifetime { get; init; }
+    public Optional<int?> SlidingRefreshTokenLifetime { get; init; }
+    public Optional<int?> ClientSessionIdleLifetime { get; init; }
+    public Optional<int?> ClientSessionAbsoluteLifetime { get; init; }
 
     public bool? AlwaysSendClientClaims { get; init; }
     public bool? UpdateAccessTokenClaimsOnRefresh { get; init; }
-    public string? ClientClaimsPrefix { get; init; }
+    public Optional<string?> ClientClaimsPrefix { get; init; }
     public List<OAuthClientClaimDto>? Claims { get; init; }
 
     /// <summary>RFC 9126 PAR requirement patch. <c>null</c> = field omitted (no
@@ -271,10 +280,11 @@ public record UpdateOAuthClientDto
     public bool? RequireDpopNonce { get; init; }
 
     /// <summary>
-    /// ADR-0009 per-client WebAuthn RP ID patch. <c>null</c> = field omitted (no
-    /// change); empty string = clear back to realm-scoped; any non-blank value sets it.
+    /// ADR-0009 per-client WebAuthn RP ID. Absent = no change; explicit
+    /// <c>null</c> or empty string = clear back to realm-scoped; any non-blank
+    /// value sets it.
     /// </summary>
-    public string? WebAuthnRpId { get; init; }
+    public Optional<string?> WebAuthnRpId { get; init; }
 
     public List<string>? Roles { get; init; }
 

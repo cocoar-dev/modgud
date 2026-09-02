@@ -1,3 +1,5 @@
+using Modgud.Domain.Common;
+
 namespace Modgud.Application.DTOs.OAuth;
 
 public record OAuthScopeDto
@@ -49,10 +51,12 @@ public record CreateOAuthScopeDto
     public bool AllowDynamicRegistrationClients { get; init; }
 }
 
+/// <summary>Merge-patch update (v2 semantics): absent = unchanged, explicit
+/// <c>null</c> clears, <c>[]</c> clears a list; booleans have no clear.</summary>
 public record UpdateOAuthScopeDto
 {
-    public string? DisplayName { get; init; }
-    public string? Description { get; init; }
+    public Optional<string?> DisplayName { get; init; }
+    public Optional<string?> Description { get; init; }
     public List<string>? Resources { get; init; }
     public bool? Enabled { get; init; }
     public bool? Required { get; init; }

@@ -83,9 +83,10 @@ Secret-bearing fields — user passwords, client secrets, login-provider secrets
 
 A draft's content *is* a [declarative provisioning manifest](realm-provisioning) — the same schema, the same apply engine, the same guarantees. That makes the draft workspace the **human review gate** in front of automation: an agent (or a colleague) authors a manifest against the published schema, you load it as a draft, read the plan, resolve anything unexpected, and apply. Conversely, everything you stage through the UI can be exported as a manifest and re-applied elsewhere.
 
+Manifests follow **merge-patch semantics**: a field absent from the JSON stays unchanged, an explicit `null` clears the stored value, and `[]` clears a list — see [apply: merge-patch](realm-provisioning#apply-merge-vs-prune). The admin modals stage cleared fields as explicit `null`s automatically.
+
 ## Current limits
 
-- **Clearing** a stored optional value (a client token lifetime, an email-domain allowlist) cannot be expressed by the manifest — omitted means *unchanged*. Use the admin API to clear such a field.
 - **Renaming** a group or position stages a *new* entity under the new name (they have no stable key separate from the name); users and roles rename cleanly.
 - **App permission-catalog renames** keep their id-stable semantics only through a live save — the app modal automatically falls back to an immediate save when it detects a catalog rename.
 - Entities the manifest does not model (service accounts, terminal slots, SA-linked and terminal-managed clients) are managed live in their own admin surfaces.

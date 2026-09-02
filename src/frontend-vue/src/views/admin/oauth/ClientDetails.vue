@@ -604,10 +604,6 @@ function fromStaged(e: ManifestEntity): FormState {
 function toStaged(): ManifestEntity {
   const key = form.value.ClientId.trim()
   const entity: ManifestEntity = { ...(staging.findStaged(key) ?? {}) }
-  const setOrDrop = (field: string, value: unknown) => {
-    if (value === null || value === '') delete entity[field]
-    else entity[field] = value
-  }
   entity.ClientId = key
   entity.ClientType = form.value.ClientType
   entity.ConsentType = form.value.ConsentType
@@ -622,14 +618,17 @@ function toStaged(): ManifestEntity {
   entity.RequireDpop = form.value.RequireDpop
   entity.RequireDpopNonce = form.value.RequireDpopNonce
   entity.Apps = appSlugsOf(form.value.AppIds)
-  setOrDrop('DisplayName', form.value.DisplayName.trim() || null)
-  setOrDrop('WebAuthnRpId', form.value.WebAuthnRpId.trim() || null)
-  setOrDrop('IdentityTokenLifetime', form.value.IdentityTokenLifetime)
-  setOrDrop('AccessTokenLifetime', form.value.AccessTokenLifetime)
-  setOrDrop('AuthorizationCodeLifetime', form.value.AuthorizationCodeLifetime)
-  setOrDrop('SlidingRefreshTokenLifetime', form.value.SlidingRefreshTokenLifetime)
-  setOrDrop('ClientSessionIdleLifetime', form.value.ClientSessionIdleLifetime)
-  setOrDrop('ClientSessionAbsoluteLifetime', form.value.ClientSessionAbsoluteLifetime)
+  // v2 merge-patch: the modal edits all of these, so stage each one explicitly —
+  // null IS the payload for "cleared" (an absent field would mean "unchanged"
+  // and silently keep whatever the live value is at apply time).
+  entity.DisplayName = form.value.DisplayName.trim() || null
+  entity.WebAuthnRpId = form.value.WebAuthnRpId.trim() || null
+  entity.IdentityTokenLifetime = form.value.IdentityTokenLifetime
+  entity.AccessTokenLifetime = form.value.AccessTokenLifetime
+  entity.AuthorizationCodeLifetime = form.value.AuthorizationCodeLifetime
+  entity.SlidingRefreshTokenLifetime = form.value.SlidingRefreshTokenLifetime
+  entity.ClientSessionIdleLifetime = form.value.ClientSessionIdleLifetime
+  entity.ClientSessionAbsoluteLifetime = form.value.ClientSessionAbsoluteLifetime
   // Create-only explicit secret — the server strips it into a write-only
   // DataProtection slot on save; existing clients keep their stored secret.
   const secret = form.value.ClientSecret.trim()
@@ -972,13 +971,13 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     AccessTokenLifetime: form.value.AccessTokenLifetime,
     AuthorizationCodeLifetime: form.value.AuthorizationCodeLifetime,
     SlidingRefreshTokenLifetime: form.value.SlidingRefreshTokenLifetime,
+    // v2 merge-patch: an explicit null in the JSON clears the stored override
+    // (an empty lifetime field falls back to the server default).
     ClientSessionIdleLifetime: form.value.ClientSessionIdleLifetime,
     ClientSessionAbsoluteLifetime: form.value.ClientSessionAbsoluteLifetime,
-    ClearClientSessionIdleLifetime: form.value.ClientSessionIdleLifetime === null,
-    ClearClientSessionAbsoluteLifetime: form.value.ClientSessionAbsoluteLifetime === null,
-    // ADR-0009 PATCH: send the trimmed value verbatim — "" clears back to
-    // realm-scoped, a host sets the per-client RP ID.
-    WebAuthnRpId: form.value.WebAuthnRpId.trim(),
+    // ADR-0009 PATCH: null clears back to realm-scoped, a host sets the
+    // per-client RP ID.
+    WebAuthnRpId: form.value.WebAuthnRpId.trim() || null,
     // Always send AppIds on update — empty array = detach all, otherwise replace.
     AppIds: [...form.value.AppIds],
   }

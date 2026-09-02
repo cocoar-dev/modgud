@@ -256,8 +256,9 @@ public partial class OAuthAdminService
             // never carries these admin-only fields, so this is a no-op for
             // that path in practice; the explicit guard makes the split clear.
             if (ApplyNativeTokenLifetimes(
-                    settings, dto.IdentityTokenLifetime, dto.AccessTokenLifetime,
-                    dto.AuthorizationCodeLifetime, dto.SlidingRefreshTokenLifetime)
+                    settings,
+                    SetOrOmit(dto.IdentityTokenLifetime), SetOrOmit(dto.AccessTokenLifetime),
+                    SetOrOmit(dto.AuthorizationCodeLifetime), SetOrOmit(dto.SlidingRefreshTokenLifetime))
                 is { } lifetimeError)
                 return lifetimeError;
         }
@@ -393,11 +394,13 @@ public partial class OAuthAdminService
         if (ValidateGrantTypes(dto.AllowedGrantTypes) is { } updGrantErr)
             return updGrantErr;
 
-        if (ValidateWebAuthnRpId(dto.WebAuthnRpId) is { } updRpIdErr)
+        if (dto.WebAuthnRpId.HasValue &&
+            ValidateWebAuthnRpId(dto.WebAuthnRpId.Value) is { } updRpIdErr)
             return updRpIdErr;
 
-        if (dto.DisplayName is not null && dto.DisplayName != aggregate.DisplayName)
-            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName));
+        // v2 merge-patch: absent = unchanged, explicit null clears.
+        if (dto.DisplayName.HasValue && dto.DisplayName.Value != aggregate.DisplayName)
+            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName.Value));
 
         if (dto.ConsentType is not null && dto.ConsentType != aggregate.ConsentType)
         {
@@ -433,17 +436,13 @@ public partial class OAuthAdminService
                 _session.Events.Append(guid, aggregate.SetRequirements(requirements));
         }
 
-        // Settings — partial-PATCH merge; only emit the event when the merge
-        // actually produced a different dictionary.
+        // Settings — merge-patch; only emit the event when the merge actually
+        // produced a different dictionary. (Set-vs-clear can no longer conflict:
+        // one Optional field carries either, never both.)
         var newSettings = MergeClientSettings(aggregate.Settings, dto);
-        if ((dto.ClearClientSessionIdleLifetime && dto.ClientSessionIdleLifetime.HasValue) ||
-            (dto.ClearClientSessionAbsoluteLifetime && dto.ClientSessionAbsoluteLifetime.HasValue))
-            return Error.Validation(
-                "OAuthClient.ConflictingClientSessionLifetimeUpdate",
-                "A client-session lifetime cannot be set and cleared in the same update.");
         if (ValidateClientSessionLifetimes(
-                dto.ClientSessionIdleLifetime,
-                dto.ClientSessionAbsoluteLifetime) is { } clientSessionError)
+                dto.ClientSessionIdleLifetime.HasValue ? dto.ClientSessionIdleLifetime.Value : null,
+                dto.ClientSessionAbsoluteLifetime.HasValue ? dto.ClientSessionAbsoluteLifetime.Value : null) is { } clientSessionError)
             return clientSessionError;
 
         // Issue #115 — same native tkn_lft:* wiring as CreateClientAsync, PATCH
@@ -725,7 +724,7 @@ public partial class OAuthAdminService
             // silently a no-op on the wire. PATCH semantics: the SA-update
             // DTO has no identity/authorization-code/refresh fields, so
             // those are passed null and stay untouched.
-            if (ApplyNativeTokenLifetimes(settings, null, dto.AccessTokenLifetime, null, null) is { } lifetimeError)
+            if (ApplyNativeTokenLifetimes(settings, default, SetOrOmit(dto.AccessTokenLifetime), default, default) is { } lifetimeError)
                 return lifetimeError;
 
             if (!DictEquals(settings, aggregate.Settings))
@@ -902,11 +901,12 @@ public partial class OAuthAdminService
         if (StandardScopes.IsStandard(aggregate.Name))
             return OAuthErrors.CannotModifyStandardScope(aggregate.Name);
 
-        if (dto.DisplayName is not null && dto.DisplayName != aggregate.DisplayName)
-            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName));
+        // v2 merge-patch: absent = unchanged, explicit null clears.
+        if (dto.DisplayName.HasValue && dto.DisplayName.Value != aggregate.DisplayName)
+            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName.Value));
 
-        if (dto.Description is not null && dto.Description != aggregate.Description)
-            _session.Events.Append(guid, aggregate.SetDescription(dto.Description));
+        if (dto.Description.HasValue && dto.Description.Value != aggregate.Description)
+            _session.Events.Append(guid, aggregate.SetDescription(dto.Description.Value));
 
         if (dto.Resources is not null && !dto.Resources.SequenceEqual(aggregate.Resources))
         {
@@ -1093,10 +1093,11 @@ public partial class OAuthAdminService
         if (aggregate is null || aggregate.IsDeleted)
             return OAuthErrors.ApiNotFound(id);
 
-        if (dto.DisplayName is not null && dto.DisplayName != aggregate.DisplayName)
-            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName));
-        if (dto.Description is not null && dto.Description != aggregate.Description)
-            _session.Events.Append(guid, aggregate.SetDescription(dto.Description));
+        // v2 merge-patch: absent = unchanged, explicit null clears.
+        if (dto.DisplayName.HasValue && dto.DisplayName.Value != aggregate.DisplayName)
+            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName.Value));
+        if (dto.Description.HasValue && dto.Description.Value != aggregate.Description)
+            _session.Events.Append(guid, aggregate.SetDescription(dto.Description.Value));
         if (dto.Enabled.HasValue && dto.Enabled.Value != aggregate.Enabled)
             _session.Events.Append(guid, dto.Enabled.Value ? aggregate.Enable() : aggregate.Disable());
         if (dto.Scopes is not null && !dto.Scopes.SequenceEqual(aggregate.Scopes))
