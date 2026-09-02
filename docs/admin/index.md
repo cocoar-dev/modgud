@@ -36,6 +36,7 @@ Modgud is not just a login frontend — it's a full **OAuth 2.0 / OpenID Connect
   Entra ID and standards-compatible OIDC or SAML providers; setup
   walkthroughs included
 - [Realms](./realms) — multi-tenant setup; each tenant gets its own database
+- [Configuration Drafts](./configuration-drafts) — realm config is staged like code: every save commits onto a draft, review the exact change plan, apply in one transaction (git model: draft = branch, apply = push + merge)
 - [Declarative Realm Provisioning](./realm-provisioning) — create/update/tear down a whole realm from one JSON manifest (realm-as-code, per-test realms, agent automation); serves a fetchable schema
 - [Realm Settings](./realm-settings) — realm-admin-owned config (self-registration, DCR policy, branding)
 

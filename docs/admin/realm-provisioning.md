@@ -6,6 +6,10 @@ at runtime. Think *realm-as-code*: instead of clicking (or scripting dozens of)
 admin API calls, you `POST` a **manifest** and Modgud materialises the whole
 realm by running the same operations the admin UI uses.
 
+::: tip Prefer clicking over JSON?
+The interactive counterpart is [Configuration Drafts](configuration-drafts): every save in the admin UI stages onto a draft — which *is* one of these manifests — and you review the exact change plan before applying. Uploading a manifest as a draft is the reviewed import path.
+:::
+
 It's built for three jobs:
 
 - **Bootstrap a realm reproducibly** — keep a realm's shape in version control and
