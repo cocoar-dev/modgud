@@ -164,7 +164,8 @@ clients keep their secret across `apply`.
 
 ## Apply: merge vs. prune
 
-`apply` is a **merge-patch** (in the spirit of [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386)):
+`apply` is a **merge-patch** (in the spirit of [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386)) —
+the same [write semantics](/reference/#write-semantics) as the admin API:
 a field **absent** from the manifest is left unchanged (it takes the shipped default
 only on create), while every **present** field is applied — an explicit `null` **clears**
 the stored value, and `[]` clears a list. Concretely:
