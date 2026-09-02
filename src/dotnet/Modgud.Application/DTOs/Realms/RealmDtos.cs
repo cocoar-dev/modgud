@@ -1,3 +1,5 @@
+using Modgud.Domain.Common;
+
 namespace Modgud.Application.DTOs.Realms;
 
 public record RealmDto
@@ -48,15 +50,13 @@ public record SelfRegistrationDto
     public bool CaptchaSecretSet { get; init; }
 }
 
-/// <summary>Patch payload for the self-registration settings. PATCH
-/// semantics throughout: <c>null</c>/missing = no change; setting a
-/// nullable field to its default-ish value (empty array, empty string)
-/// = clear. The captcha-secret has three states:
-/// <list type="bullet">
-///   <item><c>null</c> = no change</item>
-///   <item>empty string = clear (revert to Cocoar-default secret)</item>
-///   <item>non-empty string = replace with this value (encrypted at rest)</item>
-/// </list></summary>
+/// <summary>Patch payload for the self-registration settings (v2
+/// merge-patch): a field ABSENT from the JSON is unchanged; a present
+/// field is applied — explicit <c>null</c> (or a blank string) CLEARS
+/// back to the fallback, <c>[]</c> clears a list, booleans have no
+/// clear. The captcha-secret follows the same contract: absent = keep
+/// the stored secret, null/blank = revert to the Cocoar-default secret,
+/// non-empty = replace (encrypted at rest).</summary>
 public record UpdateSelfRegistrationDto
 {
     public bool? Enabled { get; init; }
@@ -64,11 +64,11 @@ public record UpdateSelfRegistrationDto
     public string[]? AllowedEmailDomains { get; init; }
     public bool? RequireAdminApproval { get; init; }
     public string[]? DefaultGroupIds { get; init; }
-    public string? TermsOfServiceUrl { get; init; }
-    public string? PrivacyPolicyUrl { get; init; }
+    public Optional<string?> TermsOfServiceUrl { get; init; }
+    public Optional<string?> PrivacyPolicyUrl { get; init; }
     public bool? CaptchaEnabled { get; init; }
-    public string? CaptchaSiteKey { get; init; }
-    public string? CaptchaSecret { get; init; }
+    public Optional<string?> CaptchaSiteKey { get; init; }
+    public Optional<string?> CaptchaSecret { get; init; }
 }
 
 public record CreateRealmDto

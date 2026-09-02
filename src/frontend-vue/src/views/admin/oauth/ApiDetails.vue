@@ -71,11 +71,12 @@ function toStaged(): ManifestEntity {
     Enabled: form.value.Enabled,
     AllowDynamicRegistration: form.value.AllowDynamicRegistration,
   }
-  // v2 merge-patch: explicit null stages the clear (absent would keep live).
+  // v2 merge-patch: explicit null stages the clear (absent would keep live) —
+  // App: null detaches the RS back to unassigned.
   entity.DisplayName = form.value.DisplayName.trim() || null
   entity.Description = form.value.Description.trim() || null
+  entity.App = app?.Slug ?? null
   if (app) {
-    entity.App = app.Slug
     entity.Permissions = (app.Permissions ?? [])
       .filter((c) => form.value.PermissionIds.has(c.Id))
       .map((c) => ({ Resource: c.Resource, Action: c.Action }))
@@ -224,8 +225,8 @@ async function save() {
         Scopes: [...form.value.Scopes],
         UserClaims: [...form.value.UserClaims],
         Enabled: form.value.Enabled,
-        // Always send — empty string detaches, guid assigns.
-        AppId: form.value.AppId,
+        // Always send — v2 merge-patch: explicit null detaches, guid assigns.
+        AppId: form.value.AppId || null,
         PermissionIds: form.value.AppId ? Array.from(form.value.PermissionIds) : [],
         AllowDynamicRegistration: form.value.AllowDynamicRegistration,
       })

@@ -84,15 +84,15 @@ public record UpdateOAuthApiDto
     public List<string>? Scopes { get; init; }
     public List<string>? UserClaims { get; init; }
     /// <summary>
-    /// PATCH semantics: null/missing = no change, "" = detach (mark
-    /// unassigned), "<guid>" = assign or change.
+    /// v2 merge-patch: absent = no change; explicit null (or "") = detach
+    /// (mark unassigned); "&lt;guid&gt;" = assign or change.
     /// </summary>
-    public string? AppId { get; init; }
+    public Optional<string?> AppId { get; init; }
 
     /// <summary>
     /// PATCH semantics: null/missing = no change, empty list = clear.
     /// Each entry is an <c>AppPermission.Id</c> (Guid string), validated
-    /// against the linked App's catalog. Detaching the App (AppId = "")
+    /// against the linked App's catalog. Detaching the App (AppId = null)
     /// in the same payload requires PermissionIds to be empty or absent.
     /// </summary>
     public List<string>? PermissionIds { get; init; }

@@ -145,14 +145,14 @@ function buildPatch(): UpdateBrandingSettingsDto | undefined {
   const cur = form.value
   const patch: UpdateBrandingSettingsDto = {}
 
-  // Tri-state per field: trimmed-empty maps to "" (clear → revert to
-  // default), changed value writes through, unchanged is omitted.
+  // v2 merge-patch per field: a changed value writes through, a cleared
+  // field sends explicit null (revert to default), unchanged is omitted.
   const productName = cur.ProductName.trim()
-  if (productName !== (orig.ProductName ?? '')) patch.ProductName = productName
-  if (cur.LogoAssetId !== (orig.LogoAssetId ?? '')) patch.LogoAssetId = cur.LogoAssetId
-  if (cur.FaviconAssetId !== (orig.FaviconAssetId ?? '')) patch.FaviconAssetId = cur.FaviconAssetId
+  if (productName !== (orig.ProductName ?? '')) patch.ProductName = productName || null
+  if (cur.LogoAssetId !== (orig.LogoAssetId ?? '')) patch.LogoAssetId = cur.LogoAssetId || null
+  if (cur.FaviconAssetId !== (orig.FaviconAssetId ?? '')) patch.FaviconAssetId = cur.FaviconAssetId || null
   const color = cur.PrimaryColor.trim()
-  if (color !== (orig.PrimaryColor ?? '')) patch.PrimaryColor = color
+  if (color !== (orig.PrimaryColor ?? '')) patch.PrimaryColor = color || null
 
   return Object.keys(patch).length === 0 ? undefined : patch
 }
@@ -171,7 +171,7 @@ function buildEmailPatch(): UpdateEmailBrandingSettingsDto | undefined {
   ] as const
   for (const [key, formKey] of fields) {
     const value = form.value[formKey].trim()
-    if (value !== (orig[key] ?? '')) patch[key] = value
+    if (value !== (orig[key] ?? '')) patch[key] = value || null
   }
   return Object.keys(patch).length ? patch : undefined
 }

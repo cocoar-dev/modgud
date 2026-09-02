@@ -98,9 +98,14 @@ function applyStagedSettings(e: ManifestEntity) {
     return true
   }
   if (foldInto(originalSelfReg, s.SelfRegistration)) form.value = fromDto(originalSelfReg.value!)
+  // v2 merge-patch: a staged string sets the secret, a staged explicit null
+  // clears it, an absent field leaves the stored secret untouched.
   const stagedCaptchaSecret = (s.SelfRegistration as Record<string, unknown> | undefined)?.CaptchaSecret
-  if (typeof stagedCaptchaSecret === 'string' && originalSelfReg.value) {
-    originalSelfReg.value = { ...originalSelfReg.value, CaptchaSecretSet: stagedCaptchaSecret.length > 0 }
+  if (stagedCaptchaSecret !== undefined && originalSelfReg.value) {
+    originalSelfReg.value = {
+      ...originalSelfReg.value,
+      CaptchaSecretSet: typeof stagedCaptchaSecret === 'string' && stagedCaptchaSecret.length > 0,
+    }
     form.value = fromDto(originalSelfReg.value)
   }
   if (foldInto(originalRegFields, s.RegistrationFields)) regFieldsForm.value = regFieldsFromDto(originalRegFields.value!)
@@ -532,10 +537,11 @@ function buildSelfRegPatch(): UpdateSelfRegistrationDto | undefined {
   if (cur.RequireAdminApproval !== orig.RequireAdminApproval)
     patch.RequireAdminApproval = cur.RequireAdminApproval
 
+  // v2 merge-patch lists: [] IS the clear (a null would mean "unchanged").
   if (!arrayEqual(cur.AllowedEmailDomains, orig.AllowedEmailDomains ?? []))
-    patch.AllowedEmailDomains = cur.AllowedEmailDomains.length ? cur.AllowedEmailDomains : null
+    patch.AllowedEmailDomains = [...cur.AllowedEmailDomains]
   if (!arrayEqual(cur.DefaultGroupIds, orig.DefaultGroupIds ?? []))
-    patch.DefaultGroupIds = cur.DefaultGroupIds.length ? cur.DefaultGroupIds : null
+    patch.DefaultGroupIds = [...cur.DefaultGroupIds]
 
   const tos = cur.TermsOfServiceUrl.trim()
   if (tos !== (orig.TermsOfServiceUrl ?? '')) patch.TermsOfServiceUrl = tos || null
@@ -546,7 +552,8 @@ function buildSelfRegPatch(): UpdateSelfRegistrationDto | undefined {
   const key = cur.CaptchaSiteKey.trim()
   if (key !== (orig.CaptchaSiteKey ?? '')) patch.CaptchaSiteKey = key || null
 
-  if (editingSecret.value) patch.CaptchaSecret = secretInput.value
+  // v2 merge-patch: explicit null clears the stored secret (revert to default).
+  if (editingSecret.value) patch.CaptchaSecret = secretInput.value || null
 
   return Object.keys(patch).length === 0 ? undefined : patch
 }

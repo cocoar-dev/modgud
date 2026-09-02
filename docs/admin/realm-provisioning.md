@@ -170,8 +170,9 @@ only on create), while every **present** field is applied — an explicit `null`
 the stored value, and `[]` clears a list. Concretely:
 
 - Boolean flags have no clear — omit or `null` both mean "unchanged"; `true`/`false` sets.
-- Optional scalars (display names, descriptions, token lifetimes, …): omitted = unchanged,
-  `null` = clear back to the default, value = set.
+- Optional scalars (display names, descriptions, token lifetimes, branding fields, …):
+  omitted = unchanged, `null` = clear back to the default, value = set.
+- App links (`App` on an API or scope): omitted = unchanged, `null` = detach.
 - Lists (redirect URIs, scopes, group members, position grants, …): omitted = unchanged,
   `[]` = clear, non-empty = replace the full list.
 - App-catalog permission ids are preserved across updates, so unchanged permissions

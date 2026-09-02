@@ -488,7 +488,10 @@ public sealed class RealmDraftService(
                 captcha.GetValue<string>() is { Length: > 0 } captchaValue)
             {
                 secrets[captchaSlot] = protector.Protect(captchaValue);
-                selfReg["CaptchaSecret"] = null;
+                // Remove (don't null) the extracted value: under v2 merge-patch an
+                // explicit null IS a staged clear, while absent = unchanged — the
+                // slot is the "secret staged" marker, not the manifest field.
+                selfReg.Remove("CaptchaSecret");
             }
             if (secrets.ContainsKey(captchaSlot)) validSlots.Add(captchaSlot);
         }
@@ -511,7 +514,8 @@ public sealed class RealmDraftService(
                     value.GetValue<string>() is { Length: > 0 } secret)
                 {
                     secrets[slot] = protector.Protect(secret);
-                    entity[field] = null;
+                    // Absent, not null — see the captcha-slot comment above.
+                    entity.Remove(field);
                 }
                 if (secrets.ContainsKey(slot)) validSlots.Add(slot);
             }

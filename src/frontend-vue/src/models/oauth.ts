@@ -305,7 +305,7 @@ export interface UpdateOAuthScopeDto {
   Emphasize?: boolean | null
   ShowInDiscoveryDocument?: boolean | null
   UserClaims?: string[] | null
-  /** PATCH semantics: undefined/missing = no change, "" = make global, "<guid>" = assign. */
+  /** v2 merge-patch: undefined/missing = no change, null = make global, "<guid>" = assign. */
   AppId?: string | null
   /** PATCH semantics: null = no change. */
   AllowDynamicRegistrationClients?: boolean | null
@@ -373,9 +373,9 @@ export interface UpdateOAuthApiDto {
   Scopes?: string[] | null
   UserClaims?: string[] | null
   /**
-   * PATCH semantics: undefined/missing = no change, "" = detach,
+   * v2 merge-patch: undefined/missing = no change, null = detach,
    * "<guid>" = assign / change. The dropdown's "unassigned" choice
-   * serialises to "" (empty string).
+   * serialises to null.
    */
   AppId?: string | null
   /**

@@ -85,7 +85,9 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
         // Settings ARE exported (all sections, current values) so you can see what to change.
         Assert.NotNull(m.Settings);
         Assert.Equal("Optional", m.Settings!.RegistrationFields!.Username); // shipped default
-        Assert.Null(m.Settings.SelfRegistration!.CaptchaSecret);            // write-only — never exported
+        // Write-only — never exported: the field is ABSENT (None), not an
+        // explicit null (which would stage a clear under v2 merge-patch).
+        Assert.False(m.Settings.SelfRegistration!.CaptchaSecret.HasValue);
         Assert.NotNull(m.Settings.BrowserSessions);                         // session policies export too
         Assert.NotNull(m.Settings.ClientSessions);
         Assert.NotNull(m.Settings.PositionSecurity);

@@ -228,8 +228,8 @@ public sealed partial class RealmManifestApplier(
                 Enabled = api.Enabled ?? true,
                 Scopes = api.Scopes ?? [],
                 UserClaims = api.UserClaims ?? [],
-                AppId = ResolveAppId(apps, api.App, $"api '{api.Name}'"),
-                PermissionIds = ResolvePermissionIds(apps, api.App, api.Permissions, $"api '{api.Name}'"),
+                AppId = ResolveAppId(apps, OrNull(api.App), $"api '{api.Name}'"),
+                PermissionIds = ResolvePermissionIds(apps, OrNull(api.App), api.Permissions, $"api '{api.Name}'"),
                 AllowDynamicRegistration = api.AllowDynamicRegistration ?? false,
             }, ct), $"api '{api.Name}'");
         }
@@ -249,7 +249,7 @@ public sealed partial class RealmManifestApplier(
                 Emphasize = s.Emphasize ?? false,
                 ShowInDiscoveryDocument = s.ShowInDiscoveryDocument ?? true,
                 AllowDynamicRegistrationClients = s.AllowDynamicRegistrationClients ?? false,
-                AppId = ResolveAppId(apps, s.App, $"scope '{s.Name}'"),
+                AppId = ResolveAppId(apps, OrNull(s.App), $"scope '{s.Name}'"),
             }, ct), $"scope '{s.Name}'");
         }
 
@@ -451,15 +451,16 @@ public sealed partial class RealmManifestApplier(
                     Enabled = api.Enabled ?? true,
                     Scopes = api.Scopes ?? [],
                     UserClaims = api.UserClaims ?? [],
-                    AppId = ResolveAppId(apps, api.App, ctx),
-                    PermissionIds = ResolvePermissionIds(apps, api.App, api.Permissions, ctx),
+                    AppId = ResolveAppId(apps, OrNull(api.App), ctx),
+                    PermissionIds = ResolvePermissionIds(apps, OrNull(api.App), api.Permissions, ctx),
                     AllowDynamicRegistration = api.AllowDynamicRegistration ?? false,
                 }, ct), ctx);
             }
             else
             {
                 // v2 merge-patch: presence passes straight through — absent lists
-                // stay null (unchanged), [] clears; Optionals carry clears.
+                // stay null (unchanged), [] clears; Optionals carry clears
+                // (an explicit null App detaches the RS).
                 EnsureOk(await oauth.UpdateApiAsync(existing.Id.ToString(), new UpdateOAuthApiDto
                 {
                     DisplayName = api.DisplayName,
@@ -467,10 +468,12 @@ public sealed partial class RealmManifestApplier(
                     Enabled = api.Enabled,
                     Scopes = api.Scopes,
                     UserClaims = api.UserClaims,
-                    AppId = api.App is null ? null : ResolveAppId(apps, api.App, ctx),
+                    AppId = api.App.HasValue
+                        ? new Optional<string?>(ResolveAppId(apps, api.App.Value, ctx))
+                        : default,
                     PermissionIds = api.Permissions is null
                         ? null
-                        : ResolvePermissionIds(apps, api.App, api.Permissions, ctx),
+                        : ResolvePermissionIds(apps, OrNull(api.App), api.Permissions, ctx),
                     AllowDynamicRegistration = api.AllowDynamicRegistration,
                 }, ct), ctx);
             }
@@ -496,12 +499,13 @@ public sealed partial class RealmManifestApplier(
                     Emphasize = s.Emphasize ?? false,
                     ShowInDiscoveryDocument = s.ShowInDiscoveryDocument ?? true,
                     AllowDynamicRegistrationClients = s.AllowDynamicRegistrationClients ?? false,
-                    AppId = ResolveAppId(apps, s.App, ctx),
+                    AppId = ResolveAppId(apps, OrNull(s.App), ctx),
                 }, ct), ctx);
             }
             else
             {
-                // v2 merge-patch: presence passes straight through.
+                // v2 merge-patch: presence passes straight through (an explicit
+                // null App detaches the scope back to realm-wide).
                 EnsureOk(await oauth.UpdateScopeAsync(existing.Id.ToString(), new UpdateOAuthScopeDto
                 {
                     DisplayName = s.DisplayName,
@@ -513,7 +517,9 @@ public sealed partial class RealmManifestApplier(
                     Emphasize = s.Emphasize,
                     ShowInDiscoveryDocument = s.ShowInDiscoveryDocument,
                     AllowDynamicRegistrationClients = s.AllowDynamicRegistrationClients,
-                    AppId = s.App is null ? null : ResolveAppId(apps, s.App, ctx),
+                    AppId = s.App.HasValue
+                        ? new Optional<string?>(ResolveAppId(apps, s.App.Value, ctx))
+                        : default,
                 }, ct), ctx);
             }
         }

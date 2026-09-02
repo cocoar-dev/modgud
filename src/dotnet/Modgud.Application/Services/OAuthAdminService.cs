@@ -943,17 +943,18 @@ public partial class OAuthAdminService
             dto.UserClaims ?? aggregate.UserClaims,
             dto.AllowDynamicRegistrationClients ?? currentAllowDcr)));
 
-        // App-link patch — null=no change, ""=make global, "guid"=assign.
-        if (dto.AppId is not null)
+        // App-link patch (v2 merge-patch) — absent=no change, null/""=make
+        // global, "guid"=assign.
+        if (dto.AppId.HasValue)
         {
             Guid? newAppId = null;
-            if (dto.AppId.Length > 0)
+            if (!string.IsNullOrEmpty(dto.AppId.Value))
             {
-                if (!ShortGuid.TryParse(dto.AppId, out Guid parsedAppId))
-                    return Error.Validation("OAuthScope.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid or ShortGuid.");
+                if (!ShortGuid.TryParse(dto.AppId.Value, out Guid parsedAppId))
+                    return Error.Validation("OAuthScope.InvalidAppId", $"AppId '{dto.AppId.Value}' is not a valid Guid or ShortGuid.");
                 var app = await _session.LoadAsync<App>(parsedAppId, ct);
                 if (app is null || app.IsDeleted)
-                    return Error.Validation("OAuthScope.AppNotFound", $"App {dto.AppId} not found.");
+                    return Error.Validation("OAuthScope.AppNotFound", $"App {dto.AppId.Value} not found.");
                 newAppId = parsedAppId;
             }
             if (newAppId != aggregate.AppId)
@@ -1105,27 +1106,27 @@ public partial class OAuthAdminService
         if (dto.UserClaims is not null && !dto.UserClaims.SequenceEqual(aggregate.UserClaims))
             _session.Events.Append(guid, aggregate.SetUserClaims(dto.UserClaims));
 
-        // App-link patch — null=no change, ""=detach, "guid"=assign.
-        // Track the App we ended up linked to (post-patch) so PermissionIds
-        // validation in this same call sees the new context — otherwise
-        // detaching + setting a new subset in one round-trip would
+        // App-link patch (v2 merge-patch) — absent=no change, null/""=detach,
+        // "guid"=assign. Track the App we ended up linked to (post-patch) so
+        // PermissionIds validation in this same call sees the new context —
+        // otherwise detaching + setting a new subset in one round-trip would
         // contradict each other.
         var resolvedAppId = aggregate.AppId;
         App? resolvedApp = resolvedAppId.HasValue
             ? await _session.LoadAsync<App>(resolvedAppId.Value, ct)
             : null;
 
-        if (dto.AppId is not null)
+        if (dto.AppId.HasValue)
         {
             Guid? newAppId = null;
             App? newApp = null;
-            if (dto.AppId.Length > 0)
+            if (!string.IsNullOrEmpty(dto.AppId.Value))
             {
-                if (!ShortGuid.TryParse(dto.AppId, out Guid parsed))
-                    return Error.Validation("OAuthApi.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid or ShortGuid.");
+                if (!ShortGuid.TryParse(dto.AppId.Value, out Guid parsed))
+                    return Error.Validation("OAuthApi.InvalidAppId", $"AppId '{dto.AppId.Value}' is not a valid Guid or ShortGuid.");
                 newApp = await _session.LoadAsync<App>(parsed, ct);
                 if (newApp is null || newApp.IsDeleted)
-                    return Error.Validation("OAuthApi.AppNotFound", $"App {dto.AppId} not found.");
+                    return Error.Validation("OAuthApi.AppNotFound", $"App {dto.AppId.Value} not found.");
                 newAppId = parsed;
             }
             if (newAppId != aggregate.AppId)

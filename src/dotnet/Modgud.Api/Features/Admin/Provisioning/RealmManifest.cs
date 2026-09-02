@@ -105,8 +105,8 @@ public sealed record RealmManifestApi
     [Description("Optional description. Absent = unchanged; explicit null clears.")]
     public Optional<string?> Description { get; init; }
 
-    [Description("Optional app slug this API belongs to. Required if Permissions are set (they resolve into this app's catalog).")]
-    public string? App { get; init; }
+    [Description("Optional app slug this API belongs to. Absent = unchanged; explicit null detaches (unassigned). Required if Permissions are set (they resolve into this app's catalog).")]
+    public Optional<string?> App { get; init; }
 
     [Description("Scope names this API accepts. Absent = unchanged; [] clears.")]
     public List<string>? Scopes { get; init; }
@@ -138,8 +138,8 @@ public sealed record RealmManifestScope
     [Description("Optional description shown on the consent screen. Absent = unchanged; explicit null clears.")]
     public Optional<string?> Description { get; init; }
 
-    [Description("Optional app slug this scope belongs to.")]
-    public string? App { get; init; }
+    [Description("Optional app slug this scope belongs to. Absent = unchanged; explicit null detaches (realm-wide scope).")]
+    public Optional<string?> App { get; init; }
 
     [Description("API audience names ('aud') this scope grants access to. Absent = unchanged; [] clears.")]
     public List<string>? Resources { get; init; }

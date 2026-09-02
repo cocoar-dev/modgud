@@ -36,14 +36,17 @@ public class EmailBrandingSettingsTests(SharedPostgresFixture fixture) : Integra
         Assert.Equal("Realm Security", configured.EmailBranding.FromName);
         Assert.Equal("support@example.test", configured.EmailBranding.ReplyTo);
 
+        // v2 merge-patch pin: both clear forms work — a blank string and an
+        // explicit null (what the SPA sends); absent fields stay untouched.
         response = await Client.PatchAsJsonAsync(Endpoint, new UpdateRealmSettingsDto
         {
-            EmailBranding = new UpdateEmailBrandingSettingsDto { FooterText = "" },
+            EmailBranding = new UpdateEmailBrandingSettingsDto { FooterText = "", Preheader = null },
         }, JsonOptions, ct);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var cleared = await Client.GetFromJsonAsync<RealmSettingsDto>(Endpoint, JsonOptions, ct);
         Assert.Null(cleared!.EmailBranding.FooterText);
+        Assert.Null(cleared.EmailBranding.Preheader);
         Assert.Equal("Realm", cleared.EmailBranding.SubjectPrefix);
     }
 

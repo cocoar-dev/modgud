@@ -64,10 +64,10 @@ public record UpdateOAuthScopeDto
     public bool? ShowInDiscoveryDocument { get; init; }
     public List<string>? UserClaims { get; init; }
     /// <summary>
-    /// PATCH semantics: null/missing = no change, "" = make global,
-    /// "<guid>" = assign / change.
+    /// v2 merge-patch: absent = no change; explicit null (or "") = detach
+    /// (make global); "&lt;guid&gt;" = assign / change.
     /// </summary>
-    public string? AppId { get; init; }
+    public Optional<string?> AppId { get; init; }
 
     /// <summary>PATCH semantics: null = no change.</summary>
     public bool? AllowDynamicRegistrationClients { get; init; }

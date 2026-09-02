@@ -82,8 +82,8 @@ function toStaged(): ManifestEntity {
   // v2 merge-patch: explicit null stages the clear (absent would keep live).
   entity.DisplayName = form.value.DisplayName.trim() || null
   entity.Description = form.value.Description.trim() || null
-  const slug = appSlugOf(form.value.AppId)
-  if (slug) entity.App = slug
+  // App: explicit null stages the detach (realm-wide scope).
+  entity.App = appSlugOf(form.value.AppId) || null
   return entity
 }
 
@@ -243,8 +243,8 @@ async function save() {
         Required: form.value.Required,
         Emphasize: form.value.Emphasize,
         ShowInDiscoveryDocument: form.value.ShowInDiscoveryDocument,
-        // Always send — empty string = make global, guid = assign.
-        AppId: form.value.AppId,
+        // Always send — v2 merge-patch: explicit null = make global, guid = assign.
+        AppId: form.value.AppId || null,
         AllowDynamicRegistrationClients: form.value.AllowDynamicRegistrationClients,
       })
       props.close()

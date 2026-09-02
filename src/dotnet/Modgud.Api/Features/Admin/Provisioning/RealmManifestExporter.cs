@@ -101,7 +101,7 @@ public sealed class RealmManifestExporter(
             Name = api.Name,
             DisplayName = Opt(api.DisplayName),
             Description = Opt(api.Description),
-            App = SlugOfShort(appSlugById, api.AppId),
+            App = Opt(SlugOfShort(appSlugById, api.AppId)),
             Scopes = api.Scopes,
             UserClaims = api.UserClaims,
             Permissions = PermsOfShort(permKeyById, api.PermissionIds),
@@ -116,7 +116,7 @@ public sealed class RealmManifestExporter(
             Name = s.Name,
             DisplayName = Opt(s.DisplayName),
             Description = Opt(s.Description),
-            App = SlugOfShort(appSlugById, s.AppId),
+            App = Opt(SlugOfShort(appSlugById, s.AppId)),
             Resources = s.Resources,
             UserClaims = s.UserClaims,
             Enabled = s.Enabled,
@@ -322,11 +322,11 @@ public sealed class RealmManifestExporter(
             AllowedEmailDomains = s.SelfRegistration.AllowedEmailDomains,
             RequireAdminApproval = s.SelfRegistration.RequireAdminApproval,
             DefaultGroupIds = s.SelfRegistration.DefaultGroupIds,
-            TermsOfServiceUrl = s.SelfRegistration.TermsOfServiceUrl,
-            PrivacyPolicyUrl = s.SelfRegistration.PrivacyPolicyUrl,
+            TermsOfServiceUrl = Opt(s.SelfRegistration.TermsOfServiceUrl),
+            PrivacyPolicyUrl = Opt(s.SelfRegistration.PrivacyPolicyUrl),
             CaptchaEnabled = s.SelfRegistration.CaptchaEnabled,
-            CaptchaSiteKey = s.SelfRegistration.CaptchaSiteKey,
-            // CaptchaSecret is write-only (only a CaptchaSecretSet flag is readable) — leave null.
+            CaptchaSiteKey = Opt(s.SelfRegistration.CaptchaSiteKey),
+            // CaptchaSecret is write-only (only a CaptchaSecretSet flag is readable) — leave absent.
         },
         Dcr = new UpdateDcrSettingsDto
         {
@@ -381,19 +381,19 @@ public sealed class RealmManifestExporter(
         },
         Branding = new UpdateBrandingSettingsDto
         {
-            ProductName = s.Branding.ProductName,
-            LogoAssetId = s.Branding.LogoAssetId,
-            FaviconAssetId = s.Branding.FaviconAssetId,
-            PrimaryColor = s.Branding.PrimaryColor,
+            ProductName = Opt(s.Branding.ProductName),
+            LogoAssetId = Opt(s.Branding.LogoAssetId),
+            FaviconAssetId = Opt(s.Branding.FaviconAssetId),
+            PrimaryColor = Opt(s.Branding.PrimaryColor),
         },
         EmailBranding = new UpdateEmailBrandingSettingsDto
         {
-            ProductName = s.EmailBranding.ProductName,
-            SubjectPrefix = s.EmailBranding.SubjectPrefix,
-            Preheader = s.EmailBranding.Preheader,
-            FooterText = s.EmailBranding.FooterText,
-            FromName = s.EmailBranding.FromName,
-            ReplyTo = s.EmailBranding.ReplyTo,
+            ProductName = Opt(s.EmailBranding.ProductName),
+            SubjectPrefix = Opt(s.EmailBranding.SubjectPrefix),
+            Preheader = Opt(s.EmailBranding.Preheader),
+            FooterText = Opt(s.EmailBranding.FooterText),
+            FromName = Opt(s.EmailBranding.FromName),
+            ReplyTo = Opt(s.EmailBranding.ReplyTo),
         },
         RegistrationFields = new UpdateRegistrationFieldsSettingsDto
         {
