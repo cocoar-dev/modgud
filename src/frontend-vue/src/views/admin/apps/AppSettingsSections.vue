@@ -22,6 +22,7 @@ import AssetPicker from '@/components/AssetPicker.vue'
 import ColorField from '@/components/ColorField.vue'
 import type { AssetDto } from '@/models/assets'
 import BrandingPreview from '@/components/BrandingPreview.vue'
+import EmailPreview from '@/components/EmailPreview.vue'
 
 // ADR-0011 per-App settings override sections, extracted from the old standalone
 // ApplicationSettingsModal so the single App modal (AppDetails) can carry them as a
@@ -403,19 +404,24 @@ const effectiveProductName = computed(() => f.branding.override
 const effectivePrimaryColor = computed(() => f.branding.override
   ? f.branding.primaryColor.trim() || realmSettingsStore.settings?.Branding?.PrimaryColor || ''
   : realmSettingsStore.settings?.Branding?.PrimaryColor ?? '')
-const realmEmail = computed(() => realmSettingsStore.settings?.EmailBranding)
-const effectiveEmailProductName = computed(() => f.emailBranding.override
-  ? f.emailBranding.productName.trim() || realmEmail.value?.ProductName || effectiveProductName.value
-  : realmEmail.value?.ProductName || effectiveProductName.value)
-const effectiveEmailSubjectPrefix = computed(() => f.emailBranding.override
-  ? f.emailBranding.subjectPrefix.trim() || realmEmail.value?.SubjectPrefix || ''
-  : realmEmail.value?.SubjectPrefix || '')
-const effectiveEmailPreheader = computed(() => f.emailBranding.override
-  ? f.emailBranding.preheader.trim() || realmEmail.value?.Preheader || ''
-  : realmEmail.value?.Preheader || '')
-const effectiveEmailFooterText = computed(() => f.emailBranding.override
-  ? f.emailBranding.footerText.trim() || realmEmail.value?.FooterText || ''
-  : realmEmail.value?.FooterText || '')
+// The email override section only counts while its toggle is on — with it off the
+// app inherits, so the overlay carries nothing and the backend resolves realm values.
+const emailPreviewOverlay = computed(() => ({
+  productName: f.branding.override ? f.branding.productName : undefined,
+  primaryColor: f.branding.override ? f.branding.primaryColor : undefined,
+  logoUrl: f.branding.override ? (f.branding.logoUrl || undefined) : undefined,
+  branding: f.emailBranding.override
+    ? {
+        productName: f.emailBranding.productName,
+        subjectPrefix: f.emailBranding.subjectPrefix,
+        preheader: f.emailBranding.preheader,
+        footerText: f.emailBranding.footerText,
+        fromName: f.emailBranding.fromName,
+        fromAddress: f.emailBranding.fromAddress,
+        replyTo: f.emailBranding.replyTo,
+      }
+    : null,
+}))
 
 /** Build the override DTO as the COMPLETE desired state (the App PUT is a replace):
  * an overridden section sends its values, a non-overridden section sends `null` so the
@@ -743,14 +749,14 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         {{ t('admin.appSettings.login.noneWarning', {}, 'No sign-in method remains enabled for this application.') }}
       </CoarNotice>
 
-      <BrandingPreview
-        :product-name="effectiveProductName"
-        :email-product-name="effectiveEmailProductName"
-        :email-subject-prefix="effectiveEmailSubjectPrefix"
-        :email-preheader="effectiveEmailPreheader"
-        :email-footer-text="effectiveEmailFooterText"
-        :logo-url="effectiveLogoUrl"
-        :primary-color="effectivePrimaryColor" />
+      <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <BrandingPreview
+          :product-name="effectiveProductName"
+          :logo-url="effectiveLogoUrl"
+          :primary-color="effectivePrimaryColor" />
+        <!-- Rendered as THIS app (realm + its override), overlaid with the unsaved form. -->
+        <EmailPreview :overlay="emailPreviewOverlay" :application-id="applicationId ?? null" />
+      </div>
     </div>
 
     <!-- Registration -->

@@ -26,4 +26,8 @@ Every built-in template has German and English copy. Request language selects th
 - Plain text is generated from the final rendered message and contains the same user-visible information.
 - The sender address accepts a bare `local@domain` only; a display-name form (`Name <addr>`) is rejected so nothing can carry extra header material into the envelope. Whether a custom address is *deliverable* is deliberately not checked here: that depends on the admin's mail provider (SPF/DKIM/DMARC, Postmark sender signature) and is theirs to configure.
 
-Use the Application Settings preview for a quick visual check. For delivery QA, the development stack exposes Mailpit on port 8025 and SMTP port 1025.
+## Preview
+
+The realm branding page and the Application settings show a live **email preview**: one tab per built-in template (email code, sign-in link, password reset, email verification, admin invite, change-request notifications), with a German/English switch. It is not a mock-up — the backend renders the real template through the same template store and brand layout a real send uses, with the effective branding (realm, or realm + Application override) and the form's *unsaved* values overlaid, so it tracks what you type. The header shows the resolved sender and reply-to as they will appear in the mailbox; the body is rendered in a sandboxed frame with fictional sample data and inert links.
+
+The same endpoint backs it (`POST /api/admin/realm-settings/email-preview`, `realm-settings:read`), which is the seat for editable templates later on. For delivery QA, the development stack exposes Mailpit on port 8025 and SMTP port 1025.
