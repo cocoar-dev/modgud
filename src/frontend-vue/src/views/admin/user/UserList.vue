@@ -76,10 +76,14 @@ const displayUsers = computed<UserRow[]>(() => {
     const entity = entityByKey.get(entry.Key)
     if (!entity) continue
     if (entry.Action === 'update') {
-      // Same matching the applier uses: email first, then account name.
+      // Same matching the applier uses: the staged id first (it identifies the
+      // person even when the staged email/username differ — a rename), then
+      // email, then account name.
+      const id = str(entity.Id)
       const email = str(entity.Email).toUpperCase()
       const name = str(entity.UserName).toLowerCase()
       const live = base.find((r) =>
+        (id && r.Id === id) ||
         (email && r.Email?.toUpperCase() === email) || (name && r.UserName === name))
       if (live) overlays.set(live.Id, { entity })
       continue

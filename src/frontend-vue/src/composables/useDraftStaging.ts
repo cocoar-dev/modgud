@@ -115,7 +115,12 @@ export function useDraftListOverlay<TRow extends { Id: string }>(
       const entity = entityByKey.get(entry.Key)
       if (!entity) continue
       if (entry.Action === 'update') {
-        const live = base.find((row) => options.matchLive(row, entity))
+        // Id first, exactly like the apply: it identifies the entity even when the
+        // staged name differs from the live one (a staged RENAME). Falling back to
+        // the natural key covers hand-written entries that carry no id.
+        const live = base.find((row) =>
+          (typeof entity.Id === 'string' && entity.Id === row.Id) ||
+          options.matchLive(row, entity))
         if (live) overlays.set(live.Id, entity)
       } else {
         created.push({

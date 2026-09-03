@@ -46,13 +46,17 @@ public sealed partial class RealmManifestApplier
                     "ServiceAccount.InvalidAccountName",
                     $"{ctx}: account name must be 2-64 chars, start with a letter or digit, and contain only lowercase letters, digits, dots, hyphens, or underscores.")]);
 
-            var existing = await session.Query<ServiceAccount>()
-                .FirstOrDefaultAsync(s => !s.IsDeleted && s.AccountName == normalised, ct);
+            // Id first — the account name is mutable through the canonical update, so an
+            // id-matched entry renames the service account (its credentials keep working:
+            // they authenticate on the principal id, not the name).
+            var existing = await MatchByPinnedIdAsync<ServiceAccount>(session, sa.Id, x => x.IsDeleted, ct)
+                ?? await session.Query<ServiceAccount>()
+                    .FirstOrDefaultAsync(s => !s.IsDeleted && s.AccountName == normalised, ct);
 
             if (existing is null)
                 await CreateServiceAccountAsync(session, sa, normalised, ctx, ct);
             else
-                await UpdateServiceAccountAsync(session, revoker, existing, sa, ctx, ct);
+                await UpdateServiceAccountAsync(session, revoker, existing, sa, normalised, ctx, ct);
         }
     }
 
@@ -92,14 +96,27 @@ public sealed partial class RealmManifestApplier
         await session.SaveChangesAsync(ct);
     }
 
-    /// <summary>Mirror of V2_ServiceAccount_Update (minus rename — AccountName is the
-    /// manifest's natural key): v2 merge-patch on Purpose/IsActive, same
-    /// active→inactive revocation cascade (deferred inside an apply).</summary>
+    /// <summary>Mirror of V2_ServiceAccount_Update: v2 merge-patch on Purpose/IsActive, the
+    /// same active→inactive revocation cascade (deferred inside an apply), and — for an entry
+    /// matched by its pinned Id — the same cross-principal-namespace-checked rename.</summary>
     private static async Task UpdateServiceAccountAsync(
         IDocumentSession session, IOAuthGrantRevoker revoker,
-        ServiceAccount existing, RealmManifestServiceAccount sa, string ctx, CancellationToken ct)
+        ServiceAccount existing, RealmManifestServiceAccount sa, string normalised,
+        string ctx, CancellationToken ct)
     {
         var wasActive = existing.IsActive;
+
+        if (normalised != existing.AccountName)
+        {
+            if (await session.Query<Person>().AnyAsync(p => !p.IsDeleted && p.AccountName == normalised, ct)
+                || await session.Query<PositionPrincipal>().AnyAsync(f => !f.IsDeleted && f.AccountName == normalised, ct)
+                || await session.Query<ServiceAccount>().AnyAsync(
+                    x => !x.IsDeleted && x.Id != existing.Id && x.AccountName == normalised, ct))
+                throw new ManifestApplyException(ctx, [Error.Conflict(
+                    "ServiceAccount.AccountNameTaken",
+                    $"{ctx}: account name '{normalised}' is already used by another principal.")]);
+            existing.AccountName = normalised;
+        }
 
         if (sa.Purpose.HasValue)
             existing.Purpose = NormalisedPurpose(sa.Purpose.Value);

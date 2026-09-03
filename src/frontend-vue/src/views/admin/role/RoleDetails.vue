@@ -77,6 +77,9 @@ function toStaged(): ManifestEntity {
       .filter((c) => form.value.PermissionIds.includes(c.Id))
       .map((c) => ({ Resource: c.Resource, Action: c.Action }))
   }
+  // Stage the LIVE entity's id: the apply matches by identity, so editing the name
+  // is a RENAME of this entity instead of staging a second one.
+  if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
   return entity
 }
 

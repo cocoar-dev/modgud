@@ -304,7 +304,126 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
     }
 
     [Fact]
-    public async Task Pinning_an_id_owned_by_a_live_entity_fails_the_apply()
+    public async Task A_pinned_id_matching_a_live_entity_updates_it_and_renames_where_the_key_is_mutable()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "idmatch";
+        var roleId = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
+
+        RealmManifest Manifest(string roleName, string groupName, string? groupDescription = null) => new()
+        {
+            Realm = new CreateRealmDto
+            {
+                Slug = slug,
+                DisplayName = "Id match",
+                Domains = [$"{slug}.localhost"],
+                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@idmatch.test" },
+            },
+            Apps = [new RealmManifestApp { Slug = "im-app", DisplayName = "Id Match App", Permissions = [new RealmManifestPermission("im", "read")] }],
+            Roles =
+            [
+                new RealmManifestRole
+                {
+                    Name = roleName, Id = new ShortGuid(roleId).ToString(), App = "im-app",
+                    Permissions = [new RealmManifestPermission("im", "read")],
+                },
+            ],
+            Groups =
+            [
+                new RealmManifestGroup
+                {
+                    Name = groupName, Id = new ShortGuid(groupId).ToString(),
+                    Description = groupDescription, Roles = [roleName],
+                },
+            ],
+        };
+
+        var imported = await applier.ImportNewRealmAsync(Manifest("im-role", "ImGroup"), ct);
+        Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
+
+        // Same ids, DIFFERENT names: the id names the entity, so this is an update that
+        // renames — not a second entity next to the old one.
+        var renamed = await applier.UpdateRealmAsync(Manifest("im-role-v2", "ImGroupV2", "renamed via id"), ct: ct);
+        Assert.False(renamed.IsError, renamed.IsError ? renamed.FirstError.Description : string.Empty);
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+
+            var roles = await session.Query<PermissionRole>().Where(r => !r.IsDeleted && r.AppId != null).ToListAsync(ct);
+            var role = Assert.Single(roles);
+            Assert.Equal(roleId, role.Id);
+            Assert.Equal("im-role-v2", role.Name);
+
+            var groups = await session.Query<Group>().Where(g => !g.IsDeleted && g.Name.StartsWith("ImGroup")).ToListAsync(ct);
+            var group = Assert.Single(groups);
+            Assert.Equal(groupId, group.Id);
+            Assert.Equal("ImGroupV2", group.Name);
+            Assert.Equal("renamed via id", group.Description);
+            // The group still points at the SAME role — renaming both in one apply keeps
+            // the cross-reference intact (the manifest's role key moved with it).
+            Assert.Equal([roleId], group.RoleIds);
+        });
+
+        // The plan makes the rename visible before it happens.
+        var planner = factory.Services.GetRequiredService<RealmManifestPlanner>();
+        var plan = await planner.PlanAsync(Manifest("im-role-v3", "ImGroupV3"), prune: false, ct: ct);
+        Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
+
+        var roleEntry = Assert.Single(plan.Value.Sections.Single(s => s.Name == "roles").Entries);
+        Assert.Equal("update", roleEntry.Action);
+        Assert.Contains(roleEntry.Notes, n => n.Contains("RENAMES 'im-role-v2' to 'im-role-v3'"));
+        Assert.Contains(roleEntry.Changes, c => c.Field == "Name");
+        // A renamed entity is NOT also a delete candidate under its old key.
+        Assert.DoesNotContain(plan.Value.Sections.Single(s => s.Name == "roles").Entries, e => e.Action == "delete");
+    }
+
+    [Fact]
+    public async Task A_pinned_id_naming_an_entity_with_an_immutable_key_fails_with_both_ways_out()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "immutablekey";
+        var appId = Guid.NewGuid();
+
+        RealmManifest Manifest(string appSlug) => new()
+        {
+            Realm = new CreateRealmDto
+            {
+                Slug = slug,
+                DisplayName = "Immutable key",
+                Domains = [$"{slug}.localhost"],
+                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@immutablekey.test" },
+            },
+            Apps = [new RealmManifestApp { Slug = appSlug, Id = new ShortGuid(appId).ToString(), DisplayName = "App" }],
+        };
+
+        var imported = await applier.ImportNewRealmAsync(Manifest("ik-app"), ct);
+        Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
+
+        // An app slug cannot be renamed through the canonical update — the id and the slug
+        // name two different things, which is never a silent merge.
+        var renamed = await applier.UpdateRealmAsync(Manifest("ik-app-renamed"), ct: ct);
+        Assert.True(renamed.IsError);
+        Assert.Equal("Manifest.ImmutableKey", renamed.FirstError.Code);
+
+        var planner = factory.Services.GetRequiredService<RealmManifestPlanner>();
+        var plan = await planner.PlanAsync(Manifest("ik-app-renamed"), prune: false, ct: ct);
+        var entry = Assert.Single(plan.Value.Sections.Single(s => s.Name == "apps").Entries);
+        Assert.Equal("error", entry.Action);
+        Assert.Contains(entry.Notes, n => n.Contains("Slug is immutable"));
+    }
+
+    [Fact]
+    public async Task Pinning_an_id_owned_by_another_entity_type_fails_the_apply()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var factory = host.Factory;
@@ -314,7 +433,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         const string slug = "idclash";
         var appId = Guid.NewGuid();
 
-        RealmManifest Manifest(params RealmManifestApp[] apps) => new()
+        RealmManifest Manifest(bool withRole) => new()
         {
             Realm = new CreateRealmDto
             {
@@ -323,25 +442,21 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 Domains = [$"{slug}.localhost"],
                 InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@idclash.test" },
             },
-            Apps = [.. apps],
+            Apps = [new RealmManifestApp { Slug = "first", Id = new ShortGuid(appId).ToString(), DisplayName = "First" }],
+            // Claims the APP's id for a role — appending role events onto an app's stream
+            // would corrupt it, so this stays a hard conflict (no revive, no update).
+            Roles = withRole
+                ? [new RealmManifestRole { Name = "trespasser", Id = new ShortGuid(appId).ToString(), IsRealmAdmin = true }]
+                : [],
         };
 
-        var imported = await applier.ImportNewRealmAsync(
-            Manifest(new RealmManifestApp
-            {
-                Slug = "first", Id = new ShortGuid(appId).ToString(), DisplayName = "First",
-            }), ct);
+        var imported = await applier.ImportNewRealmAsync(Manifest(withRole: false), ct);
         Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
 
-        // A LIVE entity owns the id — a second app claiming it is a conflict, not a revive.
-        var clash = await applier.UpdateRealmAsync(
-            Manifest(new RealmManifestApp
-            {
-                Slug = "second", Id = new ShortGuid(appId).ToString(), DisplayName = "Second",
-            }), ct: ct);
+        var clash = await applier.UpdateRealmAsync(Manifest(withRole: true), ct: ct);
 
         Assert.True(clash.IsError);
-        Assert.Equal("App.PinnedIdTaken", clash.FirstError.Code);
+        Assert.Equal("Role.PinnedIdTaken", clash.FirstError.Code);
     }
 
     [Fact]

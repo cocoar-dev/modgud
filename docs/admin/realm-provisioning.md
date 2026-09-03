@@ -207,24 +207,33 @@ scope, client, role, user, group, service account, login provider and position w
 the *exact same id*. A stage → prod transfer therefore keeps every id consuming
 applications persist as their foreign key — nothing has to be re-linked. The rules:
 
-- `Id` applies **only at create**; on update it is ignored (ids are immutable — the
-  entity is matched by its natural key, and the plan notes a differing id instead of
-  diffing it).
-- **Deleted, then re-imported? The entity comes back with the same id.** Deleting is a
-  soft delete, so the id keeps its history. A create whose pinned id belongs to a
-  *deleted* entity of the same kind **revives** it — under the values in the manifest,
-  including its name, so a rename before the delete resolves too. This is what makes
-  "transfer to prod → something broke → delete → fix → re-import the same config" end
-  where it started.
-- A pinned id owned by a **live** entity (or by an entity of a different kind) is a
-  genuine collision: the apply fails with a `*.PinnedIdTaken` conflict, and the plan
-  flags that entry as an error before you apply. Remove the `Id` to create a separate
-  entity instead.
-- **Users are the exception**: deleting a user runs the account lifecycle (recycle bin,
-  grace period, GDPR purge), so a manifest never revives one. Re-importing a binned
-  user's id fails with a message naming the way out — restore the user from the bin,
-  then re-apply (the apply then updates it, id intact).
-- Omit `Id` (hand-written manifests) and the server generates one, exactly as before.
+**The `Id` names the entity**, and the natural key (slug, name, client id, account name)
+is ordinary data. So an entry carrying an `Id` is matched by it first, and only entries
+without one fall back to matching by key:
+
+- The id names a **live** entity → that entity is **updated** to the entry's values. If
+  its natural key differs and the type can be renamed (roles, groups, users, service
+  accounts, positions), the apply **renames** it — an export → edit-the-name → import
+  round trip is a rename, not a duplicate. The plan shows it as `Name: old → new` plus a
+  note, so you always see *which* entity is being renamed before you apply.
+- Some natural keys can't change, because other systems address the entity by them: an
+  **app slug**, a **client id**, a **scope or API name** (the API name is the `aud`
+  claim), a **login-provider slug** (it owns the callback URLs). If the id names one of
+  those and the entry's key differs, the entry fails with both ways out spelled out —
+  fix the key to match, or drop the `Id` to create a separate entity.
+- The id names a **deleted** entity → the apply **revives** it, under the entry's values
+  (name included). Deleting is a soft delete, so the id and its history are still there.
+  This is what makes "transfer to prod → something broke → delete → fix → re-import the
+  same config" end where it started.
+- The id names an entity of a **different kind** → conflict (`*.PinnedIdTaken`), and the
+  plan flags that entry as an error. Appending one kind's events onto another's stream
+  would corrupt it, so this is the one collision with no automatic resolution.
+- **Users are the exception to reviving**: deleting a user runs the account lifecycle
+  (recycle bin, grace period, GDPR purge), so a manifest never revives one. Re-importing
+  a binned user's id fails with a message naming the way out — restore the user from the
+  bin, then re-apply (the apply then updates it, id intact).
+- Omit `Id` (hand-written manifests) and matching falls back to the natural key, exactly
+  as before; a create then generates a fresh id.
 
 Service accounts export as **hulls** (AccountName, Purpose, IsActive, Id): their
 credentials never travel — issue them per environment. Service accounts are

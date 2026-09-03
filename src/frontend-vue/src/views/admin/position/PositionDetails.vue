@@ -147,6 +147,9 @@ function toStaged(): ManifestEntity {
       })
       .filter((key): key is string => !!key)
   }
+  // Stage the LIVE entity's id: the apply matches by identity, so editing the name
+  // is a RENAME of this entity instead of staging a second one.
+  if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
   return entity
 }
 

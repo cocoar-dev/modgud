@@ -156,6 +156,9 @@ function toStaged(): ManifestEntity {
   entity.Description = form.value.Description.trim() || null
   if (isAuto && form.value.MembershipScript.trim()) entity.MembershipScript = form.value.MembershipScript
   entity.Email = form.value.EmailMode === 'Shared' ? (form.value.Email?.trim() || null) : null
+  // Stage the LIVE entity's id: the apply matches by identity, so editing the name
+  // is a RENAME of this entity instead of staging a second one.
+  if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
   return entity
 }
 

@@ -68,8 +68,11 @@ public sealed partial class RealmManifestApplier
                     grantUserIds.Add(await ResolveUserRefAsync(session, userIds, key, $"{ctx} grant '{key}'", ct));
             }
 
-            var existing = await session.Query<PositionPrincipal>()
-                .FirstOrDefaultAsync(p => !p.IsDeleted && p.AccountName == normalised, ct);
+            // Id first — the account name is mutable through the canonical update, so an
+            // id-matched entry renames the position instead of creating a second one.
+            var existing = await MatchByPinnedIdAsync<PositionPrincipal>(session, pos.Id, x => x.IsDeleted, ct)
+                ?? await session.Query<PositionPrincipal>()
+                    .FirstOrDefaultAsync(p => !p.IsDeleted && p.AccountName == normalised, ct);
 
             if (existing is null)
                 await CreatePositionAsync(session, pos, normalised, grantUserIds, now, ctx, ct);
@@ -127,7 +130,8 @@ public sealed partial class RealmManifestApplier
     /// Mirror of V2_Position_Update: merge + validate + full-replace event, then the SAME
     /// post-commit cascades (policy-tightening ends affected staffing sessions; an
     /// active→inactive transition revokes the position's tokens and ends its shifts).
-    /// AccountName is the natural key, so a manifest can never rename a position.
+    /// An entry matched by its pinned Id RENAMES the position (same validation as the PUT:
+    /// format + the shared principal account-name namespace).
     /// Declarative apply auto-confirms the policy consequences — the manifest IS the
     /// desired state (documented on the manifest field).
     /// </summary>
@@ -137,6 +141,15 @@ public sealed partial class RealmManifestApplier
         DateTimeOffset now, string ctx, CancellationToken ct)
     {
         var wasActive = existing.IsActive;
+
+        var normalised = pos.AccountName.Trim().ToLowerInvariant();
+        if (normalised != existing.AccountName)
+        {
+            EnsureNoOpError(PositionsEndpoints.ValidateAccountName(normalised), ctx);
+            EnsureNoOpError(
+                await PositionsEndpoints.AccountNameTakenAsync(session, normalised, existing.Id, ct), ctx);
+            existing.AccountName = normalised;
+        }
 
         if (pos.Purpose.HasValue)
             existing.Purpose = string.IsNullOrWhiteSpace(pos.Purpose.Value) ? null : pos.Purpose.Value.Trim();

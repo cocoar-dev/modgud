@@ -414,7 +414,13 @@ public sealed partial class RealmManifestApplier(
         foreach (var app in manifest.Apps)
         {
             App result;
-            if (apps.TryGetValue(app.Slug, out var current))
+            // Id first: it names the entity outright. An app slug can't be renamed through
+            // the canonical update, so an id naming a differently-slugged app is an error.
+            var byId = await MatchByPinnedIdAsync<App>(session, app.Id, a => a.IsDeleted, ct);
+            if (byId is not null)
+                EnsureRenameable(false, app.Slug, byId.Slug, "Slug", $"app '{app.Slug}'");
+            var current = byId ?? apps.GetValueOrDefault(app.Slug);
+            if (current is not null)
             {
                 // v2 merge-patch: an absent catalog keeps the current one verbatim; a
                 // present catalog (incl. []) replaces. Preserve existing catalog-entry
@@ -433,6 +439,7 @@ public sealed partial class RealmManifestApplier(
                 var description = app.Description.HasValue ? app.Description.Value : current.Description;
                 var updated = await appAdmin.UpdateAppAsync(current.Id,
                     new UpdateAppDto(app.DisplayName, description, permissions, app.Settings), ct);
+
                 EnsureOk(updated, $"app '{app.Slug}'");
                 result = updated.Value;
             }
@@ -454,8 +461,11 @@ public sealed partial class RealmManifestApplier(
         foreach (var api in manifest.Apis)
         {
             var ctx = $"api '{api.Name}'";
-            var existing = await session.Query<OAuthApiState>()
-                .FirstOrDefaultAsync(x => x.Name == api.Name && !x.IsDeleted, ct);
+            var existing = await MatchByPinnedIdAsync<OAuthApiState>(session, api.Id, x => x.IsDeleted, ct)
+                ?? await session.Query<OAuthApiState>()
+                    .FirstOrDefaultAsync(x => x.Name == api.Name && !x.IsDeleted, ct);
+            // The audience IS the API's identity for every token consumer — immutable.
+            if (existing is not null) EnsureRenameable(false, api.Name, existing.Name, "Name", ctx);
             if (existing is null)
             {
                 EnsureOk(await oauth.CreateApiAsync(new CreateOAuthApiDto
@@ -499,8 +509,10 @@ public sealed partial class RealmManifestApplier(
         foreach (var s in manifest.Scopes)
         {
             var ctx = $"scope '{s.Name}'";
-            var existing = await session.Query<OAuthScopeState>()
-                .FirstOrDefaultAsync(x => x.Name == s.Name && !x.IsDeleted, ct);
+            var existing = await MatchByPinnedIdAsync<OAuthScopeState>(session, s.Id, x => x.IsDeleted, ct)
+                ?? await session.Query<OAuthScopeState>()
+                    .FirstOrDefaultAsync(x => x.Name == s.Name && !x.IsDeleted, ct);
+            if (existing is not null) EnsureRenameable(false, s.Name, existing.Name, "Name", ctx);
             if (existing is null)
             {
                 EnsureOk(await oauth.CreateScopeAsync(new CreateOAuthScopeDto
@@ -545,8 +557,10 @@ public sealed partial class RealmManifestApplier(
         foreach (var c in manifest.Clients)
         {
             var ctx = $"client '{c.ClientId}'";
-            var existing = await session.Query<OAuthApplicationState>()
-                .FirstOrDefaultAsync(x => x.ClientId == c.ClientId && !x.IsDeleted, ct);
+            var existing = await MatchByPinnedIdAsync<OAuthApplicationState>(session, c.Id, x => x.IsDeleted, ct)
+                ?? await session.Query<OAuthApplicationState>()
+                    .FirstOrDefaultAsync(x => x.ClientId == c.ClientId && !x.IsDeleted, ct);
+            if (existing is not null) EnsureRenameable(false, c.ClientId, existing.ClientId, "ClientId", ctx);
             if (existing is null)
             {
                 var created = await oauth.CreateClientAsync(BuildClientCreateDto(c, apps, ctx), ct);
@@ -567,8 +581,11 @@ public sealed partial class RealmManifestApplier(
         foreach (var lp in manifest.LoginProviders)
         {
             var ctx = $"login provider '{lp.Slug}'";
-            var existing = await session.Query<LoginProvider>()
-                .FirstOrDefaultAsync(x => x.Slug == lp.Slug && !x.IsDeleted, ct);
+            var existing = await MatchByPinnedIdAsync<LoginProvider>(session, lp.Id, x => x.IsDeleted, ct)
+                ?? await session.Query<LoginProvider>()
+                    .FirstOrDefaultAsync(x => x.Slug == lp.Slug && !x.IsDeleted, ct);
+            // The slug owns the provider's callback URLs — immutable after create.
+            if (existing is not null) EnsureRenameable(false, lp.Slug, existing.Slug, "Slug", ctx);
             if (existing is null)
             {
                 EnsureOk(await BuildCreateProviderHandler(sp).Handle(
@@ -643,8 +660,10 @@ public sealed partial class RealmManifestApplier(
         foreach (var r in manifest.Roles)
         {
             var ctx = $"role '{r.Name}'";
-            var existing = await session.Query<PermissionRole>()
-                .FirstOrDefaultAsync(x => x.Name == r.Name && !x.IsDeleted, ct);
+            // Id first — a role's name is mutable, so an id-matched entry RENAMES it.
+            var existing = await MatchByPinnedIdAsync<PermissionRole>(session, r.Id, x => x.IsDeleted, ct)
+                ?? await session.Query<PermissionRole>()
+                    .FirstOrDefaultAsync(x => x.Name == r.Name && !x.IsDeleted, ct);
             // v2 merge-patch: absent fields keep the existing role's values (the
             // canonical update is a full payload replace, so merge here).
             var isRealmAdmin = r.IsRealmAdmin ?? existing?.IsRealmAdmin ?? false;
@@ -678,10 +697,13 @@ public sealed partial class RealmManifestApplier(
             var ctx = $"user '{u.Email}'";
             var normalizedEmail = u.Email.ToUpperInvariant();
             var normalizedUserName = u.UserName?.ToLowerInvariant();
-            var existing = await session.Query<Person>()
-                .FirstOrDefaultAsync(p => !p.IsDeleted &&
-                    (p.NormalizedEmail == normalizedEmail ||
-                     (normalizedUserName != null && p.AccountName == normalizedUserName)), ct);
+            // Id first — the person's email/username are mutable profile fields, so an
+            // id-matched entry updates (and renames) that person.
+            var existing = await MatchByPinnedIdAsync<Person>(session, u.Id, x => x.IsDeleted, ct)
+                ?? await session.Query<Person>()
+                    .FirstOrDefaultAsync(p => !p.IsDeleted &&
+                        (p.NormalizedEmail == normalizedEmail ||
+                         (normalizedUserName != null && p.AccountName == normalizedUserName)), ct);
 
             Guid? uid;
             if (existing is null)
@@ -733,8 +755,11 @@ public sealed partial class RealmManifestApplier(
             foreach (var g in manifest.Groups)
             {
                 var ctx = $"group '{g.Name}'";
-                var existing = await session.Query<Group>()
-                    .FirstOrDefaultAsync(x => x.Name == g.Name && !x.IsDeleted, ct);
+                // Id first — a group's name is mutable, so an id-matched entry RENAMES it
+                // (this is what makes a rename survive an export → import round trip).
+                var existing = await MatchByPinnedIdAsync<Group>(session, g.Id, x => x.IsDeleted, ct)
+                    ?? await session.Query<Group>()
+                        .FirstOrDefaultAsync(x => x.Name == g.Name && !x.IsDeleted, ct);
 
                 // v2 merge-patch: absent lists/fields keep the existing group's values
                 // (the canonical update is a full payload replace, so merge here).
@@ -1216,6 +1241,37 @@ public sealed partial class RealmManifestApplier(
         var pinned = await PinnedEntityId.ResolveAsync(session, raw, entityLabel, isDeleted, ct);
         if (pinned.IsError) throw new ManifestApplyException(ctx, pinned.Errors);
         return pinned.Value;
+    }
+
+    /// <summary>
+    /// Id-first entity matching: a manifest entity carrying an <c>Id</c> that resolves to a
+    /// LIVE document of its own type IS that entity — an import updates it to the manifest's
+    /// values, INCLUDING its natural key (the id is the identity; the key is mutable
+    /// metadata). Returns null when the entity carries no id, or when the id is free / owned
+    /// by a soft-deleted entity (then the caller falls back to the natural key, and a create
+    /// pins or revives the id).
+    /// </summary>
+    private static async Task<TDoc?> MatchByPinnedIdAsync<TDoc>(
+        IDocumentSession session, string? raw, Func<TDoc, bool> isDeleted, CancellationToken ct)
+        where TDoc : class
+    {
+        if (string.IsNullOrWhiteSpace(raw) || !ShortGuid.TryParse(raw, out Guid id)) return null;
+        var doc = await session.LoadAsync<TDoc>(id, ct);
+        return doc is not null && !isDeleted(doc) ? doc : null;
+    }
+
+    /// <summary>
+    /// Guards the id-matched update of a type whose natural key CANNOT be renamed through
+    /// its canonical update op (app slug, client id, scope/api name, provider slug). The id
+    /// and the key then name two different entities, which is never a silent merge — the
+    /// entry fails with both ways out spelled out.
+    /// </summary>
+    private static void EnsureRenameable(
+        bool renameable, string manifestKey, string liveKey, string keyField, string ctx)
+    {
+        if (renameable || string.Equals(manifestKey, liveKey, StringComparison.OrdinalIgnoreCase)) return;
+        throw new ManifestApplyException(ctx, [Error.Validation("Manifest.ImmutableKey",
+            $"{ctx}: the pinned Id belongs to '{liveKey}', but {keyField} is immutable — it cannot be renamed to '{manifestKey}'. Fix the {keyField} to match, or remove the Id to create a separate entity.")]);
     }
 
     /// <summary>

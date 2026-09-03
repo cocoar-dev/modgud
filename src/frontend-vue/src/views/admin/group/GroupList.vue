@@ -64,6 +64,9 @@ const groups = useDraftListOverlay<GroupListRow>({
   matchLive: (row, e) => row.Name === str(e.Name),
   overlay: (row, e) => ({
     ...row,
+    // The staged entity carries the group's id, so a changed Name is a RENAME of
+    // this very row — show it, don't keep the live name.
+    Name: str(e.Name) || row.Name,
     Description: str(e.Description) || row.Description,
     MembershipMode: (str(e.MembershipMode) || row.MembershipMode) as GroupDto['MembershipMode'],
     // Pseudo-ids: the grid only shows the count (manifest members are user keys).

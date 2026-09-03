@@ -222,6 +222,9 @@ function toStaged(settings: ApplicationSettingsDto | undefined): ManifestEntity 
   // Settings ride the same entity (ADR-0011: an App is ONE resource). Keep the
   // previously staged override when the settings tab wasn't mounted/built.
   if (settings !== undefined) entity.Settings = settings
+  // Stage the LIVE entity's id: the apply matches by identity, so editing the name
+  // is a RENAME of this entity instead of staging a second one.
+  if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
   return entity
 }
 

@@ -633,6 +633,9 @@ function toStaged(): ManifestEntity {
   // DataProtection slot on save; existing clients keep their stored secret.
   const secret = form.value.ClientSecret.trim()
   if (secret) entity.ClientSecret = secret
+  // Stage the LIVE entity's id: the apply matches by identity, so editing the name
+  // is a RENAME of this entity instead of staging a second one.
+  if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
   return entity
 }
 

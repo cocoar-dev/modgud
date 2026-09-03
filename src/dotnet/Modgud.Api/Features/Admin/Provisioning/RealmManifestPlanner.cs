@@ -93,6 +93,7 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["Slug"],
                 ImmutableIgnored = ["Id"],
+                KeyField = "Slug",
                 PinnedId = a => a.Id,
                 PinnedIdCheck = PinnedIdLookup<App>(session, a => a.IsDeleted, a => a.Slug, ct),
                 NestedPatch = ["Settings"],
@@ -105,6 +106,7 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["Name"],
                 ImmutableIgnored = ["Id"],
+                KeyField = "Name",
                 PinnedId = a => a.Id,
                 PinnedIdCheck = PinnedIdLookup<OAuthApiState>(session, x => x.IsDeleted, x => x.Name, ct),
             }));
@@ -115,6 +117,7 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["Name"],
                 ImmutableIgnored = ["Id"],
+                KeyField = "Name",
                 PinnedId = x => x.Id,
                 PinnedIdCheck = PinnedIdLookup<OAuthScopeState>(session, x => x.IsDeleted, x => x.Name, ct),
             }));
@@ -125,6 +128,7 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["ClientId", "ClientSecret"],
                 ImmutableIgnored = ["ClientType", "Id"],
+                KeyField = "ClientId",
                 PinnedId = c => c.Id,
                 PinnedIdCheck = PinnedIdLookup<OAuthApplicationState>(
                     session, x => x.IsDeleted, x => x.ClientId, ct),
@@ -150,6 +154,7 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["Slug", "ClientSecret"],
                 ImmutableIgnored = ["Id"],
+                KeyField = "Slug",
                 PinnedId = x => x.Id,
                 PinnedIdCheck = PinnedIdLookup<LoginProvider>(session, x => x.IsDeleted, x => x.Slug, ct),
                 // Type/Flavor own the provider's URLs + config shape; the applier refuses
@@ -170,6 +175,8 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["Name", "Key"],
                 ImmutableIgnored = ["Id"],
+                KeyField = "Name",
+                KeyRenameable = true,
                 PinnedId = r => r.Id,
                 PinnedIdCheck = PinnedIdLookup<PermissionRole>(session, r => r.IsDeleted, r => r.Name, ct),
                 Protect = r => Task.FromResult<string?>(r.IsRealmAdmin == true
@@ -191,6 +198,8 @@ public sealed class RealmManifestPlanner(
                 // The pinned id only applies at CREATE; on update a differing value
                 // is ignored (ids are immutable) — surfaced as a note, not a change.
                 ImmutableIgnored = ["Id"],
+                KeyField = "AccountName",
+                KeyRenameable = true,
                 PinnedId = x => x.Id,
                 PinnedIdCheck = PinnedIdLookup<ServiceAccount>(
                     session, x => x.IsDeleted, x => x.AccountName, ct),
@@ -202,6 +211,8 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["Name"],
                 ImmutableIgnored = ["Id"],
+                KeyField = "Name",
+                KeyRenameable = true,
                 PinnedId = g => g.Id,
                 PinnedIdCheck = PinnedIdLookup<Group>(session, g => g.IsDeleted, g => g.Name, ct),
                 Protect = async g =>
@@ -222,6 +233,8 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["AccountName"],
                 ImmutableIgnored = ["Id"],
+                KeyField = "AccountName",
+                KeyRenameable = true,
                 PinnedId = x => x.Id,
                 PinnedIdCheck = PinnedIdLookup<PositionPrincipal>(
                     session, x => x.IsDeleted, x => x.AccountName, ct),
@@ -333,6 +346,8 @@ public sealed class RealmManifestPlanner(
         {
             Skip = ["Key", "Password", "EmailConfirmed"],
             ImmutableIgnored = ["Id"],
+            KeyField = "Key",
+            KeyRenameable = true,
             PinnedId = u => u.Id,
             // Users are never revived from a manifest: deletion runs the account
             // lifecycle (recycle bin, grace, purge), so the way back is a restore.
@@ -349,16 +364,32 @@ public sealed class RealmManifestPlanner(
         };
         var matched = new HashSet<string>(StringComparer.Ordinal);
 
+        // Id-first matching mirrors the applier: an entry whose pinned Id names a live
+        // person IS that person, even when the email/username differ (a rename).
+        var currentById = current.Users
+            .Select(u => (Key: NormalizedId(u.Id), User: u))
+            .Where(x => x.Key is not null)
+            .ToDictionary(x => x.Key!, x => x.User, StringComparer.Ordinal);
+
         foreach (var u in manifest.Users)
         {
-            var existing = Match(u, byEmail, byUserName);
+            var pinned = NormalizedId(u.Id);
+            RealmManifestUser? existing = null;
+            var matchedById = pinned is not null && currentById.TryGetValue(pinned, out existing);
+            existing ??= Match(u, byEmail, byUserName);
             if (existing is not null) matched.Add(existing.ResolveKey());
             var baselineUser = baselineByEmail is null
                 ? null
-                : Match(u, baselineByEmail, baselineByUserName!);
+                : Match(existing ?? u, baselineByEmail, baselineByUserName!);
 
             var entry = DiffEntry(u.ResolveKey(), u, existing, baselineUser,
                 conflictMode: baselineByEmail is not null, json, policy);
+            if (matchedById && existing is not null &&
+                !string.Equals(existing.ResolveKey(), u.ResolveKey(), StringComparison.Ordinal))
+            {
+                entry.Changes.Add(new RealmPlanChange("Key", existing.ResolveKey(), u.ResolveKey()));
+                entry.Notes.Add($"Matched by Id — RENAMES '{existing.ResolveKey()}' to '{u.ResolveKey()}'.");
+            }
             // Pinned ids only bite on CREATE (on update the id is immutable + ignored).
             if (entry.Action == "create" && policy.PinnedId?.Invoke(u) is { Length: > 0 } pinnedRaw &&
                 await policy.PinnedIdCheck!(pinnedRaw) is { } outcome)
@@ -472,7 +503,21 @@ public sealed class RealmManifestPlanner(
         /// <summary>Resolves what a create with this pinned id would do — revive a
         /// soft-deleted entity, or fail because the id is taken. Null = no check.</summary>
         public Func<string, Task<PinnedIdOutcome?>>? PinnedIdCheck { get; init; }
+
+        /// <summary>Name of the natural-key field, for the rename report on an entry the
+        /// pinned Id matched to a live entity carrying a different key.</summary>
+        public string? KeyField { get; init; }
+
+        /// <summary>Whether the canonical update op can change the natural key. False (app
+        /// slug, client id, scope/api name, provider slug) makes an id-matched entry whose
+        /// key differs an apply ERROR instead of a rename.</summary>
+        public bool KeyRenameable { get; init; }
     }
+
+    /// <summary>Canonical form of a pinned id so the manifest's spelling (Guid or ShortGuid)
+    /// matches the export's; null when absent or unparseable.</summary>
+    private static string? NormalizedId(string? raw)
+        => !string.IsNullOrWhiteSpace(raw) && ShortGuid.TryParse(raw, out Guid id) ? id.ToString() : null;
 
     /// <summary>What the applier will do with a create's pinned id: revive the
     /// soft-deleted entity that owns it, or fail because a live entity does.</summary>
@@ -509,17 +554,50 @@ public sealed class RealmManifestPlanner(
         var section = new RealmPlanSection { Name = name };
         var currentByKey = current.ToDictionary(key, c => c, StringComparer.Ordinal);
         var baselineByKey = baseline?.ToDictionary(key, b => b, StringComparer.Ordinal);
-        var desiredKeys = desired.Select(key).ToHashSet(StringComparer.Ordinal);
+        // Id-first matching mirrors the applier: an entry whose pinned Id names a live entity
+        // IS that entity, even when its natural key differs (a rename).
+        var currentById = policy.PinnedId is null
+            ? []
+            : current
+                .Select(c => (Key: NormalizedId(policy.PinnedId(c)), Entity: c))
+                .Where(x => x.Key is not null)
+                .ToDictionary(x => x.Key!, x => x.Entity, StringComparer.Ordinal);
+        // Everything the manifest matched — by id OR by key — is NOT a delete candidate.
+        var matchedKeys = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var item in desired)
         {
-            currentByKey.TryGetValue(key(item), out var existing);
+            var pinned = NormalizedId(policy.PinnedId?.Invoke(item));
+            T? existing = null;
+            var matchedById = pinned is not null && currentById.TryGetValue(pinned, out existing);
+            if (!matchedById) currentByKey.TryGetValue(key(item), out existing);
+            if (existing is not null) matchedKeys.Add(key(existing));
+
             T? baselineItem = null;
-            baselineByKey?.TryGetValue(key(item), out baselineItem);
+            baselineByKey?.TryGetValue(existing is null ? key(item) : key(existing), out baselineItem);
             var entry = DiffEntry(key(item), item, existing, baselineItem,
                 conflictMode: baselineByKey is not null, json, policy);
             policy.PostProcess?.Invoke(item, existing, entry);
-            // Pinned ids only bite on CREATE (on update the id is immutable + ignored).
+
+            // A rename: the Id named a live entity whose natural key differs. Show WHAT is
+            // being renamed (the key field is otherwise skipped, being the match key).
+            if (matchedById && existing is not null &&
+                !string.Equals(key(existing), key(item), StringComparison.Ordinal))
+            {
+                var field = policy.KeyField ?? "Key";
+                if (policy.KeyRenameable)
+                {
+                    entry.Changes.Add(new RealmPlanChange(field, key(existing), key(item)));
+                    entry.Notes.Add($"Matched by Id — RENAMES '{key(existing)}' to '{key(item)}'.");
+                }
+                else
+                {
+                    entry.Notes.Add($"The Id belongs to '{key(existing)}', but {field} is immutable — the apply FAILS for this entry. Fix the {field} to match, or remove the Id to create a separate entity.");
+                    entry = entry with { Action = "error" };
+                }
+            }
+
+            // Pinned ids only bite on CREATE (on update the id names the entity itself).
             if (entry.Action == "create" && policy.PinnedIdCheck is not null &&
                 policy.PinnedId?.Invoke(item) is { Length: > 0 } pinnedRaw &&
                 await policy.PinnedIdCheck(pinnedRaw) is { } outcome)
@@ -534,7 +612,7 @@ public sealed class RealmManifestPlanner(
 
         if (!prune && deleteKeys is not { Count: > 0 }) return section;
 
-        foreach (var item in current.Where(c => !desiredKeys.Contains(key(c))))
+        foreach (var item in current.Where(c => !matchedKeys.Contains(key(c))))
         {
             // Targeted (staged) deletes are prune's per-entity counterpart: without
             // prune only they are candidates; everything else absent from the
@@ -583,6 +661,7 @@ public sealed class RealmManifestPlanner(
 
         // Staged deletions whose target no longer exists live: intent already
         // fulfilled — informational no-op, never blocks the apply.
+        var desiredKeys = desired.Select(key).ToHashSet(StringComparer.Ordinal);
         foreach (var k in (deleteKeys ?? []).Where(k =>
                      !currentByKey.ContainsKey(k) && !desiredKeys.Contains(k)))
         {
@@ -629,6 +708,13 @@ public sealed class RealmManifestPlanner(
                 {
                     // Create path — immutability only bites on update; report the set value.
                     if (value is not null) entry.Changes.Add(new RealmPlanChange(field, null, value.DeepClone()));
+                }
+                // The entity id is compared canonically: the manifest may spell it as a Guid
+                // and the export as a ShortGuid, and the same id in two spellings is no change.
+                else if (field == "Id" &&
+                         NormalizedId(value?.GetValue<string>()) == NormalizedId(currentValue?.GetValue<string>()))
+                {
+                    // Same id — nothing to report.
                 }
                 else if (value is not null && !JsonEquivalent(value, currentValue, caseInsensitive: true))
                 {
