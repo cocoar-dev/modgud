@@ -1820,7 +1820,8 @@
         "clear": "Leeren",
         "export": "Exportieren…",
         "addTo": "Zur Export-Auswahl hinzufügen",
-        "removeFrom": "Aus Export-Auswahl entfernen"
+        "removeFrom": "Aus Export-Auswahl entfernen",
+        "show": "Gesammelte Einträge anzeigen"
       },
       "invalidJson": "Das Manifest ist kein gültiges JSON: ",
       "noDrafts": "Noch keine Drafts — oben einen anlegen.",
