@@ -115,6 +115,11 @@ function visibleGroups(): SubNavGroup[] {
   margin: 0 0 0.5rem 0;
 }
 
+/* The content area is a BOUNDED box, not a scroller: grid pages (AG Grid) and
+   the editors need a fixed height to size themselves. Consequently every page
+   that can outgrow the viewport — a long form, a settings page — must be its own
+   scroller: root element `flex-1 min-h-0 overflow-y-auto` (see InboxSettingsView,
+   BrandingView). A page without that is silently clipped below the fold. */
 .sub-nav-content {
   flex: 1;
   min-width: 0;

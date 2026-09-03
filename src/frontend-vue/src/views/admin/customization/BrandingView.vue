@@ -206,7 +206,7 @@ async function save() {
 </script>
 
 <template>
-  <div class="flex flex-1 flex-col min-w-0 p-4 gap-3">
+  <div class="flex flex-1 flex-col min-w-0 min-h-0 overflow-y-auto p-4 gap-3">
     <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
     <CoarNotice truncate v-if="savedFlash" variant="success">
       {{ t('admin.realmSettings.saved', {}, 'Saved.') }}
