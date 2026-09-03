@@ -1,15 +1,24 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
+import { useSignalR } from '@/composables/useSignalR'
 import type {
   ApplicationDto,
   CreateApplicationDto,
   UpdateApplicationDto,
 } from '@/models/application'
 
+interface AppDataEvent {
+  Subject: string
+  Action: 'Created' | 'Updated' | 'Deleted' | 'Custom' | 'FullSync'
+  Payload: unknown[]
+}
+
 /**
  * Applications store — the realm's registered Cocoar SaaS apps. The system
- * app (`modgud`) is always present and cannot be deleted.
+ * app (`modgud`) is always present and cannot be deleted. Live-updated via
+ * the AppActions SignalR stream (Created/Updated → upsert, Deleted → remove)
+ * so changes from another admin/tab appear without a manual reload.
  *
  * Distinct from the existing `useAppStore` (UI shell state for the
  * header/footer/content layout) — that one keeps its name; this one is
@@ -17,9 +26,11 @@ import type {
  */
 export const useApplicationsStore = defineStore('applications', () => {
   const http = useHttpClient('/api/app')
+  const signalr = useSignalR()
 
   const apps = ref<ApplicationDto[]>([])
   const loaded = ref(false)
+  let signalrSubscribed = false
 
   async function loadAll(): Promise<ApplicationDto[]> {
     const res = await http.get<ApplicationDto[]>()
@@ -29,7 +40,28 @@ export const useApplicationsStore = defineStore('applications', () => {
   }
 
   async function initialize() {
+    if (!signalrSubscribed) {
+      signalrSubscribed = true
+      subscribeToSignalR()
+      signalr.runOnReconnect(() => void loadAll(), 'AppActions.Reload')
+    }
     if (!loaded.value) await loadAll()
+  }
+
+  function subscribeToSignalR() {
+    signalr.stream<AppDataEvent>('AppActions.Subscribe').subscribe({
+      next: (ev) => {
+        if (ev.Action === 'Created' || ev.Action === 'Updated') {
+          let next = apps.value
+          for (const dto of ev.Payload as ApplicationDto[]) next = upsert(next, dto)
+          apps.value = next
+        } else if (ev.Action === 'Deleted') {
+          const ids = ev.Payload as string[]
+          apps.value = apps.value.filter((a) => !ids.includes(a.Id))
+        }
+      },
+      error: (err) => console.error('[applications] SignalR stream error:', err),
+    })
   }
 
   async function loadOne(id: string): Promise<ApplicationDto | null> {

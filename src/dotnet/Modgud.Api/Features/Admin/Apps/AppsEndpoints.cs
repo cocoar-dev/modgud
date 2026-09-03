@@ -1,3 +1,4 @@
+using BuildingBlocks.EventDispatcher;
 using BuildingBlocks.Helper;
 using ErrorOr;
 using Modgud.Application.DTOs.Applications;
@@ -100,23 +101,27 @@ public static class AppsEndpoints
 
         // Create / Update both delegate to the shared AppAdminService — the single
         // canonical write path the realm-provisioning applier also calls (no divergence).
-        appGroup.MapPost("", async (CreateAppDto dto, AppAdminService appAdmin, IApplicationSettingsService settingsSvc, CancellationToken ct) =>
+        appGroup.MapPost("", async (CreateAppDto dto, AppAdminService appAdmin, IApplicationSettingsService settingsSvc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
             {
                 var result = await appAdmin.CreateAppAsync(dto, ct);
                 if (result.IsError) return ToErrorResult(result.FirstError);
                 var settings = await settingsSvc.GetAsync(result.Value.Id, ct);
-                return Results.Ok(MapToResponse(result.Value, settings.IsError ? null : settings.Value));
+                var response = MapToResponse(result.Value, settings.IsError ? null : settings.Value);
+                dispatcher.DispatchCreatedEvent("App", response, session.TenantId);
+                return Results.Ok(response);
             })
             .WithName("V2_App_Create")
             .RequiresPermission("app:write");
 
-        appGroup.MapPut("{id}", async (ShortGuid id, UpdateAppDto dto, AppAdminService appAdmin, IApplicationSettingsService settingsSvc, CancellationToken ct) =>
+        appGroup.MapPut("{id}", async (ShortGuid id, UpdateAppDto dto, AppAdminService appAdmin, IApplicationSettingsService settingsSvc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
             {
                 var result = await appAdmin.UpdateAppAsync(id.Guid, dto, ct);
                 if (!result.IsError)
                 {
                     var settings = await settingsSvc.GetAsync(id.Guid, ct);
-                    return Results.Ok(MapToResponse(result.Value, settings.IsError ? null : settings.Value));
+                    var response = MapToResponse(result.Value, settings.IsError ? null : settings.Value);
+                    dispatcher.DispatchUpdatedEvent("App", response, session.TenantId);
+                    return Results.Ok(response);
                 }
 
                 var error = result.FirstError;
@@ -137,10 +142,14 @@ public static class AppsEndpoints
         // realm-provisioning prune calls. The App-level reference block carries its rich
         // blocker list through the error metadata; render the exact 409 body AppDetails.vue
         // consumes.
-        appGroup.MapDelete("{id}", async (ShortGuid id, AppAdminService appAdmin, CancellationToken ct) =>
+        appGroup.MapDelete("{id}", async (ShortGuid id, AppAdminService appAdmin, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
             {
                 var result = await appAdmin.DeleteAppAsync(id.Guid, ct);
-                if (!result.IsError) return Results.NoContent();
+                if (!result.IsError)
+                {
+                    dispatcher.DispatchDeletedEvent("App", id.ToString(), session.TenantId);
+                    return Results.NoContent();
+                }
 
                 var error = result.FirstError;
                 if (error.Code == "App.HasReferences"

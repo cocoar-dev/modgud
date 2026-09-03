@@ -111,6 +111,28 @@ export const SECTION_META: Record<string, { collection: keyof DraftManifest | nu
   positions: { collection: 'Positions', key: (e) => String(e.AccountName ?? '').trim().toLowerCase() },
 }
 
+/**
+ * Best-effort refresh of every admin entity store after a draft apply. The
+ * apply writes through the canonical services (transactional), bypassing the
+ * endpoint-layer SignalR dispatches — without this the grids keep showing
+ * pre-apply data until a manual reload. Stores that were never loaded are
+ * refreshed too (cheap GETs) so a navigation right after the apply is fresh.
+ */
+async function resyncEntityStores(): Promise<void> {
+  const loaders: Promise<unknown>[] = [
+    import('./applications.store').then((m) => m.useApplicationsStore().loadAll()),
+    import('./oauthClient.store').then((m) => m.useOAuthClientStore().loadAll()),
+    import('./oauthScope.store').then((m) => m.useOAuthScopeStore().loadAll()),
+    import('./oauthApi.store').then((m) => m.useOAuthApiStore().loadAll()),
+    import('./role.store').then((m) => m.useRoleStore().loadAll()),
+    import('./group.store').then((m) => m.useGroupStore().loadAll()),
+    import('./user.store').then((m) => m.useUserStore().loadAll()),
+    import('./loginProvider.store').then((m) => m.useLoginProviderStore().loadAll()),
+    import('./position.store').then((m) => m.usePositionStore().loadAll()),
+  ]
+  await Promise.allSettled(loaders)
+}
+
 export function draftErrorMessage(err: unknown): string {
   if (err instanceof HttpClientError) {
     const body = err.body as { Error?: string; Message?: string } | null
@@ -403,6 +425,11 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
       plan.value = null
       plannedVersion.value = null
       await loadDrafts()
+      // The apply runs through the canonical SERVICES, below the endpoint
+      // layer that dispatches the per-entity SignalR events — so no grid
+      // would hear about the changes. Re-sync every entity store that has
+      // been loaded instead (dynamic imports keep module graphs acyclic).
+      void resyncEntityStores()
       return true
     } catch (e) {
       // The server gate answers 409 with the offending plan — show it.
