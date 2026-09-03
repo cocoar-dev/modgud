@@ -11,8 +11,12 @@ public record RealmDto
     public string[] Domains { get; init; } = [];
 
     /// <summary>The realm's canonical public host — one of <see cref="Domains"/>.
-    /// Used for all outbound links and as the WebAuthn RP ID.</summary>
+    /// The WebAuthn RP ID and the cookie domain.</summary>
     public string PrimaryDomain { get; init; } = string.Empty;
+
+    /// <summary>The realm's public ORIGIN (scheme + host + optional port) that
+    /// outbound links are built against. Null = <c>https://{PrimaryDomain}</c>.</summary>
+    public string? PublicBaseUrl { get; init; }
     public bool IsControlPlane { get; init; }
     public bool IsActive { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
@@ -91,6 +95,15 @@ public record CreateRealmDto
     public string? PrimaryDomain { get; init; }
 
     /// <summary>
+    /// Optional. The realm's public ORIGIN — an absolute http(s) URL with no path,
+    /// e.g. <c>https://auth.example.com</c> or <c>http://localhost:4300</c>. Every
+    /// outbound link is built against it, and it is an accepted WebAuthn origin.
+    /// Omitted ⇒ <c>https://{PrimaryDomain}</c> (reverse proxy on 443). Declare it
+    /// whenever the realm is reached on a non-default port.
+    /// </summary>
+    public string? PublicBaseUrl { get; init; }
+
+    /// <summary>
     /// Initial activation state for ordinary realm creation. Defaults to true.
     /// First-installation realms remain inactive until installation completes,
     /// regardless of this value.
@@ -150,6 +163,12 @@ public record UpdateRealmDto
     /// domains). Changing it invalidates the realm's existing passkeys.
     /// </summary>
     public string? PrimaryDomain { get; init; }
+
+    /// <summary>v2 merge-patch: absent = unchanged, explicit null (or a blank
+    /// string) clears back to <c>https://{PrimaryDomain}</c>, a value sets the
+    /// realm's public origin.</summary>
+    public Optional<string?> PublicBaseUrl { get; init; }
+
     public bool? IsActive { get; init; }
 }
 

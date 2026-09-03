@@ -183,7 +183,7 @@ dotnet Modgud.Api.dll recover realm-remove-domain \
 ```
 
 ### `realm-set-primary-domain`
-Re-point a realm's **PrimaryDomain** — its canonical public host. The PrimaryDomain is the single domain (out of the realm's `Domains`) that Modgud uses for every outbound link (magic-links, bootstrap-invites) and as the **WebAuthn relying-party ID**. The new primary must already be in the realm's `Domains`; add it with `realm-add-domain` first (there is no silent add).
+Re-point a realm's **PrimaryDomain** — its canonical public host name. It is the **WebAuthn relying-party ID** and the cookie domain, which is why it is a bare host: neither may carry a scheme or port. (Where users actually *reach* the realm is a separate value — see [`realm-set-public-url`](#realm-set-public-url).) The new primary must already be in the realm's `Domains`; add it with `realm-add-domain` first (there is no silent add).
 
 ```bash
 dotnet Modgud.Api.dll recover realm-set-primary-domain \
@@ -198,6 +198,21 @@ Flags:
 ::: danger Changing the primary invalidates passkeys
 Because the PrimaryDomain is the WebAuthn relying-party ID, changing it **invalidates every passkey registered for the realm** — affected users must re-register their passkeys on next sign-in. Other login methods (password, TOTP, Email OTP, magic-link) are unaffected. The CLI prints this warning and writes it to the audit log.
 :::
+
+### `realm-set-public-url`
+Set a realm's **public origin** — the absolute base URL users actually reach it at, port included. Every outbound link (magic link, password reset, email verification, invites, the login-provider callback URLs shown in the admin UI) is built against it, and it is an accepted WebAuthn origin.
+
+First installation records the origin its installation link was issued for, so a fresh deployment already has the right value. Use this command for a realm created before the field existed, or when the deployment moves.
+
+```bash
+dotnet Modgud.Api.dll recover realm-set-public-url --slug acme --url https://auth.example.com
+```
+
+Flags:
+- `--slug <slug>` — required.
+- `--url <origin>` — required. Absolute `http(s)` URL with no path, query or fragment (`https://auth.example.com`, `http://localhost:4300`). Pass an empty value to clear it back to `https://{PrimaryDomain}`.
+
+Passkeys are **not** invalidated: the relying-party ID is the PrimaryDomain, which this command does not touch.
 
 ### `control-plane list` / `control-plane transfer <slug>`
 Inspect or relocate the [control-plane](../concepts/control-plane) role

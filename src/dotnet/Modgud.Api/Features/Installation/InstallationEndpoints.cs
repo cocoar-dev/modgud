@@ -115,6 +115,11 @@ public sealed class InstallationCompletionService(
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray(),
                 PrimaryDomain = request.Realm.PrimaryDomain?.Trim().ToLowerInvariant(),
+                // The deployment's public origin, declared by the operator when they
+                // issued the installation link — scheme, host AND port. Every outbound
+                // link is built against it from here on, so a deployment on a
+                // non-default port states the truth instead of having one guessed.
+                PublicBaseUrl = installOrigin,
                 InitialAdmin = new InitialAdminDto
                 {
                     UserName = request.Admin.UserName.Trim(),

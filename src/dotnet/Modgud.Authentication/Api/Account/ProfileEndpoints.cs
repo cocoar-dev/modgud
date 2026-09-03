@@ -187,7 +187,7 @@ public static class ProfileEndpoints
             var realm = await context.ResolveCurrentRealmAsync(realmSvc, ct);
             if (realm is not null && rawToken is not null && pending.Email.HasValue && !string.IsNullOrEmpty(pending.Email.Value))
             {
-                var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
+                var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm);
                 var verifyUrl = $"{appUrl}/verify-email?id={new ShortGuid(request.Id)}&token={Uri.EscapeDataString(rawToken)}";
                 await emailService.SendTemplatedEmailAsync(pending.Email.Value!, EmailTemplate.EmailVerification,
                     await emailBranding.ApplyAsync(new Dictionary<string, string>
@@ -257,7 +257,7 @@ public static class ProfileEndpoints
             var realm = await context.ResolveCurrentRealmAsync(realmSvc, ct);
             if (recipients.Count > 0 && user is not null && realm is not null)
             {
-                var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
+                var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm);
                 var changes = EnumerateProfileChanges(cr.Payload, user).ToList();
                 await emailService.SendTemplatedEmailAsync(recipients,
                     EmailTemplate.AdminChangeRequestNotification,

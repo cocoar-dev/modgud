@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
+using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Api.Tests.ColdStart;
@@ -170,6 +171,17 @@ public class FirstInstallationApiTests(ColdStartFixture fixture) : ColdStartTest
         Assert.NotNull(body);
         Assert.Equal($"{baseUrl}/login", body.LoginUrl);
         Assert.Equal("auth.localhost", body.PrimaryDomain);
+
+        // ...and the SAME origin becomes the realm's declared public origin, so every
+        // outbound link from here on resolves to where the deployment actually is —
+        // no environment guessing, no dropped port.
+        var realms = host.Services.GetRequiredService<IRealmProvisioningService>();
+        var realm = await realms.GetRealmBySlugAsync("ported", ct);
+        Assert.NotNull(realm);
+        Assert.Equal(baseUrl, realm.PublicBaseUrl);
+        Assert.Equal(baseUrl, RealmPublicOrigin.Resolve(realm));
+        // The primary domain stays a bare host — it is the WebAuthn RP ID.
+        Assert.Equal("auth.localhost", realm.PrimaryDomain);
     }
 
     private sealed record InstallationStatusResponse(

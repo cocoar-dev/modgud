@@ -133,7 +133,7 @@ public static class MagicLinkEndpoints
             await session.SaveChangesAsync();
 
             // Build magic link URL — Vue frontend handles /magic-login route
-            var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
+            var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm);
             var encodedToken = Uri.EscapeDataString(token);
             var magicUrl = $"{appUrl}/magic-login?userId={user.Id}&token={encodedToken}";
 

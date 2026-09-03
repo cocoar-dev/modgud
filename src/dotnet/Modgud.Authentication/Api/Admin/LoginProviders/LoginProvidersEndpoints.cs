@@ -239,7 +239,7 @@ public static class LoginProvidersEndpoints
         CancellationToken ct)
     {
         var realm = await http.ResolveCurrentRealmAsync(realmSvc, ct);
-        return realm is null ? null : RealmPublicUrl.RealmPublicBaseUrl(realm, env);
+        return realm is null ? null : RealmPublicUrl.RealmPublicBaseUrl(realm);
     }
 
     private static IResult RealmUnresolved()

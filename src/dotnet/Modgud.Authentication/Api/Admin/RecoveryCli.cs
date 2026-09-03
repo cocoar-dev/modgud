@@ -42,6 +42,7 @@ public static class RecoveryCli
         new RealmAddDomainCommand(),
         new RealmRemoveDomainCommand(),
         new RealmSetPrimaryDomainCommand(),
+        new RealmSetPublicUrlCommand(),
         new RealmListCommand(),
         new ControlPlaneCommand(),
         new AdoptTenantCommand(),
@@ -158,6 +159,14 @@ public static class RecoveryCli
                                              bootstrap-invite, login-provider callbacks) AND as the
                                              WebAuthn RP ID. ⚠ Changing it INVALIDATES every existing
                                              passkey registered for the realm.
+              realm-set-public-url           Set the realm's public ORIGIN (scheme + host + port).
+                  --slug <slug>              Required.
+                  --url <origin>             Required. Absolute http(s) URL without a path, e.g.
+                                             https://auth.example.com or http://localhost:4300.
+                                             Every outbound link is built against it and it is an
+                                             accepted WebAuthn origin. Pass an empty --url to clear
+                                             back to https://{PrimaryDomain}. Passkeys are NOT
+                                             invalidated (the RP ID is the PrimaryDomain).
               control-plane list             Show which realm currently holds the control-plane role.
               control-plane transfer <slug>  Move the control-plane role to another realm. Break-glass
                                              for when the control-plane realm has no usable admin —

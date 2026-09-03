@@ -60,7 +60,7 @@ public static class PasswordResetEndpoints
                 var userId = user.Id.ToString();
 
                 // Build reset URL — Vue frontend handles /reset-password route
-                var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
+                var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm);
                 var resetUrl = $"{appUrl}/reset-password?userId={userId}&token={encodedToken}";
 
                 // Thread the pending continuation through the e-mail round trip

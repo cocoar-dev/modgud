@@ -50,14 +50,22 @@ settings, the OpenIddict issuer, the magic-link rate limit, the
 
 The token issuer is **not** a global setting — there is no `Issuer` or `PublicUrl` key. Modgud is multi-tenant: each realm carries its own `PrimaryDomain` (managed in the admin UI or the Recovery CLI), and the issuer is derived per request from that domain / the request host on every path — the discovery document, the token `iss` claim, and token validation. What you must get right for a correct issuer is therefore (1) each realm's domain and (2) the reverse proxy forwarding the real public host (see `ProxyAllowedNetworks` below), **not** any issuer config value.
 
-::: warning Modgud expects to be published on the standard port
-Two different mechanisms build public URLs, and only one of them can see a port:
+### Where public URLs come from
 
-- **Per-request** — the OIDC issuer and every discovery endpoint come from the request as the client made it (scheme, host **and port**, taken from the forwarded headers). These are correct on any port.
-- **Per-realm** — every *outbound* link (magic link, password reset, email verification, invites, the login-provider callback URLs shown in the admin UI) and the WebAuthn relying-party origin are built from the realm's `PrimaryDomain` as `https://{PrimaryDomain}`. A primary domain is a **host name**: it carries no port, because it is also the passkey RP ID and the cookie domain, where a port is not permitted.
+Two mechanisms build public URLs, and neither guesses:
 
-So Modgud assumes it is reachable at `https://{PrimaryDomain}` on port 443 — the reverse-proxy topology this page describes. Serve it directly on a non-standard port instead and outbound links and passkey ceremonies will point at the wrong origin, with no setting to express the difference. (In `Development` the outbound origin becomes `http://{PrimaryDomain}:4300`, the SPA dev server — a convenience for local frontend work, never for a container.)
-:::
+- **Per-request** — the OIDC issuer and every discovery endpoint come from the request as the client made it: scheme, host **and port**, taken from the forwarded headers. Correct on any port, no configuration.
+- **Per-realm** — every *outbound* link (magic link, password reset, email verification, invites, the login-provider callback URLs shown in the admin UI) is built against the realm's **public origin**, and that origin is also an accepted WebAuthn origin.
+
+The public origin is a property of the realm: an absolute URL such as `https://auth.example.com` or `http://localhost:4300`, port included. **First installation records the exact origin its installation link was issued for** — so a deployment reached on a non-default port says so from the start, and nothing has to be inferred from the environment. Change it later with:
+
+```bash
+docker exec modgud dotnet Modgud.Api.dll recover realm-set-public-url --slug acme --url https://auth.example.com
+```
+
+It is deliberately separate from `PrimaryDomain`, which stays a bare **host name** because it doubles as the WebAuthn RP ID and the cookie domain — neither may carry a scheme or a port. The primary domain says *which host this realm is*; the public origin says *where users reach it*. Changing the origin does not invalidate passkeys; changing the primary domain does.
+
+A realm that declares no origin — every realm created before this field existed — falls back to `https://{PrimaryDomain}`, i.e. the reverse-proxy-on-443 topology this page describes. If such a realm is served anywhere else, give it an explicit origin with the command above.
 
 ### Example `configuration.json`
 

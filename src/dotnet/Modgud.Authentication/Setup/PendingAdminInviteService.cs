@@ -242,7 +242,7 @@ public sealed class PendingAdminInviteService(
         // (PrimaryDomain) — the same origin used for every other outbound
         // link in the realm. In Dev that's http://{host}:4300 (the SPA dev
         // server, where /bootstrap is served), in Prod https://{host}.
-        var baseUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
+        var baseUrl = RealmPublicUrl.RealmPublicBaseUrl(realm);
         return $"{baseUrl}/bootstrap?token={Uri.EscapeDataString(plaintextToken)}";
     }
 }

@@ -56,6 +56,24 @@ public class Realm
     public string PrimaryDomain { get; set; } = string.Empty;
 
     /// <summary>
+    /// The realm's public ORIGIN — the absolute base URL users actually reach it
+    /// at (<c>https://auth.example.com</c>, <c>http://localhost:4300</c>), without
+    /// a trailing slash. Every outbound user-facing link is built against it, and
+    /// it is an accepted WebAuthn origin.
+    ///
+    /// <para>It exists because <see cref="PrimaryDomain"/> is a HOST NAME and can
+    /// never carry a scheme or port: it doubles as the WebAuthn RP ID and the
+    /// cookie domain, where neither is permitted. The origin is therefore declared,
+    /// not derived — first installation records the very origin its installation
+    /// link was issued for, and <c>recover realm-set-public-url</c> changes it
+    /// later.</para>
+    ///
+    /// <para>Null (every realm created before this field existed) falls back to
+    /// <c>https://{PrimaryDomain}</c> — the standard reverse-proxy deployment.</para>
+    /// </summary>
+    public string? PublicBaseUrl { get; set; }
+
+    /// <summary>
     /// True for the single Control-Plane realm of the deployment — the
     /// architectural anchor for cross-realm administration. STORED, not
     /// computed: exactly one realm carries the flag, and it is transferable

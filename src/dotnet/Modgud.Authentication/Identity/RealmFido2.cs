@@ -33,10 +33,11 @@ public static class RealmFido2
 {
     /// <summary>
     /// Builds a <see cref="Fido2Configuration"/> for the given realm.
-    /// Production origin = <c>https://{PrimaryDomain}</c>; Development adds the
-    /// SPA dev-server origin (<c>http://{PrimaryDomain}:4300</c>) since that is
-    /// where the WebAuthn ceremony runs in dev. <c>localhost</c> /
-    /// <c>*.localhost</c> are browser secure-contexts, so dev passkeys work.
+    /// Accepted origins are the spec-canonical <c>https://{RP ID}</c> plus the
+    /// realm's DECLARED public origin (<see cref="Realm.PublicBaseUrl"/>) when it
+    /// sits under the RP ID — that is what lets a ceremony on a non-default port
+    /// verify. <c>localhost</c> / <c>*.localhost</c> are browser secure-contexts,
+    /// so passkeys work there over plain http too.
     ///
     /// <para><paramref name="additionalOrigins"/> — origins the authenticator
     /// actually signed (read from the ceremony's clientDataJSON). Each is accepted
@@ -74,20 +75,19 @@ public static class RealmFido2
         if (string.IsNullOrWhiteSpace(host))
             throw new RelyingPartyUnavailableException(
                 $"Realm '{realm.Slug}' has no PrimaryDomain — cannot build a WebAuthn relying party.");
-        var origins = new HashSet<string>(StringComparer.Ordinal);
-        if (env.IsDevelopment())
+        var origins = new HashSet<string>(StringComparer.Ordinal)
         {
-            // Dev: the SPA runs on the Vite dev-server port; the WebAuthn
-            // origin the browser reports is the page origin.
-            origins.Add($"http://{host}:{RealmPublicUrl.DevSpaPort}");
-            // Tolerate a plain-host origin too (e.g. when the SPA is served
-            // straight off the API in a dev container).
-            origins.Add($"https://{host}");
-            origins.Add($"http://{host}");
-        }
-        else
+            // The spec-canonical origin for this RP ID.
+            $"https://{host}",
+        };
+        // The realm's DECLARED public origin — the page the ceremony actually runs
+        // on. This is what makes passkeys work where the deployment really is (a
+        // container on :8081, the SPA dev server on :4300) instead of only on 443.
+        // Still gated by IsOriginUnderRpId, so it can never widen to a foreign host.
+        if (RealmPublicUrl.NormalizeOrigin(realm.PublicBaseUrl) is { } declared
+            && IsOriginUnderRpId(declared, host, env.IsDevelopment()))
         {
-            origins.Add($"https://{host}");
+            origins.Add(declared);
         }
 
         // Widen the accepted origins to the actual signed origin(s), but only those

@@ -199,6 +199,17 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
                 $"PrimaryDomain '{primaryDomain}' must be one of the realm's domains.");
         }
 
+        // The public origin is DECLARED, never derived (see Realm.PublicBaseUrl).
+        // Reject an unusable value instead of silently falling back to https://host.
+        string? publicBaseUrl = null;
+        if (!string.IsNullOrWhiteSpace(dto.PublicBaseUrl))
+        {
+            publicBaseUrl = RealmPublicOrigin.Normalize(dto.PublicBaseUrl);
+            if (publicBaseUrl is null)
+                return Error.Validation("Realm.InvalidPublicBaseUrl",
+                    $"PublicBaseUrl '{dto.PublicBaseUrl}' must be an absolute http(s) origin without a path, query or fragment.");
+        }
+
         await using var session = _globalStore.LightweightSession();
         if (isInitialControlPlane && await session.Query<Realm>().AnyAsync(ct))
         {
@@ -287,6 +298,7 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             Description = dto.Description,
             Domains = dto.Domains,
             PrimaryDomain = primaryDomain,
+            PublicBaseUrl = publicBaseUrl,
             IsControlPlane = isInitialControlPlane,
             IsActive = activateImmediately && (dto.IsActive ?? true),
             CreatedAt = DateTimeOffset.UtcNow,
@@ -462,7 +474,26 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             }
             realm.PrimaryDomain = dto.PrimaryDomain;
         }
-        else if (!resultingDomains.Any(d => string.Equals(d, realm.PrimaryDomain, StringComparison.OrdinalIgnoreCase)))
+        if (dto.PublicBaseUrl.HasValue)
+        {
+            // v2 merge-patch: explicit null/blank clears back to https://{PrimaryDomain}.
+            if (string.IsNullOrWhiteSpace(dto.PublicBaseUrl.Value))
+            {
+                realm.PublicBaseUrl = null;
+            }
+            else if (RealmPublicOrigin.Normalize(dto.PublicBaseUrl.Value) is { } normalized)
+            {
+                realm.PublicBaseUrl = normalized;
+            }
+            else
+            {
+                return Error.Validation("Realm.InvalidPublicBaseUrl",
+                    $"PublicBaseUrl '{dto.PublicBaseUrl.Value}' must be an absolute http(s) origin without a path, query or fragment.");
+            }
+        }
+
+        if (dto.PrimaryDomain is null
+            && !resultingDomains.Any(d => string.Equals(d, realm.PrimaryDomain, StringComparison.OrdinalIgnoreCase)))
         {
             // The domain set changed and dropped the old primary without a
             // replacement given — refuse rather than silently re-pointing the
