@@ -46,6 +46,7 @@ interface BrandingFormState {
   EmailPreheader: string
   EmailFooterText: string
   EmailFromName: string
+  EmailFromAddress: string
   EmailReplyTo: string
 }
 
@@ -62,6 +63,7 @@ function empty(): BrandingFormState {
     EmailPreheader: '',
     EmailFooterText: '',
     EmailFromName: '',
+    EmailFromAddress: '',
     EmailReplyTo: '',
   }
 }
@@ -79,6 +81,7 @@ function fromDto(b: BrandingSettingsDto, email?: EmailBrandingSettingsDto): Bran
     EmailPreheader: email?.Preheader ?? '',
     EmailFooterText: email?.FooterText ?? '',
     EmailFromName: email?.FromName ?? '',
+    EmailFromAddress: email?.FromAddress ?? '',
     EmailReplyTo: email?.ReplyTo ?? '',
   }
 }
@@ -167,6 +170,7 @@ function buildEmailPatch(): UpdateEmailBrandingSettingsDto | undefined {
     ['Preheader', 'EmailPreheader'],
     ['FooterText', 'EmailFooterText'],
     ['FromName', 'EmailFromName'],
+    ['FromAddress', 'EmailFromAddress'],
     ['ReplyTo', 'EmailReplyTo'],
   ] as const
   for (const [key, formKey] of fields) {
@@ -267,11 +271,21 @@ async function save() {
             <CoarFormField :label="t('admin.appSettings.email.fromName', {}, 'Sender display name')">
               <CoarTextInput v-model="form.EmailFromName" clearable />
             </CoarFormField>
-            <CoarFormField :label="t('admin.appSettings.email.replyTo', {}, 'Reply-to address')">
-              <CoarTextInput v-model="form.EmailReplyTo" type="email" clearable />
-            </CoarFormField>
             <CoarFormField :label="t('admin.appSettings.email.productName', {}, 'Product name in email')">
               <CoarTextInput v-model="form.EmailProductName" clearable />
+            </CoarFormField>
+            <!-- Row of its own: both fields carry a hint glyph so their labels and inputs sit level. -->
+            <CoarFormField
+              :label="t('admin.appSettings.email.fromAddress', {}, 'Sender address')"
+              :hint="t('admin.appSettings.email.fromAddressHint', {}, 'The address mail is sent from. Empty = the server default. Make sure your mail provider allows sending from it (SPF/DKIM).')"
+            >
+              <CoarTextInput v-model="form.EmailFromAddress" type="email" clearable placeholder="noreply@example.com" />
+            </CoarFormField>
+            <CoarFormField
+              :label="t('admin.appSettings.email.replyTo', {}, 'Reply-to address')"
+              :hint="t('admin.appSettings.email.replyToHint', {}, 'Where replies to outbound mail go. Empty = replies go to the sender address.')"
+            >
+              <CoarTextInput v-model="form.EmailReplyTo" type="email" clearable />
             </CoarFormField>
             <CoarFormField :label="t('admin.appSettings.email.subjectPrefix', {}, 'Subject prefix')">
               <CoarTextInput v-model="form.EmailSubjectPrefix" clearable />

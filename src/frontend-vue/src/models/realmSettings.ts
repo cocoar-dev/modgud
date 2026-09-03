@@ -160,6 +160,8 @@ export interface EmailBrandingSettingsDto {
   Preheader?: string | null
   FooterText?: string | null
   FromName?: string | null
+  /** Sender address for outbound mail. Null = the deployment's configured sender. */
+  FromAddress?: string | null
   ReplyTo?: string | null
 }
 

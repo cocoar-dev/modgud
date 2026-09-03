@@ -37,6 +37,7 @@ public sealed record EmailBrandingContext(
     string? Preheader,
     string? FooterText,
     string? FromName,
+    string? FromAddress,
     string? ReplyTo);
 
 public sealed class EmailBrandingResolver(
@@ -83,6 +84,7 @@ public sealed class EmailBrandingResolver(
             effective.EmailBranding?.Preheader,
             effective.EmailBranding?.FooterText,
             effective.EmailBranding?.FromName,
+            effective.EmailBranding?.FromAddress,
             effective.EmailBranding?.ReplyTo);
     }
 
@@ -101,6 +103,7 @@ public sealed class EmailBrandingResolver(
         if (branding.Preheader is not null) model["Preheader"] = branding.Preheader;
         if (branding.FooterText is not null) model["FooterText"] = branding.FooterText;
         if (branding.FromName is not null) model["FromName"] = branding.FromName;
+        if (branding.FromAddress is not null) model["FromAddress"] = branding.FromAddress;
         if (branding.ReplyTo is not null) model["ReplyTo"] = branding.ReplyTo;
         return model;
     }

@@ -82,9 +82,11 @@ overridden per Application and per OAuth client. See
 For transactional email: magic-link logins, password resets,
 email-OTP codes, email-verification, and bootstrap-admin invites.
 Configured under the `Email` section (host / port / TLS / auth /
-FromAddress / default FromName). The sender address and transport stay
-deployment-only; Realm/Application customization can override the display name
-and a validated reply-to address for built-in transactional messages.
+FromAddress / default FromName). The transport stays deployment-only. The
+sender address and display name are defaults: realm and Application email
+branding can override both, plus a validated reply-to address, for the built-in
+transactional messages — deliverability of a custom sender address is the
+configuring admin's responsibility.
 
 If SMTP is misconfigured, magic links can't be sent. Users with a
 working password still sign in, but recovery flows degrade — verify

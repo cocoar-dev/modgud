@@ -67,6 +67,8 @@ public record ApplicationEmailBrandingDto
     public string? Preheader { get; init; }
     public string? FooterText { get; init; }
     public string? FromName { get; init; }
+    /// <summary>Sender address override for this App. Null = inherit.</summary>
+    public string? FromAddress { get; init; }
     public string? ReplyTo { get; init; }
 }
 

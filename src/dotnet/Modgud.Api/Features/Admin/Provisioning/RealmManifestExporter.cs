@@ -410,6 +410,7 @@ public sealed class RealmManifestExporter(
             Preheader = Opt(s.EmailBranding.Preheader),
             FooterText = Opt(s.EmailBranding.FooterText),
             FromName = Opt(s.EmailBranding.FromName),
+            FromAddress = Opt(s.EmailBranding.FromAddress),
             ReplyTo = Opt(s.EmailBranding.ReplyTo),
         },
         RegistrationFields = new UpdateRegistrationFieldsSettingsDto

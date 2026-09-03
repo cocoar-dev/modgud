@@ -287,7 +287,8 @@ public partial class EmailTemplateStore
             html,
             ToPlainText(html),
             model.GetValueOrDefault("FromName"),
-            model.GetValueOrDefault("ReplyTo"));
+            model.GetValueOrDefault("ReplyTo"),
+            model.GetValueOrDefault("FromAddress"));
     }
 
     private static string ReplaceSubjectPlaceholders(string text, Dictionary<string, string> model)
@@ -374,4 +375,5 @@ public sealed record RenderedEmail(
     string HtmlBody,
     string TextBody,
     string? FromName = null,
-    string? ReplyTo = null);
+    string? ReplyTo = null,
+    string? FromAddress = null);

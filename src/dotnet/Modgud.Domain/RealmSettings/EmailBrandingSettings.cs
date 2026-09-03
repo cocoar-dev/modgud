@@ -10,5 +10,11 @@ public record EmailBrandingSettings
     public string? Preheader { get; init; }
     public string? FooterText { get; init; }
     public string? FromName { get; init; }
+
+    /// <summary>The address outbound mail is sent FROM. Null = the deployment's
+    /// configured sender (<c>Email:Smtp:FromAddress</c> / Postmark). Deliverability
+    /// (SPF/DKIM/DMARC, Postmark sender signature) for a custom address is the
+    /// configuring admin's responsibility; the platform does not gate it.</summary>
+    public string? FromAddress { get; init; }
     public string? ReplyTo { get; init; }
 }

@@ -94,6 +94,8 @@ export interface ApplicationEmailBrandingDto {
   Preheader?: string | null
   FooterText?: string | null
   FromName?: string | null
+  /** Sender address override. Null = inherit realm, then deployment. */
+  FromAddress?: string | null
   ReplyTo?: string | null
 }
 

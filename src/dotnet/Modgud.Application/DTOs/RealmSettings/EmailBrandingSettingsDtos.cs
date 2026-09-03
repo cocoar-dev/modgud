@@ -9,6 +9,9 @@ public record EmailBrandingSettingsDto
     public string? Preheader { get; init; }
     public string? FooterText { get; init; }
     public string? FromName { get; init; }
+    /// <summary>Sender address for this realm's outbound mail. Null = the
+    /// deployment's configured sender.</summary>
+    public string? FromAddress { get; init; }
     public string? ReplyTo { get; init; }
 }
 
@@ -21,5 +24,6 @@ public record UpdateEmailBrandingSettingsDto
     public Optional<string?> Preheader { get; init; }
     public Optional<string?> FooterText { get; init; }
     public Optional<string?> FromName { get; init; }
+    public Optional<string?> FromAddress { get; init; }
     public Optional<string?> ReplyTo { get; init; }
 }

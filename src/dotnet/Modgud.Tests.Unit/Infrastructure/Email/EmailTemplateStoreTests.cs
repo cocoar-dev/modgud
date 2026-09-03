@@ -162,6 +162,7 @@ public class EmailTemplateStoreTests
                 ["ActionUrl"] = "https://example.test/login",
                 ["ExpirationMinutes"] = "10",
                 ["FromName"] = "Acme Security",
+                ["FromAddress"] = "noreply@acme.test",
                 ["ReplyTo"] = "support@example.test",
             });
 
@@ -173,6 +174,7 @@ public class EmailTemplateStoreTests
             Assert.Contains("Hello Alice", rendered.TextBody);
             Assert.DoesNotContain("<", rendered.TextBody);
             Assert.Equal("Acme Security", rendered.FromName);
+            Assert.Equal("noreply@acme.test", rendered.FromAddress);
             Assert.Equal("support@example.test", rendered.ReplyTo);
         }
     }

@@ -59,7 +59,7 @@ const f = reactive({
     buttonRadius: '', inputRadius: '', cardRadius: '',
     bodyFontFamily: '', titleFontFamily: '',
   },
-  emailBranding: { override: false, productName: '', subjectPrefix: '', preheader: '', footerText: '', fromName: '', replyTo: '' },
+  emailBranding: { override: false, productName: '', subjectPrefix: '', preheader: '', footerText: '', fromName: '', fromAddress: '', replyTo: '' },
   loginExperience: { override: false, internal: true, magicLink: true, providerIds: [] as string[] },
   selfReg: {
     override: false,
@@ -157,6 +157,7 @@ const inh = computed(() => {
       preheader: r?.EmailBranding?.Preheader ?? '',
       footerText: r?.EmailBranding?.FooterText ?? '',
       fromName: r?.EmailBranding?.FromName ?? '',
+      fromAddress: r?.EmailBranding?.FromAddress ?? '',
       replyTo: r?.EmailBranding?.ReplyTo ?? '',
     },
     loginExperience: {
@@ -229,7 +230,7 @@ function resetForm() {
   f.pageTheme.bodyFontFamily = ''; f.pageTheme.titleFontFamily = ''
   f.emailBranding.override = false; f.emailBranding.productName = ''
   f.emailBranding.subjectPrefix = ''; f.emailBranding.preheader = ''; f.emailBranding.footerText = ''
-  f.emailBranding.fromName = ''; f.emailBranding.replyTo = ''
+  f.emailBranding.fromName = ''; f.emailBranding.fromAddress = ''; f.emailBranding.replyTo = ''
   f.loginExperience.override = false; f.loginExperience.internal = true
   f.loginExperience.magicLink = true; f.loginExperience.providerIds = []
   f.selfReg.override = false; f.selfReg.posture = ''; f.selfReg.enabled = false
@@ -278,6 +279,7 @@ function populate(s?: ApplicationSettingsDto | null) {
     f.emailBranding.preheader = s.EmailBranding.Preheader ?? ''
     f.emailBranding.footerText = s.EmailBranding.FooterText ?? ''
     f.emailBranding.fromName = s.EmailBranding.FromName ?? ''
+    f.emailBranding.fromAddress = s.EmailBranding.FromAddress ?? ''
     f.emailBranding.replyTo = s.EmailBranding.ReplyTo ?? ''
   }
   if (s.LoginExperience) {
@@ -448,6 +450,7 @@ function build(): ApplicationSettingsDto {
           Preheader: f.emailBranding.preheader.trim() || null,
           FooterText: f.emailBranding.footerText.trim() || null,
           FromName: f.emailBranding.fromName.trim() || null,
+          FromAddress: f.emailBranding.fromAddress.trim() || null,
           ReplyTo: f.emailBranding.replyTo.trim() || null,
         }
       : null,
@@ -686,11 +689,21 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
       </template>
 
       <CoarCheckbox v-model="f.emailBranding.override" :label="t('admin.appSettings.email.override', {}, 'Custom Email Branding')" />
+      <CoarFormField :label="t('admin.appSettings.email.fromName', {}, 'Sender display name')">
+        <CoarTextInput v-bind="fieldBind('emailBranding', 'fromName')" clearable />
+      </CoarFormField>
+      <!-- Both fields in this row carry a hint glyph so their labels and inputs sit level. -->
       <div class="grid grid-cols-2 gap-3">
-        <CoarFormField :label="t('admin.appSettings.email.fromName', {}, 'Sender display name')">
-          <CoarTextInput v-bind="fieldBind('emailBranding', 'fromName')" clearable />
+        <CoarFormField
+          :label="t('admin.appSettings.email.fromAddress', {}, 'Sender address')"
+          :hint="t('admin.appSettings.email.fromAddressHint', {}, 'The address mail is sent from. Empty = inherit. Make sure your mail provider allows sending from it (SPF/DKIM).')"
+        >
+          <CoarTextInput v-bind="fieldBind('emailBranding', 'fromAddress')" type="email" clearable placeholder="noreply@example.com" />
         </CoarFormField>
-        <CoarFormField :label="t('admin.appSettings.email.replyTo', {}, 'Reply-to address')">
+        <CoarFormField
+          :label="t('admin.appSettings.email.replyTo', {}, 'Reply-to address')"
+          :hint="t('admin.appSettings.email.replyToHint', {}, 'Where replies to outbound mail go. Empty = replies go to the sender address.')"
+        >
           <CoarTextInput v-bind="fieldBind('emailBranding', 'replyTo')" type="email" clearable />
         </CoarFormField>
       </div>

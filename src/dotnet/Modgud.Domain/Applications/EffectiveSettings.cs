@@ -128,6 +128,7 @@ public sealed record EffectiveSettings
             Preheader = app?.Preheader ?? realm?.Preheader,
             FooterText = app?.FooterText ?? realm?.FooterText,
             FromName = app?.FromName ?? realm?.FromName,
+            FromAddress = app?.FromAddress ?? realm?.FromAddress,
             ReplyTo = app?.ReplyTo ?? realm?.ReplyTo,
         };
     }

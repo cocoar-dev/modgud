@@ -23,12 +23,14 @@ public class EmailBrandingSettingsTests(SharedPostgresFixture fixture) : Integra
                 Preheader = "Continue securely",
                 FooterText = "Security team",
                 FromName = "Realm Security",
+                FromAddress = "security@example.test",
                 ReplyTo = "support@example.test",
             },
         }, JsonOptions, ct);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var configured = await Client.GetFromJsonAsync<RealmSettingsDto>(Endpoint, JsonOptions, ct);
+        Assert.Equal("security@example.test", configured!.EmailBranding.FromAddress);
         Assert.Equal("Realm Mail", configured!.EmailBranding.ProductName);
         Assert.Equal("Realm", configured.EmailBranding.SubjectPrefix);
         Assert.Equal("Continue securely", configured.EmailBranding.Preheader);
@@ -48,6 +50,19 @@ public class EmailBrandingSettingsTests(SharedPostgresFixture fixture) : Integra
         Assert.Null(cleared!.EmailBranding.FooterText);
         Assert.Null(cleared.EmailBranding.Preheader);
         Assert.Equal("Realm", cleared.EmailBranding.SubjectPrefix);
+    }
+
+    [Fact]
+    public async Task Realm_sender_address_must_be_a_bare_address()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // The display name is FromName's job; a combined form is refused so nothing
+        // can smuggle extra header material into the envelope.
+        var response = await Client.PatchAsJsonAsync(Endpoint, new UpdateRealmSettingsDto
+        {
+            EmailBranding = new UpdateEmailBrandingSettingsDto { FromAddress = "Acme <noreply@acme.test>" },
+        }, JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
