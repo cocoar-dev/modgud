@@ -132,6 +132,9 @@ const policies = computed(() => RATE_LIMIT_POLICIES.filter((p) => props.baseline
   border: 1px solid var(--coar-border-neutral-subtle, #e5e7eb);
   border-radius: var(--coar-radius-m, 4px);
   overflow: hidden;
+  /* Inside a flex-column modal body the editor must keep its natural height and let the
+     body scroll — otherwise flex-shrink + overflow:hidden squeeze the rows away. */
+  flex: none;
 }
 .rl-editor__scroll { overflow-x: auto; }
 .rl-table { width: 100%; min-width: 64rem; border-collapse: collapse; font-size: 0.8125rem; }
