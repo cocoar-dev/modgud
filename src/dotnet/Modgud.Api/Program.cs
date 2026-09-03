@@ -619,8 +619,9 @@ try
 
     // ADR-0011 — native passwordless registration: creates a passwordless user
     // from an email (JIT sign-up). Scoped (uses the tenant-scoped UserManager).
-    builder.Services.AddScoped<Modgud.Authentication.Identity.IPasswordlessUserFactory,
-        Modgud.Authentication.Identity.PasswordlessUserFactory>();
+    // ADR 0006 — the one registration pipeline for every public sign-up path.
+    builder.Services.AddScoped<Modgud.Authentication.Registration.IRegistrationPipeline,
+        Modgud.Authentication.Registration.RegistrationPipeline>();
 
     // ADR-0011 — resolves the product name for outbound emails (App email branding
     // ⊕ realm branding, Host-resolved). Scoped (per-request resolution).
@@ -1006,6 +1007,18 @@ try
         name: Modgud.Api.Features.Admin.Jobs.DcrGcJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.DcrGcJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.DcrGcJob.Description);
+    // ADR 0006 — pending-registration hygiene + legacy ghost clean-up (dry-run by default).
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.PendingRegistrationSweepJob>(
+        key: Modgud.Api.Features.Admin.Jobs.PendingRegistrationSweepJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.PendingRegistrationSweepJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.PendingRegistrationSweepJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.PendingRegistrationSweepJob.Description);
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.UnconfirmedRegistrationReaperJob>(
+        key: Modgud.Api.Features.Admin.Jobs.UnconfirmedRegistrationReaperJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.UnconfirmedRegistrationReaperJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.UnconfirmedRegistrationReaperJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.UnconfirmedRegistrationReaperJob.Description,
+        getParameterSchema: Modgud.Api.Features.Admin.Jobs.UnconfirmedRegistrationReaperJob.GetParameterSchema);
     builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.StaffingSweepJob>(
         key: Modgud.Api.Features.Admin.Jobs.StaffingSweepJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.StaffingSweepJob.Name,

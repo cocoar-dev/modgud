@@ -22,12 +22,12 @@ Every realm job has its own Quartz job + trigger. Run history (`JobRunHistoryEnt
 
 ## Registered jobs
 
-Nine job definitions ship with Modgud today:
+Eleven job definitions ship with Modgud today:
 
-- Seven are **realm jobs**. Each active realm gets an independent Quartz job and trigger, so one customer can run at 18:00, another at 21:00, and another can disable its cron and run manually.
+- Nine are **realm jobs**. Each active realm gets an independent Quartz job and trigger, so one customer can run at 18:00, another at 21:00, and another can disable its cron and run manually.
 - Two are **system jobs**: `system-job-run-history-retention` and `platform-audit-prune`. Each exists exactly once because it operates on a deployment-wide store, and is visible/configurable only in the realm that currently holds the Control-Plane role.
 
-The Control-Plane realm is still a realm, so it also owns its own copies of all seven realm jobs.
+The Control-Plane realm is still a realm, so it also owns its own copies of all nine realm jobs.
 
 System-job configuration and history live in the non-tenanted global store,
 not in the Control-Plane realm's database. Transferring the Control-Plane role
@@ -66,6 +66,24 @@ Soft-deletes [Dynamic Client Registration](./dynamic-client-registration) client
 - **Parameters:** none — TTL lives on [Realm Settings → Dynamic Client Registration](./realm-settings#dynamic-client-registration) (`GcTtlDays`, default 90).
 - **What it does:** when DCR is enabled in this realm, finds DCR-registered clients whose last-used timestamp is older than `now − GcTtlDays` and soft-deletes them via the OAuth application aggregate. A realm with DCR disabled is skipped after a single indexed lookup.
 - **On failure:** logged + inbox-notified. Soft delete means client_id history stays intact for forensics.
+
+### `pending-registration-sweep` — Pending registration sweep
+
+Hard-deletes expired pending registrations — sign-ups (web, native OTP, invite code) whose verification link or code was never redeemed.
+
+- **Default cron:** `0 10 * * * ?` (ten past every hour)
+- **Parameters:** none — lifetimes are fixed (10 minutes for codes, 24 hours for links).
+- **What it does:** deletes every pending registration past its expiry (and any consumed record a crash left behind). These records are plain documents, not users: after the sweep nothing identifying the person remains. See [Realm Settings → Self-Registration](./realm-settings#self-registration).
+- **On failure:** logged + inbox-notified; the next hourly run catches up.
+
+### `unconfirmed-registration-reaper` — Unconfirmed registration reaper
+
+Erases the "ghost" accounts the pre-ADR-0006 sign-up paths created before the proof: passwordless users whose registration code was never redeemed.
+
+- **Default cron:** `0 30 4 * * ?` (04:30 UTC daily)
+- **Parameters:** `dryRun` (default **true** — only logs the candidates), `olderThanDays` (default 7).
+- **What it does:** matches accounts that are unconfirmed, have no password, no passkey, no external login, no redeemed code, and whose stream is older than `olderThanDays`; erases them through the normal permanent-erase path (masking + archiving), never a raw delete. Anything an admin created with a password, or that ever signed in, is outside the signature. Leave it in dry-run until the logged list looks right, then set `dryRun=false`.
+- **On failure:** logged + inbox-notified.
 
 ### `signing-key-janitor` — Signing Key Janitor
 

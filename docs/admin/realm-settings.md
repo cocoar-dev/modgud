@@ -56,12 +56,16 @@ Public sign-up: visitors can create an account themselves at `/register`. Opt-in
 
 Once enabled, the login page picks up a **"No account yet? Register →"** link and `/register` becomes reachable.
 
+::: tip Registration before proof
+Submitting the form does **not** create a user. Modgud keeps a *pending registration* for the address — hashed password, names, the snapshotted default groups and approval flag — and creates the account only when the verification link is clicked. One pending record per address, overwritten by the latest request, hard-deleted on verification or after 24 hours. A stranger can therefore never block someone's address, and an abandoned sign-up leaves nothing behind.
+:::
+
 ### Fields
 
 | Field | Default | Meaning |
 | --- | --- | --- |
 | **Enable self-registration** | off | Master toggle. When off, the `/register` route returns the same anti-enumeration response as a never-registered email. |
-| **Require email verification** | on | New accounts are created with `EmailConfirmed=false` and can't sign in until they click the magic-link in the verification mail. Turn off only for trusted-internal scenarios. |
+| **Require email verification** | on | The sign-up is held as a pending registration (24 h) and the account is created only when the verification link is clicked. Turn off only for trusted-internal scenarios — then the account is created immediately, confirmed. |
 | **Require admin approval** | off | Layered on top of email verification — after the user confirms the link, the account stays `IsActive=false` until an admin flips the flag manually. Useful for moderated communities. |
 | **Allowed email domains** | empty (all) | Whitelist. Empty = accept any domain. Case-insensitive match on the part after the last `@`. |
 | **Default groups** | empty | Groups the new user is auto-attached to once the account is fully active (post-verification + post-approval). Role memberships flow through groups, so this is the lever for "what can self-registered users do?". |
@@ -102,13 +106,13 @@ The email-verification endpoint (`POST /api/account/register/verify-email`) is t
 | Data | Location |
 | --- | --- |
 | Realm-settings document (the toggles above) | tenant DB, singleton document `RealmSettings` |
-| Pending self-registration (token-hash, user ID, expiry) | tenant DB, `mt_doc_pendingselfregistration` |
-| User record | tenant DB, `mt_doc_applicationuser` (created at register time, activated on verify) |
+| Pending registration (address, hashed password, token hash, expiry, snapshotted groups / approval flag) | tenant DB, `mt_doc_pendingregistration` — a plain document, hard-deleted on verification or expiry, never event-sourced |
+| User record | tenant DB, `mt_doc_applicationuser` + the user's event stream — created **at verification**, never before |
 | Captcha secret (encrypted) | inside the `RealmSettings` document, encrypted with Data Protection |
 
 ### Known limitations (current MVP)
 
-- **No dedicated "pending approvals" UI.** When admin-approval is required, the user record is created with `IsActive=false` and an admin has to flip the flag from the regular user-edit modal. A filter chip on the user list for "pending approval" is a sensible follow-up.
+- **No dedicated "pending approvals" UI.** When admin-approval is required, the account is created `IsActive=false` at verification and an admin has to flip the flag from the regular user-edit modal. A filter chip on the user list for "pending approval" is a sensible follow-up.
 - **In-memory rate limiter.** The per-email cap (1/min, 3/h) resets on restart and isn't shared across multiple instances. Single-instance deployments are fine; multi-instance setups can bypass the cap by hopping between instances. A Redis-backed implementation behind the same interface is a follow-up.
 - **No pre-submit username availability check.** The form surfaces username collisions through the generic 200-OK like every other rejection. An anonymous `GET /api/account/check-username/{name}` (rate-limited) would improve the UX without touching the anti-enumeration guarantees on email.
 - **Email template is shared with the email-change flow.** Both reuse `EmailTemplate.EmailVerification`. A dedicated `EmailTemplate.SelfRegistrationVerify` with welcome wording is a quality-of-life improvement.

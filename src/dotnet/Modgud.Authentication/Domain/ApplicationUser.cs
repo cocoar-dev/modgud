@@ -36,6 +36,12 @@ public class ApplicationUser
     // Email OTP (per-user flag, persisted on ApplicationUser)
     public bool EmailOtpEnabled { get; set; }
 
+    // ADR 0006 — how and when this account came to exist. Set by the registration
+    // pipeline when a proof succeeds (RegistrationSources.*); null on accounts
+    // created by admins, imports or the pre-pipeline flows.
+    public string? RegistrationSource { get; set; }
+    public DateTimeOffset? RegisteredAt { get; set; }
+
     public ApplicationUser() { }
 
     public ApplicationUser(string userName, string? email = null)

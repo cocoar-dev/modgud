@@ -42,7 +42,7 @@ public class InviteCodeRegistrationFlowTests : IntegrationTestBase
     private const string Host = "adr12-invite.localhost";
 
     [Fact]
-    public async Task InviteCode_UnknownEmail_WithValidCode_CreatesUser_And_Confirms_On_Redeem()
+    public async Task InviteCode_UnknownEmail_WithValidCode_Opens_The_Pipeline_And_Creates_The_User_On_Redeem()
     {
         var ct = TestContext.Current.CancellationToken;
         var email = "adr12-invitee@example.test";
@@ -58,6 +58,8 @@ public class InviteCodeRegistrationFlowTests : IntegrationTestBase
         var msg = emailService.GetLastEmailTo(email);
         Assert.NotNull(msg); // a registration code was issued → the gate opened
         var otp = Regex.Match(msg!.HtmlBody, @"\b(\d{6})\b").Groups[1].Value;
+        // ADR 0006: the consumed code opened the pipeline, but no user exists before the proof.
+        Assert.Null(await QuerySystemUserByEmailAsync(email));
 
         var token = await MintOtpTokenAsync(Host, "adr12-valid-client", email, otp);
         Assert.False(string.IsNullOrEmpty(token));
@@ -134,10 +136,13 @@ public class InviteCodeRegistrationFlowTests : IntegrationTestBase
         (await a).EnsureSuccessStatusCode();
         (await b).EnsureSuccessStatusCode();
 
-        var userA = await QuerySystemUserByEmailAsync(emailA);
-        var userB = await QuerySystemUserByEmailAsync(emailB);
-        var created = new[] { userA, userB }.Count(u => u is not null);
-        Assert.Equal(1, created); // single-use held — only one account exists
+        // ADR 0006: no user exists before a proof either way — the single-use
+        // guarantee now shows as exactly ONE registration code being issued.
+        Assert.Null(await QuerySystemUserByEmailAsync(emailA));
+        Assert.Null(await QuerySystemUserByEmailAsync(emailB));
+        var issued = new[] { emailService.GetLastEmailTo(emailA), emailService.GetLastEmailTo(emailB) }
+            .Count(m => m is not null);
+        Assert.Equal(1, issued); // single-use held — only one sign-up got a code
     }
 
     [Fact]

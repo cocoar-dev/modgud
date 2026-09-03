@@ -110,16 +110,26 @@ an [Application](../admin/applications#application-settings) can also turn
 the same endpoint into sign-in-**or**-sign-up by setting its
 self-registration posture to `JitOnOtp` (the per-app default). Then, when
 the request arrives on the **App's subdomain** and the email is unknown,
-Modgud creates a passwordless user on the spot and emails a registration
-code; redeeming it at `/connect/token` mints tokens **and** confirms the
-mailbox in one step. No password, no separate registration call.
+Modgud writes a short-lived **pending registration** for that address and
+emails a registration code. **No user exists yet.** Redeeming the code at
+`/connect/token` proves the mailbox and creates the account — confirmed,
+passwordless — in the same step that mints the tokens. No password, no
+separate registration call.
+
+::: info Registration before proof
+A pending registration is a plain, expiring record keyed by the address:
+one per address, overwritten by the latest request, hard-deleted on proof
+(10-minute code lifetime, 3 attempts) or by the hourly sweep. Nothing
+identifying the person survives an unredeemed code, and a stranger typing
+your address can never occupy it — your own request replaces theirs.
+:::
 
 The endpoint behaves identically on the wire (same uniform response, same
 anti-enumeration jitter — "code sent" leaks nothing about existence,
 because under `JitOnOtp` an unknown email gets a code too). What changes is
 governed entirely by the App's posture:
 
-- `JitOnOtp` — unknown email on the App subdomain → create + register.
+- `JitOnOtp` — unknown email on the App subdomain → pending registration + code.
 - `Off` (default for plain realms / no App context) — unknown email → no
   user, just the uniform response.
 - `ExplicitEndpoint` — the OTP-request endpoint stays strict (known users
@@ -181,10 +191,11 @@ Content-Type: application/json
 rejected with `400` before the uniform branch.
 
 On an App subdomain whose posture is `ExplicitEndpoint`, an unknown email
-creates the passwordless user and emails a registration code; redeem it at
-`/connect/token` with `grant_type=urn:cocoar:otp` exactly like the JIT code
-(it also confirms the mailbox). Under any other posture (or with native
-grants off) the endpoint does nothing — it never doubles the JIT path.
+writes a pending registration and emails a registration code — no user
+yet; redeem it at `/connect/token` with `grant_type=urn:cocoar:otp` exactly
+like the JIT code (the proof creates the confirmed account). Under any other
+posture (or with native grants off) the endpoint does nothing — it never
+doubles the JIT path.
 
 ### Flow 2 — Magic link
 

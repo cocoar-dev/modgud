@@ -16,7 +16,7 @@ Full endpoint source in
 | `POST` | `/api/account/logout` | Remove the cookie and invalidate the browser session. `{ "EndIdpSession": true }` additionally returns an upstream logout URL only for a live OIDC provider; SAML ends locally. |
 | `GET` | `/api/account/self-registration-info` | Anonymous — public self-registration config the SPA reads before mounting `/register` |
 | `POST` | `/api/account/register` | Self-registration (when enabled per realm) |
-| `POST` | `/api/account/register/verify-email` | Anonymous — consume the registration email-verification token |
+| `POST` | `/api/account/register/verify-email` | Anonymous — prove the registration link; this is where the account is created |
 | `POST` | `/api/account/forgot-password` | Request a password-reset link |
 | `POST` | `/api/account/reset-password` | Reset password with a token |
 
@@ -92,8 +92,8 @@ For native/mobile clients that can't hold a session cookie. These mint a code, o
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/account/native/otp/request` | Email a one-time login code (also handles JIT sign-up, under the right posture) |
-| `POST` | `/api/account/native/register` | Explicit passwordless sign-up — emails a registration code |
+| `POST` | `/api/account/native/otp/request` | Email a one-time login code (under the JIT / invite-code posture an unknown email gets a pending registration + code; the account is created at redeem) |
+| `POST` | `/api/account/native/register` | Explicit passwordless sign-up — pending registration + registration code (account created at redeem) |
 | `POST` | `/connect/passkey/begin` | Begin a usernameless WebAuthn assertion ceremony |
 | `GET` | `/connect/passkey` | Bearer-authenticated — list the signed-in token subject's own passkeys |
 | `DELETE` | `/connect/passkey/{id}` | Bearer-authenticated — revoke one of the token subject's own passkeys |

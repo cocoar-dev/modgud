@@ -249,6 +249,12 @@ public class GdprService(
         var user = await session.LoadAsync<ApplicationUser>(userId, ct);
         if (user is not null)
         {
+            // ADR 0006 — an erased address must not leave a pending registration
+            // behind either (hard delete; no-op when there is none).
+            if (!string.IsNullOrEmpty(user.NormalizedEmail))
+                session.Delete<Modgud.Authentication.Registration.PendingRegistration>(
+                    Modgud.Authentication.Registration.PendingRegistration.IdFor(user.NormalizedEmail));
+
             user.IsDeleted = true;
             user.IsActive = false;
             user.UserName = $"deleted-{userId:N}";
