@@ -51,6 +51,13 @@ the realm and marks installation complete. Normal API and browser routes return
 Issuing another link revokes any previous unconsumed link. The default lifetime
 is 30 minutes; `--minutes` accepts values from 1 to 1440.
 
+**Where installation sends you afterwards:** back to the exact origin the
+installation link was issued for — the `--base-url` you passed, scheme, host and
+port verbatim. You are standing at that origin, so that is where the sign-in page
+has to be. From that point on the realm's configured **primary domain** governs
+every outbound link (magic links, password resets, email verification,
+login-provider callbacks) — see [Deployment](../operate/deployment).
+
 ::: warning Production boot guards
 The published image runs as **Production** and refuses dev-shaped security
 configuration. In particular, OpenIddict development mode must be disabled and
