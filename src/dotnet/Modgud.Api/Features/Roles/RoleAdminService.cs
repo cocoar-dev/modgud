@@ -27,6 +27,9 @@ public sealed class RoleAdminService(IDocumentSession session)
         if (built.IsError) return built.Errors;
 
         var role = built.Value;
+        var pinned = await Modgud.Application.Services.PinnedEntityId.ResolveAsync(session, dto.Id, "Role", ct);
+        if (pinned.IsError) return pinned.Errors;
+        if (pinned.Value is { } pinnedId) role.Id = pinnedId;
         // PermissionRoleProjection (inline) writes the doc from the event; emit only.
         session.Events.StartStream(role.Id,
             new PermissionRoleCreatedEvent(

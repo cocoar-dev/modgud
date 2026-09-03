@@ -199,11 +199,25 @@ it back to `/{slug}/apply`. Because confidential clients regenerate a secret on 
 and users can be created passwordless, a structure-only manifest still re-applies into
 a fully working realm.
 
-Service accounts export as **hulls** (AccountName, Purpose, IsActive) with their
-**principal id**, and the apply pins that id at create — a stage → prod transfer keeps
-the exact id consuming applications persist as their foreign key. Their credentials
-never travel; issue them per environment. Service accounts are upsert-only: prune
-never deletes them.
+### Stable ids across environments
+
+Every exported entity carries its **`Id`** (ShortGuid), and the apply **pins that id
+at create** — importing an export into another instance recreates every app, API,
+scope, client, role, user, group, service account, login provider and position with
+the *exact same id*. A stage → prod transfer therefore keeps every id consuming
+applications persist as their foreign key — nothing has to be re-linked. The rules:
+
+- `Id` applies **only at create**; on update it is ignored (ids are immutable — the
+  entity is matched by its natural key, and the plan notes a differing id instead of
+  diffing it).
+- A create whose pinned id is **already taken** by any entity in the target realm
+  (including a soft-deleted one) fails the apply with a `*.PinnedIdTaken` conflict —
+  remove the `Id` from the manifest or resolve the collision first.
+- Omit `Id` (hand-written manifests) and the server generates one, exactly as before.
+
+Service accounts export as **hulls** (AccountName, Purpose, IsActive, Id): their
+credentials never travel — issue them per environment. Service accounts are
+upsert-only: prune never deletes them.
 
 ## Per-realm self-service
 

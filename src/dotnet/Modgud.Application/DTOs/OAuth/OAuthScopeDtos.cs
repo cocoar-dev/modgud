@@ -35,6 +35,12 @@ public record OAuthScopeDto
 
 public record CreateOAuthScopeDto
 {
+    /// <summary>Optional pinned entity id (Guid or ShortGuid) — provisioning
+    /// only: a manifest apply pins the exported id at create so ids stay
+    /// stable across environments. Server-generated when omitted; a taken id
+    /// is a conflict.</summary>
+    public string? Id { get; init; }
+
     public required string Name { get; init; }
     public string? DisplayName { get; init; }
     public string? Description { get; init; }

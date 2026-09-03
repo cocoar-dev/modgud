@@ -83,6 +83,9 @@ public sealed record RealmManifestApp
     [Description("Stable key for this app: 3-63 chars, lowercase letters/digits/hyphens, starts with a letter. APIs/scopes/clients/roles reference the app by this Slug.")]
     public required string Slug { get; init; }
 
+    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    public string? Id { get; init; }
+
     [Description("Human-readable app name.")]
     public required string DisplayName { get; init; }
 
@@ -101,6 +104,9 @@ public sealed record RealmManifestApi
 {
     [Description("The API's audience ('aud') — the natural key. This is what clients request and resource servers validate.")]
     public required string Name { get; init; }
+
+    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    public string? Id { get; init; }
 
     [Description("Optional display name. Absent = unchanged; explicit null clears.")]
     public Optional<string?> DisplayName { get; init; }
@@ -134,6 +140,9 @@ public sealed record RealmManifestScope
 {
     [Description("Scope name — the natural key (e.g. 'invoice.read', 'openid').")]
     public required string Name { get; init; }
+
+    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    public string? Id { get; init; }
 
     [Description("Optional display name shown on the consent screen. Absent = unchanged; explicit null clears.")]
     public Optional<string?> DisplayName { get; init; }
@@ -173,6 +182,9 @@ public sealed record RealmManifestClient
 {
     [Description("The OAuth client_id — the natural key.")]
     public required string ClientId { get; init; }
+
+    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    public string? Id { get; init; }
 
     [Description("Optional display name. Absent = unchanged; explicit null clears.")]
     public Optional<string?> DisplayName { get; init; }
@@ -288,6 +300,9 @@ public sealed record RealmManifestRole
     [Description("Role name — the natural key for upsert.")]
     public required string Name { get; init; }
 
+    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    public string? Id { get; init; }
+
     [Description("Optional description. Absent = unchanged; explicit null clears.")]
     public Optional<string?> Description { get; init; }
 
@@ -321,6 +336,9 @@ public sealed record RealmManifestUser
     [Description("Email — the user's natural key (also the login identifier when no UserName is set).")]
     public required string Email { get; init; }
 
+    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    public string? Id { get; init; }
+
     [Description("Optional username. Falls back to the email local-part if omitted.")]
     public string? UserName { get; init; }
 
@@ -338,6 +356,9 @@ public sealed record RealmManifestGroup
 {
     [Description("Group name — the natural key.")]
     public required string Name { get; init; }
+
+    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    public string? Id { get; init; }
 
     [Description("Optional description. Absent = unchanged; explicit null clears.")]
     public Optional<string?> Description { get; init; }
@@ -372,6 +393,9 @@ public sealed record RealmManifestLoginProvider
 {
     [Description("URL-stable identifier — the natural key (appears in /signin-oidc/{slug} and /saml/{slug}/... URLs). Immutable after create.")]
     public required string Slug { get; init; }
+
+    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    public string? Id { get; init; }
 
     [Description("Provider type: 'Oidc' (default) or 'Saml'. 'Internal' is reserved (seeded automatically). Immutable after create.")]
     public string? Type { get; init; }
@@ -459,6 +483,9 @@ public sealed record RealmManifestPosition
 {
     [Description("Account name — the natural key (2-64 chars, lowercase letters/digits/dots/hyphens/underscores, starts with a letter or digit). Shares the account-name namespace with users and service accounts.")]
     public required string AccountName { get; init; }
+
+    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    public string? Id { get; init; }
 
     [Description("Optional purpose/description of the position. Absent = unchanged; explicit null clears.")]
     public Optional<string?> Purpose { get; init; }

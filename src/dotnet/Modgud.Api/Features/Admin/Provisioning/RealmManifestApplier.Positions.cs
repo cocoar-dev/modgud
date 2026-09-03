@@ -94,10 +94,11 @@ public sealed partial class RealmManifestApplier
         foreach (var uid in grantUserIds ?? [])
             await EnsureGrantablePersonAsync(session, uid, ctx, ct);
 
+        var pinnedId = await ResolvePinnedAsync(session, pos.Id, "Position", ctx, ct);
         var purpose = OrNull(pos.Purpose);
         var fn = new PositionPrincipal
         {
-            Id = Guid.NewGuid(),
+            Id = pinnedId ?? Guid.NewGuid(),
             AccountName = normalised,
             Purpose = string.IsNullOrWhiteSpace(purpose) ? null : purpose.Trim(),
             IsActive = pos.IsActive ?? true,

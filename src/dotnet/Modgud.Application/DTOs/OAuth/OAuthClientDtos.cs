@@ -127,6 +127,12 @@ public record OAuthClientClaimDto
 
 public record CreateOAuthClientDto
 {
+    /// <summary>Optional pinned entity id (Guid or ShortGuid) — provisioning
+    /// only: a manifest apply pins the exported id at create so ids stay
+    /// stable across environments. Server-generated when omitted; a taken id
+    /// is a conflict.</summary>
+    public string? Id { get; init; }
+
     public required string ClientId { get; init; }
     public string? DisplayName { get; init; }
     public required string ClientType { get; init; }

@@ -209,7 +209,7 @@ public sealed partial class RealmManifestApplier(
         {
             var dto = new CreateAppDto(app.Slug, app.DisplayName, OrNull(app.Description),
                 (app.Permissions ?? []).Select(p => new AppPermissionDto(null, p.Resource, p.Action, p.Description)).ToList(),
-                app.Settings);
+                app.Settings, app.Id);
             var created = await appAdmin.CreateAppAsync(dto, ct);
             EnsureOk(created, $"app '{app.Slug}'");
             apps[app.Slug] = created.Value;
@@ -222,6 +222,7 @@ public sealed partial class RealmManifestApplier(
         {
             EnsureOk(await oauth.CreateApiAsync(new CreateOAuthApiDto
             {
+                Id = api.Id,
                 Name = api.Name,
                 DisplayName = OrNull(api.DisplayName),
                 Description = OrNull(api.Description),
@@ -239,6 +240,7 @@ public sealed partial class RealmManifestApplier(
         {
             EnsureOk(await oauth.CreateScopeAsync(new CreateOAuthScopeDto
             {
+                Id = s.Id,
                 Name = s.Name,
                 DisplayName = OrNull(s.DisplayName),
                 Description = OrNull(s.Description),
@@ -267,8 +269,10 @@ public sealed partial class RealmManifestApplier(
         foreach (var lp in manifest.LoginProviders)
         {
             var ctx = $"login provider '{lp.Slug}'";
+            var pinnedLpId = await ResolvePinnedAsync(
+                sp.GetRequiredService<IDocumentSession>(), lp.Id, "LoginProvider", ctx, ct);
             EnsureOk(await BuildCreateProviderHandler(sp).Handle(
-                BuildCreateProviderCommand(lp, ctx), ct), ctx);
+                BuildCreateProviderCommand(lp, ctx, pinnedLpId), ct), ctx);
         }
 
         // ── Roles (app-scoped or realm-admin) ─────────────────────────────────────
@@ -280,7 +284,8 @@ public sealed partial class RealmManifestApplier(
                 OrNull(r.Description),
                 ResolveAppId(apps, r.App, $"role '{r.Name}'"),
                 r.IsRealmAdmin ?? false,
-                ResolvePermissionIds(apps, r.App, r.Permissions, $"role '{r.Name}'"));
+                ResolvePermissionIds(apps, r.App, r.Permissions, $"role '{r.Name}'"),
+                r.Id);
             // Control-plane provisioning is trusted, so the realm-admin guard is satisfied.
             var created = await roleAdmin.CreateRoleAsync(payload, callerIsRealmAdmin: true, ct);
             EnsureOk(created, $"role '{r.Name}'");
@@ -298,10 +303,12 @@ public sealed partial class RealmManifestApplier(
             sp.GetRequiredService<IApplicationSettingsResolver>());
         foreach (var u in manifest.Users)
         {
+            var ctx = $"user '{u.Email}'";
             var cmd = new CreateUserCommand(OrNull(u.Firstname), OrNull(u.Lastname), OrNull(u.Acronym), u.Email,
-                u.UserName ?? string.Empty, u.Password, u.EmailConfirmed ?? false);
+                u.UserName ?? string.Empty, u.Password, u.EmailConfirmed ?? false,
+                Id: await ResolvePinnedAsync(userSession, u.Id, "User", ctx, ct));
             var created = await createUser.Handle(cmd, ct);
-            EnsureOk(created, $"user '{u.Email}'");
+            EnsureOk(created, ctx);
             if (ShortGuid.TryParse(created.Value.Id, out Guid uid))
                 userIds[u.ResolveKey()] = uid;
         }
@@ -311,8 +318,9 @@ public sealed partial class RealmManifestApplier(
         // resolution and contextual import failures remain deterministic.
         if (manifest.Groups.Count > 0)
         {
+            var groupSession = sp.GetRequiredService<IDocumentSession>();
             var groupHandler = new CreateGroupHandler(
-                sp.GetRequiredService<IDocumentSession>(),
+                groupSession,
                 sp.GetRequiredService<IMembershipEvaluator>(),
                 sp.GetRequiredService<IAutoMembershipRecalculator>());
 
@@ -329,7 +337,8 @@ public sealed partial class RealmManifestApplier(
                     // so a manifest group is bound to the IdP and actually confers its roles —
                     // CreateGroupHandler itself defaults null to [] (dormant), which would make an
                     // imported admin group silently grant nothing.
-                    g.BoundTo ?? [AppSlugs.Modgud], g.ExternallyDrivable ?? false, CallerIsRealmAdmin: true);
+                    g.BoundTo ?? [AppSlugs.Modgud], g.ExternallyDrivable ?? false, CallerIsRealmAdmin: true,
+                    Id: await ResolvePinnedAsync(groupSession, g.Id, "Group", $"group '{g.Name}'", ct));
                 EnsureOk(await groupHandler.Handle(cmd, ct), $"group '{g.Name}'");
             }
         }
@@ -429,7 +438,7 @@ public sealed partial class RealmManifestApplier(
                 var permissions = (app.Permissions ?? [])
                     .Select(p => new AppPermissionDto(null, p.Resource, p.Action, p.Description)).ToList();
                 var created = await appAdmin.CreateAppAsync(
-                    new CreateAppDto(app.Slug, app.DisplayName, OrNull(app.Description), permissions, app.Settings), ct);
+                    new CreateAppDto(app.Slug, app.DisplayName, OrNull(app.Description), permissions, app.Settings, app.Id), ct);
                 EnsureOk(created, $"app '{app.Slug}'");
                 result = created.Value;
             }
@@ -448,6 +457,7 @@ public sealed partial class RealmManifestApplier(
             {
                 EnsureOk(await oauth.CreateApiAsync(new CreateOAuthApiDto
                 {
+                    Id = api.Id,
                     Name = api.Name,
                     DisplayName = OrNull(api.DisplayName),
                     Description = OrNull(api.Description),
@@ -492,6 +502,7 @@ public sealed partial class RealmManifestApplier(
             {
                 EnsureOk(await oauth.CreateScopeAsync(new CreateOAuthScopeDto
                 {
+                    Id = s.Id,
                     Name = s.Name,
                     DisplayName = OrNull(s.DisplayName),
                     Description = OrNull(s.Description),
@@ -558,7 +569,8 @@ public sealed partial class RealmManifestApplier(
             if (existing is null)
             {
                 EnsureOk(await BuildCreateProviderHandler(sp).Handle(
-                    BuildCreateProviderCommand(lp, ctx), ct), ctx);
+                    BuildCreateProviderCommand(lp, ctx,
+                        await ResolvePinnedAsync(session, lp.Id, "LoginProvider", ctx, ct)), ct), ctx);
                 continue;
             }
 
@@ -641,7 +653,8 @@ public sealed partial class RealmManifestApplier(
                 isRealmAdmin,
                 r.Permissions is null && existing is not null
                     ? existing.PermissionIds.Select(pid => new ShortGuid(pid).ToString()).ToList()
-                    : ResolvePermissionIds(apps, r.App, r.Permissions ?? [], ctx));
+                    : ResolvePermissionIds(apps, r.App, r.Permissions ?? [], ctx),
+                r.Id);
             // Control-plane provisioning is trusted, so the realm-admin guard is satisfied.
             ErrorOr<PermissionRole> result = existing is null
                 ? await roleAdmin.CreateRoleAsync(payload, callerIsRealmAdmin: true, ct)
@@ -670,7 +683,8 @@ public sealed partial class RealmManifestApplier(
             if (existing is null)
             {
                 var createCmd = new CreateUserCommand(OrNull(u.Firstname), OrNull(u.Lastname), OrNull(u.Acronym),
-                    u.Email, u.UserName ?? string.Empty, u.Password, u.EmailConfirmed ?? false);
+                    u.Email, u.UserName ?? string.Empty, u.Password, u.EmailConfirmed ?? false,
+                    Id: await ResolvePinnedAsync(session, u.Id, "User", ctx, ct));
                 var created = await createUser.Handle(createCmd, ct);
                 EnsureOk(created, ctx);
                 uid = ShortGuid.TryParse(created.Value.Id, out Guid cid) ? cid : null;
@@ -762,7 +776,8 @@ public sealed partial class RealmManifestApplier(
                     EnsureOk(await createHandler.Handle(new CreateGroupCommand(
                         g.Name, description, memberIds, groupRoleIds, mode,
                         script, email, emailMode,
-                        g.BoundTo ?? [AppSlugs.Modgud], externallyDrivable, CallerIsRealmAdmin: true), ct), ctx);
+                        g.BoundTo ?? [AppSlugs.Modgud], externallyDrivable, CallerIsRealmAdmin: true,
+                        Id: await ResolvePinnedAsync(session, g.Id, "Group", ctx, ct)), ct), ctx);
                 }
                 else
                 {
@@ -945,6 +960,7 @@ public sealed partial class RealmManifestApplier(
     private static CreateOAuthClientDto BuildClientCreateDto(
         RealmManifestClient c, IReadOnlyDictionary<string, App> apps, string ctx) => new()
     {
+        Id = c.Id,
         ClientId = c.ClientId,
         DisplayName = OrNull(c.DisplayName),
         ClientType = c.ClientType,
@@ -1041,7 +1057,7 @@ public sealed partial class RealmManifestApplier(
     /// declares one is a contract error.
     /// </summary>
     private static CreateLoginProviderCommand BuildCreateProviderCommand(
-        RealmManifestLoginProvider lp, string ctx)
+        RealmManifestLoginProvider lp, string ctx, Guid? pinnedId)
     {
         var type = lp.Type is null
             ? LoginProviderType.Oidc
@@ -1072,7 +1088,8 @@ public sealed partial class RealmManifestApplier(
             ButtonColorHex: OrNull(lp.ButtonColorHex),
             TrustForAuthorization: lp.TrustForAuthorization,
             AuthoritativeForProfile: lp.AuthoritativeForProfile,
-            InitialClientSecret: lp.ClientSecret);
+            InitialClientSecret: lp.ClientSecret,
+            Id: pinnedId);
     }
 
     /// <summary>Nullable bool → PATCH optional: null = omitted (no change).</summary>
@@ -1172,6 +1189,20 @@ public sealed partial class RealmManifestApplier(
             throw new ManifestApplyException(context,
                 [Error.Validation("Manifest.InvalidEnum", $"'{value}' is not a valid {typeof(TEnum).Name}.")]);
         return result;
+    }
+
+    /// <summary>Pinned-id resolution for the COMMAND-based create paths (users, groups,
+    /// login providers, positions) whose handlers have no service-level
+    /// <see cref="PinnedEntityId"/> check: validates the format and that the event stream
+    /// is free, failing the apply with the section context. Service-backed creates
+    /// (apps, apis, scopes, clients, roles, service accounts) validate inside the
+    /// service instead. On update the manifest id is ignored — ids are immutable.</summary>
+    private static async Task<Guid?> ResolvePinnedAsync(
+        IDocumentSession session, string? raw, string entityLabel, string ctx, CancellationToken ct)
+    {
+        var pinned = await PinnedEntityId.ResolveAsync(session, raw, entityLabel, ct);
+        if (pinned.IsError) throw new ManifestApplyException(ctx, pinned.Errors);
+        return pinned.Value;
     }
 
     private static void EnsureOk<T>(ErrorOr<T> result, string what)

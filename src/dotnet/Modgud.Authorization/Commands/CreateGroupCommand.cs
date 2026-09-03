@@ -21,7 +21,10 @@ public record CreateGroupCommand(
     // Whether the caller already holds realm:admin. Set by the endpoint from
     // the authenticated principal. Defaults false (fail-closed): a command
     // constructed without it cannot confer realm:admin.
-    bool CallerIsRealmAdmin = false);
+    bool CallerIsRealmAdmin = false,
+    // Optional pinned entity id — provisioning only (the manifest applier
+    // pre-checks stream availability); server-generated when null.
+    Guid? Id = null);
 
 public class CreateGroupHandler(
     IDocumentSession session,
@@ -101,7 +104,7 @@ public class CreateGroupHandler(
 
         var group = new Group
         {
-            Id = Guid.NewGuid(),
+            Id = command.Id ?? Guid.NewGuid(),
             Name = command.Name,
             Description = command.Description,
             MemberIds = memberIds,

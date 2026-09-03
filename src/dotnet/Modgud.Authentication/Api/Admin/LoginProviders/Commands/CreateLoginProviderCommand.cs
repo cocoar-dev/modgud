@@ -49,7 +49,10 @@ public record CreateLoginProviderCommand(
     string? ButtonColorHex = null,
     bool? TrustForAuthorization = null,
     bool? AuthoritativeForProfile = null,
-    string? InitialClientSecret = null);
+    string? InitialClientSecret = null,
+    // Optional pinned entity id — provisioning only (the manifest applier
+    // pre-checks stream availability); server-generated when null.
+    Guid? Id = null);
 
 public class CreateLoginProviderHandler(
     IDocumentSession session,
@@ -137,7 +140,7 @@ public class CreateLoginProviderHandler(
             return Error.Conflict("LoginProvider.DisplayNameTaken",
                 $"A login provider named '{command.DisplayName}' already exists.");
 
-        var id = Guid.NewGuid();
+        var id = command.Id ?? Guid.NewGuid();
         var now = clock.GetUtcNow();
 
         var @event = new LoginProviderAddedEvent(
@@ -213,7 +216,7 @@ public class CreateLoginProviderHandler(
             return Error.Conflict("LoginProvider.DisplayNameTaken",
                 $"A login provider named '{command.DisplayName}' already exists.");
 
-        var id = Guid.NewGuid();
+        var id = command.Id ?? Guid.NewGuid();
         var now = clock.GetUtcNow();
 
         // Apply flavor defaults to whatever FlavorData the admin passed in
@@ -282,7 +285,7 @@ public class CreateLoginProviderHandler(
             return Error.Conflict("LoginProvider.DisplayNameTaken",
                 $"A login provider named '{command.DisplayName}' already exists.");
 
-        var id = Guid.NewGuid();
+        var id = command.Id ?? Guid.NewGuid();
         var now = clock.GetUtcNow();
 
         var @event = new LoginProviderAddedEvent(

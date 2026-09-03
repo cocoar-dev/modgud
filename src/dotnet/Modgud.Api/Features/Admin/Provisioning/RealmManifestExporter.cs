@@ -86,6 +86,7 @@ public sealed class RealmManifestExporter(
             manifestApps.Add(new RealmManifestApp
             {
                 Slug = a.Slug,
+                Id = new ShortGuid(a.Id).ToString(),
                 DisplayName = a.DisplayName,
                 Description = Opt(a.Description),
                 Permissions = a.Permissions
@@ -99,6 +100,7 @@ public sealed class RealmManifestExporter(
         var manifestApis = apis.Select(api => new RealmManifestApi
         {
             Name = api.Name,
+            Id = PinId(api.Id),
             DisplayName = Opt(api.DisplayName),
             Description = Opt(api.Description),
             App = Opt(SlugOfShort(appSlugById, api.AppId)),
@@ -114,6 +116,7 @@ public sealed class RealmManifestExporter(
         var manifestScopes = scopes.Select(s => new RealmManifestScope
         {
             Name = s.Name,
+            Id = PinId(s.Id),
             DisplayName = Opt(s.DisplayName),
             Description = Opt(s.Description),
             App = Opt(SlugOfShort(appSlugById, s.AppId)),
@@ -135,6 +138,7 @@ public sealed class RealmManifestExporter(
         var manifestClients = clients.Select(c => new RealmManifestClient
         {
             ClientId = c.ClientId,
+            Id = PinId(c.Id),
             DisplayName = Opt(c.DisplayName),
             ClientType = c.ClientType,
             // No ClientSecret — it's a hash; a re-import generates a fresh one.
@@ -178,6 +182,7 @@ public sealed class RealmManifestExporter(
         var manifestProviders = providers.Select(p => new RealmManifestLoginProvider
         {
             Slug = p.Slug,
+            Id = new ShortGuid(p.Id).ToString(),
             Type = p.Type.ToString(),
             Flavor = p.Flavor,
             DisplayName = p.DisplayName,
@@ -207,6 +212,7 @@ public sealed class RealmManifestExporter(
         var manifestRoles = roles.Select(r => new RealmManifestRole
         {
             Name = r.Name,
+            Id = new ShortGuid(r.Id).ToString(),
             Description = Opt(r.Description),
             App = !r.IsRealmAdmin
                 && r.AppId is { } aid
@@ -228,6 +234,7 @@ public sealed class RealmManifestExporter(
         var manifestUsers = persons.Select(p => new RealmManifestUser
         {
             Key = p.AccountName ?? p.Email,
+            Id = new ShortGuid(p.Id).ToString(),
             Firstname = Opt(p.Firstname),
             Lastname = Opt(p.Lastname),
             Acronym = Opt(p.Acronym),
@@ -256,6 +263,7 @@ public sealed class RealmManifestExporter(
         var manifestGroups = groups.Select(g => new RealmManifestGroup
         {
             Name = g.Name,
+            Id = new ShortGuid(g.Id).ToString(),
             Description = Opt(g.Description),
             Members = g.MemberIds.Where(userKeyById.ContainsKey).Select(id => userKeyById[id]).ToList(),
             Roles = g.RoleIds.Where(roleKeyById.ContainsKey).Select(id => roleKeyById[id]).ToList(),
@@ -281,6 +289,7 @@ public sealed class RealmManifestExporter(
             manifestPositions = positions.Select(p => new RealmManifestPosition
             {
                 AccountName = p.AccountName,
+                Id = new ShortGuid(p.Id).ToString(),
                 Purpose = Opt(p.Purpose),
                 IsActive = p.IsActive,
                 TerminalPolicy = new Application.DTOs.Positions.PositionTerminalPolicyUpdateDto
@@ -440,6 +449,13 @@ public sealed class RealmManifestExporter(
     /// <inheritdoc cref="Opt(string)"/>
     private static Optional<int?> Opt(int? value)
         => value is null ? default : new Optional<int?>(value);
+
+    /// <summary>Normalizes an admin-DTO id string (Guid or ShortGuid) to the ShortGuid
+    /// form the manifest pins with — the SAME id, exported so a stage → prod transfer
+    /// keeps every entity id (consuming apps persist them as FKs).</summary>
+    private static string? PinId(string? id)
+        => !string.IsNullOrEmpty(id) && ShortGuid.TryParse(id, out Guid g)
+            ? new ShortGuid(g).ToString() : null;
 
     private static string? SlugOfShort(IReadOnlyDictionary<Guid, string> appSlugById, string? shortGuid)
         => !string.IsNullOrEmpty(shortGuid) && ShortGuid.TryParse(shortGuid, out Guid id)

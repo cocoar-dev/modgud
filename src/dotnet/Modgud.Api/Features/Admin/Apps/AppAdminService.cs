@@ -49,7 +49,9 @@ public sealed class AppAdminService(IDocumentSession session, IApplicationSettin
         var permissions = NormalizePermissions(dto.Permissions, existingByKey: null);
         if (permissions.IsError) return permissions.Errors;
 
-        var id = Guid.NewGuid();
+        var pinned = await Modgud.Application.Services.PinnedEntityId.ResolveAsync(session, dto.Id, "App", ct);
+        if (pinned.IsError) return pinned.Errors;
+        var id = pinned.Value ?? Guid.NewGuid();
         session.Events.StartStream<App>(id, new AppCreatedEvent(
             Id: id,
             Slug: dto.Slug,

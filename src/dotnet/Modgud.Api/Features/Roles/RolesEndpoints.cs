@@ -21,7 +21,9 @@ public record RolePayload(
     string? Description,
     string? AppId,
     bool IsRealmAdmin,
-    List<string> PermissionIds);
+    List<string> PermissionIds,
+    // Optional pinned entity id (Guid/ShortGuid) — provisioning only; used at CREATE, ignored on update.
+    string? Id = null);
 
 public static class RolesEndpoints
 {

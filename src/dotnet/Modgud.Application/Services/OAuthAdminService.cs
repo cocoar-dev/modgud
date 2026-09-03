@@ -223,7 +223,9 @@ public partial class OAuthAdminService
         // Build permissions list (endpoints + grant types + scopes).
         var permissions = BuildClientPermissions(dto.AllowedGrantTypes, dto.Scopes, dto.ClientType);
 
-        var id = Guid.NewGuid();
+        var pinnedClientId = await PinnedEntityId.ResolveAsync(_session, dto.Id, "OAuthClient", ct);
+        if (pinnedClientId.IsError) return pinnedClientId.Errors;
+        var id = pinnedClientId.Value ?? Guid.NewGuid();
         var (aggregate, createdEvent) = OAuthApplicationAggregate.Create(
             id,
             dto.ClientId,
@@ -864,7 +866,9 @@ public partial class OAuthAdminService
             appId = parsedAppId;
         }
 
-        var id = Guid.NewGuid();
+        var pinnedScopeId = await PinnedEntityId.ResolveAsync(_session, dto.Id, "OAuthScope", ct);
+        if (pinnedScopeId.IsError) return pinnedScopeId.Errors;
+        var id = pinnedScopeId.Value ?? Guid.NewGuid();
         var (aggregate, createdEvent) = OAuthScopeAggregate.Create(id, dto.Name, dto.DisplayName, dto.Description, dto.Resources);
         _session.Events.StartStream<OAuthScopeAggregate>(id, createdEvent);
 
@@ -1051,7 +1055,9 @@ public partial class OAuthAdminService
         var permissionIdsResult = ValidatePermissionIds(dto.PermissionIds, linkedApp);
         if (permissionIdsResult.IsError) return permissionIdsResult.FirstError;
 
-        var id = Guid.NewGuid();
+        var pinnedApiId = await PinnedEntityId.ResolveAsync(_session, dto.Id, "OAuthApi", ct);
+        if (pinnedApiId.IsError) return pinnedApiId.Errors;
+        var id = pinnedApiId.Value ?? Guid.NewGuid();
         var (aggregate, createdEvent) = OAuthApiAggregate.Create(id, dto.Name, dto.DisplayName, dto.Description, dto.Enabled, dto.Scopes);
         _session.Events.StartStream<OAuthApiAggregate>(id, createdEvent);
 

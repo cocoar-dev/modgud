@@ -92,12 +92,14 @@ Manifests follow the platform-wide [merge-patch write semantics](/reference/#wri
 
 The dev → stage → prod workflow is: configure and test on dev, **Selective export** the app bundle you care about, then on the target open *Configuration Drafts* → **Start a draft from a manifest**, upload the file, review the plan, apply. Because manifests are merge-patches, the partial file only touches what it contains — everything else on the target stays untouched.
 
-Three rules for the transfer:
+Four rules for the transfer:
 
+- **Ids travel with the export**: every exported entity carries its `Id`, and the apply pins it at create — the transferred apps, clients, roles, groups, service accounts etc. get the *same* ids on the target, so a consuming application that persists them as foreign keys never has to re-link (see [stable ids](realm-provisioning#stable-ids-across-environments)). Entities that already exist on the target keep their own id (matched by natural key; the manifest id is ignored on update); a pinned id already taken by a *different* entity fails the apply with a conflict.
 - **Never apply a partial manifest with prune** — prune deletes everything absent from the manifest.
 - **Secrets don't travel**: confidential clients get a freshly generated secret on the target (shown once at apply); provider secrets and user passwords are added to the manifest by hand if needed.
 - **User references are per-realm**: group members and position grants are user keys that usually don't exist on the target — the selective export strips them by default (absent = unchanged over there).
-- **Service accounts transfer as hulls with a stable id**: the export carries AccountName, Purpose, IsActive **and the principal id**, and the apply pins that id at create — so a consuming application that persists the service-account id as its foreign key sees the *same* id on stage and prod. Credentials are then issued per environment via the service-account admin. Service accounts are upsert-only in a manifest: they are never pruned or staged-deleted (deleting one kills live credentials — that stays a deliberate live action).
+
+Service accounts transfer as **hulls** (AccountName, Purpose, IsActive, Id): credentials are issued per environment via the service-account admin. They are upsert-only in a manifest — never pruned or staged-deleted (deleting one kills live credentials; that stays a deliberate live action).
 
 ## Current limits
 

@@ -86,24 +86,25 @@ public sealed class RealmManifestPlanner(
             new SectionPolicy<RealmManifestApp>
             {
                 Skip = ["Slug"],
+                ImmutableIgnored = ["Id"],
                 NestedPatch = ["Settings"],
                 DeleteNote = "Deleting fails at apply while the app is still referenced by a kept role, API or scope.",
             }));
 
         result.Sections.Add(await PlanSectionAsync("apis", json, prune, DeletesFor("apis"),
             manifest.Apis, current.Apis, baseline?.Apis, a => a.Name,
-            new SectionPolicy<RealmManifestApi> { Skip = ["Name"] }));
+            new SectionPolicy<RealmManifestApi> { Skip = ["Name"], ImmutableIgnored = ["Id"] }));
 
         result.Sections.Add(await PlanSectionAsync("scopes", json, prune, DeletesFor("scopes"),
             manifest.Scopes, current.Scopes, baseline?.Scopes, s => s.Name,
-            new SectionPolicy<RealmManifestScope> { Skip = ["Name"] }));
+            new SectionPolicy<RealmManifestScope> { Skip = ["Name"], ImmutableIgnored = ["Id"] }));
 
         result.Sections.Add(await PlanSectionAsync("clients", json, prune, DeletesFor("clients"),
             manifest.Clients, current.Clients, baseline?.Clients, c => c.ClientId,
             new SectionPolicy<RealmManifestClient>
             {
                 Skip = ["ClientId", "ClientSecret"],
-                ImmutableIgnored = ["ClientType"],
+                ImmutableIgnored = ["ClientType", "Id"],
                 PostProcess = (desired, existing, entry) =>
                 {
                     if (existing is null)
@@ -125,6 +126,7 @@ public sealed class RealmManifestPlanner(
             new SectionPolicy<RealmManifestLoginProvider>
             {
                 Skip = ["Slug", "ClientSecret"],
+                ImmutableIgnored = ["Id"],
                 // Type/Flavor own the provider's URLs + config shape; the applier refuses
                 // a differing value outright, so the plan flags it as an apply error.
                 ImmutableFails = ["Type", "Flavor"],
@@ -142,6 +144,7 @@ public sealed class RealmManifestPlanner(
             new SectionPolicy<RealmManifestRole>
             {
                 Skip = ["Name", "Key"],
+                ImmutableIgnored = ["Id"],
                 Protect = r => Task.FromResult<string?>(r.IsRealmAdmin == true
                     ? "Realm-admin roles are never pruned (lockout protection)."
                     : null),
@@ -168,6 +171,7 @@ public sealed class RealmManifestPlanner(
             new SectionPolicy<RealmManifestGroup>
             {
                 Skip = ["Name"],
+                ImmutableIgnored = ["Id"],
                 Protect = async g =>
                 {
                     var doc = await session.Query<Group>()
@@ -185,6 +189,7 @@ public sealed class RealmManifestPlanner(
             new SectionPolicy<RealmManifestPosition>
             {
                 Skip = ["AccountName"],
+                ImmutableIgnored = ["Id"],
                 NestedPatch = ["TerminalPolicy"],
                 DeleteNote = "Deleting a position revokes its tokens, ends its staffing sessions and revokes terminal slots that only served this position.",
                 PostProcess = (desired, existing, entry) =>
@@ -289,7 +294,11 @@ public sealed class RealmManifestPlanner(
             .Where(u => !string.IsNullOrEmpty(u.UserName))
             .ToDictionary(u => u.UserName!.ToLowerInvariant(), u => u, StringComparer.Ordinal);
 
-        var policy = new SectionPolicy<RealmManifestUser> { Skip = ["Key", "Password", "EmailConfirmed"] };
+        var policy = new SectionPolicy<RealmManifestUser>
+        {
+            Skip = ["Key", "Password", "EmailConfirmed"],
+            ImmutableIgnored = ["Id"],
+        };
         var matched = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var u in manifest.Users)
