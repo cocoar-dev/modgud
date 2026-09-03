@@ -82,9 +82,13 @@ const tabLabel = (tpl: (typeof TEMPLATES)[number]) => t(`admin.emailPreview.temp
 <template>
   <div class="email-preview rounded-lg border border-surface-200 bg-white">
     <div class="flex items-center gap-3 border-b border-surface-200 px-4 pt-3">
-      <CoarTabGroup v-model="activeTemplate" class="flex-1 min-w-0 email-preview-tabs">
-        <CoarTab v-for="tpl in TEMPLATES" :id="tpl.id" :key="tpl.id">{{ tabLabel(tpl) }}</CoarTab>
-      </CoarTabGroup>
+      <!-- Eight templates never fit one row at form width: the bar scrolls sideways
+           inside its slot instead of spilling out of the card. -->
+      <div class="email-preview-tabs flex-1 min-w-0">
+        <CoarTabGroup v-model="activeTemplate">
+          <CoarTab v-for="tpl in TEMPLATES" :id="tpl.id" :key="tpl.id">{{ tabLabel(tpl) }}</CoarTab>
+        </CoarTabGroup>
+      </div>
       <CoarSelect v-model="language" :options="languageOptions" class="w-32 shrink-0" />
     </div>
 
@@ -118,6 +122,17 @@ const tabLabel = (tpl: (typeof TEMPLATES)[number]) => t(`admin.emailPreview.temp
 </template>
 
 <style scoped>
+.email-preview-tabs {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+/* The tab list must be allowed to be wider than the slot for the scroll to exist. */
+.email-preview-tabs :deep(.coar-tab-list) {
+  flex-wrap: nowrap;
+  width: max-content;
+  min-width: 100%;
+}
 .email-preview-frame {
   height: 26rem;
   border: 0;
