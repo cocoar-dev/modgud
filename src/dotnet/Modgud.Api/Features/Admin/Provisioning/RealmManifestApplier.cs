@@ -334,6 +334,9 @@ public sealed partial class RealmManifestApplier(
             }
         }
 
+        // ── Service accounts (hulls, id-pinned creates) ───────────────────────────
+        await ApplyServiceAccountsAsync(sp, manifest, ct);
+
         // ── Positions (MG-FT) — after users so grants can resolve their keys ──────
         await ApplyPositionsAsync(sp, manifest, userIds, ct);
 
@@ -770,6 +773,9 @@ public sealed partial class RealmManifestApplier(
                 }
             }
         }
+
+        // ── Service accounts (hulls, id-pinned creates) ───────────────────────────
+        await ApplyServiceAccountsAsync(sp, manifest, ct);
 
         // ── Positions (MG-FT) — after users so grants can resolve their keys ──────
         await ApplyPositionsAsync(sp, manifest, userIds, ct);

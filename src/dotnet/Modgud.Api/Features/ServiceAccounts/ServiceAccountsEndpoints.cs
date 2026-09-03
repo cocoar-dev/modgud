@@ -25,7 +25,9 @@ namespace Modgud.Api.Features.ServiceAccounts;
 /// </summary>
 public static class ServiceAccountsEndpoints
 {
-    private static readonly Regex AccountNamePattern =
+    // Internal: the manifest applier's service-account section reuses the exact
+    // same account-name grammar (no drift between live create and apply).
+    internal static readonly Regex AccountNamePattern =
         new("^[a-z0-9][a-z0-9._-]{1,63}$", RegexOptions.Compiled);
 
     public static WebApplication MapServiceAccountsEndpoints(this WebApplication application, string path)

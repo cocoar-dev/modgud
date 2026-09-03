@@ -237,6 +237,20 @@ public sealed class RealmManifestExporter(
             EmailConfirmed = appUsers.TryGetValue(p.Id, out var au) && au.EmailConfirmed,
         }).ToList();
 
+        // ── Service accounts — HULLS only (credentials are per-environment secret
+        //    material and never exported). The Id IS exported: consuming apps persist
+        //    it as their FK, so a stage → prod transfer keeps the same principal id
+        //    (the applier pins it at create). ────────────────────────────────────────
+        var serviceAccounts = await session.Query<ServiceAccount>()
+            .Where(s => !s.IsDeleted).ToListAsync(ct);
+        var manifestServiceAccounts = serviceAccounts.Select(s => new RealmManifestServiceAccount
+        {
+            AccountName = s.AccountName,
+            Id = new ShortGuid(s.Id).ToString(),
+            Purpose = Opt(s.Purpose),
+            IsActive = s.IsActive,
+        }).ToList();
+
         // ── Groups (raw — ids are Guids; resolve members→user keys, roles→role names) ─
         var groups = await session.Query<Group>().Where(g => !g.IsDeleted).ToListAsync(ct);
         var manifestGroups = groups.Select(g => new RealmManifestGroup
@@ -301,6 +315,7 @@ public sealed class RealmManifestExporter(
             Clients = manifestClients,
             Roles = manifestRoles,
             Users = manifestUsers,
+            ServiceAccounts = manifestServiceAccounts,
             Groups = manifestGroups,
             LoginProviders = manifestProviders,
             Positions = manifestPositions,

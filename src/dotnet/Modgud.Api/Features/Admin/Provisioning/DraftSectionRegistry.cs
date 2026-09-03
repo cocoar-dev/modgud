@@ -27,6 +27,9 @@ public static class DraftSectionRegistry
         ["roles"] = new("Roles", o => Str(o, "Key") ?? Str(o, "Name")),
         ["users"] = new("Users", o => Str(o, "Key") ?? Str(o, "UserName") ?? Str(o, "Email")),
         ["groups"] = new("Groups", o => Str(o, "Name")),
+        // Upsert-only section: staged DELETIONS for service accounts are not
+        // supported (the planner emits no delete candidates; delete stays live).
+        ["serviceAccounts"] = new("ServiceAccounts", o => Str(o, "AccountName")?.Trim().ToLowerInvariant()),
         ["positions"] = new("Positions", o => Str(o, "AccountName")?.Trim().ToLowerInvariant()),
     };
 

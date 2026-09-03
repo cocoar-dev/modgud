@@ -6,6 +6,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useServiceAccountStore } from '@/stores/serviceAccount.store'
 import { useUI } from '@/composables/useUI'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import { useGridLocale } from '@/composables/useGridLocale'
 import type { ServiceAccountDto } from '@/models/serviceAccount'
 import GridEmptyState from '@/components/GridEmptyState.vue'
@@ -31,6 +32,14 @@ const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 
 const showEmpty = computed(() => store.allLoaded && rows.value.length === 0)
+
+// Service accounts export as HULLS (AccountName/Purpose/IsActive + pinned Id) —
+// credentials never travel; the manifest key is the lowercased account name.
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('serviceAccounts',
+  computed(() => {
+    const row = rows.value.find((r) => r.Id === selectedIds.value[0])
+    return row ? row.AccountName.trim().toLowerCase() : null
+  }))
 
 const builder = applyListGridDefaults(CoarGridBuilder.create<ServiceAccountDto>(), { openable: true })
   .persistColumnState('admin-service-accounts')
@@ -94,6 +103,9 @@ onMounted(() => {
       <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus" @clicked="navigateToModal('create')" />
       <CoarMenuDivider />
       <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteRows" />
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">

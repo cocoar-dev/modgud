@@ -149,6 +149,20 @@ public sealed class RealmManifestPlanner(
 
         result.Sections.Add(await PlanUsersAsync(manifest, current, baseline, json, prune, DeletesFor("users"), session, perms, ct));
 
+        // Service accounts are UPSERT-ONLY in the manifest (deleting one kills live
+        // credentials — that stays a deliberate live operation), so this section
+        // never emits delete candidates: prune off, no staged-deletion keys.
+        result.Sections.Add(await PlanSectionAsync("serviceAccounts", json, prune: false, null,
+            manifest.ServiceAccounts, current.ServiceAccounts, baseline?.ServiceAccounts,
+            s => s.AccountName.Trim().ToLowerInvariant(),
+            new SectionPolicy<RealmManifestServiceAccount>
+            {
+                Skip = ["AccountName"],
+                // The pinned id only applies at CREATE; on update a differing value
+                // is ignored (ids are immutable) — surfaced as a note, not a change.
+                ImmutableIgnored = ["Id"],
+            }));
+
         result.Sections.Add(await PlanSectionAsync("groups", json, prune, DeletesFor("groups"),
             manifest.Groups, current.Groups, baseline?.Groups, g => g.Name,
             new SectionPolicy<RealmManifestGroup>

@@ -25,6 +25,7 @@ export interface DraftManifest extends ManifestEntity {
   Clients?: ManifestEntity[]
   Roles?: ManifestEntity[]
   Users?: ManifestEntity[]
+  ServiceAccounts?: ManifestEntity[]
   Groups?: ManifestEntity[]
   LoginProviders?: ManifestEntity[]
   Positions?: ManifestEntity[]
@@ -108,6 +109,7 @@ export const SECTION_META: Record<string, { collection: keyof DraftManifest | nu
   roles: { collection: 'Roles', key: (e) => String(e.Key ?? e.Name ?? '') },
   users: { collection: 'Users', key: (e) => String(e.Key ?? e.UserName ?? e.Email ?? '') },
   groups: { collection: 'Groups', key: (e) => String(e.Name ?? '') },
+  serviceAccounts: { collection: 'ServiceAccounts', key: (e) => String(e.AccountName ?? '').trim().toLowerCase() },
   positions: { collection: 'Positions', key: (e) => String(e.AccountName ?? '').trim().toLowerCase() },
 }
 

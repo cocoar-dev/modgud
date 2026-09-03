@@ -1900,6 +1900,7 @@
         "roles": "Rollen",
         "users": "Benutzer",
         "groups": "Gruppen",
+        "serviceAccounts": "Service Accounts",
         "positions": "Positionen"
       },
       "card": {

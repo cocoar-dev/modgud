@@ -48,7 +48,7 @@ Drafts stage **configuration**. Operational **actions** — anything with its ow
 | Session revocation, force-locking staffing sessions, 2FA resets, admin password set, magic links | Security actions, not state |
 | Secret rotation (client secrets, provider secrets) | Credential material with its own audit trail |
 | Recycle-bin restore and permanent erase | Lifecycle operations on the bin |
-| Service accounts and their credentials, terminal slots, position grants/activation tokens | Credential material the manifest deliberately does not model |
+| Service-account credentials, service-account deletion, terminal slots, position grants/activation tokens | Credential material the manifest deliberately does not model |
 
 The same distinction shows up inside modals: for example the client modal's *Enabled* checkbox stages with the rest of the form, while the grid's *Disable (immediate)* action is the live kill switch.
 
@@ -97,9 +97,10 @@ Three rules for the transfer:
 - **Never apply a partial manifest with prune** — prune deletes everything absent from the manifest.
 - **Secrets don't travel**: confidential clients get a freshly generated secret on the target (shown once at apply); provider secrets and user passwords are added to the manifest by hand if needed.
 - **User references are per-realm**: group members and position grants are user keys that usually don't exist on the target — the selective export strips them by default (absent = unchanged over there).
+- **Service accounts transfer as hulls with a stable id**: the export carries AccountName, Purpose, IsActive **and the principal id**, and the apply pins that id at create — so a consuming application that persists the service-account id as its foreign key sees the *same* id on stage and prod. Credentials are then issued per environment via the service-account admin. Service accounts are upsert-only in a manifest: they are never pruned or staged-deleted (deleting one kills live credentials — that stays a deliberate live action).
 
 ## Current limits
 
 - **Renaming** a group or position stages a *new* entity under the new name (they have no stable key separate from the name); users and roles rename cleanly.
 - **App permission-catalog renames** keep their id-stable semantics only through a live save — the app modal automatically falls back to an immediate save when it detects a catalog rename.
-- Entities the manifest does not model (service accounts, terminal slots, SA-linked and terminal-managed clients) are managed live in their own admin surfaces.
+- Entities the manifest does not model (service-account **credentials**, terminal slots, SA-linked and terminal-managed clients) are managed live in their own admin surfaces; service-account hulls export/import (upsert-only), but their delete stays live.

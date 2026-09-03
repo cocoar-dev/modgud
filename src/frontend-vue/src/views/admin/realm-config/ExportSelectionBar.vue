@@ -27,6 +27,7 @@ const configHttp = useHttpClient('/api/admin/realm-config')
 const SECTION_ICONS: Record<string, string> = {
   apps: 'layout-grid', apis: 'server', scopes: 'tags', clients: 'app-window',
   roles: 'shield', groups: 'users-round', users: 'users',
+  serviceAccounts: 'bot',
   loginProviders: 'log-in', positions: 'briefcase',
 }
 
@@ -35,12 +36,13 @@ function sectionLabel(name: string): string {
     apps: 'Applications', apis: 'OAuth APIs', scopes: 'OAuth scopes',
     clients: 'OAuth clients', loginProviders: 'Login providers',
     roles: 'Roles', users: 'Users', groups: 'Groups', positions: 'Positions',
+    serviceAccounts: 'Service accounts',
   }[name] ?? name)
 }
 
 /** Grouped by section, in a stable display order. */
 const grouped = computed(() => {
-  const order = ['apps', 'apis', 'scopes', 'clients', 'roles', 'groups', 'users', 'loginProviders', 'positions']
+  const order = ['apps', 'apis', 'scopes', 'clients', 'roles', 'groups', 'users', 'serviceAccounts', 'loginProviders', 'positions']
   return order
     .map((section) => ({
       section,

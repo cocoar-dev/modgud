@@ -199,6 +199,12 @@ it back to `/{slug}/apply`. Because confidential clients regenerate a secret on 
 and users can be created passwordless, a structure-only manifest still re-applies into
 a fully working realm.
 
+Service accounts export as **hulls** (AccountName, Purpose, IsActive) with their
+**principal id**, and the apply pins that id at create — a stage → prod transfer keeps
+the exact id consuming applications persist as their foreign key. Their credentials
+never travel; issue them per environment. Service accounts are upsert-only: prune
+never deletes them.
+
 ## Per-realm self-service
 
 On a **shared** deployment you often want to delegate one realm to its owner — an app

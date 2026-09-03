@@ -57,6 +57,9 @@ public sealed record RealmManifest
     [Description("Users. Created passwordless unless a Password is given. Referenced by groups via Key.")]
     public List<RealmManifestUser> Users { get; init; } = [];
 
+    [Description("Service-account HULLS (machine principals): AccountName, Purpose, IsActive and an optional pinned Id. Credentials (client_credentials OAuth clients + secrets) are deliberately NOT modelled — issue them per environment via the service-account admin. Apply upserts only; service accounts are never pruned or staged-deleted (delete stays a live operation).")]
+    public List<RealmManifestServiceAccount> ServiceAccounts { get; init; } = [];
+
     [Description("Groups. The ONLY way users get roles: a user is a group member, the group carries roles. Members/Roles are keys, not ids.")]
     public List<RealmManifestGroup> Groups { get; init; } = [];
 
@@ -429,6 +432,25 @@ public sealed record RealmManifestLoginProvider
 
     [Description("Optional login-button color (hex). Absent = unchanged; explicit null clears.")]
     public Optional<string?> ButtonColorHex { get; init; }
+}
+
+/// <summary>A service-account HULL (machine principal). <see cref="AccountName"/> is the
+/// natural key; credentials are never part of the manifest. <see cref="Id"/> lets a
+/// stage → prod transfer keep the SAME principal id, because consuming applications
+/// persist that id as their foreign key (change-feed contract).</summary>
+public sealed record RealmManifestServiceAccount
+{
+    [Description("Account name — the natural key (2-64 chars, lowercase letters/digits/dots/hyphens/underscores, starts with a letter or digit). Shares the account-name namespace with users and positions.")]
+    public required string AccountName { get; init; }
+
+    [Description("Optional stable principal id (ShortGuid or Guid). Applied ONLY at create, so consuming applications can rely on the SAME id across environments (stage → prod); ignored on update (the id is immutable). A create whose pinned id is already taken fails the apply.")]
+    public string? Id { get; init; }
+
+    [Description("Optional purpose/description. Absent = unchanged; explicit null clears.")]
+    public Optional<string?> Purpose { get; init; }
+
+    [Description("Optional. Omit = no change / default true on create. Deactivating on apply revokes the account's outstanding tokens across all its credentials.")]
+    public bool? IsActive { get; init; }
 }
 
 /// <summary>A position principal (MG-FT). <see cref="AccountName"/> is the natural key;

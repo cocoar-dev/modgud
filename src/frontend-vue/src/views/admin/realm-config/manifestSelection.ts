@@ -24,7 +24,7 @@ import { SECTION_META, type DraftManifest, type ManifestEntity } from '@/stores/
 
 /** Manifest sections that hold selectable entities, in display order. */
 export const SELECTABLE_SECTIONS = [
-  'apps', 'apis', 'scopes', 'clients', 'roles', 'groups', 'users', 'loginProviders', 'positions',
+  'apps', 'apis', 'scopes', 'clients', 'roles', 'groups', 'users', 'serviceAccounts', 'loginProviders', 'positions',
 ] as const
 
 export type SelectableSection = (typeof SELECTABLE_SECTIONS)[number]

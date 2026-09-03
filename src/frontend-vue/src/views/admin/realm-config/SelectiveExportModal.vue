@@ -61,6 +61,7 @@ const showAll = ref(!props.preselected)
 const SECTION_ICONS: Record<string, string> = {
   apps: 'layout-grid', apis: 'server', scopes: 'tags', clients: 'app-window',
   roles: 'shield', groups: 'users-round', users: 'users',
+  serviceAccounts: 'bot',
   loginProviders: 'log-in', positions: 'briefcase',
 }
 
@@ -93,6 +94,7 @@ function rowInfo(section: SelectableSection, e: ManifestEntity): string | null {
     case 'roles': return s(e.App) ?? (e.IsRealmAdmin === true ? 'realm:admin' : null)
     case 'groups': return (e.Roles as string[] | undefined)?.join(', ') || null
     case 'users': return s(e.Email)
+    case 'serviceAccounts': return s(e.Purpose)
     case 'loginProviders': return s(e.DisplayName)
     case 'positions': return s(e.Purpose)
     default: return null
@@ -181,6 +183,7 @@ function sectionLabel(name: string): string {
     apps: 'Applications', apis: 'OAuth APIs', scopes: 'OAuth scopes',
     clients: 'OAuth clients', loginProviders: 'Login providers',
     roles: 'Roles', users: 'Users', groups: 'Groups', positions: 'Positions',
+    serviceAccounts: 'Service accounts',
   }[name] ?? name)
 }
 </script>

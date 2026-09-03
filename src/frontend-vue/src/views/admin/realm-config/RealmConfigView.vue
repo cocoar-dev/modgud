@@ -156,6 +156,7 @@ const SECTION_ICONS: Record<string, string> = {
   roles: 'shield',
   users: 'users',
   groups: 'users-round',
+  serviceAccounts: 'bot',
   positions: 'briefcase',
 }
 
@@ -184,6 +185,7 @@ function sectionLabel(name: string): string {
     settings: 'Realm settings', apps: 'Applications', apis: 'OAuth APIs',
     scopes: 'OAuth scopes', clients: 'OAuth clients', loginProviders: 'Login providers',
     roles: 'Roles', users: 'Users', groups: 'Groups', positions: 'Positions',
+    serviceAccounts: 'Service accounts',
   }[name] ?? name)
 }
 
@@ -216,6 +218,8 @@ function cardInfo(section: string, entry: PlanEntry): string[] {
       return [[s(e.Firstname), s(e.Lastname)].filter(Boolean).join(' ') || null, s(e.Email)].filter(Boolean) as string[]
     case 'groups':
       return [`${n(e.Members)} ${t('admin.realmConfig.card.members', {}, 'members')}`, (e.Roles as string[] | undefined)?.join(', ') ?? null].filter(Boolean) as string[]
+    case 'serviceAccounts':
+      return [s(e.Purpose)].filter(Boolean) as string[]
     case 'positions':
       return [s(e.Purpose), `${n(e.Grants)} ${t('admin.realmConfig.card.grants', {}, 'grants')}`].filter(Boolean) as string[]
     default:
@@ -256,6 +260,7 @@ const NEW_ENTITY_TEMPLATES: Record<string, ManifestEntity> = {
   roles: { Name: '', Permissions: [] },
   users: { Email: '' },
   groups: { Name: '', Members: [], Roles: [] },
+  serviceAccounts: { AccountName: '' },
   positions: { AccountName: '' },
 }
 
