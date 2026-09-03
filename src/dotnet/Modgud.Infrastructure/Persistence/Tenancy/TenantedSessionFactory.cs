@@ -39,9 +39,38 @@ public sealed class TenantedSessionFactory : ISessionFactory, ITenantSessionFact
 
     public IQuerySession QuerySession() => OpenQuerySession();
 
-    public IDocumentSession OpenSession() => _store.LightweightSession(ResolveTenantId(forWrite: true));
+    public IDocumentSession OpenSession()
+    {
+        var tenantId = ResolveTenantId(forWrite: true);
+        if (AmbientApplyTransactionFor(tenantId) is { } apply)
+            return _store.LightweightSession(apply.CreateSessionOptions());
+        return _store.LightweightSession(tenantId);
+    }
 
-    public IQuerySession OpenQuerySession() => _store.QuerySession(ResolveTenantId(forWrite: false));
+    public IQuerySession OpenQuerySession()
+    {
+        var tenantId = ResolveTenantId(forWrite: false);
+        // Reads inside an apply transaction MUST go through its connection too —
+        // validations have to see the apply's own uncommitted writes.
+        if (AmbientApplyTransactionFor(tenantId) is { } apply)
+            return _store.QuerySession(apply.CreateSessionOptions());
+        return _store.QuerySession(tenantId);
+    }
+
+    /// <summary>The ambient apply transaction (ADR-0005 Phase 0), when one is active
+    /// for the resolved tenant. A session for a DIFFERENT tenant inside an apply
+    /// scope is a bug — fail closed instead of silently splitting the apply across
+    /// transactional and autonomous writes.</summary>
+    private static TenantApplyTransaction? AmbientApplyTransactionFor(string tenantId)
+    {
+        var apply = TenantApplyTransaction.Current;
+        if (apply is null) return null;
+        if (!string.Equals(apply.TenantId, tenantId, StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                $"A tenant apply transaction for '{apply.TenantId}' is active, but a session for '{tenantId}' was requested. " +
+                "Cross-tenant sessions inside an apply scope are not supported.");
+        return apply;
+    }
 
     private string ResolveTenantId(bool forWrite)
     {

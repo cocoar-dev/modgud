@@ -27,7 +27,10 @@ public record CreateUserCommand(
     bool IsActive = true,
     IReadOnlyList<string>? GroupIds = null,
     int? GracePeriodDaysOverride = null,
-    bool TwoFactorExempt = false);
+    bool TwoFactorExempt = false,
+    // Optional pinned entity id — provisioning only (the manifest applier
+    // pre-checks stream availability); server-generated when null.
+    Guid? Id = null);
 
 public class CreateUserHandler(
     IDocumentSession session,
@@ -121,7 +124,7 @@ public class CreateUserHandler(
             groups.Add(group);
         }
 
-        var id = Guid.NewGuid();
+        var id = command.Id ?? Guid.NewGuid();
 
         var appUser = new ApplicationUser(normalizedUserName, command.Email)
         {

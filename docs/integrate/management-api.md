@@ -262,7 +262,9 @@ all other admin resources remain cookie-only until their contracts are
 deliberately added and tested. The atomic OAuth-client create above is the
 supported remote terminal-provisioning path. The
 [Admin endpoint reference](/reference/admin-api) is the source of truth for the
-exposed surface.
+exposed surface, and every write body follows the shared
+[write semantics](/reference/#write-semantics) (merge-patch: absent = unchanged,
+explicit `null` clears, `[]` clears a list — this includes `apply` manifests).
 
 ## Security rules for consumers
 

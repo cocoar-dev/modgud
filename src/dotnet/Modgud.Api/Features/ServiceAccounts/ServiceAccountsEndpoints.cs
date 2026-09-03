@@ -25,7 +25,9 @@ namespace Modgud.Api.Features.ServiceAccounts;
 /// </summary>
 public static class ServiceAccountsEndpoints
 {
-    private static readonly Regex AccountNamePattern =
+    // Internal: the manifest applier's service-account section reuses the exact
+    // same account-name grammar (no drift between live create and apply).
+    internal static readonly Regex AccountNamePattern =
         new("^[a-z0-9][a-z0-9._-]{1,63}$", RegexOptions.Compiled);
 
     public static WebApplication MapServiceAccountsEndpoints(this WebApplication application, string path)
@@ -190,8 +192,9 @@ public static class ServiceAccountsEndpoints
                     }
                 }
 
-                if (dto.Purpose is not null)
-                    sa.Purpose = string.IsNullOrWhiteSpace(dto.Purpose) ? null : dto.Purpose.Trim();
+                // v2 merge-patch: absent = keep, explicit null/blank = clear, value = set.
+                if (dto.Purpose.HasValue)
+                    sa.Purpose = string.IsNullOrWhiteSpace(dto.Purpose.Value) ? null : dto.Purpose.Value.Trim();
 
                 if (dto.IsActive.HasValue)
                     sa.IsActive = dto.IsActive.Value;

@@ -17,6 +17,8 @@ import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useClone, SCOPE_CLONE } from '@/composables/useClone'
+import { useDraftStaging } from '@/composables/useDraftStaging'
+import type { ManifestEntity } from '@/stores/realmDraft.store'
 import type { OAuthScopeDto } from '@/models/oauth'
 
 const { t } = useI18n()
@@ -31,6 +33,62 @@ const applicationsStore = useApplicationsStore()
 const appContextStore = useAppContextStore()
 const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
+
+// ── ADR-0005 staging: scope saves commit onto the active draft. The scope
+// name is the immutable natural key, so edits stage under it directly.
+const staging = useDraftStaging('scopes')
+const isDraftRow = computed(() => staging.isDraftId(props.id))
+const stagedSave = computed(() => staging.stagingActive.value && !isStandard.value)
+
+function appSlugOf(appId: string): string | undefined {
+  if (!appId) return undefined
+  return applicationsStore.apps.find((a) => a.Id === appId)?.Slug
+}
+
+function appIdOf(slug: unknown): string {
+  if (typeof slug !== 'string' || !slug) return ''
+  return applicationsStore.apps.find((a) => a.Slug === slug)?.Id ?? ''
+}
+
+function fromStaged(e: ManifestEntity): FormState {
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  const arr = (v: unknown) => (Array.isArray(v) ? [...(v as string[])] : [])
+  return {
+    Name: str(e.Name),
+    DisplayName: str(e.DisplayName),
+    Description: str(e.Description),
+    Resources: arr(e.Resources),
+    UserClaims: arr(e.UserClaims),
+    Enabled: e.Enabled !== false,
+    Required: e.Required === true,
+    Emphasize: e.Emphasize === true,
+    ShowInDiscoveryDocument: e.ShowInDiscoveryDocument !== false,
+    AppId: appIdOf(e.App),
+    AllowDynamicRegistrationClients: e.AllowDynamicRegistrationClients === true,
+  }
+}
+
+function toStaged(): ManifestEntity {
+  const entity: ManifestEntity = {
+    Name: form.value.Name.trim(),
+    Resources: [...form.value.Resources],
+    UserClaims: [...form.value.UserClaims],
+    Enabled: form.value.Enabled,
+    Required: form.value.Required,
+    Emphasize: form.value.Emphasize,
+    ShowInDiscoveryDocument: form.value.ShowInDiscoveryDocument,
+    AllowDynamicRegistrationClients: form.value.AllowDynamicRegistrationClients,
+  }
+  // v2 merge-patch: explicit null stages the clear (absent would keep live).
+  entity.DisplayName = form.value.DisplayName.trim() || null
+  entity.Description = form.value.Description.trim() || null
+  // App: explicit null stages the detach (realm-wide scope).
+  entity.App = appSlugOf(form.value.AppId) || null
+  // Stage the LIVE entity's id: the apply matches by identity, so editing the name
+  // is a RENAME of this entity instead of staging a second one.
+  if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
+  return entity
+}
 
 // Empty value = "global" (cross-app, e.g. standard OIDC scopes).
 const appOptions = computed(() => [
@@ -105,7 +163,9 @@ const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.Nam
 
 const footerButton = computed(() => ({
   visible: true,
-  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
+  text: stagedSave.value
+    ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+    : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: !form.value.Name.trim() || saving.value,
   loading: saving.value,
   onClick: save,
@@ -113,6 +173,11 @@ const footerButton = computed(() => ({
 
 onMounted(async () => {
   await applicationsStore.initialize()
+  if (isDraftRow.value) {
+    const entity = staging.findStaged(staging.draftKeyOf(props.id))
+    if (entity) form.value = fromStaged(entity)
+    return
+  }
   if (isCreate.value) {
     // Clone: prefill the form with the Name (immutable) blanked.
     const clone = consume<OAuthScopeDto>(SCOPE_CLONE.entity)
@@ -135,6 +200,11 @@ onMounted(async () => {
     }
     dto.value = loaded
     form.value = fromDto(loaded)
+    // Staging overlay: show the STAGED scope state when the draft carries it.
+    if (stagedSave.value && staging.draftStore.current) {
+      const entity = staging.findStaged(loaded.Name)
+      if (entity) form.value = fromStaged(entity)
+    }
   } finally {
     loading.value = false
   }
@@ -145,6 +215,12 @@ async function save() {
   saving.value = true
   error.value = null
   try {
+    // ADR-0005: commit onto the active draft instead of writing live.
+    if (stagedSave.value) {
+      await staging.stage(form.value.Name.trim(), toStaged())
+      props.close()
+      return
+    }
     if (isCreate.value) {
       const created = await store.create({
         Name: form.value.Name.trim(),
@@ -170,8 +246,8 @@ async function save() {
         Required: form.value.Required,
         Emphasize: form.value.Emphasize,
         ShowInDiscoveryDocument: form.value.ShowInDiscoveryDocument,
-        // Always send — empty string = make global, guid = assign.
-        AppId: form.value.AppId,
+        // Always send — v2 merge-patch: explicit null = make global, guid = assign.
+        AppId: form.value.AppId || null,
         AllowDynamicRegistrationClients: form.value.AllowDynamicRegistrationClients,
       })
       props.close()
@@ -206,7 +282,6 @@ async function save() {
       <CoarNotice v-if="error" variant="error" class="scope-error">
         {{ error }}
       </CoarNotice>
-
       <CoarTabGroup v-model="activeTab" class="tab-bar">
         <CoarTab id="general">{{ t('admin.oauthScopes.tabs.general', {}, 'General') }}</CoarTab>
         <CoarTab id="content">{{ t('admin.oauthScopes.tabs.content', {}, 'Token content') }}</CoarTab>

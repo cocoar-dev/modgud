@@ -414,6 +414,7 @@
       "restore": "Wiederherstellen",
       "forceDelete": "Endgültig löschen",
       "confirmBin": "In den Papierkorb verschieben? Der Benutzer wird deaktiviert und zur Löschung vorgemerkt, kann aber bis zur endgültigen Löschung wiederhergestellt werden.",
+      "confirmStagedBin": "Löschung in den Draft übernehmen? Beim Anwenden wandert der Benutzer in den Papierkorb (deaktiviert, zur Löschung vorgemerkt, bis zur endgültigen Löschung wiederherstellbar).",
       "confirmRestore": "Aus dem Papierkorb wiederherstellen? Die vorgemerkte Löschung wird abgebrochen und der Benutzer reaktiviert.",
       "forceDeleteReason": "Grund für die endgültige Löschung (wird im Audit-Log festgehalten):",
       "confirmForceDelete": "Diesen Benutzer jetzt endgültig löschen? Damit wird der Papierkorb für ihn geleert und kann NICHT rückgängig gemacht werden."
@@ -751,7 +752,8 @@
       "name": "Name",
       "resourceType": "Resource",
       "description": "Beschreibung",
-      "permissions": "Berechtigungen"
+      "permissions": "Berechtigungen",
+      "cannotDeleteRealmAdmin": "Realm-Admin-Rollen können nicht gelöscht werden (Aussperr-Schutz)."
     },
     "roleDetails": {
       "createTitle": "Rolle erstellen",
@@ -1193,6 +1195,8 @@
       "title": "OAuth-Clients",
       "emptyHint": "Ein OAuth-Client ist eine Anwendung, die Benutzer über diesen IdP anmeldet oder dessen APIs aufruft. Registriere deine erste App, um Client-ID und Secret zu erhalten.",
       "createTitle": "OAuth-Client erstellen",
+      "disableNow": "Deaktivieren (sofort)",
+      "enableNow": "Aktivieren (sofort)",
       "clientId": "Client ID",
       "displayName": "Display Name",
       "type": "Client-Typ",
@@ -1785,6 +1789,154 @@
         "lastname": "Nachname",
         "expiresAt": "Gültig bis",
         "link": "Magic-Link"
+      }
+    },
+    "realmConfig": {
+      "title": "Konfigurations-Drafts",
+      "intro": "Konfigurations-Drafts stagen Änderungen an diesem Realm — Entities anlegen, verdrahten, den exakten Änderungsplan prüfen; wirksam wird alles erst mit „Anwenden“. Drafts sind privat, solange du sie nicht teilst.",
+      "newDraftName": "Draft-Name…",
+      "createDraft": "Draft anlegen",
+      "uploadFile": "JSON hochladen",
+      "downloadExport": "Export herunterladen",
+      "selectiveExport": "Selektiver Export",
+      "downloadSchema": "Schema herunterladen",
+      "selective": {
+        "title": "Selektiver Export",
+        "subTitle": "Entities auswählen — Referenzen werden automatisch mitgenommen",
+        "hint": "Secrets werden nie exportiert. Das Teil-Manifest auf dem Ziel OHNE Prune anwenden — mit Prune würde alles gelöscht, was nicht in der Datei steht.",
+        "targetSlug": "Ziel-Realm-Slug",
+        "includeSettings": "Realm-Einstellungen einschließen",
+        "includeUsers": "User-Referenzen einschließen (Gruppen-Mitglieder, Positions-Grants)",
+        "download": "Manifest herunterladen",
+        "required": "Benötigt",
+        "requiredBy": "Benötigt von: ",
+        "selectRelated": "Zugehörige auswählen",
+        "showAll": "Alle Entities anzeigen (weitere hinzufügen)",
+        "dropped": "{count} gesammelte Einträge existieren nicht mehr im Export und wurden entfernt."
+      },
+      "selection": {
+        "title": "Export-Auswahl",
+        "count": "{count} gesammelt",
+        "clear": "Leeren",
+        "export": "Exportieren…",
+        "addTo": "Zur Export-Auswahl hinzufügen",
+        "removeFrom": "Aus Export-Auswahl entfernen",
+        "show": "Gesammelte Einträge anzeigen"
+      },
+      "invalidJson": "Das Manifest ist kein gültiges JSON: ",
+      "noDrafts": "Noch keine Drafts — oben einen anlegen.",
+      "shared": "Geteilt",
+      "private": "Privat",
+      "modifiedBy": "von {name}",
+      "deleteDraftTitle": "Draft löschen?",
+      "deleteDraftConfirm": "Die gestagten Änderungen werden verworfen. Der Realm selbst bleibt unberührt.",
+      "discardDraft": "Draft verwerfen",
+      "backToList": "Drafts",
+      "parkToList": "Parken & zur Liste",
+      "showUnchanged": "Unveränderte anzeigen",
+      "noChanges": "Noch keine gestagten Änderungen — bearbeite Entities im Admin-Bereich (oder blende „Unveränderte anzeigen“ ein, um alles zu durchstöbern).",
+      "bar": {
+        "pending": "{count} gestaged",
+        "clean": "keine Änderungen",
+        "conflicts": "Konflikte",
+        "errors": "Plan-Fehler",
+        "view": "Ansehen",
+        "park": "Parken"
+      },
+      "gridCol": "Draft",
+      "gridTag": {
+        "create": "Gestaged (neu)",
+        "update": "Gestaged",
+        "delete": "Gestaged (löschen)"
+      },
+      "undelete": "Löschen zurücknehmen",
+      "shareToggle": "Mit Realm-Admins teilen",
+      "planning": "Änderungsplan wird berechnet…",
+      "prune": "Prune — Entitäten löschen, die im Draft fehlen",
+      "pruneHint": "Prune macht aus dem Anwenden einen vollständigen Abgleich: Alles, was in diesem Realm existiert, aber im Draft fehlt, wird gelöscht (System-Entitäten und Realm-Admins sind geschützt). Den Plan sorgfältig prüfen.",
+      "conflictBanner": "Die Live-Konfiguration hat sich geändert, während dieser Draft offen war. Löse jeden Konflikt in seiner Karte („Live übernehmen“) oder bestätige die verbleibenden Abweichungen als gewollt:",
+      "rebase": "Verbleibende Abweichungen bestätigen (Rebase)",
+      "planErrors": "Der Plan enthält Einträge, an denen das Anwenden scheitern würde (mit „Fehler“ markiert). Vor dem Anwenden korrigieren.",
+      "apply": "Draft anwenden",
+      "applyCount": "Draft anwenden ({count})",
+      "applyConfirmTitle": "Diesen Draft anwenden?",
+      "applyConfirm": "Die gestagten Änderungen werden in EINER Transaktion auf diesen Realm angewendet — alles oder nichts.",
+      "applyConfirmPrune": "Die gestagten Änderungen werden angewendet UND fehlende Entitäten gelöscht (vollständiger Abgleich). Eine Transaktion — alles oder nichts.",
+      "applied": "Draft angewendet.",
+      "appliedNotice": "Der Draft wurde auf diesen Realm angewendet.",
+      "secretsTitle": "Neue Client-Secrets — werden nur einmal angezeigt, jetzt kopieren:",
+      "passwordPlaceholder": "Neues Passwort…",
+      "fieldCount": "{count} Feld(er)",
+      "valueEmpty": "(leer)",
+      "source": {
+        "export": "Aktuelle Konfiguration (Export)",
+        "empty": "Leer",
+        "manifest": "Hochgeladenes JSON (Datei / KI)"
+      },
+      "action": {
+        "create": "Anlegen",
+        "update": "Ändern",
+        "unchanged": "Unverändert",
+        "delete": "Löschen",
+        "protected": "Geschützt",
+        "error": "Fehler"
+      },
+      "summary": {
+        "create": "anlegen",
+        "update": "ändern",
+        "delete": "löschen",
+        "protected": "geschützt",
+        "unchanged": "unverändert",
+        "error": "Fehler",
+        "conflicts": "Konflikte"
+      },
+      "section": {
+        "settings": "Realm-Einstellungen",
+        "apps": "Anwendungen",
+        "apis": "OAuth-APIs",
+        "scopes": "OAuth-Scopes",
+        "clients": "OAuth-Clients",
+        "loginProviders": "Login-Provider",
+        "roles": "Rollen",
+        "users": "Benutzer",
+        "groups": "Gruppen",
+        "serviceAccounts": "Service Accounts",
+        "positions": "Positionen"
+      },
+      "card": {
+        "add": "Hinzufügen",
+        "new": "Neuer Eintrag",
+        "liveOnly": "Nur live — nicht in diesem Draft",
+        "settings": "Realm-weiter Einstellungs-Patch",
+        "permissions": "Permissions",
+        "members": "Mitglieder",
+        "grants": "Grants",
+        "keyMissing": "Der Eintrag braucht seinen natürlichen Schlüssel (Slug / Name / Id), bevor er gestaged werden kann."
+      },
+      "conflict": {
+        "staleOverwrite": "Live geändert — dein Draft würde es zurückdrehen",
+        "bothChanged": "Live UND im Draft geändert",
+        "deletedLive": "Live gelöscht, im Draft noch enthalten",
+        "createdLive": "Nach Draft-Start live entstanden",
+        "live": "Live",
+        "draft": "Draft",
+        "takeLive": "Live-Wert übernehmen",
+        "keepMineHint": "„Meins behalten“ = Wert stehen lassen und im Workspace „Verbleibende Abweichungen bestätigen“ (Rebase) nutzen."
+      },
+      "col": {
+        "field": "Feld",
+        "current": "Aktuell",
+        "desired": "Neu"
+      },
+      "entry": {
+        "save": "In den Draft übernehmen",
+        "remove": "Aus dem Draft entfernen",
+        "changes": "Gestagte Änderungen",
+        "conflicts": "Konflikte",
+        "secrets": "Secrets",
+        "secretSet": "{slot} gestaged (Wert wird nicht angezeigt)",
+        "json": "Eintrag (JSON)",
+        "notInDraft": "Diese Entity existiert live, ist aber nicht Teil des Drafts — mit Prune wird sie beim Anwenden gelöscht."
       }
     },
     "realmSettings": {

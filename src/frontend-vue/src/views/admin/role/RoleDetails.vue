@@ -3,6 +3,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoleStore } from '@/stores/role.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, ROLE_CLONE } from '@/composables/useClone'
+import { useDraftStaging } from '@/composables/useDraftStaging'
+import type { ManifestEntity } from '@/stores/realmDraft.store'
 import {
   CoarNotice,
   CoarTextInput,
@@ -30,6 +32,57 @@ const roleStore = useRoleStore()
 const applicationsStore = useApplicationsStore()
 const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
+
+// ── ADR-0005 staging: role saves commit onto the active draft. Role names are
+// editable, so the staged Key is pinned to the ORIGINAL name — a rename then
+// replaces the staged entry instead of cloning it.
+const staging = useDraftStaging('roles')
+const isDraftRow = computed(() => staging.isDraftId(props.id))
+const stagedSave = computed(() => staging.stagingActive.value)
+const stagedKey = ref<string | null>(null)
+
+function fromStaged(e: ManifestEntity): FormState {
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  const app = applicationsStore.apps.find((a) => a.Slug === str(e.App))
+  const catalog = app?.Permissions ?? []
+  const permissionIds: string[] = []
+  for (const perm of Array.isArray(e.Permissions) ? (e.Permissions as ManifestEntity[]) : []) {
+    const hit = catalog.find((c) => c.Resource === perm.Resource && c.Action === perm.Action)
+    if (hit) permissionIds.push(hit.Id)
+  }
+  const isRealmAdmin = e.IsRealmAdmin === true
+  return {
+    Name: str(e.Name),
+    Description: str(e.Description),
+    AppId: isRealmAdmin ? '' : (app?.Id ?? ''),
+    IsRealmAdmin: isRealmAdmin,
+    PermissionIds: isRealmAdmin ? [] : permissionIds,
+  }
+}
+
+function toStaged(): ManifestEntity {
+  const entity: ManifestEntity = {
+    Name: form.value.Name.trim(),
+    IsRealmAdmin: form.value.IsRealmAdmin,
+  }
+  if (stagedKey.value) entity.Key = stagedKey.value
+  // v2 merge-patch: explicit null stages the clear (absent would keep live).
+  entity.Description = form.value.Description.trim() || null
+  const app = form.value.IsRealmAdmin
+    ? undefined
+    : applicationsStore.apps.find((a) => a.Id === form.value.AppId)
+  if (app) {
+    entity.App = app.Slug
+    entity.Permissions = (app.Permissions ?? [])
+      .filter((c) => form.value.PermissionIds.includes(c.Id))
+      .map((c) => ({ Resource: c.Resource, Action: c.Action }))
+  }
+  // Stage the LIVE entity's id: the apply matches by identity, so editing the name
+  // is a RENAME of this entity instead of staging a second one.
+  if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
+  return entity
+}
+
 const loading = ref(false)
 const saveError = ref('')
 const activeTab = ref<'general' | 'permissions'>('general')
@@ -113,13 +166,24 @@ const modalTitle = computed(() => {
 
 const footerButton = computed(() => ({
   visible: true,
-  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
+  text: stagedSave.value
+    ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+    : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: generalIssues.value.length > 0 || loading.value,
   onClick: save,
 }))
 
 onMounted(async () => {
-  applicationsStore.initialize()
+  await applicationsStore.initialize()
+  if (isDraftRow.value) {
+    // Draft-created role: the staged manifest entity IS the state.
+    const entity = staging.findStaged(staging.draftKeyOf(props.id))
+    if (entity) {
+      form.value = fromStaged(entity)
+      stagedKey.value = (typeof entity.Key === 'string' && entity.Key) || staging.draftKeyOf(props.id)
+    }
+    return
+  }
   if (isCreate.value) {
     // Clone: prefill from the staged source with the Name blanked. Realm-admin
     // roles are normalized to their deliberately App-less shape.
@@ -147,6 +211,13 @@ onMounted(async () => {
         IsRealmAdmin: role.IsRealmAdmin,
         PermissionIds: role.IsRealmAdmin ? [] : [...(role.PermissionIds ?? [])],
       }
+      // Staging overlay: show the STAGED role state when the draft carries it
+      // (draft keys resolve Key ?? Name, so the live name finds a staged rename).
+      stagedKey.value = role.Name
+      if (stagedSave.value && staging.draftStore.current) {
+        const entity = staging.findStaged(role.Name)
+        if (entity) form.value = fromStaged(entity)
+      }
     }
   } finally {
     loading.value = false
@@ -170,6 +241,12 @@ async function save() {
   loading.value = true
   saveError.value = ''
   try {
+    // ADR-0005: commit onto the active draft instead of writing live.
+    if (stagedSave.value) {
+      await staging.stage(form.value.Name.trim(), toStaged())
+      props.close()
+      return
+    }
     const dto = {
       Name: form.value.Name.trim(),
       Description: form.value.Description.trim() || null,

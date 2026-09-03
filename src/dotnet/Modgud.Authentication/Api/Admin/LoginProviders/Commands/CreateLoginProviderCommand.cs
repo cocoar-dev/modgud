@@ -49,7 +49,15 @@ public record CreateLoginProviderCommand(
     string? ButtonColorHex = null,
     bool? TrustForAuthorization = null,
     bool? AuthoritativeForProfile = null,
-    string? InitialClientSecret = null);
+    string? InitialClientSecret = null,
+    // Optional pinned entity id — provisioning only (the manifest applier
+    // pre-checks stream availability); server-generated when null.
+    Guid? Id = null,
+    // Provisioning only: the pinned Id belongs to a SOFT-DELETED provider, so the
+    // created event is appended onto that stream (revive) instead of starting a new
+    // one. Resolved by the applier via PinnedEntityId (layering: this project cannot
+    // see Modgud.Application).
+    bool ReviveExistingStream = false);
 
 public class CreateLoginProviderHandler(
     IDocumentSession session,
@@ -137,7 +145,7 @@ public class CreateLoginProviderHandler(
             return Error.Conflict("LoginProvider.DisplayNameTaken",
                 $"A login provider named '{command.DisplayName}' already exists.");
 
-        var id = Guid.NewGuid();
+        var id = command.Id ?? Guid.NewGuid();
         var now = clock.GetUtcNow();
 
         var @event = new LoginProviderAddedEvent(
@@ -166,7 +174,10 @@ public class CreateLoginProviderHandler(
             FlavorData: command.FlavorData,
             CreatedAt: now);
 
-        session.Events.StartStream<LoginProvider>(id, @event);
+        if (command.ReviveExistingStream)
+            session.Events.Append(id, @event);
+        else
+            session.Events.StartStream<LoginProvider>(id, @event);
         await session.SaveChangesAsync(ct);
 
         return (await session.LoadAsync<LoginProvider>(id, ct))!;
@@ -213,7 +224,7 @@ public class CreateLoginProviderHandler(
             return Error.Conflict("LoginProvider.DisplayNameTaken",
                 $"A login provider named '{command.DisplayName}' already exists.");
 
-        var id = Guid.NewGuid();
+        var id = command.Id ?? Guid.NewGuid();
         var now = clock.GetUtcNow();
 
         // Apply flavor defaults to whatever FlavorData the admin passed in
@@ -257,7 +268,10 @@ public class CreateLoginProviderHandler(
             FlavorData: flavorDataJson,
             CreatedAt: now);
 
-        session.Events.StartStream<LoginProvider>(id, @event);
+        if (command.ReviveExistingStream)
+            session.Events.Append(id, @event);
+        else
+            session.Events.StartStream<LoginProvider>(id, @event);
         await session.SaveChangesAsync(ct);
 
         return (await session.LoadAsync<LoginProvider>(id, ct))!;
@@ -282,7 +296,7 @@ public class CreateLoginProviderHandler(
             return Error.Conflict("LoginProvider.DisplayNameTaken",
                 $"A login provider named '{command.DisplayName}' already exists.");
 
-        var id = Guid.NewGuid();
+        var id = command.Id ?? Guid.NewGuid();
         var now = clock.GetUtcNow();
 
         var @event = new LoginProviderAddedEvent(
@@ -313,7 +327,10 @@ public class CreateLoginProviderHandler(
             FlavorData: null,
             CreatedAt: now);
 
-        session.Events.StartStream<LoginProvider>(id, @event);
+        if (command.ReviveExistingStream)
+            session.Events.Append(id, @event);
+        else
+            session.Events.StartStream<LoginProvider>(id, @event);
         await session.SaveChangesAsync(ct);
 
         return (await session.LoadAsync<LoginProvider>(id, ct))!;

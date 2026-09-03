@@ -35,7 +35,8 @@ public sealed partial class RealmManifestApplier
     /// <summary>
     /// Upserts every manifest position by AccountName (used by import AND apply — a fresh
     /// realm simply has no existing positions). Grants are user KEYS resolved like group
-    /// members; a non-empty grant list replaces the live grant set, empty = no change.
+    /// members; a present grant list replaces the live grant set ([] revokes all), an
+    /// absent list leaves the grants unchanged (v2 merge-patch).
     /// </summary>
     private static async Task ApplyPositionsAsync(
         IServiceProvider sp, RealmManifest manifest,
@@ -59,12 +60,19 @@ public sealed partial class RealmManifestApplier
             var ctx = $"position '{pos.AccountName}'";
             var normalised = pos.AccountName.Trim().ToLowerInvariant();
 
-            var grantUserIds = new List<Guid>(pos.Grants.Count);
-            foreach (var key in pos.Grants)
-                grantUserIds.Add(await ResolveUserRefAsync(session, userIds, key, $"{ctx} grant '{key}'", ct));
+            List<Guid>? grantUserIds = null;
+            if (pos.Grants is not null)
+            {
+                grantUserIds = new List<Guid>(pos.Grants.Count);
+                foreach (var key in pos.Grants)
+                    grantUserIds.Add(await ResolveUserRefAsync(session, userIds, key, $"{ctx} grant '{key}'", ct));
+            }
 
-            var existing = await session.Query<PositionPrincipal>()
-                .FirstOrDefaultAsync(p => !p.IsDeleted && p.AccountName == normalised, ct);
+            // Id first — the account name is mutable through the canonical update, so an
+            // id-matched entry renames the position instead of creating a second one.
+            var existing = await MatchByPinnedIdAsync<PositionPrincipal>(session, pos.Id, x => x.IsDeleted, ct)
+                ?? await session.Query<PositionPrincipal>()
+                    .FirstOrDefaultAsync(p => !p.IsDeleted && p.AccountName == normalised, ct);
 
             if (existing is null)
                 await CreatePositionAsync(session, pos, normalised, grantUserIds, now, ctx, ct);
@@ -77,7 +85,7 @@ public sealed partial class RealmManifestApplier
     /// same events, position + grant streams in ONE unit of work.</summary>
     private static async Task CreatePositionAsync(
         IDocumentSession session, RealmManifestPosition pos, string normalised,
-        List<Guid> grantUserIds, DateTimeOffset now, string ctx, CancellationToken ct)
+        List<Guid>? grantUserIds, DateTimeOffset now, string ctx, CancellationToken ct)
     {
         EnsureNoOpError(PositionsEndpoints.ValidateAccountName(normalised), ctx);
         EnsureNoOpError(await PositionsEndpoints.AccountNameTakenAsync(session, normalised, excludeId: null, ct), ctx);
@@ -86,21 +94,29 @@ public sealed partial class RealmManifestApplier
         EnsureNoOpError(policyError, ctx);
         EnsureNoOpError(await PositionsEndpoints.ValidatePolicyAgainstRealmFloorAsync(session, policy, ct), ctx);
 
-        foreach (var uid in grantUserIds)
+        foreach (var uid in grantUserIds ?? [])
             await EnsureGrantablePersonAsync(session, uid, ctx, ct);
 
+        var pinned = await ResolvePinnedAsync<PositionPrincipal>(
+            session, pos.Id, "Position", ctx, x => x.IsDeleted, ct);
+        var purpose = OrNull(pos.Purpose);
         var fn = new PositionPrincipal
         {
-            Id = Guid.NewGuid(),
+            Id = pinned.Id ?? Guid.NewGuid(),
             AccountName = normalised,
-            Purpose = string.IsNullOrWhiteSpace(pos.Purpose) ? null : pos.Purpose.Trim(),
+            Purpose = string.IsNullOrWhiteSpace(purpose) ? null : purpose.Trim(),
             IsActive = pos.IsActive ?? true,
             TerminalPolicy = policy,
         };
-        session.Events.StartStream<PositionPrincipal>(fn.Id, new PositionPrincipalCreatedEvent(
-            fn.Id, fn.AccountName, fn.Purpose, fn.IsActive, fn.TerminalPolicy));
+        var createdEvent = new PositionPrincipalCreatedEvent(
+            fn.Id, fn.AccountName, fn.Purpose, fn.IsActive, fn.TerminalPolicy);
+        // Revive: append onto the soft-deleted stream instead of starting a new one.
+        if (pinned.Revive)
+            session.Events.Append(fn.Id, createdEvent);
+        else
+            session.Events.StartStream<PositionPrincipal>(fn.Id, createdEvent);
 
-        foreach (var uid in grantUserIds)
+        foreach (var uid in grantUserIds ?? [])
         {
             var grantId = Guid.NewGuid();
             session.Events.StartStream<PositionGrant>(grantId,
@@ -114,19 +130,29 @@ public sealed partial class RealmManifestApplier
     /// Mirror of V2_Position_Update: merge + validate + full-replace event, then the SAME
     /// post-commit cascades (policy-tightening ends affected staffing sessions; an
     /// active→inactive transition revokes the position's tokens and ends its shifts).
-    /// AccountName is the natural key, so a manifest can never rename a position.
+    /// An entry matched by its pinned Id RENAMES the position (same validation as the PUT:
+    /// format + the shared principal account-name namespace).
     /// Declarative apply auto-confirms the policy consequences — the manifest IS the
     /// desired state (documented on the manifest field).
     /// </summary>
     private static async Task UpdatePositionAsync(
         IDocumentSession session, IStaffingRevoker staffingRevoker, IOAuthGrantRevoker revoker,
-        PositionPrincipal existing, RealmManifestPosition pos, List<Guid> grantUserIds,
+        PositionPrincipal existing, RealmManifestPosition pos, List<Guid>? grantUserIds,
         DateTimeOffset now, string ctx, CancellationToken ct)
     {
         var wasActive = existing.IsActive;
 
-        if (pos.Purpose is not null)
-            existing.Purpose = string.IsNullOrWhiteSpace(pos.Purpose) ? null : pos.Purpose.Trim();
+        var normalised = pos.AccountName.Trim().ToLowerInvariant();
+        if (normalised != existing.AccountName)
+        {
+            EnsureNoOpError(PositionsEndpoints.ValidateAccountName(normalised), ctx);
+            EnsureNoOpError(
+                await PositionsEndpoints.AccountNameTakenAsync(session, normalised, existing.Id, ct), ctx);
+            existing.AccountName = normalised;
+        }
+
+        if (pos.Purpose.HasValue)
+            existing.Purpose = string.IsNullOrWhiteSpace(pos.Purpose.Value) ? null : pos.Purpose.Value.Trim();
         if (pos.IsActive.HasValue)
             existing.IsActive = pos.IsActive.Value;
 
@@ -170,10 +196,11 @@ public sealed partial class RealmManifestApplier
             }
         }
 
-        // ── Grants: desired-set reconciliation (non-empty replaces, empty = no change,
-        //    matching the manifest's list semantics). Revoking ends the user's shifts —
-        //    the same MG-FT-07 cascade the grants endpoint runs.
-        if (grantUserIds.Count == 0) return;
+        // ── Grants: desired-set reconciliation (a present list replaces — [] revokes
+        //    everything; an absent list = no change, per the v2 merge-patch contract).
+        //    Revoking ends the user's shifts — the same MG-FT-07 cascade the grants
+        //    endpoint runs.
+        if (grantUserIds is null) return;
 
         var live = await session.Query<PositionGrant>()
             .Where(g => g.PositionPrincipalId == existing.Id && g.Status != PositionGrantStatus.Revoked)
@@ -213,7 +240,8 @@ public sealed partial class RealmManifestApplier
     /// </summary>
     private static async Task PrunePositionsAsync(
         IServiceProvider sp, IDocumentSession session, OAuthAdminService oauth,
-        RealmManifest manifest, CancellationToken ct)
+        RealmManifest manifest, bool prune, IReadOnlyDictionary<string, HashSet<string>>? targeted,
+        CancellationToken ct)
     {
         // Feature dark → the realm cannot contain positions; nothing to prune.
         if (!sp.GetRequiredService<AppSettings>().Features.PositionTerminals) return;
@@ -221,6 +249,9 @@ public sealed partial class RealmManifestApplier
         var keep = manifest.Positions
             .Select(p => p.AccountName.Trim().ToLowerInvariant())
             .ToHashSet(StringComparer.Ordinal);
+        // Targeted (staged) deletions restrict the sweep to their keys (lowercased
+        // account names — normalized by the caller); full prune deletes everything.
+        var targetedPositions = targeted?.GetValueOrDefault("positions");
         var staffingRevoker = sp.GetRequiredService<IStaffingRevoker>();
         var revoker = sp.GetRequiredService<IOAuthGrantRevoker>();
         var now = DateTimeOffset.UtcNow;
@@ -228,6 +259,7 @@ public sealed partial class RealmManifestApplier
         foreach (var fn in await session.Query<PositionPrincipal>().Where(p => !p.IsDeleted).ToListAsync(ct))
         {
             if (keep.Contains(fn.AccountName)) continue;
+            if (!prune && targetedPositions?.Contains(fn.AccountName) != true) continue;
             var ctx = $"prune position '{fn.AccountName}'";
 
             var slots = (await session.Query<TerminalEnrollment>().ToListAsync(ct))

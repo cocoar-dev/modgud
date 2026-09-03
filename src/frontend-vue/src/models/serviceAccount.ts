@@ -48,7 +48,8 @@ export interface UpdateServiceAccountCredentialDto {
   DisplayName?: string
   Scopes?: string[]
   AppIds?: string[]
-  AccessTokenLifetime?: number
+  /** v2 merge-patch: undefined = keep, null = clear the override (server default), value = set. */
+  AccessTokenLifetime?: number | null
   Enabled?: boolean
   AccessTokenType?: AccessTokenType
 }

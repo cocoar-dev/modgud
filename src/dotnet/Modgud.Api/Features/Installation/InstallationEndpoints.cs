@@ -28,6 +28,15 @@ public sealed record CompleteInstallationRequest(
     InstallationRealmRequest Realm,
     InstallationAdminRequest Admin);
 
+/// <summary>
+/// <paramref name="LoginUrl"/> points back at the SAME origin the installation link
+/// was issued for — scheme, host AND port verbatim, symmetric to how the install URL
+/// itself is built (<c>{BaseUrl}/install?token=…</c>). The operator is sitting at that
+/// origin; sending them anywhere else would strand them (a deployment reachable on a
+/// non-default port, or on a host that only resolves from where they are, would land
+/// on a dead URL). From the next request onwards the realm's configured PrimaryDomain
+/// governs every outbound link — see <c>RealmPublicUrl</c>.
+/// </summary>
 public sealed record CompleteInstallationResponse(
     string RealmSlug,
     string PrimaryDomain,
@@ -70,7 +79,9 @@ public sealed class InstallationCompletionService(
 
         var tokenResult = await challenges.ValidateAsync(request.Token, ct);
         if (tokenResult.IsError) return tokenResult.Errors;
-        var loginScheme = new Uri(tokenResult.Value.BaseUrl).Scheme;
+        // The origin the operator issued the link for — kept verbatim (incl. port)
+        // for the post-install redirect; see CompleteInstallationResponse.
+        var installOrigin = tokenResult.Value.BaseUrl.TrimEnd('/');
 
         await using var lockConnection = new NpgsqlConnection(masterConnection.Value);
         await lockConnection.OpenAsync(ct);
@@ -104,6 +115,11 @@ public sealed class InstallationCompletionService(
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray(),
                 PrimaryDomain = request.Realm.PrimaryDomain?.Trim().ToLowerInvariant(),
+                // The deployment's public origin, declared by the operator when they
+                // issued the installation link — scheme, host AND port. Every outbound
+                // link is built against it from here on, so a deployment on a
+                // non-default port states the truth instead of having one guessed.
+                PublicBaseUrl = installOrigin,
                 InitialAdmin = new InitialAdminDto
                 {
                     UserName = request.Admin.UserName.Trim(),
@@ -140,11 +156,10 @@ public sealed class InstallationCompletionService(
             var completion = await challenges.CompleteAsync(request.Token, dto.Slug, ct);
             if (completion.IsError) return completion.Errors;
 
-            var primaryDomain = activation.Value.PrimaryDomain;
             return new CompleteInstallationResponse(
                 dto.Slug,
-                primaryDomain,
-                $"{loginScheme}://{primaryDomain}/login");
+                activation.Value.PrimaryDomain,
+                $"{installOrigin}/login");
         }
         finally
         {

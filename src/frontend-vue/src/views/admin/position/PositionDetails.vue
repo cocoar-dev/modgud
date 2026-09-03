@@ -21,6 +21,8 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useHttpClient } from '@/composables/useHttpClient'
+import { useDraftStaging } from '@/composables/useDraftStaging'
+import type { ManifestEntity } from '@/stores/realmDraft.store'
 import { useUserStore } from '@/stores/user.store'
 import type { PositionCreateDto, PositionUpdateDto, PositionTerminalPolicyUpdateDto, PositionTerminalPolicyConsequencesDto, PositionGrantDto, TerminalDto, StaffingSessionDto, ActivationTokenDto } from '@/models/position'
 import type { RealmSettingsDto } from '@/models/realmSettings'
@@ -43,6 +45,17 @@ const props = defineProps<{
 const store = usePositionStore()
 const userStore = useUserStore()
 const isCreate = computed(() => props.id === 'create')
+
+// ── ADR-0005 staging: position identity + policy + grants commit onto the
+// active draft. Terminal SLOTS are deliberately not manifest-modeled
+// (credential material), so a create that stages slots takes the live path;
+// the embedded draftOnly flow belongs to the parent client create and stays
+// untouched. Grant/slot/session OPERATIONS in edit mode remain live actions.
+const staging = useDraftStaging('positions')
+const isDraftRow = computed(() => staging.isDraftId(props.id))
+const stagedSave = computed(() => staging.stagingActive.value
+  && !props.draftOnly
+  && !(isCreate.value && stagedTerminals.value.length > 0))
 const loading = ref(false)
 const error = ref<string | null>(null)
 const creationCompleted = ref(false)
@@ -90,6 +103,56 @@ function setAllowed(collection: 'AllowedActivationProofs' | 'AllowedDeviceBindin
 }
 const accountNamePattern = /^[a-z0-9][a-z0-9._-]{1,63}$/
 
+/** Loads the staged manifest entity into the form. */
+function fromStagedInto(e: ManifestEntity) {
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  const arr = (v: unknown, fallback: string[]) => (Array.isArray(v) && v.length > 0 ? [...(v as string[])] : fallback)
+  const num = (v: unknown, fallback: number) => (typeof v === 'number' ? v : fallback)
+  const policy = (e.TerminalPolicy ?? {}) as ManifestEntity
+  form.value = {
+    AccountName: str(e.AccountName),
+    Purpose: str(e.Purpose),
+    IsActive: e.IsActive !== false,
+    TerminalEnabled: policy.Enabled === true,
+    AllowedActivationProofs: arr(policy.AllowedActivationProofs, ['personal-passkey']),
+    AllowedDeviceBindings: arr(policy.AllowedDeviceBindings, ['dpop']),
+    StaffingSessionLifetimeMinutes: num(policy.StaffingSessionLifetimeMinutes, 16 * 60),
+    MaximumStaffingSessionLifetimeMinutes: num(policy.MaximumStaffingSessionLifetimeMinutes, 24 * 60),
+  }
+  original.value = { ...form.value }
+}
+
+function toStaged(): ManifestEntity {
+  const name = form.value.AccountName.trim()
+  // The section's natural key is the lowercased account name.
+  const entity: ManifestEntity = { ...(staging.findStaged(name.toLowerCase()) ?? {}) }
+  entity.AccountName = name
+  entity.IsActive = form.value.IsActive
+  // v2 merge-patch: explicit null stages the clear (absent would keep live).
+  entity.Purpose = form.value.Purpose.trim() || null
+  entity.TerminalPolicy = {
+    Enabled: form.value.TerminalEnabled,
+    AllowedActivationProofs: [...form.value.AllowedActivationProofs],
+    AllowedDeviceBindings: [...form.value.AllowedDeviceBindings],
+    StaffingSessionLifetimeMinutes: form.value.StaffingSessionLifetimeMinutes,
+    MaximumStaffingSessionLifetimeMinutes: form.value.MaximumStaffingSessionLifetimeMinutes,
+  }
+  // Staged CREATE carries its staged grants as user keys; on edits the merge
+  // base keeps whatever the draft already holds (grant ops stay live).
+  if (isCreate.value && stagedGrantUserIds.value.length > 0) {
+    entity.Grants = stagedGrantUserIds.value
+      .map((id) => {
+        const u = userStore.entities.find((x) => x.Id === id)
+        return u ? (u.UserName || u.Email || null) : null
+      })
+      .filter((key): key is string => !!key)
+  }
+  // Stage the LIVE entity's id: the apply matches by identity, so editing the name
+  // is a RENAME of this entity instead of staging a second one.
+  if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
+  return entity
+}
+
 const accountNameError = computed(() => {
   const value = form.value.AccountName.trim()
   if (!value || !isCreate.value) return ''
@@ -124,7 +187,9 @@ const footerButton = computed(() => ({
   visible: !creationCompleted.value,
   text: props.draftOnly
     ? t('common.apply', {}, 'Übernehmen')
-    : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
+    : stagedSave.value
+      ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+      : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: !form.value.AccountName.trim() || generalIssues.value.length > 0
     || terminalIssues.value.length > 0 || loading.value,
   onClick: save,
@@ -491,6 +556,13 @@ onMounted(async () => {
   void useHttpClient('/api/admin/realm-settings').get<RealmSettingsDto>()
     .then((dto) => { realmPositionSecurity.value = dto.PositionSecurity })
     .catch(() => { realmPositionSecurity.value = null })
+  if (isDraftRow.value) {
+    // Draft-created position: the staged manifest entity IS the state; the
+    // operational tabs (slots/grants/sessions) exist only after apply.
+    const entity = staging.findStaged(staging.draftKeyOf(props.id))
+    if (entity) fromStagedInto(entity)
+    return
+  }
   if (!isCreate.value) {
     loading.value = true
     try {
@@ -506,6 +578,11 @@ onMounted(async () => {
         MaximumStaffingSessionLifetimeMinutes: fn.TerminalPolicy.MaximumStaffingSessionLifetimeMinutes,
       }
       original.value = { ...form.value }
+      // Staging overlay: show the STAGED position state when the draft carries it.
+      if (stagedSave.value && staging.draftStore.current) {
+        const entity = staging.findStaged(fn.AccountName.trim().toLowerCase())
+        if (entity) fromStagedInto(entity)
+      }
       // Grants + terminals + sessions load alongside — they must not block the form fields.
       void loadGrants()
       void loadTerminals()
@@ -556,6 +633,14 @@ async function save() {
   loading.value = true
   error.value = null
   try {
+    // ADR-0005: commit onto the active draft instead of writing live. Policy
+    // consequences (ended sessions, disabled slots) happen at APPLY — the plan
+    // shows the change; no live preview here.
+    if (stagedSave.value) {
+      await staging.stage(form.value.AccountName.trim().toLowerCase(), toStaged())
+      props.close()
+      return
+    }
     if (isCreate.value) {
       const createDto: PositionCreateDto = {
         AccountName: form.value.AccountName.trim(),
@@ -643,7 +728,7 @@ async function save() {
             </CoarPopover>
           </span>
         </CoarTab>
-        <CoarTab v-if="!props.draftOnly" id="terminals">
+        <CoarTab v-if="!props.draftOnly && !isDraftRow" id="terminals">
           <span class="tab-label">
             {{ t('admin.positions.tabs.terminals', {}, 'Terminals') }}
             <CoarPopover v-if="terminalIssues.length" mode="hover" :offset="8">
@@ -661,10 +746,10 @@ async function save() {
             </CoarPopover>
           </span>
         </CoarTab>
-        <CoarTab v-if="!props.draftOnly" id="grants">{{ t('admin.positions.tabs.grants', {}, 'Authorized users') }}</CoarTab>
-        <CoarTab v-if="!isCreate" id="tokens">{{ t('admin.positions.tabs.tokens', {}, 'Activation tokens') }}</CoarTab>
+        <CoarTab v-if="!props.draftOnly && !isDraftRow" id="grants">{{ t('admin.positions.tabs.grants', {}, 'Authorized users') }}</CoarTab>
+        <CoarTab v-if="!isCreate && !isDraftRow" id="tokens">{{ t('admin.positions.tabs.tokens', {}, 'Activation tokens') }}</CoarTab>
         <!-- Rule 5: absent in create — sessions cannot exist before the position. -->
-        <CoarTab v-if="!isCreate" id="sessions">{{ t('admin.positions.tabs.sessions', {}, 'Staffing sessions') }}</CoarTab>
+        <CoarTab v-if="!isCreate && !isDraftRow" id="sessions">{{ t('admin.positions.tabs.sessions', {}, 'Staffing sessions') }}</CoarTab>
       </CoarTabGroup>
 
       <CoarNotice v-if="creationCompleted" variant="warning">
@@ -718,7 +803,7 @@ async function save() {
       <!-- Tab: Terminals. Rule 1 — the lifetime fields stay VISIBLE when
            terminal use is off (disabled, showing the effective defaults);
            hiding them would make the policy unfindable. -->
-      <div v-if="!props.draftOnly" v-show="activeTab === 'terminals'" class="tab-content modal-form">
+      <div v-if="!props.draftOnly && !isDraftRow" v-show="activeTab === 'terminals'" class="tab-content modal-form">
         <section class="form-section">
           <div class="modal-form-grid">
             <CoarFormField class="col-full"
@@ -971,7 +1056,7 @@ async function save() {
         </section>
       </div>
 
-      <section v-if="!isCreate" v-show="activeTab === 'tokens'" class="form-section tab-content">
+      <section v-if="!isCreate && !isDraftRow" v-show="activeTab === 'tokens'" class="form-section tab-content">
         <CoarNotice variant="info">
           {{ t('admin.activationTokens.registrationHint', {}, 'Create and assign the logical token here. Register its WebAuthn credential from an enrolled terminal so registration uses the terminal application’s RP-compatible origin.') }}
         </CoarNotice>
@@ -1017,7 +1102,7 @@ async function save() {
       <!-- Staffing sessions (MG-FT-05/07) — the live/audit view of shifts on
            this position's terminals; force-lock ends a running one remotely.
            Edit-mode only: sessions cannot exist before the position does. -->
-      <section v-if="!isCreate" v-show="activeTab === 'sessions'" class="form-section tab-content">
+      <section v-if="!isCreate && !isDraftRow" v-show="activeTab === 'sessions'" class="form-section tab-content">
         <div v-if="sessionsLoading" class="text-xs text-surface-500">
           {{ t('common.loading', {}, 'Loading...') }}
         </div>
@@ -1067,7 +1152,7 @@ async function save() {
       <!-- Rule 5: same section in both modes — create STAGES grants (the one
            Save commits position + grants atomically), edit operates on live
            grants immediately (rule 2: own lifecycle, explicit actions). -->
-      <section v-show="activeTab === 'grants'" class="form-section tab-content">
+      <section v-if="!isDraftRow" v-show="activeTab === 'grants'" class="form-section tab-content">
         <div class="mb-3 flex items-center gap-2">
           <CoarSelect
             v-model="selectedGrantUserId"

@@ -6,6 +6,10 @@ at runtime. Think *realm-as-code*: instead of clicking (or scripting dozens of)
 admin API calls, you `POST` a **manifest** and Modgud materialises the whole
 realm by running the same operations the admin UI uses.
 
+::: tip Prefer clicking over JSON?
+The interactive counterpart is [Configuration Drafts](configuration-drafts): every save in the admin UI stages onto a draft — which *is* one of these manifests — and you review the exact change plan before applying. Uploading a manifest as a draft is the reviewed import path.
+:::
+
 It's built for three jobs:
 
 - **Bootstrap a realm reproducibly** — keep a realm's shape in version control and
@@ -160,12 +164,18 @@ clients keep their secret across `apply`.
 
 ## Apply: merge vs. prune
 
-`apply` is a desired-state merge **for the fields the manifest carries**:
+`apply` is a **merge-patch** (in the spirit of [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386)) —
+the same [write semantics](/reference/#write-semantics) as the admin API:
+a field **absent** from the manifest is left unchanged (it takes the shipped default
+only on create), while every **present** field is applied — an explicit `null` **clears**
+the stored value, and `[]` clears a list. Concretely:
 
-- Boolean flags are nullable — omit one to leave it unchanged (it takes the shipped
-  default only on create).
-- Scalar strings and non-empty lists replace; an omitted/empty value is left
-  unchanged (apply never clears a list or detaches a link).
+- Boolean flags have no clear — omit or `null` both mean "unchanged"; `true`/`false` sets.
+- Optional scalars (display names, descriptions, token lifetimes, branding fields, …):
+  omitted = unchanged, `null` = clear back to the default, value = set.
+- App links (`App` on an API or scope): omitted = unchanged, `null` = detach.
+- Lists (redirect URIs, scopes, group members, position grants, …): omitted = unchanged,
+  `[]` = clear, non-empty = replace the full list.
 - App-catalog permission ids are preserved across updates, so unchanged permissions
   keep their grants.
 
@@ -188,6 +198,46 @@ export a realm, add a user password or a provider secret, tweak a setting, and `
 it back to `/{slug}/apply`. Because confidential clients regenerate a secret on import
 and users can be created passwordless, a structure-only manifest still re-applies into
 a fully working realm.
+
+### Stable ids across environments
+
+Every exported entity carries its **`Id`** (ShortGuid), and the apply **pins that id
+at create** — importing an export into another instance recreates every app, API,
+scope, client, role, user, group, service account, login provider and position with
+the *exact same id*. A stage → prod transfer therefore keeps every id consuming
+applications persist as their foreign key — nothing has to be re-linked. The rules:
+
+**The `Id` names the entity**, and the natural key (slug, name, client id, account name)
+is ordinary data. So an entry carrying an `Id` is matched by it first, and only entries
+without one fall back to matching by key:
+
+- The id names a **live** entity → that entity is **updated** to the entry's values. If
+  its natural key differs and the type can be renamed (roles, groups, users, service
+  accounts, positions), the apply **renames** it — an export → edit-the-name → import
+  round trip is a rename, not a duplicate. The plan shows it as `Name: old → new` plus a
+  note, so you always see *which* entity is being renamed before you apply.
+- Some natural keys can't change, because other systems address the entity by them: an
+  **app slug**, a **client id**, a **scope or API name** (the API name is the `aud`
+  claim), a **login-provider slug** (it owns the callback URLs). If the id names one of
+  those and the entry's key differs, the entry fails with both ways out spelled out —
+  fix the key to match, or drop the `Id` to create a separate entity.
+- The id names a **deleted** entity → the apply **revives** it, under the entry's values
+  (name included). Deleting is a soft delete, so the id and its history are still there.
+  This is what makes "transfer to prod → something broke → delete → fix → re-import the
+  same config" end where it started.
+- The id names an entity of a **different kind** → conflict (`*.PinnedIdTaken`), and the
+  plan flags that entry as an error. Appending one kind's events onto another's stream
+  would corrupt it, so this is the one collision with no automatic resolution.
+- **Users are the exception to reviving**: deleting a user runs the account lifecycle
+  (recycle bin, grace period, GDPR purge), so a manifest never revives one. Re-importing
+  a binned user's id fails with a message naming the way out — restore the user from the
+  bin, then re-apply (the apply then updates it, id intact).
+- Omit `Id` (hand-written manifests) and matching falls back to the natural key, exactly
+  as before; a create then generates a fresh id.
+
+Service accounts export as **hulls** (AccountName, Purpose, IsActive, Id): their
+credentials never travel — issue them per environment. Service accounts are
+upsert-only: prune never deletes them.
 
 ## Per-realm self-service
 

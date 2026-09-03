@@ -27,11 +27,19 @@ public sealed class RoleAdminService(IDocumentSession session)
         if (built.IsError) return built.Errors;
 
         var role = built.Value;
+        var pinned = await Modgud.Application.Services.PinnedEntityId.ResolveAsync<PermissionRole>(
+            session, dto.Id, "Role", r => r.IsDeleted, ct);
+        if (pinned.IsError) return pinned.Errors;
+        if (pinned.Value.Id is { } pinnedId) role.Id = pinnedId;
         // PermissionRoleProjection (inline) writes the doc from the event; emit only.
-        session.Events.StartStream(role.Id,
-            new PermissionRoleCreatedEvent(
-                role.Id, role.Name, role.Description,
-                role.AppId, role.IsRealmAdmin, role.PermissionIds));
+        var createdEvent = new PermissionRoleCreatedEvent(
+            role.Id, role.Name, role.Description,
+            role.AppId, role.IsRealmAdmin, role.PermissionIds);
+        // Revive: append onto the soft-deleted stream instead of starting a new one.
+        if (pinned.Value.Revive)
+            session.Events.Append(role.Id, createdEvent);
+        else
+            session.Events.StartStream(role.Id, createdEvent);
         await session.SaveChangesAsync(ct);
         return role;
     }

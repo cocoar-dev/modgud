@@ -11,6 +11,8 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
+import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import type { LoginProviderDto, LoginProviderType } from '@/models/loginProvider'
@@ -30,10 +32,40 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-const rows = computed(() => store.providers)
+const liveRows = computed(() => store.providers)
+
+// ADR-0005: draft-merged roster (natural key = the provider slug).
+const staging = useDraftStaging('loginProviders')
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const rows = useDraftListOverlay<LoginProviderDto>({
+  section: 'loginProviders',
+  rows: liveRows,
+  liveKey: (row) => row.Slug,
+  matchLive: (row, e) => row.Slug === str(e.Slug),
+  overlay: (row, e) => ({
+    ...row,
+    DisplayName: str(e.DisplayName) || row.DisplayName,
+    Enabled: e.Enabled === true,
+    ClientId: str(e.ClientId) || row.ClientId,
+  }),
+  synthesize: (key, e) => ({
+    Id: `draft__${key}`,
+    Slug: str(e.Slug) || key,
+    DisplayName: str(e.DisplayName) || key,
+    Type: (str(e.Type) || 'Oidc') as LoginProviderType,
+    Flavor: str(e.Flavor),
+    Enabled: e.Enabled === true,
+    ClientId: str(e.ClientId),
+    HasClientSecret: false,
+    IsBuiltIn: false,
+    IconName: str(e.IconName) || null,
+  } as unknown as LoginProviderDto),
+})
+
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
+const selectedDeleteStaged = ref(false)
 
 // i18n helper for the Type column.
 function typeLabel(type: LoginProviderType): string {
@@ -47,9 +79,9 @@ function typeLabel(type: LoginProviderType): string {
   }
 }
 
-const showEmpty = computed(() => store.loaded && store.providers.length === 0)
+const showEmpty = computed(() => store.loaded && rows.value.length === 0)
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<LoginProviderDto>(), { openable: true })
+const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<LoginProviderDto>>(), { openable: true })
   .persistColumnState('admin-login-providers')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -68,7 +100,9 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<LoginProviderDto>()
       event.api.deselectAll()
       event.node.setSelected(true)
     }
-    selectedIds.value = event.api.getSelectedRows().map((r: LoginProviderDto) => r.Id)
+    const selected = event.api.getSelectedRows() as DraftRow<LoginProviderDto>[]
+    selectedIds.value = selected.map((r) => r.Id)
+    selectedDeleteStaged.value = selected.some((r) => r.DraftStaged === 'delete')
     cellMenu.open(event.event as MouseEvent)
   })
   .onViewportContextMenu(($event) => viewportMenu.open($event))
@@ -87,6 +121,17 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<LoginProviderDto>()
           : base
       }),
     (col) => col.field('Flavor').header('Flavor', 'admin.loginProviders.flavor').width(140),
+    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
+        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
+        : p.data?.DraftStaged === 'update'
+          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
+          : p.data?.DraftStaged === 'delete'
+            ? t('admin.realmConfig.gridTag.delete', {}, 'Staged (delete)')
+            : '')
+      .width(120)
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged && p.data.DraftStaged !== 'delete')
+      .classRule('draft-staged-cell-delete', (p: any) => p.data?.DraftStaged === 'delete'),
     (col) => col.tag('Enabled', {
       variantMap: { active: 'success', inactive: 'neutral' },
       i18nPrefix: 'common.statusTag.',
@@ -100,6 +145,13 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<LoginProviderDto>()
   ])
 
 const selectedProvider = computed(() => rows.value.find((p) => p.Id === selectedIds.value[0]))
+
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('loginProviders',
+  computed(() => {
+    const row = selectedProvider.value
+    if (!row || row.DraftStaged === 'create' || row.IsBuiltIn) return null
+    return row.Slug
+  }))
 
 async function toggleEnabled() {
   const provider = selectedProvider.value
@@ -123,6 +175,14 @@ async function deleteSelected() {
   if (provider.IsBuiltIn) {
     alert(t('admin.loginProviders.errors.internalNotEditable', {}, 'The built-in internal login provider can\'t be edited.'))
     return
+  }
+  // ADR-0005 staged deletes.
+  if (staging.stagingActive.value) {
+    if (staging.isDraftId(provider.Id)) return staging.unstage(staging.draftKeyOf(provider.Id))
+    if ((provider as DraftRow<LoginProviderDto>).DraftStaged === 'delete')
+      return staging.unstageDelete(provider.Slug)
+    // No confirm: staged deletes are reversible; the apply popconfirm gates.
+    return staging.stageDelete(provider.Slug)
   }
   if (!confirm(t('admin.loginProviders.confirmDelete', {}, 'Really delete this login provider?'))) return
   try { await store.remove(provider.Id) } catch (e: any) { alert(e?.message ?? String(e)) }
@@ -171,9 +231,16 @@ onMounted(() => store.initialize())
         @clicked="toggleEnabled"
       />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2"
+      <CoarMenuItem
+        :label="selectedDeleteStaged
+          ? t('admin.realmConfig.undelete', {}, 'Undo delete')
+          : t('common.delete', {}, 'Delete')"
+        :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         :disabled="!selectedProvider || selectedProvider.IsBuiltIn"
         @clicked="deleteSelected" />
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">
@@ -182,3 +249,15 @@ onMounted(() => store.initialize())
     </CoarContextMenu>
   </div>
 </template>
+
+<style scoped>
+:deep(.draft-staged-cell) {
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+
+:deep(.draft-staged-cell-delete) {
+  color: var(--coar-text-semantic-error, #dc2626);
+  font-weight: 600;
+}
+</style>

@@ -15,7 +15,7 @@ namespace Modgud.Tests.Unit.Infrastructure.Persistence.Marten.Projections.OAuth;
 public class OAuthApplicationStateProjectionTests
 {
     private static OAuthApplicationState NewState() =>
-        new OAuthApplicationStateProjection().Create(new OAuthApplicationCreated(
+        new OAuthApplicationStateProjection().ApplyCreated(new OAuthApplicationCreated(
             Guid.NewGuid(),
             ClientId: "my-client",
             DisplayName: "My Client",
@@ -33,7 +33,7 @@ public class OAuthApplicationStateProjectionTests
         public void Initialises_all_fields_from_event()
         {
             var id = Guid.NewGuid();
-            var s = new OAuthApplicationStateProjection().Create(new OAuthApplicationCreated(
+            var s = new OAuthApplicationStateProjection().ApplyCreated(new OAuthApplicationCreated(
                 id, "c", "Display", "public", "implicit", "native",
                 new[] { "https://x/cb" },
                 new[] { "https://x/" },

@@ -221,6 +221,7 @@ export const baseConfig = {
           items: [
             { text: 'Applications', link: '/admin/applications' },
             { text: 'Realms', link: '/admin/realms' },
+            { text: 'Configuration Drafts', link: '/admin/configuration-drafts' },
             { text: 'Declarative Realm Provisioning', link: '/admin/realm-provisioning' },
             { text: 'Realm Settings', link: '/admin/realm-settings' },
             { text: 'Logs (Security & Audit)', link: '/admin/auth-log' },

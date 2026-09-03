@@ -10,6 +10,8 @@ import { useFragmentNavigation } from '@cocoar/vue-fragment-parser'
 import ModalLayout from '@/components/ModalLayout.vue'
 import ColorField from '@/components/ColorField.vue'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
+import { useDraftStaging } from '@/composables/useDraftStaging'
+import type { ManifestEntity } from '@/stores/realmDraft.store'
 import type { FlavorConfigFieldDto, FlavorDto, LoginProviderDto } from '@/models/loginProvider'
 import UserUpdateScriptEditor from './UserUpdateScriptEditor.vue'
 import FlavorConnectionPanel from './panels/FlavorConnectionPanel.vue'
@@ -21,6 +23,11 @@ const { navigateToModal } = useFragmentNavigation()
 
 const props = defineProps<{ id: string; close: (result?: unknown) => void }>()
 const isCreate = computed(() => props.id === 'create')
+
+// ── ADR-0005 staging: provider saves commit onto the active draft. The seeded
+// built-in Internal provider is infra, not authored config — live path.
+const staging = useDraftStaging('loginProviders')
+const isDraftRow = computed(() => staging.isDraftId(props.id))
 
 const activeTab = ref<'general' | 'connection' | 'advanced' | 'claim-mapping' | 'claims' | 'linking'>('general')
 const activeClaimMap = ref<'attributes' | 'amr'>('attributes')
@@ -40,10 +47,13 @@ const flavor = computed<FlavorDto | null>(() =>
 const isBuiltIn = computed(() => provider.value?.IsBuiltIn === true)
 const isInternal = computed(() => provider.value?.Type === 'Internal')
 const isSaml = computed(() =>
-  isCreate.value
+  isCreate.value || isDraftRow.value
     ? flavor.value?.Type === 'Saml'
     : provider.value?.Type === 'Saml'
 )
+
+const stagedSave = computed(() =>
+  staging.stagingActive.value && !isBuiltIn.value && !isInternal.value)
 
 interface FormState {
   Slug: string
@@ -93,6 +103,79 @@ function emptyForm(): FormState {
 const form = ref<FormState>(emptyForm())
 const newSecret = ref<string>('')
 
+/** Loads the staged manifest entity into the form. */
+function fromStagedInto(e: ManifestEntity) {
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  const arr = (v: unknown) => (Array.isArray(v) ? [...(v as string[])] : [])
+  flavorKey.value = str(e.Flavor) || flavorKey.value
+  const f = store.flavors.find((ff) => ff.Key === flavorKey.value) ?? null
+  form.value = {
+    Slug: str(e.Slug),
+    DisplayName: str(e.DisplayName),
+    Description: str(e.Description),
+    ClientId: str(e.ClientId),
+    Scopes: arr(e.Scopes),
+    UserUpdateScript: str(e.UserUpdateScript),
+    StoreRawClaims: e.StoreRawClaims === true,
+    RawClaimsRetentionDays: typeof e.RawClaimsRetentionDays === 'number' ? e.RawClaimsRetentionDays : null,
+    AutoCreateUsers: e.AutoCreateUsers === true,
+    AllowLinking: e.AllowLinking !== false,
+    TrustForEmailLink: e.TrustForEmailLink === true,
+    TrustForAuthorization: e.TrustForAuthorization === true,
+    AuthoritativeForProfile: e.AuthoritativeForProfile === true,
+    AllowedEmailDomains: arr(e.AllowedEmailDomains),
+    IconName: str(e.IconName),
+    ButtonColorHex: str(e.ButtonColorHex),
+    FlavorData: normalizeFlavorData((e.FlavorData as Record<string, unknown> | undefined) ?? {}, f?.ConfigSchema),
+    Enabled: e.Enabled === true,
+  }
+}
+
+/** Manifest provider entity from the form. Secrets ride the manifest field
+ * only transiently — the server strips ClientSecret into a write-only slot. */
+function toStaged(): ManifestEntity {
+  const key = form.value.Slug.trim()
+  const entity: ManifestEntity = { ...(staging.findStaged(key) ?? {}) }
+  entity.Slug = key
+  entity.Type = provider.value?.Type ?? flavor.value?.Type ?? 'Oidc'
+  entity.Flavor = flavorKey.value
+  entity.DisplayName = form.value.DisplayName.trim()
+  entity.Enabled = form.value.Enabled
+  entity.Scopes = [...form.value.Scopes]
+  entity.FlavorData = JSON.parse(JSON.stringify(form.value.FlavorData))
+  entity.UserUpdateScript = form.value.UserUpdateScript
+  entity.StoreRawClaims = form.value.StoreRawClaims
+  entity.AutoCreateUsers = form.value.AutoCreateUsers
+  entity.AllowLinking = form.value.AllowLinking
+  entity.TrustForEmailLink = form.value.TrustForEmailLink
+  entity.TrustForAuthorization = form.value.TrustForAuthorization
+  entity.AuthoritativeForProfile = form.value.AuthoritativeForProfile
+  // v2 merge-patch: explicit null stages the clear (absent would keep live).
+  entity.Description = form.value.Description.trim() || null
+  entity.RawClaimsRetentionDays = form.value.RawClaimsRetentionDays ?? null
+  entity.IconName = form.value.IconName || null
+  entity.ButtonColorHex = form.value.ButtonColorHex || null
+  entity.AllowedEmailDomains =
+    form.value.AllowedEmailDomains.length > 0 ? [...form.value.AllowedEmailDomains] : null
+  // ClientId is plain-patch in the manifest (null = unchanged, never cleared) —
+  // only stage a non-empty value.
+  if (form.value.ClientId.trim()) entity.ClientId = form.value.ClientId.trim()
+  else delete entity.ClientId
+  if (newSecret.value.trim()) entity.ClientSecret = newSecret.value.trim()
+  // Stage the LIVE entity's id: the apply matches by identity, so editing the name
+  // is a RENAME of this entity instead of staging a second one.
+  if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
+  return entity
+}
+
+/** The active draft already carries a rotated/initial secret for this provider. */
+const hasStagedSecret = computed(() => {
+  const slug = form.value.Slug.trim()
+  return slug.length > 0
+    && staging.draftStore.current?.SecretSlots
+      ?.includes(`loginProviders/${slug}/ClientSecret`) === true
+})
+
 // Slug grammar mirrors LoginProviderSlugRules on the backend: 3-64 chars,
 // lowercase letters/digits/hyphens, starts with a letter, ends alphanumeric.
 const SLUG_RE = /^[a-z][a-z0-9-]{1,62}[a-z0-9]$/
@@ -132,7 +215,7 @@ watch(
 
 const modalTitle = computed(() => {
   if (isCreate.value) return t('admin.loginProviders.createTitle', {}, 'Add Login Provider')
-  return provider.value?.DisplayName || ''
+  return provider.value?.DisplayName || form.value.DisplayName || form.value.Slug
 })
 
 // Provider callback URLs depend only on the slug — the rest is the host the
@@ -260,6 +343,12 @@ async function load() {
   loading.value = true
   try {
     await store.initialize()
+    if (isDraftRow.value) {
+      // Draft-created provider: the staged manifest entity IS the state.
+      const entity = staging.findStaged(staging.draftKeyOf(props.id))
+      if (entity) fromStagedInto(entity)
+      return
+    }
     if (isCreate.value) {
       flavorKey.value = store.flavors[0]?.Key ?? ''
       provider.value = null
@@ -295,6 +384,11 @@ async function load() {
       ButtonColorHex: existing.ButtonColorHex ?? '',
       FlavorData: normalizeFlavorData(existing.FlavorData, loadedFlavor?.ConfigSchema),
       Enabled: existing.Enabled,
+    }
+    // Staging overlay: show the STAGED provider state when the draft carries it.
+    if (stagedSave.value && staging.draftStore.current) {
+      const entity = staging.findStaged(existing.Slug)
+      if (entity) fromStagedInto(entity)
     }
   } catch (e: any) {
     error.value = e?.message ?? String(e)
@@ -355,8 +449,8 @@ const clientIdError = computed(() =>
 
 const hasOidcSecret = computed(() =>
   isCreate.value
-    ? newSecret.value.trim().length > 0
-    : provider.value?.HasClientSecret === true || newSecret.value.trim().length > 0
+    ? newSecret.value.trim().length > 0 || hasStagedSecret.value
+    : provider.value?.HasClientSecret === true || newSecret.value.trim().length > 0 || hasStagedSecret.value
 )
 
 const clientSecretError = computed(() =>
@@ -409,6 +503,13 @@ async function save() {
   error.value = null
   saving.value = true
   try {
+    // ADR-0005: commit onto the active draft instead of writing live.
+    if (stagedSave.value) {
+      await staging.stage(form.value.Slug.trim(), toStaged())
+      newSecret.value = ''
+      props.close()
+      return
+    }
     if (isCreate.value) {
       await createProvider()
     } else {
@@ -553,9 +654,11 @@ const footerButton = computed(() => ({
   // Visible in Add mode (no provider yet) and in Edit mode for non-built-in
   // providers. Built-in (Internal seed) stays read-only.
   visible: isCreate.value || !isBuiltIn.value,
-  text: isCreate.value
-    ? t('common.create', {}, 'Create')
-    : t('common.save', {}, 'Save'),
+  text: stagedSave.value
+    ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+    : isCreate.value
+      ? t('common.create', {}, 'Create')
+      : t('common.save', {}, 'Save'),
   disabled: saving.value || loading.value,
   onClick: save,
 }))

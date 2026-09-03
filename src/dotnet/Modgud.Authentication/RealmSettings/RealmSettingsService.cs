@@ -5,6 +5,7 @@ using Modgud.Application.DTOs.Realms;
 using Modgud.Authorization.Principals;
 using Modgud.Authentication.SelfRegistration.Captcha;
 using Modgud.Domain.PositionTerminals;
+using Modgud.Domain.Common;
 using Modgud.Domain.Realms;
 using Modgud.Domain.Assets;
 using Modgud.Infrastructure.Audit;
@@ -281,16 +282,17 @@ public sealed class RealmSettingsService(
             AllowedEmailDomains = patch.AllowedEmailDomains ?? s.AllowedEmailDomains,
             RequireAdminApproval = patch.RequireAdminApproval ?? s.RequireAdminApproval,
             DefaultGroupIds = patch.DefaultGroupIds ?? s.DefaultGroupIds,
-            TermsOfServiceUrl = patch.TermsOfServiceUrl ?? s.TermsOfServiceUrl,
-            PrivacyPolicyUrl = patch.PrivacyPolicyUrl ?? s.PrivacyPolicyUrl,
+            TermsOfServiceUrl = MergeClearableField(s.TermsOfServiceUrl, patch.TermsOfServiceUrl),
+            PrivacyPolicyUrl = MergeClearableField(s.PrivacyPolicyUrl, patch.PrivacyPolicyUrl),
             CaptchaEnabled = patch.CaptchaEnabled ?? s.CaptchaEnabled,
-            CaptchaSiteKey = patch.CaptchaSiteKey ?? s.CaptchaSiteKey,
-            EncryptedCaptchaSecret = patch.CaptchaSecret switch
-            {
-                null => s.EncryptedCaptchaSecret,                        // no change
-                "" => null,                                              // clear (revert to Cocoar-default)
-                var plain => captchaStore.Encrypt(plain),                // replace
-            },
+            CaptchaSiteKey = MergeClearableField(s.CaptchaSiteKey, patch.CaptchaSiteKey),
+            // v2 merge-patch: absent = keep the stored secret; null/blank =
+            // clear (revert to the Cocoar-default secret); value = replace.
+            EncryptedCaptchaSecret = !patch.CaptchaSecret.HasValue
+                ? s.EncryptedCaptchaSecret
+                : string.IsNullOrEmpty(patch.CaptchaSecret.Value)
+                    ? null
+                    : captchaStore.Encrypt(patch.CaptchaSecret.Value),
         };
     }
 
@@ -320,15 +322,14 @@ public sealed class RealmSettingsService(
         UpdateBrandingSettingsDto patch)
     {
         var s = current ?? new BrandingSettings();
-        // Tri-state per field: missing/null = no change, "" = clear (revert
-        // to Cocoar default), other = replace. Matches the captcha-secret
-        // semantics on the self-registration section.
-        var color = MergeBrandingField(s.PrimaryColor, patch.PrimaryColor);
+        // v2 merge-patch per field: absent = no change, explicit null (or a
+        // blank string) = clear back to the Cocoar default, other = replace.
+        var color = MergeClearableField(s.PrimaryColor, patch.PrimaryColor);
         if (color is not null && !IsValidCssColor(color))
             return Error.Validation("Branding.InvalidPrimaryColor",
                 "PrimaryColor must be a hex (#rgb / #rrggbb / #rrggbbaa), rgb()/rgba(), hsl()/hsla(), or a CSS named-color.");
 
-        var productName = MergeBrandingField(s.ProductName, patch.ProductName);
+        var productName = MergeClearableField(s.ProductName, patch.ProductName);
         if (productName is not null && productName.Length > 100)
             return Error.Validation("Branding.ProductNameTooLong",
                 "ProductName must be 100 characters or fewer.");
@@ -371,12 +372,13 @@ public sealed class RealmSettingsService(
         return merged.Value;
     }
 
-    private static string? MergeBrandingField(string? current, string? patch) => patch switch
-    {
-        null => current,
-        "" => null,
-        var v => v,
-    };
+    /// <summary>v2 merge-patch for one clearable string: absent = keep the
+    /// stored value, explicit null (or a blank string — same normalization the
+    /// entity modals use) = clear, other = replace.</summary>
+    private static string? MergeClearableField(string? current, Optional<string?> patch)
+        => !patch.HasValue ? current
+            : string.IsNullOrEmpty(patch.Value) ? null
+            : patch.Value;
 
     private static ErrorOr<Modgud.Domain.RealmSettings.EmailBrandingSettings> ApplyEmailBrandingPatch(
         Modgud.Domain.RealmSettings.EmailBrandingSettings? current,
@@ -384,12 +386,12 @@ public sealed class RealmSettingsService(
     {
         var result = (current ?? new Modgud.Domain.RealmSettings.EmailBrandingSettings()) with
         {
-            ProductName = MergeBrandingField(current?.ProductName, patch.ProductName),
-            SubjectPrefix = MergeBrandingField(current?.SubjectPrefix, patch.SubjectPrefix),
-            Preheader = MergeBrandingField(current?.Preheader, patch.Preheader),
-            FooterText = MergeBrandingField(current?.FooterText, patch.FooterText),
-            FromName = MergeBrandingField(current?.FromName, patch.FromName),
-            ReplyTo = MergeBrandingField(current?.ReplyTo, patch.ReplyTo),
+            ProductName = MergeClearableField(current?.ProductName, patch.ProductName),
+            SubjectPrefix = MergeClearableField(current?.SubjectPrefix, patch.SubjectPrefix),
+            Preheader = MergeClearableField(current?.Preheader, patch.Preheader),
+            FooterText = MergeClearableField(current?.FooterText, patch.FooterText),
+            FromName = MergeClearableField(current?.FromName, patch.FromName),
+            ReplyTo = MergeClearableField(current?.ReplyTo, patch.ReplyTo),
         };
         if (result.ProductName?.Length > 100 || result.SubjectPrefix?.Length > 100
             || result.Preheader?.Length > 200 || result.FooterText?.Length > 500)
@@ -414,13 +416,13 @@ public sealed class RealmSettingsService(
         ReplyTo = settings?.ReplyTo,
     };
 
-    private static ErrorOr<Guid?> MergeAssetIdField(Guid? current, string? patch)
+    private static ErrorOr<Guid?> MergeAssetIdField(Guid? current, Optional<string?> patch)
     {
-        if (patch is null) return current;
-        if (patch.Length == 0) return (Guid?)null;
-        if (ShortGuid.TryDecode(patch, out var parsed)) return (Guid?)parsed;
+        if (!patch.HasValue) return current;
+        if (string.IsNullOrEmpty(patch.Value)) return (Guid?)null;
+        if (ShortGuid.TryDecode(patch.Value, out var parsed)) return (Guid?)parsed;
         return Error.Validation("Branding.InvalidAssetId",
-            "Asset id must be a ShortGuid or empty string to clear.");
+            "Asset id must be a ShortGuid, or null to clear.");
     }
 
     // CSS color tokens we accept on write. Strict (no calc(), no var())

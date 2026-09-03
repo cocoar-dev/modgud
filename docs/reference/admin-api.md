@@ -4,6 +4,8 @@ Endpoints under `/api/admin/...` (or `/api/...` for resource reads
 without the `admin/` prefix). The realm is resolved via the Host
 header.
 
+Update endpoints follow the shared [write semantics](/reference/#write-semantics): merge-patch by default (absent = unchanged, explicit `null` clears, `[]` clears a list), with the handful of full-replace endpoints called out there.
+
 Most endpoints are cookie-only and gated through
 `.RequiresPermission("<resource>:<action>")`, and those permission
 strings are exactly the same as in the frontend sidebar. A few

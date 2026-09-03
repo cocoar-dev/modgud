@@ -14,6 +14,8 @@ import { useApplicationsStore } from '@/stores/applications.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, APP_CLONE } from '@/composables/useClone'
+import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import type { ApplicationDto } from '@/models/application'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -32,15 +34,52 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-const rows = computed(() => store.apps)
+const liveRows = computed(() => store.apps)
+
+// ADR-0005: draft-merged roster (natural key = the app slug).
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const stagedPerms = (e: Record<string, unknown>) =>
+  (Array.isArray(e.Permissions) ? (e.Permissions as Record<string, unknown>[]) : [])
+    // Transient ids — the grid only renders resource:action strings.
+    .map((p, i) => ({ Id: `staged-${i}`, Resource: str(p.Resource), Action: str(p.Action), Description: str(p.Description) || null }))
+const staging = useDraftStaging('apps')
+const rows = useDraftListOverlay<ApplicationDto>({
+  section: 'apps',
+  rows: liveRows,
+  liveKey: (row) => row.Slug,
+  matchLive: (row, e) => row.Slug === str(e.Slug),
+  overlay: (row, e) => ({
+    ...row,
+    DisplayName: str(e.DisplayName) || row.DisplayName,
+    Description: str(e.Description) || row.Description,
+    Permissions: stagedPerms(e),
+  }),
+  synthesize: (key, e) => ({
+    Id: `draft__${key}`,
+    Slug: str(e.Slug) || key,
+    DisplayName: str(e.DisplayName) || key,
+    Description: str(e.Description) || null,
+    Permissions: stagedPerms(e),
+    IsSystem: false,
+  } as unknown as ApplicationDto),
+})
+
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 const selectedIsSystem = ref(false)
+const selectedDeleteStaged = ref(false)
 
-const showEmpty = computed(() => store.loaded && store.apps.length === 0)
+const showEmpty = computed(() => store.loaded && rows.value.length === 0)
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<ApplicationDto>(), { openable: true })
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('apps',
+  computed(() => {
+    const row = rows.value.find((r) => r.Id === selectedIds.value[0])
+    if (!row || row.DraftStaged === 'create' || row.IsSystem) return null
+    return row.Slug
+  }))
+
+const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<ApplicationDto>>(), { openable: true })
   .persistColumnState('admin-apps')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -60,9 +99,10 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<ApplicationDto>(), 
       event.api.deselectAll()
       event.node.setSelected(true)
     }
-    const sel = event.api.getSelectedRows() as ApplicationDto[]
+    const sel = event.api.getSelectedRows() as DraftRow<ApplicationDto>[]
     selectedIds.value = sel.map((a) => a.Id)
     selectedIsSystem.value = sel.some((a) => a.IsSystem)
+    selectedDeleteStaged.value = sel.some((a) => a.DraftStaged === 'delete')
     cellMenu.open(event.event as MouseEvent)
   })
   .onViewportContextMenu(($event) => viewportMenu.open($event))
@@ -76,6 +116,17 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<ApplicationDto>(), 
       }),
     (col) => col.field('DisplayName').header('Display Name', 'admin.apps.displayName').flex(1).minWidth(180),
     (col) => col.field('Description').header('Description', 'common.description').flex(2),
+    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
+        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
+        : p.data?.DraftStaged === 'update'
+          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
+          : p.data?.DraftStaged === 'delete'
+            ? t('admin.realmConfig.gridTag.delete', {}, 'Staged (delete)')
+            : '')
+      .width(120)
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged && p.data.DraftStaged !== 'delete')
+      .classRule('draft-staged-cell-delete', (p: any) => p.data?.DraftStaged === 'delete'),
     (col) => col.field('Permissions').header('Permissions', 'admin.apps.permissions').flex(2)
       .option('valueGetter', (p: any) => (p.data?.Permissions ?? [])
         .map((perm: any) => `${perm.Resource}:${perm.Action}`)
@@ -108,6 +159,16 @@ async function deleteSelected() {
   if (selectedIsSystem.value) {
     alert(t('admin.apps.cannotDeleteSystem', {}, 'The system app can\'t be deleted.'))
     return
+  }
+  // ADR-0005 staged deletes: draft-created rows unstage, live rows stage their
+  // deletion (a still-referenced app fails at apply, exactly like live).
+  if (staging.stagingActive.value) {
+    if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))
+    const row = rows.value.find((r) => r.Id === id)
+    if (!row) return
+    if (row.DraftStaged === 'delete') return staging.unstageDelete(row.Slug)
+    // No confirm: staged deletes are reversible; the apply popconfirm gates.
+    return staging.stageDelete(row.Slug)
   }
   if (!confirm(t('admin.apps.confirmDelete', {}, 'Really delete this app?'))) return
   try { await store.remove(id) } catch (e: any) { alert(e?.message ?? String(e)) }
@@ -143,8 +204,15 @@ onMounted(() => store.initialize())
       <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy"
         @clicked="cloneSelected" />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2"
+      <CoarMenuItem
+        :label="selectedDeleteStaged
+          ? t('admin.realmConfig.undelete', {}, 'Undo delete')
+          : t('common.delete', {}, 'Delete')"
+        :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         :disabled="selectedIsSystem" @clicked="deleteSelected" />
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">
@@ -153,3 +221,15 @@ onMounted(() => store.initialize())
     </CoarContextMenu>
   </div>
 </template>
+
+<style scoped>
+:deep(.draft-staged-cell) {
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+
+:deep(.draft-staged-cell-delete) {
+  color: var(--coar-text-semantic-error, #dc2626);
+  font-weight: 600;
+}
+</style>

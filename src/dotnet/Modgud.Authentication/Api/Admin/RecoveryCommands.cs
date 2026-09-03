@@ -322,7 +322,7 @@ internal sealed class MagicLinkCommand : IRecoveryCommand
         session.Store(challenge);
         await session.SaveChangesAsync();
 
-        var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, ctx.Env);
+        var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm);
         var url = $"{appUrl}/magic-login?userId={user.Id}&token={Uri.EscapeDataString(token)}";
 
         await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordRequiredAsync(new SecurityAuditRecord
@@ -827,6 +827,71 @@ internal sealed class RealmSetPrimaryDomainCommand : IRecoveryCommand
             OperationCode = "realm-set-primary-domain",
             Domain = domain,
             PreviousDomain = oldPrimary,
+        });
+        return 0;
+    }
+}
+
+// ── realm-set-public-url ──────────────────────────────────────────────────
+
+/// <summary>
+/// Sets the realm's public ORIGIN — the absolute base URL users actually reach it
+/// at. Every outbound link (magic-link, password-reset, email-verify, invites,
+/// login-provider callbacks) is built against it, and it is an accepted WebAuthn
+/// origin. First installation records the origin its installation link was issued
+/// for; this command is how an existing realm gets one, or changes it.
+///
+/// <para>Unlike <c>realm-set-primary-domain</c> this does NOT touch the WebAuthn
+/// RP ID, so existing passkeys survive. Clearing it (<c>--url ""</c>) falls back to
+/// <c>https://{PrimaryDomain}</c>.</para>
+/// </summary>
+internal sealed class RealmSetPublicUrlCommand : IRecoveryCommand
+{
+    public string Name => "realm-set-public-url";
+    public bool RequiresRealm => false;
+
+    public async Task<int> ExecuteAsync(RecoveryCliContext ctx)
+    {
+        var slug = ctx.Flag("--slug");
+        var url = ctx.Flag("--url");
+        if (string.IsNullOrWhiteSpace(slug) || url is null)
+            return ctx.Fail("realm-set-public-url requires --slug <slug> and --url <origin> (pass an empty --url to clear).");
+
+        var globalStore = ctx.Services.GetRequiredService<IGlobalStore>();
+        await using var session = globalStore.LightweightSession();
+        var realm = await session.Query<Realm>().FirstOrDefaultAsync(r => r.Slug == slug);
+        if (realm is null) return ctx.Fail($"Realm '{slug}' not found.");
+
+        string? normalized = null;
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            normalized = RealmPublicOrigin.Normalize(url);
+            if (normalized is null)
+                return ctx.Fail($"'{url}' is not a usable origin — expected an absolute http(s) URL without a path, e.g. https://auth.example.com or http://localhost:4300.");
+        }
+
+        var previous = realm.PublicBaseUrl;
+        if (string.Equals(previous, normalized, StringComparison.Ordinal))
+        {
+            ctx.WriteLine($"Realm '{slug}' already has PublicBaseUrl '{previous ?? "(none)"}'. No change.");
+            return 0;
+        }
+
+        realm.PublicBaseUrl = normalized;
+        realm.UpdatedAt = DateTimeOffset.UtcNow;
+        session.Store(realm);
+        await session.SaveChangesAsync();
+
+        ctx.WriteLine($"✓ Set PublicBaseUrl for realm '{slug}': '{previous ?? "(none)"}' → '{normalized ?? "(none)"}'.");
+        ctx.WriteLine($"  Outbound links now resolve to {RealmPublicOrigin.Resolve(realm)}");
+        ctx.PrintRestartHint();
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordPlatformRequiredAsync(new PlatformAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Severity = AuditSeverity.Warning,
+            TargetRealmSlug = slug,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "realm-set-public-url",
         });
         return 0;
     }

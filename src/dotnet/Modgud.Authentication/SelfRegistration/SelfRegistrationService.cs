@@ -329,7 +329,7 @@ public sealed class SelfRegistrationService(
         string? clientId,
         CancellationToken ct)
     {
-        var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
+        var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm);
         var url = $"{appUrl}/verify-email?token={Uri.EscapeDataString(plaintextToken)}";
 
         // Thread the pending continuation through the e-mail round trip so a

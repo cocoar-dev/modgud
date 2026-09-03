@@ -223,7 +223,10 @@ public partial class OAuthAdminService
         // Build permissions list (endpoints + grant types + scopes).
         var permissions = BuildClientPermissions(dto.AllowedGrantTypes, dto.Scopes, dto.ClientType);
 
-        var id = Guid.NewGuid();
+        var pinnedClientId = await PinnedEntityId.ResolveAsync<OAuthApplicationState>(
+            _session, dto.Id, "OAuthClient", s => s.IsDeleted, ct);
+        if (pinnedClientId.IsError) return pinnedClientId.Errors;
+        var id = pinnedClientId.Value.Id ?? Guid.NewGuid();
         var (aggregate, createdEvent) = OAuthApplicationAggregate.Create(
             id,
             dto.ClientId,
@@ -236,7 +239,12 @@ public partial class OAuthAdminService
             permissions: permissions,
             requirements: BuildClientRequirements(dto.RequirePushedAuthorizationRequests));
 
-        _session.Events.StartStream<OAuthApplicationAggregate>(id, createdEvent);
+        // Revive: append onto the soft-deleted stream instead of starting a new one —
+        // the aggregate/projection rebuild from the fresh Created event.
+        if (pinnedClientId.Value.Revive)
+            _session.Events.Append(id, createdEvent);
+        else
+            _session.Events.StartStream<OAuthApplicationAggregate>(id, createdEvent);
 
         // Settings (primitive lifetime + token-type values).
         var settings = BuildClientSettings(dto);
@@ -256,8 +264,9 @@ public partial class OAuthAdminService
             // never carries these admin-only fields, so this is a no-op for
             // that path in practice; the explicit guard makes the split clear.
             if (ApplyNativeTokenLifetimes(
-                    settings, dto.IdentityTokenLifetime, dto.AccessTokenLifetime,
-                    dto.AuthorizationCodeLifetime, dto.SlidingRefreshTokenLifetime)
+                    settings,
+                    SetOrOmit(dto.IdentityTokenLifetime), SetOrOmit(dto.AccessTokenLifetime),
+                    SetOrOmit(dto.AuthorizationCodeLifetime), SetOrOmit(dto.SlidingRefreshTokenLifetime))
                 is { } lifetimeError)
                 return lifetimeError;
         }
@@ -393,11 +402,13 @@ public partial class OAuthAdminService
         if (ValidateGrantTypes(dto.AllowedGrantTypes) is { } updGrantErr)
             return updGrantErr;
 
-        if (ValidateWebAuthnRpId(dto.WebAuthnRpId) is { } updRpIdErr)
+        if (dto.WebAuthnRpId.HasValue &&
+            ValidateWebAuthnRpId(dto.WebAuthnRpId.Value) is { } updRpIdErr)
             return updRpIdErr;
 
-        if (dto.DisplayName is not null && dto.DisplayName != aggregate.DisplayName)
-            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName));
+        // v2 merge-patch: absent = unchanged, explicit null clears.
+        if (dto.DisplayName.HasValue && dto.DisplayName.Value != aggregate.DisplayName)
+            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName.Value));
 
         if (dto.ConsentType is not null && dto.ConsentType != aggregate.ConsentType)
         {
@@ -433,17 +444,13 @@ public partial class OAuthAdminService
                 _session.Events.Append(guid, aggregate.SetRequirements(requirements));
         }
 
-        // Settings — partial-PATCH merge; only emit the event when the merge
-        // actually produced a different dictionary.
+        // Settings — merge-patch; only emit the event when the merge actually
+        // produced a different dictionary. (Set-vs-clear can no longer conflict:
+        // one Optional field carries either, never both.)
         var newSettings = MergeClientSettings(aggregate.Settings, dto);
-        if ((dto.ClearClientSessionIdleLifetime && dto.ClientSessionIdleLifetime.HasValue) ||
-            (dto.ClearClientSessionAbsoluteLifetime && dto.ClientSessionAbsoluteLifetime.HasValue))
-            return Error.Validation(
-                "OAuthClient.ConflictingClientSessionLifetimeUpdate",
-                "A client-session lifetime cannot be set and cleared in the same update.");
         if (ValidateClientSessionLifetimes(
-                dto.ClientSessionIdleLifetime,
-                dto.ClientSessionAbsoluteLifetime) is { } clientSessionError)
+                dto.ClientSessionIdleLifetime.HasValue ? dto.ClientSessionIdleLifetime.Value : null,
+                dto.ClientSessionAbsoluteLifetime.HasValue ? dto.ClientSessionAbsoluteLifetime.Value : null) is { } clientSessionError)
             return clientSessionError;
 
         // Issue #115 — same native tkn_lft:* wiring as CreateClientAsync, PATCH
@@ -709,10 +716,11 @@ public partial class OAuthAdminService
         if (dto.AccessTokenLifetime.HasValue || dto.AccessTokenType.HasValue)
         {
             // Merge both into ONE settings revision — two separate SetSettings events
-            // built off the same base would clobber each other.
+            // built off the same base would clobber each other. v2 merge-patch: an
+            // explicit-null lifetime clears BOTH keys (display modgud:* and the
+            // OpenIddict tkn_lft:* override) back to the server default.
             var settings = new Dictionary<string, string>(aggregate.Settings);
-            if (dto.AccessTokenLifetime.HasValue)
-                settings[OAuthApplicationSettingKeys.AccessTokenLifetime] = dto.AccessTokenLifetime.Value.ToString();
+            ApplyIntSetting(settings, OAuthApplicationSettingKeys.AccessTokenLifetime, dto.AccessTokenLifetime);
             if (dto.AccessTokenType.HasValue)
                 settings[OAuthApplicationSettingKeys.AccessTokenType] = dto.AccessTokenType.Value.ToString();
 
@@ -722,10 +730,10 @@ public partial class OAuthAdminService
             // key above was updated and OpenIddict kept minting tokens off
             // whatever tkn_lft:act value IssueServiceAccountCredentialAsync
             // (via CreateClientAsync) wrote at creation time — an update was
-            // silently a no-op on the wire. PATCH semantics: the SA-update
-            // DTO has no identity/authorization-code/refresh fields, so
-            // those are passed null and stay untouched.
-            if (ApplyNativeTokenLifetimes(settings, null, dto.AccessTokenLifetime, null, null) is { } lifetimeError)
+            // silently a no-op on the wire. The SA-update DTO has no
+            // identity/authorization-code/refresh fields, so those stay
+            // absent (untouched).
+            if (ApplyNativeTokenLifetimes(settings, default, dto.AccessTokenLifetime, default, default) is { } lifetimeError)
                 return lifetimeError;
 
             if (!DictEquals(settings, aggregate.Settings))
@@ -864,9 +872,15 @@ public partial class OAuthAdminService
             appId = parsedAppId;
         }
 
-        var id = Guid.NewGuid();
+        var pinnedScopeId = await PinnedEntityId.ResolveAsync<OAuthScopeState>(
+            _session, dto.Id, "OAuthScope", s => s.IsDeleted, ct);
+        if (pinnedScopeId.IsError) return pinnedScopeId.Errors;
+        var id = pinnedScopeId.Value.Id ?? Guid.NewGuid();
         var (aggregate, createdEvent) = OAuthScopeAggregate.Create(id, dto.Name, dto.DisplayName, dto.Description, dto.Resources);
-        _session.Events.StartStream<OAuthScopeAggregate>(id, createdEvent);
+        if (pinnedScopeId.Value.Revive)
+            _session.Events.Append(id, createdEvent);
+        else
+            _session.Events.StartStream<OAuthScopeAggregate>(id, createdEvent);
 
         // Apply non-default flags as separate events (matching legacy behaviour).
         if (!dto.Enabled) _session.Events.Append(id, aggregate.SetEnabled(false));
@@ -902,11 +916,12 @@ public partial class OAuthAdminService
         if (StandardScopes.IsStandard(aggregate.Name))
             return OAuthErrors.CannotModifyStandardScope(aggregate.Name);
 
-        if (dto.DisplayName is not null && dto.DisplayName != aggregate.DisplayName)
-            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName));
+        // v2 merge-patch: absent = unchanged, explicit null clears.
+        if (dto.DisplayName.HasValue && dto.DisplayName.Value != aggregate.DisplayName)
+            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName.Value));
 
-        if (dto.Description is not null && dto.Description != aggregate.Description)
-            _session.Events.Append(guid, aggregate.SetDescription(dto.Description));
+        if (dto.Description.HasValue && dto.Description.Value != aggregate.Description)
+            _session.Events.Append(guid, aggregate.SetDescription(dto.Description.Value));
 
         if (dto.Resources is not null && !dto.Resources.SequenceEqual(aggregate.Resources))
         {
@@ -943,17 +958,18 @@ public partial class OAuthAdminService
             dto.UserClaims ?? aggregate.UserClaims,
             dto.AllowDynamicRegistrationClients ?? currentAllowDcr)));
 
-        // App-link patch — null=no change, ""=make global, "guid"=assign.
-        if (dto.AppId is not null)
+        // App-link patch (v2 merge-patch) — absent=no change, null/""=make
+        // global, "guid"=assign.
+        if (dto.AppId.HasValue)
         {
             Guid? newAppId = null;
-            if (dto.AppId.Length > 0)
+            if (!string.IsNullOrEmpty(dto.AppId.Value))
             {
-                if (!ShortGuid.TryParse(dto.AppId, out Guid parsedAppId))
-                    return Error.Validation("OAuthScope.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid or ShortGuid.");
+                if (!ShortGuid.TryParse(dto.AppId.Value, out Guid parsedAppId))
+                    return Error.Validation("OAuthScope.InvalidAppId", $"AppId '{dto.AppId.Value}' is not a valid Guid or ShortGuid.");
                 var app = await _session.LoadAsync<App>(parsedAppId, ct);
                 if (app is null || app.IsDeleted)
-                    return Error.Validation("OAuthScope.AppNotFound", $"App {dto.AppId} not found.");
+                    return Error.Validation("OAuthScope.AppNotFound", $"App {dto.AppId.Value} not found.");
                 newAppId = parsedAppId;
             }
             if (newAppId != aggregate.AppId)
@@ -1049,9 +1065,15 @@ public partial class OAuthAdminService
         var permissionIdsResult = ValidatePermissionIds(dto.PermissionIds, linkedApp);
         if (permissionIdsResult.IsError) return permissionIdsResult.FirstError;
 
-        var id = Guid.NewGuid();
+        var pinnedApiId = await PinnedEntityId.ResolveAsync<OAuthApiState>(
+            _session, dto.Id, "OAuthApi", s => s.IsDeleted, ct);
+        if (pinnedApiId.IsError) return pinnedApiId.Errors;
+        var id = pinnedApiId.Value.Id ?? Guid.NewGuid();
         var (aggregate, createdEvent) = OAuthApiAggregate.Create(id, dto.Name, dto.DisplayName, dto.Description, dto.Enabled, dto.Scopes);
-        _session.Events.StartStream<OAuthApiAggregate>(id, createdEvent);
+        if (pinnedApiId.Value.Revive)
+            _session.Events.Append(id, createdEvent);
+        else
+            _session.Events.StartStream<OAuthApiAggregate>(id, createdEvent);
 
         if (dto.UserClaims.Count > 0)
             _session.Events.Append(id, aggregate.SetUserClaims(dto.UserClaims));
@@ -1093,10 +1115,11 @@ public partial class OAuthAdminService
         if (aggregate is null || aggregate.IsDeleted)
             return OAuthErrors.ApiNotFound(id);
 
-        if (dto.DisplayName is not null && dto.DisplayName != aggregate.DisplayName)
-            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName));
-        if (dto.Description is not null && dto.Description != aggregate.Description)
-            _session.Events.Append(guid, aggregate.SetDescription(dto.Description));
+        // v2 merge-patch: absent = unchanged, explicit null clears.
+        if (dto.DisplayName.HasValue && dto.DisplayName.Value != aggregate.DisplayName)
+            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName.Value));
+        if (dto.Description.HasValue && dto.Description.Value != aggregate.Description)
+            _session.Events.Append(guid, aggregate.SetDescription(dto.Description.Value));
         if (dto.Enabled.HasValue && dto.Enabled.Value != aggregate.Enabled)
             _session.Events.Append(guid, dto.Enabled.Value ? aggregate.Enable() : aggregate.Disable());
         if (dto.Scopes is not null && !dto.Scopes.SequenceEqual(aggregate.Scopes))
@@ -1104,27 +1127,27 @@ public partial class OAuthAdminService
         if (dto.UserClaims is not null && !dto.UserClaims.SequenceEqual(aggregate.UserClaims))
             _session.Events.Append(guid, aggregate.SetUserClaims(dto.UserClaims));
 
-        // App-link patch — null=no change, ""=detach, "guid"=assign.
-        // Track the App we ended up linked to (post-patch) so PermissionIds
-        // validation in this same call sees the new context — otherwise
-        // detaching + setting a new subset in one round-trip would
+        // App-link patch (v2 merge-patch) — absent=no change, null/""=detach,
+        // "guid"=assign. Track the App we ended up linked to (post-patch) so
+        // PermissionIds validation in this same call sees the new context —
+        // otherwise detaching + setting a new subset in one round-trip would
         // contradict each other.
         var resolvedAppId = aggregate.AppId;
         App? resolvedApp = resolvedAppId.HasValue
             ? await _session.LoadAsync<App>(resolvedAppId.Value, ct)
             : null;
 
-        if (dto.AppId is not null)
+        if (dto.AppId.HasValue)
         {
             Guid? newAppId = null;
             App? newApp = null;
-            if (dto.AppId.Length > 0)
+            if (!string.IsNullOrEmpty(dto.AppId.Value))
             {
-                if (!ShortGuid.TryParse(dto.AppId, out Guid parsed))
-                    return Error.Validation("OAuthApi.InvalidAppId", $"AppId '{dto.AppId}' is not a valid Guid or ShortGuid.");
+                if (!ShortGuid.TryParse(dto.AppId.Value, out Guid parsed))
+                    return Error.Validation("OAuthApi.InvalidAppId", $"AppId '{dto.AppId.Value}' is not a valid Guid or ShortGuid.");
                 newApp = await _session.LoadAsync<App>(parsed, ct);
                 if (newApp is null || newApp.IsDeleted)
-                    return Error.Validation("OAuthApi.AppNotFound", $"App {dto.AppId} not found.");
+                    return Error.Validation("OAuthApi.AppNotFound", $"App {dto.AppId.Value} not found.");
                 newAppId = parsed;
             }
             if (newAppId != aggregate.AppId)

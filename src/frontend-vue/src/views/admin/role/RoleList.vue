@@ -15,6 +15,8 @@ import { useAppContextStore } from '@/stores/appContext.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, ROLE_CLONE } from '@/composables/useClone'
+import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import type { RoleDto } from '@/models/role'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -37,17 +39,51 @@ watch(language, () => ui.set((ctx) => {
 // Roles with IsRealmAdmin=true (e.g. System Admin) are kept in the
 // 'global' bucket alongside roles that have no AppId — both are
 // realm-scoped from the admin's perspective.
-const roles = computed(() =>
+const liveRoles = computed(() =>
   roleStore.roles.filter((r) =>
     appCtx.matchesSingleAppId(r.IsRealmAdmin ? null : r.AppId)))
+
+// ADR-0005: draft-merged roster — the staged key resolves Key ?? Name, so a
+// staged rename still overlays its live row.
+const staging = useDraftStaging('roles')
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const roles = useDraftListOverlay<RoleDto>({
+  section: 'roles',
+  rows: liveRoles,
+  liveKey: (row) => row.Name,
+  matchLive: (row, e) => row.Name === (str(e.Key) || str(e.Name)),
+  overlay: (row, e) => ({
+    ...row,
+    Name: str(e.Name) || row.Name,
+    Description: str(e.Description) || row.Description,
+    IsRealmAdmin: e.IsRealmAdmin === true,
+  }),
+  synthesize: (key, e) => ({
+    Id: `draft__${key}`,
+    Name: str(e.Name) || key,
+    Description: str(e.Description) || null,
+    IsRealmAdmin: e.IsRealmAdmin === true,
+    AppId: null,
+    // Pseudo-ids: the grid only shows the count.
+    PermissionIds: (Array.isArray(e.Permissions) ? e.Permissions : []).map((_, i) => String(i)),
+  } as unknown as RoleDto),
+})
 
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
+const selectedDeleteStaged = ref(false)
 
-const showEmpty = computed(() => roleStore.loaded && roleStore.roles.length === 0)
+const showEmpty = computed(() => roleStore.loaded && roles.value.length === 0)
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<RoleDto>(), { openable: true })
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('roles',
+  computed(() => {
+    const row = roles.value.find((r) => r.Id === selectedIds.value[0])
+    if (!row || row.DraftStaged === 'create') return null
+    return row.Name
+  }))
+
+const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<RoleDto>>(), { openable: true })
   .persistColumnState('admin-roles')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(roles)
@@ -61,7 +97,9 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<RoleDto>(), { opena
       event.api.deselectAll()
       event.node.setSelected(true)
     }
-    selectedIds.value = event.api.getSelectedRows().map((r: RoleDto) => r.Id)
+    const selected = event.api.getSelectedRows() as DraftRow<RoleDto>[]
+    selectedIds.value = selected.map((r) => r.Id)
+    selectedDeleteStaged.value = selected.some((r) => r.DraftStaged === 'delete')
     cellMenu.open(event.event as MouseEvent)
   })
   .onViewportContextMenu(($event) => {
@@ -72,6 +110,17 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<RoleDto>(), { opena
     (col) => col.field('IsRealmAdmin').header('Realm Admin', 'admin.roles.isRealmAdmin').width(120)
       .option('valueGetter', (p: any) => p.data?.IsRealmAdmin ? '✓' : ''),
     (col) => col.field('Description').header('Description', 'admin.roles.description').flex(1),
+    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
+        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
+        : p.data?.DraftStaged === 'update'
+          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
+          : p.data?.DraftStaged === 'delete'
+            ? t('admin.realmConfig.gridTag.delete', {}, 'Staged (delete)')
+            : '')
+      .width(120)
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged && p.data.DraftStaged !== 'delete')
+      .classRule('draft-staged-cell-delete', (p: any) => p.data?.DraftStaged === 'delete'),
     (col) => col.field('PermissionIds').header('Grants', 'admin.roles.permissions').flex(2)
       .option('valueGetter', (p: any) => {
         const r = p.data
@@ -84,6 +133,20 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<RoleDto>(), { opena
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
+  // ADR-0005 staged deletes — realm-admin roles are lockout-protected: the
+  // plan would flag the staged deletion as an error, so refuse it upfront.
+  if (staging.stagingActive.value) {
+    if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))
+    const row = roles.value.find((r) => r.Id === id)
+    if (!row) return
+    if (row.IsRealmAdmin) {
+      alert(t('admin.roles.cannotDeleteRealmAdmin', {}, 'Realm-admin roles cannot be deleted (lockout protection).'))
+      return
+    }
+    if (row.DraftStaged === 'delete') return staging.unstageDelete(row.Name)
+    // No confirm: staged deletes are reversible; the apply popconfirm gates.
+    return staging.stageDelete(row.Name)
+  }
   if (confirm(t('common.confirmDelete', {}, 'Really delete?'))) {
     await roleStore.deleteRole(id)
   }
@@ -126,7 +189,15 @@ onMounted(() => roleStore.initialize())
       <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus" @clicked="navigateToModal('create')" />
       <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy" @clicked="cloneSelected" />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteSelected" />
+      <CoarMenuItem
+        :label="selectedDeleteStaged
+          ? t('admin.realmConfig.undelete', {}, 'Undo delete')
+          : t('common.delete', {}, 'Delete')"
+        :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
+        @clicked="deleteSelected" />
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <!-- Viewport context menu (empty area) -->
@@ -135,3 +206,15 @@ onMounted(() => roleStore.initialize())
     </CoarContextMenu>
   </div>
 </template>
+
+<style scoped>
+:deep(.draft-staged-cell) {
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+
+:deep(.draft-staged-cell-delete) {
+  color: var(--coar-text-semantic-error, #dc2626);
+  font-weight: 600;
+}
+</style>

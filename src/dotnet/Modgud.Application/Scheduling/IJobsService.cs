@@ -1,3 +1,5 @@
+using Modgud.Domain.Common;
+
 namespace Modgud.Application.Scheduling;
 
 /// <summary>
@@ -74,10 +76,13 @@ public sealed record JobRunHistoryDto
 public sealed record JobUpdateDto
 {
     /// <summary>
-    /// <c>null</c> = use the registration's default cron (clears override).
-    /// Non-null = upsert override with this cron expression.
+    /// v2 merge-patch: absent = keep the current override, explicit
+    /// <c>null</c> (or a blank string) = clear back to the registration's
+    /// default cron, non-null = upsert the override. (Previously a plain
+    /// nullable whose null CLEARED — so an Enabled-only patch silently
+    /// wiped the cron override.)
     /// </summary>
-    public string? CronOverride { get; init; }
+    public Optional<string?> CronOverride { get; init; }
     public bool? Enabled { get; init; }
 
     /// <summary>

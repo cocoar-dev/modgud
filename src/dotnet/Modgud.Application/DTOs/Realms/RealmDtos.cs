@@ -1,3 +1,5 @@
+using Modgud.Domain.Common;
+
 namespace Modgud.Application.DTOs.Realms;
 
 public record RealmDto
@@ -9,8 +11,12 @@ public record RealmDto
     public string[] Domains { get; init; } = [];
 
     /// <summary>The realm's canonical public host — one of <see cref="Domains"/>.
-    /// Used for all outbound links and as the WebAuthn RP ID.</summary>
+    /// The WebAuthn RP ID and the cookie domain.</summary>
     public string PrimaryDomain { get; init; } = string.Empty;
+
+    /// <summary>The realm's public ORIGIN (scheme + host + optional port) that
+    /// outbound links are built against. Null = <c>https://{PrimaryDomain}</c>.</summary>
+    public string? PublicBaseUrl { get; init; }
     public bool IsControlPlane { get; init; }
     public bool IsActive { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
@@ -48,15 +54,13 @@ public record SelfRegistrationDto
     public bool CaptchaSecretSet { get; init; }
 }
 
-/// <summary>Patch payload for the self-registration settings. PATCH
-/// semantics throughout: <c>null</c>/missing = no change; setting a
-/// nullable field to its default-ish value (empty array, empty string)
-/// = clear. The captcha-secret has three states:
-/// <list type="bullet">
-///   <item><c>null</c> = no change</item>
-///   <item>empty string = clear (revert to Cocoar-default secret)</item>
-///   <item>non-empty string = replace with this value (encrypted at rest)</item>
-/// </list></summary>
+/// <summary>Patch payload for the self-registration settings (v2
+/// merge-patch): a field ABSENT from the JSON is unchanged; a present
+/// field is applied — explicit <c>null</c> (or a blank string) CLEARS
+/// back to the fallback, <c>[]</c> clears a list, booleans have no
+/// clear. The captcha-secret follows the same contract: absent = keep
+/// the stored secret, null/blank = revert to the Cocoar-default secret,
+/// non-empty = replace (encrypted at rest).</summary>
 public record UpdateSelfRegistrationDto
 {
     public bool? Enabled { get; init; }
@@ -64,11 +68,11 @@ public record UpdateSelfRegistrationDto
     public string[]? AllowedEmailDomains { get; init; }
     public bool? RequireAdminApproval { get; init; }
     public string[]? DefaultGroupIds { get; init; }
-    public string? TermsOfServiceUrl { get; init; }
-    public string? PrivacyPolicyUrl { get; init; }
+    public Optional<string?> TermsOfServiceUrl { get; init; }
+    public Optional<string?> PrivacyPolicyUrl { get; init; }
     public bool? CaptchaEnabled { get; init; }
-    public string? CaptchaSiteKey { get; init; }
-    public string? CaptchaSecret { get; init; }
+    public Optional<string?> CaptchaSiteKey { get; init; }
+    public Optional<string?> CaptchaSecret { get; init; }
 }
 
 public record CreateRealmDto
@@ -89,6 +93,15 @@ public record CreateRealmDto
     /// first entry of <see cref="Domains"/> is used.
     /// </summary>
     public string? PrimaryDomain { get; init; }
+
+    /// <summary>
+    /// Optional. The realm's public ORIGIN — an absolute http(s) URL with no path,
+    /// e.g. <c>https://auth.example.com</c> or <c>http://localhost:4300</c>. Every
+    /// outbound link is built against it, and it is an accepted WebAuthn origin.
+    /// Omitted ⇒ <c>https://{PrimaryDomain}</c> (reverse proxy on 443). Declare it
+    /// whenever the realm is reached on a non-default port.
+    /// </summary>
+    public string? PublicBaseUrl { get; init; }
 
     /// <summary>
     /// Initial activation state for ordinary realm creation. Defaults to true.
@@ -139,7 +152,9 @@ public record InitialAdminInviteDto
 public record UpdateRealmDto
 {
     public string? DisplayName { get; init; }
-    public string? Description { get; init; }
+    /// <summary>v2 merge-patch: absent = unchanged, explicit null (or a blank
+    /// string) clears, value sets.</summary>
+    public Optional<string?> Description { get; init; }
     public string[]? Domains { get; init; }
 
     /// <summary>
@@ -148,6 +163,12 @@ public record UpdateRealmDto
     /// domains). Changing it invalidates the realm's existing passkeys.
     /// </summary>
     public string? PrimaryDomain { get; init; }
+
+    /// <summary>v2 merge-patch: absent = unchanged, explicit null (or a blank
+    /// string) clears back to <c>https://{PrimaryDomain}</c>, a value sets the
+    /// realm's public origin.</summary>
+    public Optional<string?> PublicBaseUrl { get; init; }
+
     public bool? IsActive { get; init; }
 }
 

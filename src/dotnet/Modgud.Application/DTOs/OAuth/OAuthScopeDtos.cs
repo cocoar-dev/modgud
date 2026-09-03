@@ -1,3 +1,5 @@
+using Modgud.Domain.Common;
+
 namespace Modgud.Application.DTOs.OAuth;
 
 public record OAuthScopeDto
@@ -33,6 +35,12 @@ public record OAuthScopeDto
 
 public record CreateOAuthScopeDto
 {
+    /// <summary>Optional pinned entity id (Guid or ShortGuid) — provisioning
+    /// only: a manifest apply pins the exported id at create so ids stay
+    /// stable across environments. Server-generated when omitted; a taken id
+    /// is a conflict.</summary>
+    public string? Id { get; init; }
+
     public required string Name { get; init; }
     public string? DisplayName { get; init; }
     public string? Description { get; init; }
@@ -49,10 +57,12 @@ public record CreateOAuthScopeDto
     public bool AllowDynamicRegistrationClients { get; init; }
 }
 
+/// <summary>Merge-patch update (v2 semantics): absent = unchanged, explicit
+/// <c>null</c> clears, <c>[]</c> clears a list; booleans have no clear.</summary>
 public record UpdateOAuthScopeDto
 {
-    public string? DisplayName { get; init; }
-    public string? Description { get; init; }
+    public Optional<string?> DisplayName { get; init; }
+    public Optional<string?> Description { get; init; }
     public List<string>? Resources { get; init; }
     public bool? Enabled { get; init; }
     public bool? Required { get; init; }
@@ -60,10 +70,10 @@ public record UpdateOAuthScopeDto
     public bool? ShowInDiscoveryDocument { get; init; }
     public List<string>? UserClaims { get; init; }
     /// <summary>
-    /// PATCH semantics: null/missing = no change, "" = make global,
-    /// "<guid>" = assign / change.
+    /// v2 merge-patch: absent = no change; explicit null (or "") = detach
+    /// (make global); "&lt;guid&gt;" = assign / change.
     /// </summary>
-    public string? AppId { get; init; }
+    public Optional<string?> AppId { get; init; }
 
     /// <summary>PATCH semantics: null = no change.</summary>
     public bool? AllowDynamicRegistrationClients { get; init; }

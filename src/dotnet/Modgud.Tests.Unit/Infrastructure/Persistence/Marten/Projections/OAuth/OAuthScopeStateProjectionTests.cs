@@ -11,7 +11,7 @@ namespace Modgud.Tests.Unit.Infrastructure.Persistence.Marten.Projections.OAuth;
 public class OAuthScopeStateProjectionTests
 {
     private static OAuthScopeState NewState() =>
-        new OAuthScopeStateProjection().Create(new OAuthScopeCreated(
+        new OAuthScopeStateProjection().ApplyCreated(new OAuthScopeCreated(
             Guid.NewGuid(),
             Name: "billing.read",
             DisplayName: "Read billing",
@@ -24,7 +24,7 @@ public class OAuthScopeStateProjectionTests
         public void Initialises_all_fields_from_event()
         {
             var id = Guid.NewGuid();
-            var s = new OAuthScopeStateProjection().Create(new OAuthScopeCreated(
+            var s = new OAuthScopeStateProjection().ApplyCreated(new OAuthScopeCreated(
                 id, "scope.x", "Scope X", "desc", new[] { "r1" }));
 
             Assert.Equal(id, s.Id);
@@ -41,7 +41,7 @@ public class OAuthScopeStateProjectionTests
             // Defaults coming from OAuthScopeState (the document type) — pinning
             // them ensures Create doesn't accidentally override what the state
             // class promises (Enabled=true, Required=false, etc.).
-            var s = new OAuthScopeStateProjection().Create(new OAuthScopeCreated(
+            var s = new OAuthScopeStateProjection().ApplyCreated(new OAuthScopeCreated(
                 Guid.NewGuid(), "n", null, null, Array.Empty<string>()));
 
             Assert.True(s.Enabled);

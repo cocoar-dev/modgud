@@ -81,7 +81,7 @@ public static class AdminMagicLinkEndpoints
             await session.SaveChangesAsync();
 
             // Build magic link URL
-            var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
+            var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm);
             var encodedToken = Uri.EscapeDataString(token);
             var magicUrl = $"{appUrl}/magic-login?userId={user.Id}&token={encodedToken}";
 

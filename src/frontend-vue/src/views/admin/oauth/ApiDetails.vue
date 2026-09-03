@@ -11,6 +11,8 @@ import { useOAuthApiStore } from '@/stores/oauthApi.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useClone, API_CLONE } from '@/composables/useClone'
+import { useDraftStaging } from '@/composables/useDraftStaging'
+import type { ManifestEntity } from '@/stores/realmDraft.store'
 import type { OAuthApiDto } from '@/models/oauth'
 
 const { t } = useI18n()
@@ -25,6 +27,65 @@ const applicationsStore = useApplicationsStore()
 const appContextStore = useAppContextStore()
 const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
+
+// ── ADR-0005 staging: API saves commit onto the active draft. Natural key =
+// the immutable audience (Name); permission ids map to resource:action pairs
+// via the linked app's catalog (and back).
+const staging = useDraftStaging('apis')
+const isDraftRow = computed(() => staging.isDraftId(props.id))
+const stagedSave = computed(() => staging.stagingActive.value)
+
+function appOf(appId: string) {
+  return applicationsStore.apps.find((a) => a.Id === appId)
+}
+
+function fromStaged(e: ManifestEntity): ApiFormState {
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  const arr = (v: unknown) => (Array.isArray(v) ? [...(v as string[])] : [])
+  const app = applicationsStore.apps.find((a) => a.Slug === str(e.App))
+  const catalog = app?.Permissions ?? []
+  const permissionIds = new Set<string>()
+  for (const perm of Array.isArray(e.Permissions) ? (e.Permissions as ManifestEntity[]) : []) {
+    const hit = catalog.find((c) => c.Resource === perm.Resource && c.Action === perm.Action)
+    if (hit) permissionIds.add(hit.Id)
+  }
+  return {
+    Name: str(e.Name),
+    DisplayName: str(e.DisplayName),
+    Description: str(e.Description),
+    Scopes: arr(e.Scopes),
+    UserClaims: arr(e.UserClaims),
+    Enabled: e.Enabled !== false,
+    AppId: app?.Id ?? '',
+    PermissionIds: permissionIds,
+    AllowDynamicRegistration: e.AllowDynamicRegistration === true,
+  }
+}
+
+function toStaged(): ManifestEntity {
+  const app = appOf(form.value.AppId)
+  const entity: ManifestEntity = {
+    Name: form.value.Name.trim(),
+    Scopes: [...form.value.Scopes],
+    UserClaims: [...form.value.UserClaims],
+    Enabled: form.value.Enabled,
+    AllowDynamicRegistration: form.value.AllowDynamicRegistration,
+  }
+  // v2 merge-patch: explicit null stages the clear (absent would keep live) —
+  // App: null detaches the RS back to unassigned.
+  entity.DisplayName = form.value.DisplayName.trim() || null
+  entity.Description = form.value.Description.trim() || null
+  entity.App = app?.Slug ?? null
+  if (app) {
+    entity.Permissions = (app.Permissions ?? [])
+      .filter((c) => form.value.PermissionIds.has(c.Id))
+      .map((c) => ({ Resource: c.Resource, Action: c.Action }))
+  }
+  // Stage the LIVE entity's id: the apply matches by identity, so editing the name
+  // is a RENAME of this entity instead of staging a second one.
+  if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
+  return entity
+}
 
 // Empty value = "unassigned" — RS exists but the IdP can't resolve a
 // catalog for it, so UserInfo will not emit a resource_access block.
@@ -91,7 +152,9 @@ const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.Nam
 
 const footerButton = computed(() => ({
   visible: true,
-  text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
+  text: stagedSave.value
+    ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+    : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: !form.value.Name.trim() || busy.value,
   loading: saving.value,
   onClick: save,
@@ -99,6 +162,11 @@ const footerButton = computed(() => ({
 
 onMounted(async () => {
   await applicationsStore.initialize()
+  if (isDraftRow.value) {
+    const entity = staging.findStaged(staging.draftKeyOf(props.id))
+    if (entity) form.value = fromStaged(entity)
+    return
+  }
   if (isCreate.value) {
     // Clone: prefill the tabs with the immutable audience blanked. The linked
     // application and its catalog subset clone 1:1.
@@ -119,6 +187,11 @@ onMounted(async () => {
     }
     dto.value = loaded
     form.value = fromDto(loaded)
+    // Staging overlay: the draft is the working state when it carries this API.
+    if (stagedSave.value && staging.draftStore.current) {
+      const entity = staging.findStaged(loaded.Name)
+      if (entity) form.value = fromStaged(entity)
+    }
   } finally {
     loading.value = false
   }
@@ -129,6 +202,12 @@ async function save() {
   saving.value = true
   error.value = null
   try {
+    // ADR-0005: commit onto the active draft instead of writing live.
+    if (stagedSave.value) {
+      await staging.stage(form.value.Name.trim(), toStaged())
+      props.close()
+      return
+    }
     if (isCreate.value) {
       const created = await store.create({
         Name: form.value.Name.trim(),
@@ -149,8 +228,8 @@ async function save() {
         Scopes: [...form.value.Scopes],
         UserClaims: [...form.value.UserClaims],
         Enabled: form.value.Enabled,
-        // Always send — empty string detaches, guid assigns.
-        AppId: form.value.AppId,
+        // Always send — v2 merge-patch: explicit null detaches, guid assigns.
+        AppId: form.value.AppId || null,
         PermissionIds: form.value.AppId ? Array.from(form.value.PermissionIds) : [],
         AllowDynamicRegistration: form.value.AllowDynamicRegistration,
       })

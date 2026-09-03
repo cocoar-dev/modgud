@@ -20,6 +20,8 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import LogoutConfirmModal from '@/views/auth/LogoutConfirmModal.vue'
 import AppContextSelector from '@/components/AppContextSelector.vue'
+import DraftStagingBar from '@/views/admin/realm-config/DraftStagingBar.vue'
+import ExportSelectionBar from '@/views/admin/realm-config/ExportSelectionBar.vue'
 import InboxBell from '@/components/InboxBell.vue'
 import UnverifiedEmailBanner from '@/components/UnverifiedEmailBanner.vue'
 
@@ -32,6 +34,12 @@ const { state: ui } = provideUI()
 const authStore = useAuthStore()
 const appConfig = useAppConfigStore()
 const branding = computed(() => appConfig.config.Branding)
+
+// ADR-0005: the draft staging bar lives in the footer position — the page
+// footer row is otherwise unused (only modals carry footer buttons). Scoped
+// to the admin area; the bar itself renders only while a draft is checked out.
+const showStagingBar = computed(() =>
+    route.path.startsWith('/admin') && authStore.hasPermission('realm:admin'))
 
 const collapsed = ref(
     // Default collapsed for first-time users; persisted choice wins thereafter.
@@ -261,6 +269,9 @@ const hasAnyPlatformPermission = computed(() =>
                         <RouterView />
                     </div>
                 </main>
+
+                <ExportSelectionBar v-if="showStagingBar" />
+                <DraftStagingBar v-if="showStagingBar" />
 
                 <!-- Footer (optional, shown when views enable it) -->
                 <footer v-if="ui.footer.show" class="main-footer">

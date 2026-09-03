@@ -19,6 +19,8 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import EditableStringList from '@/components/EditableStringList.vue'
 import { useRealmSettingsStore } from '@/stores/realmSettings.store'
+import { useDraftStaging } from '@/composables/useDraftStaging'
+import type { ManifestEntity } from '@/stores/realmDraft.store'
 import { useGroupStore } from '@/stores/group.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
@@ -75,6 +77,53 @@ const settingsContentRef = ref<HTMLElement | null>(null)
 
 const canRotateSigningKey = computed(() => authStore.hasPermission('realm-settings:write'))
 const rotating = ref(false)
+
+// ── ADR-0005 staging: "Save area" commits the tab's patch onto the active
+// draft — the manifest's Settings section IS the same UpdateRealmSettingsDto
+// patch shape this view builds. Key rotation stays a live action.
+const staging = useDraftStaging('settings')
+const stagedSave = computed(() => staging.stagingActive.value)
+
+/** Folds a staged/committed Settings patch into the originals + re-derives the
+ * forms, so the working state equals the staged state (git: tree == index). */
+function applyStagedSettings(e: ManifestEntity) {
+  const s = e as UpdateRealmSettingsDto
+  const foldInto = <T extends object>(orig: { value: T | null }, patch: unknown): boolean => {
+    if (!orig.value || !patch || typeof patch !== 'object') return false
+    const out: Record<string, unknown> = { ...(orig.value as Record<string, unknown>) }
+    for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
+      if (v !== undefined && k in out) out[k] = v
+    }
+    orig.value = out as T
+    return true
+  }
+  if (foldInto(originalSelfReg, s.SelfRegistration)) form.value = fromDto(originalSelfReg.value!)
+  // v2 merge-patch: a staged string sets the secret, a staged explicit null
+  // clears it, an absent field leaves the stored secret untouched.
+  const stagedCaptchaSecret = (s.SelfRegistration as Record<string, unknown> | undefined)?.CaptchaSecret
+  if (stagedCaptchaSecret !== undefined && originalSelfReg.value) {
+    originalSelfReg.value = {
+      ...originalSelfReg.value,
+      CaptchaSecretSet: typeof stagedCaptchaSecret === 'string' && stagedCaptchaSecret.length > 0,
+    }
+    form.value = fromDto(originalSelfReg.value)
+  }
+  if (foldInto(originalRegFields, s.RegistrationFields)) regFieldsForm.value = regFieldsFromDto(originalRegFields.value!)
+  if (foldInto(originalBrowserSessions, s.BrowserSessions)) browserSessionsForm.value = { ...originalBrowserSessions.value! }
+  if (foldInto(originalClientSessions, s.ClientSessions)) clientSessionsForm.value = { ...originalClientSessions.value! }
+  if (foldInto(originalDcr, s.Dcr)) dcrForm.value = dcrFromDto(originalDcr.value!)
+  if (foldInto(originalCimd, s.Cimd)) cimdForm.value = cimdFromDto(originalCimd.value!)
+  if (foldInto(originalNativeGrants, s.NativeGrants)) nativeGrantsForm.value = nativeGrantsFromDto(originalNativeGrants.value!)
+  if (foldInto(originalAuthRateLimits, s.AuthRateLimits)) authRateLimitsForm.value = authRateLimitsFromDto(originalAuthRateLimits.value!)
+  if (foldInto(originalPositionSecurity, s.PositionSecurity)) {
+    positionSecurityForm.value = {
+      RequiredProofCapabilities: [...(originalPositionSecurity.value!.RequiredProofCapabilities ?? [])],
+      RequiredBindingCapabilities: [...(originalPositionSecurity.value!.RequiredBindingCapabilities ?? [])],
+    }
+  }
+  if (foldInto(originalAudit, s.Audit)) auditForm.value = { ...originalAudit.value! }
+  if (foldInto(originalDeletion, s.Deletion)) deletionForm.value = deletionFromDto(originalDeletion.value!)
+}
 
 const proofCapabilityOptions = computed<Array<{ id: ProofCapability; label: string; hint: string }>>(() => [
   {
@@ -464,6 +513,11 @@ onMounted(async () => {
     auditForm.value = { ...dto.Audit }
     originalRegFields.value = dto.RegistrationFields
     regFieldsForm.value = regFieldsFromDto(dto.RegistrationFields)
+    // Staging overlay: the active draft's Settings section IS the working state.
+    if (stagedSave.value && staging.draftStore.current) {
+      const staged = staging.findStaged('settings')
+      if (staged) applyStagedSettings(staged)
+    }
   } catch (e: any) {
     error.value = e?.body?.detail ?? e?.message ?? String(e)
   } finally {
@@ -483,10 +537,11 @@ function buildSelfRegPatch(): UpdateSelfRegistrationDto | undefined {
   if (cur.RequireAdminApproval !== orig.RequireAdminApproval)
     patch.RequireAdminApproval = cur.RequireAdminApproval
 
+  // v2 merge-patch lists: [] IS the clear (a null would mean "unchanged").
   if (!arrayEqual(cur.AllowedEmailDomains, orig.AllowedEmailDomains ?? []))
-    patch.AllowedEmailDomains = cur.AllowedEmailDomains.length ? cur.AllowedEmailDomains : null
+    patch.AllowedEmailDomains = [...cur.AllowedEmailDomains]
   if (!arrayEqual(cur.DefaultGroupIds, orig.DefaultGroupIds ?? []))
-    patch.DefaultGroupIds = cur.DefaultGroupIds.length ? cur.DefaultGroupIds : null
+    patch.DefaultGroupIds = [...cur.DefaultGroupIds]
 
   const tos = cur.TermsOfServiceUrl.trim()
   if (tos !== (orig.TermsOfServiceUrl ?? '')) patch.TermsOfServiceUrl = tos || null
@@ -497,7 +552,8 @@ function buildSelfRegPatch(): UpdateSelfRegistrationDto | undefined {
   const key = cur.CaptchaSiteKey.trim()
   if (key !== (orig.CaptchaSiteKey ?? '')) patch.CaptchaSiteKey = key || null
 
-  if (editingSecret.value) patch.CaptchaSecret = secretInput.value
+  // v2 merge-patch: explicit null clears the stored secret (revert to default).
+  if (editingSecret.value) patch.CaptchaSecret = secretInput.value || null
 
   return Object.keys(patch).length === 0 ? undefined : patch
 }
@@ -769,6 +825,27 @@ async function save(tab: SavableTabId) {
   saving.value = true
   error.value = null
   try {
+    // ADR-0005: commit onto the active draft instead of writing live. Section
+    // patches merge over the already-staged Settings entity; position-security
+    // consequences happen at APPLY (no live preview here).
+    if (stagedSave.value) {
+      const base = staging.findStaged('settings') ?? {}
+      const merged: ManifestEntity = { ...base }
+      for (const [section, patch] of Object.entries(payload)) {
+        if (patch === undefined) continue
+        const prev = (merged[section] ?? {}) as Record<string, unknown>
+        merged[section] = (typeof patch === 'object' && patch !== null && !Array.isArray(patch))
+          ? { ...prev, ...patch }
+          : patch
+      }
+      await staging.stage('settings', merged)
+      applyStagedSettings(payload as ManifestEntity)
+      editingSecret.value = false
+      secretInput.value = ''
+      savedFlash.value = true
+      setTimeout(() => { savedFlash.value = false }, 1500)
+      return
+    }
     if (payload.PositionSecurity) {
       const consequences = await settingsStore.previewPositionSecurity(payload.PositionSecurity)
       if (consequences.HasConsequences) {
@@ -1284,7 +1361,9 @@ async function rotateSigningKey() {
               : t('admin.realmSettings.noUnsaved', {}, 'No unsaved changes.') }}
           </span>
           <CoarButton :loading="saving" :disabled="!canSaveActive" @click="saveActiveTab">
-            {{ t('admin.realmSettings.saveArea', {}, 'Save area') }}
+            {{ stagedSave
+              ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+              : t('admin.realmSettings.saveArea', {}, 'Save area') }}
           </CoarButton>
         </div>
       </div>

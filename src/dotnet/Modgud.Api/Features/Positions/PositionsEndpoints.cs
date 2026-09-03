@@ -285,8 +285,9 @@ public static class PositionsEndpoints
                     }
                 }
 
-                if (dto.Purpose is not null)
-                    fn.Purpose = string.IsNullOrWhiteSpace(dto.Purpose) ? null : dto.Purpose.Trim();
+                // v2 merge-patch: absent = keep, explicit null/blank = clear, value = set.
+                if (dto.Purpose.HasValue)
+                    fn.Purpose = string.IsNullOrWhiteSpace(dto.Purpose.Value) ? null : dto.Purpose.Value.Trim();
 
                 if (dto.IsActive.HasValue)
                     fn.IsActive = dto.IsActive.Value;

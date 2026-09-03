@@ -21,7 +21,15 @@ public record CreateGroupCommand(
     // Whether the caller already holds realm:admin. Set by the endpoint from
     // the authenticated principal. Defaults false (fail-closed): a command
     // constructed without it cannot confer realm:admin.
-    bool CallerIsRealmAdmin = false);
+    bool CallerIsRealmAdmin = false,
+    // Optional pinned entity id — provisioning only (the manifest applier
+    // pre-checks stream availability); server-generated when null.
+    Guid? Id = null,
+    // Provisioning only: the pinned Id belongs to a SOFT-DELETED group, so the
+    // created event is appended onto that stream (revive) instead of starting a
+    // new one. Resolved by the applier via PinnedEntityId (layering: this project
+    // cannot see Modgud.Application).
+    bool ReviveExistingStream = false);
 
 public class CreateGroupHandler(
     IDocumentSession session,
@@ -101,7 +109,7 @@ public class CreateGroupHandler(
 
         var group = new Group
         {
-            Id = Guid.NewGuid(),
+            Id = command.Id ?? Guid.NewGuid(),
             Name = command.Name,
             Description = command.Description,
             MemberIds = memberIds,
@@ -116,13 +124,16 @@ public class CreateGroupHandler(
             ExternallyDrivable = command.ExternallyDrivable,
         };
 
-        session.Events.StartStream(group.Id,
-            new GroupCreatedEvent(group.Id, group.Name, group.Description,
-                group.MemberIds, group.RoleIds,
-                group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
-                group.MembershipScriptDependencies,
-                group.Email, group.EmailMode,
-                group.BoundTo, group.ExternallyDrivable));
+        var createdEvent = new GroupCreatedEvent(group.Id, group.Name, group.Description,
+            group.MemberIds, group.RoleIds,
+            group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
+            group.MembershipScriptDependencies,
+            group.Email, group.EmailMode,
+            group.BoundTo, group.ExternallyDrivable);
+        if (command.ReviveExistingStream)
+            session.Events.Append(group.Id, createdEvent);
+        else
+            session.Events.StartStream(group.Id, createdEvent);
 
         if (group.MembershipMode == MembershipMode.Auto)
             await recalculator.RecalculateForGroupAsync(group, session, ct);

@@ -1,4 +1,5 @@
 using Modgud.Application.DTOs.OAuth;
+using Modgud.Domain.Common;
 using Modgud.Domain.OAuth.Common;
 
 namespace Modgud.Application.DTOs.ServiceAccount;
@@ -56,7 +57,9 @@ public class UpdateServiceAccountCredentialDto
     public string? DisplayName { get; set; }
     public List<string>? Scopes { get; set; }
     public List<string>? AppIds { get; set; }
-    public int? AccessTokenLifetime { get; set; }
+    /// <summary>v2 merge-patch: absent = unchanged, explicit null clears the
+    /// override back to the server default, value sets.</summary>
+    public Optional<int?> AccessTokenLifetime { get; set; }
     public bool? Enabled { get; set; }
 
     /// <summary>Switch the credential's access-token format (Reference ↔ Jwt).

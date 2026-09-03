@@ -5,6 +5,8 @@ import { CoarButton, useContextMenu, CoarContextMenu, CoarMenuItem, CoarMenuDivi
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { usePositionStore } from '@/stores/position.store'
+import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import type { PositionPrincipalDto } from '@/models/position'
@@ -24,15 +26,52 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-const rows = computed(() => store.entities)
+const liveRows = computed(() => store.entities)
+
+// ADR-0005: draft-merged roster (natural key = the lowercased account name).
+const staging = useDraftStaging('positions')
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const rows = useDraftListOverlay<PositionPrincipalDto>({
+  section: 'positions',
+  rows: liveRows,
+  liveKey: (row) => row.AccountName.trim().toLowerCase(),
+  matchLive: (row, e) => row.AccountName.trim().toLowerCase() === str(e.AccountName).trim().toLowerCase(),
+  overlay: (row, e) => ({
+    ...row,
+    AccountName: str(e.AccountName) || row.AccountName,
+    Purpose: str(e.Purpose) || row.Purpose,
+    IsActive: e.IsActive !== false,
+    TerminalPolicy: {
+      ...row.TerminalPolicy,
+      Enabled: (e.TerminalPolicy as Record<string, unknown> | undefined)?.Enabled === true,
+    },
+  }),
+  synthesize: (key, e) => ({
+    Id: `draft__${key}`,
+    AccountName: str(e.AccountName) || key,
+    Purpose: str(e.Purpose) || null,
+    IsActive: e.IsActive !== false,
+    TerminalPolicy: {
+      Enabled: (e.TerminalPolicy as Record<string, unknown> | undefined)?.Enabled === true,
+    },
+  } as unknown as PositionPrincipalDto),
+})
 
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
+const selectedDeleteStaged = ref(false)
 
 const showEmpty = computed(() => store.allLoaded && rows.value.length === 0)
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<PositionPrincipalDto>(), { openable: true })
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('positions',
+  computed(() => {
+    const row = rows.value.find((r) => r.Id === selectedIds.value[0])
+    if (!row || row.DraftStaged === 'create') return null
+    return row.AccountName.trim().toLowerCase()
+  }))
+
+const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<PositionPrincipalDto>>(), { openable: true })
   .persistColumnState('admin-positions')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -46,7 +85,9 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<PositionPrincipalDt
       event.api.deselectAll()
       event.node.setSelected(true)
     }
-    selectedIds.value = event.api.getSelectedRows().map((r: PositionPrincipalDto) => r.Id)
+    const selected = event.api.getSelectedRows() as DraftRow<PositionPrincipalDto>[]
+    selectedIds.value = selected.map((r) => r.Id)
+    selectedDeleteStaged.value = selected.some((r) => r.DraftStaged === 'delete')
     cellMenu.open(event.event as MouseEvent)
   })
   .onViewportContextMenu(($event) => {
@@ -55,6 +96,17 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<PositionPrincipalDt
   .columns([
     (col) => col.field('AccountName').header('Account name', 'admin.positions.accountName').width(220).pinned('left').cellClass('account-name-cell'),
     (col) => col.field('Purpose').header('Purpose', 'admin.positions.purpose').flex(1),
+    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
+        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
+        : p.data?.DraftStaged === 'update'
+          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
+          : p.data?.DraftStaged === 'delete'
+            ? t('admin.realmConfig.gridTag.delete', {}, 'Staged (delete)')
+            : '')
+      .width(120)
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged && p.data.DraftStaged !== 'delete')
+      .classRule('draft-staged-cell-delete', (p: any) => p.data?.DraftStaged === 'delete'),
     (col) => col.icon('TerminalPolicy', { color: '#0284c7', size: 's' })
       .option('valueGetter', (p: any) => p.data?.TerminalPolicy?.Enabled ? 'monitor-smartphone' : '')
       .option('tooltipValueGetter', () => null)
@@ -66,6 +118,19 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<PositionPrincipalDt
   ])
 
 async function deleteRows() {
+  const id = selectedIds.value[0]
+  if (!id) return
+  // ADR-0005 staged deletes: single-row semantics in staging mode (the slot/
+  // session cascade runs at apply through the same canonical delete path).
+  if (staging.stagingActive.value) {
+    if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))
+    const row = rows.value.find((r) => r.Id === id)
+    if (!row) return
+    const key = row.AccountName.trim().toLowerCase()
+    if (row.DraftStaged === 'delete') return staging.unstageDelete(key)
+    // No confirm: staged deletes are reversible; the apply popconfirm gates.
+    return staging.stageDelete(key)
+  }
   if (selectedIds.value.length > 0 && confirm(t('common.confirmDelete', {}, 'Really delete?'))) {
     await store.deleteEntities(selectedIds.value)
   }
@@ -97,7 +162,15 @@ onMounted(() => {
       <CoarMenuItem :label="t('common.open', {}, 'Open')" icon="pencil" @clicked="selectedIds[0] && navigateToModal(selectedIds[0])" />
       <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus" @clicked="navigateToModal('create')" />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2" @clicked="deleteRows" />
+      <CoarMenuItem
+        :label="selectedDeleteStaged
+          ? t('admin.realmConfig.undelete', {}, 'Undo delete')
+          : t('common.delete', {}, 'Delete')"
+        :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
+        @clicked="deleteRows" />
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">
@@ -107,6 +180,16 @@ onMounted(() => {
 </template>
 
 <style scoped>
+:deep(.draft-staged-cell) {
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+
+:deep(.draft-staged-cell-delete) {
+  color: var(--coar-text-semantic-error, #dc2626);
+  font-weight: 600;
+}
+
 :deep(.account-name-cell) {
   font-weight: 600;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

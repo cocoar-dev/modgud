@@ -105,7 +105,7 @@ public static class EmailVerificationEndpoints
             session.Store(challenge);
             await session.SaveChangesAsync();
 
-            var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm, env);
+            var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm);
             var encodedToken = Uri.EscapeDataString(token);
             // type=account discriminates from the existing profile-change
             // and self-registration verify flows that share /verify-email.

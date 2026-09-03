@@ -168,6 +168,11 @@ export interface CreateOAuthClientDto {
   TerminalBinding?: 'dpop' | 'client-secret' | 'none'
 }
 
+/**
+ * Merge-patch update (v2): a field left `undefined` is OMITTED from the JSON
+ * and stays unchanged; an explicit `null` CLEARS the stored value; `[]` clears
+ * a list. Booleans have no clear (undefined/null = unchanged).
+ */
 export interface UpdateOAuthClientDto {
   DisplayName?: string | null
   ConsentType?: string | null
@@ -189,8 +194,6 @@ export interface UpdateOAuthClientDto {
   SlidingRefreshTokenLifetime?: number | null
   ClientSessionIdleLifetime?: number | null
   ClientSessionAbsoluteLifetime?: number | null
-  ClearClientSessionIdleLifetime?: boolean
-  ClearClientSessionAbsoluteLifetime?: boolean
   Claims?: OAuthClientClaimDto[] | null
   Roles?: string[] | null
   /** RFC 9126 PAR-requirement patch: null/missing = no change, true/false sets it. */
@@ -202,7 +205,7 @@ export interface UpdateOAuthClientDto {
   /**
    * ADR-0009 per-client WebAuthn RP ID patch:
    *   undefined/missing → no change
-   *   "" (empty)        → clear back to realm-scoped
+   *   null or ""        → clear back to realm-scoped
    *   "host"            → set
    */
   WebAuthnRpId?: string | null
@@ -302,7 +305,7 @@ export interface UpdateOAuthScopeDto {
   Emphasize?: boolean | null
   ShowInDiscoveryDocument?: boolean | null
   UserClaims?: string[] | null
-  /** PATCH semantics: undefined/missing = no change, "" = make global, "<guid>" = assign. */
+  /** v2 merge-patch: undefined/missing = no change, null = make global, "<guid>" = assign. */
   AppId?: string | null
   /** PATCH semantics: null = no change. */
   AllowDynamicRegistrationClients?: boolean | null
@@ -370,9 +373,9 @@ export interface UpdateOAuthApiDto {
   Scopes?: string[] | null
   UserClaims?: string[] | null
   /**
-   * PATCH semantics: undefined/missing = no change, "" = detach,
+   * v2 merge-patch: undefined/missing = no change, null = detach,
    * "<guid>" = assign / change. The dropdown's "unassigned" choice
-   * serialises to "" (empty string).
+   * serialises to null.
    */
   AppId?: string | null
   /**

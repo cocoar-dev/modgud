@@ -53,10 +53,23 @@ public partial class OAuthScopeAggregate
     public OAuthScopeAppIdChanged SetAppId(Guid? v) { var e = new OAuthScopeAppIdChanged(Id, v); Apply(e); return e; }
     public OAuthScopeDeleted Delete() { var e = new OAuthScopeDeleted(Id); Apply(e); return e; }
 
+    // A Created event on an EXISTING stream is a REVIVE (provisioning re-imports a
+    // soft-deleted entity under its pinned id): reset EVERY field to the created
+    // state, so no value from the previous incarnation survives.
     public void Apply(OAuthScopeCreated e)
     {
         Id = e.ScopeId; Name = e.Name; DisplayName = e.DisplayName; Description = e.Description;
         Resources = e.Resources.ToList();
+        DisplayNames = new Dictionary<string, string>();
+        Descriptions = new Dictionary<string, string>();
+        Properties = new Dictionary<string, object?>();
+        Enabled = true;
+        Required = false;
+        Emphasize = false;
+        ShowInDiscoveryDocument = true;
+        UserClaims = [];
+        AppId = null;
+        IsDeleted = false;
     }
     public void Apply(OAuthScopeDisplayNameChanged e) => DisplayName = e.DisplayName;
     public void Apply(OAuthScopeDescriptionChanged e) => Description = e.Description;

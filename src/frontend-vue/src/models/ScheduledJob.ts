@@ -51,7 +51,7 @@ export interface ScheduledJobDto {
 }
 
 export interface ScheduledJobUpdateDto {
-  /** null = clear the override (use registration default). */
+  /** v2 merge-patch: undefined = keep, null = clear the override (use registration default). */
   CronOverride?: string | null
   Enabled?: boolean | null
   /** When set, replaces the persisted parameters wholesale. Unknown keys are dropped server-side. */

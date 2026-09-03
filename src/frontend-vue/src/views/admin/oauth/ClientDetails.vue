@@ -31,6 +31,8 @@ import { useServiceAccountStore } from '@/stores/serviceAccount.store'
 import { usePositionStore } from '@/stores/position.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useClone, CLIENT_CLONE } from '@/composables/useClone'
+import { useDraftStaging } from '@/composables/useDraftStaging'
+import type { ManifestEntity } from '@/stores/realmDraft.store'
 import { useModalOverlay } from '@/composables/useModalOverlay'
 import { MODAL_MD } from '@/router/modal-sizes'
 import { useRouter } from 'vue-router'
@@ -58,8 +60,9 @@ const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create' && !justCreated.value)
 // Genuinely-existing client opened from the list (drives the regenerate-secret
 // affordance) — distinct from the transient just-created state where props.id
-// is still 'create' but the client now exists.
-const isExistingClient = computed(() => props.id !== 'create')
+// is still 'create' but the client now exists, and from draft-created rows
+// (`draft__…`) that exist only in the staged manifest.
+const isExistingClient = computed(() => props.id !== 'create' && !props.id.startsWith('draft__'))
 const loading = ref(false)
 const error = ref<string | null>(null)
 // The expert editor exposes the complete object before the first save. General
@@ -536,6 +539,106 @@ watch(() => form.value.TerminalBinding, (binding) => {
 const isTerminalManaged = computed(() => !isCreate.value
   && (!!form.value.ManagedTerminalEnrollmentId || !!form.value.LinkedPositionPrincipalId))
 
+// ── ADR-0005 staging: ordinary client saves commit onto the active draft. The
+// manifest deliberately does NOT model SA-linked (client_credentials),
+// terminal-/staffing-managed or just-created clients — those keep the live
+// path, exactly like the exporter skips them.
+const staging = useDraftStaging('clients')
+const isDraftRow = computed(() => staging.isDraftId(props.id))
+const stagedSave = computed(() => staging.stagingActive.value
+  && !justCreated.value
+  && !isTerminalManaged.value
+  && !hasStaffingGrant.value
+  && !form.value.LinkedServiceAccountId
+  && !useNewServiceAccountDraft.value
+  && !form.value.AllowedGrantTypes.includes('client_credentials'))
+
+function appSlugsOf(appIds: string[]): string[] {
+  return appIds
+    .map((id) => applicationsStore.apps.find((a) => a.Id === id)?.Slug)
+    .filter((s): s is string => !!s)
+}
+
+function appIdsOf(slugs: unknown): string[] {
+  if (!Array.isArray(slugs)) return []
+  return (slugs as unknown[])
+    .map((slug) => applicationsStore.apps.find((a) => a.Slug === slug)?.Id)
+    .filter((id): id is string => !!id)
+}
+
+function fromStaged(e: ManifestEntity): FormState {
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  const arr = (v: unknown) => (Array.isArray(v) ? [...(v as string[])] : [])
+  const num = (v: unknown) => (typeof v === 'number' ? v : null)
+  return {
+    ...emptyForm(),
+    ClientId: str(e.ClientId),
+    DisplayName: str(e.DisplayName),
+    ClientType: str(e.ClientType) || 'confidential',
+    ConsentType: str(e.ConsentType) || 'implicit',
+    Enabled: e.Enabled !== false,
+    Scopes: arr(e.Scopes),
+    AccessTokenType: (str(e.AccessTokenType) || 'Reference') as AccessTokenType,
+    RedirectUris: arr(e.RedirectUris),
+    PostLogoutRedirectUris: arr(e.PostLogoutRedirectUris),
+    AllowedGrantTypes: arr(e.AllowedGrantTypes),
+    AllowedCorsOrigins: arr(e.AllowedCorsOrigins),
+    RequirePushedAuthorizationRequests: e.RequirePushedAuthorizationRequests === true,
+    RequireDpop: e.RequireDpop === true,
+    RequireDpopNonce: e.RequireDpopNonce === true,
+    IdentityTokenLifetime: num(e.IdentityTokenLifetime),
+    AccessTokenLifetime: num(e.AccessTokenLifetime),
+    AuthorizationCodeLifetime: num(e.AuthorizationCodeLifetime),
+    SlidingRefreshTokenLifetime: num(e.SlidingRefreshTokenLifetime),
+    ClientSessionIdleLifetime: num(e.ClientSessionIdleLifetime),
+    ClientSessionAbsoluteLifetime: num(e.ClientSessionAbsoluteLifetime),
+    WebAuthnRpId: str(e.WebAuthnRpId),
+    AppIds: appIdsOf(e.Apps),
+  }
+}
+
+/** Manifest client entity from the form, merged over the already-staged entity
+ * so manifest fields the modal doesn't edit (Roles, Claims, …) survive. A null
+ * optional drops the key = "no change" on apply (the manifest cannot CLEAR a
+ * stored lifetime — that stays a live admin-API operation). */
+function toStaged(): ManifestEntity {
+  const key = form.value.ClientId.trim()
+  const entity: ManifestEntity = { ...(staging.findStaged(key) ?? {}) }
+  entity.ClientId = key
+  entity.ClientType = form.value.ClientType
+  entity.ConsentType = form.value.ConsentType
+  entity.Enabled = form.value.Enabled
+  entity.Scopes = [...form.value.Scopes]
+  entity.RedirectUris = [...form.value.RedirectUris]
+  entity.PostLogoutRedirectUris = [...form.value.PostLogoutRedirectUris]
+  entity.AllowedGrantTypes = [...form.value.AllowedGrantTypes]
+  entity.AllowedCorsOrigins = [...form.value.AllowedCorsOrigins]
+  entity.AccessTokenType = form.value.AccessTokenType
+  entity.RequirePushedAuthorizationRequests = form.value.RequirePushedAuthorizationRequests
+  entity.RequireDpop = form.value.RequireDpop
+  entity.RequireDpopNonce = form.value.RequireDpopNonce
+  entity.Apps = appSlugsOf(form.value.AppIds)
+  // v2 merge-patch: the modal edits all of these, so stage each one explicitly —
+  // null IS the payload for "cleared" (an absent field would mean "unchanged"
+  // and silently keep whatever the live value is at apply time).
+  entity.DisplayName = form.value.DisplayName.trim() || null
+  entity.WebAuthnRpId = form.value.WebAuthnRpId.trim() || null
+  entity.IdentityTokenLifetime = form.value.IdentityTokenLifetime
+  entity.AccessTokenLifetime = form.value.AccessTokenLifetime
+  entity.AuthorizationCodeLifetime = form.value.AuthorizationCodeLifetime
+  entity.SlidingRefreshTokenLifetime = form.value.SlidingRefreshTokenLifetime
+  entity.ClientSessionIdleLifetime = form.value.ClientSessionIdleLifetime
+  entity.ClientSessionAbsoluteLifetime = form.value.ClientSessionAbsoluteLifetime
+  // Create-only explicit secret — the server strips it into a write-only
+  // DataProtection slot on save; existing clients keep their stored secret.
+  const secret = form.value.ClientSecret.trim()
+  if (secret) entity.ClientSecret = secret
+  // Stage the LIVE entity's id: the apply matches by identity, so editing the name
+  // is a RENAME of this entity instead of staging a second one.
+  if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
+  return entity
+}
+
 function goToPosition() {
   // Deliberately NOT props.close(): the routed-modal plumbing reacts to a
   // resolved close by pushing the list route again, which would clobber this
@@ -678,7 +781,9 @@ const footerButton = computed(() => {
     }
   return {
     visible: true,
-    text: isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
+    text: stagedSave.value
+      ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+      : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
     disabled: !form.value.ClientId.trim() || loading.value || createBlockers.value.length > 0,
     loading: loading.value,
     onClick: save,
@@ -696,6 +801,14 @@ onMounted(async () => {
   if (!realmSettingsStore.loaded) realmSettingsStore.load().catch(() => {})
   if (appConfig.config.Features.PositionTerminals && positionStore.entities.length === 0)
     positionStore.loadAll().catch(() => {})
+  if (isDraftRow.value) {
+    // Draft-created client: the staged manifest entity IS the state. Apps must
+    // be loaded before slugs can resolve back to App ids.
+    await applicationsStore.initialize()
+    const entity = staging.findStaged(staging.draftKeyOf(props.id))
+    if (entity) form.value = fromStaged(entity)
+    return
+  }
   if (isCreate.value) {
     // Clone: prefill the whole form (ClientId blank, secret dropped → a fresh
     // one is minted on create).
@@ -712,6 +825,16 @@ onMounted(async () => {
     }
     original.value = dto
     form.value = fromDto(dto)
+    // Staging overlay: show the STAGED client state when the draft carries it.
+    // stagedSave re-evaluates on the loaded form, so SA-/terminal-linked
+    // clients (live path) never get overlaid.
+    if (stagedSave.value && staging.draftStore.current) {
+      const entity = staging.findStaged(dto.ClientId)
+      if (entity) {
+        await applicationsStore.initialize()
+        form.value = fromStaged(entity)
+      }
+    }
   } finally {
     loading.value = false
   }
@@ -722,6 +845,12 @@ async function save() {
   loading.value = true
   error.value = null
   try {
+    // ADR-0005: commit onto the active draft instead of writing live.
+    if (stagedSave.value) {
+      await staging.stage(form.value.ClientId.trim(), toStaged())
+      props.close()
+      return
+    }
     if (isCreate.value) {
       const created = await store.create(buildCreateDto())
       if (created.CreatedServiceAccount)
@@ -845,13 +974,13 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     AccessTokenLifetime: form.value.AccessTokenLifetime,
     AuthorizationCodeLifetime: form.value.AuthorizationCodeLifetime,
     SlidingRefreshTokenLifetime: form.value.SlidingRefreshTokenLifetime,
+    // v2 merge-patch: an explicit null in the JSON clears the stored override
+    // (an empty lifetime field falls back to the server default).
     ClientSessionIdleLifetime: form.value.ClientSessionIdleLifetime,
     ClientSessionAbsoluteLifetime: form.value.ClientSessionAbsoluteLifetime,
-    ClearClientSessionIdleLifetime: form.value.ClientSessionIdleLifetime === null,
-    ClearClientSessionAbsoluteLifetime: form.value.ClientSessionAbsoluteLifetime === null,
-    // ADR-0009 PATCH: send the trimmed value verbatim — "" clears back to
-    // realm-scoped, a host sets the per-client RP ID.
-    WebAuthnRpId: form.value.WebAuthnRpId.trim(),
+    // ADR-0009 PATCH: null clears back to realm-scoped, a host sets the
+    // per-client RP ID.
+    WebAuthnRpId: form.value.WebAuthnRpId.trim() || null,
     // Always send AppIds on update — empty array = detach all, otherwise replace.
     AppIds: [...form.value.AppIds],
   }
@@ -1811,6 +1940,7 @@ async function copySecret() {
   min-width: 0;
   gap: 12px;
 }
+
 
 .secret-banner {
   flex-shrink: 0;

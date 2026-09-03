@@ -92,7 +92,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         {
             LoginProviders = [Provider("corp-idp", "Corp IdP v2") with { ClientSecret = null }],
         };
-        var applied = await applier.UpdateRealmAsync(v2, prune: true, ct);
+        var applied = await applier.UpdateRealmAsync(v2, prune: true, deletions: null, ct);
         Assert.False(applied.IsError, applied.IsError ? applied.FirstError.Description : string.Empty);
 
         await InTenantAsync(factory, slug, async sp =>
@@ -297,7 +297,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         // ── Prune: a position absent from the manifest is deleted via the canonical
         //    cascade (soft delete; grants stay history). ─────────────────────────────
         var noPositions = Manifest("unused") with { Positions = [] };
-        Assert.False((await applier.UpdateRealmAsync(noPositions, prune: true, ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(noPositions, prune: true, deletions: null, ct)).IsError);
         await InTenantAsync(factory, slug, async sp =>
         {
             var session = sp.GetRequiredService<IDocumentSession>();

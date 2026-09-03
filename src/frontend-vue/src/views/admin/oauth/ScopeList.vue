@@ -11,6 +11,8 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
+import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
@@ -34,16 +36,58 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-const rows = computed(() =>
+const liveRows = computed(() =>
   store.scopes.filter((s) => appCtx.matchesSingleAppId(s.AppId)))
+
+// ADR-0005: draft-merged roster — staged edits overlay, draft-created scopes
+// appear as synthetic rows (natural key = the immutable scope name).
+const staging = useDraftStaging('scopes')
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
+const rows = useDraftListOverlay<OAuthScopeDto>({
+  section: 'scopes',
+  rows: liveRows,
+  liveKey: (row) => row.Name,
+  matchLive: (row, e) => row.Name === str(e.Name),
+  overlay: (row, e) => ({
+    ...row,
+    DisplayName: str(e.DisplayName) || row.DisplayName,
+    Description: str(e.Description) || row.Description,
+    Resources: arr(e.Resources).length ? arr(e.Resources) : row.Resources,
+    Enabled: typeof e.Enabled === 'boolean' ? e.Enabled : row.Enabled,
+  }),
+  synthesize: (key, e): OAuthScopeDto => ({
+    Id: `draft__${key}`,
+    Name: str(e.Name) || key,
+    DisplayName: str(e.DisplayName) || null,
+    Description: str(e.Description) || null,
+    Resources: arr(e.Resources),
+    UserClaims: arr(e.UserClaims),
+    Enabled: e.Enabled !== false,
+    Required: e.Required === true,
+    Emphasize: e.Emphasize === true,
+    ShowInDiscoveryDocument: e.ShowInDiscoveryDocument !== false,
+    AppId: null,
+    IsStandard: false,
+    AllowDynamicRegistrationClients: e.AllowDynamicRegistrationClients === true,
+  } as OAuthScopeDto),
+})
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
 const selectedIds = ref<string[]>([])
 const selectedIsStandard = ref(false)
+const selectedDeleteStaged = ref(false)
 
-const showEmpty = computed(() => store.loaded && store.scopes.length === 0)
+const showEmpty = computed(() => store.loaded && rows.value.length === 0)
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthScopeDto>(), { openable: true })
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('scopes',
+  computed(() => {
+    const row = rows.value.find((r) => r.Id === selectedIds.value[0])
+    if (!row || row.DraftStaged === 'create' || row.IsStandard) return null
+    return row.Name
+  }))
+
+const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthScopeDto>>(), { openable: true })
   .persistColumnState('admin-oauth-scopes')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -63,9 +107,10 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthScopeDto>(), {
       event.api.deselectAll()
       event.node.setSelected(true)
     }
-    const selected = event.api.getSelectedRows() as OAuthScopeDto[]
+    const selected = event.api.getSelectedRows() as DraftRow<OAuthScopeDto>[]
     selectedIds.value = selected.map((r) => r.Id)
     selectedIsStandard.value = selected.some((r) => r.IsStandard)
+    selectedDeleteStaged.value = selected.some((r) => r.DraftStaged === 'delete')
     cellMenu.open(event.event as MouseEvent)
   })
   .onViewportContextMenu(($event) => viewportMenu.open($event))
@@ -81,6 +126,17 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<OAuthScopeDto>(), {
     (col) => col.field('Description').header('Description', 'admin.oauthScopes.description').flex(2),
     (col) => col.field('Resources').header('Resources', 'admin.oauthScopes.resources').flex(1)
       .option('valueGetter', (p: any) => (p.data?.Resources ?? []).join(', ')),
+    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
+        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
+        : p.data?.DraftStaged === 'update'
+          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
+          : p.data?.DraftStaged === 'delete'
+            ? t('admin.realmConfig.gridTag.delete', {}, 'Staged (delete)')
+            : '')
+      .width(120)
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged && p.data.DraftStaged !== 'delete')
+      .classRule('draft-staged-cell-delete', (p: any) => p.data?.DraftStaged === 'delete'),
     (col) => col.tag('Enabled', {
       variantMap: { active: 'success', inactive: 'neutral' },
       i18nPrefix: 'common.statusTag.',
@@ -95,6 +151,20 @@ async function deleteSelected() {
   if (selectedIsStandard.value) {
     alert(t('admin.oauthScopes.cannotDeleteStandard', {}, 'Standard OIDC scopes cannot be deleted.'))
     return
+  }
+  // ADR-0005 staged deletes: in staging mode the delete is a commit too —
+  // draft-created rows just unstage, live rows stage their deletion, and a
+  // second click on a staged-delete row undoes it.
+  if (staging.stagingActive.value) {
+    if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))
+    const row = rows.value.find((r) => r.Id === id)
+    if (!row) return
+    if (row.DraftStaged === 'delete') return staging.unstageDelete(row.Name)
+    // No confirm dialog: a staged delete is reversible (undo via the same
+    // menu / the review page) — the apply popconfirm is the real gate. Native
+    // confirm() is also fragile: Chrome's "suppress dialogs" makes it return
+    // false silently, which read as "delete does nothing".
+    return staging.stageDelete(row.Name)
   }
   if (!confirm(t('admin.oauthScopes.confirmDelete', {}, 'Really delete this scope?'))) return
   try { await store.remove(id) } catch (e: any) { alert(e?.message ?? String(e)) }
@@ -144,8 +214,15 @@ onMounted(() => store.initialize())
       <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy"
         @clicked="cloneSelected" />
       <CoarMenuDivider />
-      <CoarMenuItem :label="t('common.delete', {}, 'Delete')" icon="trash-2"
+      <CoarMenuItem
+        :label="selectedDeleteStaged
+          ? t('admin.realmConfig.undelete', {}, 'Undo delete')
+          : t('common.delete', {}, 'Delete')"
+        :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         :disabled="selectedIsStandard" @clicked="deleteSelected" />
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">
@@ -154,3 +231,15 @@ onMounted(() => store.initialize())
     </CoarContextMenu>
   </div>
 </template>
+
+<style scoped>
+:deep(.draft-staged-cell) {
+  color: var(--coar-text-semantic-info, #2563eb);
+  font-weight: 600;
+}
+
+:deep(.draft-staged-cell-delete) {
+  color: var(--coar-text-semantic-error, #dc2626);
+  font-weight: 600;
+}
+</style>

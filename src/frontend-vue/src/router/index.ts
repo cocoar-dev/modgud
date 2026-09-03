@@ -443,6 +443,10 @@ const routes = [
               component: () => import('@/views/admin/RealmSettingsView.vue'),
             },
             {
+              path: 'realm-config',
+              component: () => import('@/views/admin/realm-config/RealmConfigView.vue'),
+            },
+            {
               path: 'scheduled-jobs',
               component: () => import('@/views/admin/scheduledJobs/ScheduledJobList.vue'),
               meta: {

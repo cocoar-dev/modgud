@@ -223,8 +223,10 @@ async function save() {
         patch.Scopes = form.value.Scopes
       if (!arraysEqual(form.value.AppIds, orig.AppIds))
         patch.AppIds = form.value.AppIds
+      // v2 merge-patch: an emptied lifetime sends explicit null (clear the
+      // override back to the server default) — omitting it would mean "keep".
       if (form.value.AccessTokenLifetime !== orig.AccessTokenLifetime)
-        patch.AccessTokenLifetime = form.value.AccessTokenLifetime ?? undefined
+        patch.AccessTokenLifetime = form.value.AccessTokenLifetime
       if (form.value.AccessTokenType !== orig.AccessTokenType)
         patch.AccessTokenType = form.value.AccessTokenType
       if (form.value.Enabled !== orig.Enabled)

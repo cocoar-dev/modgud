@@ -51,6 +51,22 @@ the realm and marks installation complete. Normal API and browser routes return
 Issuing another link revokes any previous unconsumed link. The default lifetime
 is 30 minutes; `--minutes` accepts values from 1 to 1440.
 
+**The `--base-url` you pass is the deployment's public origin.** It decides two
+things, both of them from that single declaration:
+
+1. Installation sends you back to it verbatim — scheme, host and port. You are
+   standing at that origin, so that is where the sign-in page has to be.
+2. It is recorded as the new realm's **public origin**, and from then on every
+   outbound link is built against it: magic links, password resets, email
+   verification, invites, and the login-provider callback URLs you paste into an
+   upstream IdP. Nothing is inferred from the environment, so a deployment on a
+   non-default port works without special cases.
+
+Change it later with `recover realm-set-public-url --slug <slug> --url <origin>`.
+It is separate from the realm's **primary domain**, which stays a bare host name
+because it is also the passkey relying-party ID — see
+[Deployment](../operate/deployment#where-public-urls-come-from).
+
 ::: warning Production boot guards
 The published image runs as **Production** and refuses dev-shaped security
 configuration. In particular, OpenIddict development mode must be disabled and
