@@ -1,5 +1,10 @@
+using BuildingBlocks.Helper;
 using Modgud.Api.Features.Admin.Provisioning;
 using Modgud.Api.Tests.Infrastructure;
+using Modgud.Authorization.Services;
+using Modgud.Authorization.Membership;
+using Modgud.Authorization.Commands;
+using Modgud.Api.Features.Roles;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Application.Services;
@@ -180,6 +185,163 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         var second = await applier.ImportNewRealmAsync(manifest, ct);
         Assert.True(second.IsError);
         Assert.Equal("Realm.AlreadyExists", second.FirstError.Code);
+    }
+
+    [Fact]
+    public async Task Re_importing_a_deleted_entity_under_its_pinned_id_revives_it_even_after_a_rename()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "revive";
+        var appId = Guid.NewGuid();
+        var roleId = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
+
+        // The stage → prod story: config transferred with pinned ids, deleted on the
+        // target because it caused trouble, then re-imported after the fix. The ids MUST
+        // come back — consuming apps persist them as foreign keys.
+        RealmManifest Manifest(string appSlug, string roleName, string groupName) => new()
+        {
+            Realm = new CreateRealmDto
+            {
+                Slug = slug,
+                DisplayName = "Revive",
+                Domains = [$"{slug}.localhost"],
+                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@revive.test" },
+            },
+            Apps =
+            [
+                new RealmManifestApp
+                {
+                    Slug = appSlug, Id = new ShortGuid(appId).ToString(), DisplayName = "Revive App",
+                    Permissions = [new RealmManifestPermission("rev", "read")],
+                },
+            ],
+            Roles =
+            [
+                new RealmManifestRole
+                {
+                    Name = roleName, Id = new ShortGuid(roleId).ToString(), App = appSlug,
+                    Permissions = [new RealmManifestPermission("rev", "read")],
+                },
+            ],
+            Groups = [new RealmManifestGroup { Name = groupName, Id = new ShortGuid(groupId).ToString(), Roles = [roleName] }],
+        };
+
+        var imported = await applier.ImportNewRealmAsync(Manifest("rev-app", "rev-role", "RevGroup"), ct);
+        Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
+
+        // RENAME live in the admin UI (the manifest can't rename — its natural key IS the
+        // name), THEN delete. This is the trap a natural-key-equality revive guard falls
+        // into: the dead streams no longer carry the manifest's keys.
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var role = await session.Query<PermissionRole>().SingleAsync(r => !r.IsDeleted && r.Name == "rev-role", ct);
+            var renamedRole = await sp.GetRequiredService<RoleAdminService>().UpdateRoleAsync(
+                role.Id,
+                new RolePayload("rev-role-renamed", role.Description,
+                    new ShortGuid(role.AppId!.Value).ToString(), false,
+                    [.. role.PermissionIds.Select(pid => new ShortGuid(pid).ToString())]),
+                callerIsRealmAdmin: true, ct);
+            Assert.False(renamedRole.IsError, renamedRole.IsError ? renamedRole.FirstError.Description : string.Empty);
+
+            var group = await session.Query<Group>().SingleAsync(g => !g.IsDeleted && g.Name == "RevGroup", ct);
+            var renamedGroup = await new UpdateGroupHandler(
+                    session,
+                    sp.GetRequiredService<IMembershipEvaluator>(),
+                    sp.GetRequiredService<IPermissionService>(),
+                    sp.GetRequiredService<IAutoMembershipRecalculator>())
+                .Handle(new UpdateGroupCommand(group.Id, "RevGroupRenamed", group.Description,
+                    [.. group.MemberIds], [.. group.RoleIds], CallerIsRealmAdmin: true), ct);
+            Assert.False(renamedGroup.IsError, renamedGroup.IsError ? renamedGroup.FirstError.Description : string.Empty);
+        });
+
+        // Delete all three under their CURRENT keys (staged deletes, the normal admin path).
+        var deleted = await applier.UpdateRealmAsync(
+            Manifest("rev-app", "rev-role", "RevGroup") with { Apps = [], Roles = [], Groups = [] },
+            deletions:
+            [
+                new RealmDraftDeletion("groups", "RevGroupRenamed"),
+                new RealmDraftDeletion("roles", "rev-role-renamed"),
+                new RealmDraftDeletion("apps", "rev-app"),
+            ],
+            ct: ct);
+        Assert.False(deleted.IsError, deleted.IsError ? deleted.FirstError.Description : string.Empty);
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            Assert.True((await session.LoadAsync<App>(appId, ct))!.IsDeleted, "app soft-deleted");
+            Assert.True((await session.LoadAsync<PermissionRole>(roleId, ct))!.IsDeleted, "role soft-deleted");
+            Assert.True((await session.LoadAsync<Group>(groupId, ct))!.IsDeleted, "group soft-deleted");
+        });
+
+        // Re-import the ORIGINAL manifest: the pinned ids point at soft-deleted streams, so
+        // the apply revives them — under the manifest's (original) names, not the renamed ones.
+        var reimported = await applier.UpdateRealmAsync(Manifest("rev-app", "rev-role", "RevGroup"), ct: ct);
+        Assert.False(reimported.IsError, reimported.IsError ? reimported.FirstError.Description : string.Empty);
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+
+            var app = await session.Query<App>().SingleAsync(a => !a.IsDeleted && a.Slug == "rev-app", ct);
+            Assert.Equal(appId, app.Id);
+            Assert.Single(app.Permissions);
+
+            var role = await session.Query<PermissionRole>().SingleAsync(r => !r.IsDeleted && r.Name == "rev-role", ct);
+            Assert.Equal(roleId, role.Id);
+            Assert.Equal(appId, role.AppId);
+
+            var group = await session.Query<Group>().SingleAsync(g => !g.IsDeleted && g.Name == "RevGroup", ct);
+            Assert.Equal(groupId, group.Id);
+            Assert.Equal([roleId], group.RoleIds);
+        });
+    }
+
+    [Fact]
+    public async Task Pinning_an_id_owned_by_a_live_entity_fails_the_apply()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "idclash";
+        var appId = Guid.NewGuid();
+
+        RealmManifest Manifest(params RealmManifestApp[] apps) => new()
+        {
+            Realm = new CreateRealmDto
+            {
+                Slug = slug,
+                DisplayName = "Id clash",
+                Domains = [$"{slug}.localhost"],
+                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@idclash.test" },
+            },
+            Apps = [.. apps],
+        };
+
+        var imported = await applier.ImportNewRealmAsync(
+            Manifest(new RealmManifestApp
+            {
+                Slug = "first", Id = new ShortGuid(appId).ToString(), DisplayName = "First",
+            }), ct);
+        Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
+
+        // A LIVE entity owns the id — a second app claiming it is a conflict, not a revive.
+        var clash = await applier.UpdateRealmAsync(
+            Manifest(new RealmManifestApp
+            {
+                Slug = "second", Id = new ShortGuid(appId).ToString(), DisplayName = "Second",
+            }), ct: ct);
+
+        Assert.True(clash.IsError);
+        Assert.Equal("App.PinnedIdTaken", clash.FirstError.Code);
     }
 
     [Fact]

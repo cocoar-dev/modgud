@@ -12,7 +12,7 @@ namespace Modgud.Tests.Unit.Infrastructure.Persistence.Marten.Projections.OAuth;
 public class OAuthApiStateProjectionTests
 {
     private static OAuthApiState NewState() =>
-        new OAuthApiStateProjection().Create(new OAuthApiCreated(
+        new OAuthApiStateProjection().ApplyCreated(new OAuthApiCreated(
             Guid.NewGuid(),
             Name: "billing-api",
             DisplayName: "Billing",
@@ -26,7 +26,7 @@ public class OAuthApiStateProjectionTests
         public void Initialises_all_fields_from_event()
         {
             var id = Guid.NewGuid();
-            var state = new OAuthApiStateProjection().Create(new OAuthApiCreated(
+            var state = new OAuthApiStateProjection().ApplyCreated(new OAuthApiCreated(
                 id, "api", "Api", "Desc", Enabled: true,
                 Scopes: new[] { "s1", "s2" }));
 
@@ -46,7 +46,7 @@ public class OAuthApiStateProjectionTests
             // list MUST also be a copy so mutating the source array doesn't
             // poison cached projection state.
             var sourceScopes = new[] { "a", "b" };
-            var state = new OAuthApiStateProjection().Create(new OAuthApiCreated(
+            var state = new OAuthApiStateProjection().ApplyCreated(new OAuthApiCreated(
                 Guid.NewGuid(), "n", null, null, Enabled: true, Scopes: sourceScopes));
 
             sourceScopes[0] = "MUTATED";
@@ -196,7 +196,7 @@ public class OAuthApiStateProjectionTests
             var id = Guid.NewGuid();
             var p = new OAuthApiStateProjection();
 
-            var s = p.Create(new OAuthApiCreated(id, "billing", "Billing", "old desc", true, Array.Empty<string>()));
+            var s = p.ApplyCreated(new OAuthApiCreated(id, "billing", "Billing", "old desc", true, Array.Empty<string>()));
             p.Apply(new OAuthApiDisplayNameChanged(id, "Billing API"), s);
             p.Apply(new OAuthApiDescriptionChanged(id, "new desc"), s);
             p.Apply(new OAuthApiScopesChanged(id, new[] { "billing:read", "billing:write" }), s);

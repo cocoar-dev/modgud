@@ -10,7 +10,10 @@ namespace Modgud.Authorization.Projections;
 /// </summary>
 public partial class PermissionRoleProjection : SingleStreamProjection<PermissionRole, Guid>
 {
-    public PermissionRole Create(PermissionRoleCreatedEvent @event) => new()
+    // Apply (not Create) so a Created event on an EXISTING stream REVIVES the entity:
+    // provisioning re-imports a soft-deleted entity under its pinned id, and the fresh
+    // document replaces the old one wholesale (IsDeleted back to false, no stale field).
+    public PermissionRole Apply(PermissionRoleCreatedEvent @event, PermissionRole _) => new()
     {
         Id = @event.Id,
         Name = @event.Name,

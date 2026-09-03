@@ -18,7 +18,7 @@ public class AppProjectionTests
     private static App NewState(
         string slug = "modgud",
         bool isSystem = true) =>
-        new AppProjection().Create(new AppCreatedEvent(
+        new AppProjection().ApplyCreated(new AppCreatedEvent(
             Id: Guid.NewGuid(),
             Slug: slug,
             DisplayName: "Modgud",
@@ -34,7 +34,7 @@ public class AppProjectionTests
             var id = Guid.NewGuid();
             var todoRead = Perm("todo", "read");
             var projectRead = Perm("project", "read");
-            var state = new AppProjection().Create(new AppCreatedEvent(
+            var state = new AppProjection().ApplyCreated(new AppCreatedEvent(
                 Id: id,
                 Slug: "acme-tasks",
                 DisplayName: "Acme Tasks",
@@ -60,7 +60,7 @@ public class AppProjectionTests
             var a = Perm("a", "read");
             var b = Perm("b", "read");
             var sourcePermissions = new List<AppPermission> { a, b };
-            var state = new AppProjection().Create(new AppCreatedEvent(
+            var state = new AppProjection().ApplyCreated(new AppCreatedEvent(
                 Guid.NewGuid(), "app", "App", null, sourcePermissions, IsSystem: false));
 
             sourcePermissions[0] = Perm("MUTATED", "read");
@@ -71,7 +71,7 @@ public class AppProjectionTests
         [Fact]
         public void Description_supports_null()
         {
-            var state = new AppProjection().Create(new AppCreatedEvent(
+            var state = new AppProjection().ApplyCreated(new AppCreatedEvent(
                 Guid.NewGuid(), "app", "App", Description: null, [], IsSystem: false));
 
             Assert.Null(state.Description);
@@ -80,7 +80,7 @@ public class AppProjectionTests
         [Fact]
         public void IsSystem_flag_is_carried_through()
         {
-            var state = new AppProjection().Create(new AppCreatedEvent(
+            var state = new AppProjection().ApplyCreated(new AppCreatedEvent(
                 Guid.NewGuid(), "modgud", "Modgud", null, [], IsSystem: true));
 
             Assert.True(state.IsSystem);
@@ -170,7 +170,7 @@ public class AppProjectionTests
             var id = Guid.NewGuid();
             var p = new AppProjection();
 
-            var s = p.Create(new AppCreatedEvent(
+            var s = p.ApplyCreated(new AppCreatedEvent(
                 id, "acme-tasks", "Acme Tasks", "old desc",
                 [Perm("todo", "read")], IsSystem: false));
             p.Apply(new AppUpdatedEvent(id, "Acme Tasks (renamed)", "new desc",
@@ -191,7 +191,7 @@ public class AppProjectionTests
             var id = Guid.NewGuid();
             var p = new AppProjection();
 
-            var s = p.Create(new AppCreatedEvent(
+            var s = p.ApplyCreated(new AppCreatedEvent(
                 id, "acme-tasks", "Acme Tasks", null,
                 [Perm("todo", "read")], IsSystem: false));
             p.Apply(new AppUpdatedEvent(id, "Acme Tasks!", null,

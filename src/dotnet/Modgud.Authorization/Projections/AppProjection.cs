@@ -11,7 +11,10 @@ namespace Modgud.Authorization.Projections;
 /// </summary>
 public partial class AppProjection : SingleStreamProjection<App, Guid>
 {
-    public App Create(AppCreatedEvent @event) => new()
+    // Apply (not Create) so a Created event on an EXISTING stream REVIVES the entity:
+    // provisioning re-imports a soft-deleted entity under its pinned id, and the fresh
+    // document replaces the old one wholesale (IsDeleted back to false, no stale field).
+    public App Apply(AppCreatedEvent @event, App _) => new()
     {
         Id = @event.Id,
         Slug = @event.Slug,

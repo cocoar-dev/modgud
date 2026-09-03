@@ -11,7 +11,10 @@ namespace Modgud.Authentication.Identity.LoginProviders;
 /// </summary>
 public partial class LoginProviderProjection : SingleStreamProjection<LoginProvider, Guid>
 {
-    public LoginProvider Create(LoginProviderAddedEvent @event) => new()
+    // Apply (not Create) so a Created event on an EXISTING stream REVIVES the entity:
+    // provisioning re-imports a soft-deleted entity under its pinned id, and the fresh
+    // document replaces the old one wholesale (IsDeleted back to false, no stale field).
+    public LoginProvider Apply(LoginProviderAddedEvent @event, LoginProvider _) => new()
     {
         Id = @event.Id,
         Type = @event.Type,

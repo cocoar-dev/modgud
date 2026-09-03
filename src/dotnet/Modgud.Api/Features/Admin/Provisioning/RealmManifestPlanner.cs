@@ -9,7 +9,13 @@ using Modgud.Authorization.Apps;
 using Modgud.Authorization.Commands;
 using Modgud.Authorization.Membership;
 using Modgud.Authorization.Principals;
+using Modgud.Authorization.Roles;
 using Modgud.Authorization.Services;
+using Modgud.Authentication.Domain.LoginProviders;
+using Modgud.Domain.OAuth.Apis;
+using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Scopes;
+using BuildingBlocks.Helper;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Permissions;
 
@@ -87,17 +93,31 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["Slug"],
                 ImmutableIgnored = ["Id"],
+                PinnedId = a => a.Id,
+                PinnedIdCheck = PinnedIdLookup<App>(session, a => a.IsDeleted, a => a.Slug, ct),
                 NestedPatch = ["Settings"],
                 DeleteNote = "Deleting fails at apply while the app is still referenced by a kept role, API or scope.",
             }));
 
         result.Sections.Add(await PlanSectionAsync("apis", json, prune, DeletesFor("apis"),
             manifest.Apis, current.Apis, baseline?.Apis, a => a.Name,
-            new SectionPolicy<RealmManifestApi> { Skip = ["Name"], ImmutableIgnored = ["Id"] }));
+            new SectionPolicy<RealmManifestApi>
+            {
+                Skip = ["Name"],
+                ImmutableIgnored = ["Id"],
+                PinnedId = a => a.Id,
+                PinnedIdCheck = PinnedIdLookup<OAuthApiState>(session, x => x.IsDeleted, x => x.Name, ct),
+            }));
 
         result.Sections.Add(await PlanSectionAsync("scopes", json, prune, DeletesFor("scopes"),
             manifest.Scopes, current.Scopes, baseline?.Scopes, s => s.Name,
-            new SectionPolicy<RealmManifestScope> { Skip = ["Name"], ImmutableIgnored = ["Id"] }));
+            new SectionPolicy<RealmManifestScope>
+            {
+                Skip = ["Name"],
+                ImmutableIgnored = ["Id"],
+                PinnedId = x => x.Id,
+                PinnedIdCheck = PinnedIdLookup<OAuthScopeState>(session, x => x.IsDeleted, x => x.Name, ct),
+            }));
 
         result.Sections.Add(await PlanSectionAsync("clients", json, prune, DeletesFor("clients"),
             manifest.Clients, current.Clients, baseline?.Clients, c => c.ClientId,
@@ -105,6 +125,9 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["ClientId", "ClientSecret"],
                 ImmutableIgnored = ["ClientType", "Id"],
+                PinnedId = c => c.Id,
+                PinnedIdCheck = PinnedIdLookup<OAuthApplicationState>(
+                    session, x => x.IsDeleted, x => x.ClientId, ct),
                 PostProcess = (desired, existing, entry) =>
                 {
                     if (existing is null)
@@ -127,6 +150,8 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["Slug", "ClientSecret"],
                 ImmutableIgnored = ["Id"],
+                PinnedId = x => x.Id,
+                PinnedIdCheck = PinnedIdLookup<LoginProvider>(session, x => x.IsDeleted, x => x.Slug, ct),
                 // Type/Flavor own the provider's URLs + config shape; the applier refuses
                 // a differing value outright, so the plan flags it as an apply error.
                 ImmutableFails = ["Type", "Flavor"],
@@ -145,6 +170,8 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["Name", "Key"],
                 ImmutableIgnored = ["Id"],
+                PinnedId = r => r.Id,
+                PinnedIdCheck = PinnedIdLookup<PermissionRole>(session, r => r.IsDeleted, r => r.Name, ct),
                 Protect = r => Task.FromResult<string?>(r.IsRealmAdmin == true
                     ? "Realm-admin roles are never pruned (lockout protection)."
                     : null),
@@ -164,6 +191,9 @@ public sealed class RealmManifestPlanner(
                 // The pinned id only applies at CREATE; on update a differing value
                 // is ignored (ids are immutable) — surfaced as a note, not a change.
                 ImmutableIgnored = ["Id"],
+                PinnedId = x => x.Id,
+                PinnedIdCheck = PinnedIdLookup<ServiceAccount>(
+                    session, x => x.IsDeleted, x => x.AccountName, ct),
             }));
 
         result.Sections.Add(await PlanSectionAsync("groups", json, prune, DeletesFor("groups"),
@@ -172,6 +202,8 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["Name"],
                 ImmutableIgnored = ["Id"],
+                PinnedId = g => g.Id,
+                PinnedIdCheck = PinnedIdLookup<Group>(session, g => g.IsDeleted, g => g.Name, ct),
                 Protect = async g =>
                 {
                     var doc = await session.Query<Group>()
@@ -190,6 +222,9 @@ public sealed class RealmManifestPlanner(
             {
                 Skip = ["AccountName"],
                 ImmutableIgnored = ["Id"],
+                PinnedId = x => x.Id,
+                PinnedIdCheck = PinnedIdLookup<PositionPrincipal>(
+                    session, x => x.IsDeleted, x => x.AccountName, ct),
                 NestedPatch = ["TerminalPolicy"],
                 DeleteNote = "Deleting a position revokes its tokens, ends its staffing sessions and revokes terminal slots that only served this position.",
                 PostProcess = (desired, existing, entry) =>
@@ -298,6 +333,19 @@ public sealed class RealmManifestPlanner(
         {
             Skip = ["Key", "Password", "EmailConfirmed"],
             ImmutableIgnored = ["Id"],
+            PinnedId = u => u.Id,
+            // Users are never revived from a manifest: deletion runs the account
+            // lifecycle (recycle bin, grace, purge), so the way back is a restore.
+            PinnedIdCheck = async raw =>
+            {
+                if (!ShortGuid.TryParse(raw, out Guid id))
+                    return new PinnedIdOutcome(true, $"Id '{raw}' is not a valid Guid or ShortGuid — the apply FAILS for this entry.");
+                if (await session.Events.FetchStreamStateAsync(id, ct) is null) return null;
+                var person = await session.LoadAsync<Person>(id, ct);
+                return new PinnedIdOutcome(true, person is { IsDeleted: true }
+                    ? $"Id '{raw}' belongs to a deleted user in the recycle bin — the apply FAILS for this entry. Restore that user, then re-apply (the entry then updates it, id intact)."
+                    : $"Id '{raw}' is already used by a live entity (or one of a different type) — the apply FAILS for this entry. Remove the Id to create a new user instead.");
+            },
         };
         var matched = new HashSet<string>(StringComparer.Ordinal);
 
@@ -311,6 +359,13 @@ public sealed class RealmManifestPlanner(
 
             var entry = DiffEntry(u.ResolveKey(), u, existing, baselineUser,
                 conflictMode: baselineByEmail is not null, json, policy);
+            // Pinned ids only bite on CREATE (on update the id is immutable + ignored).
+            if (entry.Action == "create" && policy.PinnedId?.Invoke(u) is { Length: > 0 } pinnedRaw &&
+                await policy.PinnedIdCheck!(pinnedRaw) is { } outcome)
+            {
+                entry.Notes.Add(outcome.Note);
+                if (outcome.Blocks) entry = entry with { Action = "error" };
+            }
             if (!string.IsNullOrWhiteSpace(u.Password))
                 entry.Notes.Add(existing is null
                     ? "Password will be set at create (value not shown)."
@@ -409,7 +464,42 @@ public sealed class RealmManifestPlanner(
 
         /// <summary>Post-diff hook for entity-specific notes (secrets, cascades).</summary>
         public Action<T, T?, RealmPlanEntry>? PostProcess { get; init; }
+
+        /// <summary>Reads the manifest entity's pinned <c>Id</c> (null when it carries
+        /// none) so a CREATE can be checked against the live event streams.</summary>
+        public Func<T, string?>? PinnedId { get; init; }
+
+        /// <summary>Resolves what a create with this pinned id would do — revive a
+        /// soft-deleted entity, or fail because the id is taken. Null = no check.</summary>
+        public Func<string, Task<PinnedIdOutcome?>>? PinnedIdCheck { get; init; }
     }
+
+    /// <summary>What the applier will do with a create's pinned id: revive the
+    /// soft-deleted entity that owns it, or fail because a live entity does.</summary>
+    private sealed record PinnedIdOutcome(bool Blocks, string Note);
+
+    /// <summary>
+    /// Pinned-id lookup for one section: mirrors <c>PinnedEntityId</c>. A free stream is
+    /// silent (the create just pins the id); a stream holding a SOFT-DELETED document of
+    /// this type is a revive — reported as a note naming the entity that comes back, so the
+    /// review shows it BEFORE the apply; anything else blocks the apply.
+    /// </summary>
+    private static Func<string, Task<PinnedIdOutcome?>> PinnedIdLookup<TDoc>(
+        IDocumentSession session, Func<TDoc, bool> isDeleted, Func<TDoc, string> describe,
+        CancellationToken ct)
+        where TDoc : class
+        => async raw =>
+        {
+            if (!ShortGuid.TryParse(raw, out Guid id))
+                return new PinnedIdOutcome(true, $"Id '{raw}' is not a valid Guid or ShortGuid — the apply FAILS for this entry.");
+            if (await session.Events.FetchStreamStateAsync(id, ct) is null) return null;
+            var doc = await session.LoadAsync<TDoc>(id, ct);
+            return doc is not null && isDeleted(doc)
+                ? new PinnedIdOutcome(false,
+                    $"Reuses the id of the deleted '{describe(doc)}' — the apply REVIVES that entity under this entry's values (its id and history are kept).")
+                : new PinnedIdOutcome(true,
+                    $"Id '{raw}' is already used by a live entity (or one of a different type) — the apply FAILS for this entry. Remove the Id to create a new entity instead.");
+        };
 
     private static async Task<RealmPlanSection> PlanSectionAsync<T>(
         string name, JsonSerializerOptions json, bool prune, HashSet<string>? deleteKeys,
@@ -429,6 +519,14 @@ public sealed class RealmManifestPlanner(
             var entry = DiffEntry(key(item), item, existing, baselineItem,
                 conflictMode: baselineByKey is not null, json, policy);
             policy.PostProcess?.Invoke(item, existing, entry);
+            // Pinned ids only bite on CREATE (on update the id is immutable + ignored).
+            if (entry.Action == "create" && policy.PinnedIdCheck is not null &&
+                policy.PinnedId?.Invoke(item) is { Length: > 0 } pinnedRaw &&
+                await policy.PinnedIdCheck(pinnedRaw) is { } outcome)
+            {
+                entry.Notes.Add(outcome.Note);
+                if (outcome.Blocks) entry = entry with { Action = "error" };
+            }
             if ((entry.Notes.Count > 0 || entry.Conflicts.Count > 0) && entry.Action == "unchanged")
                 entry = entry with { Action = "update" };
             section.Entries.Add(entry);

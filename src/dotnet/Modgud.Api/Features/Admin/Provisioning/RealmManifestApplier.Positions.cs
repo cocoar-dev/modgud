@@ -94,18 +94,24 @@ public sealed partial class RealmManifestApplier
         foreach (var uid in grantUserIds ?? [])
             await EnsureGrantablePersonAsync(session, uid, ctx, ct);
 
-        var pinnedId = await ResolvePinnedAsync(session, pos.Id, "Position", ctx, ct);
+        var pinned = await ResolvePinnedAsync<PositionPrincipal>(
+            session, pos.Id, "Position", ctx, x => x.IsDeleted, ct);
         var purpose = OrNull(pos.Purpose);
         var fn = new PositionPrincipal
         {
-            Id = pinnedId ?? Guid.NewGuid(),
+            Id = pinned.Id ?? Guid.NewGuid(),
             AccountName = normalised,
             Purpose = string.IsNullOrWhiteSpace(purpose) ? null : purpose.Trim(),
             IsActive = pos.IsActive ?? true,
             TerminalPolicy = policy,
         };
-        session.Events.StartStream<PositionPrincipal>(fn.Id, new PositionPrincipalCreatedEvent(
-            fn.Id, fn.AccountName, fn.Purpose, fn.IsActive, fn.TerminalPolicy));
+        var createdEvent = new PositionPrincipalCreatedEvent(
+            fn.Id, fn.AccountName, fn.Purpose, fn.IsActive, fn.TerminalPolicy);
+        // Revive: append onto the soft-deleted stream instead of starting a new one.
+        if (pinned.Revive)
+            session.Events.Append(fn.Id, createdEvent);
+        else
+            session.Events.StartStream<PositionPrincipal>(fn.Id, createdEvent);
 
         foreach (var uid in grantUserIds ?? [])
         {

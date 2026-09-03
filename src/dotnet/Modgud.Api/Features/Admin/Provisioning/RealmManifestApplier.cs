@@ -269,10 +269,11 @@ public sealed partial class RealmManifestApplier(
         foreach (var lp in manifest.LoginProviders)
         {
             var ctx = $"login provider '{lp.Slug}'";
-            var pinnedLpId = await ResolvePinnedAsync(
-                sp.GetRequiredService<IDocumentSession>(), lp.Id, "LoginProvider", ctx, ct);
+            var pinnedLp = await ResolvePinnedAsync<LoginProvider>(
+                sp.GetRequiredService<IDocumentSession>(), lp.Id, "LoginProvider", ctx,
+                x => x.IsDeleted, ct);
             EnsureOk(await BuildCreateProviderHandler(sp).Handle(
-                BuildCreateProviderCommand(lp, ctx, pinnedLpId), ct), ctx);
+                BuildCreateProviderCommand(lp, ctx, pinnedLp), ct), ctx);
         }
 
         // ── Roles (app-scoped or realm-admin) ─────────────────────────────────────
@@ -306,7 +307,7 @@ public sealed partial class RealmManifestApplier(
             var ctx = $"user '{u.Email}'";
             var cmd = new CreateUserCommand(OrNull(u.Firstname), OrNull(u.Lastname), OrNull(u.Acronym), u.Email,
                 u.UserName ?? string.Empty, u.Password, u.EmailConfirmed ?? false,
-                Id: await ResolvePinnedAsync(userSession, u.Id, "User", ctx, ct));
+                Id: await ResolvePinnedUserAsync(userSession, u.Id, ctx, ct));
             var created = await createUser.Handle(cmd, ct);
             EnsureOk(created, ctx);
             if (ShortGuid.TryParse(created.Value.Id, out Guid uid))
@@ -328,6 +329,8 @@ public sealed partial class RealmManifestApplier(
             {
                 var memberIds = (g.Members ?? []).Select(m => ResolveRef(userIds, m, $"group '{g.Name}' member '{m}'")).ToList();
                 var groupRoleIds = (g.Roles ?? []).Select(rk => ResolveRef(roleIds, rk, $"group '{g.Name}' role '{rk}'")).ToList();
+                var pinnedGroup = await ResolvePinnedAsync<Group>(
+                    groupSession, g.Id, "Group", $"group '{g.Name}'", x => x.IsDeleted, ct);
                 var cmd = new CreateGroupCommand(
                     g.Name, OrNull(g.Description), memberIds, groupRoleIds,
                     ParseEnum<MembershipMode>(g.MembershipMode ?? "Manual", $"group '{g.Name}' membershipMode"),
@@ -338,7 +341,7 @@ public sealed partial class RealmManifestApplier(
                     // CreateGroupHandler itself defaults null to [] (dormant), which would make an
                     // imported admin group silently grant nothing.
                     g.BoundTo ?? [AppSlugs.Modgud], g.ExternallyDrivable ?? false, CallerIsRealmAdmin: true,
-                    Id: await ResolvePinnedAsync(groupSession, g.Id, "Group", $"group '{g.Name}'", ct));
+                    Id: pinnedGroup.Id, ReviveExistingStream: pinnedGroup.Revive);
                 EnsureOk(await groupHandler.Handle(cmd, ct), $"group '{g.Name}'");
             }
         }
@@ -570,7 +573,8 @@ public sealed partial class RealmManifestApplier(
             {
                 EnsureOk(await BuildCreateProviderHandler(sp).Handle(
                     BuildCreateProviderCommand(lp, ctx,
-                        await ResolvePinnedAsync(session, lp.Id, "LoginProvider", ctx, ct)), ct), ctx);
+                        await ResolvePinnedAsync<LoginProvider>(
+                            session, lp.Id, "LoginProvider", ctx, x => x.IsDeleted, ct)), ct), ctx);
                 continue;
             }
 
@@ -684,7 +688,7 @@ public sealed partial class RealmManifestApplier(
             {
                 var createCmd = new CreateUserCommand(OrNull(u.Firstname), OrNull(u.Lastname), OrNull(u.Acronym),
                     u.Email, u.UserName ?? string.Empty, u.Password, u.EmailConfirmed ?? false,
-                    Id: await ResolvePinnedAsync(session, u.Id, "User", ctx, ct));
+                    Id: await ResolvePinnedUserAsync(session, u.Id, ctx, ct));
                 var created = await createUser.Handle(createCmd, ct);
                 EnsureOk(created, ctx);
                 uid = ShortGuid.TryParse(created.Value.Id, out Guid cid) ? cid : null;
@@ -772,12 +776,14 @@ public sealed partial class RealmManifestApplier(
 
                 if (existing is null)
                 {
+                    var pinnedGroup = await ResolvePinnedAsync<Group>(
+                        session, g.Id, "Group", ctx, x => x.IsDeleted, ct);
                     // Create-branch mirrors the create endpoint's BoundTo default (see import).
                     EnsureOk(await createHandler.Handle(new CreateGroupCommand(
                         g.Name, description, memberIds, groupRoleIds, mode,
                         script, email, emailMode,
                         g.BoundTo ?? [AppSlugs.Modgud], externallyDrivable, CallerIsRealmAdmin: true,
-                        Id: await ResolvePinnedAsync(session, g.Id, "Group", ctx, ct)), ct), ctx);
+                        Id: pinnedGroup.Id, ReviveExistingStream: pinnedGroup.Revive), ct), ctx);
                 }
                 else
                 {
@@ -1057,7 +1063,7 @@ public sealed partial class RealmManifestApplier(
     /// declares one is a contract error.
     /// </summary>
     private static CreateLoginProviderCommand BuildCreateProviderCommand(
-        RealmManifestLoginProvider lp, string ctx, Guid? pinnedId)
+        RealmManifestLoginProvider lp, string ctx, PinnedEntityId.PinnedIdResolution pinned)
     {
         var type = lp.Type is null
             ? LoginProviderType.Oidc
@@ -1089,7 +1095,8 @@ public sealed partial class RealmManifestApplier(
             TrustForAuthorization: lp.TrustForAuthorization,
             AuthoritativeForProfile: lp.AuthoritativeForProfile,
             InitialClientSecret: lp.ClientSecret,
-            Id: pinnedId);
+            Id: pinned.Id,
+            ReviveExistingStream: pinned.Revive);
     }
 
     /// <summary>Nullable bool → PATCH optional: null = omitted (no change).</summary>
@@ -1192,17 +1199,46 @@ public sealed partial class RealmManifestApplier(
     }
 
     /// <summary>Pinned-id resolution for the COMMAND-based create paths (users, groups,
-    /// login providers, positions) whose handlers have no service-level
-    /// <see cref="PinnedEntityId"/> check: validates the format and that the event stream
-    /// is free, failing the apply with the section context. Service-backed creates
-    /// (apps, apis, scopes, clients, roles, service accounts) validate inside the
-    /// service instead. On update the manifest id is ignored — ids are immutable.</summary>
-    private static async Task<Guid?> ResolvePinnedAsync(
-        IDocumentSession session, string? raw, string entityLabel, string ctx, CancellationToken ct)
+    /// login providers, positions): the handlers live in projects that cannot see
+    /// <see cref="PinnedEntityId"/>, so the applier resolves the id here and passes the
+    /// outcome down. Service-backed creates (apps, apis, scopes, clients, roles, service
+    /// accounts) resolve inside the service instead. On update the manifest id is ignored —
+    /// ids are immutable.
+    ///
+    /// <para>A pinned id whose stream holds a SOFT-DELETED document of the same type is a
+    /// REVIVE (the create appends onto that stream); a live entity — or a stream of another
+    /// type — is a conflict that fails the apply with the section context.</para></summary>
+    private static async Task<PinnedEntityId.PinnedIdResolution> ResolvePinnedAsync<TDoc>(
+        IDocumentSession session, string? raw, string entityLabel, string ctx,
+        Func<TDoc, bool> isDeleted, CancellationToken ct)
+        where TDoc : class
     {
-        var pinned = await PinnedEntityId.ResolveAsync(session, raw, entityLabel, ct);
+        var pinned = await PinnedEntityId.ResolveAsync(session, raw, entityLabel, isDeleted, ct);
         if (pinned.IsError) throw new ManifestApplyException(ctx, pinned.Errors);
         return pinned.Value;
+    }
+
+    /// <summary>
+    /// Users are the ONE type whose deletion is not a bare soft-delete: it runs the account
+    /// lifecycle (recycle bin, grace period, GDPR purge). Reviving that stream from a
+    /// manifest would bypass it, so a pinned id belonging to a binned user is refused with
+    /// the way out named explicitly — restore the user, then re-apply (the apply then
+    /// UPDATES the restored user, id intact).
+    /// </summary>
+    private static async Task<Guid?> ResolvePinnedUserAsync(
+        IDocumentSession session, string? raw, string ctx, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        if (!ShortGuid.TryParse(raw, out Guid id))
+            throw new ManifestApplyException(ctx, [Error.Validation("User.InvalidPinnedId",
+                $"Pinned id '{raw}' is not a valid Guid or ShortGuid.")]);
+        if (await session.Events.FetchStreamStateAsync(id, ct) is null) return id;
+
+        var person = await session.LoadAsync<Person>(id, ct);
+        throw new ManifestApplyException(ctx, [Error.Conflict("User.PinnedIdTaken",
+            person is { IsDeleted: true }
+                ? $"{ctx}: the pinned id '{raw}' belongs to a deleted user in the recycle bin. Restore that user first, then re-apply — the apply then updates it and the id stays the same."
+                : $"{ctx}: the pinned id '{raw}' is already used by a live entity (or one of a different type) in this realm.")]);
     }
 
     private static void EnsureOk<T>(ErrorOr<T> result, string what)

@@ -49,16 +49,22 @@ public sealed class AppAdminService(IDocumentSession session, IApplicationSettin
         var permissions = NormalizePermissions(dto.Permissions, existingByKey: null);
         if (permissions.IsError) return permissions.Errors;
 
-        var pinned = await Modgud.Application.Services.PinnedEntityId.ResolveAsync(session, dto.Id, "App", ct);
+        var pinned = await Modgud.Application.Services.PinnedEntityId.ResolveAsync<App>(
+            session, dto.Id, "App", a => a.IsDeleted, ct);
         if (pinned.IsError) return pinned.Errors;
-        var id = pinned.Value ?? Guid.NewGuid();
-        session.Events.StartStream<App>(id, new AppCreatedEvent(
+        var id = pinned.Value.Id ?? Guid.NewGuid();
+        var createdEvent = new AppCreatedEvent(
             Id: id,
             Slug: dto.Slug,
             DisplayName: dto.DisplayName,
             Description: dto.Description,
             Permissions: permissions.Value,
-            IsSystem: false));
+            IsSystem: false);
+        // Revive: append onto the soft-deleted stream instead of starting a new one.
+        if (pinned.Value.Revive)
+            session.Events.Append(id, createdEvent);
+        else
+            session.Events.StartStream<App>(id, createdEvent);
 
         // App + its settings override commit together (atomic) — see class summary.
         if (dto.Settings is not null)

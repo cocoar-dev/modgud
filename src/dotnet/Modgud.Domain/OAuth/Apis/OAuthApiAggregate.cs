@@ -57,10 +57,18 @@ public partial class OAuthApiAggregate
     public OAuthApiPermissionIdsChanged SetPermissionIds(IReadOnlyList<Guid> v) { var e = new OAuthApiPermissionIdsChanged(Id, v); Apply(e); return e; }
     public OAuthApiDeleted Delete() { var e = new OAuthApiDeleted(Id); Apply(e); return e; }
 
+    // A Created event on an EXISTING stream is a REVIVE (provisioning re-imports a
+    // soft-deleted entity under its pinned id): reset EVERY field to the created
+    // state, so no value from the previous incarnation survives.
     public void Apply(OAuthApiCreated e)
     {
         Id = e.ApiId; Name = e.Name; DisplayName = e.DisplayName; Description = e.Description;
         Enabled = e.Enabled; Scopes = e.Scopes.ToList();
+        UserClaims = [];
+        Properties = new Dictionary<string, object?>();
+        AppId = null;
+        PermissionIds = [];
+        IsDeleted = false;
     }
     public void Apply(OAuthApiDisplayNameChanged e) => DisplayName = e.DisplayName;
     public void Apply(OAuthApiDescriptionChanged e) => Description = e.Description;

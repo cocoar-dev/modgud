@@ -210,9 +210,20 @@ applications persist as their foreign key — nothing has to be re-linked. The r
 - `Id` applies **only at create**; on update it is ignored (ids are immutable — the
   entity is matched by its natural key, and the plan notes a differing id instead of
   diffing it).
-- A create whose pinned id is **already taken** by any entity in the target realm
-  (including a soft-deleted one) fails the apply with a `*.PinnedIdTaken` conflict —
-  remove the `Id` from the manifest or resolve the collision first.
+- **Deleted, then re-imported? The entity comes back with the same id.** Deleting is a
+  soft delete, so the id keeps its history. A create whose pinned id belongs to a
+  *deleted* entity of the same kind **revives** it — under the values in the manifest,
+  including its name, so a rename before the delete resolves too. This is what makes
+  "transfer to prod → something broke → delete → fix → re-import the same config" end
+  where it started.
+- A pinned id owned by a **live** entity (or by an entity of a different kind) is a
+  genuine collision: the apply fails with a `*.PinnedIdTaken` conflict, and the plan
+  flags that entry as an error before you apply. Remove the `Id` to create a separate
+  entity instead.
+- **Users are the exception**: deleting a user runs the account lifecycle (recycle bin,
+  grace period, GDPR purge), so a manifest never revives one. Re-importing a binned
+  user's id fails with a message naming the way out — restore the user from the bin,
+  then re-apply (the apply then updates it, id intact).
 - Omit `Id` (hand-written manifests) and the server generates one, exactly as before.
 
 Service accounts export as **hulls** (AccountName, Purpose, IsActive, Id): their

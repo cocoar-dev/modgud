@@ -70,41 +70,22 @@ public sealed partial class RealmManifestApplier
                 "ServiceAccount.AccountNameTaken",
                 $"{ctx}: account name '{normalised}' is already used by another principal.")]);
 
-        var id = Guid.NewGuid();
-        var reviveDeletedStream = false;
-        if (!string.IsNullOrWhiteSpace(sa.Id))
-        {
-            if (!ShortGuid.TryParse(sa.Id, out Guid pinned))
-                throw new ManifestApplyException(ctx, [Error.Validation(
-                    "Manifest.InvalidId", $"{ctx}: '{sa.Id}' is not a valid Guid or ShortGuid.")]);
-            if (await session.Events.FetchStreamStateAsync(pinned, ct) is not null)
-            {
-                // The stream exists. When it is THIS service account soft-deleted
-                // (delete → re-import is the recycle pattern the whole export/import
-                // flow leans on), REVIVE it: a fresh CreatedEvent on the stream
-                // rebuilds the doc with IsDeleted=false. Anything else owning the
-                // id is a genuine conflict.
-                var deleted = await session.LoadAsync<ServiceAccount>(pinned, ct);
-                if (deleted is { IsDeleted: true } && deleted.AccountName == normalised)
-                    reviveDeletedStream = true;
-                else
-                    throw new ManifestApplyException(ctx, [Error.Conflict(
-                        "Manifest.IdTaken",
-                        $"{ctx}: the pinned id '{sa.Id}' is already used by another entity in this realm.")]);
-            }
-            id = pinned;
-        }
+        // Shared pinned-id contract: a soft-deleted service account under this id is
+        // revived (under the manifest's account name, so a rename before the delete
+        // resolves too); a live entity is a conflict.
+        var pinned = await ResolvePinnedAsync<ServiceAccount>(
+            session, sa.Id, "ServiceAccount", ctx, x => x.IsDeleted, ct);
 
         var created = new ServiceAccount
         {
-            Id = id,
+            Id = pinned.Id ?? Guid.NewGuid(),
             AccountName = normalised,
             Purpose = NormalisedPurpose(sa.Purpose.HasValue ? sa.Purpose.Value : null),
             IsActive = sa.IsActive ?? true,
         };
         var createdEvent = new ServiceAccountCreatedEvent(
             created.Id, created.AccountName, created.Purpose, created.IsActive);
-        if (reviveDeletedStream)
+        if (pinned.Revive)
             session.Events.Append(created.Id, createdEvent);
         else
             session.Events.StartStream<ServiceAccount>(created.Id, createdEvent);

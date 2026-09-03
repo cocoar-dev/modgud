@@ -52,7 +52,12 @@ public record CreateLoginProviderCommand(
     string? InitialClientSecret = null,
     // Optional pinned entity id — provisioning only (the manifest applier
     // pre-checks stream availability); server-generated when null.
-    Guid? Id = null);
+    Guid? Id = null,
+    // Provisioning only: the pinned Id belongs to a SOFT-DELETED provider, so the
+    // created event is appended onto that stream (revive) instead of starting a new
+    // one. Resolved by the applier via PinnedEntityId (layering: this project cannot
+    // see Modgud.Application).
+    bool ReviveExistingStream = false);
 
 public class CreateLoginProviderHandler(
     IDocumentSession session,
@@ -169,7 +174,10 @@ public class CreateLoginProviderHandler(
             FlavorData: command.FlavorData,
             CreatedAt: now);
 
-        session.Events.StartStream<LoginProvider>(id, @event);
+        if (command.ReviveExistingStream)
+            session.Events.Append(id, @event);
+        else
+            session.Events.StartStream<LoginProvider>(id, @event);
         await session.SaveChangesAsync(ct);
 
         return (await session.LoadAsync<LoginProvider>(id, ct))!;
@@ -260,7 +268,10 @@ public class CreateLoginProviderHandler(
             FlavorData: flavorDataJson,
             CreatedAt: now);
 
-        session.Events.StartStream<LoginProvider>(id, @event);
+        if (command.ReviveExistingStream)
+            session.Events.Append(id, @event);
+        else
+            session.Events.StartStream<LoginProvider>(id, @event);
         await session.SaveChangesAsync(ct);
 
         return (await session.LoadAsync<LoginProvider>(id, ct))!;
@@ -316,7 +327,10 @@ public class CreateLoginProviderHandler(
             FlavorData: null,
             CreatedAt: now);
 
-        session.Events.StartStream<LoginProvider>(id, @event);
+        if (command.ReviveExistingStream)
+            session.Events.Append(id, @event);
+        else
+            session.Events.StartStream<LoginProvider>(id, @event);
         await session.SaveChangesAsync(ct);
 
         return (await session.LoadAsync<LoginProvider>(id, ct))!;

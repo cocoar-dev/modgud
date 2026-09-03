@@ -172,6 +172,9 @@ public partial class OAuthApplicationAggregate
         return e;
     }
 
+    // A Created event on an EXISTING stream is a REVIVE (provisioning re-imports a
+    // soft-deleted entity under its pinned id): reset EVERY field to the created
+    // state, so no value from the previous incarnation survives.
     public void Apply(OAuthApplicationCreated @event)
     {
         Id = @event.ApplicationId;
@@ -184,6 +187,14 @@ public partial class OAuthApplicationAggregate
         PostLogoutRedirectUris = @event.PostLogoutRedirectUris.ToList();
         Permissions = @event.Permissions.ToList();
         Requirements = @event.Requirements.ToList();
+        Settings = new Dictionary<string, string>();
+        DisplayNames = new Dictionary<string, string>();
+        Properties = new Dictionary<string, object?>();
+        AppIds = [];
+        LinkedServiceAccountId = null;
+        LinkedPositionPrincipalId = null;
+        ManagedTerminalEnrollmentId = null;
+        IsDeleted = false;
     }
 
     public void Apply(OAuthApplicationDisplayNameChanged @event) => DisplayName = @event.DisplayName;

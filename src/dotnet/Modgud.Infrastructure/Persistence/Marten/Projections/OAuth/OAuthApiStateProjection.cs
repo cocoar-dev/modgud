@@ -5,7 +5,10 @@ namespace Modgud.Infrastructure.Persistence.Marten.Projections.OAuth;
 
 public partial class OAuthApiStateProjection : SingleStreamProjection<OAuthApiState, Guid>
 {
-    public OAuthApiState Create(OAuthApiCreated e) => new()
+    // Apply (not Create) so a Created event on an EXISTING stream REVIVES the entity:
+    // provisioning re-imports a soft-deleted entity under its pinned id, and the fresh
+    // document replaces the old one wholesale (IsDeleted back to false, no stale field).
+    public OAuthApiState Apply(OAuthApiCreated e, OAuthApiState _) => new()
     {
         Id = e.ApiId,
         Name = e.Name,

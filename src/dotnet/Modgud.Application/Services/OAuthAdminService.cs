@@ -223,9 +223,10 @@ public partial class OAuthAdminService
         // Build permissions list (endpoints + grant types + scopes).
         var permissions = BuildClientPermissions(dto.AllowedGrantTypes, dto.Scopes, dto.ClientType);
 
-        var pinnedClientId = await PinnedEntityId.ResolveAsync(_session, dto.Id, "OAuthClient", ct);
+        var pinnedClientId = await PinnedEntityId.ResolveAsync<OAuthApplicationState>(
+            _session, dto.Id, "OAuthClient", s => s.IsDeleted, ct);
         if (pinnedClientId.IsError) return pinnedClientId.Errors;
-        var id = pinnedClientId.Value ?? Guid.NewGuid();
+        var id = pinnedClientId.Value.Id ?? Guid.NewGuid();
         var (aggregate, createdEvent) = OAuthApplicationAggregate.Create(
             id,
             dto.ClientId,
@@ -238,7 +239,12 @@ public partial class OAuthAdminService
             permissions: permissions,
             requirements: BuildClientRequirements(dto.RequirePushedAuthorizationRequests));
 
-        _session.Events.StartStream<OAuthApplicationAggregate>(id, createdEvent);
+        // Revive: append onto the soft-deleted stream instead of starting a new one —
+        // the aggregate/projection rebuild from the fresh Created event.
+        if (pinnedClientId.Value.Revive)
+            _session.Events.Append(id, createdEvent);
+        else
+            _session.Events.StartStream<OAuthApplicationAggregate>(id, createdEvent);
 
         // Settings (primitive lifetime + token-type values).
         var settings = BuildClientSettings(dto);
@@ -866,11 +872,15 @@ public partial class OAuthAdminService
             appId = parsedAppId;
         }
 
-        var pinnedScopeId = await PinnedEntityId.ResolveAsync(_session, dto.Id, "OAuthScope", ct);
+        var pinnedScopeId = await PinnedEntityId.ResolveAsync<OAuthScopeState>(
+            _session, dto.Id, "OAuthScope", s => s.IsDeleted, ct);
         if (pinnedScopeId.IsError) return pinnedScopeId.Errors;
-        var id = pinnedScopeId.Value ?? Guid.NewGuid();
+        var id = pinnedScopeId.Value.Id ?? Guid.NewGuid();
         var (aggregate, createdEvent) = OAuthScopeAggregate.Create(id, dto.Name, dto.DisplayName, dto.Description, dto.Resources);
-        _session.Events.StartStream<OAuthScopeAggregate>(id, createdEvent);
+        if (pinnedScopeId.Value.Revive)
+            _session.Events.Append(id, createdEvent);
+        else
+            _session.Events.StartStream<OAuthScopeAggregate>(id, createdEvent);
 
         // Apply non-default flags as separate events (matching legacy behaviour).
         if (!dto.Enabled) _session.Events.Append(id, aggregate.SetEnabled(false));
@@ -1055,11 +1065,15 @@ public partial class OAuthAdminService
         var permissionIdsResult = ValidatePermissionIds(dto.PermissionIds, linkedApp);
         if (permissionIdsResult.IsError) return permissionIdsResult.FirstError;
 
-        var pinnedApiId = await PinnedEntityId.ResolveAsync(_session, dto.Id, "OAuthApi", ct);
+        var pinnedApiId = await PinnedEntityId.ResolveAsync<OAuthApiState>(
+            _session, dto.Id, "OAuthApi", s => s.IsDeleted, ct);
         if (pinnedApiId.IsError) return pinnedApiId.Errors;
-        var id = pinnedApiId.Value ?? Guid.NewGuid();
+        var id = pinnedApiId.Value.Id ?? Guid.NewGuid();
         var (aggregate, createdEvent) = OAuthApiAggregate.Create(id, dto.Name, dto.DisplayName, dto.Description, dto.Enabled, dto.Scopes);
-        _session.Events.StartStream<OAuthApiAggregate>(id, createdEvent);
+        if (pinnedApiId.Value.Revive)
+            _session.Events.Append(id, createdEvent);
+        else
+            _session.Events.StartStream<OAuthApiAggregate>(id, createdEvent);
 
         if (dto.UserClaims.Count > 0)
             _session.Events.Append(id, aggregate.SetUserClaims(dto.UserClaims));
