@@ -138,7 +138,7 @@ async function deleteSelected() {
     const row = rows.value.find((r) => r.Id === id)
     if (!row) return
     if (row.DraftStaged === 'delete') return staging.unstageDelete(row.Name)
-    if (!confirm(t('admin.oauthApis.confirmDelete', {}, 'Really delete this API?'))) return
+    // No confirm: staged deletes are reversible; the apply popconfirm gates.
     return staging.stageDelete(row.Name)
   }
   if (!confirm(t('admin.oauthApis.confirmDelete', {}, 'Really delete this API?'))) return

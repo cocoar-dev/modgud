@@ -167,7 +167,7 @@ async function deleteSelected() {
     const row = rows.value.find((r) => r.Id === id)
     if (!row) return
     if (row.DraftStaged === 'delete') return staging.unstageDelete(row.Slug)
-    if (!confirm(t('admin.apps.confirmDelete', {}, 'Really delete this app?'))) return
+    // No confirm: staged deletes are reversible; the apply popconfirm gates.
     return staging.stageDelete(row.Slug)
   }
   if (!confirm(t('admin.apps.confirmDelete', {}, 'Really delete this app?'))) return

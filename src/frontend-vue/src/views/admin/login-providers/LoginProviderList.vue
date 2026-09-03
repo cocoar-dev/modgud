@@ -181,7 +181,7 @@ async function deleteSelected() {
     if (staging.isDraftId(provider.Id)) return staging.unstage(staging.draftKeyOf(provider.Id))
     if ((provider as DraftRow<LoginProviderDto>).DraftStaged === 'delete')
       return staging.unstageDelete(provider.Slug)
-    if (!confirm(t('admin.loginProviders.confirmDelete', {}, 'Really delete this login provider?'))) return
+    // No confirm: staged deletes are reversible; the apply popconfirm gates.
     return staging.stageDelete(provider.Slug)
   }
   if (!confirm(t('admin.loginProviders.confirmDelete', {}, 'Really delete this login provider?'))) return

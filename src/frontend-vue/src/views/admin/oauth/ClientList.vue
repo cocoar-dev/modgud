@@ -221,7 +221,7 @@ async function deleteSelected() {
     if (row && !row.LinkedServiceAccountId && !row.LinkedPositionPrincipalId
       && !row.ManagedTerminalEnrollmentId) {
       if (row.DraftStaged === 'delete') return staging.unstageDelete(row.ClientId)
-      if (!confirm(t('common.confirmDelete', {}, 'Really delete?'))) return
+      // No confirm: staged deletes are reversible; the apply popconfirm gates.
       return staging.stageDelete(row.ClientId)
     }
   }

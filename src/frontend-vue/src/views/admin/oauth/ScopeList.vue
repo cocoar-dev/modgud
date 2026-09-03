@@ -160,7 +160,10 @@ async function deleteSelected() {
     const row = rows.value.find((r) => r.Id === id)
     if (!row) return
     if (row.DraftStaged === 'delete') return staging.unstageDelete(row.Name)
-    if (!confirm(t('admin.oauthScopes.confirmDelete', {}, 'Really delete this scope?'))) return
+    // No confirm dialog: a staged delete is reversible (undo via the same
+    // menu / the review page) — the apply popconfirm is the real gate. Native
+    // confirm() is also fragile: Chrome's "suppress dialogs" makes it return
+    // false silently, which read as "delete does nothing".
     return staging.stageDelete(row.Name)
   }
   if (!confirm(t('admin.oauthScopes.confirmDelete', {}, 'Really delete this scope?'))) return

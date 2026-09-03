@@ -128,7 +128,7 @@ async function deleteRows() {
     if (!row) return
     const key = row.AccountName.trim().toLowerCase()
     if (row.DraftStaged === 'delete') return staging.unstageDelete(key)
-    if (!confirm(t('common.confirmDelete', {}, 'Really delete?'))) return
+    // No confirm: staged deletes are reversible; the apply popconfirm gates.
     return staging.stageDelete(key)
   }
   if (selectedIds.value.length > 0 && confirm(t('common.confirmDelete', {}, 'Really delete?'))) {

@@ -156,7 +156,7 @@ async function deleteSelected() {
     const row = groups.value.find((r) => r.Id === id)
     if (!row) return
     if (row.DraftStaged === 'delete') return staging.unstageDelete(row.Name)
-    if (!confirm(t('common.confirmDelete', {}, 'Really delete?'))) return
+    // No confirm: staged deletes are reversible; the apply popconfirm gates.
     return staging.stageDelete(row.Name)
   }
   if (confirm(t('common.confirmDelete', {}, 'Really delete?'))) {

@@ -239,8 +239,8 @@ async function deleteUsers() {
     const key = row?.UserName || row?.Email
     if (!row || !key) return
     if (row.DraftStaged === 'delete') return staging.unstageDelete(key)
-    if (!confirm(t('admin.users.confirmStagedBin', {},
-        'Stage the deletion? On apply the user is moved to the recycle bin (deactivated, scheduled for deletion, restorable until erased).'))) return
+    // No confirm: staged deletes are reversible; the apply popconfirm gates
+    // (and apply only moves the user to the recycle bin — grace + restore).
     return staging.stageDelete(key)
   }
   if (confirm(t('admin.users.confirmBin', {},
