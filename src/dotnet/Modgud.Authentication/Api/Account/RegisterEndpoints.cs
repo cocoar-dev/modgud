@@ -7,6 +7,7 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using Marten;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
+using Modgud.Authentication.RateLimiting;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -93,7 +94,10 @@ public static class RegisterEndpoints
             return Results.Ok(response);
         })
         .WithName("Account_Register")
-        .AllowAnonymous();
+        .AllowAnonymous()
+        // ADR 0007 — per address (the defence), per source (NAT-sized brake), per
+        // App budget; the silent per-source registration ceiling sits in the pipeline.
+        .RequireAuthRateLimit(AuthRateLimitPolicy.SelfRegistration, target: ctx => ctx.Argument<RegisterDto>()?.Email);
 
         group.MapPost("register/verify-email", async (
             VerifyEmailDto dto,

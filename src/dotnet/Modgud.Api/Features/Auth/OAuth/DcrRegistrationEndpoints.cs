@@ -52,7 +52,7 @@ public static class DcrRegistrationEndpoints
         Modgud.Authentication.Applications.IApplicationSettingsResolver settingsResolver,
         OAuthAdminService oauthAdminService,
         IDcrRegistrationValidator validator,
-        DcrRateLimiter rateLimiter,
+        IDcrRateLimiter rateLimiter,
         Serilog.ILogger logger,
         ISecurityAuditLog securityAudit,
         IDocumentSession session,
@@ -85,8 +85,8 @@ public static class DcrRegistrationEndpoints
         }
 
         // ───────── Rate-limit ─────────
-        var verdict = rateLimiter.TryConsume(
-            sourceIp, realmSlug, settings.PerIpRateLimitPerHour, settings.PerRealmRateLimitPerDay);
+        var verdict = await rateLimiter.TryConsumeAsync(
+            sourceIp, realmSlug, settings.PerIpRateLimitPerHour, settings.PerRealmRateLimitPerDay, ct);
         if (verdict != DcrRateLimitVerdict.Allowed)
         {
             var reason = verdict == DcrRateLimitVerdict.PerIpExceeded

@@ -10,6 +10,7 @@ using Modgud.Authentication.Registration;
 using Modgud.Domain.Applications;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Authentication.RateLimiting;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -113,7 +114,7 @@ public static class NativeRegisterEndpoints
         .AllowAnonymous()
         .WithName("NativeRegister_Request")
         // Same per-IP SMTP cap class as the OTP-request / magic-link endpoints.
-        .RequireRateLimiting("native-otp");
+        .RequireAuthRateLimit(AuthRateLimitPolicy.NativeOtp, target: ctx => ctx.Argument<NativeRegisterRequestDto>()?.Email);
 
         return application;
     }

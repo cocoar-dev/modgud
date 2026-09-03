@@ -206,6 +206,8 @@ public sealed record RealmManifestClient
 
     [Description("OAuth grant types, e.g. 'authorization_code', 'refresh_token', 'client_credentials'. Absent = unchanged; [] clears (the client can no longer mint tokens).")]
     public List<string>? AllowedGrantTypes { get; init; }
+    /// <summary>ADR 0007 — granted client capabilities (<c>cap:trusted-forwarder</c>).</summary>
+    public List<string>? Capabilities { get; init; }
 
     [Description("App slugs this client is bound to (which permission namespaces it operates in). Absent = unchanged; [] detaches all (realm-wide).")]
     public List<string>? Apps { get; init; }

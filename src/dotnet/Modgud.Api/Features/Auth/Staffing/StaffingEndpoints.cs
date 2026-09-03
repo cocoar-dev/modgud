@@ -15,6 +15,8 @@ using OpenIddict.Abstractions;
 using OpenIddict.Validation.AspNetCore;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
+using Modgud.Authentication.RateLimiting;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Api.Features.Auth.Staffing;
 
@@ -47,7 +49,7 @@ public static class StaffingEndpoints
             {
                 AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
             })
-            .RequireRateLimiting("passkey-begin");
+            .RequireAuthRateLimit(AuthRateLimitPolicy.PasskeyBegin);
 
         // §15.2 — the terminal-facing local lock. Authenticated by either
         // position token of the SAME terminal (staffing token of the active
@@ -75,7 +77,7 @@ public static class StaffingEndpoints
             {
                 AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
             })
-            .RequireRateLimiting("passkey-begin");
+            .RequireAuthRateLimit(AuthRateLimitPolicy.PasskeyBegin);
 
         // §15.3 — admin surface (cookie-auth like every /api endpoint).
         var admin = application.MapGroup("/api")

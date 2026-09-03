@@ -113,7 +113,6 @@ The email-verification endpoint (`POST /api/account/register/verify-email`) is t
 ### Known limitations (current MVP)
 
 - **No dedicated "pending approvals" UI.** When admin-approval is required, the account is created `IsActive=false` at verification and an admin has to flip the flag from the regular user-edit modal. A filter chip on the user list for "pending approval" is a sensible follow-up.
-- **In-memory rate limiter.** The per-email cap (1/min, 3/h) resets on restart and isn't shared across multiple instances. Single-instance deployments are fine; multi-instance setups can bypass the cap by hopping between instances. A Redis-backed implementation behind the same interface is a follow-up.
 - **No pre-submit username availability check.** The form surfaces username collisions through the generic 200-OK like every other rejection. An anonymous `GET /api/account/check-username/{name}` (rate-limited) would improve the UX without touching the anti-enumeration guarantees on email.
 - **Email template is shared with the email-change flow.** Both reuse `EmailTemplate.EmailVerification`. A dedicated `EmailTemplate.SelfRegistrationVerify` with welcome wording is a quality-of-life improvement.
 
@@ -199,25 +198,15 @@ override.
 
 ## Rate Limits
 
-Per-IP request ceilings for this realm's auth endpoints. Each policy is a **max requests / window (minutes)** pair, partitioned by source IP and applied **per realm**. The shipped defaults are the secure production posture — the knob exists so a test realm, dev, or a legitimately bursty consumer can raise a ceiling **without a modgud code change + redeploy**, and so a hardened realm can tighten one.
+Multi-dimensional ceilings for this realm's public auth endpoints — per **target** (the mailbox: the defence), per **App** (the mail-cost brake), per **client**, per **source** (a coarse, NAT-sized brake) and a silent **sign-ups-per-source** ceiling against address spraying. Each policy row shows the effective value per dimension; an empty cell inherits the shipped default, an overridden cell stores only that override. The page also carries the **source allowlist** (addresses / CIDR ranges exempt from the source dimensions only) and the **enforcement mode** (enforce, or log-only for rollout).
 
-| Policy | Endpoint | Default |
-| --- | --- | --- |
-| Native OTP request | `POST /api/account/native/otp/request` (+ native register) | 5 / 60 min |
-| Magic-link request | `POST /api/account/magic-link/request` | 5 / 60 min |
-| Password-reset request | `POST /api/account/forgot-password` | 5 / 60 min |
-| Email-OTP login verify | `POST /api/account/email-otp/login` | 30 / 1 min |
-| Email verification resend | `POST /api/account/email/send-verification` | 5 / 60 min |
-| Passkey ceremony begin / enroll | `POST /connect/passkey/begin` (+ enroll) | 60 / 5 min |
-| First-admin bootstrap | `POST /api/account/bootstrap-admin` | 10 / 15 min |
+See [Rate limits](../platform/rate-limits) for the dimensions, the defaults per policy, the trusted-forwarder capability for backends-for-frontend, and the `429` contract.
 
 Notes:
 
-- A realm that never touches this tab behaves exactly as before — the defaults are the previously-hardcoded values.
-- Limits are **per realm**: raising a ceiling on one realm does not affect another on the same shared IdP.
-- The limiter is in-memory and resets on app restart; over-limit requests get `429 Too Many Requests`.
-- A config change takes effect within a few seconds (a short cache smooths the per-request lookup).
-- This governs the **request rate**; it is independent of per-challenge attempt counters (e.g. the email-OTP `MaxAttempts` brute-force lock) and of the realm's anti-enumeration uniform responses.
+- Limits are **per realm** and can be overridden per [Application](./applications#application-settings).
+- Counters are shared through Postgres, so several Modgud instances agree on every count; over-limit requests get `429 Too Many Requests` with `Retry-After` and a machine-readable body.
+- A realm that still carries per-IP rules from before this model runs **log-only** until a mode is chosen; the old values are shown and can be removed on save.
 
 ## Account Deletion
 

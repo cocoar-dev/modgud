@@ -24,6 +24,9 @@ public record OAuthClientDto
     public bool RequireConsent { get; init; }
     public bool AllowRememberConsent { get; init; } = true;
     public List<string> AllowedGrantTypes { get; init; } = [];
+    /// <summary>ADR 0007 — granted client capabilities (<c>cap:</c> entries), e.g.
+    /// <c>cap:trusted-forwarder</c>. Confidential clients only.</summary>
+    public List<string> Capabilities { get; init; } = [];
     public List<string> AllowedCorsOrigins { get; init; } = [];
 
     public int? IdentityTokenLifetime { get; init; }
@@ -151,6 +154,9 @@ public record CreateOAuthClientDto
     public bool RequireConsent { get; init; }
     public bool AllowRememberConsent { get; init; } = true;
     public List<string> AllowedGrantTypes { get; init; } = [];
+    /// <summary>ADR 0007 — granted client capabilities (<c>cap:</c> entries), e.g.
+    /// <c>cap:trusted-forwarder</c>. Confidential clients only.</summary>
+    public List<string> Capabilities { get; init; } = [];
     public List<string> AllowedCorsOrigins { get; init; } = [];
 
     public int? IdentityTokenLifetime { get; init; }
@@ -257,6 +263,8 @@ public record UpdateOAuthClientDto
     public bool? RequireConsent { get; init; }
     public bool? AllowRememberConsent { get; init; }
     public List<string>? AllowedGrantTypes { get; init; }
+    /// <summary>ADR 0007 — null = unchanged; a list replaces the granted capabilities.</summary>
+    public List<string>? Capabilities { get; init; }
     public List<string>? AllowedCorsOrigins { get; init; }
 
     // Lifetimes in seconds. Explicit null clears the per-client override back

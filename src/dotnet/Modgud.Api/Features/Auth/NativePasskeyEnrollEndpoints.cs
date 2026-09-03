@@ -12,6 +12,8 @@ using Modgud.Authentication.Domain;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authentication.Identity;
 using OpenIddict.Validation.AspNetCore;
+using Modgud.Authentication.RateLimiting;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Api.Features.Auth;
 
@@ -128,7 +130,7 @@ public static class NativePasskeyEnrollEndpoints
         })
         .DisableAntiforgery()
         .WithTags("Native Auth")
-        .RequireRateLimiting("passkey-begin");
+        .RequireAuthRateLimit(AuthRateLimitPolicy.PasskeyBegin);
 
         // POST /connect/passkey/enroll — verify attestation, store the credential
         // under the ceremony's pinned RP ID.
@@ -255,7 +257,7 @@ public static class NativePasskeyEnrollEndpoints
         })
         .DisableAntiforgery()
         .WithTags("Native Auth")
-        .RequireRateLimiting("passkey-begin");
+        .RequireAuthRateLimit(AuthRateLimitPolicy.PasskeyBegin);
 
         return application;
     }

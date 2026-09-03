@@ -8,6 +8,8 @@ using Modgud.Authentication.Domain;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Infrastructure.Email;
 using Modgud.Infrastructure.Realms;
+using Modgud.Authentication.RateLimiting;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -124,7 +126,7 @@ public static class EmailVerificationEndpoints
             return Results.Ok(new { Message = genericMessage });
         })
         .WithName("EmailVerification_Send")
-        .RequireRateLimiting("email-verification");
+        .RequireAuthRateLimit(AuthRateLimitPolicy.EmailVerification, target: ctx => ctx.HttpContext.User.Identity?.Name);
 
         // POST /api/account/email/verify — anonymous consume. The mail link
         // opens in a fresh browser context that doesn't carry the Identity

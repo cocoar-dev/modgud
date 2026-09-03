@@ -10,6 +10,8 @@ using Modgud.Authentication.Identity;
 using Modgud.Authentication.Sessions;
 using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.Observability;
+using Modgud.Authentication.RateLimiting;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -213,7 +215,7 @@ public static class EmailOtpEndpoints
         .AllowAnonymous()
         // Audit #24 — bound brute-force bursts against the 6-digit code; the
         // per-challenge MaxAttempts counter alone races under concurrency.
-        .RequireRateLimiting("email-otp");
+        .RequireAuthRateLimit(AuthRateLimitPolicy.EmailOtp, target: ctx => ctx.HttpContext.User.Identity?.Name);
 
         return application;
     }

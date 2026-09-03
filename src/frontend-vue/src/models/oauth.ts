@@ -30,6 +30,8 @@ export interface OAuthClientDto {
   RequireConsent: boolean
   AllowRememberConsent: boolean
   AllowedGrantTypes: string[]
+  /** ADR 0007 — granted client capabilities (`cap:trusted-forwarder`). */
+  Capabilities?: string[]
   AllowedCorsOrigins: string[]
   IdentityTokenLifetime?: number | null
   AccessTokenLifetime?: number | null
@@ -119,6 +121,7 @@ export interface CreateOAuthClientDto {
   RequireConsent?: boolean
   AllowRememberConsent?: boolean
   AllowedGrantTypes?: string[]
+  Capabilities?: string[]
   AllowedCorsOrigins?: string[]
   IdentityTokenLifetime?: number | null
   AccessTokenLifetime?: number | null
@@ -187,6 +190,7 @@ export interface UpdateOAuthClientDto {
   RequireConsent?: boolean | null
   AllowRememberConsent?: boolean | null
   AllowedGrantTypes?: string[] | null
+  Capabilities?: string[] | null
   AllowedCorsOrigins?: string[] | null
   IdentityTokenLifetime?: number | null
   AccessTokenLifetime?: number | null

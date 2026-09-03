@@ -1,90 +1,81 @@
 using Modgud.Application.Dcr;
+using Modgud.Infrastructure.RateLimiting;
 
 namespace Modgud.Tests.Unit.OAuth.Dcr;
 
 /// <summary>
-/// Pins the two-window rate-limit logic. The limiter is in-memory, so
-/// these tests share no state across cases (a fresh limiter per test).
+/// Pins the two-window DCR limit logic on the shared counter store (ADR 0007). Each
+/// test gets its own in-memory store, so cases share no state.
 /// </summary>
 public class DcrRateLimiterTests
 {
     private const string RealmId = "system";
 
+    private static StoreBackedDcrRateLimiter Sut() => new(new InMemoryRateLimitStore());
+
     [Fact]
-    public void First_request_is_allowed()
+    public async Task First_request_is_allowed()
     {
-        var sut = new DcrRateLimiter();
-        Assert.Equal(DcrRateLimitVerdict.Allowed, sut.TryConsume("1.2.3.4", RealmId, 5, 100));
+        var sut = Sut();
+        Assert.Equal(DcrRateLimitVerdict.Allowed, await sut.TryConsumeAsync("1.2.3.4", RealmId, 5, 100));
     }
 
     [Fact]
-    public void Per_ip_limit_blocks_further_requests_from_same_ip()
+    public async Task Per_ip_limit_blocks_further_requests_from_same_ip()
     {
-        var sut = new DcrRateLimiter();
+        var sut = Sut();
         for (var i = 0; i < 5; i++)
-            Assert.Equal(DcrRateLimitVerdict.Allowed, sut.TryConsume("1.2.3.4", RealmId, 5, 100));
+            Assert.Equal(DcrRateLimitVerdict.Allowed, await sut.TryConsumeAsync("1.2.3.4", RealmId, 5, 100));
 
-        Assert.Equal(DcrRateLimitVerdict.PerIpExceeded,
-            sut.TryConsume("1.2.3.4", RealmId, 5, 100));
+        Assert.Equal(DcrRateLimitVerdict.PerIpExceeded, await sut.TryConsumeAsync("1.2.3.4", RealmId, 5, 100));
     }
 
     [Fact]
-    public void Per_ip_limit_does_not_affect_different_ip()
+    public async Task Per_ip_limit_does_not_affect_different_ip()
     {
-        var sut = new DcrRateLimiter();
+        var sut = Sut();
         for (var i = 0; i < 5; i++)
-            sut.TryConsume("1.2.3.4", RealmId, 5, 100);
+            await sut.TryConsumeAsync("1.2.3.4", RealmId, 5, 100);
 
-        Assert.Equal(DcrRateLimitVerdict.Allowed,
-            sut.TryConsume("9.9.9.9", RealmId, 5, 100));
+        Assert.Equal(DcrRateLimitVerdict.Allowed, await sut.TryConsumeAsync("9.9.9.9", RealmId, 5, 100));
     }
 
     [Fact]
-    public void Per_realm_limit_blocks_across_all_ips()
+    public async Task Per_realm_limit_blocks_across_all_ips()
     {
-        var sut = new DcrRateLimiter();
-        // 4 IPs × 3 hits = 12; per-IP allowance is 5, per-realm is 10. The
-        // 11th hit (any IP) trips the realm window because it's reached
-        // before any individual IP hits its own limit.
+        var sut = Sut();
         for (var n = 0; n < 10; n++)
-            Assert.Equal(DcrRateLimitVerdict.Allowed,
-                sut.TryConsume($"10.0.0.{n}", RealmId, 5, 10));
+            Assert.Equal(DcrRateLimitVerdict.Allowed, await sut.TryConsumeAsync($"10.0.0.{n}", RealmId, 5, 10));
 
-        Assert.Equal(DcrRateLimitVerdict.PerRealmExceeded,
-            sut.TryConsume("10.0.0.99", RealmId, 5, 10));
+        Assert.Equal(DcrRateLimitVerdict.PerRealmExceeded, await sut.TryConsumeAsync("10.0.0.99", RealmId, 5, 10));
     }
 
     [Fact]
-    public void Per_realm_limit_isolates_different_realms()
+    public async Task Per_realm_limit_isolates_different_realms()
     {
-        var sut = new DcrRateLimiter();
-        var realm2 = "tenant-acme";
-
+        var sut = Sut();
         for (var n = 0; n < 10; n++)
-            sut.TryConsume($"10.0.0.{n}", RealmId, 5, 10);
+            await sut.TryConsumeAsync($"10.0.0.{n}", RealmId, 5, 10);
 
-        // Different realm — counter is fresh.
-        Assert.Equal(DcrRateLimitVerdict.Allowed,
-            sut.TryConsume("10.0.0.99", realm2, 5, 10));
+        Assert.Equal(DcrRateLimitVerdict.Allowed, await sut.TryConsumeAsync("10.0.0.99", "tenant-acme", 5, 10));
     }
 
     [Fact]
-    public void Per_ip_check_runs_before_per_realm_so_blocked_ip_does_not_consume_realm_budget()
+    public async Task Per_ip_check_runs_before_per_realm_so_blocked_ip_does_not_consume_realm_budget()
     {
-        var sut = new DcrRateLimiter();
-
-        // Hit per-IP limit (5 requests) — the 6th should hit IP exceeded
-        // and NOT consume any realm budget.
+        var sut = Sut();
         for (var i = 0; i < 5; i++)
-            sut.TryConsume("1.2.3.4", RealmId, 5, 100);
+            await sut.TryConsumeAsync("1.2.3.4", RealmId, 5, 100);
+        Assert.Equal(DcrRateLimitVerdict.PerIpExceeded, await sut.TryConsumeAsync("1.2.3.4", RealmId, 5, 100));
 
-        Assert.Equal(DcrRateLimitVerdict.PerIpExceeded,
-            sut.TryConsume("1.2.3.4", RealmId, 5, 100));
-
-        // A different IP should still get its full per-IP allowance,
-        // confirming realm-counter wasn't pre-charged.
-        for (var i = 0; i < 5; i++)
-            Assert.Equal(DcrRateLimitVerdict.Allowed,
-                sut.TryConsume("9.9.9.9", RealmId, 5, 100));
+        // Realm budget 5, already 5 spent by the first ip; a rejected ip hit must not
+        // have charged the realm, so a fresh ip still gets its allowance until the
+        // realm window fills.
+        var sut2 = Sut();
+        for (var i = 0; i < 3; i++)
+            await sut2.TryConsumeAsync("1.2.3.4", RealmId, 3, 6);
+        Assert.Equal(DcrRateLimitVerdict.PerIpExceeded, await sut2.TryConsumeAsync("1.2.3.4", RealmId, 3, 6));
+        for (var i = 0; i < 3; i++)
+            Assert.Equal(DcrRateLimitVerdict.Allowed, await sut2.TryConsumeAsync("9.9.9.9", RealmId, 3, 6));
     }
 }

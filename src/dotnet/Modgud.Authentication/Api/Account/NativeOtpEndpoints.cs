@@ -11,6 +11,7 @@ using Modgud.Authentication.SelfRegistration;
 using Modgud.Domain.Applications;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Authentication.RateLimiting;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -116,7 +117,7 @@ public static class NativeOtpEndpoints
         })
         .WithName("NativeOtp_Request")
         // Same per-IP SMTP cap class as magic-link / email-verification: 5/hour.
-        .RequireRateLimiting("native-otp");
+        .RequireAuthRateLimit(AuthRateLimitPolicy.NativeOtp, target: ctx => ctx.Argument<NativeOtpRequestDto>()?.Email);
 
         return application;
     }

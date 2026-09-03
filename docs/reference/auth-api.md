@@ -221,3 +221,16 @@ email-OTP family.
 | `429` | Rate limit (Email OTP, Magic Link, bootstrap-admin, native OTP/passkey, …) |
 
 The ceilings shown throughout this page (e.g. bootstrap's 10-per-15-minutes) are the defaults — a realm admin can override each one under [Realm Settings → Rate Limits](/admin/realm-settings#rate-limits).
+
+## Rate limiting (429)
+
+Every public auth endpoint is limited per mailbox, per App, per client and per source (see [Rate limits](../platform/rate-limits)). A rejection is always:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: <seconds>
+
+{ "error": "rate_limited", "policy": "<policy>", "dimension": "source|target|client|app", "retryAfterSeconds": <seconds> }
+```
+
+Backends calling on behalf of browsers authenticate as a confidential client with `cap:trusted-forwarder` and send the user's address in `Modgud-Forwarded-For`; see [Trusted forwarders](../platform/rate-limits#trusted-forwarders).

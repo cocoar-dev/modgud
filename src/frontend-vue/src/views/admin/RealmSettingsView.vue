@@ -18,6 +18,11 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import EditableStringList from '@/components/EditableStringList.vue'
+import AuthRateLimitsEditor from '@/components/AuthRateLimitsEditor.vue'
+import {
+  diffRateLimitOverrides, overridesFromUpdate,
+  type PolicyLimitsDto, type RateLimitEnforcementMode, type RateLimitOverrides,
+} from '@/models/realmSettings'
 import { useRealmSettingsStore } from '@/stores/realmSettings.store'
 import { useDraftStaging } from '@/composables/useDraftStaging'
 import type { ManifestEntity } from '@/stores/realmDraft.store'
@@ -350,53 +355,38 @@ const clientSessionsForm = ref<ClientSessionPolicyDto>({
 })
 const originalClientSessions = ref<ClientSessionPolicyDto | null>(null)
 
-// ── Auth rate-limit form state (per-IP ceilings, configurable per realm) ──
-type RateLimitPolicyKey =
-  'NativeOtp' | 'MagicLink' | 'PasswordReset' | 'EmailOtp'
-  | 'EmailVerification' | 'PasskeyBegin' | 'Bootstrap'
-
-type AuthRateLimitsFormState = Record<RateLimitPolicyKey, { PermitLimit: number; WindowMinutes: number }>
-
-// Display order + labels for the rate-limit grid. Labels carry the endpoint so an
-// admin knows which flow each ceiling gates.
-const rateLimitPolicies: { key: RateLimitPolicyKey; labelKey: string; fallback: string }[] = [
-  { key: 'NativeOtp', labelKey: 'admin.realmSettings.authRateLimits.nativeOtp', fallback: 'Native OTP request (passwordless login code)' },
-  { key: 'MagicLink', labelKey: 'admin.realmSettings.authRateLimits.magicLink', fallback: 'Magic-link request' },
-  { key: 'PasswordReset', labelKey: 'admin.realmSettings.authRateLimits.passwordReset', fallback: 'Password-reset request' },
-  { key: 'EmailOtp', labelKey: 'admin.realmSettings.authRateLimits.emailOtp', fallback: 'Email-OTP login verify' },
-  { key: 'EmailVerification', labelKey: 'admin.realmSettings.authRateLimits.emailVerification', fallback: 'Email verification resend' },
-  { key: 'PasskeyBegin', labelKey: 'admin.realmSettings.authRateLimits.passkeyBegin', fallback: 'Passkey ceremony begin / enroll' },
-  { key: 'Bootstrap', labelKey: 'admin.realmSettings.authRateLimits.bootstrap', fallback: 'First-admin bootstrap' },
-]
-
-function emptyAuthRateLimits(): AuthRateLimitsFormState {
-  return {
-    NativeOtp: { PermitLimit: 5, WindowMinutes: 60 },
-    MagicLink: { PermitLimit: 5, WindowMinutes: 60 },
-    PasswordReset: { PermitLimit: 5, WindowMinutes: 60 },
-    EmailOtp: { PermitLimit: 30, WindowMinutes: 1 },
-    EmailVerification: { PermitLimit: 5, WindowMinutes: 60 },
-    PasskeyBegin: { PermitLimit: 60, WindowMinutes: 5 },
-    Bootstrap: { PermitLimit: 10, WindowMinutes: 15 },
-  }
+// ── Auth rate limits (ADR 0007): sparse overrides per policy × dimension ──
+interface AuthRateLimitsFormState {
+  overrides: RateLimitOverrides
+  allowlist: string[]
+  /** 'auto' = no explicit mode (enforce; log-only while legacy per-IP rules exist). */
+  mode: 'auto' | RateLimitEnforcementMode
+  clearLegacy: boolean
 }
-
-const authRateLimitsForm = ref<AuthRateLimitsFormState>(emptyAuthRateLimits())
-const originalAuthRateLimits = ref<AuthRateLimitsDto | null>(null)
 
 function authRateLimitsFromDto(d: AuthRateLimitsDto): AuthRateLimitsFormState {
-  const copy = (r: { PermitLimit: number; WindowMinutes: number }) =>
-    ({ PermitLimit: r.PermitLimit, WindowMinutes: r.WindowMinutes })
   return {
-    NativeOtp: copy(d.NativeOtp),
-    MagicLink: copy(d.MagicLink),
-    PasswordReset: copy(d.PasswordReset),
-    EmailOtp: copy(d.EmailOtp),
-    EmailVerification: copy(d.EmailVerification),
-    PasskeyBegin: copy(d.PasskeyBegin),
-    Bootstrap: copy(d.Bootstrap),
+    overrides: overridesFromUpdate(d.Overrides),
+    allowlist: [...(d.SourceAllowlist ?? [])],
+    mode: d.Overrides?.Mode ?? 'auto',
+    clearLegacy: false,
   }
 }
+
+const authRateLimitsForm = ref<AuthRateLimitsFormState>({ overrides: overridesFromUpdate(null), allowlist: [], mode: 'auto', clearLegacy: false })
+const originalAuthRateLimits = ref<AuthRateLimitsDto | null>(null)
+const rateLimitDefaults = computed<Record<string, PolicyLimitsDto>>(() => originalAuthRateLimits.value?.Defaults ?? {})
+const rateLimitModeOptions = computed(() => [
+  { value: 'auto', label: t('admin.rateLimits.mode.auto', {}, 'Automatic (enforce; log-only while legacy rules exist)') },
+  { value: 'Enforce', label: t('admin.rateLimits.mode.enforce', {}, 'Enforce') },
+  { value: 'LogOnly', label: t('admin.rateLimits.mode.logOnly', {}, 'Log only (evaluate and count, never reject)') },
+])
+const effectiveRateLimitMode = computed(() => {
+  const m = authRateLimitsForm.value.mode
+  if (m !== 'auto') return m
+  const legacy = originalAuthRateLimits.value?.LegacyOverridesPresent && !authRateLimitsForm.value.clearLegacy
+  return legacy ? 'LogOnly' : 'Enforce'
+})
 
 // ── Deletion-policy form state ───────────────────────────────────────
 interface DeletionFormState {
@@ -649,15 +639,15 @@ function buildClientSessionsPatch(): UpdateClientSessionPolicyDto | undefined {
 function buildAuthRateLimitsPatch(): UpdateAuthRateLimitsDto | undefined {
   const orig = originalAuthRateLimits.value
   if (!orig) return undefined
+  const before = authRateLimitsFromDto(orig)
   const cur = authRateLimitsForm.value
   const patch: UpdateAuthRateLimitsDto = {}
 
-  for (const { key } of rateLimitPolicies) {
-    const o = orig[key]
-    const c = cur[key]
-    if (c.PermitLimit !== o.PermitLimit || c.WindowMinutes !== o.WindowMinutes)
-      patch[key] = { PermitLimit: c.PermitLimit, WindowMinutes: c.WindowMinutes }
-  }
+  const policies = diffRateLimitOverrides(before.overrides, cur.overrides)
+  if (Object.keys(policies).length) patch.Policies = policies
+  if (!arrayEqual(before.allowlist, cur.allowlist)) patch.SourceAllowlist = cur.allowlist.length ? [...cur.allowlist] : null
+  if (before.mode !== cur.mode) patch.Mode = cur.mode === 'auto' ? null : cur.mode
+  if (cur.clearLegacy) patch.ClearLegacy = true
 
   return Object.keys(patch).length === 0 ? undefined : patch
 }
@@ -1240,23 +1230,32 @@ async function rotateSigningKey() {
             <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
               <h2 class="section-title">{{ t('admin.realmSettings.sections.rateLimits', {}, 'Authentication rate limits') }}</h2>
             </CoarDivider>
-            <p class="section-description">{{ t('admin.realmSettings.authRateLimits.hint', {}, 'Per-IP request ceilings for this realm authentication endpoints.') }}</p>
-            <div class="rate-limit-grid">
-              <div class="rate-limit-grid__header">
-                <span>{{ t('admin.realmSettings.authRateLimits.flow', {}, 'Flow') }}</span>
-                <span>{{ t('admin.realmSettings.authRateLimits.permitLimit', {}, 'Max. requests') }}</span>
-                <span>{{ t('admin.realmSettings.authRateLimits.windowMinutes', {}, 'Window (minutes)') }}</span>
-              </div>
-              <div v-for="p in rateLimitPolicies" :key="p.key" class="rate-limit-grid__row">
-                <span>{{ t(p.labelKey, {}, p.fallback) }}</span>
-                <CoarTextInput class="compact-number" :model-value="String(authRateLimitsForm[p.key].PermitLimit)"
-                  :aria-label="`${t(p.labelKey, {}, p.fallback)} – ${t('admin.realmSettings.authRateLimits.permitLimit', {}, 'Max. requests')}`"
-                  @update:model-value="(v) => (authRateLimitsForm[p.key].PermitLimit = Math.max(1, parseInt(v) || 1))" />
-                <CoarTextInput class="compact-number" :model-value="String(authRateLimitsForm[p.key].WindowMinutes)"
-                  :aria-label="`${t(p.labelKey, {}, p.fallback)} – ${t('admin.realmSettings.authRateLimits.windowMinutes', {}, 'Window (minutes)')}`"
-                  @update:model-value="(v) => (authRateLimitsForm[p.key].WindowMinutes = Math.max(1, parseInt(v) || 1))" />
-              </div>
+            <p class="section-description">{{ t('admin.rateLimits.hint', {}, 'Multi-dimensional ceilings for the public auth endpoints. Target and App are the defence (mailbox, mail budget), Client bounds one integration, Source is only a coarse brake sized for shared addresses (NAT). Empty cells inherit the shipped defaults.') }}</p>
+
+            <CoarNotice v-if="originalAuthRateLimits?.LegacyOverridesPresent" variant="warning" class="mb-3">
+              {{ t('admin.rateLimits.legacyNotice', {}, 'This realm still carries per-IP rules from before the multi-dimensional limits. They are not applied any more; until a mode is chosen the realm runs log-only.') }}
+              <CoarCheckbox v-model="authRateLimitsForm.clearLegacy" :label="t('admin.rateLimits.clearLegacy', {}, 'Remove the legacy per-IP rules on save')" />
+            </CoarNotice>
+
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <CoarFormField
+                :label="t('admin.rateLimits.mode.label', {}, 'Enforcement')"
+                :hint="t('admin.rateLimits.mode.hint', {}, 'Log-only evaluates and counts every dimension without rejecting — the rollout mode for sizing Source against real traffic.')">
+                <CoarSelect v-model="authRateLimitsForm.mode" :options="rateLimitModeOptions" />
+              </CoarFormField>
+              <p class="section-description self-end">
+                {{ t('admin.rateLimits.effectiveMode', {}, 'Effective') }}: <strong>{{ effectiveRateLimitMode }}</strong>
+              </p>
             </div>
+
+            <EditableStringList
+              v-model="authRateLimitsForm.allowlist"
+              appearance="compact-grid"
+              min-height="8rem"
+              class="mb-3"
+              :header-label="t('admin.rateLimits.allowlist', {}, 'Source allowlist — addresses or CIDR ranges exempt from the Source ceilings only (Target, Client and App still apply)')" />
+
+            <AuthRateLimitsEditor v-model="authRateLimitsForm.overrides" :baseline="rateLimitDefaults" />
           </section>
 
           <section v-if="canRotateSigningKey" class="settings-section danger-section">

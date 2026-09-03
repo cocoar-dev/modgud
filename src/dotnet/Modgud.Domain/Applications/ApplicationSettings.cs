@@ -68,6 +68,11 @@ public class ApplicationSettings
     /// inherit the realm native-grant settings.</summary>
     public ApplicationNativeGrantOverrides? NativeGrants { get; set; }
 
+    /// <summary>ADR 0007 — sparse per-App overrides of the realm's auth rate limits:
+    /// only the dimensions set here win, the allowlist/mode replace the realm's when
+    /// set. Null = inherit everything.</summary>
+    public Modgud.Domain.Realms.AuthRateLimitSettings? AuthRateLimits { get; set; }
+
     /// <summary>Per-Application defaults for native OAuth client/device
     /// sessions. A concrete OAuth client may override these values.</summary>
     public ApplicationClientSessionOverrides? ClientSessions { get; set; }

@@ -258,34 +258,115 @@ export interface UpdateNativeGrantSettingsDto {
   RefreshTokenLifetimeDays?: number
 }
 
-// Per-IP auth rate-limit ceilings, configurable per realm. Each policy is a
-// { PermitLimit, WindowMinutes } pair; the read shape carries the EFFECTIVE
-// values (the realm override if set, else the shipped default), so the form
-// shows concrete numbers. Lowering tightens, raising relaxes — defaults keep
-// the secure production posture. Mirrors AuthRateLimitsDtos.cs.
+// ADR 0007 — multi-dimensional auth rate limits. Every policy (one per public auth
+// flow) carries ceilings per dimension: Source (effective address, a NAT-sized brake),
+// SourceRegistration (silent address-spraying ceiling), Target (the mailbox — the
+// defence), Client (one integration), App (the mail-cost brake). The read shape
+// carries EFFECTIVE values plus the shipped Defaults and the sparse Overrides that
+// are actually stored. Mirrors AuthRateLimitsDtos.cs.
 export interface RateLimitRuleDto {
   PermitLimit: number
   WindowMinutes: number
+  /** Token-bucket capacity; null/absent = fixed window. */
+  Burst?: number | null
+  Enabled?: boolean
 }
+
+export type RateLimitDimensionKey = 'Source' | 'SourceRegistration' | 'Target' | 'Client' | 'App'
+export type RateLimitEnforcementMode = 'Enforce' | 'LogOnly'
+
+export type PolicyLimitsDto = Partial<Record<RateLimitDimensionKey, RateLimitRuleDto | null>>
 
 export interface AuthRateLimitsDto {
-  NativeOtp: RateLimitRuleDto
-  MagicLink: RateLimitRuleDto
-  PasswordReset: RateLimitRuleDto
-  EmailOtp: RateLimitRuleDto
-  EmailVerification: RateLimitRuleDto
-  PasskeyBegin: RateLimitRuleDto
-  Bootstrap: RateLimitRuleDto
+  Policies: Record<string, PolicyLimitsDto>
+  Defaults: Record<string, PolicyLimitsDto>
+  SourceAllowlist: string[]
+  Mode: RateLimitEnforcementMode
+  LegacyOverridesPresent: boolean
+  Overrides?: UpdateAuthRateLimitsDto | null
 }
 
-// PATCH shape: a missing policy = no change; a present rule replaces that
-// policy's ceiling (stored as a realm override).
+// Merge-patch v2 per dimension: absent = unchanged, null = back to the baseline,
+// value = override. A null policy drops every override of that policy.
+export type UpdatePolicyLimitsDto = Partial<Record<RateLimitDimensionKey, RateLimitRuleDto | null>>
+
 export interface UpdateAuthRateLimitsDto {
-  NativeOtp?: RateLimitRuleDto
-  MagicLink?: RateLimitRuleDto
-  PasswordReset?: RateLimitRuleDto
-  EmailOtp?: RateLimitRuleDto
-  EmailVerification?: RateLimitRuleDto
-  PasskeyBegin?: RateLimitRuleDto
-  Bootstrap?: RateLimitRuleDto
+  Policies?: Record<string, UpdatePolicyLimitsDto | null>
+  /** null = clear the list. */
+  SourceAllowlist?: string[] | null
+  /** null = automatic (enforce; log-only while legacy per-IP rules exist). */
+  Mode?: RateLimitEnforcementMode | null
+  ClearLegacy?: boolean
+}
+
+/** Editor model: policy → dimension → rule, null = inherit the baseline. */
+export type RateLimitOverrides = Record<string, Record<RateLimitDimensionKey, RateLimitRuleDto | null>>
+
+export const RATE_LIMIT_DIMENSIONS: { key: RateLimitDimensionKey; fallback: string; hint: string }[] = [
+  { key: 'Source', fallback: 'Source', hint: 'effective address — a coarse brake sized for shared addresses' },
+  { key: 'SourceRegistration', fallback: 'Sign-ups per source', hint: 'silent — unknown addresses from one source' },
+  { key: 'Target', fallback: 'Target', hint: 'per mailbox / username — the defence' },
+  { key: 'Client', fallback: 'Client', hint: 'per OAuth client — bounds one integration' },
+  { key: 'App', fallback: 'App', hint: 'per Application — the cost brake' },
+]
+
+export const RATE_LIMIT_POLICIES: { key: string; labelKey: string; fallback: string }[] = [
+  { key: 'native-otp', labelKey: 'admin.rateLimits.policy.nativeOtp', fallback: 'Native OTP request / register' },
+  { key: 'self-registration', labelKey: 'admin.rateLimits.policy.selfRegistration', fallback: 'Web self-registration' },
+  { key: 'magic-link', labelKey: 'admin.rateLimits.policy.magicLink', fallback: 'Magic-link request' },
+  { key: 'password-reset', labelKey: 'admin.rateLimits.policy.passwordReset', fallback: 'Password-reset request' },
+  { key: 'email-verification', labelKey: 'admin.rateLimits.policy.emailVerification', fallback: 'Email verification resend' },
+  { key: 'email-otp', labelKey: 'admin.rateLimits.policy.emailOtp', fallback: 'Email-OTP code verify' },
+  { key: 'passkey-begin', labelKey: 'admin.rateLimits.policy.passkeyBegin', fallback: 'Passkey ceremony begin / enroll' },
+  { key: 'oauth-token', labelKey: 'admin.rateLimits.policy.oauthToken', fallback: 'OAuth token endpoint' },
+  { key: 'bootstrap', labelKey: 'admin.rateLimits.policy.bootstrap', fallback: 'First-admin bootstrap' },
+]
+
+export function emptyRateLimitOverrides(): RateLimitOverrides {
+  const out: RateLimitOverrides = {}
+  for (const p of RATE_LIMIT_POLICIES)
+    out[p.key] = { Source: null, SourceRegistration: null, Target: null, Client: null, App: null }
+  return out
+}
+
+/** The stored sparse overrides → editor model (missing = inherit). */
+export function overridesFromUpdate(u?: UpdateAuthRateLimitsDto | null): RateLimitOverrides {
+  const out = emptyRateLimitOverrides()
+  for (const [policy, limits] of Object.entries(u?.Policies ?? {})) {
+    if (!limits) continue
+    out[policy] ??= { Source: null, SourceRegistration: null, Target: null, Client: null, App: null }
+    for (const d of RATE_LIMIT_DIMENSIONS) {
+      const rule = limits[d.key]
+      if (rule) out[policy][d.key] = { ...rule }
+    }
+  }
+  return out
+}
+
+/** Editor model → the sparse full-replace shape (Application override). */
+export function sparseRateLimitPolicies(o: RateLimitOverrides): Record<string, UpdatePolicyLimitsDto> | undefined {
+  const out: Record<string, UpdatePolicyLimitsDto> = {}
+  for (const [policy, dims] of Object.entries(o)) {
+    const entry: UpdatePolicyLimitsDto = {}
+    for (const d of RATE_LIMIT_DIMENSIONS) if (dims[d.key]) entry[d.key] = { ...dims[d.key]! }
+    if (Object.keys(entry).length) out[policy] = entry
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+/** Editor model diff → merge-patch (null = override removed). */
+export function diffRateLimitOverrides(before: RateLimitOverrides, after: RateLimitOverrides): Record<string, UpdatePolicyLimitsDto> {
+  const out: Record<string, UpdatePolicyLimitsDto> = {}
+  const same = (a: RateLimitRuleDto | null, b: RateLimitRuleDto | null) =>
+    JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+  for (const policy of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    const entry: UpdatePolicyLimitsDto = {}
+    for (const d of RATE_LIMIT_DIMENSIONS) {
+      const b = before[policy]?.[d.key] ?? null
+      const a = after[policy]?.[d.key] ?? null
+      if (!same(a, b)) entry[d.key] = a ? { ...a } : null
+    }
+    if (Object.keys(entry).length) out[policy] = entry
+  }
+  return out
 }

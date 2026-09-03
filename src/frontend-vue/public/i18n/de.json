@@ -1192,6 +1192,11 @@
       }
     },
     "oauthClients": {
+      "capabilities": {
+        "title": "Fähigkeiten",
+        "trustedForwarder": "Vertrauenswürdiger Forwarder (cap:trusted-forwarder)",
+        "trustedForwarderHint": "Ein vertrauenswürdiger Forwarder (ein Backend-for-Frontend) sendet auf den Auth-Endpoints, die er für einen Benutzer aufruft, dessen Adresse im Header Modgud-Forwarded-For. Rate-Limits gelten dann pro Benutzer statt pro Egress-Adresse. Verschiebt nur die Quell-Dimension; Ziel-, Client- und App-Limits begrenzen den Forwarder weiterhin. Nur konfidenzielle Clients."
+      },
       "title": "OAuth-Clients",
       "emptyHint": "Ein OAuth-Client ist eine Anwendung, die Benutzer über diesen IdP anmeldet oder dessen APIs aufruft. Registriere deine erste App, um Client-ID und Secret zu erhalten.",
       "createTitle": "OAuth-Client erstellen",
@@ -1939,6 +1944,54 @@
         "notInDraft": "Diese Entity existiert live, ist aber nicht Teil des Drafts — mit Prune wird sie beim Anwenden gelöscht."
       }
     },
+    "rateLimits": {
+      "hint": "Mehrdimensionale Obergrenzen für die öffentlichen Auth-Endpoints. Ziel und App sind der Schutz (Postfach, Mail-Budget), Client begrenzt eine Integration, Quelle ist nur eine grobe Bremse und auf geteilte Adressen (NAT) ausgelegt. Leere Zellen erben die gelieferten Defaults.",
+      "flow": "Ablauf",
+      "override": "Überschreiben",
+      "limit": "Max.",
+      "window": "Fenster (Min)",
+      "burst": "Burst",
+      "burstShort": "Burst",
+      "enabled": "Aktiv",
+      "off": "aus",
+      "allowlist": "Quell-Allowlist — Adressen oder CIDR-Bereiche, die nur von den Quell-Deckeln ausgenommen sind (Ziel, Client und App gelten weiter)",
+      "legacyNotice": "Dieser Realm trägt noch Pro-IP-Regeln aus der Zeit vor den mehrdimensionalen Limits. Sie werden nicht mehr angewendet; bis ein Modus gewählt ist, läuft der Realm im Beobachtungsmodus.",
+      "clearLegacy": "Alte Pro-IP-Regeln beim Speichern entfernen",
+      "effectiveMode": "Wirksam",
+      "mode": {
+        "label": "Durchsetzung",
+        "hint": "Beobachten wertet jede Dimension aus und zählt, lehnt aber nie ab — der Einführungsmodus, um Quelle am echten Verkehr zu dimensionieren.",
+        "auto": "Automatisch (durchsetzen; beobachten solange alte Regeln existieren)",
+        "enforce": "Durchsetzen",
+        "logOnly": "Nur beobachten (auswerten und zählen, nie ablehnen)",
+        "inherit": "Vom Realm erben"
+      },
+      "dimension": {
+        "Source": "Quelle",
+        "SourceRegistration": "Sign-ups pro Quelle",
+        "Target": "Ziel",
+        "Client": "Client",
+        "App": "App"
+      },
+      "dimensionHint": {
+        "Source": "wirksame Adresse — grobe Bremse für geteilte Adressen",
+        "SourceRegistration": "still — unbekannte Adressen aus einer Quelle",
+        "Target": "pro Postfach / Benutzername — der Schutz",
+        "Client": "pro OAuth-Client — begrenzt eine Integration",
+        "App": "pro Application — die Kostenbremse"
+      },
+      "policy": {
+        "nativeOtp": "Native-OTP-Anfrage / Registrierung",
+        "selfRegistration": "Web-Self-Registration",
+        "magicLink": "Magic-Link-Anfrage",
+        "passwordReset": "Passwort-Reset-Anfrage",
+        "emailVerification": "E-Mail-Verifizierung erneut senden",
+        "emailOtp": "E-Mail-OTP-Code-Prüfung",
+        "passkeyBegin": "Passkey-Ceremony Begin / Enroll",
+        "oauthToken": "OAuth-Token-Endpoint",
+        "bootstrap": "First-Admin-Bootstrap"
+      }
+    },
     "realmSettings": {
       "title": "Realm-Einstellungen",
       "saved": "Gespeichert.",
@@ -2086,17 +2139,7 @@
         "optInWarning": "Pro-Client-Opt-in weiterhin nötig: Ein Client kann einen nativen Grant erst nutzen, wenn er die passende Grant-Type-Permission trägt (gt:urn:cocoar:otp / :magic / :passkey), aktiviert im Grants-Tab des Clients. Dieser Realm-Schalter ist notwendig, aber nicht hinreichend. Nur Katalog-Clients kommen infrage — DCR-/CIMD-Clients sind ausgeschlossen."
       },
       "authRateLimits": {
-        "hint": "Pro-IP-Anfrage-Obergrenzen für die Auth-Endpoints dieses Realms: höchstens „Max. Anfragen“ pro „Fenster“ (Minuten) von einer Quell-IP. Die Defaults sind die sichere Produktions-Vorgabe — erhöhe sie nur für Test-Realms, Dev oder legitim stoßweise Consumer; senke sie zum Verschärfen. Jeder Wert gilt pro Realm.",
-        "flow": "Authentifizierungsablauf",
-        "permitLimit": "Max. Anfragen",
-        "windowMinutes": "Fenster (Minuten)",
-        "nativeOtp": "Native-OTP-Anfrage (passwortloser Login-Code)",
-        "magicLink": "Magic-Link-Anfrage",
-        "passwordReset": "Passwort-Reset-Anfrage",
-        "emailOtp": "E-Mail-OTP-Login-Prüfung",
-        "emailVerification": "E-Mail-Verifizierung erneut senden",
-        "passkeyBegin": "Passkey-Ceremony Begin / Enroll",
-        "bootstrap": "First-Admin-Bootstrap"
+        "hint": "Mehrdimensionale Obergrenzen für die Auth-Endpoints dieses Realms. Ziel und App sind der Schutz (Postfach, Mail-Budget), Client begrenzt eine Integration, Quelle ist nur eine grobe Bremse und auf geteilte Adressen (NAT) ausgelegt. Leere Zellen erben die gelieferten Defaults."
       },
       "sessions": {
         "browser": {
@@ -2174,6 +2217,11 @@
       "details.hint": "Der Code selbst wird nur einmal bei der Erzeugung angezeigt — gespeichert wird nur sein Hash, daher kann er hier nicht angezeigt werden."
     },
     "appSettings": {
+      "rateLimits": {
+        "override": "Eigene Rate-Limits für diese App",
+        "hint": "Nur die überschriebenen Zellen gewinnen gegenüber dem Realm; alles andere wird geerbt. Allowlist und Durchsetzungsmodus ersetzen die Realm-Werte, wenn gesetzt.",
+        "allowlistOverride": "Eigene Quell-Allowlist (ersetzt die Realm-Liste)"
+      },
       "posture.inviteCode": "Invite-Code (nur auf Einladung)",
       "posture.inviteCode.title": "Invite-Code-Posture: So vergibst du Codes",
       "posture.inviteCode.ui": "Sofort nutzbar: Codes erzeugst du im Admin unter „Einladungscodes“ (Sidebar, OAuth & Federation) für diese App — keine weitere Einrichtung nötig.",

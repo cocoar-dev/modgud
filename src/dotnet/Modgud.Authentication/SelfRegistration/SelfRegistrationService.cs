@@ -59,7 +59,6 @@ public sealed class SelfRegistrationService(
     IDocumentSession session,
     UserManager<ApplicationUser> userManager,
     TurnstileVerifier captchaVerifier,
-    RegistrationRateLimiter rateLimiter,
     Modgud.Authentication.Registration.IRegistrationPipeline registrationPipeline,
     IHostEnvironment env,
     Modgud.Authentication.Applications.IApplicationSettingsResolver settingsResolver,
@@ -139,16 +138,10 @@ public sealed class SelfRegistrationService(
                 return GenericSuccess;
         }
 
-        // Rate-limit per email. Same response on rate-limit so bots
-        // can't enumerate-by-throttle either.
+        // Per-address / per-source ceilings are the endpoint's rate-limit policy
+        // (ADR 0007, self-registration) plus the pipeline's cooldown — no in-memory
+        // limiter here any more.
         var normalizedEmail = dto.Email.Trim();
-        if (!rateLimiter.TryConsume(normalizedEmail))
-        {
-            logger.LogInformation(
-                "Self-reg: rate-limit consumed, realm={Realm} email={Email}",
-                realm.Slug, LogPiiMasking.MaskEmail(normalizedEmail));
-            return GenericSuccess;
-        }
 
         // Captcha verify — Skipped/Verified is fine, Failed means the
         // submit didn't carry a valid token. Generic response either way.

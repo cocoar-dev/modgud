@@ -478,63 +478,24 @@ try
     //   * /api/account/bootstrap-admin → IP. Bootstrap-invite consume is
     //     one-shot per token; the policy is a brake on automated probing
     //     of leaked tokens.
-    // In the Testing environment the WebApplicationFactory leaves
-    // context.Connection.RemoteIpAddress null on every request, so the per-IP
-    // limiters below all collapse into one "anon" partition that shares a
-    // single process-wide budget across the entire xUnit collection. An
-    // incidental Nth live hit to such an endpoint then trips a 429 only in the
-    // full run (a displaced flake), forcing tests to route around the HTTP
-    // layer. The test-aware key selector (see PerIpRateLimitPartitionKey) gives
-    // each Testing request its OWN partition unless it opts into a shared one
-    // via the X-Test-RateLimit header — production is unchanged (per-IP).
-    var isTestEnv = builder.Environment.IsEnvironment("Testing");
-
-    builder.Services.AddRateLimiter(options =>
-    {
-        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-
-        options.AddPolicy("oauth-token", context =>
-        {
-            var key = TryReadFormField(context, "client_id")
-                      ?? context.Connection.RemoteIpAddress?.ToString()
-                      ?? "anon";
-            return System.Threading.RateLimiting.RateLimitPartition.GetSlidingWindowLimiter(
-                partitionKey: key,
-                factory: _ => new System.Threading.RateLimiting.SlidingWindowRateLimiterOptions
-                {
-                    PermitLimit = 60,
-                    Window = TimeSpan.FromMinutes(1),
-                    SegmentsPerWindow = 6,
-                    QueueLimit = 0,
-                });
-        });
-
-        // The per-IP auth limiters below now read their ceiling per request from
-        // the realm's configured AuthRateLimits (resolved by
-        // AuthRateLimitResolutionMiddleware, falling back to AuthRateLimitDefaults).
-        // The default values are unchanged from the previously-hardcoded ones — a
-        // realm that never touches the feature behaves exactly as before. See
-        // AuthFixedWindow for the realm+limit-aware partition key.
-        options.AddPolicy("bootstrap", context => AuthFixedWindow(context, AuthRateLimitPolicy.Bootstrap, isTestEnv));
-        options.AddPolicy("password-reset", context => AuthFixedWindow(context, AuthRateLimitPolicy.PasswordReset, isTestEnv));
-        options.AddPolicy("magic-link", context => AuthFixedWindow(context, AuthRateLimitPolicy.MagicLink, isTestEnv));
-        // Email-verification (re)send. Covers both authenticated 1-click and the
-        // anonymous self-service form; the endpoint returns a generic response either way.
-        options.AddPolicy("email-verification", context => AuthFixedWindow(context, AuthRateLimitPolicy.EmailVerification, isTestEnv));
-        // Audit #24 — email-OTP code VERIFY. Anonymous (partial-2FA state); the
-        // per-challenge MaxAttempts counter is the only other brute-force defense,
-        // so a per-IP window bounds a concurrent guess burst. Default sized well
-        // above any legitimate verify cadence (30/min).
-        options.AddPolicy("email-otp", context => AuthFixedWindow(context, AuthRateLimitPolicy.EmailOtp, isTestEnv));
-        // ADR-0010 native passwordless OTP request — anonymous email-sending endpoint
-        // (default 5/hour). The dedicated boundary test sets X-Test-RateLimit to share
-        // a budget on purpose and assert the 429 (see PerIpRateLimitPartitionKey).
-        options.AddPolicy("native-otp", context => AuthFixedWindow(context, AuthRateLimitPolicy.NativeOtp, isTestEnv));
-        // ADR-0010 Phase 2 — anonymous passkey "begin" endpoint. Cheap (no email/SMTP,
-        // just a challenge + a single-use ceremony doc), so a more generous default
-        // (60/5min); still per-IP bounded to cap ceremony-doc spam.
-        options.AddPolicy("passkey-begin", context => AuthFixedWindow(context, AuthRateLimitPolicy.PasskeyBegin, isTestEnv));
-    });
+    // ADR 0007 — auth rate limiting is a subsystem (Modgud.Infrastructure.RateLimiting):
+    // multi-dimensional (source / target / client / app + the silent source-registration
+    // ceiling), Postgres-backed counters (correct across instances), realm + App
+    // configurable, and a caller context with the capability-gated trusted-forwarder
+    // header. Endpoints opt in via .RequireAuthRateLimit(policy, target: ...). The
+    // ASP.NET in-process limiter is gone.
+    builder.Services.AddSingleton<Modgud.Infrastructure.RateLimiting.IRateLimitConnectionSource,
+        Modgud.Infrastructure.RateLimiting.MartenRateLimitConnectionSource>();
+    builder.Services.AddSingleton<Modgud.Infrastructure.RateLimiting.IRateLimitStore,
+        Modgud.Infrastructure.RateLimiting.PostgresRateLimitStore>();
+    builder.Services.AddSingleton<Modgud.Infrastructure.RateLimiting.IRateLimitEvaluator,
+        Modgud.Infrastructure.RateLimiting.RateLimitEvaluator>();
+    builder.Services.AddScoped<Modgud.Authentication.RateLimiting.IAuthCallerContextFactory,
+        Modgud.Authentication.RateLimiting.AuthCallerContextFactory>();
+    builder.Services.AddScoped<Modgud.Authentication.RateLimiting.IRegistrationThrottle,
+        Modgud.Authentication.RateLimiting.RegistrationThrottle>();
+    builder.Services.AddSingleton<Modgud.Application.Dcr.IDcrRateLimiter,
+        Modgud.Infrastructure.RateLimiting.StoreBackedDcrRateLimiter>();
 
     builder.Services.AddHttpContextAccessor();
 
@@ -579,7 +540,6 @@ try
     // TurnstileSettings env-var config. Each piece is independently
     // testable; orchestration lives in SelfRegistrationService.
     builder.Services.AddHttpClient(nameof(Modgud.Authentication.SelfRegistration.Captcha.TurnstileVerifier));
-    builder.Services.AddSingleton<Modgud.Authentication.SelfRegistration.RegistrationRateLimiter>();
     builder.Services.AddSingleton<Modgud.Authentication.SelfRegistration.Captcha.ITurnstileSecretResolver>(sp =>
     {
         var resolver = new Modgud.Authentication.SelfRegistration.Captcha.TurnstileSecretResolver(
@@ -604,7 +564,6 @@ try
     // process-wide in-memory state so MUST be singleton.
     builder.Services.AddSingleton<Modgud.Application.Dcr.IDcrRegistrationValidator,
         Modgud.Application.Dcr.DcrRegistrationValidator>();
-    builder.Services.AddSingleton<Modgud.Application.Dcr.DcrRateLimiter>();
 
     // Tenant-scoped realm-wide settings (one singleton doc per tenant DB).
     // Owned by realm-admin via /api/admin/realm-settings; the service is
@@ -1254,7 +1213,6 @@ try
         context => RealmIndependentPathPolicy.Matches(context.Request.Path),
         realmIndependentBranch =>
         {
-            realmIndependentBranch.UseRateLimiter();
             realmIndependentBranch.Run(async context =>
             {
                 var endpoint = context.GetEndpoint();
@@ -1307,8 +1265,7 @@ try
     // Resolve the realm's configured auth rate-limit ceilings and stash them on
     // HttpContext.Items BEFORE the limiter runs, so the (synchronous) policy
     // factories can read per-realm limits. Runs after RealmMiddleware (tenant set).
-    app.UseMiddleware<Modgud.Api.Middleware.AuthRateLimitResolutionMiddleware>();
-    app.UseRateLimiter();
+    app.UseMiddleware<Modgud.Api.Middleware.AuthCallerContextMiddleware>();
 
     // Observability surface: /metrics (Prometheus scrape) + /health/live +
     // /health/ready. AllowAnonymous applied inside the helper. Operator
@@ -1639,85 +1596,4 @@ static string[] SplitCommandLine(string commandLine)
         tokens.Add(current.ToString());
 
     return tokens.ToArray();
-}
-
-/// <summary>
-/// Tries to read a form-encoded field WITHOUT triggering a full
-/// `Request.ReadFormAsync()` (which would consume the body before
-/// downstream handlers see it). The rate-limiter partition logic
-/// only needs to peek at <c>client_id</c> on a tiny POST body — we
-/// rebuffer + parse the first chunk and seek back to the start.
-/// </summary>
-static string? TryReadFormField(HttpContext context, string fieldName)
-{
-    if (!HttpMethods.IsPost(context.Request.Method)) return null;
-    if (!context.Request.HasFormContentType) return null;
-    try
-    {
-        // ASP.NET Core enables request-buffering via Form parsing's
-        // own buffer; reading Form here is fine — downstream consumers
-        // get the cached IFormCollection.
-        var form = context.Request.ReadFormAsync().GetAwaiter().GetResult();
-        return form.TryGetValue(fieldName, out var value) ? value.ToString() : null;
-    }
-    catch
-    {
-        return null;
-    }
-}
-
-/// <summary>
-/// Partition key for the per-IP rate limiters (bootstrap, password-reset,
-/// magic-link, email-verification, email-otp, native-otp, passkey-begin).
-/// Production partitions by the caller's remote IP. The Testing environment is
-/// special: the WebApplicationFactory leaves <c>RemoteIpAddress</c> null on
-/// every request, so a bare per-IP key collapses the whole xUnit collection
-/// into one shared "anon" budget — an incidental Nth live hit then 429s only in
-/// the full run. To kill that footgun without weakening production, Testing
-/// gives each request its OWN partition (a unique key) UNLESS it carries the
-/// <c>X-Test-RateLimit</c> header, whose value becomes the partition — letting a
-/// dedicated boundary test deliberately share a budget across N requests and
-/// assert the 429.
-/// </summary>
-static string PerIpRateLimitPartitionKey(HttpContext context, bool isTestEnv)
-{
-    if (!isTestEnv)
-        return context.Connection.RemoteIpAddress?.ToString() ?? "anon";
-
-    var shared = context.Request.Headers["X-Test-RateLimit"].ToString();
-    return string.IsNullOrEmpty(shared) ? Guid.NewGuid().ToString("N") : shared;
-}
-
-/// <summary>
-/// Builds a per-IP fixed-window partition whose ceiling comes from the realm's
-/// configured <see cref="Modgud.Domain.Realms.AuthRateLimitSettings"/> (stashed on
-/// Items by <see cref="Modgud.Api.Middleware.AuthRateLimitResolutionMiddleware"/>),
-/// falling back to the shipped <see cref="Modgud.Domain.Realms.AuthRateLimitDefaults"/>.
-/// The realm slug AND the resolved limit are baked into the partition key: each realm
-/// gets its own per-IP bucket (so its ceiling is coherent on a shared IdP), and a
-/// config change yields a fresh partition so the new limit applies on the next
-/// request (the stale limiter idles out).
-/// </summary>
-static System.Threading.RateLimiting.RateLimitPartition<string> AuthFixedWindow(
-    HttpContext context, AuthRateLimitPolicy policy, bool isTestEnv)
-{
-    var settings = context.Items.TryGetValue(
-        Modgud.Api.Middleware.AuthRateLimitResolutionMiddleware.ItemsKey, out var raw)
-        ? raw as Modgud.Domain.Realms.AuthRateLimitSettings
-        : null;
-    var rule = Modgud.Domain.Realms.AuthRateLimitSettings.Effective(settings, policy);
-
-    var ipPart = PerIpRateLimitPartitionKey(context, isTestEnv);
-    var realm = context.Items[
-        Modgud.Infrastructure.Persistence.Tenancy.TenantConstants.HttpContextTenantIdKey] as string ?? "-";
-    var key = $"{policy}|{realm}|{ipPart}|{rule.PermitLimit}|{rule.WindowMinutes}";
-
-    return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-        partitionKey: key,
-        factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
-        {
-            PermitLimit = rule.PermitLimit,
-            Window = TimeSpan.FromMinutes(rule.WindowMinutes),
-            QueueLimit = 0,
-        });
 }

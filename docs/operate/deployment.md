@@ -168,7 +168,7 @@ For a production run you must supply, at minimum:
 - **`DbSettings__ConnectionString`** — Postgres master DB. Realms get
   per-tenant DBs auto-provisioned with the slug appended.
 - **`ProxyAllowedNetworks`** — comma-separated CIDR list of reverse-
-  proxy IPs. Required so `X-Forwarded-Proto`/`-Host` are honoured for
+  proxy IPs. Your **own reverse proxy only** — never a backend-for-frontend; a BFF identifies itself as a confidential client with the trusted-forwarder capability instead (see [Rate limits](../platform/rate-limits#trusted-forwarders)). Required so `X-Forwarded-Proto`/`-Host` are honoured for
   cookie-Secure decisions **and the per-realm token issuer** (the issuer
   is derived from the forwarded host); forwarded headers from any IP
   outside the list are rejected. Fail-closed: if this is **unset** in

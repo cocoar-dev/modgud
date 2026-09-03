@@ -40,6 +40,7 @@ using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
 using static OpenIddict.Abstractions.OpenIddictConstants;
+using Modgud.Authentication.RateLimiting;
 
 namespace Modgud.Api.Features.Auth.OAuth;
 
@@ -66,7 +67,10 @@ public static class AuthorizationEndpoints
             .WithName("OAuth_Token")
             .DisableAntiforgery()
             // RATE-01 — partition by client_id (60 req/min sliding window).
-            .RequireRateLimiting("oauth-token");
+            // ADR 0007 — per claimed client_id (confidential clients authenticate, public
+            // ones at least separate) and per source; both token buckets.
+            .RequireAuthRateLimit(AuthRateLimitPolicy.OAuthToken,
+                client: ctx => AuthRateLimitEndpointExtensions.FormField(ctx.HttpContext, "client_id"));
 
         // UserInfo endpoint — claims for the authenticated subject.
         group.MapMethods("userinfo", new[] { "GET", "POST" }, UserinfoAsync)

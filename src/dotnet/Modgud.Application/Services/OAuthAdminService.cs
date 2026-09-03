@@ -210,6 +210,8 @@ public partial class OAuthAdminService
 
         // Reject unsupported / removed grant types (implicit, password, typos)
         // up front rather than silently dropping them while building permissions.
+        if (ValidateCapabilities(dto.Capabilities, dto.ClientType) is { } createCapErr)
+            return createCapErr;
         if (ValidateGrantTypes(dto.AllowedGrantTypes) is { } createGrantErr)
             return createGrantErr;
 
@@ -221,7 +223,7 @@ public partial class OAuthAdminService
         }
 
         // Build permissions list (endpoints + grant types + scopes).
-        var permissions = BuildClientPermissions(dto.AllowedGrantTypes, dto.Scopes, dto.ClientType);
+        var permissions = BuildClientPermissions(dto.AllowedGrantTypes, dto.Scopes, dto.ClientType, dto.Capabilities);
 
         var pinnedClientId = await PinnedEntityId.ResolveAsync<OAuthApplicationState>(
             _session, dto.Id, "OAuthClient", s => s.IsDeleted, ct);
@@ -399,6 +401,8 @@ public partial class OAuthAdminService
         // Reject unsupported / removed grant types (implicit, password, typos)
         // on update too — the guard is only meaningful if it can't be bypassed
         // by editing an existing client.
+        if (ValidateCapabilities(dto.Capabilities, aggregate.ClientType) is { } updCapErr)
+            return updCapErr;
         if (ValidateGrantTypes(dto.AllowedGrantTypes) is { } updGrantErr)
             return updGrantErr;
 
@@ -424,11 +428,12 @@ public partial class OAuthAdminService
             _session.Events.Append(guid, aggregate.SetPostLogoutRedirectUris(dto.PostLogoutRedirectUris));
 
         // Recompute permissions if grants/scopes changed; preserves endpoint perms.
-        if (dto.AllowedGrantTypes is not null || dto.Scopes is not null)
+        if (dto.AllowedGrantTypes is not null || dto.Scopes is not null || dto.Capabilities is not null)
         {
             var grants = dto.AllowedGrantTypes ?? ExtractGrantTypes(aggregate.Permissions);
             var scopes = dto.Scopes ?? ExtractScopes(aggregate.Permissions);
-            var permissions = BuildClientPermissions(grants, scopes, aggregate.ClientType ?? OAuthClientTypes.Public);
+            var capabilities = dto.Capabilities ?? ExtractCapabilities(aggregate.Permissions);
+            var permissions = BuildClientPermissions(grants, scopes, aggregate.ClientType ?? OAuthClientTypes.Public, capabilities);
             _session.Events.Append(guid, aggregate.SetPermissions(permissions));
         }
 
@@ -689,7 +694,8 @@ public partial class OAuthAdminService
         if (dto.Scopes is not null)
         {
             var grants = ExtractGrantTypes(aggregate.Permissions);
-            var newPermissions = BuildClientPermissions(grants, dto.Scopes, aggregate.ClientType ?? OAuthClientTypes.Confidential);
+            var newPermissions = BuildClientPermissions(grants, dto.Scopes, aggregate.ClientType ?? OAuthClientTypes.Confidential,
+                ExtractCapabilities(aggregate.Permissions));
             if (!newPermissions.SequenceEqual(aggregate.Permissions))
                 _session.Events.Append(guid, aggregate.SetPermissions(newPermissions));
         }

@@ -294,6 +294,8 @@ interface FormState {
   PostLogoutRedirectUris: string[]
   /** Pre-bound to a multi-select; sent as-is to the backend. */
   AllowedGrantTypes: string[]
+  /** ADR 0007 — `cap:` capabilities; only confidential clients may hold them. */
+  Capabilities: string[]
   AllowedCorsOrigins: string[]
   /** RFC 9126 — reject this client's direct (non-PAR) /connect/authorize requests. */
   RequirePushedAuthorizationRequests: boolean
@@ -350,6 +352,7 @@ function emptyForm(): FormState {
     RedirectUris: [],
     PostLogoutRedirectUris: [],
     AllowedGrantTypes: [],
+    Capabilities: [],
     AllowedCorsOrigins: [],
     RequirePushedAuthorizationRequests: false,
     RequireDpop: false,
@@ -429,6 +432,16 @@ function discardNewServiceAccountDraft() {
 // keep their lifecycle fields locked, while their business-resource access is
 // edited through the dedicated terminal-owned endpoint.
 const hasStaffingGrant = computed(() => form.value.AllowedGrantTypes.includes(STAFFING_GRANT))
+
+// ADR 0007 — client capabilities. The forwarder capability lets a confidential
+// client (a BFF) convey the end user's address; it shifts only the SOURCE rate-limit
+// dimension, never lifts a limit. Public clients cannot hold it.
+const TRUSTED_FORWARDER = 'cap:trusted-forwarder'
+const hasTrustedForwarder = computed(() => form.value.Capabilities.includes(TRUSTED_FORWARDER))
+function setTrustedForwarder(on: boolean) {
+  const rest = form.value.Capabilities.filter((c) => c !== TRUSTED_FORWARDER)
+  form.value.Capabilities = on ? [...rest, TRUSTED_FORWARDER] : rest
+}
 const newPositionDraft = ref<PositionCreateDto | null>(null)
 const terminalProfileSnapshot = ref<Partial<FormState> | null>(null)
 
@@ -582,6 +595,7 @@ function fromStaged(e: ManifestEntity): FormState {
     RedirectUris: arr(e.RedirectUris),
     PostLogoutRedirectUris: arr(e.PostLogoutRedirectUris),
     AllowedGrantTypes: arr(e.AllowedGrantTypes),
+    Capabilities: arr(e.Capabilities),
     AllowedCorsOrigins: arr(e.AllowedCorsOrigins),
     RequirePushedAuthorizationRequests: e.RequirePushedAuthorizationRequests === true,
     RequireDpop: e.RequireDpop === true,
@@ -612,6 +626,7 @@ function toStaged(): ManifestEntity {
   entity.RedirectUris = [...form.value.RedirectUris]
   entity.PostLogoutRedirectUris = [...form.value.PostLogoutRedirectUris]
   entity.AllowedGrantTypes = [...form.value.AllowedGrantTypes]
+  entity.Capabilities = [...form.value.Capabilities]
   entity.AllowedCorsOrigins = [...form.value.AllowedCorsOrigins]
   entity.AccessTokenType = form.value.AccessTokenType
   entity.RequirePushedAuthorizationRequests = form.value.RequirePushedAuthorizationRequests
@@ -660,6 +675,7 @@ function fromDto(dto: OAuthClientDto): FormState {
     RedirectUris: [...(dto.RedirectUris ?? [])],
     PostLogoutRedirectUris: [...(dto.PostLogoutRedirectUris ?? [])],
     AllowedGrantTypes: [...(dto.AllowedGrantTypes ?? [])],
+    Capabilities: [...(dto.Capabilities ?? [])],
     AllowedCorsOrigins: [...(dto.AllowedCorsOrigins ?? [])],
     RequirePushedAuthorizationRequests: dto.RequirePushedAuthorizationRequests,
     RequireDpop: dto.RequireDpop,
@@ -1409,6 +1425,16 @@ async function copySecret() {
                 :selected-label="t('admin.oauthClients.grantTypes.selected', {}, 'Enabled')"
                 :search-placeholder="t('admin.oauthClients.grantTypes.searchPlaceholder', {}, 'Search…')" />
             </section>
+            <CoarFormField
+              class="capabilities-field"
+              :label="t('admin.oauthClients.capabilities.title', {}, 'Capabilities')"
+              :hint="t('admin.oauthClients.capabilities.trustedForwarderHint', {}, 'A trusted forwarder (a backend-for-frontend) sends the end user address in the Modgud-Forwarded-For header on the auth endpoints it calls on the user behalf. Rate limits then apply per user instead of per egress address. It shifts only the Source dimension; Target, Client and App limits still bound the forwarder. Confidential clients only.')">
+              <CoarCheckbox
+                :model-value="hasTrustedForwarder"
+                :disabled="form.ClientType !== 'confidential'"
+                :label="t('admin.oauthClients.capabilities.trustedForwarder', {}, 'Trusted forwarder (cap:trusted-forwarder)')"
+                @update:model-value="setTrustedForwarder" />
+            </CoarFormField>
             <div
               v-if="form.AllowedGrantTypes.includes('client_credentials') || form.LinkedServiceAccountId"
               class="flow-service-account">

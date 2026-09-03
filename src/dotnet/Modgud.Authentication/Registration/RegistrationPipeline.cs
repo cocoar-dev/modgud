@@ -51,6 +51,10 @@ public enum RegistrationRequestOutcome
 
     /// <summary>The address already belongs to a user; the pipeline is never entered.</summary>
     AddressTaken,
+
+    /// <summary>The silent per-source registration ceiling (ADR 0007) was hit: this
+    /// source sprayed too many unknown addresses. Nothing written, nothing sent.</summary>
+    Throttled,
 }
 
 /// <summary>The account that a successful proof materialised.</summary>
@@ -96,6 +100,7 @@ public sealed class RegistrationPipeline(
     IEmailService emailService,
     IEmailBrandingResolver emailBranding,
     IRegistrationInviteService inviteService,
+    Modgud.Authentication.RateLimiting.IRegistrationThrottle throttle,
     ILogger<RegistrationPipeline> logger) : IRegistrationPipeline
 {
     /// <summary>Lifetime of a numeric code — same as the login OTP.</summary>
@@ -124,6 +129,11 @@ public sealed class RegistrationPipeline(
         var normalized = PendingRegistration.NormalizeEmail(request.Email);
         if (await AddressBelongsToUserAsync(normalized, ct))
             return RegistrationRequestOutcome.AddressTaken;
+
+        // ADR 0007 — entering the pipeline for an unknown address IS the spraying
+        // signal; the ceiling is silent so a 429 never reveals existence.
+        if (!await throttle.AllowAsync(ct))
+            return RegistrationRequestOutcome.Throttled;
 
         var id = PendingRegistration.IdFor(normalized);
         var now = DateTimeOffset.UtcNow;

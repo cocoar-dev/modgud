@@ -329,6 +329,26 @@ Returns `204 No Content`. A deleted passkey can no longer satisfy a `urn:cocoar:
   Refresh tokens are **single-use and rotate on every redeem** — a replayed (already-redeemed) refresh token is rejected with `invalid_grant` and revokes the whole token family, not just that one token. See [Refresh Token](/concepts/tokens#refresh-token).
 - **Revocation:** an admin disabling/deleting the user, a password reset, or "log out everywhere" rotates the user's security stamp — the next refresh then fails (`invalid_grant`), so the app must fall back to a fresh sign-in. Reference (opaque) access tokens (the default) are additionally revocable server-side immediately.
 
+### Calling through a backend (BFF)
+
+A web front end usually does not call these endpoints from the browser; its backend-for-frontend does, server-to-server. Then Modgud sees the backend's egress address for every user — and a per-source ceiling would treat the whole web population as one caller. The fix is a client capability, not a trust list:
+
+1. Make the BFF's client **confidential** and grant it **`cap:trusted-forwarder`** (client → Flows tab).
+2. On every auth call the BFF makes for a browser — OTP request, code redeem, magic link, … — authenticate with the client secret and send the user's address:
+
+   ```http
+   POST /api/account/native/otp/request
+   Authorization: Basic base64(client_id:client_secret)
+   Modgud-Forwarded-For: 203.0.113.42
+   Content-Type: application/json
+
+   { "email": "user@example.com" }
+   ```
+
+3. Pass a `429` through to the browser with its `Retry-After` and body; do not retry.
+
+The forwarded address is used for the **source** dimensions only; per-mailbox, per-client and per-App limits still bound the BFF as a whole. Sending the header without the capability (or without authenticating) is a `400 Auth.ForwarderNotTrusted`; an entitled client that omits the header gets `400 Auth.ForwardedAddressRequired`. Never put the BFF into `ProxyAllowedNetworks` — that setting is for your reverse proxy and would let the BFF choose the token issuer. Details: [Rate limits → Trusted forwarders](../platform/rate-limits#trusted-forwarders).
+
 ### Errors
 
 | Condition | Response |
@@ -338,7 +358,7 @@ Returns `204 No Content`. A deleted passkey can no longer satisfy a `urn:cocoar:
 | Client lacks the `gt:urn:cocoar:*` permission | `unauthorized_client` |
 | Wrong/expired code, link, or passkey assertion | `invalid_grant` — **uniform** message + jitter (anti-enumeration); don't parse it for "which part was wrong" |
 | TOTP required but missing/invalid (OTP & magic flows) | `invalid_grant` ("Two-factor authentication is required; supply totp_code.") |
-| Rate limit hit (OTP request, passkey begin, token endpoint) | `429 Too Many Requests` — back off. The per-IP ceilings are realm-configurable under [Realm Settings → Rate Limits](../admin/realm-settings#rate-limits) (defaults unchanged). |
+| Rate limit hit (any auth endpoint) | `429 Too Many Requests` with `Retry-After` and `{ "error": "rate_limited", "policy", "dimension", "retryAfterSeconds" }` — honour `Retry-After`, never retry automatically. Limits are per mailbox, per App, per client and per source, realm-configurable under [Realm Settings → Rate Limits](../admin/realm-settings#rate-limits); see [Rate limits](../platform/rate-limits). |
 | Passkey begin while realm has no primary domain | `503` (admin must set the realm/client RP-ID) |
 | Passkey list / delete without a valid Bearer token | `401 Unauthorized` |
 | Passkey delete of an unknown id **or** one owned by another user | `404 Not Found` — never `403`, so it is not a cross-user existence oracle |

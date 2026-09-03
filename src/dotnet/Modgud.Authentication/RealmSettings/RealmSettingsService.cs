@@ -615,13 +615,76 @@ public sealed class RealmSettingsService(
         };
     }
 
-    // Per-policy whole-rule replacement: a non-null patch field replaces that
-    // policy's ceiling (stored as a realm override); a null field leaves the
-    // existing override (or the inherited default) untouched.
-    private static ErrorOr<AuthRateLimitSettings> ApplyAuthRateLimitsPatch(
+    // ADR 0007 — merge-patch v2 per policy and dimension: absent = unchanged, explicit
+    // null = back to the shipped default, value = override. The pre-ADR-0007 single
+    // per-IP rules are still accepted (manifest compatibility) and stored as LEGACY
+    // overrides, which keeps the realm in log-only mode until an admin picks a mode.
+    // Shared with ApplicationSettingsService for the sparse per-App override.
+    internal static ErrorOr<AuthRateLimitSettings> ApplyAuthRateLimitsPatch(
         AuthRateLimitSettings? current, UpdateAuthRateLimitsDto patch)
     {
         var s = current ?? new AuthRateLimitSettings();
+        var policies = new Dictionary<string, PolicyLimits>(s.Policies ?? new(), StringComparer.OrdinalIgnoreCase);
+
+        if (patch.Policies is not null)
+        {
+            foreach (var (rawName, update) in patch.Policies)
+            {
+                if (!AuthRateLimitDefaults.TryParse(rawName, out var policy))
+                    return Error.Validation("AuthRateLimits.UnknownPolicy", $"Unknown rate-limit policy '{rawName}'.");
+                var name = AuthRateLimitDefaults.PolicyName(policy);
+                if (update is null)
+                {
+                    policies.Remove(name);
+                    continue;
+                }
+
+                var limits = policies.TryGetValue(name, out var existing) ? existing : new PolicyLimits();
+                foreach (var (dimension, field) in new (RateLimitDimension, Optional<RateLimitRuleDto?>)[]
+                         {
+                             (RateLimitDimension.Source, update.Source),
+                             (RateLimitDimension.SourceRegistration, update.SourceRegistration),
+                             (RateLimitDimension.Target, update.Target),
+                             (RateLimitDimension.Client, update.Client),
+                             (RateLimitDimension.App, update.App),
+                         })
+                {
+                    if (!field.HasValue) continue;
+                    var dto = field.Value;
+                    if (dto is null)
+                    {
+                        limits = limits.With(dimension, null);
+                        continue;
+                    }
+                    if (AuthRateLimitDefaults.For(policy, dimension) is null)
+                        return Error.Validation($"AuthRateLimits.{name}.{dimension}",
+                            $"The {dimension} dimension does not apply to the '{name}' policy.");
+                    if (ValidateRateLimitRule($"{name}.{dimension}", dto) is { } err) return err;
+                    limits = limits.With(dimension, ToRule(dto));
+                }
+
+                if (limits.IsEmpty) policies.Remove(name);
+                else policies[name] = limits;
+            }
+        }
+
+        var allowlist = s.SourceAllowlist;
+        if (patch.SourceAllowlist.HasValue)
+        {
+            var entries = (patch.SourceAllowlist.Value ?? [])
+                .Select(e => e?.Trim() ?? string.Empty)
+                .Where(e => e.Length > 0)
+                .ToArray();
+            foreach (var entry in entries)
+            {
+                if (!System.Net.IPNetwork.TryParse(entry, out _) && !System.Net.IPAddress.TryParse(entry, out _))
+                    return Error.Validation("AuthRateLimits.SourceAllowlist",
+                        $"'{entry}' is not an IP address or a CIDR range.");
+            }
+            allowlist = entries.Length == 0 ? null : entries;
+        }
+
+        var mode = patch.Mode.HasValue ? patch.Mode.Value : s.Mode;
 
         foreach (var (name, rule) in new (string, RateLimitRuleDto?)[]
                  {
@@ -637,8 +700,11 @@ public sealed class RealmSettingsService(
             if (rule is not null && ValidateRateLimitRule(name, rule) is { } err) return err;
         }
 
-        return s with
+        var result = s with
         {
+            Policies = policies.Count == 0 ? null : policies,
+            SourceAllowlist = allowlist,
+            Mode = mode,
             NativeOtp = patch.NativeOtp is { } a ? ToRule(a) : s.NativeOtp,
             MagicLink = patch.MagicLink is { } b ? ToRule(b) : s.MagicLink,
             PasswordReset = patch.PasswordReset is { } c ? ToRule(c) : s.PasswordReset,
@@ -647,9 +713,23 @@ public sealed class RealmSettingsService(
             PasskeyBegin = patch.PasskeyBegin is { } f ? ToRule(f) : s.PasskeyBegin,
             Bootstrap = patch.Bootstrap is { } g ? ToRule(g) : s.Bootstrap,
         };
+        if (patch.ClearLegacy == true)
+        {
+            result = result with
+            {
+                NativeOtp = null, MagicLink = null, PasswordReset = null, EmailOtp = null,
+                EmailVerification = null, PasskeyBegin = null, Bootstrap = null,
+            };
+        }
+        return result;
 
-        static RateLimitRule ToRule(RateLimitRuleDto d)
-            => new() { PermitLimit = d.PermitLimit, WindowMinutes = d.WindowMinutes };
+        static RateLimitRule ToRule(RateLimitRuleDto d) => new()
+        {
+            PermitLimit = d.PermitLimit,
+            WindowMinutes = d.WindowMinutes,
+            Burst = d.Burst,
+            Enabled = d.Enabled,
+        };
     }
 
     private static Error? ValidateRateLimitRule(string policy, RateLimitRuleDto rule)
@@ -660,26 +740,83 @@ public sealed class RealmSettingsService(
         if (rule.WindowMinutes is < 1 or > 1440)
             return Error.Validation($"AuthRateLimits.{policy}.WindowMinutes",
                 "WindowMinutes must be between 1 and 1440 (24 hours).");
+        if (rule.Burst is { } burst && burst is < 1 or > 100_000)
+            return Error.Validation($"AuthRateLimits.{policy}.Burst",
+                "Burst must be between 1 and 100000 (or empty for a fixed window).");
         return null;
     }
 
+    internal static RateLimitRuleDto ToRuleDto(RateLimitRule r) => new()
+    {
+        PermitLimit = r.PermitLimit,
+        WindowMinutes = r.WindowMinutes,
+        Burst = r.Burst,
+        Enabled = r.Enabled,
+    };
+
+    /// <summary>Effective values for every policy + what is stored.</summary>
     internal static AuthRateLimitsDto MapAuthRateLimitsToDto(AuthRateLimitSettings? s)
     {
-        static RateLimitRuleDto Eff(AuthRateLimitSettings? settings, AuthRateLimitPolicy p)
+        var dto = new AuthRateLimitsDto
         {
-            var r = AuthRateLimitSettings.Effective(settings, p);
-            return new RateLimitRuleDto { PermitLimit = r.PermitLimit, WindowMinutes = r.WindowMinutes };
+            Mode = AuthRateLimitSettings.EffectiveMode(s),
+            SourceAllowlist = AuthRateLimitSettings.EffectiveAllowlist(s).ToArray(),
+            LegacyOverridesPresent = s?.HasLegacyOverrides == true,
+            Overrides = MapAuthRateLimitOverridesToDto(s),
+        };
+        foreach (var policy in AuthRateLimitDefaults.All)
+        {
+            var name = AuthRateLimitDefaults.PolicyName(policy);
+            dto.Policies[name] = ToPolicyDto(AuthRateLimitSettings.EffectivePolicy(s, policy));
+            dto.Defaults[name] = ToPolicyDto(AuthRateLimitDefaults.ForPolicy(policy));
+        }
+        return dto;
+
+        static PolicyLimitsDto ToPolicyDto(PolicyLimits eff) => new()
+        {
+            Source = eff.Source is { } so ? ToRuleDto(so) : null,
+            SourceRegistration = eff.SourceRegistration is { } sr ? ToRuleDto(sr) : null,
+            Target = eff.Target is { } ta ? ToRuleDto(ta) : null,
+            Client = eff.Client is { } cl ? ToRuleDto(cl) : null,
+            App = eff.App is { } ap ? ToRuleDto(ap) : null,
+        };
+    }
+
+    /// <summary>The sparse stored shape (realm overrides or an App override); null when
+    /// nothing is stored. Round-trips through <see cref="ApplyAuthRateLimitsPatch"/>.</summary>
+    internal static UpdateAuthRateLimitsDto? MapAuthRateLimitOverridesToDto(AuthRateLimitSettings? s)
+    {
+        if (s is null || s.IsEmpty) return null;
+
+        Dictionary<string, UpdatePolicyLimitsDto?>? policies = null;
+        if (s.Policies is { Count: > 0 })
+        {
+            policies = new Dictionary<string, UpdatePolicyLimitsDto?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (name, limits) in s.Policies)
+            {
+                policies[name] = new UpdatePolicyLimitsDto
+                {
+                    Source = limits.Source is { } so ? new Optional<RateLimitRuleDto?>(ToRuleDto(so)) : default,
+                    SourceRegistration = limits.SourceRegistration is { } sr ? new Optional<RateLimitRuleDto?>(ToRuleDto(sr)) : default,
+                    Target = limits.Target is { } ta ? new Optional<RateLimitRuleDto?>(ToRuleDto(ta)) : default,
+                    Client = limits.Client is { } cl ? new Optional<RateLimitRuleDto?>(ToRuleDto(cl)) : default,
+                    App = limits.App is { } ap ? new Optional<RateLimitRuleDto?>(ToRuleDto(ap)) : default,
+                };
+            }
         }
 
-        return new AuthRateLimitsDto
+        return new UpdateAuthRateLimitsDto
         {
-            NativeOtp = Eff(s, AuthRateLimitPolicy.NativeOtp),
-            MagicLink = Eff(s, AuthRateLimitPolicy.MagicLink),
-            PasswordReset = Eff(s, AuthRateLimitPolicy.PasswordReset),
-            EmailOtp = Eff(s, AuthRateLimitPolicy.EmailOtp),
-            EmailVerification = Eff(s, AuthRateLimitPolicy.EmailVerification),
-            PasskeyBegin = Eff(s, AuthRateLimitPolicy.PasskeyBegin),
-            Bootstrap = Eff(s, AuthRateLimitPolicy.Bootstrap),
+            Policies = policies,
+            SourceAllowlist = s.SourceAllowlist is null ? default : new Optional<string[]?>(s.SourceAllowlist),
+            Mode = s.Mode is null ? default : new Optional<RateLimitEnforcementMode?>(s.Mode),
+            NativeOtp = s.NativeOtp is { } a ? ToRuleDto(a) : null,
+            MagicLink = s.MagicLink is { } b ? ToRuleDto(b) : null,
+            PasswordReset = s.PasswordReset is { } c ? ToRuleDto(c) : null,
+            EmailOtp = s.EmailOtp is { } d ? ToRuleDto(d) : null,
+            EmailVerification = s.EmailVerification is { } e ? ToRuleDto(e) : null,
+            PasskeyBegin = s.PasskeyBegin is { } f ? ToRuleDto(f) : null,
+            Bootstrap = s.Bootstrap is { } g ? ToRuleDto(g) : null,
         };
     }
 

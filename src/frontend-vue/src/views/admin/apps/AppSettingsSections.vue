@@ -7,6 +7,11 @@ import {
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import EditableStringList from '@/components/EditableStringList.vue'
+import AuthRateLimitsEditor from '@/components/AuthRateLimitsEditor.vue'
+import {
+  emptyRateLimitOverrides, overridesFromUpdate, sparseRateLimitPolicies,
+  type RateLimitEnforcementMode, type RateLimitOverrides,
+} from '@/models/realmSettings'
 import { useGroupStore } from '@/stores/group.store'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
@@ -34,7 +39,7 @@ const props = defineProps<{
 const groupStore = useGroupStore()
 const loginProviderStore = useLoginProviderStore()
 const appConfig = useAppConfigStore()
-const activeTab = ref<'origin' | 'registration' | 'sessions' | 'grants' | 'oauth' | 'sync' | 'pages'>('origin')
+const activeTab = ref<'origin' | 'registration' | 'sessions' | 'grants' | 'rateLimits' | 'oauth' | 'sync' | 'pages'>('origin')
 
 const groupOptions = ref<{ value: string; label: string }[]>([])
 const loginProviderOptions = ref<{ value: string; label: string }[]>([])
@@ -75,6 +80,13 @@ const f = reactive({
   },
   clientSessions: { override: false, idle: '', absolute: '' },
   nativeGrants: { override: false, enabled: false, access: '', refresh: '' },
+  rateLimits: {
+    override: false,
+    overrides: emptyRateLimitOverrides() as RateLimitOverrides,
+    allowlistOverride: false,
+    allowlist: [] as string[],
+    mode: 'inherit' as 'inherit' | RateLimitEnforcementMode,
+  },
   dcr: {
     override: false, enabled: false, access: '', refresh: '',
     reservedNames: [] as string[], perIp: '', perRealm: '',
@@ -116,6 +128,13 @@ function parseNum(s: string): number | null {
 // Shown greyed in the (always-visible) fields so a setting stays findable and its
 // effective value is visible without ticking "override" first (Modal & Form Contract R1).
 const realmSettingsStore = useRealmSettingsStore()
+// ADR 0007 — the App editor inherits the realm's EFFECTIVE limits.
+const realmRateLimitBaseline = computed(() => realmSettingsStore.settings?.AuthRateLimits?.Policies ?? {})
+const appRateLimitModeOptions = computed(() => [
+  { value: 'inherit', label: t('admin.rateLimits.mode.inherit', {}, 'Inherit from realm') },
+  { value: 'Enforce', label: t('admin.rateLimits.mode.enforce', {}, 'Enforce') },
+  { value: 'LogOnly', label: t('admin.rateLimits.mode.logOnly', {}, 'Log only (evaluate and count, never reject)') },
+])
 const inh = computed(() => {
   const r = realmSettingsStore.settings
   return {
@@ -221,6 +240,8 @@ function resetForm() {
   f.registrationFields.firstname = ''; f.registrationFields.lastname = ''
   f.clientSessions.override = false; f.clientSessions.idle = ''; f.clientSessions.absolute = ''
   f.nativeGrants.override = false; f.nativeGrants.enabled = false; f.nativeGrants.access = ''; f.nativeGrants.refresh = ''
+  f.rateLimits.override = false; f.rateLimits.overrides = emptyRateLimitOverrides()
+  f.rateLimits.allowlistOverride = false; f.rateLimits.allowlist = []; f.rateLimits.mode = 'inherit'
   f.dcr.override = false; f.dcr.enabled = false; f.dcr.access = ''; f.dcr.refresh = ''
   f.dcr.reservedNames = []; f.dcr.perIp = ''; f.dcr.perRealm = ''
   f.cimd.override = false; f.cimd.enabled = false; f.cimd.access = ''; f.cimd.refresh = ''
@@ -289,6 +310,13 @@ function populate(s?: ApplicationSettingsDto | null) {
     f.nativeGrants.enabled = s.NativeGrants.Enabled ?? false
     f.nativeGrants.access = numStr(s.NativeGrants.AccessTokenLifetimeMinutes)
     f.nativeGrants.refresh = numStr(s.NativeGrants.RefreshTokenLifetimeDays)
+  }
+  if (s.AuthRateLimits) {
+    f.rateLimits.override = true
+    f.rateLimits.overrides = overridesFromUpdate(s.AuthRateLimits)
+    f.rateLimits.allowlistOverride = s.AuthRateLimits.SourceAllowlist != null
+    f.rateLimits.allowlist = [...(s.AuthRateLimits.SourceAllowlist ?? [])]
+    f.rateLimits.mode = s.AuthRateLimits.Mode ?? 'inherit'
   }
   if (s.ClientSessions) {
     f.clientSessions.override = true
@@ -452,6 +480,13 @@ function build(): ApplicationSettingsDto {
     NativeGrants: f.nativeGrants.override
       ? { Enabled: f.nativeGrants.enabled, AccessTokenLifetimeMinutes: parseNum(f.nativeGrants.access), RefreshTokenLifetimeDays: parseNum(f.nativeGrants.refresh) }
       : null,
+    AuthRateLimits: f.rateLimits.override
+      ? {
+          Policies: sparseRateLimitPolicies(f.rateLimits.overrides),
+          SourceAllowlist: f.rateLimits.allowlistOverride ? [...f.rateLimits.allowlist] : undefined,
+          Mode: f.rateLimits.mode === 'inherit' ? undefined : f.rateLimits.mode,
+        }
+      : null,
     ClientSessions: f.clientSessions.override
       ? { IdleLifetimeDays: parseNum(f.clientSessions.idle), AbsoluteLifetimeDays: parseNum(f.clientSessions.absolute) }
       : null,
@@ -560,6 +595,7 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
       <CoarTab id="registration">{{ t('admin.appSettings.tabs.registration', {}, 'Registrierung') }}</CoarTab>
       <CoarTab id="sessions">{{ t('admin.appSettings.tabs.sessions', {}, 'Sessions') }}</CoarTab>
       <CoarTab id="grants">{{ t('admin.appSettings.tabs.grants', {}, 'Native Grants') }}</CoarTab>
+      <CoarTab id="rateLimits">{{ t('admin.appSettings.tabs.rateLimits', {}, 'Rate limits') }}</CoarTab>
       <CoarTab id="oauth">{{ t('admin.appSettings.tabs.oauth', {}, 'OAuth (DCR/CIMD)') }}</CoarTab>
       <CoarTab id="sync">{{ t('admin.appSettings.tabs.sync', {}, 'Sync') }}</CoarTab>
       <CoarTab v-if="appConfig.config.Features.PageBuilder" id="pages">
@@ -785,6 +821,26 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
           <CoarTextInput v-bind="fieldBind('nativeGrants', 'refresh')" clearable placeholder="14" />
         </CoarFormField>
       </div>
+    </div>
+
+    <!-- Rate limits (ADR 0007) -->
+    <div v-show="activeTab === 'rateLimits'" class="tab-content">
+      <CoarCheckbox v-model="f.rateLimits.override" :label="t('admin.appSettings.rateLimits.override', {}, 'Custom rate limits for this App')" />
+      <p class="text-sm">{{ t('admin.appSettings.rateLimits.hint', {}, 'Only the cells you override win over the realm; everything else inherits. The allowlist and the enforcement mode replace the realm values when set.') }}</p>
+      <div class="grid grid-cols-2 gap-3">
+        <CoarFormField :label="t('admin.rateLimits.mode.label', {}, 'Enforcement')">
+          <CoarSelect v-model="f.rateLimits.mode" :options="appRateLimitModeOptions" :disabled="!f.rateLimits.override" />
+        </CoarFormField>
+        <CoarCheckbox v-model="f.rateLimits.allowlistOverride" :disabled="!f.rateLimits.override"
+          :label="t('admin.appSettings.rateLimits.allowlistOverride', {}, 'Own source allowlist (replaces the realm list)')" />
+      </div>
+      <EditableStringList
+        v-if="f.rateLimits.override && f.rateLimits.allowlistOverride"
+        v-model="f.rateLimits.allowlist"
+        appearance="compact-grid"
+        min-height="8rem"
+        :header-label="t('admin.rateLimits.allowlist', {}, 'Source allowlist — addresses or CIDR ranges exempt from the Source ceilings only (Target, Client and App still apply)')" />
+      <AuthRateLimitsEditor v-model="f.rateLimits.overrides" :baseline="realmRateLimitBaseline" :disabled="!f.rateLimits.override" />
     </div>
 
     <!-- OAuth (DCR / CIMD) -->

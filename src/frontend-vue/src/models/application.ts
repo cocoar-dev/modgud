@@ -1,3 +1,4 @@
+import type { UpdateAuthRateLimitsDto } from './realmSettings'
 // Application admin models — mirror the DTOs in
 // src/dotnet/Modgud.Api/Features/Admin/Apps/AppsEndpoints.cs.
 //
@@ -155,6 +156,8 @@ export interface ApplicationSettingsDto {
   LoginExperience?: ApplicationLoginExperienceDto | null
   SelfRegistration?: ApplicationSelfRegistrationOverrideDto | null
   NativeGrants?: ApplicationGrantOverrideDto | null
+  /** ADR 0007 — sparse rate-limit overrides for this App (null = inherit the realm). */
+  AuthRateLimits?: UpdateAuthRateLimitsDto | null
   ClientSessions?: ApplicationClientSessionsDto | null
   Dcr?: ApplicationDcrOverrideDto | null
   Cimd?: ApplicationGrantOverrideDto | null

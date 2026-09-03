@@ -69,11 +69,11 @@ Soft-deletes [Dynamic Client Registration](./dynamic-client-registration) client
 
 ### `pending-registration-sweep` — Pending registration sweep
 
-Hard-deletes expired pending registrations — sign-ups (web, native OTP, invite code) whose verification link or code was never redeemed.
+Hard-deletes expired pending registrations — sign-ups (web, native OTP, invite code) whose verification link or code was never redeemed — and prunes [rate-limit](../platform/rate-limits) counters idle for two days.
 
 - **Default cron:** `0 10 * * * ?` (ten past every hour)
 - **Parameters:** none — lifetimes are fixed (10 minutes for codes, 24 hours for links).
-- **What it does:** deletes every pending registration past its expiry (and any consumed record a crash left behind). These records are plain documents, not users: after the sweep nothing identifying the person remains. See [Realm Settings → Self-Registration](./realm-settings#self-registration).
+- **What it does:** deletes every pending registration past its expiry (and any consumed record a crash left behind), then drops rate-limit counters nobody touched for two days. These records are plain documents, not users: after the sweep nothing identifying the person remains. See [Realm Settings → Self-Registration](./realm-settings#self-registration).
 - **On failure:** logged + inbox-notified; the next hourly run catches up.
 
 ### `unconfirmed-registration-reaper` — Unconfirmed registration reaper

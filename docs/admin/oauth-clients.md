@@ -150,6 +150,16 @@ Account provisions its confidential client and `client_credentials` grant
 through the same client-creation validation path.
 :::
 
+### Capabilities
+
+Capabilities are explicit, per-client grants a realm admin gives on the **Flows** tab. They are stored next to the grant-type permissions (as `cap:` entries) and are exported with the realm manifest.
+
+| Capability | Meaning |
+| --- | --- |
+| `cap:trusted-forwarder` | The client is a backend-for-frontend that calls the auth endpoints on behalf of browsers. When it authenticates a request with its client secret and sends the end user's address in the `Modgud-Forwarded-For` header, rate limits apply per user instead of per egress address. It shifts **only** the source dimension; target, client and App limits still bound the forwarder. Confidential clients only. See [Rate limits → Trusted forwarders](../platform/rate-limits#trusted-forwarders). |
+
+Trust never depends on who owns the client: any realm admin can grant the capability to any confidential client, and a capability can never lift a limit.
+
 ### Lifetimes
 
 The **Lifetimes** tab is available during create and edit. Each field is

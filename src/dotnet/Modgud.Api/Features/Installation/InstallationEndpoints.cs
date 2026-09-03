@@ -6,6 +6,8 @@ using Modgud.Infrastructure.Installation;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using Npgsql;
+using Modgud.Authentication.RateLimiting;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Api.Features.Installation;
 
@@ -204,7 +206,7 @@ public static class InstallationEndpoints
                 : Results.Ok(new { valid = true, expiresAt = result.Value.ExpiresAt });
         })
         .WithName("Installation_Validate")
-        .RequireRateLimiting("bootstrap");
+        .RequireAuthRateLimit(AuthRateLimitPolicy.Bootstrap);
 
         group.MapPost("complete", async (
             [FromBody] CompleteInstallationRequest request,
@@ -217,7 +219,7 @@ public static class InstallationEndpoints
                 : Results.Ok(result.Value);
         })
         .WithName("Installation_Complete")
-        .RequireRateLimiting("bootstrap");
+        .RequireAuthRateLimit(AuthRateLimitPolicy.Bootstrap);
 
         return app;
     }

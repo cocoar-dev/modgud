@@ -12,6 +12,8 @@ using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Email;
 using Modgud.Infrastructure.Observability;
 using Modgud.Infrastructure.Realms;
+using Modgud.Authentication.RateLimiting;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -167,7 +169,7 @@ public static class MagicLinkEndpoints
         // RATE-01 — 5 requests per hour per IP. Per-user rate limit lives
         // in the magic-link service itself; this is the upstream IP cap
         // that prevents enum-spam against the SMTP path.
-        .RequireRateLimiting("magic-link");
+        .RequireAuthRateLimit(AuthRateLimitPolicy.MagicLink, target: ctx => ctx.Argument<MagicLinkRequestDto>()?.Email);
 
         // POST /api/account/magic-link/login — Validate token and sign in
         group.MapPost("login", async (
