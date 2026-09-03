@@ -9,7 +9,7 @@
  * The bar only appears once a draft exists — the first staged change creates one
  * implicitly, so an admin who never stages anything never sees it.
  */
-import { onMounted } from 'vue'
+import { onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { CoarButton, CoarIcon, CoarPopconfirm, CoarSpinner, CoarTag, useToast } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
@@ -22,6 +22,15 @@ const store = useRealmDraftStore()
 
 onMounted(() => {
   if (!store.current) void store.loadActive()
+})
+
+// The draft store swallows mutation failures into `store.error`, which only
+// the drafts WORKSPACE renders — a failed stage/stage-delete from a normal
+// admin list would otherwise be perfectly silent ("I clicked delete and
+// nothing happened"). This bar is mounted on every admin page, so surface
+// every draft error as a toast here.
+watch(() => store.error, (message) => {
+  if (message) toast.error(message)
 })
 
 async function applyDraft() {
