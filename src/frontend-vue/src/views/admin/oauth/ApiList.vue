@@ -12,6 +12,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useOAuthApiStore } from '@/stores/oauthApi.store'
 import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
@@ -74,6 +75,13 @@ const selectedIds = ref<string[]>([])
 const selectedDeleteStaged = ref(false)
 
 const showEmpty = computed(() => store.loaded && rows.value.length === 0)
+
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('apis',
+  computed(() => {
+    const row = rows.value.find((r) => r.Id === selectedIds.value[0])
+    if (!row || row.DraftStaged === 'create') return null
+    return row.Name
+  }))
 
 const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthApiDto>>(), { openable: true })
   .persistColumnState('admin-oauth-apis')
@@ -188,6 +196,9 @@ onMounted(() => store.initialize())
           : t('common.delete', {}, 'Delete')"
         :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         @clicked="deleteSelected" />
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">

@@ -12,6 +12,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
 import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import type { LoginProviderDto, LoginProviderType } from '@/models/loginProvider'
@@ -145,6 +146,13 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<LoginProvi
 
 const selectedProvider = computed(() => rows.value.find((p) => p.Id === selectedIds.value[0]))
 
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('loginProviders',
+  computed(() => {
+    const row = selectedProvider.value
+    if (!row || row.DraftStaged === 'create' || row.IsBuiltIn) return null
+    return row.Slug
+  }))
+
 async function toggleEnabled() {
   const provider = selectedProvider.value
   if (!provider) return
@@ -230,6 +238,9 @@ onMounted(() => store.initialize())
         :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         :disabled="!selectedProvider || selectedProvider.IsBuiltIn"
         @clicked="deleteSelected" />
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">

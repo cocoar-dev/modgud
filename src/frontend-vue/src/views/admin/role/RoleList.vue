@@ -16,6 +16,7 @@ import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, ROLE_CLONE } from '@/composables/useClone'
 import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import type { RoleDto } from '@/models/role'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -74,6 +75,13 @@ const selectedIds = ref<string[]>([])
 const selectedDeleteStaged = ref(false)
 
 const showEmpty = computed(() => roleStore.loaded && roles.value.length === 0)
+
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('roles',
+  computed(() => {
+    const row = roles.value.find((r) => r.Id === selectedIds.value[0])
+    if (!row || row.DraftStaged === 'create') return null
+    return row.Name
+  }))
 
 const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<RoleDto>>(), { openable: true })
   .persistColumnState('admin-roles')
@@ -187,6 +195,9 @@ onMounted(() => roleStore.initialize())
           : t('common.delete', {}, 'Delete')"
         :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         @clicked="deleteSelected" />
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <!-- Viewport context menu (empty area) -->

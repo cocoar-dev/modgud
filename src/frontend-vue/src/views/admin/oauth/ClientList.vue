@@ -20,6 +20,7 @@ import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, CLIENT_CLONE } from '@/composables/useClone'
 import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import { useRouter } from 'vue-router'
 import type { OAuthClientDto } from '@/models/oauth'
 import GridEmptyState from '@/components/GridEmptyState.vue'
@@ -188,6 +189,14 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthClien
 const liveSelected = computed(() =>
   store.clients.find((c) => c.Id === selectedIds.value[0]) ?? null)
 
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('clients',
+  computed(() => {
+    const row = rows.value.find((r) => r.Id === selectedIds.value[0])
+    if (!row || row.DraftStaged === 'create') return null
+    if (row.LinkedServiceAccountId || row.LinkedPositionPrincipalId || row.ManagedTerminalEnrollmentId) return null
+    return row.ClientId
+  }))
+
 // Live emergency lever (mirrors the login-provider grid toggle): the modal's
 // Enabled checkbox STAGES, this acts NOW — a disabled client stops
 // authenticating immediately. Deletion stays a staged config change.
@@ -326,6 +335,9 @@ function openClient(client: OAuthClientDto) {
           : t('common.delete', {}, 'Delete')"
         :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         @clicked="deleteSelected" />
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">

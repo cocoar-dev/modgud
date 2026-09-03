@@ -26,6 +26,12 @@ import {
 const props = defineProps<{
   close: (result?: unknown) => void
   manifest: DraftManifest
+  /** Pre-collected selection keys (`section/key`) from the export-selection
+   * bar. Keys that no longer resolve in the export are dropped (and counted
+   * in a notice). When given, the modal starts in review mode: only the
+   * selection + its required closure is listed — browsing/filtering happened
+   * in the admin grids. */
+  preselected?: string[]
 }>()
 
 const { t } = useI18n()
@@ -33,7 +39,24 @@ const { t } = useI18n()
 const includeUsers = ref(false)
 const includeSettings = ref(false)
 const targetSlug = ref(String(props.manifest.Realm?.Slug ?? ''))
-const selected = ref<Set<SelectionKey>>(new Set())
+
+function keyExists(sel: SelectionKey): boolean {
+  const slash = sel.indexOf('/')
+  if (slash <= 0) return false
+  const section = sel.slice(0, slash) as SelectableSection
+  const meta = SECTION_META[section]
+  if (!meta?.collection) return false
+  const key = sel.slice(slash + 1)
+  const entities = (props.manifest[meta.collection] as ManifestEntity[] | undefined) ?? []
+  return entities.some((e) => meta.key(e) === key)
+}
+
+const validPreselected = (props.preselected ?? []).filter(keyExists)
+const droppedCount = (props.preselected?.length ?? 0) - validPreselected.length
+const selected = ref<Set<SelectionKey>>(new Set(validPreselected))
+
+/** Review mode (preselected): list only the selection + closure. */
+const showAll = ref(!props.preselected)
 
 const SECTION_ICONS: Record<string, string> = {
   apps: 'layout-grid', apis: 'server', scopes: 'tags', clients: 'app-window',
@@ -51,10 +74,11 @@ const sections = computed(() => SELECTABLE_SECTIONS
   .map((section) => {
     const meta = SECTION_META[section]!
     const entities = (props.manifest[meta.collection!] as ManifestEntity[] | undefined) ?? []
-    const rows: Row[] = entities.map((e) => {
+    let rows: Row[] = entities.map((e) => {
       const key = meta.key(e)
       return { key, sel: selectionKey(section, key), info: rowInfo(section, e) }
     })
+    if (!showAll.value) rows = rows.filter((r) => isChecked(r.sel))
     return { section, rows }
   })
   .filter((s) => s.rows.length > 0))
@@ -178,6 +202,10 @@ function sectionLabel(name: string): string {
         {{ t('admin.realmConfig.selective.hint', {},
           'Secrets are never exported. Apply the partial manifest on the target WITHOUT prune — with prune it would delete everything not in the file.') }}
       </CoarNotice>
+      <CoarNotice v-if="droppedCount > 0" variant="warning" truncate>
+        {{ t('admin.realmConfig.selective.dropped', { count: droppedCount },
+          `${droppedCount} collected entr(y/ies) no longer exist in the export and were dropped.`) }}
+      </CoarNotice>
 
       <div class="selective-options">
         <div class="option-slug">
@@ -190,6 +218,10 @@ function sectionLabel(name: string): string {
         <CoarCheckbox
           v-model="includeUsers"
           :label="t('admin.realmConfig.selective.includeUsers', {}, 'Include user references (group members, position grants)')" />
+        <CoarCheckbox
+          v-if="props.preselected"
+          v-model="showAll"
+          :label="t('admin.realmConfig.selective.showAll', {}, 'Show all entities (add more)')" />
       </div>
 
       <section v-for="{ section, rows } in sections" :key="section" class="selective-section">

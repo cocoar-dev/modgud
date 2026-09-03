@@ -21,6 +21,7 @@ import { useAppConfigStore } from '@/stores/appconfig.store'
 import LogoutConfirmModal from '@/views/auth/LogoutConfirmModal.vue'
 import AppContextSelector from '@/components/AppContextSelector.vue'
 import DraftStagingBar from '@/views/admin/realm-config/DraftStagingBar.vue'
+import ExportSelectionBar from '@/views/admin/realm-config/ExportSelectionBar.vue'
 import InboxBell from '@/components/InboxBell.vue'
 import UnverifiedEmailBanner from '@/components/UnverifiedEmailBanner.vue'
 
@@ -269,6 +270,7 @@ const hasAnyPlatformPermission = computed(() =>
                     </div>
                 </main>
 
+                <ExportSelectionBar v-if="showStagingBar" />
                 <DraftStagingBar v-if="showStagingBar" />
 
                 <!-- Footer (optional, shown when views enable it) -->

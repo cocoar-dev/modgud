@@ -15,6 +15,7 @@ import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, APP_CLONE } from '@/composables/useClone'
 import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import type { ApplicationDto } from '@/models/application'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -70,6 +71,13 @@ const selectedIsSystem = ref(false)
 const selectedDeleteStaged = ref(false)
 
 const showEmpty = computed(() => store.loaded && rows.value.length === 0)
+
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('apps',
+  computed(() => {
+    const row = rows.value.find((r) => r.Id === selectedIds.value[0])
+    if (!row || row.DraftStaged === 'create' || row.IsSystem) return null
+    return row.Slug
+  }))
 
 const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<ApplicationDto>>(), { openable: true })
   .persistColumnState('admin-apps')
@@ -202,6 +210,9 @@ onMounted(() => store.initialize())
           : t('common.delete', {}, 'Delete')"
         :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         :disabled="selectedIsSystem" @clicked="deleteSelected" />
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">

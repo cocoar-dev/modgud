@@ -1810,7 +1810,17 @@
         "download": "Manifest herunterladen",
         "required": "Benötigt",
         "requiredBy": "Benötigt von: ",
-        "selectRelated": "Zugehörige auswählen"
+        "selectRelated": "Zugehörige auswählen",
+        "showAll": "Alle Entities anzeigen (weitere hinzufügen)",
+        "dropped": "{count} gesammelte Einträge existieren nicht mehr im Export und wurden entfernt."
+      },
+      "selection": {
+        "title": "Export-Auswahl",
+        "count": "{count} gesammelt",
+        "clear": "Leeren",
+        "export": "Exportieren…",
+        "addTo": "Zur Export-Auswahl hinzufügen",
+        "removeFrom": "Aus Export-Auswahl entfernen"
       },
       "invalidJson": "Das Manifest ist kein gültiges JSON: ",
       "noDrafts": "Noch keine Drafts — oben einen anlegen.",

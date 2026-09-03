@@ -17,6 +17,7 @@ import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, GROUP_CLONE } from '@/composables/useClone'
 import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import type { GroupDto } from '@/models/group'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -88,6 +89,13 @@ const selectedIds = ref<string[]>([])
 const selectedDeleteStaged = ref(false)
 
 const showEmpty = computed(() => groupStore.loaded && groups.value.length === 0)
+
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('groups',
+  computed(() => {
+    const row = groups.value.find((g) => g.Id === selectedIds.value[0])
+    if (!row || row.DraftStaged === 'create') return null
+    return row.Name
+  }))
 
 const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<GroupListRow>>(), { openable: true })
   .persistColumnState('admin-groups')
@@ -198,6 +206,9 @@ onMounted(() => groupStore.initialize())
           : t('common.delete', {}, 'Delete')"
         :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         @clicked="deleteSelected" />
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">

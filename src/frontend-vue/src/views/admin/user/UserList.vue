@@ -13,6 +13,7 @@ import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-par
 import { useUserStore } from '@/stores/user.store'
 import { useRealmDraftStore, type ManifestEntity } from '@/stores/realmDraft.store'
 import { useDraftStaging } from '@/composables/useDraftStaging'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
@@ -138,6 +139,11 @@ const selectedDeleteStaged = computed(() => {
   const id = selectedIds.value[0]
   return !!id && displayUsers.value.find((r) => r.Id === id)?.DraftStaged === 'delete'
 })
+
+// selectedUser resolves against the LIVE roster, so draft-only creations
+// (not in the export) yield null and hide the menu item automatically.
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('users',
+  computed(() => selectedUser.value ? (selectedUser.value.UserName || selectedUser.value.Email || null) : null))
 
 // Onboarding empty-state shows only when the realm genuinely has no users
 // (keyed off the raw roster, not the recycle-bin/search-filtered view) so a
@@ -342,6 +348,9 @@ onMounted(() => {
         <CoarMenuItem :label="t('admin.users.restore', {}, 'Restore')" icon="rotate-ccw" @clicked="restoreSelected" />
         <CoarMenuItem :label="t('admin.users.forceDelete', {}, 'Delete permanently')" icon="trash-2" @clicked="forceDeleteSelected" />
       </template>
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <!-- Viewport context menu (empty area) -->

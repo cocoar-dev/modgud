@@ -6,6 +6,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { usePositionStore } from '@/stores/position.store'
 import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import type { PositionPrincipalDto } from '@/models/position'
@@ -62,6 +63,13 @@ const selectedIds = ref<string[]>([])
 const selectedDeleteStaged = ref(false)
 
 const showEmpty = computed(() => store.allLoaded && rows.value.length === 0)
+
+const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('positions',
+  computed(() => {
+    const row = rows.value.find((r) => r.Id === selectedIds.value[0])
+    if (!row || row.DraftStaged === 'create') return null
+    return row.AccountName.trim().toLowerCase()
+  }))
 
 const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<PositionPrincipalDto>>(), { openable: true })
   .persistColumnState('admin-positions')
@@ -160,6 +168,9 @@ onMounted(() => {
           : t('common.delete', {}, 'Delete')"
         :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         @clicked="deleteRows" />
+      <CoarMenuDivider v-if="exportMenuVisible" />
+      <CoarMenuItem v-if="exportMenuVisible" :label="exportMenuLabel" icon="list-checks"
+        @clicked="exportMenuToggle" />
     </CoarContextMenu>
 
     <CoarContextMenu :menu="viewportMenu">

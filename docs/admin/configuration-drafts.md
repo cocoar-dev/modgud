@@ -78,6 +78,8 @@ Secret-bearing fields — user passwords, client secrets, login-provider secrets
 - **Start a draft from a manifest** — upload a JSON manifest (hand-written or machine-generated) as a new draft, review its plan, then apply. This is the interactive import path.
 - **Export** the current realm configuration and download the **manifest JSON Schema**.
 - **Selective export** — the cart: pick individual entities (an app, its clients, a group, …) and download a *partial* manifest. Whatever the selection references — transitively — is pulled in automatically and marked *Required*, so the file always applies cleanly; a "Select related" shortcut on an app grabs its clients, APIs, scopes and roles in one click. The target realm slug is written into the file, user references (group members, position grants) are excluded by default, and references that aren't part of the export (standard scopes, the system app) are assumed to exist on the target. See [moving config between realms](#moving-config-between-realms-and-instances).
+
+On a large realm you don't pick entities in a dialog — you collect them where the search and filters are: every admin grid's context menu offers **"Add to export selection"**. The collected entities appear in a footer bar (it survives navigation and reloads, per browser), and **Export…** on that bar opens the selective-export review pre-filled with your collection — showing only the selection plus its required references, with the full list one checkbox away.
 - **Prune** — opt-in full sync: the apply additionally deletes entities absent from the draft, with the same protections as [declarative provisioning](realm-provisioning#apply-merge-vs-prune).
 
 ## Drafts are manifests
