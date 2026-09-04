@@ -27,6 +27,10 @@ public static class OAuthErrors
                    + "and the native urn:cocoar:* grants. The OAuth 2.1-removed 'implicit' and 'password' "
                    + "grants are rejected.");
 
+    public static Error InvalidJsonWebKeySet(string reason) => Error.Validation(
+        code: "OAuth.InvalidJsonWebKeySet",
+        description: $"Invalid JSON Web Key Set: {reason}");
+
     public static Error InvalidBackChannelLogoutUri(string value, string reason) => Error.Validation(
         code: "OAuth.InvalidBackChannelLogoutUri",
         description: $"Invalid back-channel logout URI '{value}': {reason}");

@@ -55,9 +55,11 @@ public partial class OAuthAdminService
             .Take(pagination.PageSize)
             .ToListAsync(ct);
 
+        var security = (await _session.LoadManyAsync<OAuthApplicationSecurityData>(ct, clients.Select(c => c.Id).ToArray()))
+            .ToDictionary(x => x.Id);
         return new OAuthClientListDto
         {
-            Items = clients.Select(MapClient).ToList(),
+            Items = clients.Select(c => MapClient(c, delivery: null, security: security.GetValueOrDefault(c.Id))).ToList(),
             TotalCount = totalCount,
         };
     }
@@ -69,7 +71,8 @@ public partial class OAuthAdminService
         if (state is null || state.IsDeleted) return null;
         // ADR 0009 — last logout-token delivery, kept beside the client document.
         var delivery = await _session.LoadAsync<BackChannelLogoutDeliveryStatus>(guid, ct);
-        return MapClient(state, delivery);
+        var security = await _session.LoadAsync<OAuthApplicationSecurityData>(guid, ct);
+        return MapClient(state, delivery, security);
     }
 
     public Task<ErrorOr<OAuthClientCreatedDto>> CreateClientAsync(
@@ -128,6 +131,10 @@ public partial class OAuthAdminService
             return createRpIdErr;
         if (ValidateBackChannelLogoutUri(dto.BackChannelLogoutUri) is { } createBclErr)
             return createBclErr;
+        if (ValidateJsonWebKeySet(dto.JsonWebKeySet, out var createJwks) is { } createJwksErr)
+            return createJwksErr;
+        if (createJwks is not null && dto.ClientType != OAuthClientTypes.Confidential)
+            return OAuthErrors.InvalidJsonWebKeySet("only a confidential client authenticates with private_key_jwt.");
 
         var existing = await _session.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(x => x.ClientId == dto.ClientId && !x.IsDeleted, ct);
@@ -219,11 +226,13 @@ public partial class OAuthAdminService
         if (ValidateGrantTypes(dto.AllowedGrantTypes) is { } createGrantErr)
             return createGrantErr;
 
-        // Confidential clients must have a secret (generated if not supplied).
+        // Confidential clients must be able to authenticate: with a secret (generated
+        // if not supplied) or, when a key set is registered and no secret was given,
+        // with private_key_jwt only — no shared secret exists then.
         string? clientSecret = null;
         if (dto.ClientType == OAuthClientTypes.Confidential)
         {
-            clientSecret = dto.ClientSecret ?? GenerateSecret();
+            clientSecret = dto.ClientSecret ?? (createJwks is null ? GenerateSecret() : null);
         }
 
         // Build permissions list (endpoints + grant types + scopes).
@@ -339,11 +348,13 @@ public partial class OAuthAdminService
             _session.Events.Append(id, aggregate.SetLinkedServiceAccountId(linkedServiceAccountId.Value));
         }
 
-        // Persist the (hashed) secret separately from the event stream.
-        if (clientSecret is not null)
+        // Persist the (hashed) secret and the key set separately from the event stream.
+        OAuthApplicationSecurityData? sec = null;
+        if (clientSecret is not null || createJwks is not null)
         {
-            var sec = OAuthApplicationSecurityData.Create(id);
-            sec.ClientSecret = HashSecret(clientSecret);
+            sec = OAuthApplicationSecurityData.Create(id);
+            if (clientSecret is not null) sec.ClientSecret = HashSecret(clientSecret);
+            sec.JsonWebKeySet = createJwks;
             _session.Store(sec);
         }
 
@@ -354,7 +365,7 @@ public partial class OAuthAdminService
         var state = await _session.LoadAsync<OAuthApplicationState>(id, ct);
         return new OAuthClientCreatedDto
         {
-            Client = MapClient(state!),
+            Client = MapClient(state!, delivery: null, security: sec),
             ClientSecret = clientSecret,
             CreatedServiceAccount = createdServiceAccount,
         };
@@ -416,6 +427,21 @@ public partial class OAuthAdminService
         if (dto.BackChannelLogoutUri.HasValue &&
             ValidateBackChannelLogoutUri(dto.BackChannelLogoutUri.Value) is { } updBclErr)
             return updBclErr;
+        string? updJwks = null;
+        if (dto.JsonWebKeySet.HasValue)
+        {
+            if (ValidateJsonWebKeySet(dto.JsonWebKeySet.Value, out updJwks) is { } updJwksErr)
+                return updJwksErr;
+            if (updJwks is not null && aggregate.ClientType != OAuthClientTypes.Confidential)
+                return OAuthErrors.InvalidJsonWebKeySet("only a confidential client authenticates with private_key_jwt.");
+            var securityData = await _session.LoadAsync<OAuthApplicationSecurityData>(guid, ct)
+                               ?? OAuthApplicationSecurityData.Create(guid);
+            if (updJwks is null && string.IsNullOrEmpty(securityData.ClientSecret) && aggregate.ClientType == OAuthClientTypes.Confidential)
+                return OAuthErrors.InvalidJsonWebKeySet("removing the key set would leave the confidential client without any credential; regenerate a secret first.");
+            securityData.JsonWebKeySet = updJwks;
+            securityData.UpdateConcurrencyToken();
+            _session.Store(securityData);
+        }
 
         // v2 merge-patch: absent = unchanged, explicit null clears.
         if (dto.DisplayName.HasValue && dto.DisplayName.Value != aggregate.DisplayName)

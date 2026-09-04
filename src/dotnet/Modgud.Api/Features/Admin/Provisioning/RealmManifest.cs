@@ -221,6 +221,9 @@ public sealed record RealmManifestClient
     [Description("Optional OpenID Connect back-channel logout URI (absolute https; http only on localhost). Absent = unchanged; explicit null (or \"\") removes it.")]
     public Optional<string?> BackChannelLogoutUri { get; init; }
 
+    [Description("Optional JSON Web Key Set (public RSA/EC keys with kid) for private_key_jwt client authentication, as a JSON string. A confidential client created with a key set and no ClientSecret gets no secret. Absent = unchanged; explicit null (or \"\") removes it.")]
+    public Optional<string?> JsonWebKeySet { get; init; }
+
     [Description("Optional. Logout tokens carry the sid claim. Omit = no change / default true.")]
     public bool? BackChannelLogoutSessionRequired { get; init; }
 

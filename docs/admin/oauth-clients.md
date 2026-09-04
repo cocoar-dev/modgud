@@ -57,6 +57,30 @@ There are exactly two client types — `public` and `confidential`:
 | **Confidential** | Server-side web apps (ASP.NET, Node, Rails) — can store secrets | Yes |
 | **Public** | SPAs and mobile apps — can't safely store secrets | No, PKCE only |
 
+### Client authentication: secret or private key
+
+A confidential client proves itself at `/connect/token` (and the introspection,
+revocation and PAR endpoints) in one of two ways:
+
+- **Client secret** (`client_secret_basic` / `client_secret_post`) — generated
+  at creation, shown once, rotatable with *Regenerate Client Secret*.
+- **`private_key_jwt`** (RFC 7523 / OpenID Connect Core §9) — register the
+  client's public keys as a **JSON Web Key Set** on the *Security* tab
+  (`JsonWebKeySet` in the admin API and the realm manifest): RSA or EC keys,
+  public parts only, each with a `kid`. The client then sends a JWT it signed
+  with the matching private key (header `typ: client-authentication+jwt`,
+  `iss` = `sub` = its `client_id`, `aud` = the token endpoint, `jti`, short
+  `exp`) as `client_assertion` with
+  `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer`.
+  No shared secret leaves the client. Create a confidential client with a key
+  set and **no** secret to get a client that authenticates with assertions only;
+  the Security tab shows which credentials exist. Rotate by replacing the key
+  set (old keys stop working at once); removing the last credential is refused.
+
+Both may coexist. Service-account credentials (M2M clients) keep their own
+secret lifecycle and do not take a key set; dynamic client registration does
+not accept `private_key_jwt` either (see the OAuth API reference).
+
 ::: tip Machine-to-machine? Link a Service Account
 There is no separate "service" client type. For server-to-server flows with no
 user involved, use a [Service Account](./service-accounts). Selecting
@@ -171,7 +195,7 @@ Capabilities are explicit, per-client grants a realm admin gives on the **Flows*
 
 | Capability | Meaning |
 | --- | --- |
-| `cap:trusted-forwarder` | The client is a backend-for-frontend that calls the auth endpoints on behalf of browsers. When it authenticates a request with its client secret and sends the end user's address in the `Modgud-Forwarded-For` header, rate limits apply per user instead of per egress address. It shifts **only** the source dimension; target, client and App limits still bound the forwarder. Confidential clients only. See [Rate limits → Trusted forwarders](../platform/rate-limits#trusted-forwarders). |
+| `cap:trusted-forwarder` | The client is a backend-for-frontend that calls the auth endpoints on behalf of browsers. When it authenticates a request with its client secret or a `private_key_jwt` assertion and sends the end user's address in the `Modgud-Forwarded-For` header, rate limits apply per user instead of per egress address. It shifts **only** the source dimension; target, client and App limits still bound the forwarder. Confidential clients only. See [Rate limits → Trusted forwarders](../platform/rate-limits#trusted-forwarders). |
 
 Trust never depends on who owns the client: any realm admin can grant the capability to any confidential client, and a capability can never lift a limit.
 

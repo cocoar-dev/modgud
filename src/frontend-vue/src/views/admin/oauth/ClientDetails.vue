@@ -285,6 +285,9 @@ interface FormState {
   ClientType: string
   ConsentType: string
   ClientSecret: string
+  /** Public JSON Web Key Set for private_key_jwt (confidential clients). */
+  JsonWebKeySet: string
+  HasClientSecret: boolean
   Enabled: boolean
   /** Bare scope names (no `scp:` prefix). Drives `Scopes` on Create/Update. */
   Scopes: string[]
@@ -351,6 +354,8 @@ function emptyForm(): FormState {
     ClientType: 'confidential',
     ConsentType: 'implicit',
     ClientSecret: '',
+    JsonWebKeySet: '',
+    HasClientSecret: false,
     Enabled: true,
     Scopes: [],
     // Match the backend contract and documented security default. The expert
@@ -665,6 +670,7 @@ function toStaged(): ManifestEntity {
   // DataProtection slot on save; existing clients keep their stored secret.
   const secret = form.value.ClientSecret.trim()
   if (secret) entity.ClientSecret = secret
+  entity.JsonWebKeySet = form.value.JsonWebKeySet.trim() || null
   // Stage the LIVE entity's id: the apply matches by identity, so editing the name
   // is a RENAME of this entity instead of staging a second one.
   if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
@@ -686,6 +692,8 @@ function fromDto(dto: OAuthClientDto): FormState {
     ClientType: dto.ClientType,
     ConsentType: dto.ConsentType,
     ClientSecret: '',
+    JsonWebKeySet: dto.JsonWebKeySet ?? '',
+    HasClientSecret: dto.HasClientSecret ?? false,
     Enabled: dto.Enabled,
     Scopes: extractScopeNames(dto.Permissions),
     AccessTokenType: (dto.AccessTokenType as AccessTokenType) ?? 'Reference',
@@ -948,6 +956,8 @@ function buildCreateDto(): CreateOAuthClientDto {
   }
   const secret = form.value.ClientSecret.trim()
   if (secret) dto.ClientSecret = secret
+  const jwks = form.value.JsonWebKeySet.trim()
+  if (jwks) dto.JsonWebKeySet = jwks
   const rpId = form.value.WebAuthnRpId.trim()
   if (rpId) dto.WebAuthnRpId = rpId
   dto.Capabilities = [...form.value.Capabilities]
@@ -1025,6 +1035,8 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     Capabilities: [...form.value.Capabilities],
     // ADR 0009: null removes the logout URI.
     BackChannelLogoutUri: form.value.BackChannelLogoutUri.trim() || null,
+    // private_key_jwt: null removes the key set.
+    JsonWebKeySet: form.value.JsonWebKeySet.trim() || null,
     BackChannelLogoutSessionRequired: form.value.BackChannelLogoutSessionRequired,
     // Always send AppIds on update — empty array = detach all, otherwise replace.
     AppIds: [...form.value.AppIds],
@@ -1758,6 +1770,23 @@ async function copySecret() {
                     {{ t('admin.oauthClients.regenerateHint', {}, 'Das bisherige Secret wird sofort ungültig.') }}
                   </p>
                 </div>
+                <CoarFormField
+                  v-if="form.ClientType === 'confidential' && !form.LinkedServiceAccountId"
+                  class="col-full"
+                  :label="t('admin.oauthClients.jsonWebKeySet', {}, 'JSON Web Key Set (private_key_jwt)')"
+                  :hint="t('admin.oauthClients.jsonWebKeySetHint', {}, 'Öffentliche RSA-/EC-Schlüssel des Clients als JWKS-Dokument (keys-Array), jeder mit kid. Der Client authentifiziert sich dann mit einem signierten Client-Assertion-JWT (RFC 7523) statt mit dem Secret. Wird beim Erstellen ein Key Set und kein Secret angegeben, bekommt der Client kein Secret. Leer = kein Key Set.')">
+                  <textarea
+                    v-model="form.JsonWebKeySet"
+                    class="jwks-editor"
+                    rows="6"
+                    spellcheck="false"
+                    :placeholder="'{&quot;keys&quot;: [{&quot;kty&quot;: &quot;RSA&quot;, &quot;kid&quot;: &quot;2026-09&quot;, &quot;use&quot;: &quot;sig&quot;, &quot;n&quot;: &quot;…&quot;, &quot;e&quot;: &quot;AQAB&quot;}]}'" />
+                  <p v-if="isExistingClient && form.ClientType === 'confidential'" class="field-hint">
+                    {{ form.HasClientSecret
+                      ? t('admin.oauthClients.credentialStateSecret', {}, 'Ein Client Secret ist hinterlegt.')
+                      : t('admin.oauthClients.credentialStateNoSecret', {}, 'Kein Client Secret hinterlegt — der Client authentifiziert sich ausschließlich per private_key_jwt.') }}
+                  </p>
+                </CoarFormField>
                 <CoarNotice v-if="form.ClientType === 'public'" variant="info" class="col-full">
                   {{ t('admin.oauthClients.publicClientSecretHint', {}, 'Public Clients verwenden kein Client Secret. Für Authorization Code ist PKCE erforderlich.') }}
                 </CoarNotice>
@@ -2542,5 +2571,18 @@ async function copySecret() {
   .service-account-draft__actions {
     justify-content: flex-end;
   }
+}
+
+.jwks-editor {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--coar-border-neutral, #d1d5db);
+  border-radius: 0.375rem;
+  background: var(--coar-background-neutral-primary, #fff);
+  color: inherit;
+  resize: vertical;
 }
 </style>
