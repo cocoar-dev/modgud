@@ -11,6 +11,10 @@ public static class ModgudClaimTypes
 
     /// <summary>The per-audience authorization object emitted by Modgud.</summary>
     public const string ResourceAccess = "resource_access";
+
+    /// <summary>The OpenID Connect session identifier every user token carries
+    /// (<c>sid</c>); the key of session revocation.</summary>
+    public const string SessionId = "sid";
 }
 
 /// <summary>

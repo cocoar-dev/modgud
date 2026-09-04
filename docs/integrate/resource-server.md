@@ -217,6 +217,61 @@ valid proof whose key and access-token hash match. Replaying it as plain
 Behind a reverse proxy, configure forwarded headers so the externally visible
 scheme and host match the proof's signed `htu`.
 
+## Session revocation (JWT mode)
+
+A self-contained JWT stays valid until `exp`, even after the user signed out or
+an admin deactivated the account — the IdP cannot recall it. With session
+revocation the library follows the Modgud
+[Application change feed](./application-change-feed#session-entity-version-1)
+and rejects any token whose `sid` belongs to a session that ended (sign-out,
+RP-initiated logout, sessions list, force sign-out, deactivation, deletion,
+expiry). Reference tokens do not need this: introspection answers "inactive"
+immediately.
+
+Prerequisites, all in Modgud:
+
+1. The Application whose OAuth clients issue the tokens has the **Consumer
+   change feed** enabled (*Settings → Sync*).
+2. A confidential client with the `client_credentials` grant and the
+   `modgud.management` scope, assigned to that Application, linked to a
+   service account that holds `app-scope:read` (through a group and role) —
+   the same setup as any change-feed consumer.
+
+```csharp
+builder.Services.AddModgudResourceServer(options =>
+{
+    options.Authority = "https://id.example.com";
+    options.Audience = "https://api.example.com";
+    options.SessionRevocation = new ModgudSessionRevocationOptions
+    {
+        Enabled = true,
+        AppId = "AbCdEfGhIjKlMnOpQrStUv",      // the Application's id (admin UI / API)
+        ClientId = "api-feed-reader",
+        ClientSecret = builder.Configuration["Modgud:FeedClientSecret"]!,
+        AccessTokenLifetime = TimeSpan.FromMinutes(60), // ≥ the realm's access-token lifetime
+    };
+});
+```
+
+How it behaves:
+
+- A background worker takes a fresh snapshot cursor at start (live sessions are
+  not needed, only ends), then polls the feed every `PollInterval` (5 s).
+  Every `session` entity deleted with a reason puts its `SessionId` on an
+  in-memory denylist for `AccessTokenLifetime + ClockSkew`; a token with that
+  `sid` is refused with `401` from then on, before its `exp`.
+- The denylist is bounded by the token lifetime: an entry is dropped once every
+  token that could carry it has expired, so memory stays proportional to the
+  number of sessions ending per token lifetime.
+- **Fail-open.** While the feed or the token endpoint is unreachable, tokens are
+  validated as before and the worker retries every `RetryDelay`; the gap is
+  bounded by the token lifetime, exactly as without the feature. Inject
+  `IModgudSessionDenylist` to expose `LastSyncedAt` and `Count` on a health
+  endpoint.
+- Each host instance keeps its own denylist and its own cursor; nothing is
+  shared, nothing is persisted.
+- Enabling it in `OnlyReferenceToken` mode is a startup error.
+
 ## Options and startup validation
 
 | Option | Required | Description |
@@ -228,6 +283,12 @@ scheme and host match the proof's signed `htu`.
 | `IntrospectionClientSecret` | Reference/Both | Confidential introspection secret. |
 | `RequireHttpsMetadata` | No | Set `false` only for local development. |
 | `ConfigureJwtBearer` | No | Advanced JWT configuration in JWT-capable modes. |
+| `SessionRevocation.Enabled` | No | Reject JWTs of ended sessions via the change feed (default `false`). |
+| `SessionRevocation.AppId` | When enabled | The Application whose feed lists the sessions. |
+| `SessionRevocation.ClientId` / `ClientSecret` | When enabled | Management client (`client_credentials`, `modgud.management`, `app-scope:read`); fall back to the introspection credentials in reference-capable modes. |
+| `SessionRevocation.AccessTokenLifetime` | No | Denylist retention, default 60 min; set to the realm's access-token lifetime or longer. |
+| `SessionRevocation.ClockSkew` | No | Extra retention for clock skew, default 5 min. |
+| `SessionRevocation.PollInterval` / `RetryDelay` / `BatchSize` | No | Feed polling cadence (5 s / 15 s / 200). |
 
 C# `required` properties cannot express a requirement conditional on
 `TokenMode`. The registration therefore validates the complete combination
@@ -242,6 +303,9 @@ options.
 - The authorization request omitted `roles` or `permissions`.
 - The OAuth API is not linked to an app or has no selected permissions.
 - The introspection client's ID is not the token audience.
+- Session revocation never syncs: the management client lacks the
+  `modgud.management` scope, `app-scope:read`, or the assignment to the
+  Application, or the Application's change feed is disabled.
 - `UseAuthentication()` or `UseAuthorization()` is missing or ordered after
   endpoint execution.
 
@@ -251,4 +315,5 @@ options.
 - [Apps and resource_access](../concepts/apps-and-resource-access.md)
 - [Permissions and gating](../concepts/permissions.md)
 - [OAuth API](../reference/oauth-api.md)
+- [Application change feed](./application-change-feed) and [logout propagation](./login-flows#logout-propagation-to-relying-parties)
 - Source: `src/dotnet/Modgud.AspNetCore.ResourceServer/`

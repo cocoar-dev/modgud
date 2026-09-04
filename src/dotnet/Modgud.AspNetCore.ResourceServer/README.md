@@ -124,6 +124,28 @@ var permissions = user.FindAll(ModgudClaimTypes.Permission)
     .Select(claim => claim.Value);
 ```
 
+## Session revocation
+
+A JWT normally stays valid until `exp` even after the user signed out. With
+`SessionRevocation` enabled the library follows the Application's change feed
+with a management client and refuses every token whose `sid` belongs to an
+ended session (sign-out, force sign-out, deactivation, deletion, expiry).
+Fail-open while the feed is unreachable; the denylist is bounded by the
+access-token lifetime. See the integration guide for the Modgud-side setup
+(feed enabled on the Application, a `client_credentials` client with
+`modgud.management` and `app-scope:read`).
+
+```csharp
+options.SessionRevocation = new ModgudSessionRevocationOptions
+{
+    Enabled = true,
+    AppId = "<application id>",
+    ClientId = "api-feed-reader",
+    ClientSecret = "<secret>",
+    AccessTokenLifetime = TimeSpan.FromMinutes(60),
+};
+```
+
 ## Configuration
 
 | Option | Description |
@@ -135,6 +157,7 @@ var permissions = user.FindAll(ModgudClaimTypes.Permission)
 | `IntrospectionClientSecret` | Required when the mode accepts reference tokens. |
 | `RequireHttpsMetadata` | Requires an HTTPS authority; defaults to `true`. |
 | `ConfigureJwtBearer` | Optional advanced JWT bearer configuration in JWT-capable modes. |
+| `SessionRevocation` | Reject JWTs of sessions that ended before `exp`, learned from the Modgud Application change feed (`Enabled`, `AppId`, `ClientId`, `ClientSecret`, `AccessTokenLifetime`). Off by default; JWT-capable modes only. |
 
 The valid option combination is checked immediately during registration.
 `required` properties cannot express the mode-dependent secret requirement, so

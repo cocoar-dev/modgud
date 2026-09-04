@@ -580,10 +580,11 @@ deactivation, deletion) deletes every session entity of that user. A session
 whose user leaves the App scope is emitted as `FellOutOfScope`. Treat the
 reason set as open for future additions.
 
-A resource server validating JWTs locally can keep a denylist of ended
-`SessionId`s (bounded by the access-token lifetime) and reject tokens whose
-`sid` is on it; a relying party ends the local session it stored the `sid`
-for.
+A resource server validating JWTs locally keeps a denylist of ended
+`SessionId`s (bounded by the access-token lifetime) and rejects tokens whose
+`sid` is on it — `Modgud.AspNetCore.ResourceServer` does exactly that when
+[session revocation](resource-server#session-revocation-jwt-mode) is enabled;
+a relying party ends the local session it stored the `sid` for.
 
 ## Reset conditions
 
