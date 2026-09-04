@@ -119,9 +119,39 @@ jobs:
         with:
           working-directory: ./src/frontend-vue
 
+      # A finding at or above "moderate" fails the job — that part is a hard
+      # gate. What must NOT fail the job is npm's audit *service* being down:
+      # its security endpoint times out now and then (2026-09-04 it blocked
+      # every PR for over an hour) while the registry itself keeps working.
+      # pnpm reports that as {"error":{"code":"ERR_SOCKET_TIMEOUT",...}} in
+      # --json mode, so we can tell "could not audit" from "found something":
+      # retry the former a few times, then surface it as a warning; fail hard
+      # on the latter with the human-readable report.
       - name: Audit npm dependencies for known CVEs
-        run: pnpm audit --prod --audit-level=moderate
         working-directory: ./src/frontend-vue
+        run: |
+          set +e
+          code=""
+          for attempt in 1 2 3 4; do
+            out=$(pnpm audit --prod --audit-level=moderate --json 2>/dev/null)
+            rc=$?
+            if [ $rc -eq 0 ]; then
+              echo "npm audit: no vulnerabilities at or above moderate (attempt $attempt)"
+              exit 0
+            fi
+            code=$(printf '%s' "$out" | jq -r '.error.code // empty' 2>/dev/null)
+            if [ -n "$code" ]; then
+              echo "npm audit: registry error $code on attempt $attempt/4 — retrying in $((attempt * 30))s"
+              sleep $((attempt * 30))
+              continue
+            fi
+            echo "$out" | jq '.metadata.vulnerabilities' 2>/dev/null || echo "$out"
+            pnpm audit --prod --audit-level=moderate || true
+            echo "::error ::Vulnerable npm packages detected (moderate or higher). See report above."
+            exit 1
+          done
+          echo "::warning ::npm audit could not be performed: registry audit endpoint unreachable after 4 attempts (last error: $code). Not a finding — re-run this job once npm recovers."
+          exit 0
 
       - name: Type-check frontend
         run: pnpm type-check
