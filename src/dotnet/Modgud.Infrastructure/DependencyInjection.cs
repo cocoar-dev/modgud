@@ -18,6 +18,7 @@ using Marten.Events.Daemon;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Modgud.Application.Contracts;
+using Modgud.Infrastructure.Cluster;
 using Modgud.Infrastructure.Events;
 using Modgud.Infrastructure.Persistence.Marten.Configuration;
 using Modgud.Infrastructure.Persistence.Marten;
@@ -35,12 +36,19 @@ public static class DependencyInjection
     /// Infrastructure → Authentication. Called between ConfigureDocumentStore and
     /// ConfigureEventStore so STJ is already set up when auth documents are registered.
     /// </param>
+    /// <param name="hosting">
+    /// How this host coordinates background work with its peers (ADR 0010). Defaults
+    /// to single-process coordination with Marten's Solo daemon — the Development
+    /// and Testing shape. Production passes <see cref="ClusterCoordination.WolverineManaged"/>.
+    /// </param>
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
         string connectionString,
         Action<StoreOptions>? additionalMartenConfig = null,
-        DaemonMode asyncDaemonMode = DaemonMode.Solo)
+        ClusterHostingOptions? hosting = null)
     {
+        hosting ??= new ClusterHostingOptions { Coordination = ClusterCoordination.SingleProcess };
+        services.AddSingleton(hosting);
         // Make sure HttpContext access is available — TenantedSessionFactory
         // needs it to resolve the active tenant out of HttpContext.Items.
         services.AddHttpContextAccessor();
@@ -167,6 +175,14 @@ public static class DependencyInjection
             // IRealmMessageStorageProvisioner.
             options.MainDatabaseConnectionString = connectionString;
             options.UseFastEventForwarding = true;
+
+            // ADR 0010 (D3) — one coordinator. Under Wolverine-managed
+            // distribution every async projection and every event subscription
+            // (App change feed, back-channel logout) runs on exactly one live
+            // node per realm database, assigned by Wolverine's leader and failed
+            // over when a node disappears. Wolverine sets Marten's daemon to
+            // externally managed itself and refuses a competing AddAsyncDaemon.
+            options.UseWolverineManagedEventSubscriptionDistribution = hosting.IsWolverineManaged;
         });
 
         // Apply Wolverine/Marten resources for the master database and every
@@ -175,12 +191,14 @@ public static class DependencyInjection
         // missing storage.
         services.AddResourceSetupOnStartup();
 
-        martenBuilder.AddAsyncDaemon(asyncDaemonMode);
-        if (asyncDaemonMode is DaemonMode.Solo or DaemonMode.HotCold)
+        services.AddSingleton<IClusterNodes, WolverineClusterNodes>();
+
+        if (hosting.IsWolverineManaged)
         {
-            // Registered after Marten's coordinator hosted service on purpose.
-            // Hosted services stop in reverse registration order, so this gate
-            // drains application maintenance before Marten begins host shutdown.
+            // Wolverine's coordinator implements Marten's IProjectionCoordinator,
+            // so the pause/stop gate below keeps working for maintenance windows
+            // (projection rebuild) — the rebuild endpoint additionally refuses to
+            // run while more than one node is live (ADR 0010, D8).
             services.Configure<HostOptions>(options =>
                 options.ServicesStopConcurrently = false);
             services.AddSingleton<HostedProjectionCoordinatorControl>();
@@ -188,10 +206,30 @@ public static class DependencyInjection
                 sp.GetRequiredService<HostedProjectionCoordinatorControl>());
             services.AddSingleton<IHostedService>(sp =>
                 sp.GetRequiredService<HostedProjectionCoordinatorControl>());
+            services.AddSingleton<IClusterLock, PostgresClusterLock>();
         }
         else
         {
-            services.AddSingleton<IProjectionCoordinatorControl, DisabledProjectionCoordinatorControl>();
+            var asyncDaemonMode = hosting.SingleProcessDaemonMode;
+            martenBuilder.AddAsyncDaemon(asyncDaemonMode);
+            if (asyncDaemonMode is DaemonMode.Solo or DaemonMode.HotCold)
+            {
+                // Registered after Marten's coordinator hosted service on purpose.
+                // Hosted services stop in reverse registration order, so this gate
+                // drains application maintenance before Marten begins host shutdown.
+                services.Configure<HostOptions>(options =>
+                    options.ServicesStopConcurrently = false);
+                services.AddSingleton<HostedProjectionCoordinatorControl>();
+                services.AddSingleton<IProjectionCoordinatorControl>(sp =>
+                    sp.GetRequiredService<HostedProjectionCoordinatorControl>());
+                services.AddSingleton<IHostedService>(sp =>
+                    sp.GetRequiredService<HostedProjectionCoordinatorControl>());
+            }
+            else
+            {
+                services.AddSingleton<IProjectionCoordinatorControl, DisabledProjectionCoordinatorControl>();
+            }
+            services.AddSingleton<IClusterLock, NoClusterLock>();
         }
 
         // Register Event Dispatcher

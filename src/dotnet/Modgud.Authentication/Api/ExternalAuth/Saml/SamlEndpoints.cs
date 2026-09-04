@@ -64,9 +64,12 @@ public static class SamlEndpoints
     private static async Task<IResult> SpMetadataAsync(
         string slug,
         [FromServices] DynamicSamlSchemeManager manager,
+        [FromServices] LoginProviderSchemeMaterializer materializer,
         [FromServices] SamlLoginFlow flow,
         CancellationToken ct)
     {
+        // Providers are resolved per node from the database (ADR 0010, D6).
+        await materializer.EnsureFreshAsync(TenantContext.Current, ct);
         if (!manager.TryGetBySlug(TenantContext.Current, slug, out var provider) || provider is null)
             return Results.NotFound();
 
@@ -79,10 +82,12 @@ public static class SamlEndpoints
         string? returnUrl,
         HttpContext http,
         [FromServices] DynamicSamlSchemeManager manager,
+        [FromServices] LoginProviderSchemeMaterializer materializer,
         [FromServices] SamlLoginFlow flow,
         [FromServices] Modgud.Authentication.Applications.IApplicationSettingsResolver settingsResolver,
         CancellationToken ct)
     {
+        await materializer.EnsureFreshAsync(TenantContext.Current, ct);
         if (!manager.TryGetBySlug(TenantContext.Current, slug, out var provider) || provider is null)
             return Results.NotFound();
 
@@ -99,6 +104,7 @@ public static class SamlEndpoints
         string slug,
         HttpContext http,
         [FromServices] DynamicSamlSchemeManager manager,
+        [FromServices] LoginProviderSchemeMaterializer materializer,
         [FromServices] SamlLoginFlow flow,
         CancellationToken ct)
     {
@@ -109,6 +115,7 @@ public static class SamlEndpoints
         http.Features.Get<IHttpMaxRequestBodySizeFeature>()
             ?.MaxRequestBodySize = MaxAcsBodyBytes;
 
+        await materializer.EnsureFreshAsync(TenantContext.Current, ct);
         if (!manager.TryGetBySlug(TenantContext.Current, slug, out var provider) || provider is null)
             return Results.NotFound();
 

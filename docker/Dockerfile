@@ -83,4 +83,10 @@ ENV HEALTHCHECK_URL=http://127.0.0.1:8081/health/ready
 HEALTHCHECK --interval=15s --timeout=5s --start-period=120s --retries=3 \
     CMD curl -fsS "$HEALTHCHECK_URL" > /dev/null || exit 1
 
+# Graceful stop (ADR 0010): on SIGTERM readiness flips to 503, the node
+# drains for Cluster__DrainDelaySeconds (5 s), then finishes running jobs
+# and hands its Wolverine agents to a peer. Give it room: stop_grace_period
+# 45s in Compose/Swarm, terminationGracePeriodSeconds 45 in Kubernetes.
+STOPSIGNAL SIGTERM
+
 ENTRYPOINT ["/usr/bin/tini", "--", "dotnet", "Modgud.Api.dll"]

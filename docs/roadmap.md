@@ -138,7 +138,7 @@ updates when something ships.
 
 ### High
 
-- **Multi-instance HA** — Modgud runs as a single instance today. Per-tenant DataProtection keys and the Marten outbox already cover the "restart = everyone logged out" class of bugs, but real HA needs shared state (Redis or equivalent) for the SignalR backplane and distributed rate-limiting, plus a failover test rig.
+- **Multi-instance operation, next steps** — two instances against one PostgreSQL are supported (Wolverine-coordinated projections and outbox, clustered Quartz, SignalARRR backplane on Valkey; see [Running two instances](./operate/deployment#running-two-instances)). Still open: persisting the live observability feeds so the admin view is not per node, a CI job that runs the previous release next to the current build to enforce the "rolling update: safe" rule automatically, and a Postgres backplane in SignalARRR so the platform stays Postgres-only.
 
 ### Medium
 

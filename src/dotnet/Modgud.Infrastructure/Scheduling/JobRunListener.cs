@@ -67,10 +67,18 @@ public class JobRunListener(
 
         var startedAt = context.Get(StartTimeKey) as DateTime? ?? context.FireTimeUtc.UtcDateTime;
         var finishedAt = DateTime.UtcNow;
-        var manual = context.MergedJobDataMap.TryGetValue(ManualTriggerKey, out var m) && m is true;
-        var triggeredBy = context.MergedJobDataMap.TryGetValue(TriggeredByUserIdKey, out var t) && t is Guid g
-            ? g
-            : (Guid?)null;
+        // Values arrive as strings from the persistent store and as the original
+        // CLR values from the in-memory store; accept both.
+        var manual = context.MergedJobDataMap.TryGetValue(ManualTriggerKey, out var m)
+            && (m is true || (m is string ms && bool.TryParse(ms, out var mb) && mb));
+        var triggeredBy = context.MergedJobDataMap.TryGetValue(TriggeredByUserIdKey, out var t)
+            ? t switch
+            {
+                Guid g => g,
+                string ts when Guid.TryParse(ts, out var parsed) => parsed,
+                _ => (Guid?)null,
+            }
+            : null;
         var resultSummary = context.Result as string;
 
         var entry = new JobRunHistoryEntry

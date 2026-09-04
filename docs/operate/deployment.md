@@ -47,6 +47,7 @@ settings, the OpenIddict issuer, the magic-link rate limit, the
 | `AppSettings` | `AppSettings:` — `AuthenticationMinimumLevel`, `MagicLinkSelfService`, `TwoFactorGracePeriodDays` |
 | `OpenIddictSettings` | `OpenIddict:` — `*LifetimeMinutes`, `DevelopmentMode`, `SigningCertificatePath` |
 | `ObservabilitySettings` | `Observability:` — `Prometheus.Enabled`, `Prometheus.BearerToken`, `Otlp.*`, `ErrorFeed.*` |
+| `ClusterSettings` | `Cluster:` — `Backplane.ConnectionString`, `Backplane.ChannelPrefix`, `DrainDelaySeconds`, `NodeName` (see [Running two instances](#running-two-instances)) |
 
 The token issuer is **not** a global setting — there is no `Issuer` or `PublicUrl` key. Modgud is multi-tenant: each realm carries its own `PrimaryDomain` (managed in the admin UI or the Recovery CLI), and the issuer is derived per request from that domain / the request host on every path — the discovery document, the token `iss` claim, and token validation. What you must get right for a correct issuer is therefore (1) each realm's domain and (2) the reverse proxy forwarding the real public host (see `ProxyAllowedNetworks` below), **not** any issuer config value.
 
@@ -425,13 +426,12 @@ Apps + OAuth clients + users in one document) for import/upsert, with a
 matching `GET /api/admin/realms/{slug}/export` and a `GET
 /api/admin/realms/manifest-schema` for the manifest's JSON Schema.
 
-::: warning Multi-pod deployments
-When several modgud instances boot in parallel, schema apply can
-race. In practice this is not an issue today (Marten is idempotent +
-Postgres locks help), but for very large setups a separate migration
-phase is preferable: `AutoCreate.None` in the pods + a `migrate`
-sidecar/job that applies the schema once before the pod rollout.
-:::
+Several instances may boot in parallel: Marten's schema apply is
+idempotent and serialised by Postgres locks, and the one-off Quartz
+schema step runs under a cluster lock. Realm provisioning applies the
+schema of a new realm database at runtime, so a separate migration
+phase is neither needed nor possible. See
+[Running two instances](#running-two-instances) for the update rules.
 
 ## Health checks
 
@@ -443,7 +443,7 @@ curl http://localhost:8081/health/ready   # readiness — DB connection + OpenId
 ```
 
 - **`/health/live`** runs no dependency checks; it returns `200` as long as the process is up. Use it as the liveness probe.
-- **`/health/ready`** returns `200` only when the master DB connection and the OpenIddict signing/encryption certificate are both ready. Use it as the readiness probe (gate traffic on it).
+- **`/health/ready`** returns `200` only when the master DB connection and the OpenIddict signing/encryption certificate are both ready, the node is **not draining** after SIGTERM, and — with more than one node alive — a SignalR backplane is configured. Use it as the readiness probe (gate traffic on it). The JSON body names the failing check (`postgres`, `marten-schema`, `openiddict-cert`, `cluster`).
 
 The image also declares a Docker `HEALTHCHECK` on `/health/ready` (every 15 s, 120 s start period), so `docker ps` shows `healthy` / `unhealthy` and other services can wait with `depends_on: condition: service_healthy`. If you change `AppUrl`, point the probe at the new address with `HEALTHCHECK_URL`.
 
@@ -461,12 +461,155 @@ The window is `DbSettings__StartupTimeoutSeconds` (default `90`; `0` = a single 
 
 **PID 1.** The image runs `dotnet` under [tini](https://github.com/krallin/tini) so the process is never PID 1 itself. Without an init process the kernel does not deliver the abort signal the .NET runtime raises on a crash, and a crashed container stays "Up" at 100 % CPU forever. If you build your own image from the published binaries, keep an init process (`tini`, or `init: true` in Compose / `docker run --init`).
 
+## Running two instances
+
+Modgud can run as **two (or more) containers against one PostgreSQL**, both serving traffic all the time. That is what makes an image update a non-event: replace one container while the other keeps serving, then the other. It also means a single crashed container no longer takes the login page down. It is *not* a claim of failover across machines or regions.
+
+There is no "cluster mode" to switch on. A Production container always runs the cluster-capable code path, with one instance as well as with two:
+
+| Concern | How it is coordinated |
+|---|---|
+| Outbox, scheduled messages, event forwarding | Wolverine in `Balanced` mode — leader election over its node table in the master DB, work reassigned when a node's heartbeat goes stale |
+| Async projections and event subscriptions (audit view, application change feed, back-channel logout) | Wolverine-managed distribution: every realm database's projections run on exactly one live node; a dead node's databases are picked up by a survivor |
+| Scheduled jobs | Quartz.NET clustered on a Postgres job store (schema `quartz` in the master DB): a trigger fires on one node, `RequestRecovery` jobs interrupted by a crash re-run on a survivor |
+| Live updates over SignalR | The SignalARRR backplane on Valkey/Redis, **required as soon as a second node is alive** (see below) |
+| Login providers (OIDC/SAML), passkey ceremonies, sessions, rate limits, DataProtection keys | Resolved from the database by whichever node serves the request — nothing lives only in one process |
+
+How many nodes are alive is read from Wolverine's node table at runtime; nothing is configured twice.
+
+### What you need
+
+1. **A Valkey (or Redis) instance** reachable from every Modgud container. It carries the SignalR backplane and the cross-node live-update relay; both are transient by contract, so it needs no persistence, no backup and no more than a few megabytes. Set the same connection string on every node:
+
+   ```yaml
+   Cluster__Backplane__ConnectionString: "valkey:6379,abortConnect=false"
+   ```
+
+   Without it, one instance runs exactly as before. As soon as a second instance registers, **both report `/health/ready` = 503** with the message `2 nodes are alive but no SignalR backplane is configured` — a push raised by a request on one node would never reach a browser connected to the other, and that is a functional failure, not a cosmetic one.
+
+2. **Sticky sessions at the reverse proxy.** SignalR requires that every request of one connection reaches the same process; the backplane routes messages between nodes, it does not replace affinity. Cookie affinity is the right kind: it survives NAT and keeps a browser's connection and its WebAuthn ceremony on one node.
+
+3. **Active health checks on `/health/ready`** so the proxy removes a draining or failed node within seconds instead of after a client saw an error.
+
+4. **Synchronised clocks** (NTP) on the hosts — Quartz clustering and Wolverine's stale-node detection compare timestamps between nodes.
+
+5. `stop_grace_period` **≥ 45 s** on the container, so a graceful stop can drain (5 s), finish running jobs and hand its agents over (see [Graceful stop](#graceful-stop)).
+
+### Settings
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `Cluster__Backplane__ConnectionString` | *(empty)* | StackExchange.Redis connection string of the Valkey/Redis backplane. Empty = single-node SignalR. |
+| `Cluster__Backplane__ChannelPrefix` | `modgud` | Key/channel prefix; change it when several deployments share one Valkey. |
+| `Cluster__DrainDelaySeconds` | `5` | How long the node keeps serving after SIGTERM with readiness already at 503. `0` disables the drain. |
+| `Cluster__NodeName` | container hostname | Name of this node in logs and health output. |
+
+### Caddy
+
+```
+auth.example.com {
+    reverse_proxy modgud-a:8081 modgud-b:8081 {
+        lb_policy cookie
+        health_uri /health/ready
+        health_interval 5s
+        fail_duration 30s
+    }
+}
+```
+
+Caddy sets `X-Forwarded-*` and handles the WebSocket upgrade for `/signalr` by itself.
+
+### Nginx
+
+```nginx
+upstream modgud {
+    hash $cookie_modgud_affinity consistent;   # or: ip_hash; if all clients have distinct addresses
+    server modgud-a:8081 max_fails=2 fail_timeout=10s;
+    server modgud-b:8081 max_fails=2 fail_timeout=10s;
+}
+```
+
+Nginx open source has no active health checks; keep the passive `max_fails`/`fail_timeout` short and rely on the drain window. The `location` blocks are the same as in [Reverse proxy (Nginx)](#reverse-proxy-nginx) with `proxy_pass http://modgud;`.
+
+### Docker Compose
+
+Two named services sharing one environment, plus Valkey:
+
+```yaml
+services:
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]   # transient by design
+
+  modgud-a: &modgud
+    image: ghcr.io/cocoar-dev/modgud:1.0.0
+    stop_grace_period: 45s
+    environment: &modgud-env
+      DbSettings__ConnectionString: "Host=postgres;Database=modgud;Username=postgres;Password=postgres"
+      Cluster__Backplane__ConnectionString: "valkey:6379,abortConnect=false"
+      ProxyAllowedNetworks: "10.0.0.0/24"
+      Observability__Prometheus__BearerToken: "${PROMETHEUS_TOKEN}"
+    volumes:
+      - cocoar-keys:/app/data/keys      # both nodes must see the same OpenIddict certificates
+    depends_on:
+      postgres: { condition: service_healthy }
+      valkey: { condition: service_started }
+
+  modgud-b:
+    <<: *modgud
+```
+
+Both nodes must load the **same OpenIddict signing and encryption certificates** — mount the same keys volume (or the same files) into every container; a token signed by one node is verified by the other. DataProtection keys already live in the database.
+
+**Rolling update with Compose.** Compose itself has no rolling strategy; the sequence is a short script:
+
+```bash
+docker compose pull
+docker compose up -d --no-deps modgud-b        # replaces b; a keeps serving
+until curl -fsS http://localhost:8082/health/ready >/dev/null; do sleep 2; done
+docker compose up -d --no-deps modgud-a        # replaces a; b keeps serving
+```
+
+Expose each node's port on localhost (`127.0.0.1:8081` / `127.0.0.1:8082`) for the readiness wait, or watch `docker compose ps` for `healthy`.
+
+**Docker Swarm** does the same natively, on a single host as well: `deploy.replicas: 2` with `update_config: { parallelism: 1, order: start-first }` and the image `HEALTHCHECK` gating each step. Use it if you would rather not script the order.
+
+### Graceful stop
+
+On SIGTERM a node
+
+1. reports `/health/ready` = 503 immediately (`"Draining — this node is shutting down."`),
+2. keeps serving for `Cluster__DrainDelaySeconds` so the proxy's active check takes it out of rotation while in-flight requests complete,
+3. stops accepting connections, waits for running Quartz jobs, stops its Wolverine agents and deregisters its node so the peer takes over its projections and outbox work without waiting for the stale-node timeout.
+
+A killed node (`docker kill`, OOM, host crash) skips all of that; the survivor takes over its work after Wolverine's stale-node timeout and Quartz's cluster check-in, both well under a minute. Browsers reconnect to the other node and their admin grids resubscribe.
+
+### Which release is safe to roll
+
+Both instances run against the same databases for the duration of an update, so a release must be able to run **next to its predecessor**. Marten applies additive schema changes idempotently at boot — new tables, columns and indexes are fine while the old version is still running.
+
+Every GitHub release states it in its notes:
+
+- **`Rolling update: safe`** — replace one container after the other as above.
+- **`Rolling update: stop required (reason)`** — scale to one instance, update it, scale back. This is the case for a Marten upgrade that replaces its `mt_*` functions, a projection rebuild, an inline projection whose new shape the previous version cannot read, or a new event type the previous version has no upcaster for.
+
+A **projection rebuild** (Admin → Projections) is always a single-instance operation; the endpoint refuses with `409` while more than one node is live.
+
+### What still lives per node
+
+Two things are deliberately process-local and bounded rather than shared:
+
+- **Caches with a short revalidation window** — realm lookups, signing keys, CORS origins, login-provider schemes: a change made on one node is visible on the other within seconds (15–60 s depending on the cache), never "after a restart".
+- **The live observability view** (activity feed, error feed) shows the node the browser is connected to. Persisting these events is the next increment.
+
 ## SignalR
 
 Modgud pushes live updates over `/signalr/ui` (typed RPC via
 SignalARRR). Reverse proxies need upgrade headers (see above). The
 connection is auth-gated — the user must be logged in before it's
-established.
+established. With two instances the SignalARRR backplane on Valkey
+carries pushes between nodes and the proxy keeps each connection on
+one node — see [Running two instances](#running-two-instances).
 
 ## Security headers
 

@@ -47,7 +47,7 @@ authenticated requests from users without 2FA (with a grace period).
 | `Modgud.Auth` | Main session (HttpOnly) | Lax | Session or realm browser-session policy |
 | `Modgud.2FA` | UserId between password step and 2FA step | Strict | 5 min |
 | `Modgud.External` | OIDC callback holder | Lax | 10 min |
-| `Modgud.Session` | Only for passkey attestation options | Strict | 5 min idle |
+| `Modgud.Passkey.Challenge` / `Modgud.Passkey.Enroll` | Id of the server-side passkey login / registration ceremony | Strict | 5 min |
 
 `SameSite=Lax` on the main session cookie is required so that OIDC
 redirect-back navigations carry the cookie (top-level GET → cookie sent).
