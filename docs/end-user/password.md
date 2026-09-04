@@ -31,8 +31,8 @@ If you have **no email access** AND **no working 2FA**:
 Modgud enforces a minimum policy: at least 8 characters, at least one digit, at least one uppercase letter. That keeps the worst passwords out — but a manager-generated, unique, long passphrase is the floor for anything you care about.
 :::
 
-::: tip Account lockout
-After 5 failed sign-in attempts in a row, your account is locked for one minute. Brief — but it means a typo-cluster can briefly lock you out. If you hit it, wait a moment and try again.
+::: tip Too many wrong passwords
+Failed attempts are counted per browser. A typo-cluster on your own device is generous (10 in 15 minutes); from a browser that never signed in as you, 5 wrong passwords refuse further attempts for 15 minutes — and you get an e-mail with a sign-in link. Your own devices are never locked out by someone else's attempts.
 :::
 
 ::: warning Don't reuse this password elsewhere

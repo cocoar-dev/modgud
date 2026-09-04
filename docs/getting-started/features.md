@@ -6,7 +6,7 @@ A point-by-point list of what Modgud delivers out of the box.
 
 ### Local authentication
 - Username + password sign-in; passwords hashed by ASP.NET Core Identity (PBKDF2). OAuth client and API secrets are BCrypt-hashed (work factor 12).
-- Configurable account lockout (default: 5 failed attempts → 1 minute lock)
+- Device-aware login throttling instead of a global account lockout: failure buckets per trusted browser and per untrusted pool, an unlock e-mail for the owner, a password-spray signal per source (all realm settings)
 - Password reset via emailed magic link
 - Email confirmation with double-opt-in for self-service email changes
 - Public self-registration, off by default and configurable per app: sign-in-or-sign-up on first OTP, an explicit register step, or invite-code-gated sign-up (single-use codes minted by an admin or by the consuming app's backend)

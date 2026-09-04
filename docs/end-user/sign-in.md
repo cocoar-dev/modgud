@@ -51,10 +51,10 @@ Most common cause: typo. Check Caps Lock, paste-from-clipboard for invisible whi
 If still failing: use "Forgot password?" — Modgud emails you a password-reset link.
 :::
 
-::: details "Account locked"
-Too many failed attempts (5 in a row). The lockout is short (default one minute); wait it out and try again.
+::: details "Invalid credentials" although the password is right
+Too many wrong passwords were entered for your account from a browser you never signed in with. Sign-in from unfamiliar browsers is refused for a while (default 15 minutes); browsers you have signed in with before are not affected. You also get an e-mail with a sign-in link: it signs you in directly and marks that browser as yours.
 
-If you've genuinely forgotten the password, use "Forgot password?" — the password-reset link works even during lockout.
+If you've genuinely forgotten the password, use "Forgot password?" — the password-reset link always works.
 :::
 
 ::: details "Email is not verified"

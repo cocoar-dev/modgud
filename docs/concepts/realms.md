@@ -14,7 +14,7 @@ Per realm:
 - its own **OIDC discovery endpoint**
 - its own **login providers** (Internal + OIDC/SAML IdPs)
 - its own **cookie domain**
-- its own **auth rate-limit ceilings** (per-IP request limits on login/register/etc., overridable per realm)
+- its own **auth rate-limit policies** (per source, target, client, app and device on login/register/etc., overridable per App)
 
 Each realm looks like a standalone modgud installation —
 because that is essentially what it is.

@@ -145,7 +145,7 @@ dotnet test
 | **A02** Cryptographic Failures | 3 | Auth cookie is HttpOnly, no `PasswordHash` field in any user-detail response, login does not reveal user existence (identical 401 + body for unknown user vs. wrong password on existing user) |
 | **A03** Injection | 1 | SQL-injection payload in login username returns vanilla 401 — never crashes (Marten parameterises every query) |
 | **A05** Security Misconfiguration | 1 | Public-facing error responses do not leak .NET stack-trace markers or DB-driver internals |
-| **A07** Identification and Authentication Failures | 4 | Brute-force lockout after 5 failed attempts, weak passwords rejected by Identity, deactivated user cannot sign in (same 401 as unknown), forgot-password always returns 200 with byte-identical body for known and unknown users |
+| **A07** Identification and Authentication Failures | 4 | Device-aware throttling after repeated failures (strangers exhaust the untrusted pool, the owner's trusted browser keeps working), weak passwords rejected by Identity, deactivated user cannot sign in (same 401 as unknown), forgot-password always returns 200 with byte-identical body for known and unknown users |
 
 A04 (Insecure Design), A06 (Vulnerable Components), A08 (Software and
 Data Integrity), A09 (Logging and Monitoring), A10 (SSRF) are

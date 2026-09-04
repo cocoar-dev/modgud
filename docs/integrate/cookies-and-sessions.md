@@ -174,4 +174,4 @@ cookie. Every browser and native app must authenticate again.
 | CSRF | `SameSite=Lax` on the main cookie + `Strict` on 2FA/Session step cookies + `CsrfDefenseMiddleware` on mutating endpoints |
 | Cross-realm leakage | Realm domain → own cookie domain |
 | Forced logout | Per-request authoritative browser-session check + security stamp + OAuth client-session/token revocation |
-| Account lockout | 5 failed logins → 1 min lockout (DoS limit) |
+| Password brute force | Device-aware failure buckets (`Modgud.Device` cookie): 10 per trusted browser, 5 per untrusted pool per 15 min, unlock e-mail; the owner's devices are never locked by strangers |

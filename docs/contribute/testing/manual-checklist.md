@@ -24,7 +24,7 @@ Some of this is already covered by the Playwright suite under `src/frontend-vue/
 ## 2. Login & sign-out
 
 - [ ] Sign out via the header menu → back at `/login`
-- [ ] Wrong password 5× locks the account; the correct password is rejected until the lockout window passes **(automated)**
+- [ ] Wrong password 5× from a browser that never signed in as the user refuses further attempts from that browser for 15 min — even the correct password; a browser that signed in before is unaffected and an unlock e-mail arrives **(automated)**
 - [ ] Magic-link round trip: request → email → click → signed in **(automated)**
 - [ ] "Remember me" persists the cookie across a real browser restart
 - [ ] Logout-everywhere from `/profile/sessions` signs out other sessions
