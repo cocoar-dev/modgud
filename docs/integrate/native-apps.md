@@ -175,8 +175,8 @@ login. On registration they are persisted on the new account.
 
 When an App's posture is `ExplicitEndpoint`, sign-up is a separate call (so
 the app can gate it behind its own ToS / profile UI) while sign-in stays
-strict. Same uniform response, anti-enumeration jitter and per-IP rate limit
-as the OTP request:
+strict. Same uniform response, anti-enumeration jitter and rate limits (per
+source, target, client and app) as the OTP request:
 
 ```http
 POST /api/account/native/register

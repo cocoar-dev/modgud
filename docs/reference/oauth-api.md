@@ -426,8 +426,10 @@ consent page renders the same marker).
 
 ### DCR constraints
 
-- Only `none` (PKCE-only public client) and `client_secret_basic`
-  auth methods accepted.
+- Accepted `token_endpoint_auth_method` values: `none` (PKCE-only public
+  client), `client_secret_basic` and `client_secret_post`. `private_key_jwt`
+  needs a registered key set and is therefore available to admin-registered
+  clients only.
 - Redirect URIs must be HTTPS or `localhost`; deep-link schemes are
   rejected.
 - Triple opt-in: the realm must enable DCR globally; the requested

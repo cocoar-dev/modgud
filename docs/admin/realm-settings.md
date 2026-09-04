@@ -33,7 +33,7 @@ The page currently has these tabs:
   Off by default.
 - **Native Passwordless Grants** — the per-realm master toggle for the
   cookieless `urn:cocoar:*` grants (see [Native app integration](../integrate/native-apps))
-- [Rate Limits](#rate-limits) — per-IP request ceilings for the realm's auth endpoints
+- [Rate Limits](#rate-limits) — request ceilings per source, target, client, app and device for the realm's auth endpoints
 - [Account Deletion](#account-deletion) — grace period and recycle-bin retention policy
 - [Signing Keys](#signing-keys) — rotate the realm's OAuth/OIDC token-signing key
 

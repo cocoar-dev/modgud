@@ -81,9 +81,9 @@ Right-click a user on the list → **Show IdP Claims** opens a standalone panel 
 
 Modgud tracks sign-in sessions per user (device, browser, IP, last activity), but today there is no admin-UI surface to list or end another user's sessions — that view only exists for end users managing their own sessions, under **Profile → Sessions** (see [Profile](../end-user/profile#sessions)). If you need to force a user out of all their sessions as an admin today, deactivating the account (see below) revokes live access immediately.
 
-## Account lockout
+## Failed sign-ins
 
-After too many failed sign-in attempts, Modgud temporarily locks the account for a short, fixed cooldown — it clears itself automatically after a few minutes, with no admin action needed. There is currently no manual "lift lockout" control in the admin UI.
+Repeated wrong passwords no longer lock the account for everyone. Failures are counted per browser: a browser that completed a sign-in for the user before has its own allowance (default 10 per 15 minutes), every other client shares the user's untrusted pool (default 5 per 15 minutes). An exhausted pool refuses further attempts from unfamiliar clients only — the user's own devices keep working — and the user receives one e-mail per window with a sign-in link that also trusts the device. Nothing clears itself except time, and no admin action is needed; the limits are realm settings (see [Rate limits](../platform/rate-limits#password-login-device-aware-throttling)). An explicit admin lock on the account (deactivation) is a separate action and still blocks every sign-in.
 
 ## Recycle bin & permanent erase
 
