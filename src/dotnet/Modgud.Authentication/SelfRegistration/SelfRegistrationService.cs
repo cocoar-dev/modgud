@@ -21,12 +21,12 @@ namespace Modgud.Authentication.SelfRegistration;
 /// <summary>
 /// Orchestrates the public self-registration flow:
 /// <list type="bullet">
-///   <item><c>RegisterAsync</c> — validate, captcha-verify,
-///   anti-enumerate, create user (Identity), issue verification-token,
-///   send email.</item>
-///   <item><c>VerifyEmailAsync</c> — consume token, mark
-///   EmailConfirmed, attach default-groups (snapshotted at register
-///   time), respect RequireAdminApproval.</item>
+///   <item><c>RegisterAsync</c> — validate, captcha-verify, anti-enumerate,
+///   hash the password and hand the sign-up to the registration pipeline
+///   (ADR 0006: pending record + verification link; NO user until proved).</item>
+///   <item><c>VerifyEmailAsync</c> — prove the link: the pipeline creates the
+///   confirmed user, attaches the snapshotted default groups and respects
+///   RequireAdminApproval. Legacy pre-pipeline rows still consume for one release.</item>
 /// </list>
 ///
 /// <para>Tenant-scoped: the <see cref="IDocumentSession"/> + UserManager
@@ -60,10 +60,9 @@ public sealed class SelfRegistrationService(
     UserManager<ApplicationUser> userManager,
     TurnstileVerifier captchaVerifier,
     RegistrationRateLimiter rateLimiter,
-    IEmailService emailService,
+    Modgud.Authentication.Registration.IRegistrationPipeline registrationPipeline,
     IHostEnvironment env,
     Modgud.Authentication.Applications.IApplicationSettingsResolver settingsResolver,
-    Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
     Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor,
     ILogger<SelfRegistrationService> logger) : ISelfRegistrationService
 {
@@ -186,65 +185,67 @@ public sealed class SelfRegistrationService(
             .AnyAsync(f => f.AccountName == normalizedUserName && !f.IsDeleted, ct);
         if (positionNameTaken) return GenericSuccess;
 
-        // Create the Identity user. EmailConfirmed=false; IsActive
-        // depends on RequireAdminApproval (pending users are inactive
-        // until an admin flips the flag from the admin UI).
-        var appUser = new ApplicationUser(normalizedUserName, normalizedEmail)
+        // ADR 0006 — validate + hash the password NOW; the user itself is materialised
+        // only when the verification link is proved. Until then the sign-up is a
+        // pending record keyed by the address (one per address, hard-deleted on
+        // proof/expiry), so a stranger's attempt can never occupy someone's address.
+        var probe = new ApplicationUser(normalizedUserName, normalizedEmail);
+        foreach (var validator in userManager.PasswordValidators)
         {
-            Id = Guid.NewGuid(),
-            Firstname = dto.Firstname,
-            Lastname = dto.Lastname,
-            IsActive = !settings.RequireAdminApproval,
-        };
-        var createResult = await userManager.CreateAsync(appUser, dto.Password);
-        if (!createResult.Succeeded)
-        {
-            logger.LogInformation(
-                "Self-reg: Identity rejected user creation, realm={Realm} errors={Errors}",
-                realm.Slug,
-                string.Join(';', createResult.Errors.Select(e => e.Code)));
-            return GenericSuccess;
+            var check = await validator.ValidateAsync(userManager, probe, dto.Password);
+            if (!check.Succeeded)
+            {
+                logger.LogInformation(
+                    "Self-reg: password rejected, realm={Realm} errors={Errors}",
+                    realm.Slug, string.Join(';', check.Errors.Select(e => e.Code)));
+                return GenericSuccess;
+            }
         }
+        var passwordHash = userManager.PasswordHasher.HashPassword(probe, dto.Password);
 
-        // Issue verification token + magic-link URL. Mirrors
-        // PendingAdminInvite's shape: 32-byte base64url plaintext,
-        // SHA-256-hex stored.
-        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
-            .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-        var tokenHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+        // Thread the pending continuation through the e-mail round trip so a
+        // self-registration can resume a client app's OIDC authorize flow.
+        // Same-origin guard mirrors the SPA's; the verify page forwards
+        // ?redirect= to /login once the account is confirmed.
+        var returnUrl = Modgud.Authentication.Api.LoginRedirectGuard.IsSameOriginPath(dto.ReturnUrl) && dto.ReturnUrl != "/"
+            ? dto.ReturnUrl
+            : null;
 
-        var pending = new PendingSelfRegistration
-        {
-            Id = Guid.NewGuid(),
-            UserId = appUser.Id,
-            Email = normalizedEmail,
-            TokenHash = tokenHash,
-            ExpiresAt = DateTimeOffset.UtcNow.AddHours(PendingSelfRegistration.DefaultExpirationHours),
-            CreatedAt = DateTimeOffset.UtcNow,
-            DefaultGroupIds = settings.DefaultGroupIds ?? [],
-            RequireAdminApproval = settings.RequireAdminApproval,
-        };
-        session.Store(pending);
-        await session.SaveChangesAsync(ct);
+        var request = new Modgud.Authentication.Registration.RegistrationRequest(
+            Email: normalizedEmail,
+            UserName: normalizedUserName,
+            Firstname: dto.Firstname,
+            Lastname: dto.Lastname,
+            PasswordHash: passwordHash,
+            ProofKind: Modgud.Authentication.Registration.RegistrationProofKind.Link,
+            Source: Modgud.Authentication.Registration.RegistrationSources.Web,
+            ApplicationId: http is null
+                ? null
+                : Modgud.Infrastructure.Persistence.Tenancy.HttpContextApplicationExtensions.GetApplicationId(http),
+            ClientId: clientId,
+            ReturnUrl: returnUrl,
+            LinkBaseUrl: RealmPublicUrl.RealmPublicBaseUrl(realm),
+            DefaultGroupIds: settings.DefaultGroupIds ?? [],
+            RequireAdminApproval: settings.RequireAdminApproval);
 
-        // Skip email entirely when the realm explicitly opts out of
-        // verification (RequireEmailVerification=false). Edge case — for
-        // most setups verification is mandatory. The user record is
-        // already EmailConfirmed=false; the verify-email consume is what
-        // flips it. We log so the admin sees why no email was sent.
         if (settings.RequireEmailVerification)
         {
-            await SendVerificationEmailAsync(appUser, realm, token, dto.ReturnUrl, clientId, ct);
+            var outcome = await registrationPipeline.RequestAsync(request, ct);
+            logger.LogInformation("Self-reg: pending registration {Outcome}, realm={Realm}", outcome, realm.Slug);
         }
         else
         {
-            // Treat as immediate verification: trigger the same path the
-            // user would walk by clicking the link, so groups land and
-            // approval still gates.
-            await ConsumeAsync(pending, ct);
-            logger.LogInformation(
-                "Self-reg: RequireEmailVerification=false, auto-confirmed user {UserId} in realm={Realm}",
-                appUser.Id, realm.Slug);
+            // The realm explicitly opted out of proof: the user is created right away,
+            // confirmed, default groups attached; admin approval still gates activation.
+            var created = await registrationPipeline.RegisterWithoutProofAsync(request, ct);
+            if (created.IsError)
+                logger.LogInformation(
+                    "Self-reg: immediate registration refused ({Code}), realm={Realm}",
+                    created.FirstError.Code, realm.Slug);
+            else
+                logger.LogInformation(
+                    "Self-reg: RequireEmailVerification=false, created confirmed user {UserId} in realm={Realm}",
+                    created.Value.User.Id, realm.Slug);
         }
 
         return GenericSuccess;
@@ -257,6 +258,34 @@ public sealed class SelfRegistrationService(
         if (string.IsNullOrWhiteSpace(plaintextToken))
             return Error.Validation("SelfRegistration.TokenRequired", "Verification token is required.");
 
+        // ADR 0006 — the pending pipeline owns every new registration.
+        var proved = await registrationPipeline.ProveLinkAsync(plaintextToken, ct);
+        if (!proved.IsError)
+        {
+            var created = proved.Value;
+            return new VerifyEmailResult(
+                UserId: created.User.Id,
+                UserName: created.User.UserName ?? "",
+                Email: created.User.Email ?? "",
+                RequiresAdminApproval: created.RequiresAdminApproval);
+        }
+        switch (proved.FirstError.Code)
+        {
+            case Modgud.Authentication.Registration.RegistrationPipeline.ErrorExpired:
+                return Error.Validation("SelfRegistration.TokenExpired", "Verification token has expired.");
+            case Modgud.Authentication.Registration.RegistrationPipeline.ErrorAlreadyConsumed:
+                return Error.Validation("SelfRegistration.TokenUsed", "Verification token has already been used.");
+            case Modgud.Authentication.Registration.RegistrationPipeline.ErrorRejected:
+                return Error.Validation("SelfRegistration.Rejected", proved.FirstError.Description);
+            case Modgud.Authentication.Registration.RegistrationPipeline.ErrorNoPendingProof:
+                break; // not a pipeline token → try the legacy rows below
+            default:
+                return proved.Errors;
+        }
+
+        // Legacy: rows written by the pre-ADR-0006 flow (user created first, token
+        // row keyed by UserId). Kept for one release so in-flight verifications
+        // still complete; remove together with PendingSelfRegistration.
         var tokenHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(plaintextToken)));
 
         var pending = await session.Query<PendingSelfRegistration>()
@@ -319,48 +348,5 @@ public sealed class SelfRegistrationService(
             UserName: user.UserName ?? "",
             Email: pending.Email,
             RequiresAdminApproval: pending.RequireAdminApproval);
-    }
-
-    private async Task SendVerificationEmailAsync(
-        ApplicationUser user,
-        Realm realm,
-        string plaintextToken,
-        string? returnUrl,
-        string? clientId,
-        CancellationToken ct)
-    {
-        var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm);
-        var url = $"{appUrl}/verify-email?token={Uri.EscapeDataString(plaintextToken)}";
-
-        // Thread the pending continuation through the e-mail round trip so a
-        // self-registration can resume a client app's OIDC authorize flow.
-        // Same-origin guard mirrors the SPA's; the verify page forwards
-        // ?redirect= to /login once the account is confirmed.
-        if (Modgud.Authentication.Api.LoginRedirectGuard.IsSameOriginPath(returnUrl) && returnUrl != "/")
-            url += $"&redirect={Uri.EscapeDataString(returnUrl!)}";
-
-        var displayName = !string.IsNullOrWhiteSpace(user.Firstname)
-            ? $"{user.Firstname} {user.Lastname}".Trim()
-            : user.UserName ?? user.Email ?? "";
-
-        try
-        {
-            await emailService.SendTemplatedEmailAsync(
-                user.Email!,
-                EmailTemplate.EmailVerification,
-                await emailBranding.ApplyAsync(new Dictionary<string, string>
-                {
-                    ["DisplayName"] = displayName,
-                    ["ActionUrl"] = url,
-                    ["ExpirationHours"] = PendingSelfRegistration.DefaultExpirationHours.ToString(),
-                }, clientId: clientId, ct: ct),
-                ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex,
-                "Self-reg: verification email delivery failed, realm={Realm} email={MaskedEmail}",
-                realm.Slug, LogPiiMasking.MaskEmail(user.Email!));
-        }
     }
 }

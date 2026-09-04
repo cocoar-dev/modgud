@@ -156,10 +156,10 @@ passwordless sign-up is triggered for the App:
 
 | Posture | Behaviour |
 | --- | --- |
-| `JitOnOtp` *(default)* | Sign-in-or-sign-up: an unknown email at the native OTP endpoint creates a passwordless user and emails a one-time code; redeeming it both verifies the mailbox and signs in. The low-friction consumer default. |
+| `JitOnOtp` *(default)* | Sign-in-or-sign-up: an unknown email at the native OTP endpoint gets a pending registration and a one-time code — no user yet; redeeming the code proves the mailbox, creates the confirmed passwordless account and signs in. The low-friction consumer default. |
 | `Off` | No self-registration — an unknown email gets the uniform anti-enumeration response, no user is created. |
-| `ExplicitEndpoint` | Registration is a deliberate, separate step via `POST /api/account/native/register` (room for an app's own ToS / profile UI); sign-in stays strict — the OTP-request endpoint serves only known users. An unknown email at the register endpoint creates the passwordless user and emails the same registration code. |
-| `InviteCode` | Invite-only: an unknown email becomes a passwordless user **only** when the native sign-up request carries a valid, unused, unexpired [invite code](#invite-codes-the-invitecode-posture). Existing confirmed users still sign in normally (no code needed). Code failures are indistinguishable from `Off` (anti-enumeration). |
+| `ExplicitEndpoint` | Registration is a deliberate, separate step via `POST /api/account/native/register` (room for an app's own ToS / profile UI); sign-in stays strict — the OTP-request endpoint serves only known users. An unknown email at the register endpoint gets a pending registration and the same registration code; the account is created when the code is redeemed. |
+| `InviteCode` | Invite-only: an unknown email enters the registration pipeline **only** when the native sign-up request carries a valid, unused, unexpired [invite code](#invite-codes-the-invitecode-posture) (the account is created when the code is redeemed). Existing confirmed users still sign in normally (no code needed). Code failures are indistinguishable from `Off` (anti-enumeration). |
 
 See [Integrate → Native apps](../integrate/native-apps#native-passwordless-registration-jit-on-otp)
 for the end-to-end flow.

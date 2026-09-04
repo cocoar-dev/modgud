@@ -150,6 +150,7 @@ public static class MartenConfiguration
         options.Events.MapEventType<UserUpdatedEvent>("user_updated");
         options.Events.MapEventType<UserDeletedEvent>("user_deleted");
         options.Events.MapEventType<UserMigratedEvent>("user_migrated");
+        options.Events.MapEventType<UserRegisteredEvent>("user_registered");
 
         // Authorization slice events (PermissionRole + Group + GroupMembership) are
         // registered by UseModgudAuthorization() — kept inside the slice so apps

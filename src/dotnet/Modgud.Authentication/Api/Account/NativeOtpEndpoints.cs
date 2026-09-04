@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
+using Modgud.Authentication.Registration;
 using Modgud.Authentication.SelfRegistration;
 using Modgud.Domain.Applications;
 using Modgud.Domain.Realms;
@@ -48,7 +49,7 @@ public static class NativeOtpEndpoints
             IDocumentSession session,
             IApplicationSettingsResolver settingsResolver,
             IEmailOtpService emailOtpService,
-            IPasswordlessUserFactory passwordlessUserFactory,
+            IRegistrationPipeline registrationPipeline,
             IRegistrationInviteService inviteService,
             UserManager<ApplicationUser> userManager,
             ILoggerFactory loggerFactory,
@@ -105,7 +106,7 @@ public static class NativeOtpEndpoints
                     request.Email, request.FirstName, request.LastName,
                     request.InviteCode, httpContext.GetApplicationId(),
                     settings.SelfRegPosture, session, userManager,
-                    emailOtpService, passwordlessUserFactory, inviteService, ct);
+                    emailOtpService, registrationPipeline, inviteService, ct);
             }
 
             // Same jitter on every branch (incl. success, which did real work) so
@@ -129,11 +130,11 @@ public static class NativeOtpEndpoints
     ///   <item>Known confirmed user → native login OTP.</item>
     ///   <item>Known passwordless still-unconfirmed user + JIT posture → re-issue
     ///   the registration OTP (resend for an in-progress sign-up).</item>
-    ///   <item>Unknown email + JIT posture → create a passwordless user and issue
-    ///   the registration OTP.</item>
-    ///   <item>Unknown email + InviteCode posture (ADR-0012) → create + register
+    ///   <item>Unknown email + JIT posture → enter the registration pipeline
+    ///   (ADR 0006: pending record + code; NO user until the code is proved).</item>
+    ///   <item>Unknown email + InviteCode posture (ADR-0012) → enter the pipeline
     ///   ONLY if a valid, unused, unexpired, app-matching code is presented; the
-    ///   code is consumed atomically before creation. A missing/invalid/used/
+    ///   code is consumed atomically before anything is written. A missing/invalid/used/
     ///   expired/mismatched code is silently a no-op (indistinguishable from
     ///   <see cref="SelfRegPosture.Off"/>).</item>
     ///   <item>Otherwise (no self-reg posture, or a password-bearing unconfirmed
@@ -150,7 +151,7 @@ public static class NativeOtpEndpoints
         IDocumentSession session,
         UserManager<ApplicationUser> userManager,
         IEmailOtpService emailOtpService,
-        IPasswordlessUserFactory passwordlessUserFactory,
+        IRegistrationPipeline registrationPipeline,
         IRegistrationInviteService inviteService,
         CancellationToken ct)
     {
@@ -174,7 +175,7 @@ public static class NativeOtpEndpoints
             case NativeOtpAction.CreateAndRegister:
                 await CreateAndRegisterAsync(
                     email, firstName, lastName, inviteCode, appId, posture,
-                    emailOtpService, passwordlessUserFactory, inviteService, ct);
+                    registrationPipeline, inviteService, ct);
                 break;
             case NativeOtpAction.None:
             default:
@@ -183,13 +184,13 @@ public static class NativeOtpEndpoints
     }
 
     /// <summary>
-    /// Materialises a new passwordless user for an unknown email and issues the
-    /// registration OTP. Under <see cref="SelfRegPosture.InviteCode"/> this is
+    /// ADR 0006 — enters the registration pipeline for an unknown email: a pending
+    /// record is written and the registration code mailed; NO user exists until the
+    /// code is proved at redeem. Under <see cref="SelfRegPosture.InviteCode"/> this is
     /// gated on consuming a valid invite code FIRST (ADR-0012, D4/§5): the code is
-    /// consumed atomically (single-use, optimistic-concurrency) before the user
-    /// exists, which closes the bearer-code race (consuming at redeem would let two
-    /// requests each create an account before either redeems). Any code failure is
-    /// a silent no-op so the path stays anti-enumeration-safe.
+    /// consumed atomically (single-use, optimistic-concurrency) before anything is
+    /// written, which closes the bearer-code race. Any code failure is a silent no-op
+    /// so the path stays anti-enumeration-safe.
     /// </summary>
     private static async Task CreateAndRegisterAsync(
         string email,
@@ -198,8 +199,7 @@ public static class NativeOtpEndpoints
         string? inviteCode,
         Guid? appId,
         SelfRegPosture? posture,
-        IEmailOtpService emailOtpService,
-        IPasswordlessUserFactory passwordlessUserFactory,
+        IRegistrationPipeline registrationPipeline,
         IRegistrationInviteService inviteService,
         CancellationToken ct)
     {
@@ -216,14 +216,20 @@ public static class NativeOtpEndpoints
             consumedInviteId = consume.InviteId;
         }
 
-        var created = await passwordlessUserFactory.CreateAsync(email, firstName, lastName, ct);
-        if (created is null)
-            return; // TOCTOU race lost; under InviteCode the code stays consumed (benign, swept later)
-
-        if (consumedInviteId is { } inviteId)
-            await inviteService.AttachConsumerAsync(inviteId, created.Id, ct);
-
-        _ = await emailOtpService.RequestNativeRegistrationOtpAsync(created.Id, ct);
+        // The full email is the username: unique per realm, collision-free.
+        var trimmed = email.Trim();
+        _ = await registrationPipeline.RequestAsync(new RegistrationRequest(
+            Email: trimmed,
+            UserName: trimmed,
+            Firstname: firstName,
+            Lastname: lastName,
+            PasswordHash: null,
+            ProofKind: RegistrationProofKind.Code,
+            Source: posture == SelfRegPosture.InviteCode ? RegistrationSources.NativeInvite : RegistrationSources.NativeJit,
+            ApplicationId: appId,
+            ConsumedInviteId: consumedInviteId), ct);
+        // Cooldown / lost race → no code sent; under InviteCode the invite stays
+        // consumed (benign, swept later) — same as the previous TOCTOU behaviour.
     }
 
     public enum NativeOtpAction { None, Login, ResendRegistration, CreateAndRegister }

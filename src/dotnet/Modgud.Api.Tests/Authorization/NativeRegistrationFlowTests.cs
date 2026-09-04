@@ -35,7 +35,7 @@ public class NativeRegistrationFlowTests : IntegrationTestBase
     public NativeRegistrationFlowTests(SharedPostgresFixture fixture) : base(fixture) { }
 
     [Fact]
-    public async Task Jit_Registration_Creates_Passwordless_User_And_Confirms_On_Redeem()
+    public async Task Jit_Registration_Creates_No_User_Until_The_Code_Is_Proved()
     {
         var ct = TestContext.Current.CancellationToken;
         var newEmail = "jit-phase5-newuser@example.test"; // not seeded → unknown
@@ -54,18 +54,21 @@ public class NativeRegistrationFlowTests : IntegrationTestBase
         Assert.NotNull(msg); // JIT issued a registration code to the unknown email
         var code = Regex.Match(msg!.HtmlBody, @"\b(\d{6})\b").Groups[1].Value;
         Assert.False(string.IsNullOrEmpty(code));
+        // ADR 0006: the request wrote a pending record, NOT a user.
+        Assert.Null(await QuerySystemUserByEmailAsync(newEmail));
 
         // 2) Redeem at /connect/token → tokens minted (the registration completes).
         var token = await MintOtpTokenAsync("p5-jit.localhost", "p5-jit-client", newEmail, code);
         Assert.False(string.IsNullOrEmpty(token));
 
-        // 3) The user now exists, passwordless, and EmailConfirmed flipped true.
+        // 3) The user exists now — created confirmed by the proof, passwordless.
         var user = await QuerySystemUserByEmailAsync(newEmail);
         Assert.NotNull(user);
         Assert.True(user!.EmailConfirmed);
         Assert.True(string.IsNullOrEmpty(user.PasswordHash));
         // The full email is the username (no local-part derivation / suffixing).
         Assert.Equal(newEmail, user.UserName);
+        Assert.Equal("native-jit", user.RegistrationSource);
     }
 
     [Fact]
@@ -84,20 +87,27 @@ public class NativeRegistrationFlowTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Native_Otp_With_Required_Name_Persists_It_On_Jit()
+    public async Task Native_Otp_With_Required_Name_Lands_On_The_User_At_Proof()
     {
         var ct = TestContext.Current.CancellationToken;
         var newEmail = "p5-named-newuser@example.test";
         await EnableRealmNativeGrantsAsync();
         await SetRealmRegistrationFieldsAsync(firstname: "Required");
         var app = await CreateAppAsync("p5-named-app");
+        await CreateOtpClientAsync("p5-named-client", app.Id);
         await MapApplicationDomainsAsync(("p5-named.localhost", app.Id));
 
         var emailService = Factory.Services.GetRequiredService<InMemoryEmailService>();
         emailService.Clear();
         var resp = await RequestNativeOtpAsync("p5-named.localhost", newEmail, firstName: "Ada", lastName: "Lovelace");
         resp.EnsureSuccessStatusCode();
-        Assert.NotNull(emailService.GetLastEmailTo(newEmail)); // JIT issued the registration code
+        var msg = emailService.GetLastEmailTo(newEmail);
+        Assert.NotNull(msg); // the registration code was issued
+        // ADR 0006: the names travel on the pending record — no user yet.
+        Assert.Null(await QuerySystemUserByEmailAsync(newEmail));
+
+        var code = Regex.Match(msg!.HtmlBody, @"\b(\d{6})\b").Groups[1].Value;
+        await MintOtpTokenAsync("p5-named.localhost", "p5-named-client", newEmail, code);
 
         var user = await QuerySystemUserByEmailAsync(newEmail);
         Assert.NotNull(user);

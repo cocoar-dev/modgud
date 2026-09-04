@@ -6,8 +6,10 @@ using Microsoft.Extensions.Logging;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
+using Modgud.Authentication.Registration;
 using Modgud.Domain.Applications;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -49,7 +51,7 @@ public static class NativeRegisterEndpoints
             IDocumentSession session,
             IApplicationSettingsResolver settingsResolver,
             IEmailOtpService emailOtpService,
-            IPasswordlessUserFactory passwordlessUserFactory,
+            IRegistrationPipeline registrationPipeline,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -99,7 +101,7 @@ public static class NativeRegisterEndpoints
                 // the uniform response + jitter below is the only observable.
                 await IssueRegistrationOtpAsync(
                     request.Email, request.FirstName, request.LastName,
-                    session, emailOtpService, passwordlessUserFactory, ct);
+                    session, emailOtpService, registrationPipeline, httpContext.GetApplicationId(), ct);
             }
 
             // Same jitter on every branch (incl. the success path, which did real
@@ -120,8 +122,8 @@ public static class NativeRegisterEndpoints
     /// Explicit-registration routing (ADR-0011). All outcomes are silent so the
     /// caller's uniform response + jitter is the only observable.
     /// <list type="bullet">
-    ///   <item>Unknown email → create a passwordless user and issue the
-    ///   registration code.</item>
+    ///   <item>Unknown email → enter the registration pipeline (ADR 0006: pending
+    ///   record + code; NO user until the code is proved).</item>
     ///   <item>Known passwordless still-unconfirmed user → re-issue the code
     ///   (resend for an in-progress sign-up).</item>
     ///   <item>Otherwise (an already-confirmed user, or a password-bearing
@@ -135,7 +137,8 @@ public static class NativeRegisterEndpoints
         string? lastName,
         IDocumentSession session,
         IEmailOtpService emailOtpService,
-        IPasswordlessUserFactory passwordlessUserFactory,
+        IRegistrationPipeline registrationPipeline,
+        Guid? appId,
         CancellationToken ct)
     {
         var user = await session.Query<ApplicationUser>()
@@ -143,9 +146,17 @@ public static class NativeRegisterEndpoints
 
         if (user is null)
         {
-            var created = await passwordlessUserFactory.CreateAsync(email, firstName, lastName, ct);
-            if (created is not null)
-                _ = await emailOtpService.RequestNativeRegistrationOtpAsync(created.Id, ct);
+            // ADR 0006 — pending record + code; NO user until the code is proved.
+            var trimmed = email.Trim();
+            _ = await registrationPipeline.RequestAsync(new RegistrationRequest(
+                Email: trimmed,
+                UserName: trimmed,
+                Firstname: firstName,
+                Lastname: lastName,
+                PasswordHash: null,
+                ProofKind: RegistrationProofKind.Code,
+                Source: RegistrationSources.NativeExplicit,
+                ApplicationId: appId), ct);
             return;
         }
 

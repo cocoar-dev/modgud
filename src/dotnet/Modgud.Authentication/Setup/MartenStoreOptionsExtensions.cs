@@ -74,6 +74,15 @@ public static class MartenStoreOptionsExtensions
             .Identity(x => x.Id)
             .UseOptimisticConcurrency(true);
 
+        // ADR 0006 — the one pre-verification record per address. Plain document,
+        // version-checked consume, hard-deleted on proof/expiry/erasure; NEVER
+        // soft-deleted, never event-sourced (see PendingRegistration remarks).
+        options.Schema.For<Modgud.Authentication.Registration.PendingRegistration>()
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Index(x => x.SecretHash)
+            .Index(x => x.ExpiresAt);
+
         // Audit #25 — optimistic concurrency makes the "one-time use" consume
         // atomic. Login loads the challenge then deletes it; two concurrent
         // redemptions of the same link both pass the null/expiry check before

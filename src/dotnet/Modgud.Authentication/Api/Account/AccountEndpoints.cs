@@ -10,6 +10,7 @@ using Modgud.Authentication.Domain.ExternalAuth;
 using Modgud.Authentication.Domain.LoginProviders;
 using BuildingBlocks.Helper;
 using Modgud.Authentication.Identity;
+using Modgud.Authentication.Registration;
 using Modgud.Authentication.Sessions;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.SelfRegistration;
@@ -295,7 +296,7 @@ public static class AccountEndpoints
             IDocumentSession session,
             IApplicationSettingsResolver settingsResolver,
             IEmailOtpService emailOtpService,
-            IPasswordlessUserFactory passwordlessUserFactory,
+            IRegistrationPipeline registrationPipeline,
             IRegistrationInviteService inviteService,
             UserManager<ApplicationUser> userManager,
             CancellationToken ct) =>
@@ -332,7 +333,7 @@ public static class AccountEndpoints
             await NativeOtpEndpoints.IssueOtpForRequestAsync(
                 request.Email, request.FirstName, request.LastName, request.InviteCode,
                 applicationId, effective.SelfRegPosture, session, userManager,
-                emailOtpService, passwordlessUserFactory, inviteService, ct);
+                emailOtpService, registrationPipeline, inviteService, ct);
             await NativeOtpEndpoints.AntiTimingDelayAsync();
             return Results.Ok(new { Message = genericMessage });
         })
@@ -350,6 +351,7 @@ public static class AccountEndpoints
             IDocumentSession session,
             IApplicationSettingsResolver settingsResolver,
             IEmailOtpService emailOtpService,
+            IRegistrationPipeline registrationPipeline,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             CancellationToken ct) =>
@@ -381,16 +383,33 @@ public static class AccountEndpoints
             }
 
             var user = await userManager.FindByEmailAsync(request.Email);
-            if (user is null || !user.IsActive || user.IsDeleted)
-                return await InvalidCode();
+            if (user is null)
+            {
+                // ADR 0006 — no account yet: the code may prove a pending registration,
+                // which creates the user (confirmed) exactly once. Any failure is the
+                // same uniform invalid-code response.
+                var proved = await registrationPipeline.ProveCodeAsync(request.Email, request.Code, ct);
+                if (proved.IsError)
+                    return await InvalidCode();
+                user = await userManager.FindByIdAsync(proved.Value.User.Id.ToString());
+                if (user is null)
+                    return await InvalidCode();
+            }
+            else
+            {
+                if (!user.IsActive || user.IsDeleted)
+                    return await InvalidCode();
 
-            var isPasswordlessRegistration = !user.EmailConfirmed && string.IsNullOrEmpty(user.PasswordHash);
-            if (!user.EmailConfirmed && !isPasswordlessRegistration)
-                return await InvalidCode();
+                // Legacy: passwordless accounts created before the pending pipeline
+                // still redeem their registration code here (reaped after 7 days).
+                var isPasswordlessRegistration = !user.EmailConfirmed && string.IsNullOrEmpty(user.PasswordHash);
+                if (!user.EmailConfirmed && !isPasswordlessRegistration)
+                    return await InvalidCode();
 
-            var verify = await emailOtpService.VerifyOtpAsync(user.Id, request.Code, ct);
-            if (verify.IsError)
-                return await InvalidCode();
+                var verify = await emailOtpService.VerifyOtpAsync(user.Id, request.Code, ct);
+                if (verify.IsError)
+                    return await InvalidCode();
+            }
 
             var secondFactors = await TwoFactorHelper.GetMethodsAsync(user, session);
             if (secondFactors.Count > 0)

@@ -1647,32 +1647,44 @@ public static class AuthorizationEndpoints
         // Store-backed lookup so the security stamp is populated (see IssueNativeGrantAsync).
         var user = await userManager.FindByEmailAsync(email);
         if (user is null)
-            return await ForbidFactorFailureAsync("Invalid or expired code.");
-
-        // Defence-in-depth: native email-OTP is a PRIMARY factor, so a confirmed
-        // mailbox is required at the minting site too (not only at the request
-        // endpoint). ADR-0011 exception: a passwordless, still-unconfirmed account
-        // is a native JIT registration — the OTP redeem itself proves the mailbox,
-        // so it is allowed and confirmed on success below. A password-bearing
-        // unconfirmed account must verify via the web link (never gets a native
-        // code issued, and is rejected here as before).
-        var isPasswordlessRegistration = !user.EmailConfirmed && string.IsNullOrEmpty(user.PasswordHash);
-        if (!user.EmailConfirmed && !isPasswordlessRegistration)
-            return await ForbidFactorFailureAsync("Invalid or expired code.");
-
-        var verify = await emailOtpService.VerifyOtpAsync(user.Id, code, ct);
-        if (verify.IsError)
-            return await ForbidFactorFailureAsync("Invalid or expired code.");
-
-        // A consumed OTP proves mailbox control — auto-confirm a JIT registration
-        // (parity with the magic-link grant's mailbox-proof confirm).
-        if (!user.EmailConfirmed)
         {
-            user.EmailConfirmed = true;
-            session.Store(user);
-            session.Events.Append(user.Id, new Modgud.Domain.Users.Events.UserUpdatedEvent(
-                Id: user.Id, Firstname: default, Lastname: default, Acronym: default, Email: default));
-            await session.SaveChangesAsync(ct);
+            // ADR 0006 — no account yet: the code may prove a pending registration,
+            // which creates the user (confirmed) exactly once in the same unit of work.
+            // Every failure stays the uniform factor failure (anti-enumeration).
+            var registrationPipeline = httpContext.RequestServices
+                .GetRequiredService<Modgud.Authentication.Registration.IRegistrationPipeline>();
+            var proved = await registrationPipeline.ProveCodeAsync(email, code, ct);
+            if (proved.IsError)
+                return await ForbidFactorFailureAsync("Invalid or expired code.");
+            user = await userManager.FindByIdAsync(proved.Value.User.Id.ToString());
+            if (user is null)
+                return await ForbidFactorFailureAsync("Invalid or expired code.");
+        }
+        else
+        {
+            // Defence-in-depth: native email-OTP is a PRIMARY factor, so a confirmed
+            // mailbox is required at the minting site too (not only at the request
+            // endpoint). Legacy exception: a passwordless, still-unconfirmed account
+            // created by the pre-ADR-0006 JIT path may still redeem its registration
+            // code here and is confirmed on success (such accounts are reaped after
+            // 7 days). A password-bearing unconfirmed account must verify via the web
+            // link (never gets a native code issued, and is rejected here as before).
+            var isPasswordlessRegistration = !user.EmailConfirmed && string.IsNullOrEmpty(user.PasswordHash);
+            if (!user.EmailConfirmed && !isPasswordlessRegistration)
+                return await ForbidFactorFailureAsync("Invalid or expired code.");
+
+            var verify = await emailOtpService.VerifyOtpAsync(user.Id, code, ct);
+            if (verify.IsError)
+                return await ForbidFactorFailureAsync("Invalid or expired code.");
+
+            if (!user.EmailConfirmed)
+            {
+                user.EmailConfirmed = true;
+                session.Store(user);
+                session.Events.Append(user.Id, new Modgud.Domain.Users.Events.UserUpdatedEvent(
+                    Id: user.Id, Firstname: default, Lastname: default, Acronym: default, Email: default));
+                await session.SaveChangesAsync(ct);
+            }
         }
 
         // Second factor only after the primary factor proved possession.

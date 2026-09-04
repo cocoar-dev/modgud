@@ -39,7 +39,7 @@ public class NativeExplicitRegistrationFlowTests : IntegrationTestBase
     public NativeExplicitRegistrationFlowTests(SharedPostgresFixture fixture) : base(fixture) { }
 
     [Fact]
-    public async Task ExplicitPosture_Register_Creates_Passwordless_User_And_Confirms_On_Redeem()
+    public async Task ExplicitPosture_Register_Creates_No_User_Until_The_Code_Is_Proved()
     {
         var ct = TestContext.Current.CancellationToken;
         var newEmail = "explicit-reg-newuser@example.test"; // not seeded → unknown
@@ -59,6 +59,8 @@ public class NativeExplicitRegistrationFlowTests : IntegrationTestBase
         Assert.NotNull(msg);
         var code = Regex.Match(msg!.HtmlBody, @"\b(\d{6})\b").Groups[1].Value;
         Assert.False(string.IsNullOrEmpty(code));
+        // ADR 0006: the request wrote a pending record, NOT a user.
+        Assert.Null(await QuerySystemUserByEmailAsync(newEmail));
 
         // 2) Redeem at /connect/token → tokens minted (the registration completes).
         var token = await MintOtpTokenAsync("p-explicit.localhost", "p-explicit-client", newEmail, code);
@@ -71,6 +73,7 @@ public class NativeExplicitRegistrationFlowTests : IntegrationTestBase
         Assert.True(string.IsNullOrEmpty(user.PasswordHash));
         // The full email is the username (no local-part derivation / suffixing).
         Assert.Equal(newEmail, user.UserName);
+        Assert.Equal("native-explicit", user.RegistrationSource);
     }
 
     [Fact]
