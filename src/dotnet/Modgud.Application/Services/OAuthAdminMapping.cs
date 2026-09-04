@@ -914,7 +914,8 @@ internal static class OAuthAdminMapping
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
         var raw = value.Trim();
-        if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri))
+        // On Unix a bare path parses as an absolute file:// URI; treat that as "not absolute" too.
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri) || uri.IsFile || uri.IsUnc)
             return OAuthErrors.InvalidBackChannelLogoutUri(value, "not an absolute URI.");
         if (!string.IsNullOrEmpty(uri.Fragment))
             return OAuthErrors.InvalidBackChannelLogoutUri(value, "a fragment is not allowed.");
