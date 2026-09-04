@@ -102,4 +102,12 @@ public class DatabaseConfiguration
     /// Marten connection string (PostgreSQL 18)
     /// </summary>
     public string ConnectionString { get; set; } = string.Empty;
+
+    /// <summary>
+    /// How long boot waits for PostgreSQL to become reachable before giving up
+    /// (connection refused, DNS not yet resolvable, "database system is starting
+    /// up"). Configuration errors such as a wrong password fail immediately
+    /// regardless. <c>0</c> = a single attempt. Env: <c>DbSettings__StartupTimeoutSeconds</c>.
+    /// </summary>
+    public int StartupTimeoutSeconds { get; set; } = Startup.StartupDatabaseWait.DefaultTimeoutSeconds;
 }

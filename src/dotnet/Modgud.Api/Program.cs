@@ -71,6 +71,18 @@ Log.Logger = new LoggerConfiguration()
 
 Log.Information("Starting up");
 
+// Unhandled exceptions on ANY thread must end the process, explicitly. The
+// runtime's own path is abort() -> SIGABRT, and when dotnet is PID 1 in a
+// container without an init process the kernel never delivers that signal: the
+// process sits at 100 % CPU forever, "Up" for Docker, dead for everyone else,
+// and the restart policy never fires. exit() works as PID 1.
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    Log.Fatal(e.ExceptionObject as Exception, "Unhandled exception - terminating the process");
+    Log.CloseAndFlush();
+    Environment.Exit(1);
+};
+
 try
 {
     var builder = WebApplication.CreateBuilder(args);
@@ -1386,23 +1398,36 @@ try
         ?? throw new InvalidOperationException("DbSettings.ConnectionString is missing 'Database='");
 
     bootstrapBuilder.Database = "postgres";
-    await using (var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString))
-    {
-        await bootstrapConn.OpenAsync();
-        await using var checkCmd = new NpgsqlCommand(
-            "SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
-        checkCmd.Parameters.AddWithValue("@dbName", baseDbName);
-        if (await checkCmd.ExecuteScalarAsync() is null)
+
+    // First contact with PostgreSQL. In a container stack Modgud regularly
+    // comes up before Postgres does; wait a bounded window for a transient
+    // failure (refused / DNS / "starting up"), fail at once on a
+    // configuration error, and terminate after the window. Kestrel is not
+    // listening yet, so nothing is served half-booted.
+    var startupWindow = TimeSpan.FromSeconds(Math.Max(0, conf.DbSettings.StartupTimeoutSeconds));
+    await StartupDatabaseWait.RunAsync(
+        async ct =>
         {
-            var quotedName = "\"" + baseDbName.Replace("\"", "\"\"") + "\"";
+            await using var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString);
+            await bootstrapConn.OpenAsync(ct);
+            await using var checkCmd = new NpgsqlCommand(
+                "SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
+            checkCmd.Parameters.AddWithValue("@dbName", baseDbName);
+            if (await checkCmd.ExecuteScalarAsync(ct) is null)
+            {
+                var quotedName = "\"" + baseDbName.Replace("\"", "\"\"") + "\"";
 #pragma warning disable CA2100
-            await using var createCmd = new NpgsqlCommand(
-                $"CREATE DATABASE {quotedName}", bootstrapConn);
+                await using var createCmd = new NpgsqlCommand(
+                    $"CREATE DATABASE {quotedName}", bootstrapConn);
 #pragma warning restore CA2100
-            await createCmd.ExecuteNonQueryAsync();
-            Log.Information("Created master database {DbName}", baseDbName);
-        }
-    }
+                await createCmd.ExecuteNonQueryAsync(ct);
+                Log.Information("Created master database {DbName}", baseDbName);
+            }
+        },
+        startupWindow,
+        onRetry: (attempt, wait, ex) => Log.Warning(
+            "PostgreSQL at {Host}:{Port} not reachable yet (attempt {Attempt}: {Reason}) - retrying in {Wait}s, giving up after {Window}s",
+            bootstrapBuilder.Host, bootstrapBuilder.Port, attempt, ex.Message, (int)wait.TotalSeconds, (int)startupWindow.TotalSeconds));
 
     // The primary store owns the tenant registry and all registered realm DBs.
     // The Global Store owns deployment-wide state, including the realm registry
@@ -1553,6 +1578,10 @@ try
 }
 catch (Exception ex)
 {
+    // Logged here with the full exception; the rethrow reaches the
+    // UnhandledException handler above, which exits with code 1 (under an init
+    // process the runtime would report 134/SIGABRT instead - both restart the
+    // container).
     Log.Fatal(ex, "Host terminated unexpectedly");
     throw;
 }

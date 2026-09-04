@@ -445,6 +445,22 @@ curl http://localhost:8081/health/ready   # readiness — DB connection + OpenId
 - **`/health/live`** runs no dependency checks; it returns `200` as long as the process is up. Use it as the liveness probe.
 - **`/health/ready`** returns `200` only when the master DB connection and the OpenIddict signing/encryption certificate are both ready. Use it as the readiness probe (gate traffic on it).
 
+The image also declares a Docker `HEALTHCHECK` on `/health/ready` (every 15 s, 120 s start period), so `docker ps` shows `healthy` / `unhealthy` and other services can wait with `depends_on: condition: service_healthy`. If you change `AppUrl`, point the probe at the new address with `HEALTHCHECK_URL`.
+
+## Startup and process supervision
+
+**Waiting for PostgreSQL.** In a container stack Modgud regularly comes up before Postgres does. Boot therefore retries the first database contact for a bounded window — connection refused, a hostname that does not resolve yet, or Postgres' own "the database system is starting up" — with growing delays (1 s, 2 s, 4 s, 8 s, then every 10 s) and a warning per attempt:
+
+```
+[WRN] PostgreSQL at postgres:5432 not reachable yet (attempt 3: Failed to connect to ...) - retrying in 4s, giving up after 90s
+```
+
+The window is `DbSettings__StartupTimeoutSeconds` (default `90`; `0` = a single attempt). Configuration errors — wrong password, missing role, malformed connection string — are **not** retried: they fail on the first attempt so the real cause is at the top of the log. Nothing is served while waiting; Kestrel only starts after the bootstrap succeeded.
+
+**Fail fast, never half-alive.** When the window runs out, or any unhandled exception occurs, the process logs `Host terminated unexpectedly` and **exits with code 1**. That is deliberate: the alternative — a process that is up but cannot serve — is invisible to `restart:` policies and readiness probes alike. Pair it with a restart policy (`restart: unless-stopped` in Compose, the default restart in Kubernetes) and the container comes back as soon as Postgres does. `depends_on: condition: service_healthy` on the Postgres service (see the Compose example above) avoids the retries altogether.
+
+**PID 1.** The image runs `dotnet` under [tini](https://github.com/krallin/tini) so the process is never PID 1 itself. Without an init process the kernel does not deliver the abort signal the .NET runtime raises on a crash, and a crashed container stays "Up" at 100 % CPU forever. If you build your own image from the published binaries, keep an init process (`tini`, or `init: true` in Compose / `docker run --init`).
+
 ## SignalR
 
 Modgud pushes live updates over `/signalr/ui` (typed RPC via
