@@ -13,6 +13,7 @@ Limits are configured per realm under **Realm Settings → Security → Authenti
 | **Client** | the OAuth client (authenticated, or the claimed `client_id`) | bounds one integration — including a [trusted forwarder](#trusted-forwarders). | `429` |
 | **Source** | the caller's address (IPv4 address, IPv6 /64) | **a coarse anomaly brake**, sized so that a whole office behind one NAT address never notices it. A token bucket: a burst is absorbed, then the bucket refills continuously. | `429` |
 | **Sign-ups per source** | the caller's address, counted only when a request enters the registration pipeline for an *unknown* address | **the spam signal** — many unknown addresses from one origin. | **silent** — the response stays the uniform "code sent", nothing is sent |
+| **Device** | a browser the user has completed a login from before (the `Modgud.Device` cookie), per user — `login` policy only | **the user's own devices** — their failures never share a bucket with strangers. See [Password login](#password-login-device-aware-throttling). | uniform `401` |
 
 The roles are deliberate and not interchangeable. The old model had one dimension (per IP, 5 per hour) — tight only because nothing else existed, and a lock-out for any corporate network. A realm cannot weaken the model by turning a dimension off for the wrong reason: turning **Source** off never removes **Target** or **App**.
 
@@ -31,6 +32,9 @@ The **sign-ups-per-source** ceiling is silent on purpose. A `429` that fired onl
 | `passkey-begin` | passkey begin / enroll, staffing and activation ceremonies | 1200 / 5 min, burst 300 | — | 60 / 5 min | 1200 / 5 min | — |
 | `oauth-token` | `POST /connect/token` | 600 / 1 min, burst 200 | — | — | 60 / 1 min, burst 60 | — |
 | `bootstrap` | first-admin bootstrap, installation | 30 / 15 min, burst 10 | — | — | — | — |
+| `login` | `POST /api/account/login` — **failures**, not attempts | 200 / 15 min, **signal only** | — | 5 / 15 min (untrusted pool) | — | — |
+
+The `login` policy additionally has a **Device** ceiling of 10 failures / 15 min per trusted device. Its **Source** cell is a signal: it is counted and reported, never rejects, and cannot be switched off — see below.
 
 "—" means the dimension does not apply to that policy and cannot be configured for it.
 
@@ -39,6 +43,17 @@ A **fixed window** reads "at most N per window". A **token bucket** (the entries
 ### A worked example
 
 1000 users behind one corporate NAT address each fetch a login code in the morning: roughly 1000 requests from one source within an hour, spread over 1000 mailboxes. The **Source** bucket (300 burst, 20 refilled per minute) never becomes visible, and **Target** still caps every mailbox at five codes per hour. One person in that office spraying 300 invented addresses hits **sign-ups per source** after ten, the sends stop silently, and the colleagues notice nothing. **App** bounds the mail cost even if the office is [allowlisted](#source-allowlist).
+
+## Password login: device-aware throttling
+
+Interactive password login is protected differently from the mail-sending endpoints, because what is at stake is not mail but the secret itself and the user's availability. There is deliberately **no per-address limit** on login: a corporate network behind one NAT address must never be locked out by one colleague mistyping a password. Instead (ADR 0008):
+
+1. **A device cookie on success.** After every completed interactive login in the browser — password, passkey, e-mail OTP, magic link, external provider, MFA — Modgud sets `Modgud.Device`: a random id, signed, HttpOnly, 90 days, renewed on every success. It carries no fingerprint and identifies nothing but "a browser that has completed a login here". Server-side it maps to the users who logged in from it (at most ten, the most recent).
+2. **Two failure buckets per user.** A wrong password counts either in the **device** bucket (the request carries a cookie trusted for this user; default 10 / 15 min per device) or in the **untrusted** bucket (no cookie, or a cookie belonging to someone else; default 5 / 15 min per user, shared by the whole untrusted world). When the untrusted bucket is exhausted, only untrusted clients are refused; the user's own devices keep working. An attacker without the cookie can therefore never lock the user out — the classic "keep the victim locked by guessing wrong" lever is gone. A refusal looks exactly like a wrong password (`401 Invalid credentials`): it is never an existence or lock-state oracle.
+3. **Unlock e-mail.** When the untrusted bucket trips, the account owner receives — once per window — a mail with a sign-in link ("sign-in attempts were blocked; if that was you, use this link"). Completing it signs the user in and trusts that device. Requires a verified address and magic links enabled at platform level.
+4. **Spray is detected, not blocked.** Untrusted failures are also counted per source (default 200 / 15 min, NAT-sized). Crossing that threshold raises the audit event `security.login_spray_detected` and the metric `modgud.auth.login.spray_detected` — once per window per source — and never rejects anything. A realm admin can tune the threshold but not turn it into a block. The source allowlist below exempts known egress ranges from the signal.
+
+Identity's account lockout no longer applies to the password endpoint; an administrator's explicit "lock account" still does. Second-factor endpoints keep their existing protection. Native apps are not affected: the token endpoint has its own limits.
 
 ## Source allowlist
 
@@ -97,3 +112,5 @@ Counters live in Postgres — in the realm's own database, and in the global sto
 ## Observability
 
 The counter `modgud.auth.rate_limit.rejections` carries the policy, the dimension and the mode (`enforce` / `log-only`) — never the bucket value, so no address or mailbox ends up in metrics. Log-only rejections are logged at warning level with the same tags.
+
+Login throttling adds `modgud.auth.login.throttled{bucket, mode}` and `modgud.auth.login.spray_detected`, plus the security-audit events `security.login_throttled` (with the bucket as reason) and `security.login_spray_detected` (with the threshold as count), visible on the realm's auth log.

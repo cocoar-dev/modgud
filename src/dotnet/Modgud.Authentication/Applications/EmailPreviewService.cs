@@ -126,6 +126,7 @@ public sealed class EmailPreviewService(
             ["Code"] = "483 921",
             ["ExpirationMinutes"] = "10",
             ["ExpirationHours"] = "24",
+            ["WindowMinutes"] = "15",
             ["ActionUrl"] = "#",
             ["RealmDisplayName"] = "Example Realm",
             ["RequestingUser"] = "alex",

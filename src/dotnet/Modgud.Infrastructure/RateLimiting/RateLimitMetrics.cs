@@ -16,6 +16,23 @@ public static class RateLimitMetrics
         unit: "{request}",
         description: "Requests rejected (or, in log-only mode, that would have been rejected) by an auth rate-limit dimension.");
 
+    private static readonly Counter<long> LoginThrottledCounter = Meter.CreateCounter<long>(
+        "modgud.auth.login.throttled",
+        unit: "{attempt}",
+        description: "ADR 0008 — password login attempts refused (or, in log-only mode, that would have been) because a failure bucket was exhausted.");
+
+    private static readonly Counter<long> LoginSprayCounter = Meter.CreateCounter<long>(
+        "modgud.auth.login.spray_detected",
+        unit: "{source}",
+        description: "ADR 0008 — a source crossed the untrusted-failures-per-source signal threshold (once per window; never blocks).");
+
+    public static void LoginThrottled(string bucket, bool logOnly) =>
+        LoginThrottledCounter.Add(1,
+            new KeyValuePair<string, object?>("bucket", bucket),
+            new KeyValuePair<string, object?>("mode", logOnly ? "log-only" : "enforce"));
+
+    public static void LoginSprayDetected() => LoginSprayCounter.Add(1);
+
     public static void Rejected(AuthRateLimitPolicy policy, RateLimitDimension dimension, bool logOnly) =>
         Rejections.Add(1,
             new KeyValuePair<string, object?>("policy", AuthRateLimitDefaults.PolicyName(policy)),

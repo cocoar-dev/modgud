@@ -506,6 +506,13 @@ try
         Modgud.Authentication.RateLimiting.AuthCallerContextFactory>();
     builder.Services.AddScoped<Modgud.Authentication.RateLimiting.IRegistrationThrottle,
         Modgud.Authentication.RateLimiting.RegistrationThrottle>();
+    // ADR 0008 — device-aware login throttling.
+    builder.Services.AddScoped<Modgud.Authentication.Devices.IDeviceTrust,
+        Modgud.Authentication.Devices.DeviceTrust>();
+    builder.Services.AddScoped<Modgud.Authentication.RateLimiting.ILoginThrottle,
+        Modgud.Authentication.RateLimiting.LoginThrottle>();
+    builder.Services.AddScoped<Modgud.Authentication.RateLimiting.ILoginUnlockMailer,
+        Modgud.Authentication.RateLimiting.LoginUnlockMailer>();
     builder.Services.AddSingleton<Modgud.Application.Dcr.IDcrRateLimiter,
         Modgud.Infrastructure.RateLimiting.StoreBackedDcrRateLimiter>();
 

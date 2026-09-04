@@ -47,6 +47,28 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore
         }
     }
 
+    public Task<RateLimitHit> PeekAsync(RateLimitScope scope, string key, RateLimitRule rule, DateTimeOffset now, CancellationToken ct = default)
+    {
+        if (!_buckets.TryGetValue($"{scope.TenantId ?? "-"}|{key}", out var bucket))
+            return Task.FromResult(new RateLimitHit(true, 0));
+        lock (bucket)
+        {
+            if (rule.IsTokenBucket)
+            {
+                var (capacity, rate) = RateLimitMath.Bucket(rule);
+                var refilled = Math.Min(capacity, (bucket.Tokens ?? capacity) + Math.Max(0, (now - bucket.UpdatedAt).TotalSeconds) * rate);
+                return Task.FromResult(refilled >= 1
+                    ? new RateLimitHit(true, 0)
+                    : new RateLimitHit(false, RateLimitMath.RetryAfterForBucket(refilled, rule)));
+            }
+            if (bucket.WindowStart != RateLimitMath.WindowStart(now, rule))
+                return Task.FromResult(new RateLimitHit(true, 0));
+            return Task.FromResult(bucket.Hits < Math.Max(1, rule.PermitLimit)
+                ? new RateLimitHit(true, 0)
+                : new RateLimitHit(false, RateLimitMath.RetryAfterForWindow(now, rule)));
+        }
+    }
+
     public Task<int> PruneAsync(RateLimitScope scope, DateTimeOffset olderThan, CancellationToken ct = default)
     {
         var removed = 0;

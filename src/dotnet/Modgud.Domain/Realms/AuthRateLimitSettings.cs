@@ -26,6 +26,11 @@ public enum AuthRateLimitPolicy
     OAuthToken,
     /// <summary>Web self-registration form submit.</summary>
     SelfRegistration,
+    /// <summary>ADR 0008 — interactive password login: failures per trusted device
+    /// (<see cref="RateLimitDimension.Device"/>), per user from untrusted clients
+    /// (<see cref="RateLimitDimension.Target"/>) and the permanently silent spray
+    /// signal per source (<see cref="RateLimitDimension.Source"/>).</summary>
+    Login,
 }
 
 /// <summary>
@@ -48,6 +53,9 @@ public enum RateLimitDimension
     Client,
     /// <summary>The Application (or the realm when none): the global cost brake. Loud.</summary>
     App,
+    /// <summary>ADR 0008 — a browser that completed a login before (device cookie), per
+    /// user. Only the <c>login</c> policy has it.</summary>
+    Device,
 }
 
 /// <summary>Whether a realm's limits reject or only observe.</summary>
@@ -88,6 +96,7 @@ public record PolicyLimits
     public RateLimitRule? Target { get; init; }
     public RateLimitRule? Client { get; init; }
     public RateLimitRule? App { get; init; }
+    public RateLimitRule? Device { get; init; }
 
     public RateLimitRule? Get(RateLimitDimension dimension) => dimension switch
     {
@@ -96,6 +105,7 @@ public record PolicyLimits
         RateLimitDimension.Target => Target,
         RateLimitDimension.Client => Client,
         RateLimitDimension.App => App,
+        RateLimitDimension.Device => Device,
         _ => null,
     };
 
@@ -106,10 +116,11 @@ public record PolicyLimits
         RateLimitDimension.Target => this with { Target = rule },
         RateLimitDimension.Client => this with { Client = rule },
         RateLimitDimension.App => this with { App = rule },
+        RateLimitDimension.Device => this with { Device = rule },
         _ => this,
     };
 
-    public bool IsEmpty => Source is null && SourceRegistration is null && Target is null && Client is null && App is null;
+    public bool IsEmpty => Source is null && SourceRegistration is null && Target is null && Client is null && App is null && Device is null;
 
     /// <summary>Layer <paramref name="over"/> on top of this: a set dimension in <paramref name="over"/> wins.</summary>
     public PolicyLimits Merge(PolicyLimits? over) => over is null ? this : new PolicyLimits
@@ -119,6 +130,7 @@ public record PolicyLimits
         Target = over.Target ?? Target,
         Client = over.Client ?? Client,
         App = over.App ?? App,
+        Device = over.Device ?? Device,
     };
 }
 
@@ -139,7 +151,15 @@ public static class AuthRateLimitDefaults
         AuthRateLimitPolicy.NativeOtp, AuthRateLimitPolicy.MagicLink, AuthRateLimitPolicy.PasswordReset,
         AuthRateLimitPolicy.EmailOtp, AuthRateLimitPolicy.EmailVerification, AuthRateLimitPolicy.PasskeyBegin,
         AuthRateLimitPolicy.Bootstrap, AuthRateLimitPolicy.OAuthToken, AuthRateLimitPolicy.SelfRegistration,
+        AuthRateLimitPolicy.Login,
     ];
+
+    /// <summary>ADR 0008 — a dimension that is evaluated and counted but can never
+    /// reject: the login spray signal per source. A realm admin may tune its
+    /// threshold, never turn it into a block (decision 2026-05-07: no address-based
+    /// lockout on login).</summary>
+    public static bool IsSignalOnly(AuthRateLimitPolicy policy, RateLimitDimension dimension) =>
+        policy == AuthRateLimitPolicy.Login && dimension == RateLimitDimension.Source;
 
     /// <summary>The whole default set for a policy (null dimensions do not apply to it).</summary>
     public static PolicyLimits ForPolicy(AuthRateLimitPolicy policy) => policy switch
@@ -184,6 +204,16 @@ public static class AuthRateLimitDefaults
             Source = RateLimitRule.Bucket(600, 1, 200),
             Client = RateLimitRule.Bucket(60, 1, 60),
         },
+        AuthRateLimitPolicy.Login => new PolicyLimits
+        {
+            // ADR 0008: failures, not attempts. Device = a browser the user logged in
+            // from before; Target = the untrusted pool per user (what an attacker
+            // without the cookie can ever fill); Source = the spray signal, NAT-sized
+            // and signal-only (see IsSignalOnly).
+            Device = RateLimitRule.Fixed(10, 15),
+            Target = RateLimitRule.Fixed(5, 15),
+            Source = RateLimitRule.Fixed(200, 15),
+        },
         _ => new PolicyLimits { Source = RateLimitRule.Bucket(1200, 60, 300) },
     };
 
@@ -202,6 +232,7 @@ public static class AuthRateLimitDefaults
         AuthRateLimitPolicy.Bootstrap => "bootstrap",
         AuthRateLimitPolicy.OAuthToken => "oauth-token",
         AuthRateLimitPolicy.SelfRegistration => "self-registration",
+        AuthRateLimitPolicy.Login => "login",
         _ => policy.ToString().ToLowerInvariant(),
     };
 

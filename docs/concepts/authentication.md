@@ -159,7 +159,7 @@ and Artifact Binding are outside the v1 surface. See
 Lifecycle states:
 
 - **Active** — normal state
-- **Locked** — by account lockout (5 failed logins → 1 min)
+- **Locked** — by an administrator. Wrong-password floods no longer lock the account itself: failures are throttled per device and per untrusted pool so the owner's own browsers keep working (see [Rate limits → Password login](../platform/rate-limits#password-login-device-aware-throttling))
 - **Soft-deleted** — `IsDeleted = true`, all data preserved,
   reactivatable
 - **GDPR-erased** — stream archived, PII masked, irreversible

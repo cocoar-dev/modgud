@@ -22,6 +22,12 @@ public interface IRateLimitStore
 {
     Task<RateLimitHit> HitAsync(RateLimitScope scope, string key, RateLimitRule rule, DateTimeOffset now, CancellationToken ct = default);
 
+    /// <summary>Is the bucket exhausted right now, WITHOUT charging it? ADR 0008 counts
+    /// login failures, not attempts, so the check before the password runs must not
+    /// consume anything. Fixed window: hits in the current window ≥ limit; token bucket:
+    /// fewer than one refilled token.</summary>
+    Task<RateLimitHit> PeekAsync(RateLimitScope scope, string key, RateLimitRule rule, DateTimeOffset now, CancellationToken ct = default);
+
     /// <summary>Deletes buckets untouched since <paramref name="olderThan"/>. Returns the count.</summary>
     Task<int> PruneAsync(RateLimitScope scope, DateTimeOffset olderThan, CancellationToken ct = default);
 }

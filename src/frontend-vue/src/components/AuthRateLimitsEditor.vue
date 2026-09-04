@@ -36,9 +36,13 @@ function ruleOf(policy: string, dim: RateLimitDimensionKey): RateLimitRuleDto | 
 function isOverridden(policy: string, dim: RateLimitDimensionKey) {
   return ruleOf(policy, dim) !== null
 }
+/** ADR 0008: a signal-only cell (the login spray threshold) can be tuned but never switched off. */
+function isSignalOnly(policy: string, dim: RateLimitDimensionKey) {
+  return baselineOf(policy, dim)?.SignalOnly === true
+}
 
 function set(policy: string, dim: RateLimitDimensionKey, rule: RateLimitRuleDto | null) {
-  const row = props.modelValue[policy] ?? { Source: null, SourceRegistration: null, Target: null, Client: null, App: null }
+  const row = props.modelValue[policy] ?? { Source: null, SourceRegistration: null, Target: null, Client: null, App: null, Device: null }
   const next: RateLimitOverrides = { ...props.modelValue, [policy]: { ...row, [dim]: rule } }
   emit('update:modelValue', next)
 }
@@ -61,7 +65,8 @@ const summary = (r: RateLimitRuleDto | null) => {
   if (!r) return '—'
   if (r.Enabled === false) return t('admin.rateLimits.off', {}, 'off')
   const base = `${r.PermitLimit} / ${r.WindowMinutes} min`
-  return r.Burst ? `${base} · ${t('admin.rateLimits.burstShort', {}, 'burst')} ${r.Burst}` : base
+  const withBurst = r.Burst ? `${base} · ${t('admin.rateLimits.burstShort', {}, 'burst')} ${r.Burst}` : base
+  return r.SignalOnly ? `${withBurst} · ${t('admin.rateLimits.signalOnly', {}, 'signal only')}` : withBurst
 }
 
 const policies = computed(() => RATE_LIMIT_POLICIES.filter((p) => props.baseline[p.key]))
@@ -112,10 +117,12 @@ const policies = computed(() => RATE_LIMIT_POLICIES.filter((p) => props.baseline
                       @update:model-value="(v: string) => patch(p.key, d.key, { Burst: v.trim() ? int(v) : null })" />
                   </label>
                   <CoarCheckbox
+                    v-if="!isSignalOnly(p.key, d.key)"
                     :model-value="ruleOf(p.key, d.key)!.Enabled !== false"
                     :disabled="disabled"
                     :label="t('admin.rateLimits.enabled', {}, 'Active')"
                     @update:model-value="(v: boolean) => patch(p.key, d.key, { Enabled: v })" />
+                  <small v-else class="rl-signal">{{ t('admin.rateLimits.signalOnlyHint', {}, 'Signal only: counted and reported, never rejects.') }}</small>
                 </div>
               </template>
               <span v-else class="rl-cell__na">—</span>
@@ -166,4 +173,5 @@ const policies = computed(() => RATE_LIMIT_POLICIES.filter((p) => props.baseline
 .rl-cell__inputs { display: flex; flex-wrap: wrap; gap: 0.4rem 0.6rem; margin-top: 0.35rem; align-items: flex-end; }
 .rl-field { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.7rem; color: var(--coar-text-neutral-secondary, #525e76); }
 .rl-num { width: 5.5rem; }
+.rl-signal { flex-basis: 100%; color: var(--coar-text-neutral-tertiary, #7b8497); font-size: 0.7rem; }
 </style>

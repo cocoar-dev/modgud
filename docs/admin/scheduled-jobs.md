@@ -73,7 +73,7 @@ Hard-deletes expired pending registrations — sign-ups (web, native OTP, invite
 
 - **Default cron:** `0 10 * * * ?` (ten past every hour)
 - **Parameters:** none — lifetimes are fixed (10 minutes for codes, 24 hours for links).
-- **What it does:** deletes every pending registration past its expiry (and any consumed record a crash left behind), then drops rate-limit counters nobody touched for two days. These records are plain documents, not users: after the sweep nothing identifying the person remains. See [Realm Settings → Self-Registration](./realm-settings#self-registration).
+- **What it does:** deletes every pending registration past its expiry (and any consumed record a crash left behind), drops rate-limit counters nobody touched for two days, and forgets trusted-device records nobody logged in from for 90 days. These records are plain documents, not users: after the sweep nothing identifying the person remains. See [Realm Settings → Self-Registration](./realm-settings#self-registration).
 - **On failure:** logged + inbox-notified; the next hourly run catches up.
 
 ### `unconfirmed-registration-reaper` — Unconfirmed registration reaper

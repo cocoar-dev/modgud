@@ -61,6 +61,8 @@ public static class AuditDurability
 
         AuditEvents.LoginFailed or
         AuditEvents.LoginFailedUnknownUser or
+        AuditEvents.LoginThrottled or
+        AuditEvents.LoginSprayDetected or
         AuditEvents.MagicLinkInvalid or
         AuditEvents.ExternalLoginPolicyRejected or
         AuditEvents.RateLimitTriggered or

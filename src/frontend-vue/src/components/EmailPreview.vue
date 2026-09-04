@@ -28,6 +28,7 @@ const TEMPLATES = [
   { id: 'MagicLink', label: 'Anmelde-Link', labelEn: 'Sign-in link' },
   { id: 'PasswordReset', label: 'Passwort zurücksetzen', labelEn: 'Password reset' },
   { id: 'EmailVerification', label: 'E-Mail bestätigen', labelEn: 'Email verification' },
+  { id: 'LoginBlocked', label: 'Anmeldeversuche blockiert', labelEn: 'Sign-in attempts blocked' },
   { id: 'RealmAdminBootstrap', label: 'Admin-Einladung', labelEn: 'Admin invite' },
   { id: 'AdminChangeRequestNotification', label: 'Änderungsantrag (Admin)', labelEn: 'Change request (admin)' },
   { id: 'ChangeRequestApproved', label: 'Antrag genehmigt', labelEn: 'Request approved' },

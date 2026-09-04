@@ -46,6 +46,7 @@ Configured in `Program.cs`:
 | `Modgud.2FA.Remember` | `Strict` | "Remember this browser, skip 2FA" — Identity.TwoFactorRememberMe scheme | Identity default (30 days) |
 | `Modgud.External` | `Lax` | OIDC callback holder | 10 min |
 | `Modgud.Session` | `Strict` | Passkey attestation options only (ASP.NET session) | 5 min idle |
+| `Modgud.Device` | `Lax` | "This browser has completed a login here" — a random, signed device id that keeps the user's own devices in their own login-failure bucket (ADR 0008, see [Rate limits](../platform/rate-limits#password-login-device-aware-throttling)). No fingerprint, no tracking; issued on every successful interactive login | 90 days idle |
 
 The main `Modgud.Auth` cookie is `Lax` (not `Strict`) — `Strict` would
 drop the cookie on the top-level GET redirect-back that OIDC clients

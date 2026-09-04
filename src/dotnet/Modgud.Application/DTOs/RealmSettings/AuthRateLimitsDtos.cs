@@ -12,6 +12,10 @@ public record RateLimitRuleDto
     public int WindowMinutes { get; init; }
     public int? Burst { get; init; }
     public bool Enabled { get; init; } = true;
+
+    /// <summary>Read-only marker (ADR 0008): the dimension is evaluated and counted but
+    /// never rejects (the login spray signal). Ignored on write.</summary>
+    public bool SignalOnly { get; init; }
 }
 
 /// <summary>Read shape of one policy: the EFFECTIVE rule per dimension (override if set,
@@ -23,6 +27,7 @@ public record PolicyLimitsDto
     public RateLimitRuleDto? Target { get; init; }
     public RateLimitRuleDto? Client { get; init; }
     public RateLimitRuleDto? App { get; init; }
+    public RateLimitRuleDto? Device { get; init; }
 }
 
 /// <summary>Read shape (ADR 0007). <see cref="Policies"/> carries every policy with
@@ -55,6 +60,7 @@ public record UpdatePolicyLimitsDto
     public Optional<RateLimitRuleDto?> Target { get; init; }
     public Optional<RateLimitRuleDto?> Client { get; init; }
     public Optional<RateLimitRuleDto?> App { get; init; }
+    public Optional<RateLimitRuleDto?> Device { get; init; }
 }
 
 /// <summary>Patch payload (realm) / sparse override (Application, manifest). Keys of

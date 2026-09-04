@@ -652,6 +652,7 @@ public sealed class RealmSettingsService(
                              (RateLimitDimension.Target, update.Target),
                              (RateLimitDimension.Client, update.Client),
                              (RateLimitDimension.App, update.App),
+                             (RateLimitDimension.Device, update.Device),
                          })
                 {
                     if (!field.HasValue) continue;
@@ -665,6 +666,9 @@ public sealed class RealmSettingsService(
                         return Error.Validation($"AuthRateLimits.{name}.{dimension}",
                             $"The {dimension} dimension does not apply to the '{name}' policy.");
                     if (ValidateRateLimitRule($"{name}.{dimension}", dto) is { } err) return err;
+                    if (AuthRateLimitDefaults.IsSignalOnly(policy, dimension) && !dto.Enabled)
+                        return Error.Validation($"AuthRateLimits.{name}.{dimension}",
+                            $"The {dimension} dimension of the '{name}' policy is a signal and cannot be switched off; tune its threshold instead.");
                     limits = limits.With(dimension, ToRule(dto));
                 }
 
@@ -772,18 +776,19 @@ public sealed class RealmSettingsService(
         foreach (var policy in AuthRateLimitDefaults.All)
         {
             var name = AuthRateLimitDefaults.PolicyName(policy);
-            dto.Policies[name] = ToPolicyDto(AuthRateLimitSettings.EffectivePolicy(s, policy));
-            dto.Defaults[name] = ToPolicyDto(AuthRateLimitDefaults.ForPolicy(policy));
+            dto.Policies[name] = ToPolicyDto(policy, AuthRateLimitSettings.EffectivePolicy(s, policy));
+            dto.Defaults[name] = ToPolicyDto(policy, AuthRateLimitDefaults.ForPolicy(policy));
         }
         return dto;
 
-        static PolicyLimitsDto ToPolicyDto(PolicyLimits eff) => new()
+        static PolicyLimitsDto ToPolicyDto(AuthRateLimitPolicy policy, PolicyLimits eff) => new()
         {
-            Source = eff.Source is { } so ? ToRuleDto(so) : null,
+            Source = eff.Source is { } so ? ToRuleDto(so) with { SignalOnly = AuthRateLimitDefaults.IsSignalOnly(policy, RateLimitDimension.Source) } : null,
             SourceRegistration = eff.SourceRegistration is { } sr ? ToRuleDto(sr) : null,
             Target = eff.Target is { } ta ? ToRuleDto(ta) : null,
             Client = eff.Client is { } cl ? ToRuleDto(cl) : null,
             App = eff.App is { } ap ? ToRuleDto(ap) : null,
+            Device = eff.Device is { } de ? ToRuleDto(de) : null,
         };
     }
 
@@ -806,6 +811,7 @@ public sealed class RealmSettingsService(
                     Target = limits.Target is { } ta ? new Optional<RateLimitRuleDto?>(ToRuleDto(ta)) : default,
                     Client = limits.Client is { } cl ? new Optional<RateLimitRuleDto?>(ToRuleDto(cl)) : default,
                     App = limits.App is { } ap ? new Optional<RateLimitRuleDto?>(ToRuleDto(ap)) : default,
+                    Device = limits.Device is { } de ? new Optional<RateLimitRuleDto?>(ToRuleDto(de)) : default,
                 };
             }
         }

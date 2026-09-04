@@ -12,13 +12,17 @@ namespace Modgud.Api.Features.Admin.Jobs;
 /// <c>ExpiresAt</c>).
 /// </summary>
 [DisallowConcurrentExecution]
-public class PendingRegistrationSweepJob(IRegistrationPipeline pipeline, IRateLimitStore rateLimits) : IJob
+public class PendingRegistrationSweepJob(
+    IRegistrationPipeline pipeline,
+    IRateLimitStore rateLimits,
+    Modgud.Authentication.Devices.IDeviceTrust devices) : IJob
 {
     public const string Key = "pending-registration-sweep";
     public const string Name = "Pending registration sweep";
     public const string Description =
         "Hard-deletes expired pending registrations (sign-ups whose proof was never completed) and " +
-        "prunes rate-limit counters idle for two days. Nothing identifying the person remains afterwards. " +
+        "prunes rate-limit counters idle for two days and drops trusted-device records idle for 90 days. " +
+        "Nothing identifying the person remains afterwards. " +
         "Per-realm, idempotent.";
 
     /// <summary>Ten past every hour.</summary>
@@ -31,7 +35,11 @@ public class PendingRegistrationSweepJob(IRegistrationPipeline pipeline, IRateLi
         // touched for two days so the table never grows with one-off sources.
         var pruned = await rateLimits.PruneAsync(
             new RateLimitScope(TenantContext.Current), DateTimeOffset.UtcNow.AddDays(-2), context.CancellationToken);
+        // ADR 0008 — a device nobody logged in from for 90 days is forgotten.
+        var devicesSwept = await devices.SweepAsync(
+            DateTimeOffset.UtcNow - Modgud.Authentication.Devices.TrustedDevice.IdleLifetime, context.CancellationToken);
         context.Result = (swept == 0 ? "No expired pending registrations" : $"Deleted {swept} pending registration(s)")
-                         + (pruned == 0 ? "" : $"; pruned {pruned} idle rate-limit counter(s)");
+                         + (pruned == 0 ? "" : $"; pruned {pruned} idle rate-limit counter(s)")
+                         + (devicesSwept == 0 ? "" : $"; forgot {devicesSwept} idle trusted device(s)");
     }
 }
