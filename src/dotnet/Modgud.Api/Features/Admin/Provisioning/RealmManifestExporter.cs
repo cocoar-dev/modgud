@@ -153,6 +153,8 @@ public sealed class RealmManifestExporter(
             Apps = c.AppIds.Select(id => SlugOfShort(appSlugById, id)).Where(s => s is not null).Select(s => s!).ToList(),
             Roles = c.Roles,
             WebAuthnRpId = Opt(c.WebAuthnRpId),
+            BackChannelLogoutUri = Opt(c.BackChannelLogoutUri),
+            BackChannelLogoutSessionRequired = c.BackChannelLogoutSessionRequired,
             Enabled = c.Enabled,
             RequireConsent = c.RequireConsent,
             AllowRememberConsent = c.AllowRememberConsent,

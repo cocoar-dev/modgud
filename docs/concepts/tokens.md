@@ -68,6 +68,16 @@ A signed JWT that tells the client **who is signed in**. Contains
 user info per the granted scopes (name, email, roles). Read by the
 client, not sent to APIs.
 
+### The `sid` claim
+
+Every token issued for a user session — ID token, access token, and the
+introspection response of a reference token — carries `sid`, the session
+identifier: the browser session for browser flows, the native client
+session for native grants. It is opaque and realm-local. Relying parties
+and resource servers use it to match a logout notification to a session
+(see [logout propagation](../integrate/login-flows#logout-propagation-to-relying-parties)).
+Client-credentials tokens have no user, no session and no `sid`.
+
 ### Refresh Token
 
 Lets the app fetch new access tokens without signing the user in
@@ -110,7 +120,7 @@ again. Only issued when `offline_access` is granted.
 | **Reference access token** | `POST /connect/revoke` | Invalid immediately |
 | **JWT access token** | `POST /connect/revoke` | Takes effect only at expiry — the JWT remains valid until then |
 | **Refresh token** | `POST /connect/revoke` | Invalid immediately, no new access tokens possible |
-| **Session** (first-party cookie) | Logout or via session management | Cookie invalid, the user has to sign in again |
+| **Session** (first-party cookie) | Logout or via session management | Cookie invalid, the user has to sign in again; every relying party of the session receives a back-channel logout token and the change feed deletes the `session` entity |
 
 Refresh-token reuse detection (above) triggers the same effects automatically and cascades them across the whole token family, without a client ever calling `/connect/revoke` itself.
 

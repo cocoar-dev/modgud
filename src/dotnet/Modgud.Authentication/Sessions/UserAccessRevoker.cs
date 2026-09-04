@@ -1,4 +1,6 @@
+using Marten;
 using Microsoft.AspNetCore.Identity;
+using Modgud.Authentication.Events;
 using Microsoft.Extensions.Logging;
 using Modgud.Authentication.Domain;
 using Modgud.Infrastructure.OpenIddict;
@@ -17,11 +19,24 @@ public sealed class UserAccessRevoker(
     ISessionService sessionService,
     IClientSessionService clientSessionService,
     IOAuthGrantRevoker grantRevoker,
+    IDocumentSession session,
+    ISessionGrantService sessionGrants,
     ILogger<UserAccessRevoker> logger) : IUserAccessRevoker
 {
     public async Task RevokeAllAccessAsync(Guid userId, AccessRevocationReason reason, CancellationToken ct = default)
     {
         var subject = userId.ToString();
+
+        // 0) ADR 0009 — one user-level end marker carrying every relying party that
+        //    held tokens for the user; committed before the per-session revocations
+        //    below so those find no grants left and stay silent (no double notification).
+        await sessionGrants.StageUserEndAsync(session, userId, reason switch
+        {
+            AccessRevocationReason.Deactivation => AccessEndReasons.UserDeactivated,
+            AccessRevocationReason.Deletion => AccessEndReasons.UserDeleted,
+            _ => AccessEndReasons.Revoked,
+        }, ct);
+        await session.SaveChangesAsync(ct);
 
         // 1) OAuth tokens — immediate kill for reference tokens (server default).
         //    Clients opting into JWT access tokens keep their already-issued

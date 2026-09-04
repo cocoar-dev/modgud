@@ -312,6 +312,13 @@ interface FormState {
   ClientSessionAbsoluteLifetime: number | null
   /** ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys. Empty = realm-scoped. */
   WebAuthnRpId: string
+  /** ADR 0009 — back-channel logout URI. Empty = none. */
+  BackChannelLogoutUri: string
+  /** ADR 0009 — logout tokens carry `sid`. */
+  BackChannelLogoutSessionRequired: boolean
+  /** Read-only delivery status of the last logout POST. */
+  BackChannelLogoutLastDeliveryAt: string | null
+  BackChannelLogoutLastOutcome: string | null
   /** Selected App.Ids. Empty list = realm-wide. */
   AppIds: string[]
   /** Required for a pure client_credentials client; immutable after creation. */
@@ -364,6 +371,10 @@ function emptyForm(): FormState {
     ClientSessionIdleLifetime: null,
     ClientSessionAbsoluteLifetime: null,
     WebAuthnRpId: '',
+    BackChannelLogoutUri: '',
+    BackChannelLogoutSessionRequired: true,
+    BackChannelLogoutLastDeliveryAt: null,
+    BackChannelLogoutLastOutcome: null,
     AppIds: [],
     LinkedServiceAccountId: '',
     LinkedPositionPrincipalId: '',
@@ -607,6 +618,10 @@ function fromStaged(e: ManifestEntity): FormState {
     ClientSessionIdleLifetime: num(e.ClientSessionIdleLifetime),
     ClientSessionAbsoluteLifetime: num(e.ClientSessionAbsoluteLifetime),
     WebAuthnRpId: str(e.WebAuthnRpId),
+    BackChannelLogoutUri: str(e.BackChannelLogoutUri),
+    BackChannelLogoutSessionRequired: typeof e.BackChannelLogoutSessionRequired === 'boolean' ? e.BackChannelLogoutSessionRequired : true,
+    BackChannelLogoutLastDeliveryAt: null,
+    BackChannelLogoutLastOutcome: null,
     AppIds: appIdsOf(e.Apps),
   }
 }
@@ -638,6 +653,8 @@ function toStaged(): ManifestEntity {
   // and silently keep whatever the live value is at apply time).
   entity.DisplayName = form.value.DisplayName.trim() || null
   entity.WebAuthnRpId = form.value.WebAuthnRpId.trim() || null
+  entity.BackChannelLogoutUri = form.value.BackChannelLogoutUri.trim() || null
+  entity.BackChannelLogoutSessionRequired = form.value.BackChannelLogoutSessionRequired
   entity.IdentityTokenLifetime = form.value.IdentityTokenLifetime
   entity.AccessTokenLifetime = form.value.AccessTokenLifetime
   entity.AuthorizationCodeLifetime = form.value.AuthorizationCodeLifetime
@@ -687,6 +704,10 @@ function fromDto(dto: OAuthClientDto): FormState {
     ClientSessionIdleLifetime: dto.ClientSessionIdleLifetime ?? null,
     ClientSessionAbsoluteLifetime: dto.ClientSessionAbsoluteLifetime ?? null,
     WebAuthnRpId: dto.WebAuthnRpId ?? '',
+    BackChannelLogoutUri: dto.BackChannelLogoutUri ?? '',
+    BackChannelLogoutSessionRequired: dto.BackChannelLogoutSessionRequired ?? true,
+    BackChannelLogoutLastDeliveryAt: dto.BackChannelLogoutLastDeliveryAt ?? null,
+    BackChannelLogoutLastOutcome: dto.BackChannelLogoutLastOutcome ?? null,
     AppIds: [...(dto.AppIds ?? [])],
     LinkedServiceAccountId: dto.LinkedServiceAccountId ?? '',
     LinkedPositionPrincipalId: dto.LinkedPositionPrincipalId ?? '',
@@ -929,6 +950,10 @@ function buildCreateDto(): CreateOAuthClientDto {
   if (secret) dto.ClientSecret = secret
   const rpId = form.value.WebAuthnRpId.trim()
   if (rpId) dto.WebAuthnRpId = rpId
+  dto.Capabilities = [...form.value.Capabilities]
+  const bcl = form.value.BackChannelLogoutUri.trim()
+  if (bcl) dto.BackChannelLogoutUri = bcl
+  dto.BackChannelLogoutSessionRequired = form.value.BackChannelLogoutSessionRequired
   if (form.value.AppIds.length > 0) dto.AppIds = [...form.value.AppIds]
   if (form.value.AllowedGrantTypes.includes('client_credentials')) {
     if (useNewServiceAccountDraft.value) {
@@ -997,6 +1022,10 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     // ADR-0009 PATCH: null clears back to realm-scoped, a host sets the
     // per-client RP ID.
     WebAuthnRpId: form.value.WebAuthnRpId.trim() || null,
+    Capabilities: [...form.value.Capabilities],
+    // ADR 0009: null removes the logout URI.
+    BackChannelLogoutUri: form.value.BackChannelLogoutUri.trim() || null,
+    BackChannelLogoutSessionRequired: form.value.BackChannelLogoutSessionRequired,
     // Always send AppIds on update — empty array = detach all, otherwise replace.
     AppIds: [...form.value.AppIds],
   }
@@ -1217,6 +1246,31 @@ async function copySecret() {
                       : t('admin.oauthClients.webAuthnRpIdHint', {}, 'Optional. Eine Änderung macht bereits registrierte Passkeys dieses Clients ungültig.') }}
                   </p>
                 </CoarFormField>
+              </div>
+            </section>
+
+            <section class="form-section">
+              <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+                <h3 class="section-divider__title">
+                  {{ t('admin.oauthClients.section.backChannelLogout', {}, 'Back-Channel-Logout') }}
+                </h3>
+              </CoarDivider>
+              <div class="modal-form-grid">
+                <CoarFormField
+                  class="col-full"
+                  :label="t('admin.oauthClients.backChannelLogoutUri', {}, 'Logout-URI')"
+                  :hint="t('admin.oauthClients.backChannelLogoutUriHint', {}, 'Absolute https-URI, an die Modgud ein signiertes Logout-Token per POST sendet, sobald eine Session dieses Clients endet (OpenID Connect Back-Channel Logout). http nur auf localhost. Leer = keine POST-Benachrichtigung; der Application Change Feed trägt Session-Enden unabhängig davon.')">
+                  <CoarTextInput
+                    v-model="form.BackChannelLogoutUri"
+                    clearable
+                    :placeholder="t('admin.oauthClients.backChannelLogoutUriPlaceholder', {}, 'https://app.example.com/oidc/backchannel-logout')" />
+                  <p v-if="!isCreate && form.BackChannelLogoutUri && form.BackChannelLogoutLastDeliveryAt" class="field-hint">
+                    {{ t('admin.oauthClients.backChannelLogoutLastDelivery', { when: form.BackChannelLogoutLastDeliveryAt, outcome: form.BackChannelLogoutLastOutcome ?? '' }, 'Letzte Zustellung {when}: {outcome}') }}
+                  </p>
+                </CoarFormField>
+                <CoarCheckbox
+                  v-model="form.BackChannelLogoutSessionRequired"
+                  :label="t('admin.oauthClients.backChannelLogoutSessionRequired', {}, 'Session-Id (sid) im Logout-Token mitsenden')" />
               </div>
             </section>
           </div>

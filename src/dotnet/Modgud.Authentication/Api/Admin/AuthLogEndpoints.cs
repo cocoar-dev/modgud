@@ -273,6 +273,8 @@ internal static class AuditEventRenderer
             AuditEvents.MagicLinkInvalid => "Invalid or expired magic link",
             AuditEvents.LoginThrottled => "Login refused by failure bucket",
             AuditEvents.LoginSprayDetected => "Password spray signal per source",
+            AuditEvents.BackChannelLogoutSent => "Back-channel logout delivered",
+            AuditEvents.BackChannelLogoutFailed => "Back-channel logout delivery",
             AuditEvents.ExternalLoginProtocolRejected => "External login protocol",
             AuditEvents.ExternalLoginPolicyRejected => "External login policy",
             AuditEvents.ExternalLoginConfigurationError => "External login configuration",

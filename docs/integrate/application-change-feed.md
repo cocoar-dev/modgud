@@ -130,6 +130,7 @@ The public projection currently contains these entity kinds:
 | `terminal` | Non-revoked terminal with at least one allowed Position in scope |
 | `position-grant` | Non-revoked user-to-Position grant whose two ends are in scope |
 | `staffing-session` | Active session for an in-scope Position and terminal |
+| `session` | Login session for which one of the App's OAuth clients holds tokens, for a user in scope |
 
 Secrets, credential identifiers, role ids, DPoP thumbprints, and internal OAuth
 authorization ids are not part of this contract. Group member lists and
@@ -551,6 +552,38 @@ The user id and method id help an authorized administration consumer reconcile
 current state. They do not change the authorization/business invariant:
 resource access tokens use the Position as `sub`, and consumers record the
 Position as the actor.
+
+### `session` — entity version 1
+
+A login session becomes visible to an App the first time one of the App's
+OAuth clients receives tokens for it (browser flows and native grants alike),
+provided the user is in the App scope. One entity per session and client.
+The consumer learns the `sid` it will see in that client's tokens and, later,
+that the session ended — the pull-based counterpart of
+[back-channel logout](login-flows#logout-propagation-to-relying-parties).
+
+| Property | Type | Meaning |
+|---|---|---|
+| `Id` | string | Entity ShortGuid (session × client). |
+| `SessionId` | string | The `sid` claim value, verbatim. |
+| `Sub` | string | The `sub` claim value, verbatim. |
+| `UserId` | string | Person ShortGuid (feed convention). |
+| `ClientId` | string | The OAuth client whose tokens carry this `sid`. |
+| `Kind` | string | `browser` or `native`. |
+| `StartedAt` | timestamp | First token issuance for this session and client. |
+| `LastSeenAt` | timestamp | Latest token issuance. |
+
+An ended session is emitted as `Deleted` with `Reason` set to `logout`,
+`revoked`, `expired`, `user-deactivated` or `user-deleted` and a tombstone
+`{ SessionId, Sub, Reason }`. A user-level end (force sign-out,
+deactivation, deletion) deletes every session entity of that user. A session
+whose user leaves the App scope is emitted as `FellOutOfScope`. Treat the
+reason set as open for future additions.
+
+A resource server validating JWTs locally can keep a denylist of ended
+`SessionId`s (bounded by the access-token lifetime) and reject tokens whose
+`sid` is on it; a relying party ends the local session it stored the `sid`
+for.
 
 ## Reset conditions
 

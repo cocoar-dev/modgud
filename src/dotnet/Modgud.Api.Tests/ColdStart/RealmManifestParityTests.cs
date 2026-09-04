@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Features.Admin.Provisioning;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.OAuth;
+using Modgud.Domain.Common;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Application.Services;
 using Modgud.Authorization.Apps;
@@ -56,6 +57,9 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
                 AccessTokenType = AccessTokenType.Jwt,
                 RequirePushedAuthorizationRequests = true,
                 RequireDpop = true,
+                Capabilities = ["cap:trusted-forwarder"],
+                BackChannelLogoutUri = "https://parity.test/oidc/backchannel-logout",
+                BackChannelLogoutSessionRequired = false,
                 AccessTokenLifetime = 300,
                 Claims = [new OAuthClientClaimDto { Type = "tenant", Value = "parity" }],
                 ClientClaimsPrefix = "client_",
@@ -82,6 +86,9 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
                     AccessTokenType = "Jwt",
                     RequirePushedAuthorizationRequests = true,
                     RequireDpop = true,
+                    Capabilities = ["cap:trusted-forwarder"],
+                    BackChannelLogoutUri = new Optional<string?>("https://parity.test/oidc/backchannel-logout"),
+                    BackChannelLogoutSessionRequired = false,
                     AccessTokenLifetime = 300,
                     Claims = [new RealmManifestClientClaim("tenant", "parity")],
                     ClientClaimsPrefix = "client_",
@@ -118,7 +125,10 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
         string Claims,
         string? ClientClaimsPrefix,
         bool AlwaysSendClientClaims,
-        string AppSlugs);
+        string AppSlugs,
+        string Capabilities,
+        string? BackChannelLogoutUri,
+        bool BackChannelLogoutSessionRequired);
 
     private static async Task<ClientShape> GetClientShapeAsync(
         ColdStartWebApplicationFactory factory, string slug, string clientId, CancellationToken ct)
@@ -157,7 +167,10 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
                 Join(client.Claims.Select(c => $"{c.Type}={c.Value}")),
                 client.ClientClaimsPrefix,
                 client.AlwaysSendClientClaims,
-                Join(slugs));
+                Join(slugs),
+                Join(client.Capabilities),
+                client.BackChannelLogoutUri,
+                client.BackChannelLogoutSessionRequired);
         });
         return shape;
     }

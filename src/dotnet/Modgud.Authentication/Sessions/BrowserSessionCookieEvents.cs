@@ -84,8 +84,13 @@ public sealed class BrowserSessionCookieEvents(ISessionService sessions) : Cooki
         var userId = ParseUserId(principal);
         var rawSessionId = principal.FindFirst(SessionClaimTypes.BrowserSessionId)?.Value;
         if (userId is not null && Guid.TryParse(rawSessionId, out var sessionId))
-            await sessions.RevokeSessionAsync(
-                userId.Value, sessionId, context.HttpContext.RequestAborted);
+        {
+            // ADR 0009 — a sign-out is a "logout" end; the end-session endpoint names the
+            // relying party that asked for it so that RP is not notified about itself.
+            var initiator = context.HttpContext.Items[BackChannelLogout.BackChannelLogoutConstants.InitiatingClientItem] as string;
+            await sessions.EndSessionAsync(
+                userId.Value, sessionId, Events.AccessEndReasons.Logout, initiator, context.HttpContext.RequestAborted);
+        }
     }
 
     public override Task RedirectToLogin(RedirectContext<CookieAuthenticationOptions> context) =>

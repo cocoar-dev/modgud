@@ -120,6 +120,21 @@ DPoP ([RFC 9449](https://datatracker.ietf.org/doc/html/rfc9449)) binds an access
 
 Both are also settable via the admin API (`requireDpop`, `requireDpopNonce`) or a provisioning manifest. Refresh tokens issued to a DPoP client are bound to the same key automatically — no toggle needed.
 
+### Back-channel logout
+
+**Logout URI** (*Login & Consent* tab): the absolute `https` endpoint Modgud POSTs a
+signed logout token to whenever a session that holds this client's tokens
+ends — user sign-out, RP-initiated logout by another client, revocation from
+the sessions list, admin force sign-out, deactivation, deletion, expiry.
+`http` is accepted on `localhost` only; private and link-local addresses are
+refused. Leave it empty for no POST notifications; the
+[Application change feed](../integrate/application-change-feed#session-entity-version-1)
+carries session ends regardless. **Send session id (sid)** (default on)
+controls whether logout tokens name the session. The page shows the outcome
+of the last delivery attempt. Also settable via the admin API
+(`backChannelLogoutUri`, `backChannelLogoutSessionRequired`) and the realm
+manifest. Contract: [Logout propagation](../integrate/login-flows#logout-propagation-to-relying-parties).
+
 ### Allowed CORS Origins
 
 One origin per line (e.g. `https://app.acme.example.com`). This field is **enforced** — it's not decorative. For a browser-only SPA doing Authorization Code + PKCE with no backend-for-frontend, Modgud emits the CORS headers on the credentialed OIDC endpoints (`/connect/token`, `/connect/userinfo`, `/connect/revoke`, `/connect/par`) **only** when the request's `Origin` is one of these registered values, so the flow can complete cross-origin. (The public metadata endpoints — `/.well-known/openid-configuration` and `/.well-known/jwks` — are readable from any origin regardless.)

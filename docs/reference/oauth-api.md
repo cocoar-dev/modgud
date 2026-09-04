@@ -57,6 +57,7 @@ All under `/connect/...`, all realm-scoped via the domain:
 |---|---|---|
 | `/connect/authorize` | `GET`/`POST` | Authorization endpoint (Code + PKCE). Also accepts a `request_uri` from `/connect/par`. |
 | `/connect/par` | `POST` | Pushed Authorization Request endpoint (RFC 9126). Back-channel; returns a one-time `request_uri`. |
+| *(client's logout URI)* | `POST` | Outbound: OpenID Connect Back-Channel Logout 1.0 logout token (`logout_token=` form field) sent to a client's registered URI when a session ends. Discovery: `backchannel_logout_supported`, `backchannel_logout_session_supported`. See [logout propagation](../integrate/login-flows#logout-propagation-to-relying-parties). |
 | `/connect/token` | `POST` | Token endpoint (code exchange, client credentials, refresh, device) |
 | `/connect/userinfo` | `GET`/`POST` | UserInfo endpoint (claims plus eligible per-Audience `resource_access`) |
 | `/connect/introspect` | `POST` | Token introspection |

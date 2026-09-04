@@ -351,6 +351,7 @@ public static class OpenIddictExtensions
                 options.AddEventHandler(TokenEndpointAuthMethodsSupportedHandler.Descriptor);
                 options.AddEventHandler(DcrRegistrationEndpointHandler.Descriptor);
                 options.AddEventHandler(CimdMetadataDocumentSupportedHandler.Descriptor);
+                options.AddEventHandler(BackChannelLogoutMetadataHandler.Descriptor);
                 options.AddEventHandler(AccessTokenTypeHandler.Descriptor);
                 options.AddEventHandler(TokenMintMetricHandler.Descriptor);
                 options.AddEventHandler(ResourceIndicatorHandler.Descriptor);

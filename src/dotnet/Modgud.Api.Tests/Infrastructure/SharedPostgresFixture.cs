@@ -51,7 +51,13 @@ public class SharedPostgresFixture : IAsyncLifetime
                 DbSettings =
                 {
                     ConnectionString = ConnectionString
-                }
+                },
+                // Opt-in host log file for diagnosing background work (Wolverine,
+                // projections) the xunit output never shows: MODGUD_TEST_LOGPATH=<dir>.
+                Logging =
+                {
+                    LogPath = Environment.GetEnvironmentVariable("MODGUD_TEST_LOGPATH") ?? "",
+                },
             }),
             rule.For<AppSettings>().FromStatic(_ => new AppSettings { AuthenticationMinimumLevel = 0 }),
             // EmailConfiguration / MagicLinkConfiguration / EmailOtpConfiguration are

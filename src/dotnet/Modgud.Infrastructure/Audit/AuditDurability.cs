@@ -76,7 +76,9 @@ public static class AuditDurability
         AuditEvents.AccountLifecycleSwept or
         AuditEvents.DcrClientFirstUsed or
         AuditEvents.DcrClientGarbageCollected or
-        AuditEvents.StaffingSessionEnded
+        AuditEvents.StaffingSessionEnded or
+        AuditEvents.BackChannelLogoutSent or
+        AuditEvents.BackChannelLogoutFailed
             => AuditDurabilityClass.Telemetry,
 
         _ => throw new ArgumentOutOfRangeException(

@@ -1580,6 +1580,8 @@ public static class AuthorizationEndpoints
                     httpContext.Request.Headers.UserAgent.ToString()),
                 httpContext.RequestAborted);
             principal.SetClaim(SessionClaimTypes.ClientSessionId, clientSession.Id.ToString());
+            // ADR 0009 — a native session's sid is its ClientSession id.
+            principal.SetClaim(SessionClaimTypes.Sid, clientSession.Id.ToString());
         }
 
         // ADR-0010 — short JWT access TTL for native clients (per-realm tunable,
@@ -2410,6 +2412,11 @@ public static class AuthorizationEndpoints
             }
         }
 
+        // ADR 0009 — the browser session end names the relying party that asked for
+        // it; every other RP of that session gets a logout token, this one does not.
+        if (!string.IsNullOrEmpty(hintClientId))
+            httpContext.Items[Modgud.Authentication.BackChannelLogout.BackChannelLogoutConstants.InitiatingClientItem] = hintClientId;
+
         await signInManager.SignOutAsync();
 
         return Results.SignOut(
@@ -2491,6 +2498,14 @@ public static class AuthorizationEndpoints
             {
                 identity.AddClaim(new Claim(FederationClaimTypes.SessionGroup, carrier.Value));
             }
+
+            // ADR 0009 — sid. From the application cookie (authorize) it is the browser
+            // session id; from a code/refresh principal it is whatever that principal
+            // already carried, so the value survives every redemption.
+            var sid = cookiePrincipal.FindFirstValue(SessionClaimTypes.Sid)
+                      ?? cookiePrincipal.FindFirstValue(SessionClaimTypes.BrowserSessionId);
+            if (!string.IsNullOrEmpty(sid))
+                identity.SetClaim(SessionClaimTypes.Sid, sid);
 
             // RFC 9449 §5 — carry the DPoP refresh-token binding forward. On the
             // refresh path cookiePrincipal is the rehydrated reference-token
@@ -2887,6 +2902,14 @@ internal static class AuthorizationEndpointHelpers
 
             case "AspNet.Identity.SecurityStamp":
             case SessionClaimTypes.ClientSessionId:
+                yield break;
+
+            // ADR 0009 — the session identifier reaches the ID token (OIDC sid) and the
+            // access token (so a resource server can drop tokens of an ended session);
+            // introspection echoes access-token claims.
+            case SessionClaimTypes.Sid:
+                yield return Destinations.AccessToken;
+                yield return Destinations.IdentityToken;
                 yield break;
 
             // Federation v1 (hub boundary, decision D): the session-group carrier

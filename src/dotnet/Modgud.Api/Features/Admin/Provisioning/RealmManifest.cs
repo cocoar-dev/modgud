@@ -218,6 +218,12 @@ public sealed record RealmManifestClient
     [Description("Optional WebAuthn Relying Party id (passkeys) for this client. Absent = unchanged; explicit null (or \"\") clears back to realm-scoped.")]
     public Optional<string?> WebAuthnRpId { get; init; }
 
+    [Description("Optional OpenID Connect back-channel logout URI (absolute https; http only on localhost). Absent = unchanged; explicit null (or \"\") removes it.")]
+    public Optional<string?> BackChannelLogoutUri { get; init; }
+
+    [Description("Optional. Logout tokens carry the sid claim. Omit = no change / default true.")]
+    public bool? BackChannelLogoutSessionRequired { get; init; }
+
     // Nullable for surgical patching: omitted = no change on update / shipped default on
     // create (Enabled defaults true, RequireConsent false).
     [Description("Optional. Omit = no change / default true on create.")]

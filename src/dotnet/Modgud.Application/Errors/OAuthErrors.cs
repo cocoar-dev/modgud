@@ -27,6 +27,10 @@ public static class OAuthErrors
                    + "and the native urn:cocoar:* grants. The OAuth 2.1-removed 'implicit' and 'password' "
                    + "grants are rejected.");
 
+    public static Error InvalidBackChannelLogoutUri(string value, string reason) => Error.Validation(
+        code: "OAuth.InvalidBackChannelLogoutUri",
+        description: $"Invalid back-channel logout URI '{value}': {reason}");
+
     public static Error InvalidWebAuthnRpId(string value) => Error.Validation(
         code: "OAuth.InvalidWebAuthnRpId",
         description: $"Invalid WebAuthn RP ID '{value}'. Must be a bare hostname (e.g. 'app.example.com') "

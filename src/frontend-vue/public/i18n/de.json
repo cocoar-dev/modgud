@@ -1209,6 +1209,11 @@
       "webAuthnRpId": "WebAuthn RP-ID (Passkeys)",
       "webAuthnRpIdPlaceholder": "leer = Realm-Domain",
       "webAuthnRpIdHint": "Optional. Eigene Relying-Party-Domain für native Passkeys dieser App (z. B. app.example.com). Leer = Realm-Domain. Achtung: Eine Änderung macht alle bereits registrierten Passkeys dieser App ungültig.",
+      "backChannelLogoutUri": "Logout-URI",
+      "backChannelLogoutUriPlaceholder": "https://app.example.com/oidc/backchannel-logout",
+      "backChannelLogoutUriHint": "Absolute https-URI, an die Modgud ein signiertes Logout-Token per POST sendet, sobald eine Session dieses Clients endet (OpenID Connect Back-Channel Logout). http nur auf localhost. Leer = keine POST-Benachrichtigung; der Application Change Feed trägt Session-Enden unabhängig davon.",
+      "backChannelLogoutSessionRequired": "Session-Id (sid) im Logout-Token mitsenden",
+      "backChannelLogoutLastDelivery": "Letzte Zustellung {when}: {outcome}",
       "clientSecret": "Client Secret (leer = generieren)",
       "clientSecretHint": "Leer lassen, um beim Erstellen ein starkes einmalig sichtbares Secret zu erzeugen.",
       "position": "Zugehörige Position",
@@ -1239,6 +1244,7 @@
       "protocolParHelpAria": "Details zu PAR",
       "protocolDpopHelpAria": "Details zu DPoP",
       "section": {
+        "backChannelLogout": "Back-Channel-Logout",
         "authentication": "Client-Authentifizierung",
         "protocolSecurity": "Protokollabsicherung",
         "tokenFormat": "Token-Format"

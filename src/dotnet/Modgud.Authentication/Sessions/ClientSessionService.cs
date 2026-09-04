@@ -4,6 +4,7 @@ using Marten;
 using JasperFx;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Events;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Domain.Applications;
 using Modgud.Domain.OAuth.Applications;
@@ -16,7 +17,8 @@ public sealed class ClientSessionService(
     IDocumentSession session,
     IDeviceInfoService deviceInfo,
     IRealmSettingsService realmSettings,
-    IOAuthGrantRevoker grants) : IClientSessionService, IRefreshTokenReuseObserver
+    IOAuthGrantRevoker grants,
+    ISessionGrantService sessionGrants) : IClientSessionService, IRefreshTokenReuseObserver
 {
     private static readonly TimeSpan TouchInterval = TimeSpan.FromMinutes(5);
 
@@ -178,6 +180,9 @@ public sealed class ClientSessionService(
         }
 
         session.DeleteWhere<ClientSession>(x => x.UserId == userId);
+        // ADR 0009 — one end marker per native session (see SessionService.RevokeAllSessionsAsync).
+        foreach (var row in rows)
+            await sessionGrants.StageSessionEndAsync(session, row.UserId, row.Id, AccessEndReasons.Revoked, initiatingClientId: null, ct);
         await session.SaveChangesAsync(ct);
     }
 
@@ -192,6 +197,7 @@ public sealed class ClientSessionService(
             await grants.RevokeTokensByAuthorizationIdAsync(row.AuthorizationId, ct);
             await grants.RevokeAuthorizationByIdAsync(row.AuthorizationId, ct);
             session.Delete(row);
+            await sessionGrants.StageSessionEndAsync(session, row.UserId, row.Id, AccessEndReasons.Expired, initiatingClientId: null, ct);
         }
         if (rows.Count > 0)
             await session.SaveChangesAsync(ct);
@@ -212,7 +218,10 @@ public sealed class ClientSessionService(
         if (rows.Count == 0) return;
 
         foreach (var row in rows)
+        {
             session.Delete(row);
+            await sessionGrants.StageSessionEndAsync(session, row.UserId, row.Id, AccessEndReasons.Revoked, initiatingClientId: null, ct);
+        }
         await session.SaveChangesAsync(ct);
     }
 
@@ -221,6 +230,7 @@ public sealed class ClientSessionService(
         await grants.RevokeTokensByAuthorizationIdAsync(entity.AuthorizationId, ct);
         await grants.RevokeAuthorizationByIdAsync(entity.AuthorizationId, ct);
         session.Delete(entity);
+        await sessionGrants.StageSessionEndAsync(session, entity.UserId, entity.Id, AccessEndReasons.Revoked, initiatingClientId: null, ct);
         await session.SaveChangesAsync(ct);
     }
 

@@ -69,6 +69,20 @@ public record OAuthClientDto
     /// </summary>
     public string? WebAuthnRpId { get; init; }
 
+    /// <summary>ADR 0009 — where Modgud POSTs a signed logout token when a session of
+    /// this client ends. Null = no POST notifications (the change feed still carries
+    /// session ends).</summary>
+    public string? BackChannelLogoutUri { get; init; }
+
+    /// <summary>ADR 0009 — logout tokens carry <c>sid</c> (default true).</summary>
+    public bool BackChannelLogoutSessionRequired { get; init; } = true;
+
+    /// <summary>Read-only: last delivery attempt to the logout URI, if any.</summary>
+    public DateTimeOffset? BackChannelLogoutLastDeliveryAt { get; init; }
+
+    /// <summary>Read-only: <c>delivered</c> or <c>failed:&lt;reason&gt;</c> of the last attempt.</summary>
+    public string? BackChannelLogoutLastOutcome { get; init; }
+
     public List<string> Roles { get; init; } = [];
 
     /// <summary>
@@ -188,6 +202,13 @@ public record CreateOAuthClientDto
     /// Null/blank ⇒ realm-scoped (the realm's PrimaryDomain).</summary>
     public string? WebAuthnRpId { get; init; }
 
+    /// <summary>ADR 0009 — back-channel logout URI (absolute https; http only on loopback).
+    /// Null/blank = none.</summary>
+    public string? BackChannelLogoutUri { get; init; }
+
+    /// <summary>ADR 0009 — include <c>sid</c> in logout tokens. Default true.</summary>
+    public bool BackChannelLogoutSessionRequired { get; init; } = true;
+
     public List<string> Roles { get; init; } = [];
 
     /// <summary>
@@ -299,6 +320,13 @@ public record UpdateOAuthClientDto
     /// value sets it.
     /// </summary>
     public Optional<string?> WebAuthnRpId { get; init; }
+
+    /// <summary>ADR 0009 back-channel logout URI. Absent = no change; explicit
+    /// <c>null</c> or empty = remove; any value sets it.</summary>
+    public Optional<string?> BackChannelLogoutUri { get; init; }
+
+    /// <summary>ADR 0009 — <c>null</c> = no change.</summary>
+    public bool? BackChannelLogoutSessionRequired { get; init; }
 
     public List<string>? Roles { get; init; }
 
