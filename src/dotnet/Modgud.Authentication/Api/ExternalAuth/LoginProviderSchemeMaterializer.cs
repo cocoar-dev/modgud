@@ -22,9 +22,10 @@ namespace Modgud.Authentication.Api.ExternalAuth;
 /// change is visible here within seconds, never "after a restart".
 /// </para>
 /// <para>
-/// Change detection uses the document's <c>UpdatedAt</c> stamp, which every
-/// mutation event bumps. Registration of a SAML provider fetches IdP metadata,
-/// so an unchanged provider is deliberately never re-registered.
+/// Change detection on the periodic path uses the document's <c>UpdatedAt</c>
+/// stamp, which every mutation event bumps; registration of a SAML provider
+/// fetches IdP metadata, so an unchanged provider is not re-registered there.
+/// A forced refresh (the committing node's handlers) re-registers everything.
 /// </para>
 /// </summary>
 public sealed class LoginProviderSchemeMaterializer(
@@ -86,21 +87,37 @@ public sealed class LoginProviderSchemeMaterializer(
             // A peer request may have refreshed while we waited for the gate.
             if (!force && IsFresh(state)) return;
 
-            IReadOnlyList<LoginProvider> current;
+            // Every OIDC/SAML provider of the realm, including disabled and
+            // soft-deleted ones: those are unregistered explicitly (idempotent),
+            // so this node converges even if something else registered a scheme
+            // before the materializer knew about it.
+            IReadOnlyList<LoginProvider> all;
             await using (var session = store.QuerySession(realmSlug))
             {
-                current = await session.Query<LoginProvider>()
-                    .Where(p => !p.IsDeleted && p.Enabled
-                        && (p.Type == LoginProviderType.Oidc || p.Type == LoginProviderType.Saml))
+                all = await session.Query<LoginProvider>()
+                    .Where(p => p.Type == LoginProviderType.Oidc || p.Type == LoginProviderType.Saml)
                     .ToListAsync(ct);
             }
 
             // The managers stamp each registration with the ambient realm.
             using var _ = TenantContext.Enter(realmSlug);
 
+            // A forced refresh re-registers everything: the committing node just
+            // changed something, and re-reading beats trusting a fingerprint.
+            var previouslyRegistered = state.Registered.ToDictionary(kv => kv.Key, kv => kv.Value.Type);
+            if (force)
+                state.Registered.Clear();
+
             var seen = new HashSet<Guid>();
-            foreach (var provider in current)
+            foreach (var provider in all)
             {
+                if (provider.IsDeleted || !provider.Enabled)
+                {
+                    await UnregisterAsync(provider.Id, provider.Type);
+                    state.Registered.Remove(provider.Id);
+                    continue;
+                }
+
                 seen.Add(provider.Id);
                 var fingerprint = new Fingerprint(provider.Type, provider.UpdatedAt);
                 if (state.Registered.TryGetValue(provider.Id, out var known) && known == fingerprint)
@@ -124,10 +141,12 @@ public sealed class LoginProviderSchemeMaterializer(
                 }
             }
 
-            foreach (var gone in state.Registered.Where(kv => !seen.Contains(kv.Key)).ToList())
+            // Hard-deleted documents (realm surgery, GDPR erasure) no longer show
+            // up above; drop whatever this node still holds for them.
+            foreach (var (id, type) in previouslyRegistered.Where(kv => !seen.Contains(kv.Key)))
             {
-                await UnregisterAsync(gone.Key, gone.Value.Type);
-                state.Registered.Remove(gone.Key);
+                await UnregisterAsync(id, type);
+                state.Registered.Remove(id);
             }
 
             state.CheckedAt = clock.GetUtcNow();

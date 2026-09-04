@@ -135,6 +135,8 @@ public class ColdStartFixture : IAsyncLifetime
                 Prometheus = new ObservabilitySettings.PrometheusSettings { Enabled = false },
                 Otlp = new ObservabilitySettings.OtlpSettings { Enabled = false },
             }),
+            // ADR 0010: no backplane, no drain in the test host (single process).
+            rule.For<ClusterSettings>().FromStatic(_ => new ClusterSettings { DrainDelaySeconds = 0 }),
         ]);
 
     public async ValueTask DisposeAsync()

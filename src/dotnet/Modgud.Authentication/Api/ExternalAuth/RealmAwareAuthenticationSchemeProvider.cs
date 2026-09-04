@@ -19,32 +19,47 @@ namespace Modgud.Authentication.Api.ExternalAuth;
 /// from the request (<c>RealmMiddleware</c> runs before authentication) or from
 /// an ambient <see cref="TenantContext"/>.
 /// </para>
+/// <para>
+/// The materializer is resolved lazily: it depends on the scheme managers, which
+/// register schemes through this very provider — a constructor dependency in
+/// both directions would be a cycle.
+/// </para>
 /// </summary>
-public sealed class RealmAwareAuthenticationSchemeProvider(
-    IOptions<AuthenticationOptions> options,
-    IHttpContextAccessor httpContextAccessor,
-    LoginProviderSchemeMaterializer materializer) : AuthenticationSchemeProvider(options)
+public sealed class RealmAwareAuthenticationSchemeProvider : AuthenticationSchemeProvider
 {
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly Lazy<LoginProviderSchemeMaterializer> _materializer;
+
+    public RealmAwareAuthenticationSchemeProvider(
+        IOptions<AuthenticationOptions> options,
+        IHttpContextAccessor httpContextAccessor,
+        IServiceProvider services) : base(options)
+    {
+        _httpContextAccessor = httpContextAccessor;
+        _materializer = new Lazy<LoginProviderSchemeMaterializer>(
+            services.GetRequiredService<LoginProviderSchemeMaterializer>);
+    }
+
     public override async Task<AuthenticationScheme?> GetSchemeAsync(string name)
     {
         if (name.StartsWith(DynamicOidcSchemeManager.SchemeNamePrefix, StringComparison.Ordinal))
-            await materializer.EnsureFreshAsync(CurrentRealm());
+            await _materializer.Value.EnsureFreshAsync(CurrentRealm());
         return await base.GetSchemeAsync(name);
     }
 
     public override async Task<IEnumerable<AuthenticationScheme>> GetRequestHandlerSchemesAsync()
     {
-        await materializer.EnsureFreshAsync(CurrentRealm());
+        await _materializer.Value.EnsureFreshAsync(CurrentRealm());
         return await base.GetRequestHandlerSchemesAsync();
     }
 
     public override async Task<IEnumerable<AuthenticationScheme>> GetAllSchemesAsync()
     {
-        await materializer.EnsureFreshAsync(CurrentRealm());
+        await _materializer.Value.EnsureFreshAsync(CurrentRealm());
         return await base.GetAllSchemesAsync();
     }
 
     private string? CurrentRealm()
-        => httpContextAccessor.HttpContext?.Items[TenantConstants.HttpContextTenantIdKey] as string
+        => _httpContextAccessor.HttpContext?.Items[TenantConstants.HttpContextTenantIdKey] as string
            ?? TenantContext.CurrentOrNull;
 }

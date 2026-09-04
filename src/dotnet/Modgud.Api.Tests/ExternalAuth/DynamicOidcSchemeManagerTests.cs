@@ -55,10 +55,16 @@ public class DynamicOidcSchemeManagerTests : IntegrationTestBase
         var name = DynamicOidcSchemeManager.SchemeNameFor(config.Id);
         Assert.NotNull(await schemeProvider.GetSchemeAsync(name));
 
-        var disabled = config;
-        disabled.Enabled = false;
-        using (TenantContext.Enter("system"))
-            await manager.RegisterAsync(disabled);
+        // ADR 0010: the database is the source of truth on every node. Disable
+        // the provider there; a refresh (what the committing node's handler and
+        // every other node's request path do) drops the scheme.
+        await using (var session = GetTenantedDocumentSession())
+        {
+            session.Events.Append(config.Id, new LoginProviderDisabledEvent(config.Id, DateTimeOffset.UtcNow));
+            await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        await Factory.Services.GetRequiredService<LoginProviderSchemeMaterializer>()
+            .RefreshAsync("system", TestContext.Current.CancellationToken);
 
         Assert.Null(await schemeProvider.GetSchemeAsync(name));
     }

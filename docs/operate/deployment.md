@@ -582,7 +582,7 @@ On SIGTERM a node
 2. keeps serving for `Cluster__DrainDelaySeconds` so the proxy's active check takes it out of rotation while in-flight requests complete,
 3. stops accepting connections, waits for running Quartz jobs, stops its Wolverine agents and deregisters its node so the peer takes over its projections and outbox work without waiting for the stale-node timeout.
 
-A killed node (`docker kill`, OOM, host crash) skips all of that; the survivor takes over its work after Wolverine's stale-node timeout and Quartz's cluster check-in, both well under a minute. Browsers reconnect to the other node and their admin grids resubscribe.
+A killed node (`docker kill`, OOM, host crash) skips all of that; the survivor takes over its work after Wolverine's stale-node timeout and Quartz's cluster check-in, both well under a minute (measured on the reference rig: all projection shards, outbox agents and jobs on the survivor within 60 s). Expect one `StopRemoteAgent … Timed out` error on the survivor at that moment — that is Wolverine clearing the dead node's leader record and getting no answer, not a fault in the survivor. Browsers reconnect to the other node and their admin grids resubscribe.
 
 ### Which release is safe to roll
 

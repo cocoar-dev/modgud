@@ -22,7 +22,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
     private readonly SharedPostgresFixture _fixture;
     private readonly IDisposable _tenantContext;
 
-    private const string DefaultPassword = "TestPass1234";
+    protected const string DefaultPassword = "TestPass1234";
 
     protected ModgudWebApplicationFactory Factory = null!;
     protected HttpClient Client = null!;
