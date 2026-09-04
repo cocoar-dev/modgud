@@ -22,6 +22,7 @@ import AssetPicker from '@/components/AssetPicker.vue'
 import ColorField from '@/components/ColorField.vue'
 import type { AssetDto } from '@/models/assets'
 import BrandingPreview from '@/components/BrandingPreview.vue'
+import EmailPreview from '@/components/EmailPreview.vue'
 
 // ADR-0011 per-App settings override sections, extracted from the old standalone
 // ApplicationSettingsModal so the single App modal (AppDetails) can carry them as a
@@ -59,7 +60,7 @@ const f = reactive({
     buttonRadius: '', inputRadius: '', cardRadius: '',
     bodyFontFamily: '', titleFontFamily: '',
   },
-  emailBranding: { override: false, productName: '', subjectPrefix: '', preheader: '', footerText: '', fromName: '', replyTo: '' },
+  emailBranding: { override: false, productName: '', subjectPrefix: '', preheader: '', footerText: '', fromName: '', fromAddress: '', replyTo: '' },
   loginExperience: { override: false, internal: true, magicLink: true, providerIds: [] as string[] },
   selfReg: {
     override: false,
@@ -157,6 +158,7 @@ const inh = computed(() => {
       preheader: r?.EmailBranding?.Preheader ?? '',
       footerText: r?.EmailBranding?.FooterText ?? '',
       fromName: r?.EmailBranding?.FromName ?? '',
+      fromAddress: r?.EmailBranding?.FromAddress ?? '',
       replyTo: r?.EmailBranding?.ReplyTo ?? '',
     },
     loginExperience: {
@@ -229,7 +231,7 @@ function resetForm() {
   f.pageTheme.bodyFontFamily = ''; f.pageTheme.titleFontFamily = ''
   f.emailBranding.override = false; f.emailBranding.productName = ''
   f.emailBranding.subjectPrefix = ''; f.emailBranding.preheader = ''; f.emailBranding.footerText = ''
-  f.emailBranding.fromName = ''; f.emailBranding.replyTo = ''
+  f.emailBranding.fromName = ''; f.emailBranding.fromAddress = ''; f.emailBranding.replyTo = ''
   f.loginExperience.override = false; f.loginExperience.internal = true
   f.loginExperience.magicLink = true; f.loginExperience.providerIds = []
   f.selfReg.override = false; f.selfReg.posture = ''; f.selfReg.enabled = false
@@ -278,6 +280,7 @@ function populate(s?: ApplicationSettingsDto | null) {
     f.emailBranding.preheader = s.EmailBranding.Preheader ?? ''
     f.emailBranding.footerText = s.EmailBranding.FooterText ?? ''
     f.emailBranding.fromName = s.EmailBranding.FromName ?? ''
+    f.emailBranding.fromAddress = s.EmailBranding.FromAddress ?? ''
     f.emailBranding.replyTo = s.EmailBranding.ReplyTo ?? ''
   }
   if (s.LoginExperience) {
@@ -401,19 +404,24 @@ const effectiveProductName = computed(() => f.branding.override
 const effectivePrimaryColor = computed(() => f.branding.override
   ? f.branding.primaryColor.trim() || realmSettingsStore.settings?.Branding?.PrimaryColor || ''
   : realmSettingsStore.settings?.Branding?.PrimaryColor ?? '')
-const realmEmail = computed(() => realmSettingsStore.settings?.EmailBranding)
-const effectiveEmailProductName = computed(() => f.emailBranding.override
-  ? f.emailBranding.productName.trim() || realmEmail.value?.ProductName || effectiveProductName.value
-  : realmEmail.value?.ProductName || effectiveProductName.value)
-const effectiveEmailSubjectPrefix = computed(() => f.emailBranding.override
-  ? f.emailBranding.subjectPrefix.trim() || realmEmail.value?.SubjectPrefix || ''
-  : realmEmail.value?.SubjectPrefix || '')
-const effectiveEmailPreheader = computed(() => f.emailBranding.override
-  ? f.emailBranding.preheader.trim() || realmEmail.value?.Preheader || ''
-  : realmEmail.value?.Preheader || '')
-const effectiveEmailFooterText = computed(() => f.emailBranding.override
-  ? f.emailBranding.footerText.trim() || realmEmail.value?.FooterText || ''
-  : realmEmail.value?.FooterText || '')
+// The email override section only counts while its toggle is on — with it off the
+// app inherits, so the overlay carries nothing and the backend resolves realm values.
+const emailPreviewOverlay = computed(() => ({
+  productName: f.branding.override ? f.branding.productName : undefined,
+  primaryColor: f.branding.override ? f.branding.primaryColor : undefined,
+  logoUrl: f.branding.override ? (f.branding.logoUrl || undefined) : undefined,
+  branding: f.emailBranding.override
+    ? {
+        productName: f.emailBranding.productName,
+        subjectPrefix: f.emailBranding.subjectPrefix,
+        preheader: f.emailBranding.preheader,
+        footerText: f.emailBranding.footerText,
+        fromName: f.emailBranding.fromName,
+        fromAddress: f.emailBranding.fromAddress,
+        replyTo: f.emailBranding.replyTo,
+      }
+    : null,
+}))
 
 /** Build the override DTO as the COMPLETE desired state (the App PUT is a replace):
  * an overridden section sends its values, a non-overridden section sends `null` so the
@@ -448,6 +456,7 @@ function build(): ApplicationSettingsDto {
           Preheader: f.emailBranding.preheader.trim() || null,
           FooterText: f.emailBranding.footerText.trim() || null,
           FromName: f.emailBranding.fromName.trim() || null,
+          FromAddress: f.emailBranding.fromAddress.trim() || null,
           ReplyTo: f.emailBranding.replyTo.trim() || null,
         }
       : null,
@@ -686,11 +695,21 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
       </template>
 
       <CoarCheckbox v-model="f.emailBranding.override" :label="t('admin.appSettings.email.override', {}, 'Custom Email Branding')" />
+      <CoarFormField :label="t('admin.appSettings.email.fromName', {}, 'Sender display name')">
+        <CoarTextInput v-bind="fieldBind('emailBranding', 'fromName')" clearable />
+      </CoarFormField>
+      <!-- Both fields in this row carry a hint glyph so their labels and inputs sit level. -->
       <div class="grid grid-cols-2 gap-3">
-        <CoarFormField :label="t('admin.appSettings.email.fromName', {}, 'Sender display name')">
-          <CoarTextInput v-bind="fieldBind('emailBranding', 'fromName')" clearable />
+        <CoarFormField
+          :label="t('admin.appSettings.email.fromAddress', {}, 'Sender address')"
+          :hint="t('admin.appSettings.email.fromAddressHint', {}, 'The address mail is sent from. Empty = inherit. Make sure your mail provider allows sending from it (SPF/DKIM).')"
+        >
+          <CoarTextInput v-bind="fieldBind('emailBranding', 'fromAddress')" type="email" clearable placeholder="noreply@example.com" />
         </CoarFormField>
-        <CoarFormField :label="t('admin.appSettings.email.replyTo', {}, 'Reply-to address')">
+        <CoarFormField
+          :label="t('admin.appSettings.email.replyTo', {}, 'Reply-to address')"
+          :hint="t('admin.appSettings.email.replyToHint', {}, 'Where replies to outbound mail go. Empty = replies go to the sender address.')"
+        >
           <CoarTextInput v-bind="fieldBind('emailBranding', 'replyTo')" type="email" clearable />
         </CoarFormField>
       </div>
@@ -730,14 +749,14 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         {{ t('admin.appSettings.login.noneWarning', {}, 'No sign-in method remains enabled for this application.') }}
       </CoarNotice>
 
-      <BrandingPreview
-        :product-name="effectiveProductName"
-        :email-product-name="effectiveEmailProductName"
-        :email-subject-prefix="effectiveEmailSubjectPrefix"
-        :email-preheader="effectiveEmailPreheader"
-        :email-footer-text="effectiveEmailFooterText"
-        :logo-url="effectiveLogoUrl"
-        :primary-color="effectivePrimaryColor" />
+      <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <BrandingPreview
+          :product-name="effectiveProductName"
+          :logo-url="effectiveLogoUrl"
+          :primary-color="effectivePrimaryColor" />
+        <!-- Rendered as THIS app (realm + its override), overlaid with the unsaved form. -->
+        <EmailPreview :overlay="emailPreviewOverlay" :application-id="applicationId ?? null" />
+      </div>
     </div>
 
     <!-- Registration -->

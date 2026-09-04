@@ -64,4 +64,46 @@ public class NativeEmailBrandingTests : IntegrationTestBase
         Assert.Contains("amZettel", msg!.Subject);
         Assert.DoesNotContain("Modgud", msg.Subject);
     }
+
+    [Fact]
+    public async Task Otp_Email_Is_Sent_From_The_Apps_Own_Sender_Address()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var appId = Guid.NewGuid();
+
+        using var scope = Factory.Services.CreateScope();
+        var http = new DefaultHttpContext();
+        http.Items[TenantConstants.HttpContextTenantIdKey] = "system";
+        http.Items[TenantConstants.HttpContextApplicationIdKey] = appId;
+        scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>().HttpContext = http;
+
+        // The App declares who its mail comes from. Nothing else is configured, so
+        // this is the whole cascade under test: App → (no realm value) → deployment.
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+        session.Store(new ApplicationSettings
+        {
+            Id = appId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            EmailBranding = new ApplicationEmailBranding
+            {
+                FromName = "amZettel Support",
+                FromAddress = "hello@amzettel.test",
+                ReplyTo = "help@amzettel.test",
+            },
+        });
+        await session.SaveChangesAsync(ct);
+
+        var emailService = Factory.Services.GetRequiredService<InMemoryEmailService>();
+        emailService.Clear();
+
+        var result = await scope.ServiceProvider.GetRequiredService<IEmailOtpService>()
+            .RequestNativeOtpAsync(DefaultUser!.Id, ct);
+        Assert.False(result.IsError);
+
+        var msg = emailService.GetLastEmailTo(Email);
+        Assert.NotNull(msg);
+        Assert.Equal("hello@amzettel.test", msg!.FromAddress);
+        Assert.Equal("amZettel Support", msg.FromName);
+        Assert.Equal("help@amzettel.test", msg.ReplyTo);
+    }
 }

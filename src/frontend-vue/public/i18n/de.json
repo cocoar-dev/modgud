@@ -2227,6 +2227,22 @@
       "posture.inviteCode.ui": "Sofort nutzbar: Codes erzeugst du im Admin unter „Einladungscodes“ (Sidebar, OAuth & Federation) für diese App — keine weitere Einrichtung nötig.",
       "posture.inviteCode.m2m": "Für automatisches Minting durch die Backend-App (M2M): Lege einen OAuth-Scope „invite:write“ an, der an diese App gebunden ist (App-ID gesetzt), und gib einem ServiceAccount ein Credential mit diesem Scope. Die App ruft dann POST /api/app/{appId}/invite-codes mit ihrem client_credentials-Token auf.",
       "posture.inviteCode.redeem": "Einlösung: Der Code reist auf dem nativen Sign-up-Request mit (Feld InviteCode); unbekannte E-Mails werden nur mit gültigem, unbenutztem Code zu Nutzern. Bestehende bestätigte Nutzer melden sich normal an (der Code wird ignoriert)."
+    },
+    "emailPreview": {
+      "title": "E-Mail-Vorschau",
+      "from": "Von",
+      "replyTo": "Antwort an",
+      "subject": "Betreff",
+      "templates": {
+        "EmailOtp": "E-Mail-Code (OTP)",
+        "MagicLink": "Anmelde-Link",
+        "PasswordReset": "Passwort zurücksetzen",
+        "EmailVerification": "E-Mail bestätigen",
+        "RealmAdminBootstrap": "Admin-Einladung",
+        "AdminChangeRequestNotification": "Änderungsantrag (Admin)",
+        "ChangeRequestApproved": "Antrag genehmigt",
+        "ChangeRequestRejected": "Antrag abgelehnt"
+      }
     }
   },
   "permissions": {

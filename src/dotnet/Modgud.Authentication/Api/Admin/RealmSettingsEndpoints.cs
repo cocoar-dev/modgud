@@ -59,6 +59,25 @@ public static class RealmSettingsEndpoints
         .WithName("RealmSettings_Patch")
         .RequiresPermission("realm-settings:write");
 
+        // Renders a built-in transactional template exactly as it would be sent
+        // (real EmailTemplateStore, effective realm/App branding, optional unsaved
+        // form overlay) so the admin preview is the real message, not a mock-up.
+        group.MapPost("email-preview", async (
+            Applications.EmailPreviewRequest request,
+            Applications.IEmailPreviewService preview,
+            CancellationToken ct) =>
+        {
+            var result = await preview.RenderAsync(request, ct);
+            return result.Match(
+                ok => Results.Ok(ok),
+                errors => Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: errors.First().Code,
+                    detail: errors.First().Description));
+        })
+        .WithName("RealmSettings_EmailPreview")
+        .RequiresPermission("realm-settings:read");
+
         group.MapPost("position-security/preview", async (
             UpdatePositionSecuritySettingsDto dto,
             IRealmSettingsService svc,

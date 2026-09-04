@@ -1,3 +1,4 @@
+using Modgud.Domain.Common;
 using System.Text.RegularExpressions;
 using BuildingBlocks.Helper;
 using ErrorOr;
@@ -621,6 +622,7 @@ public sealed class ApplicationSettingsService(
             Preheader = NullIfBlank(dto.Preheader),
             FooterText = NullIfBlank(dto.FooterText),
             FromName = NullIfBlank(dto.FromName),
+            FromAddress = NullIfBlank(dto.FromAddress),
             ReplyTo = NullIfBlank(dto.ReplyTo),
         };
         if (result.ProductName?.Length > 100 || result.SubjectPrefix?.Length > 100)
@@ -634,10 +636,13 @@ public sealed class ApplicationSettingsService(
                 "Email sender display name must be at most 100 characters and contain no line breaks.");
         if (result.ReplyTo is not null && !System.Net.Mail.MailAddress.TryCreate(result.ReplyTo, out _))
             return Error.Validation("Application.EmailReplyToInvalid", "Email reply-to must be a valid address.");
+        if (result.FromAddress is not null && !EmailAddressRules.IsBareAddress(result.FromAddress))
+            return Error.Validation("Application.EmailFromAddressInvalid",
+                "Email sender address must be a plain email address (no display name).");
 
         return result.ProductName is null && result.SubjectPrefix is null
                && result.Preheader is null && result.FooterText is null
-               && result.FromName is null && result.ReplyTo is null
+               && result.FromName is null && result.FromAddress is null && result.ReplyTo is null
             ? (ApplicationEmailBranding?)null
             : result;
     }
@@ -690,6 +695,7 @@ public sealed class ApplicationSettingsService(
                     Preheader = doc.EmailBranding.Preheader,
                     FooterText = doc.EmailBranding.FooterText,
                     FromName = doc.EmailBranding.FromName,
+                    FromAddress = doc.EmailBranding.FromAddress,
                     ReplyTo = doc.EmailBranding.ReplyTo,
                 },
             LoginExperience = doc.LoginExperience is null ? null : new ApplicationLoginExperienceDto

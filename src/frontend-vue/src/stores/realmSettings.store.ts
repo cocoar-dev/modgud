@@ -47,5 +47,45 @@ export const useRealmSettingsStore = defineStore('realmSettings', () => {
       .post<PositionSecurityConsequencesDto>(dto)
   }
 
-  return { settings, loaded, load, patch, previewPositionSecurity, rotateSigningKey }
+  /**
+   * Renders a built-in transactional template exactly as it would be sent — the
+   * real template store with the effective branding, overlaid with unsaved form
+   * values. Drives the tabbed EmailPreview component.
+   */
+  async function previewEmail(request: EmailPreviewRequest): Promise<EmailPreviewResult> {
+    return http.addPath('email-preview').post<EmailPreviewResult>(request)
+  }
+
+  return { settings, loaded, load, patch, previewPositionSecurity, rotateSigningKey, previewEmail }
 })
+
+/** Unsaved form values overlaid on the effective branding for the preview. */
+export interface EmailPreviewOverlay {
+  productName?: string | null
+  primaryColor?: string | null
+  logoUrl?: string | null
+  branding?: {
+    productName?: string | null
+    subjectPrefix?: string | null
+    preheader?: string | null
+    footerText?: string | null
+    fromName?: string | null
+    fromAddress?: string | null
+    replyTo?: string | null
+  } | null
+}
+
+export interface EmailPreviewRequest extends EmailPreviewOverlay {
+  template: string
+  language?: 'de' | 'en'
+  applicationId?: string
+}
+
+export interface EmailPreviewResult {
+  Template: string
+  Subject: string
+  From: string
+  ReplyTo: string | null
+  HtmlBody: string
+  TextBody: string
+}

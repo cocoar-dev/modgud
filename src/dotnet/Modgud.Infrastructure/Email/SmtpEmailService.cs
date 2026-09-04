@@ -59,7 +59,7 @@ public class SmtpEmailService : IEmailService
         var rendered = EmailTemplateStore.RenderMessage(template, model);
 
         var message = new MimeMessage();
-        message.From.Add(new MailboxAddress(rendered.FromName ?? options.FromName, options.FromAddress));
+        message.From.Add(new MailboxAddress(rendered.FromName ?? options.FromName, rendered.FromAddress ?? options.FromAddress));
         foreach (var addr in recipients)
         {
             if (!string.IsNullOrWhiteSpace(addr))
@@ -87,7 +87,7 @@ public class SmtpEmailService : IEmailService
     {
         var options = _optionsFactory();
         var message = new MimeMessage();
-        message.From.Add(new MailboxAddress(rendered.FromName ?? options.FromName, options.FromAddress));
+        message.From.Add(new MailboxAddress(rendered.FromName ?? options.FromName, rendered.FromAddress ?? options.FromAddress));
         message.To.Add(MailboxAddress.Parse(to));
         if (rendered.ReplyTo is not null) message.ReplyTo.Add(MailboxAddress.Parse(rendered.ReplyTo));
         message.Subject = rendered.Subject;

@@ -161,6 +161,9 @@ public record ApplicationEmailBranding
     public string? Preheader { get; init; }
     public string? FooterText { get; init; }
     public string? FromName { get; init; }
+    /// <summary>Sender address override. Null = inherit the realm's, then the
+    /// deployment's. Deliverability is the configuring admin's responsibility.</summary>
+    public string? FromAddress { get; init; }
     public string? ReplyTo { get; init; }
 }
 

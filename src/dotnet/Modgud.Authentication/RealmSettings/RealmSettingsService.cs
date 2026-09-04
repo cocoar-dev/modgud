@@ -391,6 +391,7 @@ public sealed class RealmSettingsService(
             Preheader = MergeClearableField(current?.Preheader, patch.Preheader),
             FooterText = MergeClearableField(current?.FooterText, patch.FooterText),
             FromName = MergeClearableField(current?.FromName, patch.FromName),
+            FromAddress = MergeClearableField(current?.FromAddress, patch.FromAddress),
             ReplyTo = MergeClearableField(current?.ReplyTo, patch.ReplyTo),
         };
         if (result.ProductName?.Length > 100 || result.SubjectPrefix?.Length > 100
@@ -402,6 +403,9 @@ public sealed class RealmSettingsService(
                 "Sender display name must be at most 100 characters and contain no line breaks.");
         if (result.ReplyTo is not null && !System.Net.Mail.MailAddress.TryCreate(result.ReplyTo, out _))
             return Error.Validation("EmailBranding.ReplyToInvalid", "Reply-to must be a valid email address.");
+        if (result.FromAddress is not null && !EmailAddressRules.IsBareAddress(result.FromAddress))
+            return Error.Validation("EmailBranding.FromAddressInvalid",
+                "Sender address must be a plain email address (no display name).");
         return result;
     }
 
@@ -413,6 +417,7 @@ public sealed class RealmSettingsService(
         Preheader = settings?.Preheader,
         FooterText = settings?.FooterText,
         FromName = settings?.FromName,
+        FromAddress = settings?.FromAddress,
         ReplyTo = settings?.ReplyTo,
     };
 

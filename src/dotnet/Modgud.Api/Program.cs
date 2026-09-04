@@ -684,6 +684,14 @@ try
             Serilog.Log.Warning("No EmailConfiguration found — email sending disabled");
         }
 
+        // The deployment-level sender the admin preview shows when no realm/App
+        // override applies — read reactively from the same config the senders use.
+        builder.Services.AddSingleton<Modgud.Authentication.Applications.IEmailSenderDefaults>(
+            new ConfiguredEmailSenderDefaults(
+                () => configManager.TryGetConfig<EmailConfiguration>(out var c) ? c : null));
+        builder.Services.AddScoped<Modgud.Authentication.Applications.IEmailPreviewService,
+            Modgud.Authentication.Applications.EmailPreviewService>();
+
         // Always register the configured email service (Smtp or Postmark).
         // The previous dev-only branch wrapped this in InMemoryEmailService and
         // exposed it via /api/dev/emails — but that left a Development-mode

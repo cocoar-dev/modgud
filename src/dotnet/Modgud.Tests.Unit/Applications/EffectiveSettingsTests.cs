@@ -315,6 +315,7 @@ public class EffectiveSettingsTests
                 Preheader = "Realm preheader",
                 FooterText = "Realm footer",
                 FromName = "Realm Sender",
+                FromAddress = "noreply@realm.test",
                 ReplyTo = "realm@example.test",
             };
             var app = new ApplicationSettings
@@ -324,6 +325,7 @@ public class EffectiveSettingsTests
                     ProductName = "App Mail",
                     FooterText = "App footer",
                     FromName = "App Sender",
+                    FromAddress = "hello@app.test",
                 },
             };
 
@@ -334,7 +336,23 @@ public class EffectiveSettingsTests
             Assert.Equal("Realm preheader", effective.Preheader);
             Assert.Equal("App footer", effective.FooterText);
             Assert.Equal("App Sender", effective.FromName);
+            Assert.Equal("hello@app.test", effective.FromAddress);
             Assert.Equal("realm@example.test", effective.ReplyTo);
+        }
+
+        [Fact]
+        public void Email_from_address_inherits_the_realm_value_when_the_app_sets_none()
+        {
+            var realm = Realm();
+            realm.EmailBranding = new EmailBrandingSettings { FromAddress = "noreply@realm.test" };
+            var app = new ApplicationSettings
+            {
+                EmailBranding = new ApplicationEmailBranding { ProductName = "App Mail" },
+            };
+
+            Assert.Equal("noreply@realm.test", EffectiveSettings.Merge(realm, app).EmailBranding!.FromAddress);
+            // No override anywhere: null, so the sender falls back to the deployment address.
+            Assert.Null(EffectiveSettings.Merge(Realm(), app).EmailBranding!.FromAddress);
         }
 
         // ─────────────── ADR-0001: variants + activation ───────────────

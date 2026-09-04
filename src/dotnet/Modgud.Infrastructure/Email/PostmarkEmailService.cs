@@ -53,9 +53,10 @@ public class PostmarkEmailService : IEmailService
         {
             var client = new PostmarkClient(options.ServerToken);
             var fromName = model.GetValueOrDefault("FromName") ?? options.FromName;
+            var fromAddress = model.GetValueOrDefault("FromAddress") ?? options.FromAddress;
             var from = string.IsNullOrEmpty(fromName)
-                ? options.FromAddress
-                : $"{fromName} <{options.FromAddress}>";
+                ? fromAddress
+                : $"{fromName} <{fromAddress}>";
 
             var message = new TemplatedPostmarkMessage
             {
@@ -96,9 +97,10 @@ public class PostmarkEmailService : IEmailService
         {
             var client = new PostmarkClient(options.ServerToken);
             var fromName = model.GetValueOrDefault("FromName") ?? options.FromName;
+            var fromAddress = model.GetValueOrDefault("FromAddress") ?? options.FromAddress;
             var from = string.IsNullOrEmpty(fromName)
-                ? options.FromAddress
-                : $"{fromName} <{options.FromAddress}>";
+                ? fromAddress
+                : $"{fromName} <{fromAddress}>";
             var message = new TemplatedPostmarkMessage
             {
                 From = from,
@@ -124,9 +126,10 @@ public class PostmarkEmailService : IEmailService
         var options = _optionsFactory();
         var client = new PostmarkClient(options.ServerToken);
         var fromName = rendered.FromName ?? options.FromName;
+        var fromAddress = rendered.FromAddress ?? options.FromAddress;
         var from = string.IsNullOrEmpty(fromName)
-            ? options.FromAddress
-            : $"{fromName} <{options.FromAddress}>";
+            ? fromAddress
+            : $"{fromName} <{fromAddress}>";
         var response = await client.SendMessageAsync(new PostmarkMessage
         {
             From = from,

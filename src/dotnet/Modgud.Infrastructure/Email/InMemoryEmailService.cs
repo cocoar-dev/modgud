@@ -35,7 +35,8 @@ public class InMemoryEmailService : IEmailService
     {
         // Always store the rendered version for dev inspection
         var rendered = EmailTemplateStore.RenderMessage(template, model);
-        _emails.Enqueue(new SentEmail(to, rendered.Subject, rendered.HtmlBody, DateTimeOffset.UtcNow, rendered.TextBody));
+        _emails.Enqueue(new SentEmail(to, rendered.Subject, rendered.HtmlBody, DateTimeOffset.UtcNow, rendered.TextBody,
+            rendered.FromName, rendered.FromAddress, rendered.ReplyTo));
         LogEmail(to, rendered.Subject, rendered.HtmlBody);
 
         if (_inner is not null)
@@ -50,7 +51,8 @@ public class InMemoryEmailService : IEmailService
         foreach (var addr in recipients)
         {
             if (string.IsNullOrWhiteSpace(addr)) continue;
-            _emails.Enqueue(new SentEmail(addr, rendered.Subject, rendered.HtmlBody, DateTimeOffset.UtcNow, rendered.TextBody));
+            _emails.Enqueue(new SentEmail(addr, rendered.Subject, rendered.HtmlBody, DateTimeOffset.UtcNow, rendered.TextBody,
+                rendered.FromName, rendered.FromAddress, rendered.ReplyTo));
             LogEmail(addr, rendered.Subject, rendered.HtmlBody);
         }
 
@@ -92,4 +94,10 @@ public class InMemoryEmailService : IEmailService
     public void Clear() => _emails.Clear();
 }
 
-public record SentEmail(string To, string Subject, string HtmlBody, DateTimeOffset SentAt, string? TextBody = null);
+/// <summary>A captured message. <paramref name="FromName"/>/<paramref name="FromAddress"/>/
+/// <paramref name="ReplyTo"/> are the values the branding resolver put on the message
+/// (null = the sender falls back to the deployment default), so tests can assert the
+/// envelope a real transport would build.</summary>
+public record SentEmail(
+    string To, string Subject, string HtmlBody, DateTimeOffset SentAt, string? TextBody = null,
+    string? FromName = null, string? FromAddress = null, string? ReplyTo = null);

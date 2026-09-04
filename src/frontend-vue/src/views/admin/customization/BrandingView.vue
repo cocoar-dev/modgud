@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
   CoarNotice,
   CoarCard,
@@ -14,6 +14,7 @@ import { useRealmSettingsStore } from '@/stores/realmSettings.store'
 import AssetPicker from '@/components/AssetPicker.vue'
 import ColorField from '@/components/ColorField.vue'
 import BrandingPreview from '@/components/BrandingPreview.vue'
+import EmailPreview from '@/components/EmailPreview.vue'
 import type { AssetDto } from '@/models/assets'
 import type {
   BrandingSettingsDto,
@@ -46,6 +47,7 @@ interface BrandingFormState {
   EmailPreheader: string
   EmailFooterText: string
   EmailFromName: string
+  EmailFromAddress: string
   EmailReplyTo: string
 }
 
@@ -62,6 +64,7 @@ function empty(): BrandingFormState {
     EmailPreheader: '',
     EmailFooterText: '',
     EmailFromName: '',
+    EmailFromAddress: '',
     EmailReplyTo: '',
   }
 }
@@ -79,6 +82,7 @@ function fromDto(b: BrandingSettingsDto, email?: EmailBrandingSettingsDto): Bran
     EmailPreheader: email?.Preheader ?? '',
     EmailFooterText: email?.FooterText ?? '',
     EmailFromName: email?.FromName ?? '',
+    EmailFromAddress: email?.FromAddress ?? '',
     EmailReplyTo: email?.ReplyTo ?? '',
   }
 }
@@ -157,6 +161,22 @@ function buildPatch(): UpdateBrandingSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+// Everything the form holds, as the preview overlay: empty = cleared (falls back).
+const emailPreviewOverlay = computed(() => ({
+  productName: form.value.ProductName,
+  primaryColor: form.value.PrimaryColor,
+  logoUrl: form.value.LogoUrl,
+  branding: {
+    productName: form.value.EmailProductName,
+    subjectPrefix: form.value.EmailSubjectPrefix,
+    preheader: form.value.EmailPreheader,
+    footerText: form.value.EmailFooterText,
+    fromName: form.value.EmailFromName,
+    fromAddress: form.value.EmailFromAddress,
+    replyTo: form.value.EmailReplyTo,
+  },
+}))
+
 function buildEmailPatch(): UpdateEmailBrandingSettingsDto | undefined {
   const orig = originalEmail.value
   if (!orig) return undefined
@@ -167,6 +187,7 @@ function buildEmailPatch(): UpdateEmailBrandingSettingsDto | undefined {
     ['Preheader', 'EmailPreheader'],
     ['FooterText', 'EmailFooterText'],
     ['FromName', 'EmailFromName'],
+    ['FromAddress', 'EmailFromAddress'],
     ['ReplyTo', 'EmailReplyTo'],
   ] as const
   for (const [key, formKey] of fields) {
@@ -202,7 +223,7 @@ async function save() {
 </script>
 
 <template>
-  <div class="flex flex-1 flex-col min-w-0 p-4 gap-3">
+  <div class="flex flex-1 flex-col min-w-0 min-h-0 overflow-y-auto p-4 gap-3">
     <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
     <CoarNotice truncate v-if="savedFlash" variant="success">
       {{ t('admin.realmSettings.saved', {}, 'Saved.') }}
@@ -267,11 +288,21 @@ async function save() {
             <CoarFormField :label="t('admin.appSettings.email.fromName', {}, 'Sender display name')">
               <CoarTextInput v-model="form.EmailFromName" clearable />
             </CoarFormField>
-            <CoarFormField :label="t('admin.appSettings.email.replyTo', {}, 'Reply-to address')">
-              <CoarTextInput v-model="form.EmailReplyTo" type="email" clearable />
-            </CoarFormField>
             <CoarFormField :label="t('admin.appSettings.email.productName', {}, 'Product name in email')">
               <CoarTextInput v-model="form.EmailProductName" clearable />
+            </CoarFormField>
+            <!-- Row of its own: both fields carry a hint glyph so their labels and inputs sit level. -->
+            <CoarFormField
+              :label="t('admin.appSettings.email.fromAddress', {}, 'Sender address')"
+              :hint="t('admin.appSettings.email.fromAddressHint', {}, 'The address mail is sent from. Empty = the server default. Make sure your mail provider allows sending from it (SPF/DKIM).')"
+            >
+              <CoarTextInput v-model="form.EmailFromAddress" type="email" clearable placeholder="noreply@example.com" />
+            </CoarFormField>
+            <CoarFormField
+              :label="t('admin.appSettings.email.replyTo', {}, 'Reply-to address')"
+              :hint="t('admin.appSettings.email.replyToHint', {}, 'Where replies to outbound mail go. Empty = replies go to the sender address.')"
+            >
+              <CoarTextInput v-model="form.EmailReplyTo" type="email" clearable />
             </CoarFormField>
             <CoarFormField :label="t('admin.appSettings.email.subjectPrefix', {}, 'Subject prefix')">
               <CoarTextInput v-model="form.EmailSubjectPrefix" clearable />
@@ -285,14 +316,14 @@ async function save() {
           </div>
         </div>
 
-        <BrandingPreview
-          :product-name="form.ProductName"
-          :logo-url="form.LogoUrl"
-          :primary-color="form.PrimaryColor"
-          :email-product-name="form.EmailProductName"
-          :email-subject-prefix="form.EmailSubjectPrefix"
-          :email-preheader="form.EmailPreheader"
-          :email-footer-text="form.EmailFooterText" />
+        <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          <BrandingPreview
+            :product-name="form.ProductName"
+            :logo-url="form.LogoUrl"
+            :primary-color="form.PrimaryColor" />
+          <!-- The real templates, rendered by the backend with THIS form's values. -->
+          <EmailPreview :overlay="emailPreviewOverlay" />
+        </div>
       </div>
     </CoarCard>
   </div>
