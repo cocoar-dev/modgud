@@ -35,8 +35,15 @@ WORKDIR /app
 # library present it logs a noisy "Cannot load libgssapi_krb5.so.2" error
 # before falling back to password auth. Install it so the boot / recovery-CLI
 # logs stay clean. (Kept above the app COPYs so the apt layer caches.)
+#
+# tini: a real PID 1. When dotnet itself is PID 1 the kernel never delivers
+# the SIGABRT the runtime raises on an unhandled exception, so a crashed
+# process keeps spinning at 100 % CPU and Docker still reports it "Up" - the
+# restart policy never fires. tini forwards signals, reaps zombies and lets
+# the container exit so `restart:` can do its job.
+# curl: for the HEALTHCHECK below.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 tini curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the published .NET app
@@ -67,4 +74,13 @@ ENV CertPassword=
 RUN mkdir -p /app/data/keys && chown -R app:app /app/data
 USER app
 
-ENTRYPOINT ["dotnet", "Modgud.Api.dll"]
+# Readiness as the container health: master DB reachable + OpenIddict cert
+# ready. `docker ps` then shows the real state and `depends_on:
+# condition: service_healthy` works for consumers. start-period covers the
+# bounded Postgres wait at boot (DbSettings__StartupTimeoutSeconds, 90 s by
+# default) plus schema apply. Override the URL when AppUrl is changed.
+ENV HEALTHCHECK_URL=http://127.0.0.1:8081/health/ready
+HEALTHCHECK --interval=15s --timeout=5s --start-period=120s --retries=3 \
+    CMD curl -fsS "$HEALTHCHECK_URL" > /dev/null || exit 1
+
+ENTRYPOINT ["/usr/bin/tini", "--", "dotnet", "Modgud.Api.dll"]
