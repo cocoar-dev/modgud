@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Modgud.AspNetCore.ResourceServer;
@@ -35,6 +36,8 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<ModgudResourceServerRegistrationMarker>();
         services.AddAuthorization();
+        if (options.SessionRevocation.Enabled)
+            AddSessionRevocation(services, options);
 
         var authentication = services.AddAuthentication(
             ModgudResourceServerDefaults.AuthenticationScheme);
@@ -176,13 +179,60 @@ public static class ServiceCollectionExtensions
 
             ModgudDpopJwtBearer.EnforceBinding(context);
             if (context.Result is null)
+                RejectEndedSession(context);
+            if (context.Result is null)
                 ModgudClaimsProjector.Project(context.Principal, audience);
         };
+    }
+
+    /// <summary>Session revocation: a token whose <c>sid</c> is on the denylist is refused
+    /// like an expired one. No-op when the feature is off (no denylist registered).</summary>
+    private static void RejectEndedSession(TokenValidatedContext context)
+    {
+        var denylist = context.HttpContext.RequestServices.GetService<ModgudSessionDenylist>();
+        if (denylist is null) return;
+        var sid = context.Principal?.FindFirst(ModgudClaimTypes.SessionId)?.Value;
+        if (!string.IsNullOrEmpty(sid) && denylist.IsRevoked(sid))
+            context.Fail("The session behind this access token has ended.");
+    }
+
+    private static void AddSessionRevocation(IServiceCollection services, ModgudResourceServerOptions options)
+    {
+        services.AddHttpClient(ModgudSessionFeedDefaults.HttpClientName);
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton(options);
+        services.AddSingleton(options.SessionRevocation);
+        services.AddSingleton<ModgudSessionDenylist>();
+        services.AddSingleton<IModgudSessionDenylist>(sp => sp.GetRequiredService<ModgudSessionDenylist>());
+        services.AddSingleton<ModgudSessionFeedClient>();
+        services.AddSingleton<ModgudSessionRevocationWorker>();
+        services.AddHostedService(sp => sp.GetRequiredService<ModgudSessionRevocationWorker>());
+    }
+
+    private static void ValidateSessionRevocation(ModgudResourceServerOptions options, List<string> failures)
+    {
+        var revocation = options.SessionRevocation;
+        if (!revocation.Enabled) return;
+        if (options.TokenMode == ModgudTokenMode.OnlyReferenceToken)
+            failures.Add("SessionRevocation applies to JWT access tokens only; reference tokens are revoked through introspection. Disable it or accept JWTs.");
+        if (string.IsNullOrWhiteSpace(revocation.AppId))
+            failures.Add("SessionRevocation.AppId is required (the Modgud Application whose change feed is followed).");
+        if (string.IsNullOrWhiteSpace(revocation.ClientId ?? options.IntrospectionClientId))
+            failures.Add("SessionRevocation.ClientId is required (IntrospectionClientId is the fallback in reference-capable modes).");
+        if (string.IsNullOrWhiteSpace(revocation.ClientSecret ?? options.IntrospectionClientSecret))
+            failures.Add("SessionRevocation.ClientSecret is required (IntrospectionClientSecret is the fallback in reference-capable modes).");
+        if (revocation.AccessTokenLifetime <= TimeSpan.Zero)
+            failures.Add("SessionRevocation.AccessTokenLifetime must be positive.");
+        if (revocation.PollInterval <= TimeSpan.Zero || revocation.RetryDelay <= TimeSpan.Zero)
+            failures.Add("SessionRevocation.PollInterval and RetryDelay must be positive.");
+        if (revocation.BatchSize is < 1 or > 500)
+            failures.Add("SessionRevocation.BatchSize must be between 1 and 500.");
     }
 
     private static void Validate(ModgudResourceServerOptions options)
     {
         var failures = new List<string>();
+        ValidateSessionRevocation(options, failures);
 
         if (!Enum.IsDefined(options.TokenMode))
             failures.Add("TokenMode must be OnlyJwt, OnlyReferenceToken, or Both.");

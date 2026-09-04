@@ -64,6 +64,15 @@ public class DeviceFlowTests : IntegrationTestBase
         Assert.False(string.IsNullOrEmpty(
             doc.RootElement.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null),
             "offline_access should yield a refresh token.");
+
+        // ADR 0009 — the approving browser session is the sid of the device's tokens,
+        // and the client now holds a grant for it (back-channel logout targets it).
+        var idToken = new Microsoft.IdentityModel.JsonWebTokens.JsonWebToken(doc.RootElement.GetProperty("id_token").GetString()!);
+        var sid = Guid.Parse(idToken.GetClaim("sid").Value);
+        await using var query = GetTenantedSession();
+        Assert.NotNull(await query.LoadAsync<Modgud.Authentication.Domain.UserSession>(sid, ct));
+        Assert.NotNull(await query.LoadAsync<Modgud.Authentication.Sessions.SessionGrant>(
+            Modgud.Authentication.Sessions.SessionGrant.IdFor(sid, clientId), ct));
     }
 
     [Fact]

@@ -55,6 +55,14 @@ public sealed class ModgudResourceServerOptions
     public bool RequireHttpsMetadata { get; set; } = true;
 
     /// <summary>
+    /// Rejects JWT access tokens of sessions that ended before the token expired,
+    /// fed by the Modgud Application change feed. Off by default; see
+    /// <see cref="ModgudSessionRevocationOptions"/>. Used only by modes that accept JWTs
+    /// (reference tokens are revoked through introspection already).
+    /// </summary>
+    public ModgudSessionRevocationOptions SessionRevocation { get; set; } = new();
+
+    /// <summary>
     /// Optional advanced configuration applied to the internal JWT bearer
     /// handler before Modgud wires DPoP and audience-local claims projection.
     /// Used only by modes that accept JWTs.
