@@ -148,6 +148,10 @@ PAR is **offered, not required** — every realm advertises `pushed_authorizatio
 POST /connect/par
 Content-Type: application/x-www-form-urlencoded
 Authorization: Basic <base64(client_id:client_secret)>   # confidential clients
+# or, for a client with a registered JSON Web Key Set (private_key_jwt, RFC 7523):
+#   client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+#   client_assertion=<JWT signed with the client's private key: header typ=client-authentication+jwt,
+#                     iss=sub=client_id, aud=token endpoint, jti, exp ≤ 5 min>
 
 response_type=code
 client_id=acme-web

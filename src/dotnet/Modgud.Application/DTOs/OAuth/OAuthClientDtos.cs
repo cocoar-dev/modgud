@@ -20,6 +20,13 @@ public record OAuthClientDto
     public bool Enabled { get; init; } = true;
     public bool AllowAccessTokensViaBrowser { get; init; }
     public bool RequireClientSecret { get; init; } = true;
+
+    /// <summary>A client secret is registered (its value is never returned again).</summary>
+    public bool HasClientSecret { get; init; }
+
+    /// <summary>The registered JSON Web Key Set (public keys only) for
+    /// <c>private_key_jwt</c> client authentication, or <c>null</c>.</summary>
+    public string? JsonWebKeySet { get; init; }
     public bool EnableLocalLogin { get; init; } = true;
     public bool RequireConsent { get; init; }
     public bool AllowRememberConsent { get; init; } = true;
@@ -154,6 +161,12 @@ public record CreateOAuthClientDto
     public string? DisplayName { get; init; }
     public required string ClientType { get; init; }
     public string? ClientSecret { get; init; }
+
+    /// <summary>JSON Web Key Set (public keys, each with a <c>kid</c>) for
+    /// <c>private_key_jwt</c> client authentication. A confidential client created
+    /// with a key set and no explicit <see cref="ClientSecret"/> gets no secret at all —
+    /// it authenticates with signed client assertions only.</summary>
+    public string? JsonWebKeySet { get; init; }
     public string ConsentType { get; init; } = "implicit";
     public List<string> RedirectUris { get; init; } = [];
     public List<string> PostLogoutRedirectUris { get; init; } = [];
@@ -320,6 +333,10 @@ public record UpdateOAuthClientDto
     /// value sets it.
     /// </summary>
     public Optional<string?> WebAuthnRpId { get; init; }
+
+    /// <summary>JSON Web Key Set for <c>private_key_jwt</c>. Absent = no change; explicit
+    /// <c>null</c> or empty = remove; a value replaces the whole set.</summary>
+    public Optional<string?> JsonWebKeySet { get; init; }
 
     /// <summary>ADR 0009 back-channel logout URI. Absent = no change; explicit
     /// <c>null</c> or empty = remove; any value sets it.</summary>

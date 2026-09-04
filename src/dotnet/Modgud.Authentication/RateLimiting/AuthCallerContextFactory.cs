@@ -52,17 +52,40 @@ public sealed class AuthCallerContextFactory(IHostEnvironment env) : IAuthCaller
         var applicationId = http.GetApplicationId();
         var remote = http.Connection.RemoteIpAddress;
 
-        // ── client authentication (client_secret_basic) ─────────────────────
+        // ── client authentication (client_secret_basic or private_key_jwt) ──
         string? clientId = null;
         var confidential = false;
         var capabilities = new HashSet<string>(StringComparer.Ordinal);
-        if (TryReadBasicCredentials(http, out var presentedId, out var presentedSecret) && realmSlug is not null)
+        if (realmSlug is not null)
         {
             var applications = http.RequestServices.GetRequiredService<IOpenIddictApplicationManager>();
-            var app = await applications.FindByClientIdAsync(presentedId, ct);
-            if (app is not null
-                && await applications.HasClientTypeAsync(app, OpenIddictConstants.ClientTypes.Confidential, ct)
-                && await applications.ValidateClientSecretAsync(app, presentedSecret, ct))
+            object? app = null;
+            string? presentedId = null;
+            if (TryReadBasicCredentials(http, out var basicId, out var presentedSecret))
+            {
+                var candidate = await applications.FindByClientIdAsync(basicId, ct);
+                if (candidate is not null
+                    && await applications.HasClientTypeAsync(candidate, OpenIddictConstants.ClientTypes.Confidential, ct)
+                    && await applications.ValidateClientSecretAsync(candidate, presentedSecret, ct))
+                {
+                    app = candidate;
+                    presentedId = basicId;
+                }
+            }
+            else if (await TryReadClientAssertionAsync(http, ct) is { } assertion)
+            {
+                var candidate = await applications.FindByClientIdAsync(assertion.ClientId, ct);
+                if (candidate is not null
+                    && await applications.HasClientTypeAsync(candidate, OpenIddictConstants.ClientTypes.Confidential, ct)
+                    && await ClientAssertionValidator.IsValidAsync(
+                        assertion.Assertion, assertion.ClientId, await applications.GetJsonWebKeySetAsync(candidate, ct), http.Request))
+                {
+                    app = candidate;
+                    presentedId = assertion.ClientId;
+                }
+            }
+
+            if (app is not null && presentedId is not null)
             {
                 clientId = presentedId;
                 confidential = true;
@@ -153,6 +176,23 @@ public sealed class AuthCallerContextFactory(IHostEnvironment env) : IAuthCaller
             if (IPAddress.TryParse(text, out var single) && single.Equals(address)) return true;
         }
         return false;
+    }
+
+    /// <summary>RFC 7523 §2.2 — <c>client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer</c>
+    /// plus <c>client_assertion</c> in the form body. The assertion's <c>iss</c>/<c>sub</c> name the
+    /// client; an explicit <c>client_id</c> must agree.</summary>
+    private static async Task<(string ClientId, string Assertion)?> TryReadClientAssertionAsync(HttpContext http, CancellationToken ct)
+    {
+        if (!HttpMethods.IsPost(http.Request.Method) || !http.Request.HasFormContentType) return null;
+        var form = await http.Request.ReadFormAsync(ct);
+        if (form["client_assertion_type"].ToString() != ClientAssertionValidator.JwtBearerAssertionType) return null;
+        var assertion = form["client_assertion"].ToString();
+        if (string.IsNullOrEmpty(assertion)) return null;
+        var subject = ClientAssertionValidator.ReadSubject(assertion);
+        if (string.IsNullOrEmpty(subject)) return null;
+        var explicitId = form["client_id"].ToString();
+        if (!string.IsNullOrEmpty(explicitId) && !string.Equals(explicitId, subject, StringComparison.Ordinal)) return null;
+        return (subject, assertion);
     }
 
     private static bool TryReadBasicCredentials(HttpContext http, out string clientId, out string secret)

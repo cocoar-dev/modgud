@@ -60,6 +60,7 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
                 Capabilities = ["cap:trusted-forwarder"],
                 BackChannelLogoutUri = "https://parity.test/oidc/backchannel-logout",
                 BackChannelLogoutSessionRequired = false,
+                JsonWebKeySet = ParityJwks.PublicJwks,
                 AccessTokenLifetime = 300,
                 Claims = [new OAuthClientClaimDto { Type = "tenant", Value = "parity" }],
                 ClientClaimsPrefix = "client_",
@@ -89,6 +90,7 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
                     Capabilities = ["cap:trusted-forwarder"],
                     BackChannelLogoutUri = new Optional<string?>("https://parity.test/oidc/backchannel-logout"),
                     BackChannelLogoutSessionRequired = false,
+                    JsonWebKeySet = new Optional<string?>(ParityJwks.PublicJwks),
                     AccessTokenLifetime = 300,
                     Claims = [new RealmManifestClientClaim("tenant", "parity")],
                     ClientClaimsPrefix = "client_",
@@ -107,6 +109,8 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
 
     /// <summary>A realm-independent, order-stable projection of a client's externally
     /// meaningful state. App links are normalised to slugs (the ids differ per realm).</summary>
+    private static readonly TestJwks ParityJwks = new("parity-key");
+
     private sealed record ClientShape(
         string ClientType,
         string ConsentType,
@@ -128,7 +132,8 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
         string AppSlugs,
         string Capabilities,
         string? BackChannelLogoutUri,
-        bool BackChannelLogoutSessionRequired);
+        bool BackChannelLogoutSessionRequired,
+        string? JsonWebKeySet);
 
     private static async Task<ClientShape> GetClientShapeAsync(
         ColdStartWebApplicationFactory factory, string slug, string clientId, CancellationToken ct)
@@ -170,7 +175,8 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
                 Join(slugs),
                 Join(client.Capabilities),
                 client.BackChannelLogoutUri,
-                client.BackChannelLogoutSessionRequired);
+                client.BackChannelLogoutSessionRequired,
+                client.JsonWebKeySet);
         });
         return shape;
     }

@@ -154,6 +154,7 @@ public sealed class RealmManifestExporter(
             Roles = c.Roles,
             WebAuthnRpId = Opt(c.WebAuthnRpId),
             BackChannelLogoutUri = Opt(c.BackChannelLogoutUri),
+            JsonWebKeySet = Opt(c.JsonWebKeySet),
             BackChannelLogoutSessionRequired = c.BackChannelLogoutSessionRequired,
             Enabled = c.Enabled,
             RequireConsent = c.RequireConsent,

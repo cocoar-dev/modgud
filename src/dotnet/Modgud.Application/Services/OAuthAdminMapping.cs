@@ -590,9 +590,12 @@ internal static class OAuthAdminMapping
 
     // ───────────────────────────────────────────── State → DTO ────────────────
 
-    internal static OAuthClientDto MapClient(OAuthApplicationState s) => MapClient(s, delivery: null);
+    internal static OAuthClientDto MapClient(OAuthApplicationState s) => MapClient(s, delivery: null, security: null);
 
-    internal static OAuthClientDto MapClient(OAuthApplicationState s, BackChannelLogoutDeliveryStatus? delivery)
+    internal static OAuthClientDto MapClient(
+        OAuthApplicationState s,
+        BackChannelLogoutDeliveryStatus? delivery,
+        OAuthApplicationSecurityData? security)
     {
         var props = s.Properties;
         var settings = s.Settings;
@@ -647,6 +650,8 @@ internal static class OAuthAdminMapping
             BackChannelLogoutSessionRequired = GetBoolProp(props, OAuthApplicationPropertyKeys.BackChannelLogoutSessionRequired, true),
             BackChannelLogoutLastDeliveryAt = delivery?.LastAttemptAt,
             BackChannelLogoutLastOutcome = delivery?.LastOutcome,
+            HasClientSecret = !string.IsNullOrEmpty(security?.ClientSecret),
+            JsonWebKeySet = security?.JsonWebKeySet,
             Claims = GetClaimsProp(props),
             Roles = GetStringListProp(props, OAuthApplicationPropertyKeys.Roles),
             AppIds = s.AppIds.Select(g => new ShortGuid(g).ToString()).ToList(),
@@ -937,6 +942,65 @@ internal static class OAuthAdminMapping
             var b = a.GetAddressBytes();
             return b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168)
                    || (b[0] == 169 && b[1] == 254) || (b[0] == 100 && b[1] >= 64 && b[1] <= 127);
+        }
+    }
+
+    private static readonly string[] JwkPrivateMembers = ["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
+
+    /// <summary>
+    /// A registered key set holds public RSA or EC keys only, each with a <c>kid</c>
+    /// (the assertion header names the key; rotation adds a key under a new id). The
+    /// document is re-serialized compactly so exports and re-imports compare equal.
+    /// </summary>
+    internal static Error? ValidateJsonWebKeySet(string? value, out string? normalized)
+    {
+        normalized = null;
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (value.Length > 64 * 1024)
+            return OAuthErrors.InvalidJsonWebKeySet("the document is larger than 64 KB.");
+
+        JsonDocument document;
+        try { document = JsonDocument.Parse(value); }
+        catch (JsonException ex) { return OAuthErrors.InvalidJsonWebKeySet($"not valid JSON ({ex.Message})."); }
+
+        using (document)
+        {
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("keys", out var keys) || keys.ValueKind != JsonValueKind.Array)
+                return OAuthErrors.InvalidJsonWebKeySet("expected an object with a \"keys\" array (RFC 7517).");
+            if (keys.GetArrayLength() == 0)
+                return OAuthErrors.InvalidJsonWebKeySet("the key set is empty.");
+            if (keys.GetArrayLength() > 10)
+                return OAuthErrors.InvalidJsonWebKeySet("at most 10 keys are accepted.");
+
+            var kids = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var key in keys.EnumerateArray())
+            {
+                if (key.ValueKind != JsonValueKind.Object)
+                    return OAuthErrors.InvalidJsonWebKeySet("every entry in \"keys\" must be an object.");
+                var kty = key.TryGetProperty("kty", out var k) && k.ValueKind == JsonValueKind.String ? k.GetString() : null;
+                if (kty is not ("RSA" or "EC"))
+                    return OAuthErrors.InvalidJsonWebKeySet("only RSA and EC keys are accepted (kty).");
+                foreach (var member in JwkPrivateMembers)
+                {
+                    if (key.TryGetProperty(member, out _))
+                        return OAuthErrors.InvalidJsonWebKeySet($"key carries the private member \"{member}\"; register public keys only.");
+                }
+                if (kty == "RSA" && (!key.TryGetProperty("n", out _) || !key.TryGetProperty("e", out _)))
+                    return OAuthErrors.InvalidJsonWebKeySet("an RSA key needs \"n\" and \"e\".");
+                if (kty == "EC" && (!key.TryGetProperty("crv", out _) || !key.TryGetProperty("x", out _) || !key.TryGetProperty("y", out _)))
+                    return OAuthErrors.InvalidJsonWebKeySet("an EC key needs \"crv\", \"x\" and \"y\".");
+                var kid = key.TryGetProperty("kid", out var kidElement) && kidElement.ValueKind == JsonValueKind.String ? kidElement.GetString() : null;
+                if (string.IsNullOrWhiteSpace(kid))
+                    return OAuthErrors.InvalidJsonWebKeySet("every key needs a \"kid\".");
+                if (!kids.Add(kid))
+                    return OAuthErrors.InvalidJsonWebKeySet($"duplicate kid \"{kid}\".");
+                if (key.TryGetProperty("use", out var use) && use.ValueKind == JsonValueKind.String && use.GetString() is { } u && u != "sig")
+                    return OAuthErrors.InvalidJsonWebKeySet("keys must be signing keys (use = sig).");
+            }
+
+            normalized = JsonSerializer.Serialize(root);
+            return null;
         }
     }
 

@@ -66,6 +66,10 @@ export interface OAuthClientDto {
    * invalidates all passkeys already enrolled for this client.
    */
   WebAuthnRpId?: string | null
+  /** A client secret is registered (its value is never returned again). */
+  HasClientSecret?: boolean
+  /** Public JSON Web Key Set for private_key_jwt client authentication. */
+  JsonWebKeySet?: string | null
   /** ADR 0009 — where Modgud POSTs a signed logout token when a session ends. */
   BackChannelLogoutUri?: string | null
   /** ADR 0009 — logout tokens carry `sid` (default true). */
@@ -117,6 +121,8 @@ export interface CreateOAuthClientDto {
   DisplayName?: string | null
   ClientType: string
   ClientSecret?: string | null
+  /** Public JSON Web Key Set for private_key_jwt; with no ClientSecret the client gets no secret. */
+  JsonWebKeySet?: string | null
   ConsentType?: string
   RedirectUris?: string[]
   PostLogoutRedirectUris?: string[]
@@ -204,6 +210,8 @@ export interface UpdateOAuthClientDto {
   AllowedCorsOrigins?: string[] | null
   BackChannelLogoutUri?: string | null
   BackChannelLogoutSessionRequired?: boolean | null
+  /** null removes the key set. */
+  JsonWebKeySet?: string | null
   IdentityTokenLifetime?: number | null
   AccessTokenLifetime?: number | null
   AuthorizationCodeLifetime?: number | null
