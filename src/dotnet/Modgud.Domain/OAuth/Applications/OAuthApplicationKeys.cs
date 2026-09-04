@@ -21,6 +21,15 @@ public static class OAuthApplicationSettingKeys
     /// public-suffix check.
     /// </summary>
     public const string WebAuthnRpId = "modgud:webauthn_rp_id";
+
+    /// <summary>
+    /// ADR 0009 — OpenID Connect Back-Channel Logout 1.0: the absolute URI Modgud POSTs a
+    /// signed logout token to when a session of this client ends. Absent = the client
+    /// receives no logout notifications by POST (it may still read them from the
+    /// Application change feed). Admin-set; validated at registration and guarded
+    /// against private / link-local targets again at send time.
+    /// </summary>
+    public const string BackChannelLogoutUri = "modgud:backchannel_logout_uri";
 }
 
 /// <summary>Custom OAuth application property keys (JSON-element values for complex types).</summary>
@@ -104,4 +113,10 @@ public static class OAuthApplicationPropertyKeys
     /// CIMD-resolved client apart from a DCR-registered one even though both
     /// set <see cref="DcrIsDynamicallyRegistered"/>.</summary>
     public const string CimdIsResolvedClient = "modgud:cimd:is_resolved_client";
+
+    // ─────── Back-channel logout (ADR 0009) ──────
+
+    /// <summary>Boolean, default <c>true</c> — logout tokens carry the <c>sid</c> claim
+    /// (spec: <c>backchannel_logout_session_required</c>).</summary>
+    public const string BackChannelLogoutSessionRequired = "modgud:backchannel_logout_session_required";
 }

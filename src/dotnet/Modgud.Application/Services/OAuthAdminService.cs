@@ -67,7 +67,9 @@ public partial class OAuthAdminService
         if (!Guid.TryParse(id, out var guid)) return null;
         var state = await _session.LoadAsync<OAuthApplicationState>(guid, ct);
         if (state is null || state.IsDeleted) return null;
-        return MapClient(state);
+        // ADR 0009 — last logout-token delivery, kept beside the client document.
+        var delivery = await _session.LoadAsync<BackChannelLogoutDeliveryStatus>(guid, ct);
+        return MapClient(state, delivery);
     }
 
     public Task<ErrorOr<OAuthClientCreatedDto>> CreateClientAsync(
@@ -124,6 +126,8 @@ public partial class OAuthAdminService
 
         if (ValidateWebAuthnRpId(dto.WebAuthnRpId) is { } createRpIdErr)
             return createRpIdErr;
+        if (ValidateBackChannelLogoutUri(dto.BackChannelLogoutUri) is { } createBclErr)
+            return createBclErr;
 
         var existing = await _session.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(x => x.ClientId == dto.ClientId && !x.IsDeleted, ct);
@@ -409,6 +413,9 @@ public partial class OAuthAdminService
         if (dto.WebAuthnRpId.HasValue &&
             ValidateWebAuthnRpId(dto.WebAuthnRpId.Value) is { } updRpIdErr)
             return updRpIdErr;
+        if (dto.BackChannelLogoutUri.HasValue &&
+            ValidateBackChannelLogoutUri(dto.BackChannelLogoutUri.Value) is { } updBclErr)
+            return updBclErr;
 
         // v2 merge-patch: absent = unchanged, explicit null clears.
         if (dto.DisplayName.HasValue && dto.DisplayName.Value != aggregate.DisplayName)

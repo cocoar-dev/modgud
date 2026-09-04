@@ -9,6 +9,8 @@ using JasperFx.Events.Projections;
 using Marten;
 using Marten.Subscriptions;
 using Modgud.Authentication.Events;
+using Modgud.Authentication.Sessions;
+using Modgud.Domain.OAuth.Applications;
 using Modgud.Authentication.Domain.ExternalAuth.Events;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
@@ -67,6 +69,10 @@ public sealed class AppChangeFeedSubscription : SubscriptionBase
             .Distinct()
             .OrderBy(x => x)
             .ToList();
+
+        // ADR 0009 — why a session entity vanishes. The grants are deleted in the same
+        // unit of work as the end marker, so the reason is only knowable from the event.
+        var ends = AccessEnds.From(page.Events);
 
         var relevantSources = page.Events.Where(IsPublicStateSource).Take(2).ToList();
         var publicStateMayHaveChanged = relevantSources.Count > 0;
@@ -133,7 +139,7 @@ public sealed class AppChangeFeedSubscription : SubscriptionBase
                 state.MinimumEventCount = policy.MinimumEventCount;
                 state.LastProcessedSequence = page.SequenceCeiling;
 
-                var snapshot = await BuildSnapshotAsync(operations, app, cancellationToken);
+                var snapshot = await BuildSnapshotAsync(operations, app, ends, cancellationToken);
                 state.ScopeVersion = snapshot.ScopeVersion;
                 await ReplaceEntityStateAsync(operations, appId, snapshot.Entities, cancellationToken);
                 StageEntry(
@@ -156,7 +162,7 @@ public sealed class AppChangeFeedSubscription : SubscriptionBase
 
             if (publicStateMayHaveChanged)
             {
-                var snapshot = await BuildSnapshotAsync(operations, app, cancellationToken);
+                var snapshot = await BuildSnapshotAsync(operations, app, ends, cancellationToken);
                 if (!string.Equals(state.ScopeVersion, snapshot.ScopeVersion, StringComparison.Ordinal))
                 {
                     state.Generation++;
@@ -214,12 +220,16 @@ public sealed class AppChangeFeedSubscription : SubscriptionBase
             or UserActivatedEvent
             or UserDeactivatedEvent
             or UserExternalIdentityLinkedEvent
-            or UserExternalIdentityUnlinkedEvent;
+            or UserExternalIdentityUnlinkedEvent
+            // ADR 0009 — a relying party got its first tokens for a session / a session ended.
+            or UserAccessGrantedEvent
+            or UserAccessEndedEvent;
     }
 
     private static async Task<PublicAppSnapshot> BuildSnapshotAsync(
         IDocumentOperations operations,
         App app,
+        AccessEnds ends,
         CancellationToken cancellationToken)
     {
         var directory = await operations.Query<Principal>().ToListAsync(cancellationToken);
@@ -357,7 +367,43 @@ public sealed class AppChangeFeedSubscription : SubscriptionBase
             });
         }
 
-        return new PublicAppSnapshot(scope.ScopeVersion, current, presence);
+        // ADR 0009 — `session`: a login session is visible to an App exactly when one of
+        // the App's clients holds tokens for it (a SessionGrant), and the user is in
+        // scope. Identifiers only; SessionId and Sub are the raw token claim values so
+        // a consumer can match them against `sid` / `sub` without any conversion.
+        var appClientIds = (await operations.Query<OAuthApplicationState>()
+                .Where(c => !c.IsDeleted)
+                .ToListAsync(cancellationToken))
+            .Where(c => c.AppIds.Contains(app.Id))
+            .Select(c => c.ClientId)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (appClientIds.Count > 0)
+        {
+            var sessionGrants = await operations.Query<SessionGrant>()
+                .Where(g => appClientIds.Contains(g.ClientId))
+                .ToListAsync(cancellationToken);
+            foreach (var grant in sessionGrants)
+            {
+                var key = new EntityKey(AppEntityKinds.Session, grant.Id);
+                presence[key] = new EntityPresence(true, null);
+                if (!scopeIds.Contains(grant.UserId)) continue;
+
+                current[key] = PublicEntity.Create(key, new
+                {
+                    Id = ShortGuid.Encode(grant.Id),
+                    SessionId = grant.SessionId.ToString(),
+                    Sub = grant.UserId.ToString(),
+                    UserId = ShortGuid.Encode(grant.UserId),
+                    grant.ClientId,
+                    Kind = grant.Kind == AccessSessionKind.Native ? "native" : "browser",
+                    StartedAt = grant.FirstIssuedAt,
+                    LastSeenAt = grant.LastIssuedAt,
+                });
+            }
+        }
+
+        return new PublicAppSnapshot(scope.ScopeVersion, current, presence, ends);
     }
 
     private static async Task StageNetChangesAsync(
@@ -407,7 +453,16 @@ public sealed class AppChangeFeedSubscription : SubscriptionBase
             var tombstone = presence.RemovalPayloadJson is null
                 ? null
                 : new PublicEntity(key, presence.RemovalPayloadJson, Fingerprint(presence.RemovalPayloadJson));
-            changes.Add(new PendingChange(kind, tombstone ?? new PublicEntity(key, null, string.Empty), null));
+            string? reason = null;
+            if (kind == AppChangeKinds.Deleted && key.Kind == AppEntityKinds.Session)
+            {
+                // The grant row is gone; its last public shape still names the session and
+                // the subject, which is what the consumer keys its own session on.
+                var (sessionTombstone, endReason) = SessionTombstone(key, old.PayloadJson, snapshot.Ends);
+                tombstone = sessionTombstone;
+                reason = endReason;
+            }
+            changes.Add(new PendingChange(kind, tombstone ?? new PublicEntity(key, null, string.Empty), reason));
             operations.Delete<AppChangeFeedEntityState>(old.Id);
         }
 
@@ -533,6 +588,36 @@ public sealed class AppChangeFeedSubscription : SubscriptionBase
         }
     }
 
+    /// <summary>ADR 0009 — tombstone of an ended session: <c>{ SessionId, Sub, Reason }</c>.
+    /// The reason comes from the end marker in the page (<c>logout</c>, <c>revoked</c>,
+    /// <c>expired</c>, <c>user-deactivated</c>, <c>user-deleted</c>); a grant that vanished
+    /// without one (orphan sweep) is reported as <c>expired</c>.</summary>
+    private static (PublicEntity? Tombstone, string Reason) SessionTombstone(
+        EntityKey key, string lastPayloadJson, AccessEnds ends)
+    {
+        string? sessionId = null;
+        string? sub = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(lastPayloadJson);
+            if (doc.RootElement.TryGetProperty("SessionId", out var s)) sessionId = s.GetString();
+            if (doc.RootElement.TryGetProperty("Sub", out var u)) sub = u.GetString();
+        }
+        catch (JsonException)
+        {
+            // An unreadable last shape still yields a Deleted entry, just without ids.
+        }
+
+        var reason = AccessEndReasons.Expired;
+        if (Guid.TryParse(sessionId, out var sid) && ends.Sessions.TryGetValue(sid, out var byession))
+            reason = byession;
+        else if (Guid.TryParse(sub, out var userId) && ends.Users.TryGetValue(userId, out var byUser))
+            reason = byUser;
+
+        var json = Serialize(new { SessionId = sessionId, Sub = sub, Reason = reason });
+        return (new PublicEntity(key, json, Fingerprint(json)), reason);
+    }
+
     private static string Serialize<T>(T value) => JsonSerializer.Serialize(value, PayloadJson);
 
     private static string Fingerprint(string json) =>
@@ -565,8 +650,36 @@ public sealed class AppChangeFeedSubscription : SubscriptionBase
     private sealed record PublicAppSnapshot(
         string ScopeVersion,
         IReadOnlyDictionary<EntityKey, PublicEntity> Entities,
-        IReadOnlyDictionary<EntityKey, EntityPresence> Presence);
+        IReadOnlyDictionary<EntityKey, EntityPresence> Presence,
+        AccessEnds Ends);
     private sealed record PendingChange(string ChangeKind, PublicEntity Entity, string? Reason);
+
+    /// <summary>ADR 0009 — the session and user ends found in one subscription page,
+    /// keyed by id, carrying the reason for the `session` tombstones.</summary>
+    private sealed record AccessEnds(
+        IReadOnlyDictionary<Guid, string> Sessions,
+        IReadOnlyDictionary<Guid, string> Users)
+    {
+        public static readonly AccessEnds None = new(
+            new Dictionary<Guid, string>(), new Dictionary<Guid, string>());
+
+        public static AccessEnds From(IReadOnlyList<IEvent> events)
+        {
+            Dictionary<Guid, string>? sessions = null;
+            Dictionary<Guid, string>? users = null;
+            foreach (var e in events)
+            {
+                if (e.Data is not UserAccessEndedEvent ended) continue;
+                if (ended.Scope == AccessEndScope.Session && ended.SessionId is { } sid)
+                    (sessions ??= new())[sid] = ended.Reason;
+                else if (ended.Scope == AccessEndScope.User)
+                    (users ??= new())[ended.UserId] = ended.Reason;
+            }
+            return sessions is null && users is null
+                ? None
+                : new AccessEnds(sessions ?? new Dictionary<Guid, string>(), users ?? new Dictionary<Guid, string>());
+        }
+    }
 }
 
 internal static class AppEntityKinds
@@ -575,6 +688,8 @@ internal static class AppEntityKinds
     public const string Terminal = "terminal";
     public const string PositionGrant = "position-grant";
     public const string StaffingSession = "staffing-session";
+    /// <summary>ADR 0009 — a login session one of the App's clients holds tokens for.</summary>
+    public const string Session = "session";
 }
 
 internal static class AppChangeKinds

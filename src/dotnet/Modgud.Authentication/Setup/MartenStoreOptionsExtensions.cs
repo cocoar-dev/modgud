@@ -148,6 +148,27 @@ public static class MartenStoreOptionsExtensions
             .Index(x => x.ExpiresAt)
             .Index(x => x.AbsoluteExpiresAt);
 
+        // ADR 0009 — "this relying party holds tokens of this session". Plain document,
+        // deterministic id per (session, client), hard-deleted with the session. Indexed
+        // for the two questions it answers: the session's RPs and the user's RPs.
+        options.Schema.For<Modgud.Authentication.Sessions.SessionGrant>()
+            .Identity(x => x.Id)
+            .Index(x => x.SessionId)
+            .Index(x => x.UserId)
+            .Index(x => x.ClientId);
+
+        // ADR 0009 — last logout-token delivery per client, beside the client document.
+        options.Schema.For<Modgud.Domain.OAuth.Applications.BackChannelLogoutDeliveryStatus>()
+            .Identity(x => x.Id);
+
+        // ADR 0009 — pending logout-token deliveries. Version-checked so the in-process
+        // first attempt and the retry job never both send for one row; indexed on the
+        // due time the job sweeps by.
+        options.Schema.For<Modgud.Authentication.BackChannelLogout.BackChannelLogoutDelivery>()
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Index(x => x.NextAttemptAt);
+
         // WebAuthn/passkey credentials (raw crypto, not event-sourced). One per
         // enrolled authenticator; indexed by UserId for the per-user list/login
         // lookup and the cascade-delete on permanent erase.
@@ -253,6 +274,9 @@ public static class MartenStoreOptionsExtensions
         options.Events.MapEventType<UserUnlockedEvent>("user_unlocked");
         options.Events.MapEventType<UserActivatedEvent>("user_activated");
         options.Events.MapEventType<UserDeactivatedEvent>("user_deactivated");
+        // ADR 0009 — session/RP markers (identifiers only, nothing to mask).
+        options.Events.MapEventType<UserAccessGrantedEvent>("user_access_granted");
+        options.Events.MapEventType<UserAccessEndedEvent>("user_access_ended");
 
         // Login provider events (event-aliases keep the legacy `idp_config_*`
         // wire format because there is no migration concern — the names are an

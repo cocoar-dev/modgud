@@ -67,6 +67,6 @@ Ask your admin. The external provider may be misconfigured. As a workaround, sig
 
 ## Signing out
 
-Top-right user menu → **Sign out**. Modgud invalidates your session here and (if the connected app uses front-channel logout) signs you out of every app you've used in this browser session.
+Top-right user menu → **Sign out**. Modgud ends your session here and tells every connected app you signed into from this browser session to end its own session too (apps that support back-channel logout do so within seconds).
 
 To end **other** sessions you've forgotten about — say, on a coworker's laptop — go to Profile → Sessions and end them individually.

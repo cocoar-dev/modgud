@@ -1,4 +1,5 @@
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Events;
 using ErrorOr;
 using Marten;
 using JasperFx;
@@ -19,7 +20,8 @@ public class SessionService(
     ITenantSessionFactory sessionFactory,
     IDeviceInfoService deviceInfo,
     IRealmSettingsService realmSettings,
-    IBrowserSessionConnectionRegistry connections) : ISessionService
+    IBrowserSessionConnectionRegistry connections,
+    ISessionGrantService grants) : ISessionService
 {
     private static readonly TimeSpan TouchInterval = TimeSpan.FromMinutes(5);
 
@@ -126,13 +128,18 @@ public class SessionService(
         return entity;
     }
 
-    public async Task<ErrorOr<bool>> RevokeSessionAsync(Guid userId, Guid sessionId, CancellationToken ct = default)
+    public Task<ErrorOr<bool>> RevokeSessionAsync(Guid userId, Guid sessionId, CancellationToken ct = default) =>
+        EndSessionAsync(userId, sessionId, AccessEndReasons.Revoked, initiatingClientId: null, ct);
+
+    public async Task<ErrorOr<bool>> EndSessionAsync(Guid userId, Guid sessionId, string reason, string? initiatingClientId, CancellationToken ct = default)
     {
         var entity = await session.LoadAsync<UserSession>(sessionId, ct);
         if (entity is null) return Error.NotFound("Session.NotFound", $"Session {sessionId} not found.");
         if (entity.UserId != userId) return Error.Forbidden("Session.NotOwner", "Caller does not own this session.");
 
         session.Delete<UserSession>(sessionId);
+        // ADR 0009 — the session's relying parties and the end marker commit with the delete.
+        await grants.StageSessionEndAsync(session, userId, sessionId, reason, initiatingClientId, ct);
         await session.SaveChangesAsync(ct);
         connections.Revoke(sessionId);
         return true;
@@ -154,6 +161,12 @@ public class SessionService(
             session.DeleteWhere<UserSession>(s => s.UserId == userId && s.Id != excludedSessionId);
         else
             session.DeleteWhere<UserSession>(s => s.UserId == userId);
+
+        // ADR 0009 — one end marker per session so every relying party of every
+        // ended session is notified with the sid it knows (a user-level end would
+        // also log the caller's own, kept session out at its RPs).
+        foreach (var id in ids)
+            await grants.StageSessionEndAsync(session, userId, id, AccessEndReasons.Revoked, initiatingClientId: null, ct);
 
         await session.SaveChangesAsync(ct);
         foreach (var id in ids) connections.Revoke(id);
@@ -188,7 +201,14 @@ public class SessionService(
             .ToListAsync(ct);
         if (expired.Count == 0) return 0;
 
+        var owners = await session.Query<UserSession>()
+            .Where(s => s.ExpiresAt <= now || s.AbsoluteExpiresAt <= now)
+            .Select(s => new { s.Id, s.UserId })
+            .ToListAsync(ct);
         session.DeleteWhere<UserSession>(s => s.ExpiresAt <= now || s.AbsoluteExpiresAt <= now);
+        // ADR 0009 — an expired session ends its relying-party sessions too.
+        foreach (var owner in owners)
+            await grants.StageSessionEndAsync(session, owner.UserId, owner.Id, AccessEndReasons.Expired, initiatingClientId: null, ct);
         await session.SaveChangesAsync(ct);
         foreach (var id in expired) connections.Revoke(id);
         return expired.Count;

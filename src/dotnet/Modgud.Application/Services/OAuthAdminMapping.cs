@@ -208,6 +208,8 @@ internal static class OAuthAdminMapping
         // ADR-0009 — store the normalized (trimmed, lowercased) per-client RP ID; a
         // blank value leaves it realm-scoped (no key). Format is validated upstream.
         if (!string.IsNullOrWhiteSpace(dto.WebAuthnRpId)) settings[OAuthApplicationSettingKeys.WebAuthnRpId] = dto.WebAuthnRpId.Trim().ToLowerInvariant();
+        // ADR 0009 — stored as given (trimmed); format validated upstream.
+        if (!string.IsNullOrWhiteSpace(dto.BackChannelLogoutUri)) settings[OAuthApplicationSettingKeys.BackChannelLogoutUri] = dto.BackChannelLogoutUri.Trim();
         return settings;
     }
 
@@ -221,7 +223,9 @@ internal static class OAuthAdminMapping
         // pass it explicitly. Always written (like the other flags) so it's
         // queryable regardless of when it was set.
         bool requireDpop = false,
-        bool requireDpopNonce = false)
+        bool requireDpopNonce = false,
+        // ADR 0009 — spec default is true; trailing optional for the pin tests.
+        bool backChannelLogoutSessionRequired = true)
         => new()
         {
             [OAuthApplicationPropertyKeys.Enabled] = JsonSerializer.SerializeToElement(enabled),
@@ -237,6 +241,7 @@ internal static class OAuthAdminMapping
             [OAuthApplicationPropertyKeys.Roles] = JsonSerializer.SerializeToElement(roles),
             [OAuthApplicationPropertyKeys.RequireDpop] = JsonSerializer.SerializeToElement(requireDpop),
             [OAuthApplicationPropertyKeys.RequireDpopNonce] = JsonSerializer.SerializeToElement(requireDpopNonce),
+            [OAuthApplicationPropertyKeys.BackChannelLogoutSessionRequired] = JsonSerializer.SerializeToElement(backChannelLogoutSessionRequired),
         };
 
     internal static Dictionary<string, object?> BuildScopeProperties(
@@ -357,6 +362,14 @@ internal static class OAuthAdminMapping
                 settings.Remove(OAuthApplicationSettingKeys.WebAuthnRpId);
             else
                 settings[OAuthApplicationSettingKeys.WebAuthnRpId] = dto.WebAuthnRpId.Value.Trim().ToLowerInvariant();
+        }
+        // ADR 0009: absent = no change; explicit null or blank = remove; value = set.
+        if (dto.BackChannelLogoutUri.HasValue)
+        {
+            if (string.IsNullOrWhiteSpace(dto.BackChannelLogoutUri.Value))
+                settings.Remove(OAuthApplicationSettingKeys.BackChannelLogoutUri);
+            else
+                settings[OAuthApplicationSettingKeys.BackChannelLogoutUri] = dto.BackChannelLogoutUri.Value.Trim();
         }
         return settings;
     }
@@ -572,11 +585,14 @@ internal static class OAuthAdminMapping
             claims: dto.Claims ?? GetClaimsProp(current),
             roles: dto.Roles ?? GetStringListProp(current, OAuthApplicationPropertyKeys.Roles),
             requireDpop: dto.RequireDpop ?? GetBoolProp(current, OAuthApplicationPropertyKeys.RequireDpop, false),
-            requireDpopNonce: dto.RequireDpopNonce ?? GetBoolProp(current, OAuthApplicationPropertyKeys.RequireDpopNonce, false));
+            requireDpopNonce: dto.RequireDpopNonce ?? GetBoolProp(current, OAuthApplicationPropertyKeys.RequireDpopNonce, false),
+            backChannelLogoutSessionRequired: dto.BackChannelLogoutSessionRequired ?? GetBoolProp(current, OAuthApplicationPropertyKeys.BackChannelLogoutSessionRequired, true));
 
     // ───────────────────────────────────────────── State → DTO ────────────────
 
-    internal static OAuthClientDto MapClient(OAuthApplicationState s)
+    internal static OAuthClientDto MapClient(OAuthApplicationState s) => MapClient(s, delivery: null);
+
+    internal static OAuthClientDto MapClient(OAuthApplicationState s, BackChannelLogoutDeliveryStatus? delivery)
     {
         var props = s.Properties;
         var settings = s.Settings;
@@ -591,6 +607,7 @@ internal static class OAuthAdminMapping
 
         settings.TryGetValue(OAuthApplicationSettingKeys.ClientClaimsPrefix, out var prefix);
         settings.TryGetValue(OAuthApplicationSettingKeys.WebAuthnRpId, out var webAuthnRpId);
+        settings.TryGetValue(OAuthApplicationSettingKeys.BackChannelLogoutUri, out var backChannelLogoutUri);
 
         return new OAuthClientDto
         {
@@ -626,6 +643,10 @@ internal static class OAuthAdminMapping
             UpdateAccessTokenClaimsOnRefresh = GetBoolProp(props, OAuthApplicationPropertyKeys.UpdateAccessTokenClaimsOnRefresh, false),
             ClientClaimsPrefix = prefix,
             WebAuthnRpId = webAuthnRpId,
+            BackChannelLogoutUri = backChannelLogoutUri,
+            BackChannelLogoutSessionRequired = GetBoolProp(props, OAuthApplicationPropertyKeys.BackChannelLogoutSessionRequired, true),
+            BackChannelLogoutLastDeliveryAt = delivery?.LastAttemptAt,
+            BackChannelLogoutLastOutcome = delivery?.LastOutcome,
             Claims = GetClaimsProp(props),
             Roles = GetStringListProp(props, OAuthApplicationPropertyKeys.Roles),
             AppIds = s.AppIds.Select(g => new ShortGuid(g).ToString()).ToList(),
@@ -883,6 +904,41 @@ internal static class OAuthAdminMapping
     /// (admin-set, not client-supplied) so there is NO public-suffix-list check;
     /// this only rejects obvious malformity that would mint unverifiable credentials.
     /// </summary>
+    /// <summary>
+    /// ADR 0009 — a back-channel logout URI is an absolute URI without fragment, https
+    /// anywhere, http only on a loopback host (local development). Null/blank = none.
+    /// Private / link-local literals are rejected here as well; the delivery handler
+    /// re-checks every resolved address at send time (SSRF guard).
+    /// </summary>
+    internal static Error? ValidateBackChannelLogoutUri(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var raw = value.Trim();
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri))
+            return OAuthErrors.InvalidBackChannelLogoutUri(value, "not an absolute URI.");
+        if (!string.IsNullOrEmpty(uri.Fragment))
+            return OAuthErrors.InvalidBackChannelLogoutUri(value, "a fragment is not allowed.");
+        var loopback = uri.IsLoopback;
+        if (uri.Scheme == Uri.UriSchemeHttps) { /* fine */ }
+        else if (uri.Scheme == Uri.UriSchemeHttp && loopback) { /* local development only */ }
+        else
+            return OAuthErrors.InvalidBackChannelLogoutUri(value, "must be https (http only on localhost).");
+        if (uri.HostNameType is UriHostNameType.IPv4 or UriHostNameType.IPv6
+            && System.Net.IPAddress.TryParse(uri.Host.Trim('[', ']'), out var literal)
+            && !System.Net.IPAddress.IsLoopback(literal)
+            && (literal.IsIPv6LinkLocal || literal.IsIPv6UniqueLocal || IsPrivateV4(literal)))
+            return OAuthErrors.InvalidBackChannelLogoutUri(value, "private or link-local addresses are not reachable targets.");
+        return null;
+
+        static bool IsPrivateV4(System.Net.IPAddress a)
+        {
+            if (a.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) return false;
+            var b = a.GetAddressBytes();
+            return b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168)
+                   || (b[0] == 169 && b[1] == 254) || (b[0] == 100 && b[1] >= 64 && b[1] <= 127);
+        }
+    }
+
     internal static Error? ValidateWebAuthnRpId(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;

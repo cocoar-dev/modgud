@@ -115,7 +115,8 @@ public sealed class BrowserSessionTouchConcurrencyTests : IntegrationTestBase
 			new FixedTenantSessionFactory(store),
 			new StubDeviceInfoService(),
 			realmSettings,
-			new BrowserSessionConnectionRegistry());
+			new BrowserSessionConnectionRegistry(),
+			new SessionGrantService(documentSession, TimeProvider.System));
 
 	private sealed class FixedTenantSessionFactory(IDocumentStore store) : ITenantSessionFactory
 	{

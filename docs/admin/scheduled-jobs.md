@@ -103,6 +103,22 @@ Drives this realm's account-deletion deadlines: sends "about to be deleted" remi
 - **What it does:** runs the self-service reminder/erasure sweep, the admin recycle-bin auto-purge sweep, and the invite-code prune in the owning realm, then reports counts for each. See [Users → recycle bin & permanent erase](./users#recycle-bin-permanent-erase) for the lifecycle this job enforces.
 - **On failure:** that realm's run fails and is written to its own history; no other realm's run is affected.
 
+### `backchannel-logout-retry` — Back-channel logout retry
+
+Retries logout-token deliveries to relying parties whose logout URI did not
+accept the first, immediate attempt (see
+[logout propagation](../integrate/login-flows#logout-propagation-to-relying-parties)).
+
+- **Default cron:** `0 * * * * ?` (every minute)
+- **Parameters:** none — the schedule is fixed: about 1, 5 and 30 minutes
+  after the previous failure, then the delivery is given up.
+- **What it does:** sweeps the realm's pending deliveries whose next attempt is
+  due, mints a fresh logout token for each and POSTs it. A delivered or
+  given-up row is removed; every attempt is a security-log entry and updates
+  the client's "last delivery" status.
+- **On failure:** that realm's run fails and is written to its own history; no
+  other realm's run is affected.
+
 ### `session-prune` — Session Prune
 
 Removes expired browser/SSO and native OAuth client-session documents from
@@ -114,7 +130,11 @@ this realm.
 - **What it does:** deletes `UserSession` and `ClientSession` rows whose idle
   or absolute expiry has passed. Runtime cookie and refresh-token validation
   already rejects an expired row, so pruning is storage hygiene rather than
-  the enforcement boundary.
+  the enforcement boundary. An expired session still ends its relying-party
+  sessions: the sweep emits the end marker that drives
+  [back-channel logout](../integrate/login-flows#logout-propagation-to-relying-parties)
+  with reason `expired`, and removes any session-grant row left without a
+  session.
 - **On failure:** that realm's run fails and is written to its own history; no
   other realm's run is affected.
 

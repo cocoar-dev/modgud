@@ -66,6 +66,14 @@ export interface OAuthClientDto {
    * invalidates all passkeys already enrolled for this client.
    */
   WebAuthnRpId?: string | null
+  /** ADR 0009 — where Modgud POSTs a signed logout token when a session ends. */
+  BackChannelLogoutUri?: string | null
+  /** ADR 0009 — logout tokens carry `sid` (default true). */
+  BackChannelLogoutSessionRequired?: boolean
+  /** Read-only: last delivery attempt to the logout URI. */
+  BackChannelLogoutLastDeliveryAt?: string | null
+  /** Read-only: `delivered` or `failed:<reason>`. */
+  BackChannelLogoutLastOutcome?: string | null
   Claims: OAuthClientClaimDto[]
   Roles: string[]
   /**
@@ -123,6 +131,8 @@ export interface CreateOAuthClientDto {
   AllowedGrantTypes?: string[]
   Capabilities?: string[]
   AllowedCorsOrigins?: string[]
+  BackChannelLogoutUri?: string | null
+  BackChannelLogoutSessionRequired?: boolean
   IdentityTokenLifetime?: number | null
   AccessTokenLifetime?: number | null
   AuthorizationCodeLifetime?: number | null
@@ -192,6 +202,8 @@ export interface UpdateOAuthClientDto {
   AllowedGrantTypes?: string[] | null
   Capabilities?: string[] | null
   AllowedCorsOrigins?: string[] | null
+  BackChannelLogoutUri?: string | null
+  BackChannelLogoutSessionRequired?: boolean | null
   IdentityTokenLifetime?: number | null
   AccessTokenLifetime?: number | null
   AuthorizationCodeLifetime?: number | null

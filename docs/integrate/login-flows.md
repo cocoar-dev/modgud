@@ -255,3 +255,31 @@ For a live OIDC provider, the response can include
 `ExternalLogoutUrl`, which performs RP-initiated logout at the upstream
 OIDC provider when requested. SAML v1 has no Single Logout endpoint:
 SAML-originated sessions end locally and return no external logout URL.
+
+## Logout propagation to relying parties
+
+Modgud owns the session of record. A relying party's own session is a cache of a Modgud login, and it ends when the Modgud session ends — whichever way that happens: the user signs out, an RP calls `/connect/logout`, the user ends a session from the sessions list or signs out everywhere, an admin forces a sign-out, the account is deactivated or deleted, or the session simply expires. Every such end is propagated over two transports; use one or both.
+
+### The session identifier
+
+Every token of a user session carries `sid`: the ID token, the access token (JWT or introspection response). For browser flows it is the browser session; for native grants (OTP, passkey, magic link) it is the native client session. Client-credentials tokens have no session and no `sid`. A relying party keeps the `sid` next to its own session so it can match a logout notification to exactly one local session.
+
+### Transport A — back-channel logout (POST)
+
+Register a **Logout URI** on the client (admin UI, *Login & Consent* tab; `BackChannelLogoutUri` in the admin API and the realm manifest). It must be an absolute `https` URI without fragment (`http` only on `localhost`); private and link-local targets are refused at registration and again at send time. When a session that holds tokens of the client ends, Modgud POSTs
+
+```http
+POST /oidc/backchannel-logout HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+Cache-Control: no-store
+
+logout_token=eyJhbGciOiJSUzI1NiIsImtpZCI6Ii4uLiIsInR5cCI6ImxvZ291dCtqd3QifQ...
+```
+
+The logout token follows [OpenID Connect Back-Channel Logout 1.0 §2.4](https://openid.net/specs/openid-connect-backchannel-1_0.html#LogoutToken): `iss` (the same issuer your ID tokens carry), `sub`, `aud` = your `client_id`, `iat`, `exp` (two minutes), `jti`, `events` with the `http://schemas.openid.net/event/backchannel-logout` member, `sid` when one session ended, no `nonce`, header `typ: logout+jwt`, signed RS256 with the realm key (`kid` in the JWKS). Validate it like an ID token (signature, `iss`, `aud`, `iat`/`exp`, `jti` replay), then end the local session named by `sid` — or every session of `sub` when `sid` is absent (the user's access ended as a whole: force sign-out, deactivation, deletion). Answer `200` or `204`; anything else, a timeout or an unreachable host counts as failed. The delivery is retried by the realm's retry job after about 1, 5 and 30 minutes, each time with a fresh token, then given up (the change feed still carries the fact). The RP that called `/connect/logout` is not notified about its own logout. The last delivery outcome per client is shown on the client page, and every attempt is a `security.backchannel_logout_sent` / `security.backchannel_logout_failed` entry in the security log.
+
+Discovery advertises `backchannel_logout_supported` and `backchannel_logout_session_supported`; most OIDC client libraries (ASP.NET Core, Spring, Keycloak adapters, oidc-client) handle the token with their built-in back-channel support.
+
+### Transport B — the Application change feed
+
+A relying party without an inbound route reads the same fact from the [Application change feed](application-change-feed#session-entity-version-1): a `session` entity is upserted when the App's client first receives tokens for a session and deleted — with `Reason` — when the session ends. An offline consumer replays the deletes from its cursor; the snapshot lists the live sessions for reconciliation. A resource server that validates JWTs locally can use the same entity kind to reject tokens of ended sessions before they expire (the shared `Modgud.AspNetCore.ResourceServer` library will ship that denylist).

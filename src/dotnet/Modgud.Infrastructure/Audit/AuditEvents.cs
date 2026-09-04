@@ -224,6 +224,16 @@ public static class AuditEvents
     /// <summary>A DCR client was garbage-collected for inactivity (tenant-visible).</summary>
     public const string DcrClientGarbageCollected = "ops.dcr_client_garbage_collected";
 
+    /// <summary>ADR 0009 — a logout token was delivered to a client's back-channel logout
+    /// URI. Carries TargetSubjectId, SessionId, OAuthClientId, Count = attempt,
+    /// OperationCode = session|user, ReasonCode = why the session ended.</summary>
+    public const string BackChannelLogoutSent = "security.backchannel_logout_sent";
+
+    /// <summary>ADR 0009 — one delivery attempt failed (retried on a schedule, then
+    /// dead-lettered). ReasonCode = failure class (<c>failed:http-503</c>, <c>failed:timeout</c>,
+    /// <c>failed:connect</c>, <c>failed:ssrf</c>).</summary>
+    public const string BackChannelLogoutFailed = "security.backchannel_logout_failed";
+
     // ─────────────────────────────────────────────────────────────────────
     // Taxonomy helper. Store ownership is selected through separate realm and
     // platform record types, never inferred from this event code.

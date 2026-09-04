@@ -63,6 +63,7 @@ using Marten;
 using Marten.Storage;
 using Npgsql;
 using Wolverine;
+using Wolverine.Marten;
 
 
 Log.Logger = new LoggerConfiguration()
@@ -513,6 +514,33 @@ try
         Modgud.Authentication.RateLimiting.LoginThrottle>();
     builder.Services.AddScoped<Modgud.Authentication.RateLimiting.ILoginUnlockMailer,
         Modgud.Authentication.RateLimiting.LoginUnlockMailer>();
+    // ADR 0009 — back-channel logout: session grants, logout-token minter, delivery client.
+    builder.Services.AddScoped<Modgud.Authentication.Sessions.ISessionGrantService,
+        Modgud.Authentication.Sessions.SessionGrantService>();
+    builder.Services.AddSingleton<Modgud.Authentication.BackChannelLogout.LogoutTokenMinter>();
+    builder.Services.AddScoped<Modgud.Authentication.BackChannelLogout.IBackChannelLogoutDeliverer,
+        Modgud.Authentication.BackChannelLogout.BackChannelLogoutDeliverer>();
+    // The prompt first attempt runs on this background dispatcher; the pending row in
+    // the realm database is the durable record, the per-realm retry job the backstop.
+    builder.Services.AddSingleton<Modgud.Authentication.BackChannelLogout.BackChannelLogoutDispatchQueue>();
+    builder.Services.AddHostedService<Modgud.Authentication.BackChannelLogout.BackChannelLogoutDispatcher>();
+    {
+        // The SSRF guard refuses loopback/private targets at connect time. Development and
+        // the test host talk to relying parties on localhost, so only they get a plain
+        // handler; every other environment keeps the guard (an admin-registered URI is
+        // not a reason to skip it).
+        var backChannelClient = builder.Services.AddHttpClient(
+            Modgud.Authentication.BackChannelLogout.BackChannelLogoutConstants.HttpClientName,
+            client => client.Timeout = Modgud.Authentication.BackChannelLogout.BackChannelLogoutConstants.DeliveryTimeout);
+        if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
+            backChannelClient.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+        else
+            backChannelClient.ConfigurePrimaryHttpMessageHandler(() =>
+                Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create("Back-channel logout delivery"));
+    }
+    // ADR 0009 — record "client holds tokens of session" on every access-token mint.
+    builder.Services.AddOpenIddict().AddServer(options =>
+        options.AddEventHandler(Modgud.Authentication.BackChannelLogout.SessionGrantTokenHandler.Descriptor));
     builder.Services.AddSingleton<Modgud.Application.Dcr.IDcrRateLimiter,
         Modgud.Infrastructure.RateLimiting.StoreBackedDcrRateLimiter>();
 
@@ -969,7 +997,20 @@ try
 
         // Auto-register Event Forwarding subscriptions for all ReferenceSyncHandler<TEvent> implementations
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
+
     });
+
+    // ADR 0009 — the fan-out reads the end markers from the event store itself (a
+    // Marten subscription driven by the projection daemon, in order, with durable
+    // progress), not from session-commit forwarding: sessions end from plain
+    // endpoints whose Marten session is not Wolverine's outboxed one.
+    builder.Services.ProcessEventsWithWolverineHandlersInStrictOrder(
+        Modgud.Authentication.BackChannelLogout.BackChannelLogoutConstants.SubscriptionName,
+        subscription =>
+        {
+            subscription.IncludeType<Modgud.Authentication.Events.UserAccessEndedEvent>();
+            subscription.Options.SubscribeFromPresent();
+        });
 
     // Structured best-effort security-event sink. Realm events are routed to the
     // owning physical realm DB; PII-free deployment events go to the Global Store.
@@ -1025,6 +1066,11 @@ try
         name: Modgud.Api.Features.Admin.Jobs.SessionPruneJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.SessionPruneJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.SessionPruneJob.Description);
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.BackChannelLogoutRetryJob>(
+        key: Modgud.Api.Features.Admin.Jobs.BackChannelLogoutRetryJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.BackChannelLogoutRetryJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.BackChannelLogoutRetryJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.BackChannelLogoutRetryJob.Description);
     builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob>(
         key: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.SigningKeyJanitorJob.Name,
