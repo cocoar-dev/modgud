@@ -22,6 +22,7 @@ using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Observability;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
+using Modgud.Authentication.RateLimiting;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -339,7 +340,7 @@ public static class AccountEndpoints
         })
         .WithName("Account_PasswordlessOtpRequest")
         .AllowAnonymous()
-        .RequireRateLimiting("native-otp");
+        .RequireAuthRateLimit(AuthRateLimitPolicy.NativeOtp, target: ctx => ctx.Argument<PasswordlessOtpRequest>()?.Email);
 
         // Redeem the primary OTP into the normal Modgud browser cookie. Users
         // with another configured second factor are rejected here instead of
@@ -443,7 +444,7 @@ public static class AccountEndpoints
         })
         .WithName("Account_PasswordlessOtpLogin")
         .AllowAnonymous()
-        .RequireRateLimiting("email-otp");
+        .RequireAuthRateLimit(AuthRateLimitPolicy.EmailOtp, target: ctx => ctx.Argument<PasswordlessOtpLoginRequest>()?.Email);
 
         group.MapPost("logout", [Authorize] async (
             HttpContext context,

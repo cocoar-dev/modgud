@@ -6,6 +6,8 @@ using Modgud.Authentication.Domain;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Infrastructure.Email;
 using Modgud.Infrastructure.Realms;
+using Modgud.Authentication.RateLimiting;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -88,7 +90,7 @@ public static class PasswordResetEndpoints
         // RATE-01 — 5 requests per hour per IP. Bounds the enum-via-email
         // surface even though the response body is constant ("if your account
         // exists, an email is on the way") and prevents SMTP-pipeline DoS.
-        .RequireRateLimiting("password-reset");
+        .RequireAuthRateLimit(AuthRateLimitPolicy.PasswordReset, target: ctx => ctx.Argument<ForgotPasswordRequest>()?.UserName);
 
         // POST /api/account/reset-password — Reset password with token
         group.MapPost("reset-password", async (

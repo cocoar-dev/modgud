@@ -16,6 +16,8 @@ using Modgud.Infrastructure.PositionTerminals;
 using OpenIddict.Abstractions;
 using OpenIddict.Validation.AspNetCore;
 using static OpenIddict.Abstractions.OpenIddictConstants;
+using Modgud.Authentication.RateLimiting;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Api.Features.Positions;
 
@@ -60,7 +62,7 @@ public static class ActivationTokenEndpoints
             {
                 AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
             })
-            .RequireRateLimiting("passkey-begin");
+            .RequireAuthRateLimit(AuthRateLimitPolicy.PasskeyBegin);
         app.MapPost("/connect/activation-token/{tokenId}/register", RegistrationCompleteAsync)
             .WithName("ActivationToken_Register")
             .WithTags("Position Staffing")
@@ -69,7 +71,7 @@ public static class ActivationTokenEndpoints
             {
                 AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme,
             })
-            .RequireRateLimiting("passkey-begin");
+            .RequireAuthRateLimit(AuthRateLimitPolicy.PasskeyBegin);
 
         return app;
     }

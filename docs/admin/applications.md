@@ -148,6 +148,7 @@ re-inherits the realm.
 | **Native grants** | Per-app toggle + token lifetimes for the cookieless [native passwordless grants](../integrate/native-apps). |
 | **DCR** | Per-app override of [Dynamic Client Registration](./dynamic-client-registration) (enable, token lifetimes, rate limits, reserved-name blocklist). |
 | **CIMD** | Per-app override of [Client-ID Metadata Documents](./client-id-metadata-documents) (enable, token lifetimes). |
+| **Rate limits** | Sparse override of the realm's [auth rate limits](../platform/rate-limits): only the overridden policy/dimension cells win, plus an optional own source allowlist and enforcement mode. |
 
 ### Self-registration posture
 

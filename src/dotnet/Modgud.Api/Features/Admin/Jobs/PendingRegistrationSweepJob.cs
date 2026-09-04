@@ -1,4 +1,6 @@
 using Modgud.Authentication.Registration;
+using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Infrastructure.RateLimiting;
 using Quartz;
 
 namespace Modgud.Api.Features.Admin.Jobs;
@@ -10,13 +12,14 @@ namespace Modgud.Api.Features.Admin.Jobs;
 /// <c>ExpiresAt</c>).
 /// </summary>
 [DisallowConcurrentExecution]
-public class PendingRegistrationSweepJob(IRegistrationPipeline pipeline) : IJob
+public class PendingRegistrationSweepJob(IRegistrationPipeline pipeline, IRateLimitStore rateLimits) : IJob
 {
     public const string Key = "pending-registration-sweep";
     public const string Name = "Pending registration sweep";
     public const string Description =
-        "Hard-deletes expired pending registrations (sign-ups whose proof was never completed). " +
-        "Nothing identifying the person remains afterwards. Per-realm, idempotent.";
+        "Hard-deletes expired pending registrations (sign-ups whose proof was never completed) and " +
+        "prunes rate-limit counters idle for two days. Nothing identifying the person remains afterwards. " +
+        "Per-realm, idempotent.";
 
     /// <summary>Ten past every hour.</summary>
     public const string DefaultCron = "0 10 * * * ?";
@@ -24,6 +27,11 @@ public class PendingRegistrationSweepJob(IRegistrationPipeline pipeline) : IJob
     public async Task Execute(IJobExecutionContext context)
     {
         var swept = await pipeline.SweepAsync(context.CancellationToken);
-        context.Result = swept == 0 ? "No expired pending registrations" : $"Deleted {swept} pending registration(s)";
+        // ADR 0007 — counters are keyed by address / mailbox / client; drop the ones nobody
+        // touched for two days so the table never grows with one-off sources.
+        var pruned = await rateLimits.PruneAsync(
+            new RateLimitScope(TenantContext.Current), DateTimeOffset.UtcNow.AddDays(-2), context.CancellationToken);
+        context.Result = (swept == 0 ? "No expired pending registrations" : $"Deleted {swept} pending registration(s)")
+                         + (pruned == 0 ? "" : $"; pruned {pruned} idle rate-limit counter(s)");
     }
 }

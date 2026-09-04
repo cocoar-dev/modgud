@@ -109,6 +109,13 @@ public sealed class ApplicationSettingsService(
             doc.NativeGrants = r.Value;
         }
 
+        if (dto.AuthRateLimits is not null)
+        {
+            var r = Modgud.Authentication.RealmSettings.RealmSettingsService.ApplyAuthRateLimitsPatch(doc.AuthRateLimits, dto.AuthRateLimits);
+            if (r.IsError) return r.FirstError;
+            doc.AuthRateLimits = r.Value.IsEmpty ? null : r.Value;
+        }
+
         if (dto.ClientSessions is not null)
         {
             var r = MapClientSessions(dto.ClientSessions);
@@ -214,6 +221,14 @@ public sealed class ApplicationSettingsService(
 
         if (dto.NativeGrants is null) doc.NativeGrants = null;
         else { var r = MapNativeGrants(dto.NativeGrants); if (r.IsError) return r.FirstError; doc.NativeGrants = r.Value; }
+
+        if (dto.AuthRateLimits is null) doc.AuthRateLimits = null;
+        else
+        {
+            var r = Modgud.Authentication.RealmSettings.RealmSettingsService.ApplyAuthRateLimitsPatch(null, dto.AuthRateLimits);
+            if (r.IsError) return r.FirstError;
+            doc.AuthRateLimits = r.Value.IsEmpty ? null : r.Value;
+        }
 
         if (dto.ClientSessions is null) doc.ClientSessions = null;
         else { var r = MapClientSessions(dto.ClientSessions); if (r.IsError) return r.FirstError; doc.ClientSessions = r.Value; }
@@ -694,6 +709,7 @@ public sealed class ApplicationSettingsService(
                 TermsOfServiceUrl = doc.SelfRegistration.TermsOfServiceUrl,
                 PrivacyPolicyUrl = doc.SelfRegistration.PrivacyPolicyUrl,
             },
+            AuthRateLimits = Modgud.Authentication.RealmSettings.RealmSettingsService.MapAuthRateLimitOverridesToDto(doc.AuthRateLimits),
             NativeGrants = doc.NativeGrants is null ? null : new ApplicationNativeGrantsDto
             {
                 Enabled = doc.NativeGrants.Enabled,

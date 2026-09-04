@@ -25,6 +25,7 @@ public sealed record EffectiveSettings
     public DcrSettings? Dcr { get; init; }
     public CimdSettings? Cimd { get; init; }
     public NativeGrantSettings? NativeGrants { get; init; }
+    public AuthRateLimitSettings? AuthRateLimits { get; init; }
     public ClientSessionPolicy? ClientSessions { get; init; }
     public BrandingSettings? Branding { get; init; }
     public RegistrationFieldsSettings? RegistrationFields { get; init; }
@@ -53,6 +54,7 @@ public sealed record EffectiveSettings
         Dcr = realm.Dcr,
         Cimd = realm.Cimd,
         NativeGrants = realm.NativeGrants,
+        AuthRateLimits = realm.AuthRateLimits,
         ClientSessions = realm.ClientSessions,
         Branding = realm.Branding,
         RegistrationFields = realm.RegistrationFields,
@@ -74,6 +76,7 @@ public sealed record EffectiveSettings
     {
         // Sections the App can override (field-by-field):
         NativeGrants = MergeNativeGrants(realm.NativeGrants, app.NativeGrants),
+        AuthRateLimits = AuthRateLimitSettings.Merge(realm.AuthRateLimits, app.AuthRateLimits),
         ClientSessions = MergeClientSessions(realm.ClientSessions, app.ClientSessions),
         Branding = MergeBranding(realm.Branding, app.Branding),
         SelfRegistration = MergeSelfRegistration(realm.SelfRegistration, app.SelfRegistration),

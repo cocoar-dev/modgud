@@ -36,7 +36,8 @@ internal static class OAuthAdminMapping
     // ───────────────────────────────────────────── Permissions ────────────────
 
     internal static List<string> BuildClientPermissions(
-        IReadOnlyList<string> grantTypes, IReadOnlyList<string> scopes, string clientType)
+        IReadOnlyList<string> grantTypes, IReadOnlyList<string> scopes, string clientType,
+        IReadOnlyList<string>? capabilities = null)
     {
         var permissions = new List<string>
         {
@@ -75,7 +76,36 @@ internal static class OAuthAdminMapping
         foreach (var scope in scopes)
             permissions.Add(OAuthPermissions.Prefixes.Scope + scope);
 
+        // ADR 0007 — capabilities ride in the same list under their own prefix.
+        foreach (var capability in capabilities ?? [])
+        {
+            if (!permissions.Contains(capability, StringComparer.Ordinal))
+                permissions.Add(capability);
+        }
+
         return permissions;
+    }
+
+    internal static List<string> ExtractCapabilities(IReadOnlyList<string> permissions) =>
+        permissions
+            .Where(p => p.StartsWith(OAuthPermissions.Prefixes.Capability, StringComparison.Ordinal))
+            .ToList();
+
+    /// <summary>Only known capabilities, and the forwarder one only on confidential clients
+    /// (a public client cannot authenticate, so it could never be trusted).</summary>
+    internal static Error? ValidateCapabilities(IReadOnlyList<string>? capabilities, string? clientType)
+    {
+        if (capabilities is null) return null;
+        foreach (var capability in capabilities)
+        {
+            if (!OAuthPermissions.Capabilities.IsKnown(capability))
+                return Error.Validation("OAuthClient.UnknownCapability", $"Unknown client capability '{capability}'.");
+            if (capability == OAuthPermissions.Capabilities.TrustedForwarder
+                && !string.Equals(clientType, OAuthClientTypes.Confidential, StringComparison.OrdinalIgnoreCase))
+                return Error.Validation("OAuthClient.CapabilityRequiresConfidential",
+                    "cap:trusted-forwarder can only be granted to a confidential client.");
+        }
+        return null;
     }
 
     /// <summary>Builds the OpenIddict <c>Requirements</c> list from the client's
@@ -584,6 +614,7 @@ internal static class OAuthAdminMapping
             RequireDpop = GetBoolProp(props, OAuthApplicationPropertyKeys.RequireDpop, false),
             RequireDpopNonce = GetBoolProp(props, OAuthApplicationPropertyKeys.RequireDpopNonce, false),
             AllowedGrantTypes = ExtractGrantTypes(s.Permissions),
+            Capabilities = ExtractCapabilities(s.Permissions),
             AllowedCorsOrigins = GetStringListProp(props, OAuthApplicationPropertyKeys.AllowedCorsOrigins),
             IdentityTokenLifetime = GetIntSetting(OAuthApplicationSettingKeys.IdentityTokenLifetime),
             AccessTokenLifetime = GetIntSetting(OAuthApplicationSettingKeys.AccessTokenLifetime),

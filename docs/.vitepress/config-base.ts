@@ -252,6 +252,7 @@ export const baseConfig = {
             { text: 'Inbox', link: '/platform/inbox' },
             { text: 'Inbox settings', link: '/platform/inbox-settings' },
             { text: 'Settings', link: '/platform/settings' },
+            { text: 'Rate limits', link: '/platform/rate-limits' },
           ],
         },
       ],

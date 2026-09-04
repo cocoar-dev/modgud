@@ -148,6 +148,7 @@ public sealed class RealmManifestExporter(
             Scopes = c.Permissions.Where(p => p.StartsWith(ScopePrefix, StringComparison.Ordinal))
                 .Select(p => p[ScopePrefix.Length..]).ToList(),
             AllowedGrantTypes = c.AllowedGrantTypes,
+            Capabilities = c.Capabilities.Count == 0 ? null : c.Capabilities,
             AllowedCorsOrigins = c.AllowedCorsOrigins,
             Apps = c.AppIds.Select(id => SlugOfShort(appSlugById, id)).Where(s => s is not null).Select(s => s!).ToList(),
             Roles = c.Roles,
@@ -392,17 +393,9 @@ public sealed class RealmManifestExporter(
             RequiredProofCapabilities = s.PositionSecurity.RequiredProofCapabilities,
             RequiredBindingCapabilities = s.PositionSecurity.RequiredBindingCapabilities,
         },
-        AuthRateLimits = new UpdateAuthRateLimitsDto
-        {
-            // Read + patch share RateLimitRuleDto, so the rules copy across directly.
-            NativeOtp = s.AuthRateLimits.NativeOtp,
-            MagicLink = s.AuthRateLimits.MagicLink,
-            PasswordReset = s.AuthRateLimits.PasswordReset,
-            EmailOtp = s.AuthRateLimits.EmailOtp,
-            EmailVerification = s.AuthRateLimits.EmailVerification,
-            PasskeyBegin = s.AuthRateLimits.PasskeyBegin,
-            Bootstrap = s.AuthRateLimits.Bootstrap,
-        },
+        // ADR 0007 — only what the realm actually stores (sparse), never the effective
+        // defaults: importing must not pin today's defaults as overrides.
+        AuthRateLimits = s.AuthRateLimits.Overrides,
         Branding = new UpdateBrandingSettingsDto
         {
             ProductName = Opt(s.Branding.ProductName),

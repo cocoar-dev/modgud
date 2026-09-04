@@ -8,6 +8,8 @@ using Microsoft.Extensions.Logging;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Identity;
+using Modgud.Authentication.RateLimiting;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -127,7 +129,7 @@ public static class NativePasskeyEndpoints
         .AllowAnonymous()
         .DisableAntiforgery()
         .WithTags("Native Auth")
-        .RequireRateLimiting("passkey-begin");
+        .RequireAuthRateLimit(AuthRateLimitPolicy.PasskeyBegin);
 
         return application;
     }

@@ -4,6 +4,8 @@ using Modgud.Authentication.Sessions;
 using Modgud.Authentication.Setup;
 using Modgud.Infrastructure.Audit;
 using Microsoft.AspNetCore.Identity;
+using Modgud.Authentication.RateLimiting;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -35,7 +37,7 @@ public static class BootstrapEndpoints
             // 10 attempts per 15 min per IP. Bootstrap is at most one
             // click per recipient; this is a brake on automated probing
             // of leaked tokens.
-            .RequireRateLimiting("bootstrap");
+            .RequireAuthRateLimit(AuthRateLimitPolicy.Bootstrap);
 
         group.MapPost("", async (
             ConsumeInviteRequest request,
