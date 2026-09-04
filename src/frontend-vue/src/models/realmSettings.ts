@@ -272,9 +272,11 @@ export interface RateLimitRuleDto {
   /** Token-bucket capacity; null/absent = fixed window. */
   Burst?: number | null
   Enabled?: boolean
+  /** Read-only marker: evaluated and counted, never rejects (ADR 0008 login spray signal). */
+  SignalOnly?: boolean
 }
 
-export type RateLimitDimensionKey = 'Source' | 'SourceRegistration' | 'Target' | 'Client' | 'App'
+export type RateLimitDimensionKey = 'Source' | 'SourceRegistration' | 'Target' | 'Client' | 'App' | 'Device'
 export type RateLimitEnforcementMode = 'Enforce' | 'LogOnly'
 
 export type PolicyLimitsDto = Partial<Record<RateLimitDimensionKey, RateLimitRuleDto | null>>
@@ -310,6 +312,7 @@ export const RATE_LIMIT_DIMENSIONS: { key: RateLimitDimensionKey; fallback: stri
   { key: 'Target', fallback: 'Target', hint: 'per mailbox / username — the defence' },
   { key: 'Client', fallback: 'Client', hint: 'per OAuth client — bounds one integration' },
   { key: 'App', fallback: 'App', hint: 'per Application — the cost brake' },
+  { key: 'Device', fallback: 'Device', hint: 'login only — failures per browser the user signed in from before' },
 ]
 
 export const RATE_LIMIT_POLICIES: { key: string; labelKey: string; fallback: string }[] = [
@@ -322,12 +325,13 @@ export const RATE_LIMIT_POLICIES: { key: string; labelKey: string; fallback: str
   { key: 'passkey-begin', labelKey: 'admin.rateLimits.policy.passkeyBegin', fallback: 'Passkey ceremony begin / enroll' },
   { key: 'oauth-token', labelKey: 'admin.rateLimits.policy.oauthToken', fallback: 'OAuth token endpoint' },
   { key: 'bootstrap', labelKey: 'admin.rateLimits.policy.bootstrap', fallback: 'First-admin bootstrap' },
+  { key: 'login', labelKey: 'admin.rateLimits.policy.login', fallback: 'Password login (failures)' },
 ]
 
 export function emptyRateLimitOverrides(): RateLimitOverrides {
   const out: RateLimitOverrides = {}
   for (const p of RATE_LIMIT_POLICIES)
-    out[p.key] = { Source: null, SourceRegistration: null, Target: null, Client: null, App: null }
+    out[p.key] = { Source: null, SourceRegistration: null, Target: null, Client: null, App: null, Device: null }
   return out
 }
 
@@ -336,7 +340,7 @@ export function overridesFromUpdate(u?: UpdateAuthRateLimitsDto | null): RateLim
   const out = emptyRateLimitOverrides()
   for (const [policy, limits] of Object.entries(u?.Policies ?? {})) {
     if (!limits) continue
-    out[policy] ??= { Source: null, SourceRegistration: null, Target: null, Client: null, App: null }
+    out[policy] ??= { Source: null, SourceRegistration: null, Target: null, Client: null, App: null, Device: null }
     for (const d of RATE_LIMIT_DIMENSIONS) {
       const rule = limits[d.key]
       if (rule) out[policy][d.key] = { ...rule }

@@ -80,6 +80,16 @@ public static class AuditEvents
     /// Carries Ip.</summary>
     public const string MagicLinkInvalid = "security.magic_link_invalid";
 
+    /// <summary>ADR 0008 — a password login was refused (or, log-only, would have been)
+    /// because the user's device or untrusted failure bucket is exhausted. Reason =
+    /// bucket. Carries Ip, TargetSubjectId.</summary>
+    public const string LoginThrottled = "security.login_throttled";
+
+    /// <summary>ADR 0008 — one source crossed the untrusted-failures-per-source signal
+    /// threshold (password spray / brute force across accounts). Never a block; the
+    /// input for alerting. Carries Ip, Count = threshold.</summary>
+    public const string LoginSprayDetected = "security.login_spray_detected";
+
     /// <summary>An external/federation response was rejected because its protocol
     /// shape, signature-independent validation or request correlation was invalid.
     /// This is a durable security incident, not a policy decision.</summary>

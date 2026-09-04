@@ -271,6 +271,8 @@ internal static class AuditEventRenderer
             AuditEvents.LoginFailed => "Login",
             AuditEvents.LoginFailedUnknownUser => "Login for an unknown identifier",
             AuditEvents.MagicLinkInvalid => "Invalid or expired magic link",
+            AuditEvents.LoginThrottled => "Login refused by failure bucket",
+            AuditEvents.LoginSprayDetected => "Password spray signal per source",
             AuditEvents.ExternalLoginProtocolRejected => "External login protocol",
             AuditEvents.ExternalLoginPolicyRejected => "External login policy",
             AuditEvents.ExternalLoginConfigurationError => "External login configuration",

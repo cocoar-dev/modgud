@@ -36,7 +36,8 @@ public class GdprService(
     IEmailService emailService,
     IUserAccessRevoker accessRevoker,
     IRealmSettingsService realmSettings,
-    IHttpContextAccessor httpContextAccessor) : IGdprService
+    IHttpContextAccessor httpContextAccessor,
+    Modgud.Authentication.Devices.IDeviceTrust deviceTrust) : IGdprService
 {
     public async Task<ErrorOr<UserDataExportDto>> ExportUserDataAsync(Guid userId, CancellationToken ct = default)
     {
@@ -254,6 +255,9 @@ public class GdprService(
             if (!string.IsNullOrEmpty(user.NormalizedEmail))
                 session.Delete<Modgud.Authentication.Registration.PendingRegistration>(
                     Modgud.Authentication.Registration.PendingRegistration.IdFor(user.NormalizedEmail));
+
+            // ADR 0008 — the user leaves every trusted device; devices without users go.
+            await deviceTrust.ForgetUserAsync(userId, ct);
 
             user.IsDeleted = true;
             user.IsActive = false;

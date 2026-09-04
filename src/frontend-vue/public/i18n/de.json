@@ -1954,6 +1954,8 @@
       "burstShort": "Burst",
       "enabled": "Aktiv",
       "off": "aus",
+      "signalOnly": "nur Signal",
+      "signalOnlyHint": "Nur Signal: wird gezählt und gemeldet, lehnt nie ab.",
       "allowlist": "Quell-Allowlist — Adressen oder CIDR-Bereiche, die nur von den Quell-Deckeln ausgenommen sind (Ziel, Client und App gelten weiter)",
       "legacyNotice": "Dieser Realm trägt noch Pro-IP-Regeln aus der Zeit vor den mehrdimensionalen Limits. Sie werden nicht mehr angewendet; bis ein Modus gewählt ist, läuft der Realm im Beobachtungsmodus.",
       "clearLegacy": "Alte Pro-IP-Regeln beim Speichern entfernen",
@@ -1971,14 +1973,16 @@
         "SourceRegistration": "Sign-ups pro Quelle",
         "Target": "Ziel",
         "Client": "Client",
-        "App": "App"
+        "App": "App",
+        "Device": "Gerät"
       },
       "dimensionHint": {
         "Source": "wirksame Adresse — grobe Bremse für geteilte Adressen",
         "SourceRegistration": "still — unbekannte Adressen aus einer Quelle",
         "Target": "pro Postfach / Benutzername — der Schutz",
         "Client": "pro OAuth-Client — begrenzt eine Integration",
-        "App": "pro Application — die Kostenbremse"
+        "App": "pro Application — die Kostenbremse",
+        "Device": "nur Login — Fehlversuche pro Browser, von dem sich der Benutzer schon angemeldet hat"
       },
       "policy": {
         "nativeOtp": "Native-OTP-Anfrage / Registrierung",
@@ -1989,7 +1993,8 @@
         "emailOtp": "E-Mail-OTP-Code-Prüfung",
         "passkeyBegin": "Passkey-Ceremony Begin / Enroll",
         "oauthToken": "OAuth-Token-Endpoint",
-        "bootstrap": "First-Admin-Bootstrap"
+        "bootstrap": "First-Admin-Bootstrap",
+        "login": "Passwort-Login (Fehlversuche)"
       }
     },
     "realmSettings": {
@@ -2238,6 +2243,7 @@
         "MagicLink": "Anmelde-Link",
         "PasswordReset": "Passwort zurücksetzen",
         "EmailVerification": "E-Mail bestätigen",
+        "LoginBlocked": "Anmeldeversuche blockiert",
         "RealmAdminBootstrap": "Admin-Einladung",
         "AdminChangeRequestNotification": "Änderungsantrag (Admin)",
         "ChangeRequestApproved": "Antrag genehmigt",

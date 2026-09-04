@@ -101,6 +101,8 @@ public static class AccountEndpoints
             IDocumentSession docSession,
             IQuerySession session,
             ISecurityAuditLog securityAudit,
+            Modgud.Authentication.RateLimiting.ILoginThrottle loginThrottle,
+            IUserStore<ApplicationUser> userStore,
             HttpContext context) =>
         {
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -152,8 +154,24 @@ public static class AccountEndpoints
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
             }
 
+            // ADR 0008 — device-aware throttling replaces Identity's global lockout on
+            // this endpoint: failures count per trusted device or in the user's
+            // untrusted pool, so an attacker without the user's cookie can never lock
+            // the user out of their own devices. Identity's LockoutEnd stays the
+            // administrative lock (CanSignIn still honours it); lockoutOnFailure is off.
+            var throttle = await loginThrottle.CheckAsync(context, user, clientId, context.RequestAborted);
+            if (!throttle.Allowed)
+            {
+                // Same body and timing shape as a wrong password: the refusal must not
+                // become an existence or lock-state oracle.
+                PasswordTimingSafety.EqualizeFailure(userManager.PasswordHasher, request.Password);
+                Log.Warning("Login refused by throttle. UserId={UserId} Bucket={Bucket} IP={IP}", user.Id, throttle.Bucket, ip);
+                ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Locked);
+                return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+            }
+
             var result = await signInManager.PasswordSignInAsync(user, request.Password,
-                isPersistent: request.RememberMe, lockoutOnFailure: true);
+                isPersistent: request.RememberMe, lockoutOnFailure: false);
 
             // Audit M4: when the realm requires verified emails, an unverified
             // account must not complete login (even though it may be active).
@@ -279,6 +297,14 @@ public static class AccountEndpoints
             {
                 Log.Warning("Login failed — wrong password. UserId={UserId} IP={IP}", user.Id, ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Failure);
+                // The per-user failure counter keeps counting (concurrency-safe jsonb
+                // increment, P0-4) so the aggregated failure-streak audit event on the
+                // next success still fires — only Identity's LOCK on it is gone.
+                if (userStore is IUserLockoutStore<ApplicationUser> lockoutStore)
+                    await lockoutStore.IncrementAccessFailedCountAsync(user, context.RequestAborted);
+                // ADR 0008 — count the failure in the bucket the check resolved, raise the
+                // spray signal, send the unlock mail when the untrusted pool just tripped.
+                await loginThrottle.RecordFailureAsync(context, user, throttle, clientId, context.RequestAborted);
             }
 
             return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);

@@ -21,7 +21,8 @@ public class AppSignInManager(
     ILogger<SignInManager<ApplicationUser>> logger,
     IAuthenticationSchemeProvider schemes,
     IUserConfirmation<ApplicationUser> confirmation,
-    IDocumentSession session)
+    IDocumentSession session,
+    Modgud.Authentication.Devices.IDeviceTrust deviceTrust)
     : SignInManager<ApplicationUser>(userManager, contextAccessor, claimsFactory, optionsAccessor, logger, schemes, confirmation)
 {
     public override async Task<bool> IsTwoFactorEnabledAsync(ApplicationUser user)
@@ -51,5 +52,21 @@ public class AppSignInManager(
         }
 
         await base.SignInWithClaimsAsync(user, authenticationProperties, additionalClaims);
+
+        // ADR 0008 — every completed interactive login (password, MFA, passkey, magic
+        // link, e-mail OTP, external) marks this browser as a trusted device for the
+        // user. Best-effort: the auth cookie is already issued, a failed device write
+        // must not turn a successful login into a 500.
+        if (Context is { } http)
+        {
+            try
+            {
+                await deviceTrust.IssueAsync(http, user.Id, http.RequestAborted);
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Device cookie could not be issued for user {UserId}", user.Id);
+            }
+        }
     }
 }

@@ -63,6 +63,34 @@ public partial class EmailTemplateStore
                 """
         ),
 
+        [EmailTemplate.LoginBlocked] = (
+            Subject: "{{AppName}} — Anmeldeversuche blockiert",
+            HtmlBody: """
+                <!DOCTYPE html>
+                <html><body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <h2 style="color: #333;">Anmeldeversuche blockiert</h2>
+                    <p>Hallo {{DisplayName}},</p>
+                    <p>Für Ihr Konto gab es mehrere fehlgeschlagene Anmeldeversuche von einem unbekannten Gerät. Anmeldungen von unbekannten Geräten sind deshalb für {{WindowMinutes}} Minuten blockiert. Ihre bereits verwendeten Geräte sind nicht betroffen.</p>
+                    <p>Falls Sie das selbst waren, melden Sie sich über diesen Link an. Das Gerät wird dabei als vertrauenswürdig gespeichert:</p>
+                    <table cellpadding="0" cellspacing="0" border="0" role="presentation" style="margin: 30px 0;">
+                        <tr>
+                            <td align="center" bgcolor="#525e76" style="border-radius: 6px;">
+                                <a href="{{ActionUrl}}" style="display:inline-block;padding:12px 24px;color:#ffffff;text-decoration:none;font-weight:bold;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+                                    Auf diesem Gerät anmelden
+                                </a>
+                            </td>
+                        </tr>
+                    </table>
+                    <p style="color: #666; font-size: 14px;">
+                        Dieser Link ist {{ExpirationMinutes}} Minuten gültig und kann nur einmal verwendet werden.
+                    </p>
+                    <p style="color: #888; font-size: 0.85em;">
+                        Falls Sie das nicht waren, müssen Sie nichts tun. Ihr Passwort wurde nicht erraten; ändern Sie es trotzdem, wenn Sie unsicher sind.
+                    </p>
+                </body></html>
+                """
+        ),
+
         [EmailTemplate.PasswordReset] = (
             Subject: "{{AppName}} — Passwort zurücksetzen",
             HtmlBody: """
@@ -234,6 +262,10 @@ public partial class EmailTemplateStore
         [EmailTemplate.ChangeRequestRejected] = English(
             "{{AppName}} — Change rejected: {{Field}}", "Change rejected",
             "<p>Hello {{DisplayName}},</p><p>Your requested change was rejected.</p><p><strong>Field:</strong> {{Field}}<br><strong>Rejected value:</strong> {{NewValue}}</p><p><strong>Reason:</strong> {{ReviewerNote}}</p>"),
+        [EmailTemplate.LoginBlocked] = English(
+            "{{AppName}} — Sign-in attempts blocked", "Sign-in attempts blocked",
+            "<p>Hello {{DisplayName}},</p><p>There were several failed sign-in attempts on your account from a device we do not know. Sign-ins from unknown devices are therefore blocked for {{WindowMinutes}} minutes. Devices you have used before are not affected.</p><p>If that was you, sign in through this link; the device will be remembered as trusted:</p>{{ActionButton}}<p>This link is valid for {{ExpirationMinutes}} minutes and can only be used once.</p><p>If that was not you, there is nothing you need to do. Your password was not guessed; change it anyway if you are unsure.</p>",
+            "Sign in on this device"),
         [EmailTemplate.RealmAdminBootstrap] = English(
             "{{AppName}} — Set up admin access ({{RealmDisplayName}})", "Set up admin access",
             "<p>Hello {{DisplayName}},</p><p>Your admin access for <strong>{{RealmDisplayName}}</strong> is ready.</p>{{ActionButton}}<p><strong>Username:</strong> {{UserName}}<br><strong>Email:</strong> {{Email}}</p><p>This link is valid for {{ExpirationHours}} hours and can only be used once.</p>",

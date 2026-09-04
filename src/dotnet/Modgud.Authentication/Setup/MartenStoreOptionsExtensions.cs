@@ -83,6 +83,15 @@ public static class MartenStoreOptionsExtensions
             .Index(x => x.SecretHash)
             .Index(x => x.ExpiresAt);
 
+        // ADR 0008 — "a browser that completed a login here". Plain document, hard-
+        // deleted when idle (sweep) or emptied by GDPR erasure; never soft-deleted,
+        // never event-sourced. Last write wins on purpose: two logins from one
+        // browser at the same instant both add their user, losing one is harmless
+        // (the next success re-adds it).
+        options.Schema.For<Modgud.Authentication.Devices.TrustedDevice>()
+            .Identity(x => x.Id)
+            .Index(x => x.LastSeenAt);
+
         // Audit #25 — optimistic concurrency makes the "one-time use" consume
         // atomic. Login loads the challenge then deletes it; two concurrent
         // redemptions of the same link both pass the null/expiry check before

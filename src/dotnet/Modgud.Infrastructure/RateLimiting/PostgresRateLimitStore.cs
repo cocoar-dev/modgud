@@ -97,6 +97,33 @@ public sealed class PostgresRateLimitStore(IRateLimitConnectionSource connection
         }
     }
 
+    public async Task<RateLimitHit> PeekAsync(RateLimitScope scope, string key, RateLimitRule rule, DateTimeOffset now, CancellationToken ct = default)
+    {
+        await using var connection = await connections.OpenAsync(scope, ct);
+        await EnsureTableAsync(connection, ct);
+        await using var cmd = new NpgsqlCommand($"SELECT window_start, hits, tokens, updated_at FROM {TableName} WHERE key = @key", connection);
+        cmd.Parameters.AddWithValue("key", key);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return new RateLimitHit(true, 0);
+
+        if (rule.IsTokenBucket)
+        {
+            var (capacity, rate) = RateLimitMath.Bucket(rule);
+            var tokens = reader.IsDBNull(2) ? capacity : reader.GetDouble(2);
+            var updatedAt = new DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(3), DateTimeKind.Utc));
+            var refilled = Math.Min(capacity, tokens + Math.Max(0, (now - updatedAt).TotalSeconds) * rate);
+            return refilled >= 1 ? new RateLimitHit(true, 0) : new RateLimitHit(false, RateLimitMath.RetryAfterForBucket(refilled, rule));
+        }
+
+        if (reader.IsDBNull(0)) return new RateLimitHit(true, 0);
+        var windowStart = new DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc));
+        if (windowStart != RateLimitMath.WindowStart(now, rule)) return new RateLimitHit(true, 0);
+        var hits = reader.GetInt32(1);
+        return hits < Math.Max(1, rule.PermitLimit)
+            ? new RateLimitHit(true, 0)
+            : new RateLimitHit(false, RateLimitMath.RetryAfterForWindow(now, rule));
+    }
+
     public async Task<int> PruneAsync(RateLimitScope scope, DateTimeOffset olderThan, CancellationToken ct = default)
     {
         await using var connection = await connections.OpenAsync(scope, ct);

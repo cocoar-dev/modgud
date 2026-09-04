@@ -245,10 +245,11 @@ public class OwaspTop10Tests : IntegrationTestBase
     [Fact]
     public async Task A07_BruteForce_Locks_Account_After_Configured_Failures()
     {
-        // ASP.NET Identity's lockout is enabled with a 5-attempt
-        // threshold; the 6th attempt with the correct password must
-        // still fail because the account is locked. Pins that
-        // `lockoutOnFailure: true` is wired through.
+        // ADR 0008: five wrong passwords from an untrusted client exhaust
+        // the user's untrusted failure bucket (default 5 / 15 min); the
+        // 6th attempt with the correct password from that client must
+        // still fail. (The owner's own trusted devices are not affected —
+        // see LoginThrottleTests.)
         await Factory.CreateTestUserWithIdentityAsync(
             firstname: "Brute", lastname: "Force", acronym: "bf",
             email: "bf@test.com", password: "TestPass1234");

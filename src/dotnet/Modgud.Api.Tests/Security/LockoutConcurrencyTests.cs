@@ -52,22 +52,24 @@ public class LockoutConcurrencyTests : IntegrationTestBase
             anon.PostAsJsonAsync("/api/account/login",
                 new { UserName = "rl", Password = "Wrong123!@#", RememberMe = false }, ct)));
 
-        // The decisive assertion: the CORRECT password is now refused, because the
-        // account is locked. This is the property an attacker defeats by going
-        // parallel — without the fix the burst leaves the counter below the
-        // threshold and this request succeeds.
+        // The decisive assertion: the CORRECT password is now refused from this
+        // (untrusted) client, because the burst exhausted the user's untrusted
+        // failure bucket (ADR 0008). This is the property an attacker defeats by
+        // going parallel — a read-then-write counter would leave the bucket below
+        // the threshold and this request would succeed.
         var withCorrectPassword = await anon.PostAsJsonAsync("/api/account/login",
             new { UserName = "rl", Password = Password, RememberMe = false }, ct);
 
         Assert.Equal(HttpStatusCode.Unauthorized, withCorrectPassword.StatusCode);
 
-        // And the lockout is actually persisted, not just inferred from the response.
+        // The per-user failure counter recorded every attempt — and, since ADR 0008,
+        // no longer locks the account itself (LockoutEnd stays the admin's lock):
+        // the owner's own trusted devices are unaffected by a stranger's burst.
         await using var qs = GetTenantedSession();
         var securityData = await qs.LoadAsync<UserSecurityData>(user.Id, ct);
         Assert.NotNull(securityData);
-        Assert.NotNull(securityData!.LockoutEnd);
-        Assert.True(securityData.LockoutEnd > DateTimeOffset.UtcNow,
-            "the lockout window must still be open right after the burst");
+        Assert.Equal(parallelAttempts, securityData!.AccessFailedCount);
+        Assert.Null(securityData.LockoutEnd);
     }
 
     [Fact]
