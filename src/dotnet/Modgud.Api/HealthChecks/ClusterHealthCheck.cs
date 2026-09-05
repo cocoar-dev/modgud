@@ -34,7 +34,7 @@ public sealed class ClusterHealthCheck(
         {
             ["node"] = nodes.LocalNodeName,
             ["liveNodes"] = live.Count,
-            ["relay"] = hosting.CrossNodeRelay ? "postgres" : "none",
+            ["relay"] = hosting.CrossNodeRelay ? "signalarrr-postgres" : "none",
         };
 
         if (live.Count > 1 && !hosting.CrossNodeRelay)
@@ -47,7 +47,7 @@ public sealed class ClusterHealthCheck(
         }
 
         return HealthCheckResult.Healthy(
-            live.Count == 1 ? "Single live node." : $"{live.Count} live nodes, live-update relay active.",
+            live.Count == 1 ? "Single live node." : $"{live.Count} live nodes, backplane and live-update relay active.",
             data);
     }
 }

@@ -6,9 +6,9 @@ namespace Modgud.Api;
 /// with env overrides: <c>Cluster__DrainDelaySeconds</c>, <c>Cluster__NodeName</c>.
 /// <para>
 /// There is deliberately no instance count and no transport choice here.
-/// Production always runs the cluster-capable code path, with the cross-node
-/// live-update relay on the master database; how many nodes are alive is read
-/// from Wolverine's node table at runtime.
+/// Production always runs the cluster-capable code path, with the SignalARRR
+/// backplane and the live-update relay on the master database; how many nodes
+/// are alive is read from Wolverine's node table at runtime.
 /// </para>
 /// </summary>
 public class ClusterSettings

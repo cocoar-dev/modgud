@@ -472,16 +472,16 @@ There is no "cluster mode" to switch on. A Production container always runs the 
 | Outbox, scheduled messages, event forwarding | Wolverine in `Balanced` mode — leader election over its node table in the master DB, work reassigned when a node's heartbeat goes stale |
 | Async projections and event subscriptions (audit view, application change feed, back-channel logout) | Wolverine-managed distribution: every realm database's projections run on exactly one live node; a dead node's databases are picked up by a survivor |
 | Scheduled jobs | Quartz.NET clustered on a Postgres job store (schema `quartz` in the master DB): a trigger fires on one node, `RequestRecovery` jobs interrupted by a crash re-run on a survivor |
-| Live updates over SignalR | Modgud's live-update relay on the master database (`LISTEN`/`NOTIFY`): an event raised on one node is replayed into the hub streams of the other, so every browser sees it exactly once, from the node it is pinned to. No SignalR backplane — every hub is a server stream, there are no targeted sends to route |
+| Live updates over SignalR | The SignalARRR Postgres backplane on the master database (`LISTEN`/`NOTIFY`) carrying a cluster subject with Modgud's data events: an event raised on one node is replayed into the hub streams of the other, so every browser sees it exactly once, from the node it is pinned to. A listener drop is caught up from the backplane's message table, not lost |
 | Login providers (OIDC/SAML), passkey ceremonies, sessions, rate limits, DataProtection keys | Resolved from the database by whichever node serves the request — nothing lives only in one process |
 
 How many nodes are alive is read from Wolverine's node table at runtime; nothing is configured twice.
 
 ### What you need
 
-1. **Nothing beyond PostgreSQL.** In Production every node runs the cross-node live-update relay on the master database: one long-lived `LISTEN` connection per node, a `modgud_cluster` schema created on first start (the database role needs `CREATE` once), `NOTIFY` for delivery and an unlogged table for pushes above 8 kB. Delivery is transient by contract and the table sweeps itself. Two things to know: the connection string must point at the **primary** (`NOTIFY` is not replicated), and the listener needs a **direct or session-pooled** connection — a transaction-pooling PgBouncer cannot hold a `LISTEN`. The relay's ceiling is in the low thousands of events per second, two orders of magnitude above what an identity provider produces.
+1. **Nothing beyond PostgreSQL.** In Production every node runs the SignalARRR backplane on the master database: one long-lived `LISTEN` connection per node, a `signalarrr` schema created on first start (the database role needs `CREATE` once), `NOTIFY` for delivery and an unlogged message table that every envelope passes through. Modgud's live updates travel as a cluster subject on it. A node whose listener connection drops reconnects and replays what it missed from that table, in order, for up to five minutes; a longer outage is logged as a gap and the grids catch up on their next fetch. Two things to know: the connection string must point at the **primary** (`NOTIFY` is not replicated), and the listener needs a **direct or session-pooled** connection — a transaction-pooling PgBouncer cannot hold a `LISTEN`; startup fails with a clear message if it cannot subscribe. The ceiling is in the low thousands of cross-node messages per second, two orders of magnitude above what an identity provider produces.
 
-2. **Sticky sessions at the reverse proxy.** SignalR requires that every request of one connection reaches the same process; the relay carries events between nodes, it does not replace affinity. Cookie affinity is the right kind: it survives NAT and keeps a browser's connection and its WebAuthn ceremony on one node.
+2. **Sticky sessions at the reverse proxy.** SignalR requires that every request of one connection reaches the same process; the backplane carries events between nodes, it does not replace affinity. Cookie affinity is the right kind: it survives NAT and keeps a browser's connection and its WebAuthn ceremony on one node.
 
 3. **Active health checks on `/health/ready`** so the proxy removes a draining or failed node within seconds instead of after a client saw an error.
 
@@ -593,8 +593,8 @@ Two things are deliberately process-local and bounded rather than shared:
 Modgud pushes live updates over `/signalr/ui` (typed RPC via
 SignalARRR). Reverse proxies need upgrade headers (see above). The
 connection is auth-gated — the user must be logged in before it's
-established. With two instances Modgud's live-update relay on the
-master database carries events between nodes and the proxy keeps each
+established. With two instances the SignalARRR backplane on the master
+database carries events between nodes and the proxy keeps each
 connection on one node — see
 [Running two instances](#running-two-instances).
 

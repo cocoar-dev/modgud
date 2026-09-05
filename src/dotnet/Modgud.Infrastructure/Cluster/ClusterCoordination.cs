@@ -49,10 +49,10 @@ public sealed record ClusterHostingOptions
     public string NodeName { get; init; } = Environment.MachineName;
 
     /// <summary>
-    /// Whether this host relays data events to its peers over the master
-    /// database (ADR 0010, D5). True in Production; a single-process host keeps
-    /// pushes in-process. Read by readiness: two live nodes without the relay
-    /// is a functional break.
+    /// Whether this host runs the SignalARRR backplane on the master database and
+    /// relays data events to its peers over it (ADR 0010, D5). True in
+    /// Production; a single-process host keeps pushes in-process. Read by
+    /// readiness: two live nodes without the relay is a functional break.
     /// </summary>
     public bool CrossNodeRelay { get; init; }
 

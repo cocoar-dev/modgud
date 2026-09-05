@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BuildingBlocks.EventDispatcher;
 using Modgud.Api.Cluster;
 using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
@@ -5,21 +6,24 @@ using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
 namespace Modgud.Tests.Unit.Cluster;
 
 /// <summary>
-/// The wire form shared by both data-event relays (ADR 0010, D5): a typed payload
-/// round-trips into the same CLR type, the sender's own messages are recognised,
-/// and a payload type outside this deployment's assemblies is refused.
+/// The wire form Modgud's cluster subject carries (ADR 0010, D5): a typed payload
+/// survives the subject's own JSON round trip into the same CLR type, the
+/// sender's own envelopes are recognised, and a payload type outside this
+/// deployment's assemblies is refused.
 /// </summary>
 public class DataEventEnvelopeTests
 {
     [Fact]
-    public void Round_trips_a_typed_payload_and_tenant()
+    public void Round_trips_a_typed_payload_and_tenant_through_the_wire_serializer()
     {
         var view = new UserView { Id = Guid.NewGuid(), UserName = "alice", Email = "alice@example.test" };
         var original = DataEvent.Updated("User", view).WithTenant("acme");
 
-        var json = DataEventEnvelope.Encode(original, "node-a");
-        var decoded = DataEventEnvelope.Decode(json, "node-b");
+        var wire = JsonSerializer.Serialize(DataEventEnvelope.Encode(original, "node-a"), DataEventEnvelope.WireJson);
+        var envelope = JsonSerializer.Deserialize<DataEventEnvelope>(wire, DataEventEnvelope.WireJson)!;
+        var decoded = DataEventEnvelope.Decode(envelope, "node-b");
 
+        Assert.Contains("\"action\":\"Updated\"", wire); // enums travel by name
         Assert.NotNull(decoded);
         Assert.Equal(DataEventAction.Updated, decoded!.Action);
         Assert.Equal("User", decoded.Subject);
@@ -30,18 +34,18 @@ public class DataEventEnvelopeTests
     }
 
     [Fact]
-    public void Own_messages_decode_to_null()
+    public void Own_envelopes_decode_to_null()
     {
-        var json = DataEventEnvelope.Encode(DataEvent.Deleted("User", "1"), "node-a");
+        var envelope = DataEventEnvelope.Encode(DataEvent.Deleted("User", "1"), "node-a");
 
-        Assert.Null(DataEventEnvelope.Decode(json, "node-a"));
+        Assert.Null(DataEventEnvelope.Decode(envelope, "node-a"));
     }
 
     [Fact]
     public void Foreign_payload_types_are_refused()
     {
-        var json = DataEventEnvelope.Encode(DataEvent.Created("Thing", new Uri("https://example.test/")), "node-a");
+        var envelope = DataEventEnvelope.Encode(DataEvent.Created("Thing", new Uri("https://example.test/")), "node-a");
 
-        Assert.Throws<InvalidOperationException>(() => DataEventEnvelope.Decode(json, "node-b"));
+        Assert.Throws<InvalidOperationException>(() => DataEventEnvelope.Decode(envelope, "node-b"));
     }
 }

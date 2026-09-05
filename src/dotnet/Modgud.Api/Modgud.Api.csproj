@@ -28,6 +28,7 @@
     <PackageReference Include="Cocoar.JsEval.TsDefinition" />
     <PackageReference Include="Cocoar.Reflectensions" />
     <PackageReference Include="Cocoar.SignalARRR.Server" />
+    <PackageReference Include="Cocoar.SignalARRR.Server.Backplane.Postgres" />
     <PackageReference Include="Cocoar.Configuration" />
     <PackageReference Include="Cocoar.Configuration.AspNetCore" />
     <PackageReference Include="WolverineFx.Marten" />

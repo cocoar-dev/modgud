@@ -4,6 +4,7 @@ using Modgud.Api.Features;
 using Modgud.Permissions.Abstractions;
 using System.Text.Json.Serialization;
 using BuildingBlocks.EventDispatcher;
+using Cocoar.SignalARRR.Server;
 using Cocoar.Configuration.AspNetCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Modgud.Api.Cluster;
@@ -194,8 +195,8 @@ try
         NodeName = string.IsNullOrWhiteSpace(clusterSettings.NodeName)
             ? Environment.MachineName
             : clusterSettings.NodeName.Trim(),
-        // ADR 0010 (D5) — Production always relays data events between nodes
-        // over the master DB. Single-process hosts keep them in-process.
+        // ADR 0010 (D5) — Production always runs the backplane on the master DB
+        // and relays data events over it. Single-process hosts keep them in-process.
         CrossNodeRelay = builder.Environment.IsProduction(),
     };
     var drainDelay = builder.Environment.IsProduction() && clusterSettings.DrainDelaySeconds > 0
@@ -303,19 +304,27 @@ try
 
     // ADR 0010 (D5) — cross-node live updates. Every hub in Modgud is a server
     // stream fed by the in-process DataEventDispatcher observable; there are no
-    // targeted sends, so a SignalR backplane would route nothing. The relay
-    // makes that observable cluster-wide over the master DB (LISTEN/NOTIFY):
-    // no second stateful service, nothing to configure.
+    // targeted sends for the backplane to route. A SignalARRR cluster subject
+    // makes that observable cluster-wide over the Postgres backplane on the
+    // master DB (LISTEN/NOTIFY, catch-up after a listener drop): no second
+    // stateful service, nothing to configure.
     if (clusterHosting.CrossNodeRelay)
     {
-        var relayNodeId = $"{clusterHosting.NodeName}-{Guid.NewGuid():N}";
-        builder.Services.AddSingleton(sp => new PostgresDataEventRelay(
-            conf.DbSettings.ConnectionString,
-            relayNodeId,
+        var nodeId = $"{clusterHosting.NodeName}-{Guid.NewGuid():N}";
+        builder.Services.AddSignalARRRPostgresBackplane(o => o
+            .WithConnectionString(conf.DbSettings.ConnectionString)
+            .WithSchema("signalarrr")
+            .WithNodeId(nodeId));
+        builder.Services.AddSignalARRRClusterSubject<DataEventEnvelope>(
+            ClusterSubjectDataEventRelay.SubjectName,
+            o => o.SerializerOptions = DataEventEnvelope.WireJson);
+        builder.Services.AddSingleton(sp => new ClusterSubjectDataEventRelay(
+            sp.GetRequiredService<IClusterSubject<DataEventEnvelope>>(),
+            nodeId,
             sp.GetRequiredService<DataEventDispatcher>,
-            sp.GetRequiredService<ILogger<PostgresDataEventRelay>>()));
-        builder.Services.AddSingleton<IDataEventRelay>(sp => sp.GetRequiredService<PostgresDataEventRelay>());
-        builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PostgresDataEventRelay>());
+            sp.GetRequiredService<ILogger<ClusterSubjectDataEventRelay>>()));
+        builder.Services.AddSingleton<IDataEventRelay>(sp => sp.GetRequiredService<ClusterSubjectDataEventRelay>());
+        builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<ClusterSubjectDataEventRelay>());
     }
     else
     {
