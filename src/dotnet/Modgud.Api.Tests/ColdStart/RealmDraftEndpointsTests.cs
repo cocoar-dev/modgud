@@ -290,6 +290,107 @@ public class RealmDraftEndpointsTests(ColdStartFixture fixture) : ColdStartTestB
         Assert.Contains("Draft.ApplyRefused", await refused.Content.ReadAsStringAsync(ct));
     }
 
+    /// <summary>
+    /// Regression: role names are unique PER APP, so two apps may each own an "Author". The
+    /// planner used to key roles by bare name and crashed (500, duplicate dictionary key) on
+    /// EVERY plan of such a realm — no draft could be planned or applied at all. Roles are
+    /// now keyed <c>app/name</c> end to end: export, staging seam, plan, apply, group refs.
+    /// </summary>
+    [Fact]
+    public async Task Roles_sharing_a_name_across_apps_are_keyed_app_slash_name()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var client = await factory.CreateRealmAdminAndLoginAsync();
+
+        // Live state: two apps, each with an "Author" role; a group holding beta's.
+        var seed = new
+        {
+            Name = "Two authors",
+            Source = "manifest",
+            Manifest = new
+            {
+                Realm = new { },
+                Apps = new[]
+                {
+                    new { Slug = "alpha", DisplayName = "Alpha", Permissions = new[] { new { Resource = "doc", Action = "write" } } },
+                    new { Slug = "beta", DisplayName = "Beta", Permissions = new[] { new { Resource = "doc", Action = "write" } } },
+                },
+                Roles = new[]
+                {
+                    new { Name = "Author", App = "alpha", Permissions = new[] { new { Resource = "doc", Action = "write" } } },
+                    new { Name = "Author", App = "beta", Permissions = new[] { new { Resource = "doc", Action = "write" } } },
+                },
+                Groups = new[] { new { Name = "Beta writers", Roles = new[] { "beta/Author" } } },
+            },
+        };
+        var created = await client.PostAsJsonAsync("/api/admin/realm-config/drafts", seed, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var seedId = JsonNode.Parse(await created.Content.ReadAsStringAsync(ct))!["Id"]!.GetValue<Guid>();
+        var seedPlan = await PlanAsync(client, factory, seedId, ct);
+        Assert.Equal("create", SectionEntry(seedPlan, "roles", "alpha/Author")["Action"]!.GetValue<string>());
+        Assert.Equal("create", SectionEntry(seedPlan, "roles", "beta/Author")["Action"]!.GetValue<string>());
+        var seeded = await client.PostAsJsonAsync($"/api/admin/realm-config/drafts/{seedId}/apply", new { }, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, seeded.StatusCode);
+
+        Guid alphaAuthor = default, betaAuthor = default;
+        await InTenantAsync(factory, TenantConstants.SystemTenantId, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var apps = await session.Query<Modgud.Authorization.Apps.App>().Where(a => !a.IsDeleted).ToListAsync(ct);
+            var authors = await session.Query<Modgud.Authorization.Roles.PermissionRole>()
+                .Where(r => !r.IsDeleted && r.Name == "Author").ToListAsync(ct);
+            Assert.Equal(2, authors.Count);
+            alphaAuthor = authors.Single(r => r.AppId == apps.Single(a => a.Slug == "alpha").Id).Id;
+            betaAuthor = authors.Single(r => r.AppId == apps.Single(a => a.Slug == "beta").Id).Id;
+            var group = await session.Query<Group>()
+                .SingleAsync(g => !g.IsDeleted && g.Name == "Beta writers", ct);
+            Assert.Equal([betaAuthor], group.RoleIds);
+        });
+
+        // The export references roles by their qualified key.
+        var export = JsonNode.Parse(await client.GetStringAsync("/api/admin/realm-config/export", ct))!;
+        var exportedGroup = export["Groups"]!.AsArray().Single(g => g!["Name"]!.GetValue<string>() == "Beta writers")!;
+        Assert.Equal(["beta/Author"], exportedGroup["Roles"]!.AsArray().Select(r => r!.GetValue<string>()));
+
+        // Stage an edit of beta's Author exactly as the admin UI does (Id + pinned Key +
+        // App) — this plan used to be the 500.
+        var stage = await client.PutAsJsonAsync("/api/admin/realm-config/drafts/active/entities/roles",
+            new { Key = "beta/Author", Id = betaAuthor, Name = "Author", App = "beta", Description = "Beta's authors" },
+            factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, stage.StatusCode);
+        var draftId = JsonNode.Parse(await stage.Content.ReadAsStringAsync(ct))!["Id"]!.GetValue<Guid>();
+
+        var plan = await PlanAsync(client, factory, draftId, ct);
+        var roleEntries = plan["Sections"]!.AsArray()
+            .Single(s => s!["Name"]!.GetValue<string>() == "roles")!["Entries"]!.AsArray()
+            .ToDictionary(e => e!["Key"]!.GetValue<string>(), e => e!["Action"]!.GetValue<string>());
+        Assert.Equal("update", roleEntries["beta/Author"]);
+        Assert.Equal("unchanged", roleEntries["alpha/Author"]);
+        Assert.DoesNotContain("Author", roleEntries.Keys);
+        Assert.False(plan["HasConflicts"]!.GetValue<bool>());
+
+        var applied = await client.PostAsJsonAsync($"/api/admin/realm-config/drafts/{draftId}/apply", new { }, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, applied.StatusCode);
+        await InTenantAsync(factory, TenantConstants.SystemTenantId, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            Assert.Equal("Beta's authors", (await session.LoadAsync<Modgud.Authorization.Roles.PermissionRole>(betaAuthor, ct))!.Description);
+            Assert.Null((await session.LoadAsync<Modgud.Authorization.Roles.PermissionRole>(alphaAuthor, ct))!.Description);
+        });
+
+        // A group referencing the bare "Author" is ambiguous — the apply refuses instead
+        // of silently picking one of the two.
+        var ambiguous = await client.PutAsJsonAsync("/api/admin/realm-config/drafts/active/entities/groups",
+            new { Name = "Ambiguous", Roles = new[] { "Author" } }, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, ambiguous.StatusCode);
+        var ambiguousId = JsonNode.Parse(await ambiguous.Content.ReadAsStringAsync(ct))!["Id"]!.GetValue<Guid>();
+        var refused = await client.PostAsJsonAsync($"/api/admin/realm-config/drafts/{ambiguousId}/apply", new { }, factory.JsonOptions, ct);
+        Assert.NotEqual(HttpStatusCode.OK, refused.StatusCode);
+        Assert.Contains("Manifest.AmbiguousReference", await refused.Content.ReadAsStringAsync(ct));
+    }
+
     private static async Task<JsonNode> PlanAsync(
         HttpClient client, ColdStartWebApplicationFactory factory, Guid draftId, CancellationToken ct)
     {

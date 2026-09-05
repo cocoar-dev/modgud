@@ -7,7 +7,8 @@ import { usePrincipalStore } from '@/stores/principal.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, GROUP_CLONE } from '@/composables/useClone'
 import { useDraftStaging } from '@/composables/useDraftStaging'
-import type { ManifestEntity } from '@/stores/realmDraft.store'
+import { roleManifestKey, type ManifestEntity } from '@/stores/realmDraft.store'
+import type { RoleDto } from '@/models/role'
 import {
   CoarTextInput,
   CoarFormField,
@@ -105,8 +106,23 @@ const form = ref({
   BoundTo: [] as string[],
 })
 
+/** A live role's manifest key: `app/name`, bare name for a realm-admin role. */
+function roleKeyOf(role: RoleDto): string {
+  const slug = role.IsRealmAdmin ? null : applicationsStore.apps.find((a) => a.Id === role.AppId)?.Slug
+  return roleManifestKey(slug, role.Name)
+}
+
+/** Resolves a manifest role reference: the qualified key exactly, else a bare
+ * name while it names exactly one live role (mirrors the applier). */
+function roleByKey(key: string): RoleDto | undefined {
+  const qualified = roleStore.roles.find((r) => roleKeyOf(r) === key)
+  if (qualified) return qualified
+  const byName = roleStore.roles.filter((r) => r.Name === key)
+  return byName.length === 1 ? byName[0] : undefined
+}
+
 /** Loads the staged manifest entity into the form (user keys → principal ids,
- * role names → role ids — both need the lookups loaded first). */
+ * role keys → role ids — both need the lookups loaded first). */
 function fromStagedInto(e: ManifestEntity) {
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
   const arr = (v: unknown) => (Array.isArray(v) ? [...(v as string[])] : [])
@@ -115,7 +131,7 @@ function fromStagedInto(e: ManifestEntity) {
       .find((p) => p.Type === 'person' && (p.UserName === key || p.Email === key))?.Id)
     .filter((id): id is string => !!id)
   const roleIds = arr(e.Roles)
-    .map((name) => roleStore.roles.find((r) => r.Name === name)?.Id)
+    .map((key) => roleByKey(key)?.Id)
     .filter((id): id is string => !!id)
   form.value = {
     Name: str(e.Name),
@@ -146,8 +162,9 @@ function toStaged(): ManifestEntity {
       })
       .filter((key): key is string => !!key),
     Roles: form.value.RoleIds
-      .map((id) => roleStore.roles.find((r) => r.Id === id)?.Name)
-      .filter((name): name is string => !!name),
+      .map((id) => roleStore.roles.find((r) => r.Id === id))
+      .filter((r): r is RoleDto => !!r)
+      .map(roleKeyOf),
     // Explicit — empty list = dormant, matching the UI semantics (an omitted
     // BoundTo would default to ['modgud'] on a staged CREATE).
     BoundTo: [...form.value.BoundTo],

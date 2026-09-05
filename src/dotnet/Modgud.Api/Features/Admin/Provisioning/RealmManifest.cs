@@ -305,10 +305,10 @@ public sealed record RealmManifestClientClaim(
 /// <summary>A role. <see cref="App"/> is a slug; <see cref="Permissions"/> resolve into the linked app's catalog. <see cref="Key"/> (default <see cref="Name"/>) is how groups reference it.</summary>
 public sealed record RealmManifestRole
 {
-    [Description("Optional stable key groups use to reference this role. Defaults to Name.")]
+    [Description("Optional stable key groups use to reference this role. Defaults to '<App>/<Name>' (the bare Name for a realm-admin role); a bare Name is also accepted as a reference while exactly one role carries it.")]
     public string? Key { get; init; }
 
-    [Description("Role name — the natural key for upsert.")]
+    [Description("Role name — unique per App, so the natural key for upsert is App + Name (two apps may each have an 'Author').")]
     public required string Name { get; init; }
 
     [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
@@ -326,7 +326,39 @@ public sealed record RealmManifestRole
     [Description("Permissions from the linked App's catalog this role grants. Requires App and is forbidden for a realm-admin role. Absent = unchanged; [] clears.")]
     public List<RealmManifestPermission>? Permissions { get; init; }
 
-    public string ResolveKey() => Key ?? Name;
+    /// <summary>
+    /// The role's natural key: <c>App/Name</c> for an App role, the bare <c>Name</c> for a
+    /// realm-admin role (or an update patch that omits <c>App</c>). Role names are only
+    /// unique PER APP — two apps may each have an "Author" — so the name alone can never
+    /// identify a role in the manifest.
+    /// </summary>
+    public string NaturalKey => RoleKeys.Qualified(App, Name);
+
+    /// <summary>The key groups reference this role by: the explicit <see cref="Key"/>, else
+    /// the <see cref="NaturalKey"/>. A bare name is also accepted as a reference as long
+    /// as it names exactly one role (see the applier's role-reference resolution).</summary>
+    public string ResolveKey() => Key ?? NaturalKey;
+}
+
+/// <summary>
+/// The manifest's role-key convention, shared by the exporter, planner, applier, draft
+/// registry and the admin UI: <c>&lt;app slug&gt;/&lt;role name&gt;</c> for an App role,
+/// the bare name for a realm-admin role. App slugs never contain a slash, so the key
+/// splits at the FIRST one (role names may contain slashes).
+/// </summary>
+public static class RoleKeys
+{
+    public const char Separator = '/';
+
+    public static string Qualified(string? appSlug, string name)
+        => string.IsNullOrEmpty(appSlug) ? name : $"{appSlug}{Separator}{name}";
+
+    /// <summary>Splits a reference into (app slug, name); (null, key) when unqualified.</summary>
+    public static (string? App, string Name) Split(string key)
+    {
+        var i = key.IndexOf(Separator);
+        return i < 0 ? (null, key) : (key[..i], key[(i + 1)..]);
+    }
 }
 
 /// <summary>A user. <see cref="Key"/> (default <see cref="UserName"/> ?? <see cref="Email"/>) is how groups reference it as a member.</summary>

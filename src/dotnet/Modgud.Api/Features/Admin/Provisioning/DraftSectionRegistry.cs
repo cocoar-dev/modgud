@@ -24,7 +24,10 @@ public static class DraftSectionRegistry
         ["scopes"] = new("Scopes", o => Str(o, "Name")),
         ["clients"] = new("Clients", o => Str(o, "ClientId")),
         ["loginProviders"] = new("LoginProviders", o => Str(o, "Slug")),
-        ["roles"] = new("Roles", o => Str(o, "Key") ?? Str(o, "Name")),
+        // Role names are unique per APP only — the key is `app/name` (bare name for a
+        // realm-admin role), mirroring RealmManifestRole.ResolveKey().
+        ["roles"] = new("Roles", o => Str(o, "Key")
+            ?? (Str(o, "Name") is { } name ? RoleKeys.Qualified(Str(o, "App"), name) : null)),
         ["users"] = new("Users", o => Str(o, "Key") ?? Str(o, "UserName") ?? Str(o, "Email")),
         ["groups"] = new("Groups", o => Str(o, "Name")),
         // Upsert-only section: staged DELETIONS for service accounts are not

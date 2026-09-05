@@ -266,7 +266,8 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             deletions:
             [
                 new RealmDraftDeletion("groups", "RevGroupRenamed"),
-                new RealmDraftDeletion("roles", "rev-role-renamed"),
+                // Roles are keyed app/name — names are unique per App only.
+                new RealmDraftDeletion("roles", "rev-app/rev-role-renamed"),
                 new RealmDraftDeletion("apps", "rev-app"),
             ],
             ct: ct);
@@ -377,7 +378,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
 
         var roleEntry = Assert.Single(plan.Value.Sections.Single(s => s.Name == "roles").Entries);
         Assert.Equal("update", roleEntry.Action);
-        Assert.Contains(roleEntry.Notes, n => n.Contains("RENAMES 'im-role-v2' to 'im-role-v3'"));
+        Assert.Contains(roleEntry.Notes, n => n.Contains("RENAMES 'im-app/im-role-v2' to 'im-app/im-role-v3'"));
         Assert.Contains(roleEntry.Changes, c => c.Field == "Name");
         // A renamed entity is NOT also a delete candidate under its old key.
         Assert.DoesNotContain(plan.Value.Sections.Single(s => s.Name == "roles").Entries, e => e.Action == "delete");
@@ -810,6 +811,135 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
     /// permissions, user firstname, group membership) and adds a new "globex-viewer" role —
     /// exercising both the update and the upsert-create branch.
     /// </summary>
+    /// <summary>
+    /// Role names are unique per App, so the manifest keys roles <c>app/name</c>: an export
+    /// with two "Author" roles round-trips without duplicating either, a group reference
+    /// resolves the qualified key (and a bare name only while unambiguous), a patch that
+    /// omits App still finds a uniquely-named role, and one app may not own two roles of
+    /// the same name.
+    /// </summary>
+    [Fact]
+    public async Task Roles_are_keyed_per_app_and_round_trip_through_export()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+        const string slug = "authors";
+
+        static RealmManifestApp AppOf(string appSlug) => new()
+        {
+            Slug = appSlug, DisplayName = appSlug, Permissions = [new RealmManifestPermission("doc", "write")],
+        };
+        static RealmManifestRole Author(string appSlug) => new()
+        {
+            Name = "Author", App = appSlug, Permissions = [new RealmManifestPermission("doc", "write")],
+        };
+
+        var manifest = new RealmManifest
+        {
+            Realm = new CreateRealmDto
+            {
+                Slug = slug, DisplayName = "Authors", Domains = [$"{slug}.localhost"],
+                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@authors.test" },
+            },
+            Apps = [AppOf("alpha"), AppOf("beta")],
+            Roles = [Author("alpha"), Author("beta"), new RealmManifestRole { Name = "Reviewer", App = "beta", Permissions = [] }],
+            Groups =
+            [
+                new RealmManifestGroup { Name = "Alpha writers", Roles = ["alpha/Author"] },
+                new RealmManifestGroup { Name = "Beta writers", Roles = ["beta/Author"] },
+                // A bare name is fine while exactly one role carries it.
+                new RealmManifestGroup { Name = "Reviewers", Roles = ["Reviewer"] },
+            ],
+        };
+        var imported = await applier.ImportNewRealmAsync(manifest, ct);
+        Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
+
+        async Task<(Guid Alpha, Guid Beta, Guid Reviewer)> RoleIdsAsync()
+        {
+            (Guid, Guid, Guid) ids = default;
+            await InTenantAsync(factory, slug, async sp =>
+            {
+                var session = sp.GetRequiredService<IDocumentSession>();
+                var apps = (await session.Query<App>().Where(a => !a.IsDeleted).ToListAsync(ct)).ToDictionary(a => a.Slug, a => a.Id);
+                var roles = await session.Query<PermissionRole>().Where(r => !r.IsDeleted && r.AppId != null).ToListAsync(ct);
+                Assert.Equal(3, roles.Count);
+                ids = (roles.Single(r => r.Name == "Author" && r.AppId == apps["alpha"]).Id,
+                       roles.Single(r => r.Name == "Author" && r.AppId == apps["beta"]).Id,
+                       roles.Single(r => r.Name == "Reviewer").Id);
+                var groups = (await session.Query<Group>().Where(g => !g.IsDeleted).ToListAsync(ct)).ToDictionary(g => g.Name);
+                Assert.Equal([ids.Item1], groups["Alpha writers"].RoleIds);
+                Assert.Equal([ids.Item2], groups["Beta writers"].RoleIds);
+                Assert.Equal([ids.Item3], groups["Reviewers"].RoleIds);
+            });
+            return ids;
+        }
+        var before = await RoleIdsAsync();
+
+        // Export → import is a no-op: every role matches by id/key, nothing is duplicated.
+        var export = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(export.IsError, export.IsError ? export.FirstError.Description : string.Empty);
+        Assert.Equal(["beta/Author"], export.Value.Groups.Single(g => g.Name == "Beta writers").Roles);
+        var reapplied = await applier.UpdateRealmAsync(export.Value, ct: ct);
+        Assert.False(reapplied.IsError, reapplied.IsError ? reapplied.FirstError.Description : string.Empty);
+        Assert.Equal(before, await RoleIdsAsync());
+
+        // A patch without App (absent = unchanged) updates a uniquely-named role...
+        var patch = new RealmManifest
+        {
+            Realm = manifest.Realm,
+            Roles = [new RealmManifestRole { Name = "Reviewer", Description = "Reviews drafts" }],
+        };
+        var patched = await applier.UpdateRealmAsync(patch, ct: ct);
+        Assert.False(patched.IsError, patched.IsError ? patched.FirstError.Description : string.Empty);
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            Assert.Equal("Reviews drafts", (await session.LoadAsync<PermissionRole>(before.Reviewer, ct))!.Description);
+        });
+
+        // ...but is refused for an ambiguous one instead of silently picking the first.
+        var ambiguous = await applier.UpdateRealmAsync(new RealmManifest
+        {
+            Realm = manifest.Realm,
+            Roles = [new RealmManifestRole { Name = "Author", Description = "Which one?" }],
+        }, ct: ct);
+        Assert.True(ambiguous.IsError);
+        Assert.Equal("Manifest.AmbiguousRole", ambiguous.FirstError.Code);
+
+        // So is a group reference to the bare name.
+        var ambiguousRef = await applier.UpdateRealmAsync(new RealmManifest
+        {
+            Realm = manifest.Realm,
+            Groups = [new RealmManifestGroup { Name = "Anyone", Roles = ["Author"] }],
+        }, ct: ct);
+        Assert.True(ambiguousRef.IsError);
+        Assert.Equal("Manifest.AmbiguousReference", ambiguousRef.FirstError.Code);
+
+        // One app may not own two roles of the same name — that is the invariant the key
+        // rests on (the manifest path can't even express it: `beta/Reviewer` matches the
+        // existing role), so the canonical service refuses it for the live admin path too.
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var beta = await session.Query<App>().SingleAsync(a => !a.IsDeleted && a.Slug == "beta", ct);
+            var roleAdmin = sp.GetRequiredService<RoleAdminService>();
+            var duplicate = await roleAdmin.CreateRoleAsync(
+                new RolePayload("Reviewer", null, new ShortGuid(beta.Id).ToString(), false, [], null),
+                callerIsRealmAdmin: true, ct);
+            Assert.True(duplicate.IsError);
+            Assert.Equal("Role.NameTaken", duplicate.FirstError.Code);
+            // The same name in ANOTHER app is fine — that is the whole point.
+            var alpha = await session.Query<App>().SingleAsync(a => !a.IsDeleted && a.Slug == "alpha", ct);
+            var elsewhere = await roleAdmin.CreateRoleAsync(
+                new RolePayload("Reviewer", null, new ShortGuid(alpha.Id).ToString(), false, [], null),
+                callerIsRealmAdmin: true, ct);
+            Assert.False(elsewhere.IsError, elsewhere.IsError ? elsewhere.FirstError.Description : string.Empty);
+        });
+    }
+
     private static RealmManifest BuildGlobexManifest(string slug, int version)
     {
         var v2 = version == 2;

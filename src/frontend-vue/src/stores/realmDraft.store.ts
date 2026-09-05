@@ -98,6 +98,15 @@ export interface ApplyOutcome {
   ClientSecrets: Record<string, string>
 }
 
+/**
+ * A role's manifest key (mirrors `RoleKeys` in the backend): `<app slug>/<name>` for an
+ * App role, the bare name for a realm-admin role. Role names are unique per App only —
+ * two apps may each have an "Author" — so the name alone never identifies a role.
+ */
+export function roleManifestKey(appSlug: string | null | undefined, name: string): string {
+  return appSlug ? `${appSlug}/${name}` : name
+}
+
 /** Manifest collection + natural key per plan section (mirrors the backend). */
 export const SECTION_META: Record<string, { collection: keyof DraftManifest | null; key: (e: ManifestEntity) => string }> = {
   settings: { collection: null, key: () => 'settings' },
@@ -106,7 +115,10 @@ export const SECTION_META: Record<string, { collection: keyof DraftManifest | nu
   scopes: { collection: 'Scopes', key: (e) => String(e.Name ?? '') },
   clients: { collection: 'Clients', key: (e) => String(e.ClientId ?? '') },
   loginProviders: { collection: 'LoginProviders', key: (e) => String(e.Slug ?? '') },
-  roles: { collection: 'Roles', key: (e) => String(e.Key ?? e.Name ?? '') },
+  roles: {
+    collection: 'Roles',
+    key: (e) => String(e.Key ?? roleManifestKey(typeof e.App === 'string' ? e.App : null, String(e.Name ?? ''))),
+  },
   users: { collection: 'Users', key: (e) => String(e.Key ?? e.UserName ?? e.Email ?? '') },
   groups: { collection: 'Groups', key: (e) => String(e.Name ?? '') },
   serviceAccounts: { collection: 'ServiceAccounts', key: (e) => String(e.AccountName ?? '').trim().toLowerCase() },

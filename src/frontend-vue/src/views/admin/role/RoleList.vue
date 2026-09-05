@@ -12,10 +12,12 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useRoleStore } from '@/stores/role.store'
 import { useAppContextStore } from '@/stores/appContext.store'
+import { useApplicationsStore } from '@/stores/applications.store'
+import { roleManifestKey } from '@/stores/realmDraft.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, ROLE_CLONE } from '@/composables/useClone'
-import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { draftRowId, useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
 import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import type { RoleDto } from '@/models/role'
 import GridEmptyState from '@/components/GridEmptyState.vue'
@@ -27,6 +29,7 @@ const { navigateToModal } = useFragmentNavigation()
 const { stage } = useClone()
 const roleStore = useRoleStore()
 const appCtx = useAppContextStore()
+const applicationsStore = useApplicationsStore()
 
 const ui = useUI()
 watch(language, () => ui.set((ctx) => {
@@ -43,15 +46,17 @@ const liveRoles = computed(() =>
   roleStore.roles.filter((r) =>
     appCtx.matchesSingleAppId(r.IsRealmAdmin ? null : r.AppId)))
 
-// ADR-0005: draft-merged roster — the staged key resolves Key ?? Name, so a
-// staged rename still overlays its live row.
+// ADR-0005: draft-merged roster — the staged key resolves Key ?? app/name (role
+// names are unique per App only), so a staged rename still overlays its live row.
 const staging = useDraftStaging('roles')
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const liveKey = (row: RoleDto) => roleManifestKey(
+  row.IsRealmAdmin ? null : applicationsStore.apps.find((a) => a.Id === row.AppId)?.Slug, row.Name)
 const roles = useDraftListOverlay<RoleDto>({
   section: 'roles',
   rows: liveRoles,
-  liveKey: (row) => row.Name,
-  matchLive: (row, e) => row.Name === (str(e.Key) || str(e.Name)),
+  liveKey,
+  matchLive: (row, e) => liveKey(row) === (str(e.Key) || roleManifestKey(str(e.App) || null, str(e.Name))),
   overlay: (row, e) => ({
     ...row,
     Name: str(e.Name) || row.Name,
@@ -59,11 +64,11 @@ const roles = useDraftListOverlay<RoleDto>({
     IsRealmAdmin: e.IsRealmAdmin === true,
   }),
   synthesize: (key, e) => ({
-    Id: `draft__${key}`,
+    Id: draftRowId(key),
     Name: str(e.Name) || key,
     Description: str(e.Description) || null,
     IsRealmAdmin: e.IsRealmAdmin === true,
-    AppId: null,
+    AppId: applicationsStore.apps.find((a) => a.Slug === str(e.App))?.Id ?? null,
     // Pseudo-ids: the grid only shows the count.
     PermissionIds: (Array.isArray(e.Permissions) ? e.Permissions : []).map((_, i) => String(i)),
   } as unknown as RoleDto),
@@ -80,7 +85,7 @@ const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelect
   computed(() => {
     const row = roles.value.find((r) => r.Id === selectedIds.value[0])
     if (!row || row.DraftStaged === 'create') return null
-    return row.Name
+    return liveKey(row)
   }))
 
 const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<RoleDto>>(), { openable: true })
@@ -143,9 +148,9 @@ async function deleteSelected() {
       alert(t('admin.roles.cannotDeleteRealmAdmin', {}, 'Realm-admin roles cannot be deleted (lockout protection).'))
       return
     }
-    if (row.DraftStaged === 'delete') return staging.unstageDelete(row.Name)
+    if (row.DraftStaged === 'delete') return staging.unstageDelete(liveKey(row))
     // No confirm: staged deletes are reversible; the apply popconfirm gates.
-    return staging.stageDelete(row.Name)
+    return staging.stageDelete(liveKey(row))
   }
   if (confirm(t('common.confirmDelete', {}, 'Really delete?'))) {
     await roleStore.deleteRole(id)
@@ -163,7 +168,8 @@ function cloneSelected() {
   navigateToModal('create')
 }
 
-onMounted(() => roleStore.initialize())
+// Apps supply the slug half of every role key (`app/name`).
+onMounted(() => Promise.all([roleStore.initialize(), applicationsStore.initialize()]))
 </script>
 
 <template>

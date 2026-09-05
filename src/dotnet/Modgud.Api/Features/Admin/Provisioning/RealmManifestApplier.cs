@@ -290,7 +290,7 @@ public sealed partial class RealmManifestApplier(
             // Control-plane provisioning is trusted, so the realm-admin guard is satisfied.
             var created = await roleAdmin.CreateRoleAsync(payload, callerIsRealmAdmin: true, ct);
             EnsureOk(created, $"role '{r.Name}'");
-            roleIds[r.ResolveKey()] = created.Value.Id;
+            RegisterRole(roleIds, manifest.Roles, r, created.Value.Id);
         }
 
         // ── Users — canonical handler on the manifest's tenant session ────────────
@@ -655,15 +655,14 @@ public sealed partial class RealmManifestApplier(
             }
         }
 
-        // ── Roles (natural key = Name) ─────────────────────────────────────────────
+        // ── Roles (natural key = App/Name — names are unique per App only) ─────────
         var roleAdmin = sp.GetRequiredService<RoleAdminService>();
         foreach (var r in manifest.Roles)
         {
-            var ctx = $"role '{r.Name}'";
+            var ctx = $"role '{r.NaturalKey}'";
             // Id first — a role's name is mutable, so an id-matched entry RENAMES it.
             var existing = await MatchByPinnedIdAsync<PermissionRole>(session, r.Id, x => x.IsDeleted, ct)
-                ?? await session.Query<PermissionRole>()
-                    .FirstOrDefaultAsync(x => x.Name == r.Name && !x.IsDeleted, ct);
+                ?? await MatchRoleByKeyAsync(session, apps, r, ctx, ct);
             // v2 merge-patch: absent fields keep the existing role's values (the
             // canonical update is a full payload replace, so merge here).
             var isRealmAdmin = r.IsRealmAdmin ?? existing?.IsRealmAdmin ?? false;
@@ -683,7 +682,7 @@ public sealed partial class RealmManifestApplier(
                 ? await roleAdmin.CreateRoleAsync(payload, callerIsRealmAdmin: true, ct)
                 : await roleAdmin.UpdateRoleAsync(existing.Id, payload, callerIsRealmAdmin: true, ct);
             EnsureOk(result, ctx);
-            roleIds[r.ResolveKey()] = result.Value.Id;
+            RegisterRole(roleIds, manifest.Roles, r, result.Value.Id);
         }
 
         // ── Users (natural key = email or username) ────────────────────────────────
@@ -966,12 +965,20 @@ public sealed partial class RealmManifestApplier(
             EnsureOk(await userHandler.Handle(new DeleteUsersCommand([p.Id]), ct), $"prune user '{p.AccountName ?? p.Id.ToString()}'");
         }
 
-        // ── Roles (natural key = Name) — keep realm-admin roles (lockout guard). ─────────────
-        var keepRoles = manifest.Roles.Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        // ── Roles (natural key = App/Name) — keep realm-admin roles (lockout guard). ─────────
+        // The manifest's roles were just upserted, so a live role is kept when its qualified
+        // key is listed — or its bare name, for a patch entry that omitted App.
+        var keepRoles = manifest.Roles.Select(r => r.NaturalKey).ToHashSet(StringComparer.Ordinal);
+        var keepBareRoleNames = manifest.Roles.Where(r => r.App is null).Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        var roleAppSlugById = (await session.Query<App>().Where(a => !a.IsDeleted).ToListAsync(ct))
+            .ToDictionary(a => a.Id, a => a.Slug);
         foreach (var r in await session.Query<PermissionRole>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepRoles.Contains(r.Name) || r.IsRealmAdmin || !Wants("roles", r.Name)) continue;
-            EnsureOk(await roleAdmin.DeleteRoleAsync(r.Id, ct), $"prune role '{r.Name}'");
+            var roleKey = RoleKeys.Qualified(
+                !r.IsRealmAdmin && r.AppId is { } aid ? roleAppSlugById.GetValueOrDefault(aid) : null, r.Name);
+            if (keepRoles.Contains(roleKey) || keepBareRoleNames.Contains(r.Name) || r.IsRealmAdmin
+                || !Wants("roles", roleKey)) continue;
+            EnsureOk(await roleAdmin.DeleteRoleAsync(r.Id, ct), $"prune role '{roleKey}'");
         }
 
         // ── Apps (natural key = Slug) — keep the system app; a still-referenced app errors. ──
@@ -1168,16 +1175,75 @@ public sealed partial class RealmManifestApplier(
         return person.Id;
     }
 
+    /// <summary>
+    /// Registers an applied role for group references: under its reference key
+    /// (<c>Key</c>, else <c>app/name</c>) and — when the bare name occurs only once in the
+    /// manifest — under the bare name too, so hand-written manifests that reference
+    /// <c>"Roles": ["acme-admin"]</c> keep working. An ambiguous bare name is never
+    /// registered: the reference then resolves live (and fails if still ambiguous).
+    /// </summary>
+    private static void RegisterRole(
+        Dictionary<string, Guid> roleIds, IReadOnlyList<RealmManifestRole> all, RealmManifestRole r, Guid id)
+    {
+        roleIds[r.ResolveKey()] = id;
+        if (all.Count(x => string.Equals(x.Name, r.Name, StringComparison.Ordinal)) == 1)
+            roleIds.TryAdd(r.Name, id);
+    }
+
+    /// <summary>
+    /// The live role a manifest entry without a matching pinned Id addresses. With <c>App</c>
+    /// the match is exact (that app's role of that name); a realm-admin entry matches the
+    /// realm-admin role of that name; an entry that omits both (a merge patch) matches the
+    /// bare name only while it is unambiguous — two apps each owning an "Author" make it an
+    /// apply error rather than a silent pick of whichever comes first.
+    /// </summary>
+    private static async Task<PermissionRole?> MatchRoleByKeyAsync(
+        IDocumentSession session, IReadOnlyDictionary<string, App> apps, RealmManifestRole r,
+        string context, CancellationToken ct)
+    {
+        var candidates = await session.Query<PermissionRole>()
+            .Where(x => !x.IsDeleted && x.Name == r.Name).ToListAsync(ct);
+        if (r.App is not null)
+        {
+            // An unknown app slug falls through to the create path, which reports it.
+            if (!apps.TryGetValue(r.App, out var app)) return null;
+            return candidates.FirstOrDefault(x => !x.IsRealmAdmin && x.AppId == app.Id);
+        }
+        if (r.IsRealmAdmin == true) return candidates.FirstOrDefault(x => x.IsRealmAdmin);
+        if (candidates.Count > 1)
+            throw new ManifestApplyException(context,
+                [Error.Validation("Manifest.AmbiguousRole",
+                    $"{context} names {candidates.Count} live roles — add App (or Id) to say which one is meant.")]);
+        return candidates.SingleOrDefault();
+    }
+
+    /// <summary>
+    /// Resolves a group's role reference: the keys registered by this apply first, then
+    /// live — a qualified <c>app/name</c> exactly, a bare name only while it names exactly
+    /// one live role.
+    /// </summary>
     private static async Task<Guid> ResolveRoleRefAsync(
         IDocumentSession session, IReadOnlyDictionary<string, Guid> map, string key, string context, CancellationToken ct)
     {
         if (map.TryGetValue(key, out var id)) return id;
-        var role = await session.Query<PermissionRole>()
-            .FirstOrDefaultAsync(r => !r.IsDeleted && r.Name == key, ct);
-        if (role is null)
+        var (appSlug, name) = RoleKeys.Split(key);
+        var candidates = await session.Query<PermissionRole>()
+            .Where(r => !r.IsDeleted && (r.Name == key || r.Name == name)).ToListAsync(ct);
+        if (appSlug is not null)
+        {
+            var app = await session.Query<App>().FirstOrDefaultAsync(a => !a.IsDeleted && a.Slug == appSlug, ct);
+            if (app is not null &&
+                candidates.FirstOrDefault(r => !r.IsRealmAdmin && r.AppId == app.Id && r.Name == name) is { } qualified)
+                return qualified.Id;
+        }
+        var byName = candidates.Where(r => string.Equals(r.Name, key, StringComparison.Ordinal)).ToList();
+        if (byName.Count == 1) return byName[0].Id;
+        if (byName.Count > 1)
             throw new ManifestApplyException(context,
-                [Error.Validation("Manifest.UnknownReference", $"{context} resolves to no role.")]);
-        return role.Id;
+                [Error.Validation("Manifest.AmbiguousReference",
+                    $"{context} names {byName.Count} live roles — qualify it as <app slug>/{key}.")]);
+        throw new ManifestApplyException(context,
+            [Error.Validation("Manifest.UnknownReference", $"{context} resolves to no role.")]);
     }
 
     private static string? ResolveAppId(IReadOnlyDictionary<string, App> apps, string? slug, string context)

@@ -4,7 +4,7 @@ import { useRoleStore } from '@/stores/role.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, ROLE_CLONE } from '@/composables/useClone'
 import { useDraftStaging } from '@/composables/useDraftStaging'
-import type { ManifestEntity } from '@/stores/realmDraft.store'
+import { roleManifestKey, type ManifestEntity } from '@/stores/realmDraft.store'
 import {
   CoarNotice,
   CoarTextInput,
@@ -34,12 +34,18 @@ const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
 
 // ── ADR-0005 staging: role saves commit onto the active draft. Role names are
-// editable, so the staged Key is pinned to the ORIGINAL name — a rename then
-// replaces the staged entry instead of cloning it.
+// editable, so the staged Key is pinned to the ORIGINAL key — a rename then
+// replaces the staged entry instead of cloning it. The key is `app/name` (bare
+// name for a realm-admin role): names are unique per App only.
 const staging = useDraftStaging('roles')
 const isDraftRow = computed(() => staging.isDraftId(props.id))
 const stagedSave = computed(() => staging.stagingActive.value)
 const stagedKey = ref<string | null>(null)
+
+function liveRoleKey(role: RoleDto): string {
+  const slug = role.IsRealmAdmin ? null : applicationsStore.apps.find((a) => a.Id === role.AppId)?.Slug
+  return roleManifestKey(slug, role.Name)
+}
 
 function fromStaged(e: ManifestEntity): FormState {
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -212,10 +218,10 @@ onMounted(async () => {
         PermissionIds: role.IsRealmAdmin ? [] : [...(role.PermissionIds ?? [])],
       }
       // Staging overlay: show the STAGED role state when the draft carries it
-      // (draft keys resolve Key ?? Name, so the live name finds a staged rename).
-      stagedKey.value = role.Name
+      // (draft keys resolve Key ?? app/name, so the live key finds a staged rename).
+      stagedKey.value = liveRoleKey(role)
       if (stagedSave.value && staging.draftStore.current) {
-        const entity = staging.findStaged(role.Name)
+        const entity = staging.findStaged(stagedKey.value)
         if (entity) form.value = fromStaged(entity)
       }
     }
@@ -243,7 +249,9 @@ async function save() {
   try {
     // ADR-0005: commit onto the active draft instead of writing live.
     if (stagedSave.value) {
-      await staging.stage(form.value.Name.trim(), toStaged())
+      const entity = toStaged()
+      await staging.stage(stagedKey.value ?? roleManifestKey(
+        typeof entity.App === 'string' ? entity.App : null, form.value.Name.trim()), entity)
       props.close()
       return
     }

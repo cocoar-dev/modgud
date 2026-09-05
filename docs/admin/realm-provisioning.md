@@ -86,8 +86,11 @@ A manifest is one object with a required `Realm` plus optional entity lists.
 
 - APIs / scopes / clients / roles reference an app by its **`Slug`**.
 - Permissions are addressed as **`resource:action`** (e.g. `invoice:read`).
-- Groups list **`Members`** (user keys) and **`Roles`** (role keys). Group
-  membership is the *only* way users get roles.
+- Roles are keyed **`<app slug>/<name>`** (a realm-admin role by its bare `Name`):
+  role names are unique *per app*, so two apps may each have an `Author`. Groups list
+  **`Members`** (user keys) and **`Roles`** (role keys) — the qualified key, an explicit
+  `Key`, or a bare name as long as exactly one role carries it. Group membership is the
+  *only* way users get roles.
 - Login providers are keyed by their **`Slug`** (the one in the provider's
   callback URLs); positions list **`Grants`** as user keys.
 

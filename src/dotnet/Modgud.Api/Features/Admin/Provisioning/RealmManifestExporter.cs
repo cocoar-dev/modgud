@@ -212,17 +212,16 @@ public sealed class RealmManifestExporter(
 
         // ── Roles (raw — ids are Guids) ──────────────────────────────────────────────
         var roles = await session.Query<PermissionRole>().Where(r => !r.IsDeleted).ToListAsync(ct);
-        var roleKeyById = roles.ToDictionary(r => r.Id, r => r.Name);
+        string? RoleApp(PermissionRole r)
+            => !r.IsRealmAdmin && r.AppId is { } aid && appSlugById.TryGetValue(aid, out var slugOf) ? slugOf : null;
+        // Group references use the qualified `app/name` key — names repeat across apps.
+        var roleKeyById = roles.ToDictionary(r => r.Id, r => RoleKeys.Qualified(RoleApp(r), r.Name));
         var manifestRoles = roles.Select(r => new RealmManifestRole
         {
             Name = r.Name,
             Id = new ShortGuid(r.Id).ToString(),
             Description = Opt(r.Description),
-            App = !r.IsRealmAdmin
-                && r.AppId is { } aid
-                && appSlugById.TryGetValue(aid, out var slugOf)
-                    ? slugOf
-                    : null,
+            App = RoleApp(r),
             IsRealmAdmin = r.IsRealmAdmin,
             Permissions = r.IsRealmAdmin
                 ? []

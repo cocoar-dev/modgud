@@ -27,6 +27,7 @@ public sealed class RoleAdminService(IDocumentSession session)
         if (built.IsError) return built.Errors;
 
         var role = built.Value;
+        if (await NameTakenAsync(role, excludeId: null, ct)) return NameTaken(role);
         var pinned = await Modgud.Application.Services.PinnedEntityId.ResolveAsync<PermissionRole>(
             session, dto.Id, "Role", r => r.IsDeleted, ct);
         if (pinned.IsError) return pinned.Errors;
@@ -68,6 +69,7 @@ public sealed class RoleAdminService(IDocumentSession session)
         if (built.IsError) return built.Errors;
 
         var role = built.Value;
+        if (await NameTakenAsync(role, excludeId: id, ct)) return NameTaken(role);
         existing.Name = role.Name;
         existing.Description = role.Description;
         existing.AppId = role.AppId;
@@ -81,6 +83,25 @@ public sealed class RoleAdminService(IDocumentSession session)
         await session.SaveChangesAsync(ct);
         return existing;
     }
+
+    /// <summary>
+    /// A role's name is its natural key WITHIN its scope — the linked App, or the realm for
+    /// a realm-admin role. Two apps may each own an "Author"; one app may not own two. The
+    /// realm-manifest keys roles as <c>app/name</c> on exactly this invariant.
+    /// </summary>
+    private async Task<bool> NameTakenAsync(PermissionRole role, Guid? excludeId, CancellationToken ct)
+    {
+        var sameName = await session.Query<PermissionRole>()
+            .Where(r => !r.IsDeleted && r.Name == role.Name).ToListAsync(ct);
+        return sameName.Any(r => r.Id != excludeId
+            && r.IsRealmAdmin == role.IsRealmAdmin
+            && r.AppId == role.AppId);
+    }
+
+    private static Error NameTaken(PermissionRole role)
+        => Error.Conflict("Role.NameTaken", role.IsRealmAdmin
+            ? $"A realm-admin role named '{role.Name}' already exists."
+            : $"A role named '{role.Name}' already exists in this app.");
 
     /// <summary>
     /// The single canonical delete path for an existing <see cref="PermissionRole"/>, shared
