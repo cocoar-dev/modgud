@@ -38,6 +38,10 @@ public class SsrfAllowListTests
     [Fact]
     public async Task Guard_refuses_loopback_by_default_and_connects_when_the_host_is_listed()
     {
+        // The client addresses the listener by its literal loopback address, not
+        // by "localhost": on a dual-stack runner that name resolves to ::1 first,
+        // which the IPv4 listener does not serve, and the test would measure the
+        // runner's resolver instead of the guard.
         using var listener = new HttpListener();
         var port = FreePort();
         listener.Prefixes.Add($"http://127.0.0.1:{port}/");
@@ -60,12 +64,12 @@ public class SsrfAllowListTests
         try
         {
             using var blocked = new HttpClient(SsrfSafeHttpHandlerFactory.Create("test fetch"));
-            var ex = await Assert.ThrowsAnyAsync<Exception>(() => blocked.GetAsync($"http://localhost:{port}/"));
+            var ex = await Assert.ThrowsAnyAsync<Exception>(() => blocked.GetAsync($"http://127.0.0.1:{port}/"));
             Assert.Contains("did not resolve to a routable public address", Flatten(ex));
             Assert.Contains("OutboundHttp__AllowedPrivateHosts", Flatten(ex));
 
-            using var allowed = new HttpClient(SsrfSafeHttpHandlerFactory.Create("test fetch", SsrfAllowList.Parse("localhost")));
-            var response = await allowed.GetAsync($"http://localhost:{port}/");
+            using var allowed = new HttpClient(SsrfSafeHttpHandlerFactory.Create("test fetch", SsrfAllowList.Parse("127.0.0.1")));
+            var response = await allowed.GetAsync($"http://127.0.0.1:{port}/");
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
         finally
