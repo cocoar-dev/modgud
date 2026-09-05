@@ -48,6 +48,7 @@ settings, the OpenIddict issuer, the magic-link rate limit, the
 | `OpenIddictSettings` | `OpenIddict:` — `*LifetimeMinutes`, `DevelopmentMode`, `SigningCertificatePath` |
 | `ObservabilitySettings` | `Observability:` — `Prometheus.Enabled`, `Prometheus.BearerToken`, `Otlp.*`, `ErrorFeed.*` |
 | `ClusterSettings` | `Cluster:` — `DrainDelaySeconds`, `NodeName` (see [Running two instances](#running-two-instances)) |
+| `OutboundHttpSettings` | `OutboundHttp:` — `AllowedPrivateHosts` (see [Identity providers on private networks](#identity-providers-on-private-networks)) |
 
 The token issuer is **not** a global setting — there is no `Issuer` or `PublicUrl` key. Modgud is multi-tenant: each realm carries its own `PrimaryDomain` (managed in the admin UI or the Recovery CLI), and the issuer is derived per request from that domain / the request host on every path — the discovery document, the token `iss` claim, and token validation. What you must get right for a correct issuer is therefore (1) each realm's domain and (2) the reverse proxy forwarding the real public host (see `ProxyAllowedNetworks` below), **not** any issuer config value.
 
@@ -67,6 +68,18 @@ docker exec modgud dotnet Modgud.Api.dll recover realm-set-public-url --slug acm
 It is deliberately separate from `PrimaryDomain`, which stays a bare **host name** because it doubles as the WebAuthn RP ID and the cookie domain — neither may carry a scheme or a port. The primary domain says *which host this realm is*; the public origin says *where users reach it*. Changing the origin does not invalidate passkeys; changing the primary domain does.
 
 A realm that declares no origin — every realm created before this field existed — falls back to `https://{PrimaryDomain}`, i.e. the reverse-proxy-on-443 topology this page describes. If such a realm is served anywhere else, give it an explicit origin with the command above.
+
+### Identity providers on private networks
+
+Every URL a realm admin types into Modgud and that Modgud then fetches server-side — an OIDC provider's discovery and token endpoints, SAML IdP metadata, a client-id metadata document, the back-channel logout endpoint of a resource server — goes through an SSRF guard: the name is resolved, any address that is not publicly routable (private ranges, loopback, link-local, CGNAT, ULA …) is refused, and the connection goes to exactly the validated address. A realm admin is a lower trust tier than the platform operator, so "an admin configured it" does not switch this off.
+
+An identity provider or an application on your **internal network** is a legitimate case the guard would otherwise block. The platform operator lists those hosts explicitly, deployment-wide:
+
+```yaml
+OutboundHttp__AllowedPrivateHosts: "keycloak.corp.internal, *.apps.corp.internal"
+```
+
+Exact host names, or `*.suffix` for a whole zone (the suffix alone does not match). Separate entries with commas, semicolons or whitespace. A listed host is exempt from the address check only; TLS still validates the certificate against the name, redirects stay off and the timeouts stay tight. A refused fetch says so in the log, naming this setting.
 
 ### Example `configuration.json`
 

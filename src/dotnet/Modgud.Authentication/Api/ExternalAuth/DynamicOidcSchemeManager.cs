@@ -42,6 +42,7 @@ public class DynamicOidcSchemeManager(
     LoginProviderSecretStore secrets,
     OidcSchemeRealmRegistry realmRegistry,
     IHostEnvironment env,
+    Modgud.Infrastructure.Http.SsrfAllowList allowedPrivateHosts,
     ILogger<DynamicOidcSchemeManager> logger)
 {
     public const string SchemeNamePrefix = "Oidc_";
@@ -153,9 +154,11 @@ public class DynamicOidcSchemeManager(
         // token/userinfo backchannel are SSRF sinks. Use the same transport
         // guard as the CIMD and SAML metadata fetchers (DNS resolved and
         // validated before connect — closing the rebinding window — redirects
-        // off, tight timeouts) instead of a bare HttpClient.
+        // off, tight timeouts) instead of a bare HttpClient. An identity
+        // provider on the private network needs the operator's exemption
+        // (OutboundHttp:AllowedPrivateHosts); a realm admin cannot grant it.
         options.Backchannel ??= new HttpClient(
-            Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create("OIDC metadata/backchannel fetch"))
+            Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create("OIDC metadata/backchannel fetch", allowedPrivateHosts))
         {
             Timeout = TimeSpan.FromSeconds(15),
         };

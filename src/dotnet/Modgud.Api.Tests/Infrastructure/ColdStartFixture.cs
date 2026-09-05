@@ -137,6 +137,7 @@ public class ColdStartFixture : IAsyncLifetime
             }),
             // ADR 0010: no cross-node relay, no drain in the test host (single process).
             rule.For<ClusterSettings>().FromStatic(_ => new ClusterSettings { DrainDelaySeconds = 0 }),
+            rule.For<Modgud.Infrastructure.Http.OutboundHttpSettings>().FromStatic(_ => new Modgud.Infrastructure.Http.OutboundHttpSettings()),
         ]);
 
     public async ValueTask DisposeAsync()

@@ -45,8 +45,9 @@ public static class SamlSetup
             {
                 client.Timeout = TimeSpan.FromSeconds(5);
             })
-            .ConfigurePrimaryHttpMessageHandler(() =>
-                Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create("SAML metadata fetch"));
+            .ConfigurePrimaryHttpMessageHandler(sp =>
+                Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create(
+                    "SAML metadata fetch", sp.GetRequiredService<Modgud.Infrastructure.Http.SsrfAllowList>()));
         services.AddSingleton<SamlMetadataFetcher>();
 
         services.AddSingleton<DynamicSamlSchemeManager>();

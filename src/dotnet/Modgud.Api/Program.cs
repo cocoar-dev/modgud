@@ -141,6 +141,14 @@ try
             rule.For<ClusterSettings>().FromFile("data/configuration.json").Select("Cluster"),
             rule.For<ClusterSettings>().FromFile("data/configuration.local.json").Select("Cluster"),
             rule.For<ClusterSettings>().FromEnvironment("Cluster"),
+
+            // Operator exemptions from the SSRF guard on admin-supplied URLs
+            // (an internal identity provider, a resource server on the private
+            // network). Deployment-wide by nature. Env form:
+            // OutboundHttp__AllowedPrivateHosts.
+            rule.For<Modgud.Infrastructure.Http.OutboundHttpSettings>().FromFile("data/configuration.json").Select("OutboundHttp"),
+            rule.For<Modgud.Infrastructure.Http.OutboundHttpSettings>().FromFile("data/configuration.local.json").Select("OutboundHttp"),
+            rule.For<Modgud.Infrastructure.Http.OutboundHttpSettings>().FromEnvironment("OutboundHttp"),
         ], setup =>
         [
             setup.ConcreteType<StartUpConfiguration>().AsSingleton(),
@@ -152,7 +160,13 @@ try
             setup.ConcreteType<TurnstileSettings>().AsSingleton(),
             setup.ConcreteType<ObservabilitySettings>().AsSingleton(),
             setup.ConcreteType<ClusterSettings>().AsSingleton(),
+            setup.ConcreteType<Modgud.Infrastructure.Http.OutboundHttpSettings>().AsSingleton(),
         ]));
+
+    // The parsed SSRF allow-list, one per host, consumed by every guarded fetcher.
+    builder.Services.AddSingleton(sp =>
+        Modgud.Infrastructure.Http.SsrfAllowList.Parse(
+            sp.GetRequiredService<Modgud.Infrastructure.Http.OutboundHttpSettings>().AllowedPrivateHosts));
 
     // Expose concrete config types as Authentication interfaces so Authentication
     // can inject them without depending on the Api project.
@@ -618,8 +632,9 @@ try
         if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
             backChannelClient.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
         else
-            backChannelClient.ConfigurePrimaryHttpMessageHandler(() =>
-                Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create("Back-channel logout delivery"));
+            backChannelClient.ConfigurePrimaryHttpMessageHandler(sp =>
+                Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create(
+                    "Back-channel logout delivery", sp.GetRequiredService<Modgud.Infrastructure.Http.SsrfAllowList>()));
     }
     // ADR 0009 — record "client holds tokens of session" on every access-token mint.
     builder.Services.AddOpenIddict().AddServer(options =>

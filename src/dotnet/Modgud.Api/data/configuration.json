@@ -69,5 +69,8 @@
     "Cluster": {
         "NodeName": "",
         "DrainDelaySeconds": 5
+    },
+    "OutboundHttp": {
+        "AllowedPrivateHosts": ""
     }
 }
