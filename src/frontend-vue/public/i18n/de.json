@@ -786,6 +786,8 @@
       "saveError": "Die Rolle konnte nicht gespeichert werden.",
       "validation.nameRequired": "Name ist erforderlich.",
       "validation.appRequired": "Wähle eine Anwendung für diese Rolle.",
+      "validation.nameTaken": "In dieser Anwendung gibt es bereits eine Rolle mit diesem Namen.",
+      "validation.realmAdminNameTaken": "Es gibt bereits eine Realm-Admin-Rolle mit diesem Namen.",
       "validation.incomplete": "Fehlende Angaben",
       "tabs": {
         "general": "Allgemein",

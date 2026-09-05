@@ -162,7 +162,45 @@ const appError = computed(() =>
     : '',
 )
 
-const generalIssues = computed(() => [nameError.value, appError.value].filter(Boolean))
+/** The key this form would save under: `app/name`, bare name for a realm-admin role. */
+const formKey = computed(() => {
+  const name = form.value.Name.trim()
+  if (!name) return ''
+  const slug = form.value.IsRealmAdmin
+    ? null
+    : applicationsStore.apps.find((a) => a.Id === form.value.AppId)?.Slug
+  return roleManifestKey(slug, name)
+})
+
+// A role's name is unique within its scope (the App, or the realm for a realm-admin
+// role) — the backend refuses a duplicate with 409, and a staged CREATE under an
+// existing key would silently turn into an UPDATE of that role (manifest upsert
+// semantics). So the form refuses upfront, against live roles and staged ones alike.
+const nameTakenError = computed(() => {
+  const key = formKey.value
+  if (!key) return ''
+  const message = form.value.IsRealmAdmin
+    ? t('admin.roleDetails.validation.realmAdminNameTaken', {}, 'A realm-admin role with this name already exists.')
+    : t('admin.roleDetails.validation.nameTaken', {}, 'A role with this name already exists in this application.')
+  const liveClash = roleStore.roles.some((r) => r.Id !== props.id && liveRoleKey(r) === key)
+  if (liveClash) return message
+  if (stagedSave.value && staging.draftStore.current) {
+    const mine = stagedKey.value
+    const stagedClash = staging.draftStore.sectionEntities('roles').some((e) => {
+      // What the apply will produce for this entry (a staged rename counts under
+      // its NEW name), vs. the key the draft files it under (its pinned Key).
+      const natural = roleManifestKey(
+        typeof e.App === 'string' ? e.App : null, typeof e.Name === 'string' ? e.Name : '')
+      const registryKey = typeof e.Key === 'string' && e.Key ? e.Key : natural
+      const isMine = (typeof e.Id === 'string' && e.Id === props.id) || (!!mine && registryKey === mine)
+      return !isMine && natural === key
+    })
+    if (stagedClash) return message
+  }
+  return ''
+})
+
+const generalIssues = computed(() => [nameError.value, appError.value, nameTakenError.value].filter(Boolean))
 
 const modalTitle = computed(() => {
   const name = form.value.Name?.trim()
@@ -180,7 +218,9 @@ const footerButton = computed(() => ({
 }))
 
 onMounted(async () => {
-  await applicationsStore.initialize()
+  // Apps supply the slug half of the role key; the roster is what the name-uniqueness
+  // check runs against — both are needed on every path, create included.
+  await Promise.all([applicationsStore.initialize(), roleStore.initialize()])
   if (isDraftRow.value) {
     // Draft-created role: the staged manifest entity IS the state.
     const entity = staging.findStaged(staging.draftKeyOf(props.id))
@@ -271,10 +311,19 @@ async function save() {
     }
     props.close()
   } catch (e: unknown) {
-    const err = e as { data?: { Message?: string }; message?: string }
-    saveError.value = err?.data?.Message
-      ?? err?.message
-      ?? t('admin.roleDetails.saveError', {}, 'The role could not be saved.')
+    // HttpClientError carries the backend's `{ Error, Message }` in `body`. A 409 is the
+    // name-uniqueness rule (Role.NameTaken) — the same message the form validates upfront;
+    // it can still happen when the roster was stale or another admin was faster.
+    const err = e as { status?: number; body?: { Error?: string; Message?: string }; message?: string }
+    if (err?.status === 409 || err?.body?.Error === 'Role.NameTaken') {
+      saveError.value = form.value.IsRealmAdmin
+        ? t('admin.roleDetails.validation.realmAdminNameTaken', {}, 'A realm-admin role with this name already exists.')
+        : t('admin.roleDetails.validation.nameTaken', {}, 'A role with this name already exists in this application.')
+      await roleStore.loadAll()
+    } else {
+      saveError.value = err?.body?.Message
+        ?? t('admin.roleDetails.saveError', {}, 'The role could not be saved.')
+    }
   } finally {
     loading.value = false
   }
@@ -323,7 +372,7 @@ async function save() {
                 class="col-full"
                 :label="t('admin.roleDetails.name', {}, 'Name')"
                 required
-                :error="nameError"
+                :error="nameError || nameTakenError"
                 :hint="t('admin.roleDetails.name.hint', {}, 'Display/identification name of the role.')">
                 <CoarTextInput v-model="form.Name" clearable />
               </CoarFormField>
