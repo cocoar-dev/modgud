@@ -41,7 +41,7 @@ public sealed class RoleAdminService(IDocumentSession session)
             session.Events.Append(role.Id, createdEvent);
         else
             session.Events.StartStream(role.Id, createdEvent);
-        await session.SaveChangesAsync(ct);
+        if (!await TrySaveAsync(ct)) return NameTaken(role);
         return role;
     }
 
@@ -80,8 +80,37 @@ public sealed class RoleAdminService(IDocumentSession session)
             new PermissionRoleUpdatedEvent(
                 id, existing.Name, existing.Description,
                 existing.AppId, existing.IsRealmAdmin, existing.PermissionIds));
-        await session.SaveChangesAsync(ct);
+        if (!await TrySaveAsync(ct)) return NameTaken(role);
         return existing;
+    }
+
+    /// <summary>
+    /// Commits, translating the unique-index violation (23505) on the role-name indexes
+    /// into <c>false</c>: the pre-check in <see cref="NameTakenAsync"/> can lose a race
+    /// between two concurrent writers (or two instances), and the DB index is the
+    /// authority — the loser gets the same 409 the pre-check would have given.
+    /// </summary>
+    private async Task<bool> TrySaveAsync(CancellationToken ct)
+    {
+        try
+        {
+            await session.SaveChangesAsync(ct);
+            return true;
+        }
+        catch (Exception ex) when (IsUniqueViolation(ex))
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Marten wraps the Postgres 23505 differently per code path
+    /// (<c>DocumentAlreadyExistsException</c>, <c>MartenCommandException</c>, raw) — walk
+    /// the chain rather than pin one shape.</summary>
+    private static bool IsUniqueViolation(Exception? ex)
+    {
+        for (; ex is not null; ex = ex.InnerException)
+            if (ex is Npgsql.PostgresException { SqlState: "23505" }) return true;
+        return false;
     }
 
     /// <summary>

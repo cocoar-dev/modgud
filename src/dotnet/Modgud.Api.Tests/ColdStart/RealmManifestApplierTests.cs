@@ -938,6 +938,52 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 callerIsRealmAdmin: true, ct);
             Assert.False(elsewhere.IsError, elsewhere.IsError ? elsewhere.FirstError.Description : string.Empty);
         });
+
+        // The DATABASE is the authority, not the service's pre-check: a duplicate written
+        // past the service (the loser of a race between two writers, or any other code
+        // path) is refused by the partial unique indexes — for App roles and for
+        // realm-admin roles alike.
+        static bool IsUniqueViolation(Exception? ex)
+        {
+            for (; ex is not null; ex = ex.InnerException)
+                if (ex is Npgsql.PostgresException { SqlState: "23505" }) return true;
+            return false;
+        }
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var beta = await session.Query<App>().SingleAsync(a => !a.IsDeleted && a.Slug == "beta", ct);
+            var id = Guid.NewGuid();
+            session.Events.StartStream(id, new Modgud.Authorization.Events.PermissionRoleCreatedEvent(
+                id, "Reviewer", null, beta.Id, false, []));
+            var ex = await Assert.ThrowsAnyAsync<Exception>(() => session.SaveChangesAsync(ct));
+            Assert.True(IsUniqueViolation(ex), ex.ToString());
+        });
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var owner = await sp.GetRequiredService<RoleAdminService>().CreateRoleAsync(
+                new RolePayload("Realm Owner", null, null, true, [], null), callerIsRealmAdmin: true, ct);
+            Assert.False(owner.IsError, owner.IsError ? owner.FirstError.Description : string.Empty);
+            var id = Guid.NewGuid();
+            session.Events.StartStream(id, new Modgud.Authorization.Events.PermissionRoleCreatedEvent(
+                id, "Realm Owner", null, null, true, []));
+            var ex = await Assert.ThrowsAnyAsync<Exception>(() => session.SaveChangesAsync(ct));
+            Assert.True(IsUniqueViolation(ex), ex.ToString());
+        });
+        // A soft-deleted role releases its name (the index is partial).
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var roleAdmin = sp.GetRequiredService<RoleAdminService>();
+            var alpha = await session.Query<App>().SingleAsync(a => !a.IsDeleted && a.Slug == "alpha", ct);
+            var reviewer = await session.Query<PermissionRole>().SingleAsync(r => !r.IsDeleted && r.Name == "Reviewer" && r.AppId == alpha.Id, ct);
+            Assert.False((await roleAdmin.DeleteRoleAsync(reviewer.Id, ct)).IsError);
+            var again = await roleAdmin.CreateRoleAsync(
+                new RolePayload("Reviewer", null, new ShortGuid(alpha.Id).ToString(), false, [], null),
+                callerIsRealmAdmin: true, ct);
+            Assert.False(again.IsError, again.IsError ? again.FirstError.Description : string.Empty);
+        });
     }
 
     private static RealmManifest BuildGlobexManifest(string slug, int version)

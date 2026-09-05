@@ -55,8 +55,29 @@ public static class MartenStoreOptionsExtensions
             .AddSubClass<ServiceAccount>("service-account")
             .AddSubClass<PositionPrincipal>("position");
 
-        // PermissionRole — its own top-level document.
-        martenOpts.Schema.For<PermissionRole>();
+        // PermissionRole — its own top-level document. A role's name is its natural key
+        // WITHIN its scope: the linked App, or the realm for a realm-admin role (which has
+        // no AppId — BuildRoleAsync makes the two shapes exclusive). The realm manifest
+        // keys roles `app/name` on exactly this invariant, so it is DB-enforced with two
+        // partial UNIQUE indexes (partial: soft-deleted roles release their name; two
+        // indexes: a NULL AppId would never collide in one composite index). RoleAdminService
+        // pre-checks for a friendly 409; the index catches what two concurrent writers or a
+        // code path outside the service would otherwise slip through.
+        martenOpts.Schema.For<PermissionRole>()
+            .Index(x => new { x.AppId, x.Name }, idx =>
+            {
+                idx.IsUnique = true;
+                idx.Predicate =
+                    "(data ->> 'AppId') IS NOT NULL " +
+                    "AND COALESCE((data ->> 'IsDeleted')::boolean, false) = false";
+            })
+            .Index(x => x.Name, idx =>
+            {
+                idx.IsUnique = true;
+                idx.Predicate =
+                    "(data ->> 'AppId') IS NULL " +
+                    "AND COALESCE((data ->> 'IsDeleted')::boolean, false) = false";
+            });
 
         // App — logical scope inside a realm (the user-facing concept is
         // "Application"; the class is `App` to avoid collision with the
