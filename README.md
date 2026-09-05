@@ -45,6 +45,14 @@ emission, full 2FA spectrum, GDPR self-service.
 - **Observability built-in** — OpenTelemetry metrics + traces,
   Prometheus scrape endpoint, custom IdP meter, in-app live
   activity feed.
+- **Two instances, updates without downtime** — run two containers
+  against one PostgreSQL behind a sticky reverse proxy and replace
+  them one after the other; Wolverine coordinates projections and
+  the outbox, Quartz runs clustered, live updates cross nodes over
+  a Postgres backplane. No second stateful service. The database
+  itself is still one — this is update- and container-resilience,
+  not a full HA story yet. See
+  [Running two instances](./docs/operate/deployment.md#running-two-instances).
 - **Recovery CLI** — shell-authorized first installation plus
   break-glass admin paths (`install-link`, `bootstrap-admin`,
   `reset-2fa`, `magic-link`, `rebuild-projections`) when the UI can't

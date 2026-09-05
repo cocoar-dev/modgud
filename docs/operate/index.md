@@ -18,6 +18,10 @@ when something breaks.
   master-table-tenancy model, per-realm database naming.
 - [Multi-tenancy / Realms](./realms) — the operator-facing side of
   realm provisioning, domain wiring, and migration paths.
+- [Running two instances](./deployment#running-two-instances) — two
+  containers against one PostgreSQL, sticky proxy with active health
+  checks, and image updates that replace one node after the other
+  with no downtime; which releases are safe to roll.
 
 ## Day 2
 

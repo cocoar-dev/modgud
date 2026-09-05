@@ -100,6 +100,14 @@ in a changelog that ages between releases.
 
 **Operations**
 
+- Two instances against one PostgreSQL, and image updates without
+  downtime: replace one container after the other behind a sticky
+  reverse proxy with active readiness checks. Wolverine coordinates
+  projections and the outbox, Quartz runs clustered, live updates cross
+  nodes over the SignalARRR Postgres backplane, every node resolves login
+  providers and sessions from the database — no second stateful service.
+  Each release says whether it is safe to roll. First increment; see
+  [Running two instances](./operate/deployment#running-two-instances)
 - OpenTelemetry: metrics + traces, Prometheus scrape endpoint
   (Bearer-gated), custom IdP meter (login attempts, token issuance,
   realm operations), in-app live activity feed
