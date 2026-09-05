@@ -3,7 +3,13 @@ using System.Security.Cryptography.X509Certificates;
 using Modgud.Api.Features;
 using Modgud.Permissions.Abstractions;
 using System.Text.Json.Serialization;
+using BuildingBlocks.EventDispatcher;
+using Cocoar.SignalARRR.Server;
 using Cocoar.Configuration.AspNetCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Modgud.Api.Cluster;
+using Modgud.Infrastructure.Cluster;
+using Modgud.Infrastructure.Scheduling;
 using Cocoar.Configuration.DI;
 using Cocoar.Configuration.DI.Extensions;
 using Cocoar.Configuration.Providers;
@@ -15,7 +21,6 @@ using Microsoft.AspNetCore.SignalR;
 using Serilog;
 using Serilog.Sinks.OpenTelemetry;
 using Serilog.Sinks.SystemConsole.Themes;
-using BuildingBlocks.EventDispatcher;
 using Fido2NetLib;
 using Modgud.Infrastructure.Email;
 using Modgud.Api;
@@ -45,7 +50,6 @@ using Modgud.Infrastructure;
 using Modgud.Infrastructure.PositionTerminals;
 using Modgud.Infrastructure.OAuth;
 using Modgud.Infrastructure.OpenIddict;
-using Modgud.Infrastructure.Scheduling;
 using Modgud.Infrastructure.Persistence.DataProtection;
 using Microsoft.AspNetCore.DataProtection;
 using Modgud.Api.Features.Auth;
@@ -130,6 +134,21 @@ try
             rule.For<ObservabilitySettings>().FromFile("data/configuration.json").Select("Observability"),
             rule.For<ObservabilitySettings>().FromFile("data/configuration.local.json").Select("Observability"),
             rule.For<ObservabilitySettings>().FromEnvironment("Observability"),
+
+            // ADR 0010 — two-instance operation: drain, node name.
+            // Deployment-wide by nature, hence configuration/env and not a
+            // realm setting. Env form: Cluster__DrainDelaySeconds.
+            rule.For<ClusterSettings>().FromFile("data/configuration.json").Select("Cluster"),
+            rule.For<ClusterSettings>().FromFile("data/configuration.local.json").Select("Cluster"),
+            rule.For<ClusterSettings>().FromEnvironment("Cluster"),
+
+            // Operator exemptions from the SSRF guard on admin-supplied URLs
+            // (an internal identity provider, a resource server on the private
+            // network). Deployment-wide by nature. Env form:
+            // OutboundHttp__AllowedPrivateHosts.
+            rule.For<Modgud.Infrastructure.Http.OutboundHttpSettings>().FromFile("data/configuration.json").Select("OutboundHttp"),
+            rule.For<Modgud.Infrastructure.Http.OutboundHttpSettings>().FromFile("data/configuration.local.json").Select("OutboundHttp"),
+            rule.For<Modgud.Infrastructure.Http.OutboundHttpSettings>().FromEnvironment("OutboundHttp"),
         ], setup =>
         [
             setup.ConcreteType<StartUpConfiguration>().AsSingleton(),
@@ -140,7 +159,14 @@ try
             setup.ConcreteType<OpenIddictSettings>().AsSingleton(),
             setup.ConcreteType<TurnstileSettings>().AsSingleton(),
             setup.ConcreteType<ObservabilitySettings>().AsSingleton(),
+            setup.ConcreteType<ClusterSettings>().AsSingleton(),
+            setup.ConcreteType<Modgud.Infrastructure.Http.OutboundHttpSettings>().AsSingleton(),
         ]));
+
+    // The parsed SSRF allow-list, one per host, consumed by every guarded fetcher.
+    builder.Services.AddSingleton(sp =>
+        Modgud.Infrastructure.Http.SsrfAllowList.Parse(
+            sp.GetRequiredService<Modgud.Infrastructure.Http.OutboundHttpSettings>().AllowedPrivateHosts));
 
     // Expose concrete config types as Authentication interfaces so Authentication
     // can inject them without depending on the Api project.
@@ -157,6 +183,39 @@ try
     // left DbSettings.ConnectionString at its empty default. Without this the
     // app boots far and dies with a cryptic database error far from the cause.
     StartupValidation.ValidateRequiredConfig(conf);
+
+    // ADR 0010 (D2) — one code path. Production always runs cluster-capable:
+    // Wolverine Balanced with managed projection distribution and a clustered
+    // Quartz store, whether one container is running or two. Development and
+    // Testing keep the single-process shape (Marten Solo daemon, in-memory
+    // Quartz) because they restart constantly and the integration suite drives
+    // projections through explicit interactive daemons. There is deliberately
+    // no instance-count switch: how many nodes are alive is read from
+    // Wolverine's node table at runtime (IClusterNodes).
+    var clusterSettings = configManager.GetConfig<ClusterSettings>();
+    var clusterHosting = new ClusterHostingOptions
+    {
+        Coordination = builder.Environment.IsProduction()
+            ? ClusterCoordination.WolverineManaged
+            : ClusterCoordination.SingleProcess,
+        // The behavioural integration suite owns projection progress explicitly:
+        // each consistency boundary runs a fresh interactive daemon. Running the
+        // production background daemon beside full database resets creates two
+        // competing lifecycle owners and makes test outcomes scheduler-dependent.
+        SingleProcessDaemonMode = builder.Environment.IsEnvironment("Testing") &&
+                                  !builder.Configuration.GetValue<bool>("Testing:UseBackgroundProjectionDaemon")
+            ? JasperFx.Events.Daemon.DaemonMode.Disabled
+            : JasperFx.Events.Daemon.DaemonMode.Solo,
+        NodeName = string.IsNullOrWhiteSpace(clusterSettings.NodeName)
+            ? Environment.MachineName
+            : clusterSettings.NodeName.Trim(),
+        // ADR 0010 (D5) — Production always runs the backplane on the master DB
+        // and relays data events over it. Single-process hosts keep them in-process.
+        CrossNodeRelay = builder.Environment.IsProduction(),
+    };
+    var drainDelay = builder.Environment.IsProduction() && clusterSettings.DrainDelaySeconds > 0
+        ? TimeSpan.FromSeconds(clusterSettings.DrainDelaySeconds)
+        : TimeSpan.Zero;
 
     if (!string.IsNullOrWhiteSpace(conf.CertPath))
     {
@@ -232,21 +291,11 @@ try
 
     builder.Services.AddAntiforgery(options => options.HeaderName = "X-XSRF-TOKEN");
 
-    // Session (needed for Passkey registration challenge storage)
-    builder.Services.AddDistributedMemoryCache();
-    builder.Services.AddSession(options =>
-    {
-        options.IdleTimeout = TimeSpan.FromMinutes(5);
-        options.Cookie.HttpOnly = true;
-        options.Cookie.SameSite = SameSiteMode.Strict;
-        // SameAsRequest: cookie carries Secure when the request itself
-        // came in over HTTPS, otherwise not. With ForwardedHeaders middleware
-        // configured for the reverse proxy, IsHttps reflects the public
-        // scheme — production deploys always get Secure, dev over plain
-        // HTTP doesn't (so the cookie is settable at all).
-        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-        options.Cookie.Name = "Modgud.Session";
-    });
+    // No ASP.NET session middleware: its only consumer was the passkey
+    // registration challenge, which now lives in a server-side ceremony
+    // document like every other WebAuthn ceremony (ADR 0010, D6). An in-memory
+    // session would silently break the moment a second instance answers the
+    // second request of the ceremony.
 
     builder.Services.AddResponseCompression(options =>
     {
@@ -263,6 +312,54 @@ try
     builder.Services.AddSingleton<Modgud.Authentication.Sessions.IBrowserSessionConnectionRegistry,
         Modgud.Authentication.Sessions.BrowserSessionConnectionRegistry>();
     builder.Services.AddSingleton<Modgud.Api.Realtime.BrowserSessionHubFilter>();
+    // ADR 0010 (D6) — a session revoked on another node has no local registry
+    // entry to abort; the sweep re-validates idle connections against the DB.
+    builder.Services.AddHostedService<Modgud.Api.Realtime.BrowserSessionConnectionSweeper>();
+
+    // ADR 0010 (D5) — cross-node live updates. Every hub in Modgud is a server
+    // stream fed by the in-process DataEventDispatcher observable; there are no
+    // targeted sends for the backplane to route. A SignalARRR cluster subject
+    // makes that observable cluster-wide over the Postgres backplane on the
+    // master DB (LISTEN/NOTIFY, catch-up after a listener drop): no second
+    // stateful service, nothing to configure.
+    if (clusterHosting.CrossNodeRelay)
+    {
+        var nodeId = $"{clusterHosting.NodeName}-{Guid.NewGuid():N}";
+        builder.Services.AddSignalARRRPostgresBackplane(o => o
+            .WithConnectionString(conf.DbSettings.ConnectionString)
+            .WithSchema("signalarrr")
+            .WithNodeId(nodeId));
+        builder.Services.AddSignalARRRClusterSubject<DataEventEnvelope>(
+            ClusterSubjectDataEventRelay.SubjectName,
+            o => o.SerializerOptions = DataEventEnvelope.WireJson);
+        builder.Services.AddSingleton(sp => new ClusterSubjectDataEventRelay(
+            sp.GetRequiredService<IClusterSubject<DataEventEnvelope>>(),
+            nodeId,
+            sp.GetRequiredService<DataEventDispatcher>,
+            sp.GetRequiredService<ILogger<ClusterSubjectDataEventRelay>>()));
+        builder.Services.AddSingleton<IDataEventRelay>(sp => sp.GetRequiredService<ClusterSubjectDataEventRelay>());
+        builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<ClusterSubjectDataEventRelay>());
+    }
+    else
+    {
+        builder.Services.AddSingleton<IDataEventRelay>(NoDataEventRelay.Instance);
+    }
+
+    // ADR 0010 (D7) — graceful drain: readiness 503 first, then hold the
+    // shutdown so the proxy's active health check drains traffic away.
+    builder.Services.AddSingleton<ShutdownState>();
+    builder.Services.AddSingleton<IHostedService>(sp => new ShutdownDrainService(
+        sp.GetRequiredService<IHostApplicationLifetime>(),
+        sp.GetRequiredService<ShutdownState>(),
+        drainDelay,
+        sp.GetRequiredService<ILogger<ShutdownDrainService>>()));
+    if (drainDelay > TimeSpan.Zero)
+    {
+        // Drain + Quartz WaitForJobsToComplete + Wolverine agent stop must fit
+        // before the host gives up; Docker's stop_grace_period must cover it too.
+        builder.Services.Configure<HostOptions>(o =>
+            o.ShutdownTimeout = TimeSpan.FromSeconds(30) + drainDelay);
+    }
     builder.Services.AddSignalR(options =>
         {
             options.AddFilter<Modgud.Api.Realtime.BrowserSessionHubFilter>();
@@ -535,8 +632,9 @@ try
         if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
             backChannelClient.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
         else
-            backChannelClient.ConfigurePrimaryHttpMessageHandler(() =>
-                Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create("Back-channel logout delivery"));
+            backChannelClient.ConfigurePrimaryHttpMessageHandler(sp =>
+                Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create(
+                    "Back-channel logout delivery", sp.GetRequiredService<Modgud.Infrastructure.Http.SsrfAllowList>()));
     }
     // ADR 0009 — record "client holds tokens of session" on every access-token mint.
     builder.Services.AddOpenIddict().AddServer(options =>
@@ -667,7 +765,16 @@ try
     builder.Services.AddSingleton<Modgud.Authentication.Api.ExternalAuth.OidcSchemeRealmRegistry>();
     builder.Services.AddSingleton<DynamicOidcSchemeManager>();
     builder.Services.AddScoped<ExternalLoginProcessor>();
-    builder.Services.AddHostedService<OidcSchemeBootstrap>();
+
+    // ADR 0010 (D6) — every node resolves the current realm's OIDC schemes and
+    // SAML providers from the database on demand instead of learning about
+    // them from a Wolverine handler that only ever runs on the committing node.
+    // The scheme provider replacement must follow AddAuthentication above.
+    builder.Services.AddSingleton<Modgud.Authentication.Api.ExternalAuth.LoginProviderSchemeMaterializer>();
+    builder.Services.Replace(ServiceDescriptor.Singleton<
+        Microsoft.AspNetCore.Authentication.IAuthenticationSchemeProvider,
+        Modgud.Authentication.Api.ExternalAuth.RealmAwareAuthenticationSchemeProvider>());
+    builder.Services.AddHostedService<Modgud.Authentication.Api.ExternalAuth.LoginProviderSchemeBootstrap>();
 
     // SAML SP federation (cert services, login flow, scheme manager,
     // bootstrap + metadata-refresh hosted services).
@@ -801,14 +908,7 @@ try
             options.UseModgudPositionTerminals();
             options.Events.Subscribe(new Modgud.Api.Features.ChangeFeed.AppChangeFeedSubscription());
         },
-        // The behavioural integration suite owns projection progress explicitly:
-        // each consistency boundary runs a fresh interactive daemon. Running the
-        // production background daemon beside full database resets creates two
-        // competing lifecycle owners and makes test outcomes scheduler-dependent.
-        asyncDaemonMode: builder.Environment.IsEnvironment("Testing") &&
-                         !builder.Configuration.GetValue<bool>("Testing:UseBackgroundProjectionDaemon")
-            ? JasperFx.Events.Daemon.DaemonMode.Disabled
-            : JasperFx.Events.Daemon.DaemonMode.Solo);
+        hosting: clusterHosting);
 
     // OpenTelemetry foundation (Phase 1). See
     // the maintainers' 'observability-opentelemetry' design note.
@@ -919,32 +1019,21 @@ try
 
     // Wolverine CQRS + Marten projection side effects.
     //
-    // HA-2a — DurabilityMode is now env-overridable so a future Multi-
-    // Instance Deployment can switch to Balanced without a code change.
-    // Default Solo because that's correct for the supported deployment
-    // shape today (one instance). Two instances in Solo mode would both
-    // process the same outbox row → silent double-execution.
-    var wolverineMode = Enum.TryParse<DurabilityMode>(
-        Environment.GetEnvironmentVariable("Wolverine__DurabilityMode"),
-        ignoreCase: true,
-        out var parsedMode)
-            ? parsedMode
-            : DurabilityMode.Solo;
-
-    // Audit M9: Solo mode assumes a single instance. Surface it as a WARNING (not
-    // Information) so an operator who scales to replicas>1 without reconfiguring
-    // can't silently miss it — two Solo instances both process the same outbox row
-    // (double-execution) and, with the in-memory Quartz store, each node also runs
-    // every scheduled job. Multi-node requires Wolverine__DurabilityMode=Balanced
-    // AND a clustered Quartz store.
-    if (wolverineMode == DurabilityMode.Solo)
-        Log.Warning(
-            "Wolverine running in Solo mode — single-instance assumption. Scaling to " +
-            "more than one replica REQUIRES Wolverine__DurabilityMode=Balanced and a " +
-            "clustered Quartz store; otherwise the outbox double-executes and every " +
-            "node runs every scheduled job.");
-    else
-        Log.Information("Wolverine running in {Mode} mode.", wolverineMode);
+    // ADR 0010 (D3) — the environment decides, not an env var: Production runs
+    // Balanced (leader election over the node table in the master DB, outbox
+    // agents and projection shards assigned across live nodes, stale nodes
+    // recovered), Development and Testing run Solo. Two Solo instances would
+    // both drain the same outbox row; that shape no longer exists for Production.
+    var wolverineMode = clusterHosting.IsWolverineManaged
+        ? DurabilityMode.Balanced
+        : DurabilityMode.Solo;
+    Log.Information(
+        "Cluster coordination: {Coordination} — Wolverine {Mode}, projections {Projections}, Quartz {Quartz}, node {Node}",
+        clusterHosting.Coordination,
+        wolverineMode,
+        clusterHosting.IsWolverineManaged ? "Wolverine-managed" : "Marten daemon (" + clusterHosting.SingleProcessDaemonMode + ")",
+        clusterHosting.IsWolverineManaged ? "clustered Postgres store" : "in-memory",
+        clusterHosting.NodeName);
 
     builder.Host.UseWolverine(opts =>
     {
@@ -1022,7 +1111,14 @@ try
     // Quartz-based scheduling framework. Realm jobs get one independent
     // Quartz job + trigger per realm; deployment-wide jobs are registered once
     // and are visible only from the current Control-Plane realm.
-    builder.Services.AddScheduling();
+    builder.Services.AddScheduling(new SchedulingStoreOptions
+    {
+        // ADR 0010 (D4) — clustered Postgres job store in the master DB; the
+        // schema is created by QuartzSchemaBootstrap before the scheduler starts.
+        PersistentStoreConnectionString = clusterHosting.IsWolverineManaged
+            ? conf.DbSettings.ConnectionString
+            : null,
+    });
     builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob>(
         key: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.JobRunHistoryRetentionJob.Name,
@@ -1318,7 +1414,6 @@ try
     // the cookie is inspected.
     app.UseMiddleware<Modgud.Api.Middleware.ControlPlaneGateMiddleware>();
 
-    app.UseSession();
     app.UseAuthentication();
     app.UseAuthorization();
     app.UseMiddleware<Modgud.Authentication.Api.Account.TwoFactorEnforcementMiddleware>();
@@ -1497,6 +1592,20 @@ try
     await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
     var globalStore = app.Services.GetRequiredService<IGlobalStore>();
     await globalStore.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
+
+    // ADR 0010 (D4) — Quartz validates its tables at start and never creates
+    // them; do it here, once, under a cluster lock (two nodes may boot together).
+    if (clusterHosting.IsWolverineManaged)
+    {
+        await QuartzSchemaBootstrap.EnsureAsync(
+            conf.DbSettings.ConnectionString,
+            app.Services.GetRequiredService<IClusterLock>(),
+            app.Services.GetRequiredService<ILogger<Program>>());
+    }
+
+    // The data-event relay is fire-and-forget by contract; surface its failures.
+    app.Services.GetRequiredService<DataEventDispatcher>().RelayFailed += (ev, ex) =>
+        Log.Warning(ex, "Data-event relay failed for {Subject}/{Action}", ev.Subject, ev.Action);
 
     using (var realmScope = app.Services.CreateScope())
     {

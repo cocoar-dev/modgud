@@ -104,11 +104,14 @@ var result = await _messageBus.InvokeAsync<ErrorOr<UserDto>>(
     new CreateUserCommand(...));
 ```
 
-Handlers are auto-discovered. Modgud runs with
-`DurabilityMode.Solo` (in-memory, local) — no external message broker
-required. The Marten outbox is still active for event side-effects:
-SignalR notifications fire after `SaveChangesAsync` via
-`ProjectionSideEffects`.
+Handlers are auto-discovered. No external message broker is required:
+Production runs `DurabilityMode.Balanced` with Wolverine's node table in
+the master DB as the coordination point (leader election, outbox agents
+and Marten projection shards assigned across live nodes — see
+[Running two instances](./deployment#running-two-instances));
+Development and Testing run `Solo`. The Marten outbox is active in both
+for event side-effects: SignalR notifications fire after
+`SaveChangesAsync` via `ProjectionSideEffects`.
 
 Codegen mode is environment-aware. Production runs `TypeLoadMode.Dynamic`
 — Wolverine/Marten handler classes are generated in memory on first use

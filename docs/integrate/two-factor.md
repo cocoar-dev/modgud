@@ -142,9 +142,10 @@ POST /api/account/passkey/register-options
 - `UserVerification = Preferred`
 - `excludeCredentials` = the user's existing credentials
 
-Challenge bytes + options JSON are stored in a
-`Modgud.Session` ASP.NET session entry (Marten
-`DistributedMemoryCache` as the session store), 5 min idle.
+Challenge bytes + options JSON are stored in a server-side
+`PasskeyEnrollCeremony` document in the realm database; the response
+sets the `Modgud.Passkey.Enroll` cookie carrying only its id (5 min,
+single use), so the finishing request may be served by any instance.
 
 ```http
 POST /api/account/passkey/register

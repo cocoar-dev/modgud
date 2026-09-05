@@ -156,9 +156,11 @@ internal sealed class JobsService(
         // the JobDataMap. JobRunListener reads them back on completion and
         // stamps the history entry; the job→inbox bridge then routes the
         // ManualJobCompleted notification to the triggering user.
-        var data = new JobDataMap { [JobRunListener.ManualTriggerKey] = true };
+        // String values only: the clustered job store persists the map as
+        // name/value properties (ADR 0010), and JobRunListener parses them back.
+        var data = new JobDataMap { [JobRunListener.ManualTriggerKey] = bool.TrueString };
         if (triggeredByUserId is Guid uid && uid != Guid.Empty)
-            data[JobRunListener.TriggeredByUserIdKey] = uid;
+            data[JobRunListener.TriggeredByUserIdKey] = uid.ToString("D");
         await scheduler.TriggerJob(jobKey, data, ct);
         logger.LogInformation(
             "[Jobs] Manual trigger for {Key} in realm {Realm} by user {UserId}",

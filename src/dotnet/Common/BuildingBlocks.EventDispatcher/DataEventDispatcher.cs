@@ -5,12 +5,62 @@ namespace BuildingBlocks.EventDispatcher;
 
 public class DataEventDispatcher
 {
+    private readonly IDataEventRelay _relay;
+
+    public DataEventDispatcher() : this(NoDataEventRelay.Instance) { }
+
+    /// <param name="relay">
+    /// Cross-node relay for multi-instance deployments. Every locally raised event
+    /// is handed to it after the local subscribers were notified.
+    /// </param>
+    public DataEventDispatcher(IDataEventRelay relay)
+    {
+        _relay = relay ?? NoDataEventRelay.Instance;
+    }
+
     private Subject<DataEvent> NotificationsSubject { get; } = new();
     public IObservable<DataEvent> Notifications => NotificationsSubject.AsObservable();
+
+    /// <summary>
+    /// Raised when the relay could not publish an event. Observed by the host
+    /// for logging; the local dispatch has already happened at that point.
+    /// </summary>
+    public event Action<DataEvent, Exception>? RelayFailed;
 
     public void DispatchEvent(DataEvent @event)
     {
         NotificationsSubject.OnNext(@event);
+        Relay(@event);
+    }
+
+    /// <summary>
+    /// Delivers an event received from another node to the local subscribers
+    /// without relaying it again.
+    /// </summary>
+    public void DispatchRemoteEvent(DataEvent @event)
+    {
+        NotificationsSubject.OnNext(@event);
+    }
+
+    private void Relay(DataEvent @event)
+    {
+        if (ReferenceEquals(_relay, NoDataEventRelay.Instance)) return;
+
+        // Fire-and-forget by contract: the producer's request must not wait on
+        // the network, and a relay outage must not turn into a failed command.
+        _ = RelayAsync(@event);
+    }
+
+    private async Task RelayAsync(DataEvent @event)
+    {
+        try
+        {
+            await _relay.PublishAsync(@event).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            RelayFailed?.Invoke(@event, ex);
+        }
     }
 
     public void DispatchEvent(DataEventAction action, string subject, IEnumerable<object>? payload = null)

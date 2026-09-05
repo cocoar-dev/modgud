@@ -24,11 +24,16 @@ public static class PasskeyEndpoints
     public record PasskeyLoginOptionsRequest(string? UserName = null, string? ReturnUrl = null);
     public record PasskeyDisplayDto(string Id, string DisplayName, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt);
 
-    private const string RegistrationCacheKey = "fido2.attestationOptions";
-
     /// <summary>Carries only the server-side ceremony id — never the ceremony
     /// state itself.</summary>
     private const string PasskeyChallengeCookie = "Modgud.Passkey.Challenge";
+
+    /// <summary>Registration counterpart of <see cref="PasskeyChallengeCookie"/>:
+    /// the id of the server-side <see cref="PasskeyEnrollCeremony"/> issued by
+    /// register-options. The attestation options used to live in the ASP.NET
+    /// session (in-memory, per node); with two instances the register call could
+    /// land on a node that never saw them (ADR 0010, D6).</summary>
+    private const string PasskeyEnrollCookie = "Modgud.Passkey.Enroll";
 
     /// <summary>The cookie is scoped to the passkey endpoints; every Append AND
     /// Delete must use this exact path or the delete silently does nothing.</summary>
@@ -143,7 +148,34 @@ public static class PasskeyEndpoints
             });
 
             var json = options.ToJson();
-            context.Session.SetString(RegistrationCacheKey, json);
+
+            // Same server-side ceremony document the native enrollment uses; the
+            // cookie carries only its id. Opportunistic cleanup of expired rows on
+            // the same traffic that creates them (backed by the ExpiresAt index).
+            session.DeleteWhere<PasskeyEnrollCeremony>(c => c.ExpiresAt < DateTimeOffset.UtcNow);
+            var ceremony = new PasskeyEnrollCeremony
+            {
+                Id = Guid.NewGuid(),
+                OptionsJson = json,
+                UserId = user.Id,
+                ClientId = null,
+                RpId = primaryDomain,
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(PasskeyEnrollCeremony.ExpirationMinutes),
+                CreatedAt = DateTimeOffset.UtcNow,
+            };
+            session.Store(ceremony);
+            await session.SaveChangesAsync(ct);
+
+            context.Response.Cookies.Append(PasskeyEnrollCookie,
+                ceremony.Id.ToString(),
+                new CookieOptions
+                {
+                    HttpOnly = true,
+                    Secure = context.Request.IsHttps,
+                    SameSite = SameSiteMode.Strict,
+                    MaxAge = TimeSpan.FromMinutes(PasskeyEnrollCeremony.ExpirationMinutes),
+                    Path = PasskeyCookiePath,
+                });
 
             // Return Fido2's own JSON serialization — ASP.NET's JsonStringEnumConverter
             // would break WebAuthn enum values (e.g. "PublicKey" instead of "public-key")
@@ -162,14 +194,32 @@ public static class PasskeyEndpoints
             var userId = context.GetUserId();
             if (userId is null) return Results.Unauthorized();
 
-            var fido2 = await fido2Factory.CreateAsync(ct);
+            // The cookie carries only the ceremony id; the authoritative options
+            // come from the server-side record. Delete MUST repeat the Path the
+            // cookie was set with or the stale cookie survives in the browser.
+            var enrollCookie = context.Request.Cookies[PasskeyEnrollCookie];
+            context.Response.Cookies.Delete(PasskeyEnrollCookie,
+                new CookieOptions { Path = PasskeyCookiePath });
 
-            var optionsJson = context.Session.GetString(RegistrationCacheKey);
-            if (string.IsNullOrEmpty(optionsJson))
+            if (!Guid.TryParse(enrollCookie, out var ceremonyId))
                 return Results.BadRequest(new { Message = "Registration session expired. Please try again." });
 
-            var options = CredentialCreateOptions.FromJson(optionsJson);
-            context.Session.Remove(RegistrationCacheKey);
+            var ceremony = await session.LoadAsync<PasskeyEnrollCeremony>(ceremonyId, ct);
+            if (ceremony is null || ceremony.IsExpired || ceremony.UserId != userId.Value)
+            {
+                if (ceremony is not null) { session.Delete(ceremony); await session.SaveChangesAsync(ct); }
+                return Results.BadRequest(new { Message = "Registration session expired. Please try again." });
+            }
+
+            // Single-use: consume before verifying.
+            session.Delete(ceremony);
+            await session.SaveChangesAsync(ct);
+
+            // Pinned at register-options so an admin editing PrimaryDomain
+            // mid-ceremony cannot cause a begin/finish RP-ID drift.
+            var fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: ceremony.RpId);
+
+            var options = CredentialCreateOptions.FromJson(ceremony.OptionsJson);
 
             var fido2JsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
             var attestationResponse = JsonSerializer.Deserialize<AuthenticatorAttestationRawResponse>(body.GetRawText(), fido2JsonOptions);

@@ -38,6 +38,20 @@ please confirm both green for non-trivial changes.
 
 - [ ] Unit tests added / updated for the changed code
 - [ ] Integration tests added / updated where applicable
+
+## Rolling update
+
+<!--
+Two instances run the previous release next to this build during an
+update (docs/operate/deployment → "Running two instances"). Tick the
+second box for a Marten upgrade that replaces mt_* functions, a
+projection rebuild, an inline projection the previous version cannot
+read, or a new event type without an upcaster — the release notes then
+say "Rolling update: stop required".
+-->
+
+- [ ] Safe next to the previous release (additive schema, compatible events)
+- [ ] **Stop required** — reason:
 - [ ] `dotnet test` is green locally
 - [ ] Frontend changes verified in the browser (login, modal, sidebar
       gating, dark mode if a UI change)

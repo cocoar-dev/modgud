@@ -1,7 +1,5 @@
 using Marten;
-using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Domain.LoginProviders.Events;
-using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.Api.ExternalAuth;
 
@@ -9,94 +7,59 @@ namespace Modgud.Authentication.Api.ExternalAuth;
 // `Handle` method). One class per event keeps discovery explicit and matches
 // the pattern used by AutoMembershipSync* in the Groups feature.
 //
-// Phase 2: handlers still fire for every LoginProvider event regardless of
-// type (the event stream itself is shared) but the LoginProviderReRegister
-// helper short-circuits non-Oidc providers before touching the scheme manager.
-// An Internal LoginProvider being added/updated/enabled must NOT cause OIDC
-// scheme work. SAML events are handled by SamlLoginProviderEventHandlers;
-// LDAP/Kerberos remain unsupported.
+// ADR 0010 (D6): these handlers no longer register or unregister schemes
+// themselves — that would only ever affect the node that committed the change.
+// They ask the materializer to re-read the realm's providers now, so this
+// node's OIDC schemes and SAML cache are exact the moment the admin's request
+// returns; every other node picks the change up from the database within
+// LoginProviderSchemeMaterializer.RevalidateInterval. The Marten session is
+// tenant-scoped through the message envelope, which is how the realm is known.
 
-public class LoginProviderOnAddedHandler(
-    IQuerySession session,
-    DynamicOidcSchemeManager manager)
+public class LoginProviderOnAddedHandler(IQuerySession session, LoginProviderSchemeMaterializer materializer)
 {
     public Task Handle(LoginProviderAddedEvent @event, CancellationToken ct) =>
-        LoginProviderReRegister.Run(@event.Id, session, manager, ct);
+        LoginProviderSchemeRefresh.Run(session, materializer, ct);
 }
 
-public class LoginProviderOnUpdatedHandler(
-    IQuerySession session,
-    DynamicOidcSchemeManager manager)
+public class LoginProviderOnUpdatedHandler(IQuerySession session, LoginProviderSchemeMaterializer materializer)
 {
     public Task Handle(LoginProviderUpdatedEvent @event, CancellationToken ct) =>
-        LoginProviderReRegister.Run(@event.Id, session, manager, ct);
+        LoginProviderSchemeRefresh.Run(session, materializer, ct);
 }
 
-public class LoginProviderOnEnabledHandler(
-    IQuerySession session,
-    DynamicOidcSchemeManager manager)
+public class LoginProviderOnEnabledHandler(IQuerySession session, LoginProviderSchemeMaterializer materializer)
 {
     public Task Handle(LoginProviderEnabledEvent @event, CancellationToken ct) =>
-        LoginProviderReRegister.Run(@event.Id, session, manager, ct);
+        LoginProviderSchemeRefresh.Run(session, materializer, ct);
 }
 
-public class LoginProviderOnDisabledHandler(DynamicOidcSchemeManager manager)
+public class LoginProviderOnDisabledHandler(IQuerySession session, LoginProviderSchemeMaterializer materializer)
 {
     public Task Handle(LoginProviderDisabledEvent @event, CancellationToken ct) =>
-        manager.UnregisterAsync(@event.Id);
+        LoginProviderSchemeRefresh.Run(session, materializer, ct);
 }
 
-public class LoginProviderOnSecretRotatedHandler(
-    IQuerySession session,
-    DynamicOidcSchemeManager manager)
+public class LoginProviderOnSecretRotatedHandler(IQuerySession session, LoginProviderSchemeMaterializer materializer)
 {
     public Task Handle(LoginProviderSecretRotatedEvent @event, CancellationToken ct) =>
-        LoginProviderReRegister.Run(@event.Id, session, manager, ct);
+        LoginProviderSchemeRefresh.Run(session, materializer, ct);
 }
 
-public class LoginProviderOnDeletedHandler(DynamicOidcSchemeManager manager)
+public class LoginProviderOnDeletedHandler(IQuerySession session, LoginProviderSchemeMaterializer materializer)
 {
     public Task Handle(LoginProviderDeletedEvent @event, CancellationToken ct) =>
-        manager.UnregisterAsync(@event.Id);
+        LoginProviderSchemeRefresh.Run(session, materializer, ct);
 }
 
-internal static class LoginProviderReRegister
+internal static class LoginProviderSchemeRefresh
 {
-    public static async Task Run(Guid id,
+    public static async Task Run(
         IQuerySession session,
-        DynamicOidcSchemeManager manager,
+        LoginProviderSchemeMaterializer materializer,
         CancellationToken ct)
     {
-        var config = await session.LoadAsync<LoginProvider>(id, ct);
-        if (config is null)
-        {
-            await manager.UnregisterAsync(id);
-            return;
-        }
-
-        // Type-discriminator gate. Every non-OIDC event skips this OIDC
-        // scheme-manager path — SAML has its own parallel handlers, and the
-        // manager defends itself too. Pre-filtering keeps logs clean. The
-        // unregister-on-missing branch above is unconditional on purpose: a
-        // deleted Oidc provider whose record vanished should still drop its
-        // scheme.
-        if (config.Type != LoginProviderType.Oidc) return;
-
-        // Wolverine event handlers run in a background message pump where
-        // RealmMiddleware hasn't set the TenantContext. The session itself is
-        // tenant-scoped (TenantedSessionFactory reads the message envelope), so
-        // pull its TenantId and enter the context — manager.RegisterAsync
-        // requires an ambient TenantContext to stamp the scheme with its realm.
-        // Mirrors SamlLoginProviderReRegister.Run.
-        var sessionTenantId = session.TenantId;
-        if (!string.IsNullOrEmpty(sessionTenantId)
-            && string.IsNullOrEmpty(TenantContext.CurrentOrNull))
-        {
-            using var _ = TenantContext.Enter(sessionTenantId);
-            await manager.RegisterAsync(config);
-            return;
-        }
-
-        await manager.RegisterAsync(config);
+        var realm = session.TenantId;
+        if (string.IsNullOrEmpty(realm)) return;
+        await materializer.RefreshAsync(realm, ct);
     }
 }

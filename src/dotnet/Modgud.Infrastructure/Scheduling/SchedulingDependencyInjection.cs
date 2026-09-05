@@ -7,16 +7,56 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Infrastructure.Scheduling;
 
+/// <summary>
+/// How the Quartz scheduler stores its jobs and triggers (ADR 0010, D4).
+/// </summary>
+public sealed class SchedulingStoreOptions
+{
+    /// <summary>
+    /// Master-database connection string for the clustered Postgres job store.
+    /// <c>null</c> keeps the in-memory store (Development, Testing).
+    /// </summary>
+    public string? PersistentStoreConnectionString { get; init; }
+
+    /// <summary>
+    /// Shared scheduler name. Every node of one deployment must use the same
+    /// name — Quartz clusters instances by it.
+    /// </summary>
+    public string SchedulerName { get; init; } = "modgud";
+
+    /// <summary>
+    /// How often a clustered node stamps its check-in row. A node whose
+    /// check-in is older than this plus the misfire threshold is treated as
+    /// dead and its in-flight, recoverable jobs are re-run by a survivor.
+    /// </summary>
+    public TimeSpan ClusterCheckinInterval { get; init; } = TimeSpan.FromSeconds(7.5);
+
+    public bool IsPersistent => !string.IsNullOrWhiteSpace(PersistentStoreConnectionString);
+}
+
 public static class SchedulingDependencyInjection
 {
     /// <summary>
-    /// Wire Quartz.NET with an in-memory job store, register the
-    /// <see cref="IJobsService"/> facade and the run-history listener. Hosts
-    /// register every compiled job explicitly as realm-owned or system-owned;
-    /// a hosted bootstrap materialises the corresponding Quartz instances.
+    /// Wire Quartz.NET, register the <see cref="IJobsService"/> facade and the
+    /// run-history listener. Hosts register every compiled job explicitly as
+    /// realm-owned or system-owned; a hosted bootstrap materialises the
+    /// corresponding Quartz instances.
+    /// <para>
+    /// With a persistent store the scheduler is clustered: every node runs a
+    /// scheduler instance against the shared Postgres tables, Quartz elects
+    /// which instance fires a trigger, honours <c>[DisallowConcurrentExecution]</c>
+    /// cluster-wide, and recovers <c>RequestRecovery</c> jobs from a dead node.
+    /// Without one (Development, Testing) the in-memory store is used and the
+    /// schedules are rebuilt from <see cref="JobConfig"/> on every boot.
+    /// </para>
     /// </summary>
-    public static IServiceCollection AddScheduling(this IServiceCollection services)
+    public static IServiceCollection AddScheduling(
+        this IServiceCollection services,
+        SchedulingStoreOptions? storeOptions = null)
     {
+        storeOptions ??= new SchedulingStoreOptions();
+        services.AddSingleton(storeOptions);
+
         services.AddSingleton<IJobRegistry, JobRegistry>();
         services.AddScoped<IJobsService, JobsService>();
         services.AddScoped<IJobRunHistoryRetentionService, JobRunHistoryRetentionService>();
@@ -30,9 +70,40 @@ public static class SchedulingDependencyInjection
 
         services.AddQuartz(q =>
         {
-            // In-memory store — schedules don't survive restart. The
-            // startup-bootstrap re-applies overrides from Marten on every
-            // boot so the effective state is identical.
+            q.SchedulerName = storeOptions.SchedulerName;
+
+            if (!storeOptions.IsPersistent)
+            {
+                // In-memory store — schedules don't survive restart. The
+                // startup-bootstrap re-applies overrides from Marten on every
+                // boot so the effective state is identical.
+                return;
+            }
+
+            // AUTO gives every node a unique instance id; the shared name is
+            // what makes them one cluster.
+            q.SchedulerId = "AUTO";
+            q.UsePersistentStore(store =>
+            {
+                // String-only JobDataMap: every value we put in (tenant slug,
+                // scope, manual-trigger flag, triggering user) is a string, so
+                // the map round-trips without a binary serializer.
+                store.UseProperties = true;
+                store.RetryInterval = TimeSpan.FromSeconds(15);
+                store.UsePostgres(pg =>
+                {
+                    pg.ConnectionString = storeOptions.PersistentStoreConnectionString!;
+                    // Tables live in their own schema of the master database,
+                    // created by QuartzSchemaBootstrap before the scheduler starts.
+                    pg.TablePrefix = $"{QuartzSchemaBootstrap.Schema}.qrtz_";
+                });
+                store.UseClustering(cluster =>
+                {
+                    cluster.CheckinInterval = storeOptions.ClusterCheckinInterval;
+                    cluster.CheckinMisfireThreshold = TimeSpan.FromSeconds(60);
+                });
+                store.UseSystemTextJsonSerializer();
+            });
         });
 
         services.AddQuartzHostedService(o =>

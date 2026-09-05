@@ -85,6 +85,9 @@ public class SharedPostgresFixture : IAsyncLifetime
                 Prometheus = new ObservabilitySettings.PrometheusSettings { Enabled = false },
                 Otlp = new ObservabilitySettings.OtlpSettings { Enabled = false },
             }),
+            // ADR 0010: no cross-node relay, no drain in the test host (single process).
+            rule.For<ClusterSettings>().FromStatic(_ => new ClusterSettings { DrainDelaySeconds = 0 }),
+            rule.For<Modgud.Infrastructure.Http.OutboundHttpSettings>().FromStatic(_ => new Modgud.Infrastructure.Http.OutboundHttpSettings()),
         ]);
 
         // Apply config before creating factory (must be in same async context)

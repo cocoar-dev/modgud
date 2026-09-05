@@ -251,3 +251,5 @@ panel on the **Connection** tab.
 If a misconfigured external provider is the only login path and an admin
 can't sign in, the [Recovery CLI](../operate/recovery-cli) is your only way back.
 :::
+
+- **The provider lives on your internal network and Modgud refuses to talk to it.** The log says `OIDC metadata/backchannel fetch refused: '<host>' did not resolve to a routable public address`. Modgud's SSRF guard blocks private addresses for every admin-supplied URL by design. The platform operator lists the internal IdP in `OutboundHttp__AllowedPrivateHosts` (see [Deployment](/operate/deployment#identity-providers-on-private-networks)); a realm admin cannot grant this.

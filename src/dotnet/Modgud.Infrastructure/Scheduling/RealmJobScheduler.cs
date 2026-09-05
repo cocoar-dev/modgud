@@ -1,6 +1,7 @@
 using Marten;
 using Microsoft.Extensions.Logging;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Cluster;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Quartz;
 using Quartz.Impl.Matchers;
@@ -26,6 +27,7 @@ internal sealed class RealmJobScheduler(
     IJobRegistry registry,
     IGlobalStore globalStore,
     IDocumentStore tenantStore,
+    IClusterLock clusterLock,
     ILogger<RealmJobScheduler> logger) : IRealmJobScheduleObserver
 {
     internal const string TenantSlugDataKey = "__modgudTenantSlug";
@@ -33,6 +35,10 @@ internal sealed class RealmJobScheduler(
     private const string RealmGroupPrefix = "realm:";
     private const string SystemGroup = "system";
 
+    // Serialises mutations within this process; the cluster lock below does the
+    // same across nodes that share the persistent job store (ADR 0010, D4) —
+    // two booting nodes reconciling the same realm would otherwise race on
+    // AddJob/ScheduleJob and one of them would fail with "already exists".
     private readonly SemaphoreSlim _mutationLock = new(1, 1);
 
     public async Task ReconcileAsync(CancellationToken ct = default)
@@ -40,6 +46,7 @@ internal sealed class RealmJobScheduler(
         await _mutationLock.WaitAsync(ct);
         try
         {
+            await using var _ = await clusterLock.AcquireAsync(ClusterLockKeys.QuartzSchedules, ct);
             await using var globalSession = globalStore.QuerySession();
             var realms = await globalSession.Query<Realm>()
                 .OrderBy(r => r.CreatedAt)
@@ -70,6 +77,7 @@ internal sealed class RealmJobScheduler(
         await _mutationLock.WaitAsync(ct);
         try
         {
+            await using var _ = await clusterLock.AcquireAsync(ClusterLockKeys.QuartzSchedules, ct);
             var scheduler = await schedulerFactory.GetScheduler(ct);
             await ApplyCoreAsync(scheduler, registration, realmSlug, config, ct);
         }
@@ -233,6 +241,9 @@ internal sealed class RealmJobScheduler(
             .UsingJobData(TenantSlugDataKey, realmSlug)
             .UsingJobData(JobScopeDataKey, registration.Scope.ToString())
             .StoreDurably()
+            // Every job is an idempotent sweep: if the node executing it dies
+            // mid-run, a surviving node re-runs it (clustered store only).
+            .RequestRecovery()
             .Build();
 
         await scheduler.AddJob(jobDetail, replace: true, ct);

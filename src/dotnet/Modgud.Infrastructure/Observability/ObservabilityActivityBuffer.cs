@@ -14,10 +14,9 @@ namespace Modgud.Infrastructure.Observability;
 /// (~100 KB at typical tag payload size) and is sufficient for a
 /// rolling 15min window at modest production rates.</para>
 ///
-/// <para>Multi-instance note: this buffer is local to the process.
-/// Phase 5 deliberately doesn't replicate across instances — see the
-/// HA / Multi-Instance dev-note for the broader Redis/SignalR-backplane
-/// trade-off. Single-instance is the supported deployment shape today.</para>
+/// <para>Multi-instance note: this buffer is local to the process, so with
+/// two instances an admin sees the activity of the node their connection is
+/// pinned to. Persisting it is the open item of ADR 0010, increment 2.</para>
 /// </summary>
 public sealed class ObservabilityActivityBuffer
 {

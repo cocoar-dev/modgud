@@ -9,6 +9,7 @@ using Modgud.Authentication.Projections;
 using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Persistence.Marten;
+using Modgud.Infrastructure.Cluster;
 using System.Diagnostics;
 
 namespace Modgud.Api.Features.Admin;
@@ -31,9 +32,26 @@ public static class ProjectionEndpoints
         group.MapPost("rebuild", async (
             IDocumentStore store,
             IProjectionCoordinatorControl coordinatorControl,
+            IClusterNodes clusterNodes,
             HttpContext httpContext,
             CancellationToken ct) =>
         {
+            // ADR 0010 (D8): a rebuild pauses THIS node's projection agents and
+            // replays with an interactive daemon. With a second node alive the
+            // realm's shards may be running there and would keep writing
+            // progression rows the rebuild is about to reset. Scale to one
+            // instance, rebuild, scale back — the docs say so.
+            var liveNodes = await clusterNodes.GetLiveNodesAsync(ct);
+            if (liveNodes.Count > 1)
+            {
+                Serilog.Log.Warning("Admin: Projection rebuild rejected — {Count} nodes are live", liveNodes.Count);
+                return Results.Conflict(new
+                {
+                    Message = $"A projection rebuild requires a single running instance; {liveNodes.Count} are live. " +
+                              "Scale the deployment down to one instance, rebuild, then scale back up.",
+                });
+            }
+
             if (!await _rebuildGate.WaitAsync(0, ct))
             {
                 Serilog.Log.Warning("Admin: Projection rebuild rejected — another rebuild is already running");

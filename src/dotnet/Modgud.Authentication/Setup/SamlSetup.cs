@@ -45,8 +45,9 @@ public static class SamlSetup
             {
                 client.Timeout = TimeSpan.FromSeconds(5);
             })
-            .ConfigurePrimaryHttpMessageHandler(() =>
-                Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create("SAML metadata fetch"));
+            .ConfigurePrimaryHttpMessageHandler(sp =>
+                Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create(
+                    "SAML metadata fetch", sp.GetRequiredService<Modgud.Infrastructure.Http.SsrfAllowList>()));
         services.AddSingleton<SamlMetadataFetcher>();
 
         services.AddSingleton<DynamicSamlSchemeManager>();
@@ -73,12 +74,10 @@ public static class SamlSetup
         // already done elsewhere in the host setup (it's idempotent).
         services.AddHttpContextAccessor();
 
-        // Cold-start hosted service — walks active realms and seeds the
-        // cache with already-enabled SAML providers. Runtime config
-        // changes flow through the SAML event handlers in
-        // Api.ExternalAuth.Saml.SamlLoginProviderEventHandlers (Wolverine
-        // discovers them by `*Handler` convention).
-        services.AddHostedService<SamlSchemeBootstrap>();
+        // Cold-start warm-up and runtime changes both go through
+        // LoginProviderSchemeMaterializer (registered by the host together
+        // with the OIDC side) — every node resolves SAML providers from the
+        // database on demand (ADR 0010, D6).
 
         // Periodic metadata refresh — wakes every 15 min, re-fetches IdP
         // metadata for any provider whose per-provider cadence has elapsed.

@@ -65,5 +65,12 @@
             "SourcePrefix": "Modgud",
             "CapacityPerRealm": 100
         }
+    },
+    "Cluster": {
+        "NodeName": "",
+        "DrainDelaySeconds": 5
+    },
+    "OutboundHttp": {
+        "AllowedPrivateHosts": ""
     }
 }

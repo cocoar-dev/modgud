@@ -140,6 +140,10 @@ internal static class ObservabilityExtensions
         healthBuilder.AddCheck<OpenIddictCertHealthCheck>(
             name: "openiddict-cert",
             tags: new[] { "ready" });
+        // ADR 0010 — draining after SIGTERM, and "two nodes but no relay".
+        healthBuilder.AddCheck<ClusterHealthCheck>(
+            name: "cluster",
+            tags: new[] { "ready" });
 
         return services;
     }
@@ -183,6 +187,24 @@ internal static class ObservabilityExtensions
             app.MapPrometheusScrapingEndpoint(scrapePath)
                 .AllowAnonymous();
         }
+
+        // ADR 0010 (D7) — while draining after SIGTERM, answer readiness with 503
+        // here, before the health-check pipeline runs: the framework logs every
+        // Unhealthy result at Error level, and a planned drain is not an error.
+        // ClusterHealthCheck keeps the same rule as a backstop.
+        var shutdown = app.Services.GetRequiredService<Modgud.Api.Cluster.ShutdownState>();
+        app.Use(async (context, next) =>
+        {
+            if (shutdown.IsStopping && context.Request.Path.Equals("/health/ready", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                context.Response.ContentType = "application/json; charset=utf-8";
+                await context.Response.WriteAsync(
+                    """{"status":"Unhealthy","checks":[{"name":"cluster","status":"Unhealthy","description":"Draining — this node is shutting down."}]}""");
+                return;
+            }
+            await next(context);
+        });
 
         app.MapHealthChecks("/health/live", new HealthCheckOptions
         {

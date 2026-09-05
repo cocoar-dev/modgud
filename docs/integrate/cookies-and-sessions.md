@@ -45,7 +45,7 @@ Configured in `Program.cs`:
 | `Modgud.2FA` | `Strict` | UserId holder between password step and 2FA step | 5 min |
 | `Modgud.2FA.Remember` | `Strict` | "Remember this browser, skip 2FA" — Identity.TwoFactorRememberMe scheme | Identity default (30 days) |
 | `Modgud.External` | `Lax` | OIDC callback holder | 10 min |
-| `Modgud.Session` | `Strict` | Passkey attestation options only (ASP.NET session) | 5 min idle |
+| `Modgud.Passkey.Challenge` / `Modgud.Passkey.Enroll` | `Strict` | Id of the server-side passkey login / registration ceremony (path-scoped to `/api/account/passkey`) | 5 min |
 | `Modgud.Device` | `Lax` | "This browser has completed a login here" — a random, signed device id that keeps the user's own devices in their own login-failure bucket (ADR 0008, see [Rate limits](../platform/rate-limits#password-login-device-aware-throttling)). No fingerprint, no tracking; issued on every successful interactive login | 90 days idle |
 
 The main `Modgud.Auth` cookie is `Lax` (not `Strict`) — `Strict` would
@@ -102,9 +102,9 @@ request; it is not merely an activity log.
 ### Browser-session binding
 
 The browser-session ID lives inside the encrypted `Modgud.Auth` ticket.
-`Modgud.Session` is unrelated ASP.NET session state used for short-lived
-passkey ceremony data. On normal logout, only the current `UserSession`
-row is deleted and the auth cookie is cleared.
+Passkey ceremonies are server-side documents referenced by their own
+short-lived cookies; there is no ASP.NET session state. On normal logout,
+only the current `UserSession` row is deleted and the auth cookie is cleared.
 
 ### UserSession document
 
