@@ -169,8 +169,10 @@ public sealed class RealmManifestPlanner(
                 },
             }));
 
+        // Roles are keyed `app/name`: names are unique per App only (two apps may each
+        // have an "Author"), so the bare name can never be the dictionary key.
         result.Sections.Add(await PlanSectionAsync("roles", json, prune, DeletesFor("roles"),
-            manifest.Roles, current.Roles, baseline?.Roles, r => r.Name,
+            manifest.Roles, current.Roles, baseline?.Roles, r => r.NaturalKey,
             new SectionPolicy<RealmManifestRole>
             {
                 Skip = ["Name", "Key"],
@@ -179,6 +181,23 @@ public sealed class RealmManifestPlanner(
                 KeyRenameable = true,
                 PinnedId = r => r.Id,
                 PinnedIdCheck = PinnedIdLookup<PermissionRole>(session, r => r.IsDeleted, r => r.Name, ct),
+                // An update patch may omit App (absent = unchanged): match the bare name
+                // when it is unambiguous, exactly like the applier; refuse when it isn't.
+                FallbackMatch = (desired, live) =>
+                {
+                    if (desired.App is not null || desired.IsRealmAdmin == true) return (null, null);
+                    var byName = live.Where(c => string.Equals(c.Name, desired.Name, StringComparison.Ordinal)).ToList();
+                    return byName.Count switch
+                    {
+                        0 => (null, null),
+                        1 => (byName[0], null),
+                        _ => (null, $"'{desired.Name}' names {byName.Count} live roles ({string.Join(", ", byName.Select(c => $"'{c.NaturalKey}'"))}) — add App (or Id) to say which one is meant; the apply FAILS for this entry."),
+                    };
+                },
+                // The matched entity supplies the App an update patch left out, so the
+                // entry is keyed (and rename-checked) by the role it actually addresses.
+                EffectiveKey = (desired, existing) => RoleKeys.Qualified(
+                    desired.App ?? (desired.IsRealmAdmin == true ? null : existing?.App), desired.Name),
                 Protect = r => Task.FromResult<string?>(r.IsRealmAdmin == true
                     ? "Realm-admin roles are never pruned (lockout protection)."
                     : null),
@@ -205,8 +224,25 @@ public sealed class RealmManifestPlanner(
                     session, x => x.IsDeleted, x => x.AccountName, ct),
             }));
 
+        // Cross-references ({ Key, Id } or a bare key) normalize to the CURRENT entity's
+        // canonical { Key, Id } before diffing: a reference that follows a renamed role or
+        // user by Id is not a change, and the same entity written as key-only, id-only or
+        // both compares equal. Unresolvable references stay as written (and surface at apply).
+        var roleRefs = new RefCanonicalizer();
+        foreach (var sameName in current.Roles.GroupBy(r => r.Name, StringComparer.Ordinal))
+            foreach (var r in sameName)
+                roleRefs.Add(r.NaturalKey, r.Id, sameName.Count() == 1 ? r.Name : null);
+        var userRefs = new RefCanonicalizer();
+        foreach (var u in current.Users)
+            userRefs.Add(u.Key ?? u.UserName ?? u.Email, u.Id, u.UserName, u.Email);
+        RealmManifestGroup CanonGroup(RealmManifestGroup g)
+            => g with { Members = userRefs.Canon(g.Members), Roles = roleRefs.Canon(g.Roles) };
+        RealmManifestPosition CanonPosition(RealmManifestPosition p)
+            => p with { Grants = userRefs.Canon(p.Grants) };
+
         result.Sections.Add(await PlanSectionAsync("groups", json, prune, DeletesFor("groups"),
-            manifest.Groups, current.Groups, baseline?.Groups, g => g.Name,
+            manifest.Groups.Select(CanonGroup).ToList(), current.Groups.Select(CanonGroup).ToList(),
+            baseline?.Groups.Select(CanonGroup).ToList(), g => g.Name,
             new SectionPolicy<RealmManifestGroup>
             {
                 Skip = ["Name"],
@@ -227,7 +263,8 @@ public sealed class RealmManifestPlanner(
             }));
 
         result.Sections.Add(await PlanSectionAsync("positions", json, prune, DeletesFor("positions"),
-            manifest.Positions, current.Positions, baseline?.Positions,
+            manifest.Positions.Select(CanonPosition).ToList(), current.Positions.Select(CanonPosition).ToList(),
+            baseline?.Positions.Select(CanonPosition).ToList(),
             p => p.AccountName.Trim().ToLowerInvariant(),
             new SectionPolicy<RealmManifestPosition>
             {
@@ -512,6 +549,63 @@ public sealed class RealmManifestPlanner(
         /// slug, client id, scope/api name, provider slug) makes an id-matched entry whose
         /// key differs an apply ERROR instead of a rename.</summary>
         public bool KeyRenameable { get; init; }
+
+        /// <summary>Last-resort match when neither the pinned Id nor the natural key found a
+        /// live entity (a patch that omits part of a composite key). Returns the match, or
+        /// an error text when the entry is ambiguous — the entry then becomes an apply
+        /// error instead of a create.</summary>
+        public Func<T, IReadOnlyList<T>, (T? Match, string? Error)>? FallbackMatch { get; init; }
+
+        /// <summary>The key an entry is reported (and rename-checked) under once its live
+        /// counterpart is known — lets a composite key borrow the part the patch omitted.
+        /// Null = the section's key function.</summary>
+        public Func<T, T?, string>? EffectiveKey { get; init; }
+    }
+
+    /// <summary>
+    /// Keys a live list without throwing on duplicates (nothing in the domain guarantees
+    /// every natural key is unique — a lax import or two same-named roles in one app can
+    /// break it). The first entity wins the key; each duplicated key is returned so the
+    /// section can report it as an apply error instead of the plan failing with a 500.
+    /// </summary>
+    private static (Dictionary<string, T> ByKey, List<string> Duplicates) IndexByKey<T>(
+        IEnumerable<T> items, Func<T, string> key) where T : class
+    {
+        var byKey = new Dictionary<string, T>(StringComparer.Ordinal);
+        var duplicates = new List<string>();
+        foreach (var item in items)
+            if (!byKey.TryAdd(key(item), item)) duplicates.Add(key(item));
+        return (byKey, duplicates);
+    }
+
+    /// <summary>
+    /// Maps every accepted spelling of a reference (id, canonical key, unambiguous alias)
+    /// to the referenced CURRENT entity's canonical <c>{ Key, Id }</c>, so the differ
+    /// compares identities rather than spellings. Unknown references pass through as written.
+    /// </summary>
+    private sealed class RefCanonicalizer
+    {
+        private readonly Dictionary<Guid, ManifestRef> byId = [];
+        private readonly Dictionary<string, ManifestRef> byKey = new(StringComparer.Ordinal);
+
+        public void Add(string canonicalKey, string? rawId, params string?[] aliases)
+        {
+            if (string.IsNullOrWhiteSpace(rawId) || !ShortGuid.TryParse(rawId, out Guid id)) return;
+            var canon = ManifestRef.Of(canonicalKey, id);
+            byId[id] = canon;
+            byKey.TryAdd(canonicalKey, canon);
+            foreach (var alias in aliases)
+                if (!string.IsNullOrEmpty(alias)) byKey.TryAdd(alias, canon);
+        }
+
+        public ManifestRef Canon(ManifestRef r)
+        {
+            if (r.ParsedId is { } id && byId.TryGetValue(id, out var canon)) return canon;
+            if (r.Key is not null && byKey.TryGetValue(r.Key, out canon)) return canon;
+            return r;
+        }
+
+        public List<ManifestRef>? Canon(List<ManifestRef>? refs) => refs?.Select(Canon).ToList();
     }
 
     /// <summary>Canonical form of a pinned id so the manifest's spelling (Guid or ShortGuid)
@@ -552,8 +646,16 @@ public sealed class RealmManifestPlanner(
         where T : class
     {
         var section = new RealmPlanSection { Name = name };
-        var currentByKey = current.ToDictionary(key, c => c, StringComparer.Ordinal);
-        var baselineByKey = baseline?.ToDictionary(key, b => b, StringComparer.Ordinal);
+        var (currentByKey, duplicateKeys) = IndexByKey(current, key);
+        var baselineByKey = baseline is null ? null : IndexByKey(baseline, key).ByKey;
+        // Two live entities sharing a natural key can't be told apart by the manifest —
+        // report it on the plan (an apply error) instead of failing the whole plan.
+        foreach (var duplicate in duplicateKeys.Distinct(StringComparer.Ordinal))
+        {
+            var entry = new RealmPlanEntry { Key = duplicate, Action = "error" };
+            entry.Notes.Add($"{current.Count(c => string.Equals(key(c), duplicate, StringComparison.Ordinal))} live entities share the key '{duplicate}' — the manifest cannot address them individually. Rename one of them live before applying.");
+            section.Entries.Add(entry);
+        }
         // Id-first matching mirrors the applier: an entry whose pinned Id names a live entity
         // IS that entity, even when its natural key differs (a rename).
         var currentById = policy.PinnedId is null
@@ -561,7 +663,8 @@ public sealed class RealmManifestPlanner(
             : current
                 .Select(c => (Key: NormalizedId(policy.PinnedId(c)), Entity: c))
                 .Where(x => x.Key is not null)
-                .ToDictionary(x => x.Key!, x => x.Entity, StringComparer.Ordinal);
+                .GroupBy(x => x.Key!, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First().Entity, StringComparer.Ordinal);
         // Everything the manifest matched — by id OR by key — is NOT a delete candidate.
         var matchedKeys = new HashSet<string>(StringComparer.Ordinal);
 
@@ -569,26 +672,36 @@ public sealed class RealmManifestPlanner(
         {
             var pinned = NormalizedId(policy.PinnedId?.Invoke(item));
             T? existing = null;
+            string? matchError = null;
             var matchedById = pinned is not null && currentById.TryGetValue(pinned, out existing);
             if (!matchedById) currentByKey.TryGetValue(key(item), out existing);
+            if (!matchedById && existing is null && policy.FallbackMatch is not null)
+                (existing, matchError) = policy.FallbackMatch(item, current);
             if (existing is not null) matchedKeys.Add(key(existing));
+            var itemKey = policy.EffectiveKey?.Invoke(item, existing) ?? key(item);
 
             T? baselineItem = null;
-            baselineByKey?.TryGetValue(existing is null ? key(item) : key(existing), out baselineItem);
-            var entry = DiffEntry(key(item), item, existing, baselineItem,
+            baselineByKey?.TryGetValue(existing is null ? itemKey : key(existing), out baselineItem);
+            var entry = DiffEntry(itemKey, item, existing, baselineItem,
                 conflictMode: baselineByKey is not null, json, policy);
             policy.PostProcess?.Invoke(item, existing, entry);
+
+            if (matchError is not null)
+            {
+                entry.Notes.Add(matchError);
+                entry = entry with { Action = "error" };
+            }
 
             // A rename: the Id named a live entity whose natural key differs. Show WHAT is
             // being renamed (the key field is otherwise skipped, being the match key).
             if (matchedById && existing is not null &&
-                !string.Equals(key(existing), key(item), StringComparison.Ordinal))
+                !string.Equals(key(existing), itemKey, StringComparison.Ordinal))
             {
                 var field = policy.KeyField ?? "Key";
                 if (policy.KeyRenameable)
                 {
-                    entry.Changes.Add(new RealmPlanChange(field, key(existing), key(item)));
-                    entry.Notes.Add($"Matched by Id — RENAMES '{key(existing)}' to '{key(item)}'.");
+                    entry.Changes.Add(new RealmPlanChange(field, key(existing), itemKey));
+                    entry.Notes.Add($"Matched by Id — RENAMES '{key(existing)}' to '{itemKey}'.");
                 }
                 else
                 {

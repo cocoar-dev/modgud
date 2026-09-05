@@ -21,6 +21,24 @@ import {
  * - `findStaged`: the manifest entity behind a key (drafts start from the
  *   export, so existing entities are present with their staged state).
  */
+/**
+ * Draft-created rows carry `draft__<key>` ids that travel through the fragment router
+ * (`roles/:id`), whose `:id` stops at a slash — and role keys are `app/name`. The key is
+ * therefore percent-encoded inside the id; decoding tolerates an already-decoded id (the
+ * router decodes route params) as well as a key that was never encoded.
+ */
+export function draftRowId(key: string): string {
+  return `draft__${encodeURIComponent(key)}`
+}
+
+function decodeDraftKey(raw: string): string {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
 export function useDraftStaging(section: string) {
   const draftStore = useRealmDraftStore()
   const authStore = useAuthStore()
@@ -32,7 +50,7 @@ export function useDraftStaging(section: string) {
   }
 
   function draftKeyOf(id: string): string {
-    return id.slice('draft__'.length)
+    return decodeDraftKey(id.slice('draft__'.length))
   }
 
   function findStaged(key: string): ManifestEntity | null {
@@ -125,7 +143,7 @@ export function useDraftListOverlay<TRow extends { Id: string }>(
       } else {
         created.push({
           ...options.synthesize(entry.Key, entity, draft),
-          Id: `draft__${entry.Key}`,
+          Id: draftRowId(entry.Key),
           DraftStaged: 'create',
         })
       }

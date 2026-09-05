@@ -212,17 +212,16 @@ public sealed class RealmManifestExporter(
 
         // ── Roles (raw — ids are Guids) ──────────────────────────────────────────────
         var roles = await session.Query<PermissionRole>().Where(r => !r.IsDeleted).ToListAsync(ct);
-        var roleKeyById = roles.ToDictionary(r => r.Id, r => r.Name);
+        string? RoleApp(PermissionRole r)
+            => !r.IsRealmAdmin && r.AppId is { } aid && appSlugById.TryGetValue(aid, out var slugOf) ? slugOf : null;
+        // Group references use the qualified `app/name` key — names repeat across apps.
+        var roleKeyById = roles.ToDictionary(r => r.Id, r => RoleKeys.Qualified(RoleApp(r), r.Name));
         var manifestRoles = roles.Select(r => new RealmManifestRole
         {
             Name = r.Name,
             Id = new ShortGuid(r.Id).ToString(),
             Description = Opt(r.Description),
-            App = !r.IsRealmAdmin
-                && r.AppId is { } aid
-                && appSlugById.TryGetValue(aid, out var slugOf)
-                    ? slugOf
-                    : null,
+            App = RoleApp(r),
             IsRealmAdmin = r.IsRealmAdmin,
             Permissions = r.IsRealmAdmin
                 ? []
@@ -269,8 +268,10 @@ public sealed class RealmManifestExporter(
             Name = g.Name,
             Id = new ShortGuid(g.Id).ToString(),
             Description = Opt(g.Description),
-            Members = g.MemberIds.Where(userKeyById.ContainsKey).Select(id => userKeyById[id]).ToList(),
-            Roles = g.RoleIds.Where(roleKeyById.ContainsKey).Select(id => roleKeyById[id]).ToList(),
+            // References carry Key + Id: the Id is what the apply follows (rename-proof), the
+            // Key is what a human reads. A plain string would ALWAYS mean "key".
+            Members = g.MemberIds.Where(userKeyById.ContainsKey).Select(id => ManifestRef.Of(userKeyById[id], id)).ToList(),
+            Roles = g.RoleIds.Where(roleKeyById.ContainsKey).Select(id => ManifestRef.Of(roleKeyById[id], id)).ToList(),
             MembershipMode = g.MembershipMode.ToString(),
             MembershipScript = g.MembershipScript,
             Email = Opt(g.Email),
@@ -306,7 +307,7 @@ public sealed class RealmManifestExporter(
                 },
                 Grants = liveGrants[p.Id]
                     .Where(g => userKeyById.ContainsKey(g.UserId))
-                    .Select(g => userKeyById[g.UserId]).ToList(),
+                    .Select(g => ManifestRef.Of(userKeyById[g.UserId], g.UserId)).ToList(),
             }).ToList();
         }
 

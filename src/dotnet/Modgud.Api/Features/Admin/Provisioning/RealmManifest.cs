@@ -1,3 +1,4 @@
+using BuildingBlocks.Helper;
 using System.ComponentModel;
 using System.Text.Json;
 using Modgud.Application.DTOs.Applications;
@@ -22,9 +23,9 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// <summary>
 /// A declarative description of a realm's complete configuration, applied in-process by
 /// <see cref="RealmManifestApplier"/>. Cross-references use stable KEYS (apps by slug,
-/// roles/users by key, permissions by <c>resource:action</c>) — never server-generated
-/// ids — mirroring the existing <c>demo-seed.json</c> contract; the applier resolves
-/// them to ids as it creates entities in dependency order. Each section maps onto the
+/// roles/users by key, permissions by <c>resource:action</c>); group/position references
+/// may additionally carry the entity Id (<see cref="ManifestRef"/>), which wins when it
+/// resolves. The applier resolves references as it creates entities in dependency order. Each section maps onto the
 /// SAME canonical operation the admin UI/API uses, so the manifest path and the manual
 /// path can never diverge.
 /// </summary>
@@ -60,7 +61,7 @@ public sealed record RealmManifest
     [Description("Service-account HULLS (machine principals): AccountName, Purpose, IsActive and an optional pinned Id. Credentials (client_credentials OAuth clients + secrets) are deliberately NOT modelled — issue them per environment via the service-account admin. Apply upserts only; service accounts are never pruned or staged-deleted (delete stays a live operation).")]
     public List<RealmManifestServiceAccount> ServiceAccounts { get; init; } = [];
 
-    [Description("Groups. The ONLY way users get roles: a user is a group member, the group carries roles. Members/Roles are keys, not ids.")]
+    [Description("Groups. The ONLY way users get roles: a user is a group member, the group carries roles. Members/Roles are references: a string key, or { Key, Id } where the Id wins and the Key is the readable fallback.")]
     public List<RealmManifestGroup> Groups { get; init; } = [];
 
     [Description("External login providers (OIDC/SAML federation). The built-in Internal provider is seeded automatically and cannot be declared here. Slug is the natural key; Type and Flavor are immutable after create.")]
@@ -305,10 +306,10 @@ public sealed record RealmManifestClientClaim(
 /// <summary>A role. <see cref="App"/> is a slug; <see cref="Permissions"/> resolve into the linked app's catalog. <see cref="Key"/> (default <see cref="Name"/>) is how groups reference it.</summary>
 public sealed record RealmManifestRole
 {
-    [Description("Optional stable key groups use to reference this role. Defaults to Name.")]
+    [Description("Optional stable key groups use to reference this role. Defaults to '<App>/<Name>' (the bare Name for a realm-admin role); a bare Name is also accepted as a reference while exactly one role carries it.")]
     public string? Key { get; init; }
 
-    [Description("Role name — the natural key for upsert.")]
+    [Description("Role name — unique per App, so the natural key for upsert is App + Name (two apps may each have an 'Author').")]
     public required string Name { get; init; }
 
     [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
@@ -326,7 +327,39 @@ public sealed record RealmManifestRole
     [Description("Permissions from the linked App's catalog this role grants. Requires App and is forbidden for a realm-admin role. Absent = unchanged; [] clears.")]
     public List<RealmManifestPermission>? Permissions { get; init; }
 
-    public string ResolveKey() => Key ?? Name;
+    /// <summary>
+    /// The role's natural key: <c>App/Name</c> for an App role, the bare <c>Name</c> for a
+    /// realm-admin role (or an update patch that omits <c>App</c>). Role names are only
+    /// unique PER APP — two apps may each have an "Author" — so the name alone can never
+    /// identify a role in the manifest.
+    /// </summary>
+    public string NaturalKey => RoleKeys.Qualified(App, Name);
+
+    /// <summary>The key groups reference this role by: the explicit <see cref="Key"/>, else
+    /// the <see cref="NaturalKey"/>. A bare name is also accepted as a reference as long
+    /// as it names exactly one role (see the applier's role-reference resolution).</summary>
+    public string ResolveKey() => Key ?? NaturalKey;
+}
+
+/// <summary>
+/// The manifest's role-key convention, shared by the exporter, planner, applier, draft
+/// registry and the admin UI: <c>&lt;app slug&gt;/&lt;role name&gt;</c> for an App role,
+/// the bare name for a realm-admin role. App slugs never contain a slash, so the key
+/// splits at the FIRST one (role names may contain slashes).
+/// </summary>
+public static class RoleKeys
+{
+    public const char Separator = '/';
+
+    public static string Qualified(string? appSlug, string name)
+        => string.IsNullOrEmpty(appSlug) ? name : $"{appSlug}{Separator}{name}";
+
+    /// <summary>Splits a reference into (app slug, name); (null, key) when unqualified.</summary>
+    public static (string? App, string Name) Split(string key)
+    {
+        var i = key.IndexOf(Separator);
+        return i < 0 ? (null, key) : (key[..i], key[(i + 1)..]);
+    }
 }
 
 /// <summary>A user. <see cref="Key"/> (default <see cref="UserName"/> ?? <see cref="Email"/>) is how groups reference it as a member.</summary>
@@ -374,11 +407,11 @@ public sealed record RealmManifestGroup
     [Description("Optional description. Absent = unchanged; explicit null clears.")]
     public Optional<string?> Description { get; init; }
 
-    [Description("Member user keys (RealmManifestUser.Key — NOT ids). For MembershipMode=Manual. Absent = unchanged; [] clears the member list.")]
-    public List<string>? Members { get; init; }
+    [Description("Members (users) for MembershipMode=Manual. Each entry is a reference: a string user key (RealmManifestUser.Key), or { \"Key\": \"alice\", \"Id\": \"<user id>\" } — the Id wins, the Key is the readable fallback. Absent = unchanged; [] clears the member list.")]
+    public List<ManifestRef>? Members { get; init; }
 
-    [Description("Role keys (RealmManifestRole.Key/Name — NOT ids) this group grants to its members. Absent = unchanged; [] clears.")]
-    public List<string>? Roles { get; init; }
+    [Description("Roles this group grants to its members. Each entry is a reference: a string role key (\"<app slug>/<name>\", or the explicit RealmManifestRole.Key), or { \"Key\": \"acme/Author\", \"Id\": \"<role id>\" } — the Id wins, the Key is the readable fallback. Absent = unchanged; [] clears.")]
+    public List<ManifestRef>? Roles { get; init; }
 
     [Description("'Manual' (explicit Members) or 'Auto' (members computed from MembershipScript). Absent = unchanged / default 'Manual' on create.")]
     public string? MembershipMode { get; init; }
@@ -507,8 +540,89 @@ public sealed record RealmManifestPosition
     [Description("Optional partial terminal policy (patch semantics: omitted fields keep the stored/default value). Omitted entirely = terminal use stays disabled on create / unchanged on apply. Tightening the policy on apply ends affected staffing sessions (declarative apply auto-confirms the consequences).")]
     public PositionTerminalPolicyUpdateDto? TerminalPolicy { get; init; }
 
-    [Description("User keys (RealmManifestUser.Key — NOT ids) authorized to staff this position. Present = replaces the live grant set (missing grants are issued, absent ones revoked — revoking ends that user's running shifts; [] revokes all); absent = no change.")]
-    public List<string>? Grants { get; init; }
+    [Description("Users authorized to staff this position. Each entry is a reference: a string user key (RealmManifestUser.Key), or { \"Key\": \"alice\", \"Id\": \"<user id>\" } — the Id wins, the Key is the readable fallback. Present = replaces the live grant set (missing grants are issued, absent ones revoked — revoking ends that user's running shifts; [] revokes all); absent = no change.")]
+    public List<ManifestRef>? Grants { get; init; }
+}
+
+/// <summary>
+/// A cross-reference from one manifest entity to another (group → role, group → member,
+/// position → grant). Two wire shapes, no heuristics:
+/// <list type="bullet">
+///   <item>a plain string — ALWAYS a key (role <c>app/name</c>, user key), never an id;</item>
+///   <item>an object <c>{ "Key": "...", "Id": "..." }</c> — the <c>Id</c> names the entity
+///   (rename-proof), the <c>Key</c> is the readable fallback used when no entity carries
+///   that id (a hand-edited or cross-environment manifest).</item>
+/// </list>
+/// The exporter writes the object form; hand-written manifests may use either. Names are
+/// unrestricted, so no string format could ever separate "key" from "id" by construction —
+/// the object form is what makes the distinction unambiguous.
+/// </summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(ManifestRefJsonConverter))]
+public sealed record ManifestRef
+{
+    public string? Key { get; init; }
+
+    /// <summary>Entity id (ShortGuid or Guid). Wins over <see cref="Key"/> when it resolves.</summary>
+    public string? Id { get; init; }
+
+    public static ManifestRef Of(string key, Guid id) => new() { Key = key, Id = new ShortGuid(id).ToString() };
+
+    /// <summary>The id as a Guid, null when absent or unparseable.</summary>
+    public Guid? ParsedId => !string.IsNullOrWhiteSpace(Id) && ShortGuid.TryParse(Id, out Guid id) ? id : null;
+
+    /// <summary>What a human reads in messages: the key, else the id.</summary>
+    public string Display => Key ?? Id ?? string.Empty;
+
+    public override string ToString() => Display;
+
+    /// <summary>A bare string is a key — the manifest's original reference form.</summary>
+    public static implicit operator ManifestRef(string key) => new() { Key = key };
+}
+
+/// <summary>String ⇄ key, object ⇄ { Key, Id }. Property names are matched case-insensitively
+/// on read (hand-written manifests); the exporter writes PascalCase like the rest.</summary>
+public sealed class ManifestRefJsonConverter : System.Text.Json.Serialization.JsonConverter<ManifestRef>
+{
+    public override ManifestRef? Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+    {
+        switch (reader.TokenType)
+        {
+            case System.Text.Json.JsonTokenType.String:
+                return new ManifestRef { Key = reader.GetString() };
+            case System.Text.Json.JsonTokenType.Null:
+                return null;
+            case System.Text.Json.JsonTokenType.StartObject:
+            {
+                string? key = null, id = null;
+                while (reader.Read() && reader.TokenType != System.Text.Json.JsonTokenType.EndObject)
+                {
+                    var name = reader.GetString();
+                    reader.Read();
+                    if (string.Equals(name, "Key", StringComparison.OrdinalIgnoreCase)) key = reader.TokenType == System.Text.Json.JsonTokenType.String ? reader.GetString() : null;
+                    else if (string.Equals(name, "Id", StringComparison.OrdinalIgnoreCase)) id = reader.TokenType == System.Text.Json.JsonTokenType.String ? reader.GetString() : null;
+                    else reader.Skip();
+                }
+                if (key is null && id is null)
+                    throw new System.Text.Json.JsonException("A reference object needs a \"Key\" and/or an \"Id\".");
+                return new ManifestRef { Key = key, Id = id };
+            }
+            default:
+                throw new System.Text.Json.JsonException($"A reference is a string key or an object {{ \"Key\", \"Id\" }}, not {reader.TokenType}.");
+        }
+    }
+
+    public override void Write(System.Text.Json.Utf8JsonWriter writer, ManifestRef value, System.Text.Json.JsonSerializerOptions options)
+    {
+        if (value.Id is null)
+        {
+            writer.WriteStringValue(value.Key);
+            return;
+        }
+        writer.WriteStartObject();
+        if (value.Key is not null) writer.WriteString("Key", value.Key);
+        writer.WriteString("Id", value.Id);
+        writer.WriteEndObject();
+    }
 }
 
 /// <summary>The outcome of a successful import.</summary>

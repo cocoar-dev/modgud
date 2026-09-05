@@ -98,6 +98,43 @@ export interface ApplyOutcome {
   ClientSecrets: Record<string, string>
 }
 
+/**
+ * A role's manifest key (mirrors `RoleKeys` in the backend): `<app slug>/<name>` for an
+ * App role, the bare name for a realm-admin role. Role names are unique per App only —
+ * two apps may each have an "Author" — so the name alone never identifies a role.
+ */
+export function roleManifestKey(appSlug: string | null | undefined, name: string): string {
+  return appSlug ? `${appSlug}/${name}` : name
+}
+
+/**
+ * A manifest cross-reference (group → role / member, position → grant), mirroring the
+ * backend's `ManifestRef`: a bare string is ALWAYS a key, never an id; the object form
+ * carries the entity `Id` (which wins — rename-proof) plus the readable `Key`.
+ */
+export type ManifestRef = string | { Key?: string; Id?: string }
+
+export function refKey(ref: ManifestRef): string | null {
+  if (typeof ref === 'string') return ref || null
+  return typeof ref.Key === 'string' && ref.Key ? ref.Key : null
+}
+
+export function refId(ref: ManifestRef): string | null {
+  return typeof ref === 'object' && typeof ref.Id === 'string' && ref.Id ? ref.Id : null
+}
+
+export function refList(value: unknown): ManifestRef[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((x): x is ManifestRef =>
+    (typeof x === 'string' && x.length > 0) || (!!x && typeof x === 'object'))
+}
+
+/** The form the export writes: both halves, so the apply follows the id and a reader
+ * still sees the key. */
+export function makeRef(key: string, id: string): ManifestRef {
+  return { Key: key, Id: id }
+}
+
 /** Manifest collection + natural key per plan section (mirrors the backend). */
 export const SECTION_META: Record<string, { collection: keyof DraftManifest | null; key: (e: ManifestEntity) => string }> = {
   settings: { collection: null, key: () => 'settings' },
@@ -106,7 +143,10 @@ export const SECTION_META: Record<string, { collection: keyof DraftManifest | nu
   scopes: { collection: 'Scopes', key: (e) => String(e.Name ?? '') },
   clients: { collection: 'Clients', key: (e) => String(e.ClientId ?? '') },
   loginProviders: { collection: 'LoginProviders', key: (e) => String(e.Slug ?? '') },
-  roles: { collection: 'Roles', key: (e) => String(e.Key ?? e.Name ?? '') },
+  roles: {
+    collection: 'Roles',
+    key: (e) => String(e.Key ?? roleManifestKey(typeof e.App === 'string' ? e.App : null, String(e.Name ?? ''))),
+  },
   users: { collection: 'Users', key: (e) => String(e.Key ?? e.UserName ?? e.Email ?? '') },
   groups: { collection: 'Groups', key: (e) => String(e.Name ?? '') },
   serviceAccounts: { collection: 'ServiceAccounts', key: (e) => String(e.AccountName ?? '').trim().toLowerCase() },

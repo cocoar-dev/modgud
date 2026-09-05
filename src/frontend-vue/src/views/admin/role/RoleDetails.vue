@@ -4,7 +4,7 @@ import { useRoleStore } from '@/stores/role.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, ROLE_CLONE } from '@/composables/useClone'
 import { useDraftStaging } from '@/composables/useDraftStaging'
-import type { ManifestEntity } from '@/stores/realmDraft.store'
+import { roleManifestKey, type ManifestEntity } from '@/stores/realmDraft.store'
 import {
   CoarNotice,
   CoarTextInput,
@@ -34,12 +34,18 @@ const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
 
 // ── ADR-0005 staging: role saves commit onto the active draft. Role names are
-// editable, so the staged Key is pinned to the ORIGINAL name — a rename then
-// replaces the staged entry instead of cloning it.
+// editable, so the staged Key is pinned to the ORIGINAL key — a rename then
+// replaces the staged entry instead of cloning it. The key is `app/name` (bare
+// name for a realm-admin role): names are unique per App only.
 const staging = useDraftStaging('roles')
 const isDraftRow = computed(() => staging.isDraftId(props.id))
 const stagedSave = computed(() => staging.stagingActive.value)
 const stagedKey = ref<string | null>(null)
+
+function liveRoleKey(role: RoleDto): string {
+  const slug = role.IsRealmAdmin ? null : applicationsStore.apps.find((a) => a.Id === role.AppId)?.Slug
+  return roleManifestKey(slug, role.Name)
+}
 
 function fromStaged(e: ManifestEntity): FormState {
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -156,7 +162,45 @@ const appError = computed(() =>
     : '',
 )
 
-const generalIssues = computed(() => [nameError.value, appError.value].filter(Boolean))
+/** The key this form would save under: `app/name`, bare name for a realm-admin role. */
+const formKey = computed(() => {
+  const name = form.value.Name.trim()
+  if (!name) return ''
+  const slug = form.value.IsRealmAdmin
+    ? null
+    : applicationsStore.apps.find((a) => a.Id === form.value.AppId)?.Slug
+  return roleManifestKey(slug, name)
+})
+
+// A role's name is unique within its scope (the App, or the realm for a realm-admin
+// role) — the backend refuses a duplicate with 409, and a staged CREATE under an
+// existing key would silently turn into an UPDATE of that role (manifest upsert
+// semantics). So the form refuses upfront, against live roles and staged ones alike.
+const nameTakenError = computed(() => {
+  const key = formKey.value
+  if (!key) return ''
+  const message = form.value.IsRealmAdmin
+    ? t('admin.roleDetails.validation.realmAdminNameTaken', {}, 'A realm-admin role with this name already exists.')
+    : t('admin.roleDetails.validation.nameTaken', {}, 'A role with this name already exists in this application.')
+  const liveClash = roleStore.roles.some((r) => r.Id !== props.id && liveRoleKey(r) === key)
+  if (liveClash) return message
+  if (stagedSave.value && staging.draftStore.current) {
+    const mine = stagedKey.value
+    const stagedClash = staging.draftStore.sectionEntities('roles').some((e) => {
+      // What the apply will produce for this entry (a staged rename counts under
+      // its NEW name), vs. the key the draft files it under (its pinned Key).
+      const natural = roleManifestKey(
+        typeof e.App === 'string' ? e.App : null, typeof e.Name === 'string' ? e.Name : '')
+      const registryKey = typeof e.Key === 'string' && e.Key ? e.Key : natural
+      const isMine = (typeof e.Id === 'string' && e.Id === props.id) || (!!mine && registryKey === mine)
+      return !isMine && natural === key
+    })
+    if (stagedClash) return message
+  }
+  return ''
+})
+
+const generalIssues = computed(() => [nameError.value, appError.value, nameTakenError.value].filter(Boolean))
 
 const modalTitle = computed(() => {
   const name = form.value.Name?.trim()
@@ -174,7 +218,9 @@ const footerButton = computed(() => ({
 }))
 
 onMounted(async () => {
-  await applicationsStore.initialize()
+  // Apps supply the slug half of the role key; the roster is what the name-uniqueness
+  // check runs against — both are needed on every path, create included.
+  await Promise.all([applicationsStore.initialize(), roleStore.initialize()])
   if (isDraftRow.value) {
     // Draft-created role: the staged manifest entity IS the state.
     const entity = staging.findStaged(staging.draftKeyOf(props.id))
@@ -212,10 +258,10 @@ onMounted(async () => {
         PermissionIds: role.IsRealmAdmin ? [] : [...(role.PermissionIds ?? [])],
       }
       // Staging overlay: show the STAGED role state when the draft carries it
-      // (draft keys resolve Key ?? Name, so the live name finds a staged rename).
-      stagedKey.value = role.Name
+      // (draft keys resolve Key ?? app/name, so the live key finds a staged rename).
+      stagedKey.value = liveRoleKey(role)
       if (stagedSave.value && staging.draftStore.current) {
-        const entity = staging.findStaged(role.Name)
+        const entity = staging.findStaged(stagedKey.value)
         if (entity) form.value = fromStaged(entity)
       }
     }
@@ -243,7 +289,9 @@ async function save() {
   try {
     // ADR-0005: commit onto the active draft instead of writing live.
     if (stagedSave.value) {
-      await staging.stage(form.value.Name.trim(), toStaged())
+      const entity = toStaged()
+      await staging.stage(stagedKey.value ?? roleManifestKey(
+        typeof entity.App === 'string' ? entity.App : null, form.value.Name.trim()), entity)
       props.close()
       return
     }
@@ -263,10 +311,19 @@ async function save() {
     }
     props.close()
   } catch (e: unknown) {
-    const err = e as { data?: { Message?: string }; message?: string }
-    saveError.value = err?.data?.Message
-      ?? err?.message
-      ?? t('admin.roleDetails.saveError', {}, 'The role could not be saved.')
+    // HttpClientError carries the backend's `{ Error, Message }` in `body`. A 409 is the
+    // name-uniqueness rule (Role.NameTaken) — the same message the form validates upfront;
+    // it can still happen when the roster was stale or another admin was faster.
+    const err = e as { status?: number; body?: { Error?: string; Message?: string }; message?: string }
+    if (err?.status === 409 || err?.body?.Error === 'Role.NameTaken') {
+      saveError.value = form.value.IsRealmAdmin
+        ? t('admin.roleDetails.validation.realmAdminNameTaken', {}, 'A realm-admin role with this name already exists.')
+        : t('admin.roleDetails.validation.nameTaken', {}, 'A role with this name already exists in this application.')
+      await roleStore.loadAll()
+    } else {
+      saveError.value = err?.body?.Message
+        ?? t('admin.roleDetails.saveError', {}, 'The role could not be saved.')
+    }
   } finally {
     loading.value = false
   }
@@ -315,7 +372,7 @@ async function save() {
                 class="col-full"
                 :label="t('admin.roleDetails.name', {}, 'Name')"
                 required
-                :error="nameError"
+                :error="nameError || nameTakenError"
                 :hint="t('admin.roleDetails.name.hint', {}, 'Display/identification name of the role.')">
                 <CoarTextInput v-model="form.Name" clearable />
               </CoarFormField>

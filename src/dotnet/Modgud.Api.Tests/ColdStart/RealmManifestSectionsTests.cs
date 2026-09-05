@@ -278,7 +278,8 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         var exPos = Assert.Single(exported.Value.Positions);
         Assert.Equal("gate.porter", exPos.AccountName);
         Assert.True(exPos.TerminalPolicy?.Enabled);
-        Assert.Equal(["alice"], exPos.Grants);
+        // Exported references are { Key, Id } — the readable half is the user key.
+        Assert.Equal(["alice"], exPos.Grants!.Select(g => g.Key));
 
         // ── Apply: merge purpose + REPLACE the grant set (alice → bob). ────────────
         var applied = await applier.UpdateRealmAsync(Manifest("Gate v2", "bob"), ct: ct);

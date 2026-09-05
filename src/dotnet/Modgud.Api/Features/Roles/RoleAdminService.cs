@@ -27,6 +27,7 @@ public sealed class RoleAdminService(IDocumentSession session)
         if (built.IsError) return built.Errors;
 
         var role = built.Value;
+        if (await NameTakenAsync(role, excludeId: null, ct)) return NameTaken(role);
         var pinned = await Modgud.Application.Services.PinnedEntityId.ResolveAsync<PermissionRole>(
             session, dto.Id, "Role", r => r.IsDeleted, ct);
         if (pinned.IsError) return pinned.Errors;
@@ -40,7 +41,7 @@ public sealed class RoleAdminService(IDocumentSession session)
             session.Events.Append(role.Id, createdEvent);
         else
             session.Events.StartStream(role.Id, createdEvent);
-        await session.SaveChangesAsync(ct);
+        if (!await TrySaveAsync(ct)) return NameTaken(role);
         return role;
     }
 
@@ -68,6 +69,7 @@ public sealed class RoleAdminService(IDocumentSession session)
         if (built.IsError) return built.Errors;
 
         var role = built.Value;
+        if (await NameTakenAsync(role, excludeId: id, ct)) return NameTaken(role);
         existing.Name = role.Name;
         existing.Description = role.Description;
         existing.AppId = role.AppId;
@@ -78,9 +80,57 @@ public sealed class RoleAdminService(IDocumentSession session)
             new PermissionRoleUpdatedEvent(
                 id, existing.Name, existing.Description,
                 existing.AppId, existing.IsRealmAdmin, existing.PermissionIds));
-        await session.SaveChangesAsync(ct);
+        if (!await TrySaveAsync(ct)) return NameTaken(role);
         return existing;
     }
+
+    /// <summary>
+    /// Commits, translating the unique-index violation (23505) on the role-name indexes
+    /// into <c>false</c>: the pre-check in <see cref="NameTakenAsync"/> can lose a race
+    /// between two concurrent writers (or two instances), and the DB index is the
+    /// authority — the loser gets the same 409 the pre-check would have given.
+    /// </summary>
+    private async Task<bool> TrySaveAsync(CancellationToken ct)
+    {
+        try
+        {
+            await session.SaveChangesAsync(ct);
+            return true;
+        }
+        catch (Exception ex) when (IsUniqueViolation(ex))
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Marten wraps the Postgres 23505 differently per code path
+    /// (<c>DocumentAlreadyExistsException</c>, <c>MartenCommandException</c>, raw) — walk
+    /// the chain rather than pin one shape.</summary>
+    private static bool IsUniqueViolation(Exception? ex)
+    {
+        for (; ex is not null; ex = ex.InnerException)
+            if (ex is Npgsql.PostgresException { SqlState: "23505" }) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// A role's name is its natural key WITHIN its scope — the linked App, or the realm for
+    /// a realm-admin role. Two apps may each own an "Author"; one app may not own two. The
+    /// realm-manifest keys roles as <c>app/name</c> on exactly this invariant.
+    /// </summary>
+    private async Task<bool> NameTakenAsync(PermissionRole role, Guid? excludeId, CancellationToken ct)
+    {
+        var sameName = await session.Query<PermissionRole>()
+            .Where(r => !r.IsDeleted && r.Name == role.Name).ToListAsync(ct);
+        return sameName.Any(r => r.Id != excludeId
+            && r.IsRealmAdmin == role.IsRealmAdmin
+            && r.AppId == role.AppId);
+    }
+
+    private static Error NameTaken(PermissionRole role)
+        => Error.Conflict("Role.NameTaken", role.IsRealmAdmin
+            ? $"A realm-admin role named '{role.Name}' already exists."
+            : $"A role named '{role.Name}' already exists in this app.");
 
     /// <summary>
     /// The single canonical delete path for an existing <see cref="PermissionRole"/>, shared
