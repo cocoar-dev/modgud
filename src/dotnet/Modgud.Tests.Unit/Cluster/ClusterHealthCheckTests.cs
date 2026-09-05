@@ -6,15 +6,15 @@ using Modgud.Infrastructure.Cluster;
 namespace Modgud.Tests.Unit.Cluster;
 
 /// <summary>
-/// Readiness facts of ADR 0010: a draining node and "two nodes without a
-/// backplane" both refuse traffic; one node, or two with a backplane, are ready.
+/// Readiness facts of ADR 0010: a draining node and "two nodes without the
+/// relay" both refuse traffic; one node, or two with the relay, are ready.
 /// </summary>
 public class ClusterHealthCheckTests
 {
     [Fact]
-    public async Task Single_node_without_backplane_is_healthy()
+    public async Task Single_node_without_relay_is_healthy()
     {
-        var sut = new ClusterHealthCheck(Nodes(1), new ShutdownState(), Hosting(ClusterBackplane.None));
+        var sut = new ClusterHealthCheck(Nodes(1), new ShutdownState(), Hosting(relay: false));
 
         var result = await sut.CheckHealthAsync(new HealthCheckContext());
 
@@ -23,20 +23,20 @@ public class ClusterHealthCheckTests
     }
 
     [Fact]
-    public async Task Two_nodes_without_backplane_are_unhealthy_and_name_the_setting()
+    public async Task Two_nodes_without_relay_are_unhealthy_and_name_the_fix()
     {
-        var sut = new ClusterHealthCheck(Nodes(2), new ShutdownState(), Hosting(ClusterBackplane.None));
+        var sut = new ClusterHealthCheck(Nodes(2), new ShutdownState(), Hosting(relay: false));
 
         var result = await sut.CheckHealthAsync(new HealthCheckContext());
 
         Assert.Equal(HealthStatus.Unhealthy, result.Status);
-        Assert.Contains("without a SignalR backplane", result.Description);
+        Assert.Contains("without the cross-node live-update relay", result.Description);
     }
 
     [Fact]
-    public async Task Two_nodes_with_backplane_are_healthy()
+    public async Task Two_nodes_with_relay_are_healthy()
     {
-        var sut = new ClusterHealthCheck(Nodes(2), new ShutdownState(), Hosting(ClusterBackplane.Postgres));
+        var sut = new ClusterHealthCheck(Nodes(2), new ShutdownState(), Hosting(relay: true));
 
         var result = await sut.CheckHealthAsync(new HealthCheckContext());
 
@@ -48,7 +48,7 @@ public class ClusterHealthCheckTests
     {
         var shutdown = new ShutdownState();
         shutdown.MarkStopping();
-        var sut = new ClusterHealthCheck(Nodes(1), shutdown, Hosting(ClusterBackplane.Postgres));
+        var sut = new ClusterHealthCheck(Nodes(1), shutdown, Hosting(relay: true));
 
         var result = await sut.CheckHealthAsync(new HealthCheckContext());
 
@@ -56,10 +56,10 @@ public class ClusterHealthCheckTests
         Assert.Contains("Draining", result.Description);
     }
 
-    private static ClusterHostingOptions Hosting(ClusterBackplane backplane) => new()
+    private static ClusterHostingOptions Hosting(bool relay) => new()
     {
         Coordination = ClusterCoordination.WolverineManaged,
-        Backplane = backplane,
+        CrossNodeRelay = relay,
     };
 
     private static IClusterNodes Nodes(int count) => new FakeNodes(count);

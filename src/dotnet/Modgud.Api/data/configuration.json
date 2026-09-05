@@ -68,12 +68,6 @@
     },
     "Cluster": {
         "NodeName": "",
-        "DrainDelaySeconds": 5,
-        "Backplane": {
-            "Provider": "Postgres",
-            "ConnectionString": "",
-            "ChannelPrefix": "modgud",
-            "Schema": "signalarrr"
-        }
+        "DrainDelaySeconds": 5
     }
 }

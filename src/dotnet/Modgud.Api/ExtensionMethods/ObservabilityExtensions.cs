@@ -140,7 +140,7 @@ internal static class ObservabilityExtensions
         healthBuilder.AddCheck<OpenIddictCertHealthCheck>(
             name: "openiddict-cert",
             tags: new[] { "ready" });
-        // ADR 0010 — draining after SIGTERM, and "two nodes but no backplane".
+        // ADR 0010 — draining after SIGTERM, and "two nodes but no relay".
         healthBuilder.AddCheck<ClusterHealthCheck>(
             name: "cluster",
             tags: new[] { "ready" });

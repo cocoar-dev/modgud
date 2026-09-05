@@ -28,9 +28,9 @@ namespace Modgud.Infrastructure.Observability;
 /// controls here. Entries are rendered+truncated at capture by
 /// <c>ErrorFeedSink</c>.</para>
 ///
-/// <para>Multi-instance note: this buffer is local to the process. Phase 5
-/// deliberately doesn't replicate across instances — see the HA /
-/// Redis-backplane trade-off. Single-instance is the supported shape today.</para>
+/// <para>Multi-instance note: this buffer is local to the process, so with
+/// two instances an admin sees the errors of the node their connection is
+/// pinned to. Persisting it is the open item of ADR 0010, increment 2.</para>
 /// </summary>
 public sealed class RealmErrorBuffer
 {

@@ -20,7 +20,6 @@ using Microsoft.AspNetCore.SignalR;
 using Serilog;
 using Serilog.Sinks.OpenTelemetry;
 using Serilog.Sinks.SystemConsole.Themes;
-using BuildingBlocks.EventDispatcher;
 using Fido2NetLib;
 using Modgud.Infrastructure.Email;
 using Modgud.Api;
@@ -50,7 +49,6 @@ using Modgud.Infrastructure;
 using Modgud.Infrastructure.PositionTerminals;
 using Modgud.Infrastructure.OAuth;
 using Modgud.Infrastructure.OpenIddict;
-using Modgud.Infrastructure.Scheduling;
 using Modgud.Infrastructure.Persistence.DataProtection;
 using Microsoft.AspNetCore.DataProtection;
 using Modgud.Api.Features.Auth;
@@ -136,9 +134,9 @@ try
             rule.For<ObservabilitySettings>().FromFile("data/configuration.local.json").Select("Observability"),
             rule.For<ObservabilitySettings>().FromEnvironment("Observability"),
 
-            // ADR 0010 — two-instance operation: backplane, drain, node name.
+            // ADR 0010 — two-instance operation: drain, node name.
             // Deployment-wide by nature, hence configuration/env and not a
-            // realm setting. Env form: Cluster__Backplane__ConnectionString.
+            // realm setting. Env form: Cluster__DrainDelaySeconds.
             rule.For<ClusterSettings>().FromFile("data/configuration.json").Select("Cluster"),
             rule.For<ClusterSettings>().FromFile("data/configuration.local.json").Select("Cluster"),
             rule.For<ClusterSettings>().FromEnvironment("Cluster"),
@@ -196,18 +194,10 @@ try
         NodeName = string.IsNullOrWhiteSpace(clusterSettings.NodeName)
             ? Environment.MachineName
             : clusterSettings.NodeName.Trim(),
-        // ADR 0010 (D5) — Production always has a backplane: Postgres on the
-        // master DB unless the operator chose Redis. Single-process hosts have none.
-        Backplane = !builder.Environment.IsProduction()
-            ? ClusterBackplane.None
-            : clusterSettings.Backplane.UsesRedis
-                ? ClusterBackplane.Redis
-                : ClusterBackplane.Postgres,
+        // ADR 0010 (D5) — Production always relays data events between nodes
+        // over the master DB. Single-process hosts keep them in-process.
+        CrossNodeRelay = builder.Environment.IsProduction(),
     };
-    if (clusterHosting.Backplane == ClusterBackplane.Redis && string.IsNullOrWhiteSpace(clusterSettings.Backplane.ConnectionString))
-        throw new InvalidOperationException(
-            "Cluster__Backplane__Provider is Redis but Cluster__Backplane__ConnectionString is empty. " +
-            "Set the Valkey/Redis connection string, or leave the provider at Postgres (default, no configuration).");
     var drainDelay = builder.Environment.IsProduction() && clusterSettings.DrainDelaySeconds > 0
         ? TimeSpan.FromSeconds(clusterSettings.DrainDelaySeconds)
         : TimeSpan.Zero;
@@ -311,46 +301,25 @@ try
     // entry to abort; the sweep re-validates idle connections against the DB.
     builder.Services.AddHostedService<Modgud.Api.Realtime.BrowserSessionConnectionSweeper>();
 
-    // ADR 0010 (D5) — SignalR backplane + data-event relay. Postgres (master DB)
-    // by default: LISTEN/NOTIFY, no second stateful service, nothing to configure.
-    // Redis/Valkey when Cluster__Backplane__Provider=Redis. Both are needed
-    // together: the SignalARRR backplane routes targeted sends across nodes,
-    // the relay makes the in-process DataEventDispatcher observable that feeds
-    // every hub stream cluster-wide.
-    var backplaneNodeId = $"{clusterHosting.NodeName}-{Guid.NewGuid():N}";
-    switch (clusterHosting.Backplane)
+    // ADR 0010 (D5) — cross-node live updates. Every hub in Modgud is a server
+    // stream fed by the in-process DataEventDispatcher observable; there are no
+    // targeted sends, so a SignalR backplane would route nothing. The relay
+    // makes that observable cluster-wide over the master DB (LISTEN/NOTIFY):
+    // no second stateful service, nothing to configure.
+    if (clusterHosting.CrossNodeRelay)
     {
-        case ClusterBackplane.Postgres:
-            builder.Services.AddSignalARRRPostgresBackplane(o => o
-                .WithConnectionString(conf.DbSettings.ConnectionString)
-                .WithSchema(clusterSettings.Backplane.Schema)
-                .WithNodeId(backplaneNodeId));
-            builder.Services.AddSingleton(sp => new PostgresDataEventRelay(
-                conf.DbSettings.ConnectionString,
-                backplaneNodeId,
-                sp.GetRequiredService<DataEventDispatcher>,
-                sp.GetRequiredService<ILogger<PostgresDataEventRelay>>()));
-            builder.Services.AddSingleton<IDataEventRelay>(sp => sp.GetRequiredService<PostgresDataEventRelay>());
-            builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PostgresDataEventRelay>());
-            break;
-
-        case ClusterBackplane.Redis:
-            builder.Services.AddSignalARRRRedisBackplane(o => o
-                .WithConnectionString(clusterSettings.Backplane.ConnectionString)
-                .WithChannelPrefix(clusterSettings.Backplane.ChannelPrefix)
-                .WithNodeId(backplaneNodeId));
-            builder.Services.AddSingleton(sp => new RedisDataEventRelay(
-                clusterSettings,
-                backplaneNodeId,
-                sp,
-                sp.GetRequiredService<ILogger<RedisDataEventRelay>>()));
-            builder.Services.AddSingleton<IDataEventRelay>(sp => sp.GetRequiredService<RedisDataEventRelay>());
-            builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<RedisDataEventRelay>());
-            break;
-
-        default:
-            builder.Services.AddSingleton<IDataEventRelay>(NoDataEventRelay.Instance);
-            break;
+        var relayNodeId = $"{clusterHosting.NodeName}-{Guid.NewGuid():N}";
+        builder.Services.AddSingleton(sp => new PostgresDataEventRelay(
+            conf.DbSettings.ConnectionString,
+            relayNodeId,
+            sp.GetRequiredService<DataEventDispatcher>,
+            sp.GetRequiredService<ILogger<PostgresDataEventRelay>>()));
+        builder.Services.AddSingleton<IDataEventRelay>(sp => sp.GetRequiredService<PostgresDataEventRelay>());
+        builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PostgresDataEventRelay>());
+    }
+    else
+    {
+        builder.Services.AddSingleton<IDataEventRelay>(NoDataEventRelay.Instance);
     }
 
     // ADR 0010 (D7) — graceful drain: readiness 503 first, then hold the

@@ -14,7 +14,7 @@
     "cleanup:check": "pnpm dlx knip"
   },
   "dependencies": {
-    "@cocoar/signalarrr": "5.1.0-beta.1",
+    "@cocoar/signalarrr": "5.0.0",
     "@cocoar/vue-data-grid": "3.0.0",
     "@cocoar/vue-fragment-parser": "3.0.0",
     "@cocoar/vue-localization": "3.0.0",

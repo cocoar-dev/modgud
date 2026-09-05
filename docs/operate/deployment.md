@@ -47,7 +47,7 @@ settings, the OpenIddict issuer, the magic-link rate limit, the
 | `AppSettings` | `AppSettings:` — `AuthenticationMinimumLevel`, `MagicLinkSelfService`, `TwoFactorGracePeriodDays` |
 | `OpenIddictSettings` | `OpenIddict:` — `*LifetimeMinutes`, `DevelopmentMode`, `SigningCertificatePath` |
 | `ObservabilitySettings` | `Observability:` — `Prometheus.Enabled`, `Prometheus.BearerToken`, `Otlp.*`, `ErrorFeed.*` |
-| `ClusterSettings` | `Cluster:` — `Backplane.ConnectionString`, `Backplane.ChannelPrefix`, `DrainDelaySeconds`, `NodeName` (see [Running two instances](#running-two-instances)) |
+| `ClusterSettings` | `Cluster:` — `DrainDelaySeconds`, `NodeName` (see [Running two instances](#running-two-instances)) |
 
 The token issuer is **not** a global setting — there is no `Issuer` or `PublicUrl` key. Modgud is multi-tenant: each realm carries its own `PrimaryDomain` (managed in the admin UI or the Recovery CLI), and the issuer is derived per request from that domain / the request host on every path — the discovery document, the token `iss` claim, and token validation. What you must get right for a correct issuer is therefore (1) each realm's domain and (2) the reverse proxy forwarding the real public host (see `ProxyAllowedNetworks` below), **not** any issuer config value.
 
@@ -472,25 +472,16 @@ There is no "cluster mode" to switch on. A Production container always runs the 
 | Outbox, scheduled messages, event forwarding | Wolverine in `Balanced` mode — leader election over its node table in the master DB, work reassigned when a node's heartbeat goes stale |
 | Async projections and event subscriptions (audit view, application change feed, back-channel logout) | Wolverine-managed distribution: every realm database's projections run on exactly one live node; a dead node's databases are picked up by a survivor |
 | Scheduled jobs | Quartz.NET clustered on a Postgres job store (schema `quartz` in the master DB): a trigger fires on one node, `RequestRecovery` jobs interrupted by a crash re-run on a survivor |
-| Live updates over SignalR | The SignalARRR backplane plus Modgud's data-event relay, both on the master database (`LISTEN`/`NOTIFY`) by default — no second stateful service; Valkey/Redis optional for high realtime volume |
+| Live updates over SignalR | Modgud's live-update relay on the master database (`LISTEN`/`NOTIFY`): an event raised on one node is replayed into the hub streams of the other, so every browser sees it exactly once, from the node it is pinned to. No SignalR backplane — every hub is a server stream, there are no targeted sends to route |
 | Login providers (OIDC/SAML), passkey ceremonies, sessions, rate limits, DataProtection keys | Resolved from the database by whichever node serves the request — nothing lives only in one process |
 
 How many nodes are alive is read from Wolverine's node table at runtime; nothing is configured twice.
 
 ### What you need
 
-1. **Nothing beyond PostgreSQL.** In Production every node runs the SignalR backplane and the cross-node live-update relay on the master database: one long-lived `LISTEN` connection per node, a `signalarrr` schema and a `modgud_cluster` schema created on first start (the database role needs `CREATE` once), `NOTIFY` for delivery and an unlogged table for pushes above 8 kB. Both are transient by contract and sweep themselves. Two things to know: the connection string must point at the **primary** (`NOTIFY` is not replicated), and the listener needs a **direct or session-pooled** connection — a transaction-pooling PgBouncer cannot hold a `LISTEN`; startup fails with a clear message if it cannot subscribe.
+1. **Nothing beyond PostgreSQL.** In Production every node runs the cross-node live-update relay on the master database: one long-lived `LISTEN` connection per node, a `modgud_cluster` schema created on first start (the database role needs `CREATE` once), `NOTIFY` for delivery and an unlogged table for pushes above 8 kB. Delivery is transient by contract and the table sweeps itself. Two things to know: the connection string must point at the **primary** (`NOTIFY` is not replicated), and the listener needs a **direct or session-pooled** connection — a transaction-pooling PgBouncer cannot hold a `LISTEN`. The relay's ceiling is in the low thousands of events per second, two orders of magnitude above what an identity provider produces.
 
-   Deployments with a high realtime volume, or Redis already in the stack, can switch the transport:
-
-   ```yaml
-   Cluster__Backplane__Provider: "Redis"
-   Cluster__Backplane__ConnectionString: "valkey:6379,abortConnect=false"
-   ```
-
-   The Postgres transport's ceiling is in the low thousands of cross-node messages per second, two orders of magnitude above what an identity provider produces; Redis is sub-millisecond and effectively unbounded. Switching is a setting, nothing else changes.
-
-2. **Sticky sessions at the reverse proxy.** SignalR requires that every request of one connection reaches the same process; the backplane routes messages between nodes, it does not replace affinity. Cookie affinity is the right kind: it survives NAT and keeps a browser's connection and its WebAuthn ceremony on one node.
+2. **Sticky sessions at the reverse proxy.** SignalR requires that every request of one connection reaches the same process; the relay carries events between nodes, it does not replace affinity. Cookie affinity is the right kind: it survives NAT and keeps a browser's connection and its WebAuthn ceremony on one node.
 
 3. **Active health checks on `/health/ready`** so the proxy removes a draining or failed node within seconds instead of after a client saw an error.
 
@@ -502,10 +493,6 @@ How many nodes are alive is read from Wolverine's node table at runtime; nothing
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `Cluster__Backplane__Provider` | `Postgres` | `Postgres`: backplane and relay on the master database, no configuration. `Redis`: Valkey/Redis instead. |
-| `Cluster__Backplane__ConnectionString` | *(empty)* | StackExchange.Redis connection string; only with `Provider=Redis`. |
-| `Cluster__Backplane__ChannelPrefix` | `modgud` | Redis key/channel prefix; change it when several deployments share one Valkey. |
-| `Cluster__Backplane__Schema` | `signalarrr` | Postgres schema of the SignalARRR backplane tables in the master database. |
 | `Cluster__DrainDelaySeconds` | `5` | How long the node keeps serving after SIGTERM with readiness already at 503. `0` disables the drain. |
 | `Cluster__NodeName` | container hostname | Name of this node in logs and health output. |
 
@@ -606,9 +593,9 @@ Two things are deliberately process-local and bounded rather than shared:
 Modgud pushes live updates over `/signalr/ui` (typed RPC via
 SignalARRR). Reverse proxies need upgrade headers (see above). The
 connection is auth-gated — the user must be logged in before it's
-established. With two instances the SignalARRR backplane (on the
-master database by default) carries pushes between nodes and the proxy
-keeps each connection on one node — see
+established. With two instances Modgud's live-update relay on the
+master database carries events between nodes and the proxy keeps each
+connection on one node — see
 [Running two instances](#running-two-instances).
 
 ## Security headers

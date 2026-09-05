@@ -7,21 +7,23 @@ namespace Modgud.Api.Cluster;
 
 /// <summary>
 /// Cross-node transport for <see cref="DataEvent"/>s over the master database
-/// (ADR 0010, D5) — the default in Production, next to the SignalARRR Postgres
-/// backplane, so a two-instance deployment needs no second stateful service.
+/// (ADR 0010, D5) — the one thing a second Modgud instance needs beyond
+/// PostgreSQL, so a two-instance deployment has no second stateful service.
 /// <para>
-/// Same shape as the backplane's own transport: <c>NOTIFY</c> on one channel,
-/// one long-lived <c>LISTEN</c> connection per node with keep-alive and
-/// reconnect, envelopes above the notification limit written to an unlogged
-/// table in the same transaction as the <c>NOTIFY</c>, which then carries only
-/// the row id. Delivery is transient by contract (a node whose listener is
-/// reconnecting misses what was published in between; the grid catches up on
-/// its next fetch), so the table is unlogged and swept after two minutes.
+/// <c>NOTIFY</c> on one channel, one long-lived <c>LISTEN</c> connection per
+/// node with keep-alive and reconnect, envelopes above the notification limit
+/// written to an unlogged table in the same transaction as the <c>NOTIFY</c>,
+/// which then carries only the row id. Delivery is transient by contract (a
+/// node whose listener is reconnecting misses what was published in between;
+/// the grid catches up on its next fetch), so the table is unlogged and swept
+/// after two minutes.
 /// </para>
 /// <para>
-/// Why not the SignalARRR backplane itself: its inter-node envelope is internal
-/// on purpose, and the hub streams are fed by the in-process
-/// <see cref="DataEventDispatcher"/> observable, not by targeted sends.
+/// Why not a SignalR backplane: every hub in Modgud is a server stream fed by
+/// the in-process <see cref="DataEventDispatcher"/> observable; there are no
+/// targeted sends, and a backplane only routes those. Making the observable
+/// cluster-wide is the whole job, and each browser still receives every event
+/// exactly once, from the node its connection is pinned to.
 /// </para>
 /// </summary>
 // CA2100: every statement below is a compile-time constant (schema and channel

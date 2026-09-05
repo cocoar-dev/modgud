@@ -12,11 +12,7 @@
     <PackageVersion Include="Cocoar.JsEval.TsDefinition" Version="4.1.0" />
     <PackageVersion Include="Cocoar.JsEval.TypeScript" Version="4.1.0" />
     <PackageVersion Include="Cocoar.Reflectensions" Version="1.0.2" />
-    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="5.1.0-beta.1" />
-    <!-- ADR 0010 — backplanes for two-instance operation: Postgres (master DB, default)
-         and Redis/Valkey (Cluster__Backplane__Provider=Redis). -->
-    <PackageVersion Include="Cocoar.SignalARRR.Server.Backplane.Postgres" Version="5.1.0-beta.1" />
-    <PackageVersion Include="Cocoar.SignalARRR.Server.Backplane.Redis" Version="5.1.0-beta.1" />
+    <PackageVersion Include="Cocoar.SignalARRR.Server" Version="5.0.0" />
     <!-- Microsoft packages -->
     <PackageVersion Include="Fido2.AspNet" Version="4.0.1" />
     <PackageVersion Include="MailKit" Version="4.17.0" />

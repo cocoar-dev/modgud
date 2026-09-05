@@ -80,6 +80,6 @@ public class DataEventDispatcherRelayTests
     private sealed class FailingRelay : IDataEventRelay
     {
         public ValueTask PublishAsync(DataEvent @event, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("valkey down");
+            => throw new InvalidOperationException("relay down");
     }
 }

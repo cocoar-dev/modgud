@@ -6,8 +6,8 @@ using Modgud.Domain.Common;
 namespace Modgud.Api.Cluster;
 
 /// <summary>
-/// Wire form of a <see cref="DataEvent"/> between nodes (ADR 0010, D5), shared by
-/// every relay transport. Payload objects are the projection documents and DTOs
+/// Wire form of a <see cref="DataEvent"/> between nodes (ADR 0010, D5), owned by
+/// Modgud so that a peer on the previous release can still read it. Payload objects are the projection documents and DTOs
 /// the hubs map (for example <c>UserView</c> → DTO), so they travel with their
 /// CLR type name and are rehydrated into the same types on the receiving node.
 /// Only types from this deployment's own assemblies are ever resolved; anything
