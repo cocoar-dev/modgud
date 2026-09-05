@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Modgud.Api;
 using Modgud.Api.Cluster;
 using Modgud.Api.HealthChecks;
 using Modgud.Infrastructure.Cluster;
@@ -15,7 +14,7 @@ public class ClusterHealthCheckTests
     [Fact]
     public async Task Single_node_without_backplane_is_healthy()
     {
-        var sut = new ClusterHealthCheck(Nodes(1), new ShutdownState(), Settings(backplane: false));
+        var sut = new ClusterHealthCheck(Nodes(1), new ShutdownState(), Hosting(ClusterBackplane.None));
 
         var result = await sut.CheckHealthAsync(new HealthCheckContext());
 
@@ -26,18 +25,18 @@ public class ClusterHealthCheckTests
     [Fact]
     public async Task Two_nodes_without_backplane_are_unhealthy_and_name_the_setting()
     {
-        var sut = new ClusterHealthCheck(Nodes(2), new ShutdownState(), Settings(backplane: false));
+        var sut = new ClusterHealthCheck(Nodes(2), new ShutdownState(), Hosting(ClusterBackplane.None));
 
         var result = await sut.CheckHealthAsync(new HealthCheckContext());
 
         Assert.Equal(HealthStatus.Unhealthy, result.Status);
-        Assert.Contains("Cluster__Backplane__ConnectionString", result.Description);
+        Assert.Contains("without a SignalR backplane", result.Description);
     }
 
     [Fact]
     public async Task Two_nodes_with_backplane_are_healthy()
     {
-        var sut = new ClusterHealthCheck(Nodes(2), new ShutdownState(), Settings(backplane: true));
+        var sut = new ClusterHealthCheck(Nodes(2), new ShutdownState(), Hosting(ClusterBackplane.Postgres));
 
         var result = await sut.CheckHealthAsync(new HealthCheckContext());
 
@@ -49,7 +48,7 @@ public class ClusterHealthCheckTests
     {
         var shutdown = new ShutdownState();
         shutdown.MarkStopping();
-        var sut = new ClusterHealthCheck(Nodes(1), shutdown, Settings(backplane: true));
+        var sut = new ClusterHealthCheck(Nodes(1), shutdown, Hosting(ClusterBackplane.Postgres));
 
         var result = await sut.CheckHealthAsync(new HealthCheckContext());
 
@@ -57,9 +56,10 @@ public class ClusterHealthCheckTests
         Assert.Contains("Draining", result.Description);
     }
 
-    private static ClusterSettings Settings(bool backplane) => new()
+    private static ClusterHostingOptions Hosting(ClusterBackplane backplane) => new()
     {
-        Backplane = { ConnectionString = backplane ? "valkey:6379" : "" },
+        Coordination = ClusterCoordination.WolverineManaged,
+        Backplane = backplane,
     };
 
     private static IClusterNodes Nodes(int count) => new FakeNodes(count);

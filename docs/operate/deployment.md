@@ -443,7 +443,7 @@ curl http://localhost:8081/health/ready   # readiness — DB connection + OpenId
 ```
 
 - **`/health/live`** runs no dependency checks; it returns `200` as long as the process is up. Use it as the liveness probe.
-- **`/health/ready`** returns `200` only when the master DB connection and the OpenIddict signing/encryption certificate are both ready, the node is **not draining** after SIGTERM, and — with more than one node alive — a SignalR backplane is configured. Use it as the readiness probe (gate traffic on it). The JSON body names the failing check (`postgres`, `marten-schema`, `openiddict-cert`, `cluster`).
+- **`/health/ready`** returns `200` only when the master DB connection and the OpenIddict signing/encryption certificate are both ready and the node is **not draining** after SIGTERM. Use it as the readiness probe (gate traffic on it). The JSON body names the failing check (`postgres`, `marten-schema`, `openiddict-cert`, `cluster`).
 
 The image also declares a Docker `HEALTHCHECK` on `/health/ready` (every 15 s, 120 s start period), so `docker ps` shows `healthy` / `unhealthy` and other services can wait with `depends_on: condition: service_healthy`. If you change `AppUrl`, point the probe at the new address with `HEALTHCHECK_URL`.
 
@@ -472,20 +472,23 @@ There is no "cluster mode" to switch on. A Production container always runs the 
 | Outbox, scheduled messages, event forwarding | Wolverine in `Balanced` mode — leader election over its node table in the master DB, work reassigned when a node's heartbeat goes stale |
 | Async projections and event subscriptions (audit view, application change feed, back-channel logout) | Wolverine-managed distribution: every realm database's projections run on exactly one live node; a dead node's databases are picked up by a survivor |
 | Scheduled jobs | Quartz.NET clustered on a Postgres job store (schema `quartz` in the master DB): a trigger fires on one node, `RequestRecovery` jobs interrupted by a crash re-run on a survivor |
-| Live updates over SignalR | The SignalARRR backplane on Valkey/Redis, **required as soon as a second node is alive** (see below) |
+| Live updates over SignalR | The SignalARRR backplane plus Modgud's data-event relay, both on the master database (`LISTEN`/`NOTIFY`) by default — no second stateful service; Valkey/Redis optional for high realtime volume |
 | Login providers (OIDC/SAML), passkey ceremonies, sessions, rate limits, DataProtection keys | Resolved from the database by whichever node serves the request — nothing lives only in one process |
 
 How many nodes are alive is read from Wolverine's node table at runtime; nothing is configured twice.
 
 ### What you need
 
-1. **A Valkey (or Redis) instance** reachable from every Modgud container. It carries the SignalR backplane and the cross-node live-update relay; both are transient by contract, so it needs no persistence, no backup and no more than a few megabytes. Set the same connection string on every node:
+1. **Nothing beyond PostgreSQL.** In Production every node runs the SignalR backplane and the cross-node live-update relay on the master database: one long-lived `LISTEN` connection per node, a `signalarrr` schema and a `modgud_cluster` schema created on first start (the database role needs `CREATE` once), `NOTIFY` for delivery and an unlogged table for pushes above 8 kB. Both are transient by contract and sweep themselves. Two things to know: the connection string must point at the **primary** (`NOTIFY` is not replicated), and the listener needs a **direct or session-pooled** connection — a transaction-pooling PgBouncer cannot hold a `LISTEN`; startup fails with a clear message if it cannot subscribe.
+
+   Deployments with a high realtime volume, or Redis already in the stack, can switch the transport:
 
    ```yaml
+   Cluster__Backplane__Provider: "Redis"
    Cluster__Backplane__ConnectionString: "valkey:6379,abortConnect=false"
    ```
 
-   Without it, one instance runs exactly as before. As soon as a second instance registers, **both report `/health/ready` = 503** with the message `2 nodes are alive but no SignalR backplane is configured` — a push raised by a request on one node would never reach a browser connected to the other, and that is a functional failure, not a cosmetic one.
+   The Postgres transport's ceiling is in the low thousands of cross-node messages per second, two orders of magnitude above what an identity provider produces; Redis is sub-millisecond and effectively unbounded. Switching is a setting, nothing else changes.
 
 2. **Sticky sessions at the reverse proxy.** SignalR requires that every request of one connection reaches the same process; the backplane routes messages between nodes, it does not replace affinity. Cookie affinity is the right kind: it survives NAT and keeps a browser's connection and its WebAuthn ceremony on one node.
 
@@ -499,8 +502,10 @@ How many nodes are alive is read from Wolverine's node table at runtime; nothing
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `Cluster__Backplane__ConnectionString` | *(empty)* | StackExchange.Redis connection string of the Valkey/Redis backplane. Empty = single-node SignalR. |
-| `Cluster__Backplane__ChannelPrefix` | `modgud` | Key/channel prefix; change it when several deployments share one Valkey. |
+| `Cluster__Backplane__Provider` | `Postgres` | `Postgres`: backplane and relay on the master database, no configuration. `Redis`: Valkey/Redis instead. |
+| `Cluster__Backplane__ConnectionString` | *(empty)* | StackExchange.Redis connection string; only with `Provider=Redis`. |
+| `Cluster__Backplane__ChannelPrefix` | `modgud` | Redis key/channel prefix; change it when several deployments share one Valkey. |
+| `Cluster__Backplane__Schema` | `signalarrr` | Postgres schema of the SignalARRR backplane tables in the master database. |
 | `Cluster__DrainDelaySeconds` | `5` | How long the node keeps serving after SIGTERM with readiness already at 503. `0` disables the drain. |
 | `Cluster__NodeName` | container hostname | Name of this node in logs and health output. |
 
@@ -533,27 +538,21 @@ Nginx open source has no active health checks; keep the passive `max_fails`/`fai
 
 ### Docker Compose
 
-Two named services sharing one environment, plus Valkey:
+Two named services sharing one environment:
 
 ```yaml
 services:
-  valkey:
-    image: valkey/valkey:8-alpine
-    command: ["valkey-server", "--save", "", "--appendonly", "no"]   # transient by design
-
   modgud-a: &modgud
     image: ghcr.io/cocoar-dev/modgud:1.0.0
     stop_grace_period: 45s
     environment: &modgud-env
       DbSettings__ConnectionString: "Host=postgres;Database=modgud;Username=postgres;Password=postgres"
-      Cluster__Backplane__ConnectionString: "valkey:6379,abortConnect=false"
       ProxyAllowedNetworks: "10.0.0.0/24"
       Observability__Prometheus__BearerToken: "${PROMETHEUS_TOKEN}"
     volumes:
       - cocoar-keys:/app/data/keys      # both nodes must see the same OpenIddict certificates
     depends_on:
       postgres: { condition: service_healthy }
-      valkey: { condition: service_started }
 
   modgud-b:
     <<: *modgud
@@ -607,9 +606,10 @@ Two things are deliberately process-local and bounded rather than shared:
 Modgud pushes live updates over `/signalr/ui` (typed RPC via
 SignalARRR). Reverse proxies need upgrade headers (see above). The
 connection is auth-gated — the user must be logged in before it's
-established. With two instances the SignalARRR backplane on Valkey
-carries pushes between nodes and the proxy keeps each connection on
-one node — see [Running two instances](#running-two-instances).
+established. With two instances the SignalARRR backplane (on the
+master database by default) carries pushes between nodes and the proxy
+keeps each connection on one node — see
+[Running two instances](#running-two-instances).
 
 ## Security headers
 

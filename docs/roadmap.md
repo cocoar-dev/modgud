@@ -138,7 +138,7 @@ updates when something ships.
 
 ### High
 
-- **Multi-instance operation, next steps** — two instances against one PostgreSQL are supported (Wolverine-coordinated projections and outbox, clustered Quartz, SignalARRR backplane on Valkey; see [Running two instances](./operate/deployment#running-two-instances)). Still open: persisting the live observability feeds so the admin view is not per node, a CI job that runs the previous release next to the current build to enforce the "rolling update: safe" rule automatically, and a Postgres backplane in SignalARRR so the platform stays Postgres-only.
+- **Multi-instance operation, next steps** — two instances against one PostgreSQL are supported with no second stateful service (Wolverine-coordinated projections and outbox, clustered Quartz, SignalARRR backplane and live-update relay on the master database; see [Running two instances](./operate/deployment#running-two-instances)). Still open: persisting the live observability feeds so the admin view is not per node, and a CI job that runs the previous release next to the current build to enforce the "rolling update: safe" rule automatically.
 
 ### Medium
 

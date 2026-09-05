@@ -3,13 +3,14 @@ namespace Modgud.Api;
 /// <summary>
 /// Deployment-wide settings for running more than one Modgud instance against
 /// one database (ADR 0010). Bound from configuration JSON (section "Cluster")
-/// with env overrides: <c>Cluster__Backplane__ConnectionString</c>,
-/// <c>Cluster__DrainDelaySeconds</c>, <c>Cluster__NodeName</c>.
+/// with env overrides: <c>Cluster__Backplane__Provider</c>,
+/// <c>Cluster__Backplane__ConnectionString</c>, <c>Cluster__DrainDelaySeconds</c>,
+/// <c>Cluster__NodeName</c>.
 /// <para>
 /// There is deliberately no instance count here. Production always runs the
-/// cluster-capable code path; how many nodes are alive is read from Wolverine's
-/// node table at runtime, and a second node without a backplane is reported by
-/// the readiness probe instead of being guessed from configuration.
+/// cluster-capable code path, with the SignalR backplane and the cross-node
+/// event relay on the master database by default; how many nodes are alive is
+/// read from Wolverine's node table at runtime.
 /// </para>
 /// </summary>
 public class ClusterSettings
@@ -33,18 +34,32 @@ public class ClusterSettings
     public class BackplaneSettings
     {
         /// <summary>
-        /// StackExchange.Redis connection string of the Valkey/Redis instance
-        /// the SignalARRR backplane runs on, e.g. <c>valkey:6379,abortConnect=false</c>.
-        /// Empty = no backplane = single-node SignalR (fine for one instance;
-        /// readiness fails as soon as a second node shows up).
+        /// <c>Postgres</c> (default): the SignalARRR backplane and the data-event
+        /// relay run on the master database — nothing to configure, no second
+        /// stateful service. <c>Redis</c>: a Valkey/Redis instance instead, for
+        /// deployments with a high realtime volume or Redis already in the stack;
+        /// needs <see cref="ConnectionString"/>.
+        /// </summary>
+        public string Provider { get; set; } = "Postgres";
+
+        /// <summary>
+        /// StackExchange.Redis connection string, only with
+        /// <see cref="Provider"/> = <c>Redis</c>, e.g. <c>valkey:6379,abortConnect=false</c>.
         /// </summary>
         public string ConnectionString { get; set; } = "";
 
         /// <summary>
-        /// Channel/key prefix so several deployments can share one Valkey.
+        /// Redis channel/key prefix so several deployments can share one Valkey.
         /// </summary>
         public string ChannelPrefix { get; set; } = "modgud";
 
-        public bool IsConfigured => !string.IsNullOrWhiteSpace(ConnectionString);
+        /// <summary>
+        /// Postgres schema of the SignalARRR backplane tables and notification
+        /// channels in the master database. Change it only when two deployments
+        /// share one master database, which they should not.
+        /// </summary>
+        public string Schema { get; set; } = "signalarrr";
+
+        public bool UsesRedis => string.Equals(Provider, "Redis", StringComparison.OrdinalIgnoreCase);
     }
 }

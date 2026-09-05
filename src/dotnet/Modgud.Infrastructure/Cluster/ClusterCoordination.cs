@@ -48,5 +48,24 @@ public sealed record ClusterHostingOptions
     /// </summary>
     public string NodeName { get; init; } = Environment.MachineName;
 
+    /// <summary>
+    /// The SignalR backplane and data-event relay transport this host runs with.
+    /// Decided by the host from environment and settings; read by readiness.
+    /// </summary>
+    public ClusterBackplane Backplane { get; init; } = ClusterBackplane.None;
+
     public bool IsWolverineManaged => Coordination == ClusterCoordination.WolverineManaged;
+}
+
+/// <summary>Transport for cross-node SignalR routing and data-event relay (ADR 0010, D5).</summary>
+public enum ClusterBackplane
+{
+    /// <summary>Single-process host; pushes stay in this process.</summary>
+    None,
+
+    /// <summary>LISTEN/NOTIFY on the master database — the Production default.</summary>
+    Postgres,
+
+    /// <summary>Valkey/Redis, for high realtime volume or when Redis is in the stack anyway.</summary>
+    Redis,
 }
