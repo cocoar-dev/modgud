@@ -106,10 +106,22 @@ public sealed class DataEventEnvelope
         return dataEvent;
     }
 
+    /// <summary>
+    /// Plain values the dispatchers send as payload next to documents: the id of a
+    /// deleted entity (<c>string</c>, <c>Guid</c>), counters, flags. Closed list —
+    /// a BCL type outside it is refused like any foreign type.
+    /// </summary>
+    private static readonly HashSet<Type> TrustedValueTypes =
+    [
+        typeof(string), typeof(Guid), typeof(bool), typeof(int), typeof(long),
+        typeof(decimal), typeof(double), typeof(DateTime), typeof(DateTimeOffset),
+    ];
+
     private static Type? ResolveTrustedType(string assemblyQualifiedName)
     {
         var type = Type.GetType(assemblyQualifiedName, throwOnError: false);
         if (type is null) return null;
+        if (TrustedValueTypes.Contains(type)) return type;
         var assembly = type.Assembly.GetName().Name ?? "";
         return TrustedAssemblyPrefixes.Any(prefix => assembly.StartsWith(prefix, StringComparison.Ordinal))
             ? type

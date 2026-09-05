@@ -34,6 +34,19 @@ public class DataEventEnvelopeTests
     }
 
     [Fact]
+    public void Deleted_event_with_a_plain_id_payload_round_trips()
+    {
+        // Every DispatchDeletedEvent sends the entity id as a string, never a document.
+        var id = Guid.NewGuid().ToString();
+        var wire = JsonSerializer.Serialize(DataEventEnvelope.Encode(DataEvent.Deleted("App", id).WithTenant("acme"), "node-b"), DataEventEnvelope.WireJson);
+        var decoded = DataEventEnvelope.Decode(JsonSerializer.Deserialize<DataEventEnvelope>(wire, DataEventEnvelope.WireJson)!, "node-a");
+
+        Assert.NotNull(decoded);
+        Assert.Equal(DataEventAction.Deleted, decoded!.Action);
+        Assert.Equal(id, Assert.IsType<string>(Assert.Single(decoded.Payload)));
+    }
+
+    [Fact]
     public void Own_envelopes_decode_to_null()
     {
         var envelope = DataEventEnvelope.Encode(DataEvent.Deleted("User", "1"), "node-a");
