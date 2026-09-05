@@ -24,6 +24,9 @@ namespace Modgud.Api.Cluster;
 /// <see cref="DataEventDispatcher"/> observable, not by targeted sends.
 /// </para>
 /// </summary>
+// CA2100: every statement below is a compile-time constant (schema and channel
+// names are const); values travel as parameters, never as concatenated input.
+#pragma warning disable CA2100
 public sealed class PostgresDataEventRelay : IDataEventRelay, IHostedService, IAsyncDisposable
 {
     public const string Schema = "modgud_cluster";
@@ -82,8 +85,21 @@ public sealed class PostgresDataEventRelay : IDataEventRelay, IHostedService, IA
         await using (var connection = new NpgsqlConnection(_connectionString))
         {
             await connection.OpenAsync(cancellationToken);
-            await using var command = new NpgsqlCommand(GetCreateScript(), connection);
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            // Two nodes booting together must not both create the schema:
+            // CREATE ... IF NOT EXISTS is not atomic across sessions and the
+            // loser fails on a catalog uniqueness violation. Serialise on a
+            // transaction-scoped advisory lock, released with the commit.
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await using (var lockCommand = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext($1))", connection, transaction))
+            {
+                lockCommand.Parameters.Add(new NpgsqlParameter { Value = $"{Schema}.data_events" });
+                await lockCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+            await using (var command = new NpgsqlCommand(GetCreateScript(), connection, transaction))
+            {
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+            await transaction.CommitAsync(cancellationToken);
         }
 
         _cts = new CancellationTokenSource();
@@ -242,3 +258,4 @@ public sealed class PostgresDataEventRelay : IDataEventRelay, IHostedService, IA
         await ValueTask.CompletedTask;
     }
 }
+#pragma warning restore CA2100

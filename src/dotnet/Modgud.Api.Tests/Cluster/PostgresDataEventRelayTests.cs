@@ -1,4 +1,5 @@
 using BuildingBlocks.EventDispatcher;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Modgud.Api.Cluster;
 using Modgud.Api.Tests.Infrastructure;
