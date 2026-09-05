@@ -104,3 +104,8 @@ pnpm dev
 
 - The pre-cutover legacy snapshot is at `git checkout legacy-final` for
   any historical lookup ("how did the old IdP do X?").
+- SignalARRR ships its documentation as an agent skill inside the server
+  package. Install it once per clone (developer-local, gitignored):
+  `dotnet tool install --global agentskills-cli` then
+  `agentskills-cli add Cocoar.SignalARRR.Server` from the repo root. It
+  lands in `.agents/skills/signalarrr` with a symlink in `.claude/skills`.

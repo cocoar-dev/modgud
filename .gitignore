@@ -418,6 +418,10 @@ src/dotnet/Modgud.Api/logs/
 src/dotnet/Modgud.Api/wwwroot/
 .claude/
 
+# Agent skills installed on demand from packages (agentskills-cli), developer-local like .claude/
+.agents/
+skills-lock.json
+
 # Playwright test artifacts
 src/frontend-vue/test-results/
 src/frontend-vue/playwright-report/
