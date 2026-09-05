@@ -25,7 +25,7 @@ public static class RealmManifestSchema
             // A non-nullable reference-typed property is a genuine "required" field.
             TreatNullObliviousAsNonNullable = true,
             TransformSchemaNode = (context, schema) =>
-                InjectDescriptions(context, MapOptional(context, schema)),
+                InjectDescriptions(context, MapReference(context, MapOptional(context, schema))),
         };
 
         var schema = serializerOptions.GetJsonSchemaAsNode(typeof(RealmManifest), exporterOptions);
@@ -65,6 +65,38 @@ public static class RealmManifestSchema
                 ["items"] = new JsonObject { ["type"] = "string" },
             };
         return schema;
+    }
+
+    /// <summary>
+    /// <see cref="ManifestRef"/> has two wire shapes behind a custom converter the exporter
+    /// can't see into: a bare string (always a KEY) or <c>{ "Key", "Id" }</c> (the Id wins,
+    /// the Key is the readable fallback). Spell both out.
+    /// </summary>
+    private static JsonNode MapReference(JsonSchemaExporterContext context, JsonNode schema)
+    {
+        if (context.TypeInfo.Type != typeof(ManifestRef)) return schema;
+        return new JsonObject
+        {
+            ["oneOf"] = new JsonArray(
+                new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "A key (role: '<app slug>/<name>' or its explicit Key; user: username or email). A bare string is never an id.",
+                },
+                new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["Key"] = new JsonObject { ["type"] = "string", ["description"] = "Readable key - the fallback when no entity carries the Id." },
+                        ["Id"] = new JsonObject { ["type"] = "string", ["description"] = "Entity id (ShortGuid or Guid) - wins when it resolves; rename-proof." },
+                    },
+                    ["anyOf"] = new JsonArray(
+                        new JsonObject { ["required"] = new JsonArray("Key") },
+                        new JsonObject { ["required"] = new JsonArray("Id") }),
+                    ["additionalProperties"] = false,
+                }),
+        };
     }
 
     /// <summary>Copies the <see cref="DescriptionAttribute"/> off the property (preferred) or

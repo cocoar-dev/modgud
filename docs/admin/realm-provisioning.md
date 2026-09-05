@@ -82,17 +82,21 @@ and author manifests directly.
 ## The manifest at a glance
 
 A manifest is one object with a required `Realm` plus optional entity lists.
-**Cross-references use stable keys, never server-generated ids:**
+**Cross-references use stable keys; group and position references may add the entity id:**
 
 - APIs / scopes / clients / roles reference an app by its **`Slug`**.
 - Permissions are addressed as **`resource:action`** (e.g. `invoice:read`).
 - Roles are keyed **`<app slug>/<name>`** (a realm-admin role by its bare `Name`):
-  role names are unique *per app*, so two apps may each have an `Author`. Groups list
-  **`Members`** (user keys) and **`Roles`** (role keys) — the qualified key, an explicit
-  `Key`, or a bare name as long as exactly one role carries it. Group membership is the
-  *only* way users get roles.
+  role names are unique *per app*, so two apps may each have an `Author`.
+- Groups list **`Members`** (users) and **`Roles`**; positions list **`Grants`** (users).
+  Each entry is a *reference* in one of two forms: a plain string is **always a key**
+  (`"acme/Author"`, an explicit role `Key`, a bare role name while exactly one role carries
+  it; for users the username or email), or an object **`{ "Key": "acme/Author", "Id": "..." }`**
+  where the `Id` names the entity (rename-proof) and the `Key` is the readable fallback
+  used when no entity carries that id. Exports write the object form. Group membership
+  is the *only* way users get roles.
 - Login providers are keyed by their **`Slug`** (the one in the provider's
-  callback URLs); positions list **`Grants`** as user keys.
+  callback URLs).
 
 ```jsonc
 {

@@ -224,8 +224,25 @@ public sealed class RealmManifestPlanner(
                     session, x => x.IsDeleted, x => x.AccountName, ct),
             }));
 
+        // Cross-references ({ Key, Id } or a bare key) normalize to the CURRENT entity's
+        // canonical { Key, Id } before diffing: a reference that follows a renamed role or
+        // user by Id is not a change, and the same entity written as key-only, id-only or
+        // both compares equal. Unresolvable references stay as written (and surface at apply).
+        var roleRefs = new RefCanonicalizer();
+        foreach (var sameName in current.Roles.GroupBy(r => r.Name, StringComparer.Ordinal))
+            foreach (var r in sameName)
+                roleRefs.Add(r.NaturalKey, r.Id, sameName.Count() == 1 ? r.Name : null);
+        var userRefs = new RefCanonicalizer();
+        foreach (var u in current.Users)
+            userRefs.Add(u.Key ?? u.UserName ?? u.Email, u.Id, u.UserName, u.Email);
+        RealmManifestGroup CanonGroup(RealmManifestGroup g)
+            => g with { Members = userRefs.Canon(g.Members), Roles = roleRefs.Canon(g.Roles) };
+        RealmManifestPosition CanonPosition(RealmManifestPosition p)
+            => p with { Grants = userRefs.Canon(p.Grants) };
+
         result.Sections.Add(await PlanSectionAsync("groups", json, prune, DeletesFor("groups"),
-            manifest.Groups, current.Groups, baseline?.Groups, g => g.Name,
+            manifest.Groups.Select(CanonGroup).ToList(), current.Groups.Select(CanonGroup).ToList(),
+            baseline?.Groups.Select(CanonGroup).ToList(), g => g.Name,
             new SectionPolicy<RealmManifestGroup>
             {
                 Skip = ["Name"],
@@ -246,7 +263,8 @@ public sealed class RealmManifestPlanner(
             }));
 
         result.Sections.Add(await PlanSectionAsync("positions", json, prune, DeletesFor("positions"),
-            manifest.Positions, current.Positions, baseline?.Positions,
+            manifest.Positions.Select(CanonPosition).ToList(), current.Positions.Select(CanonPosition).ToList(),
+            baseline?.Positions.Select(CanonPosition).ToList(),
             p => p.AccountName.Trim().ToLowerInvariant(),
             new SectionPolicy<RealmManifestPosition>
             {
@@ -558,6 +576,36 @@ public sealed class RealmManifestPlanner(
         foreach (var item in items)
             if (!byKey.TryAdd(key(item), item)) duplicates.Add(key(item));
         return (byKey, duplicates);
+    }
+
+    /// <summary>
+    /// Maps every accepted spelling of a reference (id, canonical key, unambiguous alias)
+    /// to the referenced CURRENT entity's canonical <c>{ Key, Id }</c>, so the differ
+    /// compares identities rather than spellings. Unknown references pass through as written.
+    /// </summary>
+    private sealed class RefCanonicalizer
+    {
+        private readonly Dictionary<Guid, ManifestRef> byId = [];
+        private readonly Dictionary<string, ManifestRef> byKey = new(StringComparer.Ordinal);
+
+        public void Add(string canonicalKey, string? rawId, params string?[] aliases)
+        {
+            if (string.IsNullOrWhiteSpace(rawId) || !ShortGuid.TryParse(rawId, out Guid id)) return;
+            var canon = ManifestRef.Of(canonicalKey, id);
+            byId[id] = canon;
+            byKey.TryAdd(canonicalKey, canon);
+            foreach (var alias in aliases)
+                if (!string.IsNullOrEmpty(alias)) byKey.TryAdd(alias, canon);
+        }
+
+        public ManifestRef Canon(ManifestRef r)
+        {
+            if (r.ParsedId is { } id && byId.TryGetValue(id, out var canon)) return canon;
+            if (r.Key is not null && byKey.TryGetValue(r.Key, out canon)) return canon;
+            return r;
+        }
+
+        public List<ManifestRef>? Canon(List<ManifestRef>? refs) => refs?.Select(Canon).ToList();
     }
 
     /// <summary>Canonical form of a pinned id so the manifest's spelling (Guid or ShortGuid)

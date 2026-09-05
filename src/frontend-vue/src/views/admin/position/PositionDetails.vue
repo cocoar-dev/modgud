@@ -22,7 +22,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useDraftStaging } from '@/composables/useDraftStaging'
-import type { ManifestEntity } from '@/stores/realmDraft.store'
+import { makeRef, type ManifestEntity, type ManifestRef } from '@/stores/realmDraft.store'
 import { useUserStore } from '@/stores/user.store'
 import type { PositionCreateDto, PositionUpdateDto, PositionTerminalPolicyUpdateDto, PositionTerminalPolicyConsequencesDto, PositionGrantDto, TerminalDto, StaffingSessionDto, ActivationTokenDto } from '@/models/position'
 import type { RealmSettingsDto } from '@/models/realmSettings'
@@ -137,15 +137,17 @@ function toStaged(): ManifestEntity {
     StaffingSessionLifetimeMinutes: form.value.StaffingSessionLifetimeMinutes,
     MaximumStaffingSessionLifetimeMinutes: form.value.MaximumStaffingSessionLifetimeMinutes,
   }
-  // Staged CREATE carries its staged grants as user keys; on edits the merge
-  // base keeps whatever the draft already holds (grant ops stay live).
+  // Staged CREATE carries its staged grants as { Key, Id } references (the apply follows
+  // the Id, the Key is what the plan shows); on edits the merge base keeps whatever the
+  // draft already holds (grant ops stay live).
   if (isCreate.value && stagedGrantUserIds.value.length > 0) {
     entity.Grants = stagedGrantUserIds.value
       .map((id) => {
         const u = userStore.entities.find((x) => x.Id === id)
-        return u ? (u.UserName || u.Email || null) : null
+        const key = u ? (u.UserName || u.Email || null) : null
+        return key ? makeRef(key, id) : null
       })
-      .filter((key): key is string => !!key)
+      .filter((ref): ref is ManifestRef => !!ref)
   }
   // Stage the LIVE entity's id: the apply matches by identity, so editing the name
   // is a RENAME of this entity instead of staging a second one.

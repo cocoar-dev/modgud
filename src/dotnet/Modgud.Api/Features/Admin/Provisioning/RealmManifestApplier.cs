@@ -327,8 +327,12 @@ public sealed partial class RealmManifestApplier(
 
             foreach (var g in manifest.Groups)
             {
-                var memberIds = (g.Members ?? []).Select(m => ResolveRef(userIds, m, $"group '{g.Name}' member '{m}'")).ToList();
-                var groupRoleIds = (g.Roles ?? []).Select(rk => ResolveRef(roleIds, rk, $"group '{g.Name}' role '{rk}'")).ToList();
+                var memberIds = new List<Guid>((g.Members ?? []).Count);
+                foreach (var m in g.Members ?? [])
+                    memberIds.Add(await ResolveUserRefAsync(groupSession, userIds, m, $"group '{g.Name}' member '{m}'", ct));
+                var groupRoleIds = new List<Guid>((g.Roles ?? []).Count);
+                foreach (var rk in g.Roles ?? [])
+                    groupRoleIds.Add(await ResolveRoleRefAsync(groupSession, roleIds, rk, $"group '{g.Name}' role '{rk}'", ct));
                 var pinnedGroup = await ResolvePinnedAsync<Group>(
                     groupSession, g.Id, "Group", $"group '{g.Name}'", x => x.IsDeleted, ct);
                 var cmd = new CreateGroupCommand(
@@ -1161,9 +1165,21 @@ public sealed partial class RealmManifestApplier(
     private static Optional<string> OptThrough(Optional<string?> value)
         => value.HasValue ? new Optional<string>(value.Value!) : default;
 
+    /// <summary>
+    /// Resolves a user reference. An explicit <c>Id</c> wins when a live user carries it;
+    /// otherwise the <c>Key</c> (username or email) — first among the users this apply
+    /// created/matched, then live. A bare string is always a key.
+    /// </summary>
     private static async Task<Guid> ResolveUserRefAsync(
-        IDocumentSession session, IReadOnlyDictionary<string, Guid> map, string key, string context, CancellationToken ct)
+        IDocumentSession session, IReadOnlyDictionary<string, Guid> map, ManifestRef reference, string context, CancellationToken ct)
     {
+        if (reference.ParsedId is { } byId &&
+            await session.LoadAsync<Person>(byId, ct) is { IsDeleted: false })
+            return byId;
+        if (reference.Key is null)
+            throw new ManifestApplyException(context,
+                [Error.Validation("Manifest.UnknownReference", $"{context} names no live user by id and carries no key.")]);
+        var key = reference.Key;
         if (map.TryGetValue(key, out var id)) return id;
         var lowered = key.ToLowerInvariant();
         var upper = key.ToUpperInvariant();
@@ -1223,8 +1239,17 @@ public sealed partial class RealmManifestApplier(
     /// one live role.
     /// </summary>
     private static async Task<Guid> ResolveRoleRefAsync(
-        IDocumentSession session, IReadOnlyDictionary<string, Guid> map, string key, string context, CancellationToken ct)
+        IDocumentSession session, IReadOnlyDictionary<string, Guid> map, ManifestRef reference, string context, CancellationToken ct)
     {
+        // An explicit Id wins when a live role carries it (rename-proof); the Key is the
+        // fallback for a hand-edited or cross-environment manifest. A bare string is a key.
+        if (reference.ParsedId is { } byId &&
+            await session.LoadAsync<PermissionRole>(byId, ct) is { IsDeleted: false })
+            return byId;
+        if (reference.Key is null)
+            throw new ManifestApplyException(context,
+                [Error.Validation("Manifest.UnknownReference", $"{context} names no live role by id and carries no key.")]);
+        var key = reference.Key;
         if (map.TryGetValue(key, out var id)) return id;
         var (appSlug, name) = RoleKeys.Split(key);
         var candidates = await session.Query<PermissionRole>()
@@ -1276,13 +1301,6 @@ public sealed partial class RealmManifestApplier(
         return ids;
     }
 
-    private static Guid ResolveRef(IReadOnlyDictionary<string, Guid> map, string key, string context)
-    {
-        if (!map.TryGetValue(key, out var id))
-            throw new ManifestApplyException(context,
-                [Error.Validation("Manifest.UnknownReference", $"{context} references an unknown key.")]);
-        return id;
-    }
 
     /// <summary>Null stays null — the manifest's "omitted = no change on apply / shipped
     /// default on create" semantics for optional enum fields.</summary>

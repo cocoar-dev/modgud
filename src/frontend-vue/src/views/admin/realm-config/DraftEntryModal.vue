@@ -50,9 +50,19 @@ const fieldConflicts = computed(() =>
 const entityConflicts = computed(() =>
   (props.planEntry?.Conflicts ?? []).filter((c) => c.Field === null))
 
+/** A manifest reference ({ Key, Id }) reads as its key — the id is for the apply. */
+function isRef(v: unknown): v is { Key?: string; Id?: string } {
+  return !!v && typeof v === 'object' && !Array.isArray(v) &&
+    ('Key' in v || 'Id' in v) && Object.keys(v).every((k) => k === 'Key' || k === 'Id')
+}
+
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return t('admin.realmConfig.valueEmpty', {}, '(empty)')
-  return typeof value === 'string' ? value : JSON.stringify(value)
+  if (typeof value === 'string') return value
+  if (isRef(value)) return value.Key ?? value.Id ?? ''
+  if (Array.isArray(value) && value.length > 0 && value.every(isRef))
+    return JSON.stringify(value.map((v) => v.Key ?? v.Id ?? ''))
+  return JSON.stringify(value)
 }
 
 function conflictLabel(kind: PlanConflict['Kind']): string {

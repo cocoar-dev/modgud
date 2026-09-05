@@ -881,7 +881,8 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         // Export → import is a no-op: every role matches by id/key, nothing is duplicated.
         var export = await exporter.ExportRealmAsync(slug, ct);
         Assert.False(export.IsError, export.IsError ? export.FirstError.Description : string.Empty);
-        Assert.Equal(["beta/Author"], export.Value.Groups.Single(g => g.Name == "Beta writers").Roles);
+        var betaRef = Assert.Single(export.Value.Groups.Single(g => g.Name == "Beta writers").Roles!);
+        Assert.Equal(("beta/Author", before.Beta), (betaRef.Key, betaRef.ParsedId));
         var reapplied = await applier.UpdateRealmAsync(export.Value, ct: ct);
         Assert.False(reapplied.IsError, reapplied.IsError ? reapplied.FirstError.Description : string.Empty);
         Assert.Equal(before, await RoleIdsAsync());
@@ -984,6 +985,114 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 callerIsRealmAdmin: true, ct);
             Assert.False(again.IsError, again.IsError ? again.FirstError.Description : string.Empty);
         });
+    }
+
+    /// <summary>
+    /// Cross-references are <c>{ Key, Id }</c>: the Id wins when a live entity carries it
+    /// (a stale key after a rename is harmless), the Key is the fallback when the id is
+    /// unknown, and a bare string is always a key. The planner compares references by the
+    /// entity they name, so a rename the reference follows by Id is not a change.
+    /// </summary>
+    [Fact]
+    public async Task References_follow_the_id_and_fall_back_to_the_key()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+        var planner = factory.Services.GetRequiredService<RealmManifestPlanner>();
+        const string slug = "refs";
+
+        var realm = new CreateRealmDto
+        {
+            Slug = slug, DisplayName = "Refs", Domains = [$"{slug}.localhost"],
+            InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@refs.test" },
+        };
+        var imported = await applier.ImportNewRealmAsync(new RealmManifest
+        {
+            Realm = realm,
+            Apps = [new RealmManifestApp { Slug = "alpha", DisplayName = "alpha", Permissions = [new RealmManifestPermission("doc", "write")] },
+                    new RealmManifestApp { Slug = "beta", DisplayName = "beta", Permissions = [new RealmManifestPermission("doc", "write")] }],
+            Roles = [new RealmManifestRole { Name = "Author", App = "alpha", Permissions = [] },
+                     new RealmManifestRole { Name = "Author", App = "beta", Permissions = [] }],
+            Users = [new RealmManifestUser { Key = "alice", Email = "alice@refs.test", UserName = "alice" }],
+            Groups = [new RealmManifestGroup { Name = "Beta writers", Members = ["alice"], Roles = ["beta/Author"] }],
+        }, ct);
+        Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
+
+        Guid alphaAuthor = default, betaAuthor = default, alice = default;
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var apps = (await session.Query<App>().Where(a => !a.IsDeleted).ToListAsync(ct)).ToDictionary(a => a.Slug, a => a.Id);
+            var authors = await session.Query<PermissionRole>().Where(r => !r.IsDeleted && r.Name == "Author").ToListAsync(ct);
+            alphaAuthor = authors.Single(r => r.AppId == apps["alpha"]).Id;
+            betaAuthor = authors.Single(r => r.AppId == apps["beta"]).Id;
+            alice = (await session.Query<Person>().SingleAsync(p => !p.IsDeleted && p.AccountName == "alice", ct)).Id;
+        });
+        var exportBefore = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exportBefore.IsError);
+
+        async Task<Group> GroupAsync()
+        {
+            Group? group = null;
+            await InTenantAsync(factory, slug, async sp =>
+                group = await sp.GetRequiredService<IDocumentSession>().Query<Group>()
+                    .SingleAsync(g => !g.IsDeleted && g.Name == "Beta writers", ct));
+            return group!;
+        }
+        async Task ApplyGroupAsync(List<ManifestRef>? roles = null, List<ManifestRef>? members = null)
+        {
+            var result = await applier.UpdateRealmAsync(new RealmManifest
+            {
+                Realm = realm,
+                Groups = [new RealmManifestGroup { Name = "Beta writers", Roles = roles, Members = members }],
+            }, ct: ct);
+            Assert.False(result.IsError, result.IsError ? result.FirstError.Description : string.Empty);
+        }
+
+        // A stale key next to a valid id: the id wins.
+        await ApplyGroupAsync(roles: [new ManifestRef { Key = "beta/Renamed long ago", Id = new ShortGuid(betaAuthor).ToString() }]);
+        Assert.Equal([betaAuthor], (await GroupAsync()).RoleIds);
+        // An unknown id next to a valid key: the key is the fallback.
+        await ApplyGroupAsync(roles: [new ManifestRef { Key = "alpha/Author", Id = new ShortGuid(Guid.NewGuid()).ToString() }]);
+        Assert.Equal([alphaAuthor], (await GroupAsync()).RoleIds);
+        // Id only.
+        await ApplyGroupAsync(roles: [new ManifestRef { Id = betaAuthor.ToString() }]);
+        Assert.Equal([betaAuthor], (await GroupAsync()).RoleIds);
+        // Members follow the same rule.
+        await ApplyGroupAsync(members: [new ManifestRef { Key = "nobody", Id = new ShortGuid(alice).ToString() }]);
+        Assert.Equal([alice], (await GroupAsync()).MemberIds);
+        // A bare string is ALWAYS a key — even when it happens to be an id.
+        var idAsKey = await applier.UpdateRealmAsync(new RealmManifest
+        {
+            Realm = realm,
+            Groups = [new RealmManifestGroup { Name = "Beta writers", Roles = [new ShortGuid(betaAuthor).ToString()] }],
+        }, ct: ct);
+        Assert.True(idAsKey.IsError);
+        Assert.Equal("Manifest.UnknownReference", idAsKey.FirstError.Code);
+
+        // Rename beta's Author live. The export taken BEFORE still references it by id...
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var role = await sp.GetRequiredService<IDocumentSession>().LoadAsync<PermissionRole>(betaAuthor, ct);
+            var renamed = await sp.GetRequiredService<RoleAdminService>().UpdateRoleAsync(betaAuthor,
+                new RolePayload("Writer", role!.Description, new ShortGuid(role.AppId!.Value).ToString(), false, []),
+                callerIsRealmAdmin: true, ct);
+            Assert.False(renamed.IsError, renamed.IsError ? renamed.FirstError.Description : string.Empty);
+        });
+        // ...so the plan sees no change on the group (the role entry itself flags the rename),
+        // and the apply keeps the group on the SAME role, stale key notwithstanding.
+        var plan = await planner.PlanAsync(exportBefore.Value, prune: false, baseline: exportBefore.Value, ct: ct);
+        Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
+        var groupEntry = plan.Value.Sections.Single(s => s.Name == "groups").Entries.Single(e => e.Key == "Beta writers");
+        Assert.Equal("unchanged", groupEntry.Action);
+        Assert.Empty(groupEntry.Conflicts);
+        await ApplyGroupAsync(roles: exportBefore.Value.Groups.Single(g => g.Name == "Beta writers").Roles);
+        Assert.Equal([betaAuthor], (await GroupAsync()).RoleIds);
+        await InTenantAsync(factory, slug, async sp =>
+            Assert.Equal("Writer", (await sp.GetRequiredService<IDocumentSession>().LoadAsync<PermissionRole>(betaAuthor, ct))!.Name));
     }
 
     private static RealmManifest BuildGlobexManifest(string slug, int version)

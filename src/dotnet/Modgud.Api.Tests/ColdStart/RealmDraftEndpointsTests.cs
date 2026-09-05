@@ -352,7 +352,10 @@ public class RealmDraftEndpointsTests(ColdStartFixture fixture) : ColdStartTestB
         // The export references roles by their qualified key.
         var export = JsonNode.Parse(await client.GetStringAsync("/api/admin/realm-config/export", ct))!;
         var exportedGroup = export["Groups"]!.AsArray().Single(g => g!["Name"]!.GetValue<string>() == "Beta writers")!;
-        Assert.Equal(["beta/Author"], exportedGroup["Roles"]!.AsArray().Select(r => r!.GetValue<string>()));
+        // References are exported as { Key, Id }: the Id is what the apply follows, the Key what a human reads.
+        var exportedRef = Assert.Single(exportedGroup["Roles"]!.AsArray());
+        Assert.Equal("beta/Author", exportedRef!["Key"]!.GetValue<string>());
+        Assert.Equal(betaAuthor, new BuildingBlocks.Helper.ShortGuid(exportedRef["Id"]!.GetValue<string>()).Guid);
 
         // Stage an edit of beta's Author exactly as the admin UI does (Id + pinned Key +
         // App) — this plan used to be the 500.

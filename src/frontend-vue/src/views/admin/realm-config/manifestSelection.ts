@@ -1,4 +1,4 @@
-import { SECTION_META, type DraftManifest, type ManifestEntity } from '@/stores/realmDraft.store'
+import { SECTION_META, refId, refKey, refList, type DraftManifest, type ManifestEntity } from '@/stores/realmDraft.store'
 
 /**
  * Selective ("cart") export — pure selection/closure logic over an exported
@@ -38,7 +38,10 @@ export function selectionKey(section: string, key: string): SelectionKey {
 
 export interface EntityRef {
   section: SelectableSection
+  /** The reference's readable key (may be stale after a rename — the id wins). */
   key: string
+  /** The referenced entity's id when the reference carries one ({ Key, Id } form). */
+  id?: string
 }
 
 export interface ClosureOptions {
@@ -58,10 +61,24 @@ function sectionEntities(manifest: DraftManifest, section: SelectableSection): M
   return (manifest[meta.collection] as ManifestEntity[] | undefined) ?? []
 }
 
-function findEntity(manifest: DraftManifest, section: SelectableSection, key: string): ManifestEntity | null {
+function findEntity(manifest: DraftManifest, section: SelectableSection, key: string, id?: string): ManifestEntity | null {
   const meta = SECTION_META[section]
   if (!meta) return null
-  return sectionEntities(manifest, section).find((e) => meta.key(e) === key) ?? null
+  const entities = sectionEntities(manifest, section)
+  // Id first, like the applier: a reference that carries one names the entity even
+  // when its key has since changed.
+  if (id) {
+    const byId = entities.find((e) => e.Id === id)
+    if (byId) return byId
+  }
+  return entities.find((e) => meta.key(e) === key) ?? null
+}
+
+/** Reference entries ({ Key, Id } or a bare key) → forward references. */
+function refsOf(section: SelectableSection, value: unknown): EntityRef[] {
+  return refList(value)
+    .map((ref) => ({ section, key: refKey(ref) ?? refId(ref) ?? '', id: refId(ref) ?? undefined }))
+    .filter((ref) => ref.key.length > 0)
 }
 
 /** The forward references one entity carries (unresolved — existence in the
@@ -88,12 +105,12 @@ export function referencesOf(section: SelectableSection, e: ManifestEntity, opts
       app(str(e.App))
       break
     case 'groups':
-      for (const name of strList(e.Roles)) refs.push({ section: 'roles', key: name })
+      refs.push(...refsOf('roles', e.Roles))
       for (const slug of strList(e.BoundTo)) app(slug)
-      if (opts.includeUsers) for (const key of strList(e.Members)) refs.push({ section: 'users', key })
+      if (opts.includeUsers) refs.push(...refsOf('users', e.Members))
       break
     case 'positions':
-      if (opts.includeUsers) for (const key of strList(e.Grants)) refs.push({ section: 'users', key })
+      if (opts.includeUsers) refs.push(...refsOf('users', e.Grants))
       break
   }
   return refs
@@ -124,16 +141,17 @@ export function computeClosure(
   const visited = new Set<SelectionKey>(selected)
   while (queue.length > 0) {
     const { ref, root } = queue.shift()!
-    const refKey = selectionKey(ref.section, ref.key)
-    const entity = findEntity(manifest, ref.section, ref.key)
+    const entity = findEntity(manifest, ref.section, ref.key, ref.id)
     if (!entity) continue // not in the export (standard scope etc.) — assumed present on the target
-    if (!selected.has(refKey)) {
-      let by = required.get(refKey)
-      if (!by) required.set(refKey, (by = new Set()))
+    // Address the entity by ITS key (the reference's may be stale after a rename).
+    const entityKey = selectionKey(ref.section, SECTION_META[ref.section]?.key(entity) ?? ref.key)
+    if (!selected.has(entityKey)) {
+      let by = required.get(entityKey)
+      if (!by) required.set(entityKey, (by = new Set()))
       by.add(root)
     }
-    if (visited.has(refKey)) continue
-    visited.add(refKey)
+    if (visited.has(entityKey)) continue
+    visited.add(entityKey)
     for (const next of referencesOf(ref.section, entity, opts)) queue.push({ ref: next, root })
   }
   return required
