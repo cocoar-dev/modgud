@@ -31,28 +31,3 @@ Records are numbered once and never renumbered or reused. A superseded record ke
 | [0021](./0021-back-channel-logout) | Back-channel logout | Accepted |
 | [0022](./0022-two-instance-operation) | Two-instance operation | Accepted |
 | [0023](./0023-public-origin-is-declared) | The public origin is declared, not derived | Accepted |
-
-## Reading older references
-
-::: warning Commit messages before 2026-09-06 use two different numbering schemes
-These records were consolidated into this one series on 2026-09-06. Before that they lived outside the repository in two separate stores that had each numbered themselves from 0001, with unrelated subjects. So `ADR 0010` in a commit message from August means something different from `ADR 0010` here.
-
-Cross-references **inside the repository** were all rewritten and are correct. Only Git history, which cannot be rewritten, still carries the old numbers.
-:::
-
-Records 0001–0012 kept their original numbers. The second series was renumbered by adding 12:
-
-| Old reference | Subject it meant | Now |
-|---|---|---|
-| ADR 0001 | PageBuilder page variants | [0013](./0013-pagebuilder-page-variants) |
-| ADR 0002 | Customization core before page builder | [0014](./0014-customization-core-before-page-builder) |
-| ADR 0003 | Positions/terminals/staffing shared-device model | [0015](./0015-positions-terminals-staffing-shared-device-model) |
-| ADR 0004 | Policy, binding and control-plane semantics | [0016](./0016-position-policy-binding-control-plane) |
-| ADR 0005 | Staged configuration (draft mode) | [0017](./0017-staged-configuration-draft-mode) |
-| ADR 0006 | Registration before proof | [0018](./0018-registration-before-proof) |
-| ADR 0007 | Caller context and rate limiting | [0019](./0019-caller-context-and-rate-limiting) |
-| ADR 0008 | Device-aware login throttling | [0020](./0020-device-aware-login-throttling) |
-| ADR 0009 | Back-channel logout | [0021](./0021-back-channel-logout) |
-| ADR 0010 | Two-instance operation | [0022](./0022-two-instance-operation) |
-
-The other reading of each of those numbers — DCR onboarding for 0001, the derived public origin for 0002, and so on down the first table — is unchanged and still lives at that number.
