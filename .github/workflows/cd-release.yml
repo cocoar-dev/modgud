@@ -247,6 +247,12 @@ jobs:
       # instead so the Trivy gate below exercises the same image bits.
       # Attestations are off on that path (the docker exporter can't
       # carry them).
+      #
+      # OCI labels are set here, on the per-arch build: `imagetools create`
+      # assembles the manifest list from these digests without rewriting the
+      # image configs, so the labels survive both the :candidate assembly and
+      # the later promotion to the release tags. `source` is what makes GHCR
+      # link the package back to this repository.
       - name: Build (and push by digest unless dry-run)
         id: build
         uses: docker/build-push-action@v7
@@ -254,6 +260,15 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           platforms: ${{ matrix.platform }}
+          labels: |
+            org.opencontainers.image.title=Modgud
+            org.opencontainers.image.description=Multi-tenant Identity Provider — OAuth 2.0 / OpenID Connect server with multi-app RBAC and database-per-tenant isolation.
+            org.opencontainers.image.url=https://docs.cocoar.dev/modgud/
+            org.opencontainers.image.documentation=https://docs.cocoar.dev/modgud/
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.version=${{ needs.validate-version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
           outputs: ${{ (github.event_name == 'release' || !inputs.dry_run) && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.IMAGE_NAME) || 'type=docker,name=modgud:trivy-scan' }}
           sbom: ${{ github.event_name == 'release' || !inputs.dry_run }}
           provenance: ${{ (github.event_name == 'release' || !inputs.dry_run) && 'mode=max' || 'false' }}

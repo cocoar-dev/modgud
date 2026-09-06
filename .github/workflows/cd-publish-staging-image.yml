@@ -160,6 +160,12 @@ jobs:
           file: ./docker/Dockerfile
           platforms: ${{ matrix.platform }}
           labels: |
+            org.opencontainers.image.title=Modgud
+            org.opencontainers.image.description=Multi-tenant Identity Provider — OAuth 2.0 / OpenID Connect server with multi-app RBAC and database-per-tenant isolation.
+            org.opencontainers.image.url=https://docs.cocoar.dev/modgud/
+            org.opencontainers.image.documentation=https://docs.cocoar.dev/modgud/
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
             org.opencontainers.image.version=${{ needs.version.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
