@@ -22,7 +22,7 @@ const groupStore = useGroupStore()
 const appConfig = useAppConfigStore()
 const isCreate = computed(() => props.id === 'create')
 
-// ── ADR-0005 staging (Increment B) ────────────────────────────────────────────
+// ── ADR-0017 staging (Increment B) ────────────────────────────────────────────
 // For realm admins the admin UI is always in staging mode: profile saves commit
 // onto the active draft (implicitly creating one) instead of writing live.
 // Rows created in a draft open with a "draft__<key>" id and edit the manifest
@@ -410,7 +410,7 @@ async function save() {
   if (!form.value.Email.trim() || emailInvalid.value) return
   loading.value = true
   try {
-    // ── Staged paths (ADR-0005): the save is a COMMIT onto the active draft. ──
+    // ── Staged paths (ADR-0017): the save is a COMMIT onto the active draft. ──
     if (isDraftRow.value) {
       await draftStore.upsertEntity('users', draftKey.value!, buildStagedEntity())
       props.close()

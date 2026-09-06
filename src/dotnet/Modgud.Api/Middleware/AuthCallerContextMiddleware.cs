@@ -4,7 +4,7 @@ using Modgud.Infrastructure.RateLimiting;
 namespace Modgud.Api.Middleware;
 
 /// <summary>
-/// ADR 0007 — builds the <see cref="AuthCallerContext"/> for every endpoint that carries
+/// ADR 0019 — builds the <see cref="AuthCallerContext"/> for every endpoint that carries
 /// an <see cref="AuthRateLimitMetadata"/>, after <c>RealmMiddleware</c> resolved the
 /// tenant and before the endpoint's rate-limit filter runs. A malformed or untrusted
 /// forwarded-address header is answered here with 400 so it never reaches the flow.

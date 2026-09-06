@@ -4,7 +4,7 @@ using System.Net;
 namespace Modgud.Api.Tests.Infrastructure;
 
 /// <summary>
-/// ADR 0009 — stands in for every relying party's back-channel logout endpoint. The
+/// ADR 0021 — stands in for every relying party's back-channel logout endpoint. The
 /// delivery worker's named <c>HttpClient</c> gets this as its primary handler, so no
 /// socket is opened: every POST is recorded here and answered with the status the test
 /// configured for that URI (200 by default). Singleton; the client factory's handler

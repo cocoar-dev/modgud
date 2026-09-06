@@ -24,7 +24,7 @@ public interface ISessionService
     /// <summary>Revokes a single session owned by the caller.</summary>
     Task<ErrorOr<bool>> RevokeSessionAsync(Guid userId, Guid sessionId, CancellationToken ct = default);
 
-    /// <summary>ADR 0009 — ends one browser session with an explicit reason
+    /// <summary>ADR 0021 — ends one browser session with an explicit reason
     /// (<see cref="Modgud.Authentication.Events.AccessEndReasons"/>) and, for an
     /// RP-initiated logout, the client that asked for it (which is then not notified).
     /// <see cref="RevokeSessionAsync"/> is this with reason <c>revoked</c>.</summary>

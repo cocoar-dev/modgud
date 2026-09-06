@@ -17,7 +17,7 @@ using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Authentication.RateLimiting;
 
-/// <summary>Which failure bucket a login attempt belongs to (ADR 0008).</summary>
+/// <summary>Which failure bucket a login attempt belongs to (ADR 0020).</summary>
 public enum LoginBucket
 {
     /// <summary>The request carries a device cookie trusted for this user.</summary>
@@ -45,7 +45,7 @@ public sealed record LoginThrottleDecision(
 public sealed record LoginFailureOutcome(bool BucketTripped, bool UnlockDue, bool SprayDetected);
 
 /// <summary>
-/// ADR 0008 — the arithmetic behind device-aware login throttling, free of HTTP so
+/// ADR 0020 — the arithmetic behind device-aware login throttling, free of HTTP so
 /// it is unit-testable: two failure buckets per user (trusted device / untrusted
 /// pool), a permanently silent spray signal per source, and the once-per-window
 /// guard for the unlock e-mail. Counters live in the shared
@@ -228,7 +228,7 @@ public sealed class LoginThrottle(
     }
 }
 
-/// <summary>ADR 0008 §4 — "sign-in attempts were blocked; if that was you, use this
+/// <summary>ADR 0020 §4 — "sign-in attempts were blocked; if that was you, use this
 /// link": a magic-link sign-in that, on success, trusts the device.</summary>
 public interface ILoginUnlockMailer
 {

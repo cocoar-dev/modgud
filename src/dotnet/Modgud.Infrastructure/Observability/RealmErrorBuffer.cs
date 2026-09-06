@@ -30,7 +30,7 @@ namespace Modgud.Infrastructure.Observability;
 ///
 /// <para>Multi-instance note: this buffer is local to the process, so with
 /// two instances an admin sees the errors of the node their connection is
-/// pinned to. Persisting it is the open item of ADR 0010, increment 2.</para>
+/// pinned to. Persisting it is the open item of ADR 0022, increment 2.</para>
 /// </summary>
 public sealed class RealmErrorBuffer
 {

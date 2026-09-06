@@ -16,7 +16,7 @@ public sealed record ClusterNodeInfo(
 
 /// <summary>
 /// Answers "how many of us are running right now?" from the one place that
-/// already knows: Wolverine's node table in the master database (ADR 0010, D2).
+/// already knows: Wolverine's node table in the master database (ADR 0022, D2).
 /// There is no instance-count setting to keep in sync with reality; readiness,
 /// the projection-rebuild guard and the admin UI all read this.
 /// </summary>

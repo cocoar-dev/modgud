@@ -6,7 +6,7 @@ namespace Modgud.Authentication.Api.ExternalAuth;
 /// Cold-start warm-up: materialises every active realm's OIDC schemes and SAML
 /// providers on this node so the first external login after boot does not pay
 /// for the metadata fetch. Purely an optimisation — the request path resolves
-/// providers from the database on demand either way (ADR 0010, D6), so a realm
+/// providers from the database on demand either way (ADR 0022, D6), so a realm
 /// that fails here is retried on its first request.
 /// <para>
 /// Replaces the former <c>OidcSchemeBootstrap</c> and <c>SamlSchemeBootstrap</c>,

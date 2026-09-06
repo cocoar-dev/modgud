@@ -37,7 +37,7 @@ public static class DependencyInjection
     /// ConfigureEventStore so STJ is already set up when auth documents are registered.
     /// </param>
     /// <param name="hosting">
-    /// How this host coordinates background work with its peers (ADR 0010). Defaults
+    /// How this host coordinates background work with its peers (ADR 0022). Defaults
     /// to single-process coordination with Marten's Solo daemon — the Development
     /// and Testing shape. Production passes <see cref="ClusterCoordination.WolverineManaged"/>.
     /// </param>
@@ -176,7 +176,7 @@ public static class DependencyInjection
             options.MainDatabaseConnectionString = connectionString;
             options.UseFastEventForwarding = true;
 
-            // ADR 0010 (D3) — one coordinator. Under Wolverine-managed
+            // ADR 0022 (D3) — one coordinator. Under Wolverine-managed
             // distribution every async projection and every event subscription
             // (App change feed, back-channel logout) runs on exactly one live
             // node per realm database, assigned by Wolverine's leader and failed
@@ -198,7 +198,7 @@ public static class DependencyInjection
             // Wolverine's coordinator implements Marten's IProjectionCoordinator,
             // so the pause/stop gate below keeps working for maintenance windows
             // (projection rebuild) — the rebuild endpoint additionally refuses to
-            // run while more than one node is live (ADR 0010, D8).
+            // run while more than one node is live (ADR 0022, D8).
             services.Configure<HostOptions>(options =>
                 options.ServicesStopConcurrently = false);
             services.AddSingleton<HostedProjectionCoordinatorControl>();

@@ -18,7 +18,7 @@ public sealed class SessionPruneJob(
     {
         var browser = await browserSessions.PruneExpiredAsync(context.CancellationToken);
         var clients = await clientSessions.PruneExpiredAsync(context.CancellationToken);
-        // ADR 0009 — grants die with their session; this catches any left behind.
+        // ADR 0021 — grants die with their session; this catches any left behind.
         var orphans = await sessionGrants.SweepOrphansAsync(context.CancellationToken);
         context.Result = $"Deleted {browser} browser sessions and {clients} client sessions"
                          + (orphans == 0 ? "" : $"; removed {orphans} orphaned session grant(s)");

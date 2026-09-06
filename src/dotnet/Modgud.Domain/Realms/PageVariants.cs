@@ -1,7 +1,7 @@
 namespace Modgud.Domain.Realms;
 
 /// <summary>
-/// A single named PageBuilder variant for a page slot (ADR-0001). The
+/// A single named PageBuilder variant for a page slot (ADR-0013). The
 /// <see cref="Schema"/> is the editable draft. Authentication surfaces only
 /// consume <see cref="PublishedSchema"/>, so saving an active variant cannot
 /// accidentally change the live login experience.
@@ -47,7 +47,7 @@ public class PageVariantRevision
 
 /// <summary>
 /// Realm-level configuration for one page slot: a library of named variants
-/// plus which one is active (ADR-0001). <see cref="ActiveVariantId"/> is
+/// plus which one is active (ADR-0013). <see cref="ActiveVariantId"/> is
 /// <c>null</c> ⇒ the slot renders the SPA's built-in hardcoded view
 /// (i.e. "deactivated" — variants may still exist, unused).
 /// </summary>
@@ -62,7 +62,7 @@ public class RealmPageSlot
 }
 
 /// <summary>
-/// Application-level selection for one page slot (ADR-0001). An Application does
+/// Application-level selection for one page slot (ADR-0013). An Application does
 /// not author its own variants — the variant library is realm-global; the App
 /// merely *selects* which realm variant is live for it. When
 /// <see cref="InheritActive"/> is <c>true</c> (default) the effective page is

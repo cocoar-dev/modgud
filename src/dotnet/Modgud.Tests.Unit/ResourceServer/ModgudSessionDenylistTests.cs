@@ -2,7 +2,7 @@ using Modgud.AspNetCore.ResourceServer;
 
 namespace Modgud.Tests.Unit.ResourceServer;
 
-/// <summary>ADR 0009 increment 2 — the in-memory denylist of ended sessions.</summary>
+/// <summary>ADR 0021 increment 2 — the in-memory denylist of ended sessions.</summary>
 public class ModgudSessionDenylistTests
 {
     private sealed class TestClock(DateTimeOffset start) : TimeProvider

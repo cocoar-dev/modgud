@@ -8,7 +8,7 @@ using Modgud.Infrastructure.Realms;
 namespace Modgud.Authentication.Devices;
 
 /// <summary>
-/// ADR 0008 — reads, issues and sweeps the device cookie and its
+/// ADR 0020 — reads, issues and sweeps the device cookie and its
 /// <see cref="TrustedDevice"/> record.
 /// </summary>
 public interface IDeviceTrust

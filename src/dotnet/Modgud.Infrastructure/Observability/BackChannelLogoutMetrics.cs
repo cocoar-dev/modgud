@@ -4,7 +4,7 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Infrastructure.Observability;
 
-/// <summary>ADR 0009 — delivery counter and latency of logout-token POSTs. Tags: realm,
+/// <summary>ADR 0021 — delivery counter and latency of logout-token POSTs. Tags: realm,
 /// client (bounded: registered clients), outcome. Registered through
 /// <see cref="ModgudMeters.Name"/>.</summary>
 public static class BackChannelLogoutMetrics

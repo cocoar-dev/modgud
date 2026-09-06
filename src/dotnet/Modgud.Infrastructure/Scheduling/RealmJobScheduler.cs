@@ -36,7 +36,7 @@ internal sealed class RealmJobScheduler(
     private const string SystemGroup = "system";
 
     // Serialises mutations within this process; the cluster lock below does the
-    // same across nodes that share the persistent job store (ADR 0010, D4) —
+    // same across nodes that share the persistent job store (ADR 0022, D4) —
     // two booting nodes reconciling the same realm would otherwise race on
     // AddJob/ScheduleJob and one of them would fail with "already exists".
     private readonly SemaphoreSlim _mutationLock = new(1, 1);

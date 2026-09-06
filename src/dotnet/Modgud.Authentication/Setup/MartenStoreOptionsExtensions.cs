@@ -74,7 +74,7 @@ public static class MartenStoreOptionsExtensions
             .Identity(x => x.Id)
             .UseOptimisticConcurrency(true);
 
-        // ADR 0006 — the one pre-verification record per address. Plain document,
+        // ADR 0018 — the one pre-verification record per address. Plain document,
         // version-checked consume, hard-deleted on proof/expiry/erasure; NEVER
         // soft-deleted, never event-sourced (see PendingRegistration remarks).
         options.Schema.For<Modgud.Authentication.Registration.PendingRegistration>()
@@ -83,7 +83,7 @@ public static class MartenStoreOptionsExtensions
             .Index(x => x.SecretHash)
             .Index(x => x.ExpiresAt);
 
-        // ADR 0008 — "a browser that completed a login here". Plain document, hard-
+        // ADR 0020 — "a browser that completed a login here". Plain document, hard-
         // deleted when idle (sweep) or emptied by GDPR erasure; never soft-deleted,
         // never event-sourced. Last write wins on purpose: two logins from one
         // browser at the same instant both add their user, losing one is harmless
@@ -148,7 +148,7 @@ public static class MartenStoreOptionsExtensions
             .Index(x => x.ExpiresAt)
             .Index(x => x.AbsoluteExpiresAt);
 
-        // ADR 0009 — "this relying party holds tokens of this session". Plain document,
+        // ADR 0021 — "this relying party holds tokens of this session". Plain document,
         // deterministic id per (session, client), hard-deleted with the session. Indexed
         // for the two questions it answers: the session's RPs and the user's RPs.
         options.Schema.For<Modgud.Authentication.Sessions.SessionGrant>()
@@ -157,11 +157,11 @@ public static class MartenStoreOptionsExtensions
             .Index(x => x.UserId)
             .Index(x => x.ClientId);
 
-        // ADR 0009 — last logout-token delivery per client, beside the client document.
+        // ADR 0021 — last logout-token delivery per client, beside the client document.
         options.Schema.For<Modgud.Domain.OAuth.Applications.BackChannelLogoutDeliveryStatus>()
             .Identity(x => x.Id);
 
-        // ADR 0009 — pending logout-token deliveries. Version-checked so the in-process
+        // ADR 0021 — pending logout-token deliveries. Version-checked so the in-process
         // first attempt and the retry job never both send for one row; indexed on the
         // due time the job sweeps by.
         options.Schema.For<Modgud.Authentication.BackChannelLogout.BackChannelLogoutDelivery>()
@@ -274,7 +274,7 @@ public static class MartenStoreOptionsExtensions
         options.Events.MapEventType<UserUnlockedEvent>("user_unlocked");
         options.Events.MapEventType<UserActivatedEvent>("user_activated");
         options.Events.MapEventType<UserDeactivatedEvent>("user_deactivated");
-        // ADR 0009 — session/RP markers (identifiers only, nothing to mask).
+        // ADR 0021 — session/RP markers (identifiers only, nothing to mask).
         options.Events.MapEventType<UserAccessGrantedEvent>("user_access_granted");
         options.Events.MapEventType<UserAccessEndedEvent>("user_access_ended");
 

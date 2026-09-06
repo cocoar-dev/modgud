@@ -70,7 +70,7 @@ public sealed class AppChangeFeedSubscription : SubscriptionBase
             .OrderBy(x => x)
             .ToList();
 
-        // ADR 0009 — why a session entity vanishes. The grants are deleted in the same
+        // ADR 0021 — why a session entity vanishes. The grants are deleted in the same
         // unit of work as the end marker, so the reason is only knowable from the event.
         var ends = AccessEnds.From(page.Events);
 
@@ -221,7 +221,7 @@ public sealed class AppChangeFeedSubscription : SubscriptionBase
             or UserDeactivatedEvent
             or UserExternalIdentityLinkedEvent
             or UserExternalIdentityUnlinkedEvent
-            // ADR 0009 — a relying party got its first tokens for a session / a session ended.
+            // ADR 0021 — a relying party got its first tokens for a session / a session ended.
             or UserAccessGrantedEvent
             or UserAccessEndedEvent;
     }
@@ -367,7 +367,7 @@ public sealed class AppChangeFeedSubscription : SubscriptionBase
             });
         }
 
-        // ADR 0009 — `session`: a login session is visible to an App exactly when one of
+        // ADR 0021 — `session`: a login session is visible to an App exactly when one of
         // the App's clients holds tokens for it (a SessionGrant), and the user is in
         // scope. Identifiers only; SessionId and Sub are the raw token claim values so
         // a consumer can match them against `sid` / `sub` without any conversion.
@@ -588,7 +588,7 @@ public sealed class AppChangeFeedSubscription : SubscriptionBase
         }
     }
 
-    /// <summary>ADR 0009 — tombstone of an ended session: <c>{ SessionId, Sub, Reason }</c>.
+    /// <summary>ADR 0021 — tombstone of an ended session: <c>{ SessionId, Sub, Reason }</c>.
     /// The reason comes from the end marker in the page (<c>logout</c>, <c>revoked</c>,
     /// <c>expired</c>, <c>user-deactivated</c>, <c>user-deleted</c>); a grant that vanished
     /// without one (orphan sweep) is reported as <c>expired</c>.</summary>
@@ -654,7 +654,7 @@ public sealed class AppChangeFeedSubscription : SubscriptionBase
         AccessEnds Ends);
     private sealed record PendingChange(string ChangeKind, PublicEntity Entity, string? Reason);
 
-    /// <summary>ADR 0009 — the session and user ends found in one subscription page,
+    /// <summary>ADR 0021 — the session and user ends found in one subscription page,
     /// keyed by id, carrying the reason for the `session` tombstones.</summary>
     private sealed record AccessEnds(
         IReadOnlyDictionary<Guid, string> Sessions,
@@ -688,7 +688,7 @@ internal static class AppEntityKinds
     public const string Terminal = "terminal";
     public const string PositionGrant = "position-grant";
     public const string StaffingSession = "staffing-session";
-    /// <summary>ADR 0009 — a login session one of the App's clients holds tokens for.</summary>
+    /// <summary>ADR 0021 — a login session one of the App's clients holds tokens for.</summary>
     public const string Session = "session";
 }
 

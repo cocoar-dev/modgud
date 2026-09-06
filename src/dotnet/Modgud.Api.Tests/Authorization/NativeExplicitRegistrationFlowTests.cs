@@ -59,7 +59,7 @@ public class NativeExplicitRegistrationFlowTests : IntegrationTestBase
         Assert.NotNull(msg);
         var code = Regex.Match(msg!.HtmlBody, @"\b(\d{6})\b").Groups[1].Value;
         Assert.False(string.IsNullOrEmpty(code));
-        // ADR 0006: the request wrote a pending record, NOT a user.
+        // ADR 0018: the request wrote a pending record, NOT a user.
         Assert.Null(await QuerySystemUserByEmailAsync(newEmail));
 
         // 2) Redeem at /connect/token → tokens minted (the registration completes).

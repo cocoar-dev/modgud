@@ -41,7 +41,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- ADR 0010 — Quartz job-store schema applied by QuartzSchemaBootstrap. -->
+    <!-- ADR 0022 — Quartz job-store schema applied by QuartzSchemaBootstrap. -->
     <EmbeddedResource Include="Scheduling\quartz_tables_postgres.sql" />
   </ItemGroup>
 

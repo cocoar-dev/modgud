@@ -2,7 +2,7 @@ using Modgud.Application.Services;
 
 namespace Modgud.Tests.Unit.Infrastructure;
 
-/// <summary>ADR 0009 — what a client may register as its back-channel logout URI.</summary>
+/// <summary>ADR 0021 — what a client may register as its back-channel logout URI.</summary>
 public class BackChannelLogoutUriValidationTests
 {
     [Theory]

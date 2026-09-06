@@ -3,7 +3,7 @@ using Modgud.Authentication.Events;
 namespace Modgud.Authentication.BackChannelLogout;
 
 /// <summary>
-/// ADR 0009 — one pending logout notification to one relying party. Written by the
+/// ADR 0021 — one pending logout notification to one relying party. Written by the
 /// fan-out in the same realm database as the session it belongs to, attempted at once
 /// by the in-process dispatcher and, when that fails, again by the per-realm retry
 /// job on the schedule in <see cref="BackChannelLogoutConstants.RetrySchedule"/>.

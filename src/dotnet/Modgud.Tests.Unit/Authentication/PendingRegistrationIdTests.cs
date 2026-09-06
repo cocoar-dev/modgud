@@ -2,7 +2,7 @@ using Modgud.Authentication.Registration;
 
 namespace Modgud.Tests.Unit.Authentication;
 
-/// <summary>ADR 0006 — "one pending record per address" is a property of the key.</summary>
+/// <summary>ADR 0018 — "one pending record per address" is a property of the key.</summary>
 public class PendingRegistrationIdTests
 {
     [Fact]

@@ -14,7 +14,7 @@ public readonly record struct RateLimitScope(string? TenantId)
 }
 
 /// <summary>
-/// ADR 0007 — shared, multi-instance-correct counters. One atomic upsert per hit;
+/// ADR 0019 — shared, multi-instance-correct counters. One atomic upsert per hit;
 /// fixed windows for "N per window" semantics, token buckets (capacity = burst,
 /// refill = limit per window) where a legitimate peak must be absorbed.
 /// </summary>
@@ -22,7 +22,7 @@ public interface IRateLimitStore
 {
     Task<RateLimitHit> HitAsync(RateLimitScope scope, string key, RateLimitRule rule, DateTimeOffset now, CancellationToken ct = default);
 
-    /// <summary>Is the bucket exhausted right now, WITHOUT charging it? ADR 0008 counts
+    /// <summary>Is the bucket exhausted right now, WITHOUT charging it? ADR 0020 counts
     /// login failures, not attempts, so the check before the password runs must not
     /// consume anything. Fixed window: hits in the current window ≥ limit; token bucket:
     /// fewer than one refilled token.</summary>

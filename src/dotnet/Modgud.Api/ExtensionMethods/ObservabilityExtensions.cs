@@ -140,7 +140,7 @@ internal static class ObservabilityExtensions
         healthBuilder.AddCheck<OpenIddictCertHealthCheck>(
             name: "openiddict-cert",
             tags: new[] { "ready" });
-        // ADR 0010 — draining after SIGTERM, and "two nodes but no relay".
+        // ADR 0022 — draining after SIGTERM, and "two nodes but no relay".
         healthBuilder.AddCheck<ClusterHealthCheck>(
             name: "cluster",
             tags: new[] { "ready" });
@@ -188,7 +188,7 @@ internal static class ObservabilityExtensions
                 .AllowAnonymous();
         }
 
-        // ADR 0010 (D7) — while draining after SIGTERM, answer readiness with 503
+        // ADR 0022 (D7) — while draining after SIGTERM, answer readiness with 503
         // here, before the health-check pipeline runs: the framework logs every
         // Unhealthy result at Error level, and a planned drain is not an error.
         // ClusterHealthCheck keeps the same rule as a backstop.

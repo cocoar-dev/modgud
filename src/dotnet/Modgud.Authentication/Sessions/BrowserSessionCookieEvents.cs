@@ -85,7 +85,7 @@ public sealed class BrowserSessionCookieEvents(ISessionService sessions) : Cooki
         var rawSessionId = principal.FindFirst(SessionClaimTypes.BrowserSessionId)?.Value;
         if (userId is not null && Guid.TryParse(rawSessionId, out var sessionId))
         {
-            // ADR 0009 — a sign-out is a "logout" end; the end-session endpoint names the
+            // ADR 0021 — a sign-out is a "logout" end; the end-session endpoint names the
             // relying party that asked for it so that RP is not notified about itself.
             var initiator = context.HttpContext.Items[BackChannelLogout.BackChannelLogoutConstants.InitiatingClientItem] as string;
             await sessions.EndSessionAsync(

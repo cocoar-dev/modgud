@@ -46,7 +46,7 @@ const store = usePositionStore()
 const userStore = useUserStore()
 const isCreate = computed(() => props.id === 'create')
 
-// ── ADR-0005 staging: position identity + policy + grants commit onto the
+// ── ADR-0017 staging: position identity + policy + grants commit onto the
 // active draft. Terminal SLOTS are deliberately not manifest-modeled
 // (credential material), so a create that stages slots takes the live path;
 // the embedded draftOnly flow belongs to the parent client create and stays
@@ -635,7 +635,7 @@ async function save() {
   loading.value = true
   error.value = null
   try {
-    // ADR-0005: commit onto the active draft instead of writing live. Policy
+    // ADR-0017: commit onto the active draft instead of writing live. Policy
     // consequences (ended sessions, disabled slots) happen at APPLY — the plan
     // shows the change; no live preview here.
     if (stagedSave.value) {

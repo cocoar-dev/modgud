@@ -52,7 +52,7 @@ public enum RegistrationRequestOutcome
     /// <summary>The address already belongs to a user; the pipeline is never entered.</summary>
     AddressTaken,
 
-    /// <summary>The silent per-source registration ceiling (ADR 0007) was hit: this
+    /// <summary>The silent per-source registration ceiling (ADR 0019) was hit: this
     /// source sprayed too many unknown addresses. Nothing written, nothing sent.</summary>
     Throttled,
 }
@@ -66,7 +66,7 @@ public sealed record RegisteredUser(
     string? ReturnUrl);
 
 /// <summary>
-/// ADR 0006 — one registration pipeline for every public sign-up path.
+/// ADR 0018 — one registration pipeline for every public sign-up path.
 /// <list type="bullet">
 ///   <item><see cref="RequestAsync"/> upserts the address's <see cref="PendingRegistration"/>
 ///   and mails the proof. No user exists afterwards.</item>
@@ -130,7 +130,7 @@ public sealed class RegistrationPipeline(
         if (await AddressBelongsToUserAsync(normalized, ct))
             return RegistrationRequestOutcome.AddressTaken;
 
-        // ADR 0007 — entering the pipeline for an unknown address IS the spraying
+        // ADR 0019 — entering the pipeline for an unknown address IS the spraying
         // signal; the ceiling is silent so a 429 never reveals existence.
         if (!await throttle.AllowAsync(ct))
             return RegistrationRequestOutcome.Throttled;

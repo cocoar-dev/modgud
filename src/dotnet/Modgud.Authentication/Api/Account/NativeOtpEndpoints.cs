@@ -132,7 +132,7 @@ public static class NativeOtpEndpoints
     ///   <item>Known passwordless still-unconfirmed user + JIT posture → re-issue
     ///   the registration OTP (resend for an in-progress sign-up).</item>
     ///   <item>Unknown email + JIT posture → enter the registration pipeline
-    ///   (ADR 0006: pending record + code; NO user until the code is proved).</item>
+    ///   (ADR 0018: pending record + code; NO user until the code is proved).</item>
     ///   <item>Unknown email + InviteCode posture (ADR-0012) → enter the pipeline
     ///   ONLY if a valid, unused, unexpired, app-matching code is presented; the
     ///   code is consumed atomically before anything is written. A missing/invalid/used/
@@ -185,7 +185,7 @@ public static class NativeOtpEndpoints
     }
 
     /// <summary>
-    /// ADR 0006 — enters the registration pipeline for an unknown email: a pending
+    /// ADR 0018 — enters the registration pipeline for an unknown email: a pending
     /// record is written and the registration code mailed; NO user exists until the
     /// code is proved at redeem. Under <see cref="SelfRegPosture.InviteCode"/> this is
     /// gated on consuming a valid invite code FIRST (ADR-0012, D4/§5): the code is

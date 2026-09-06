@@ -83,7 +83,7 @@ const settingsContentRef = ref<HTMLElement | null>(null)
 const canRotateSigningKey = computed(() => authStore.hasPermission('realm-settings:write'))
 const rotating = ref(false)
 
-// ── ADR-0005 staging: "Save area" commits the tab's patch onto the active
+// ── ADR-0017 staging: "Save area" commits the tab's patch onto the active
 // draft — the manifest's Settings section IS the same UpdateRealmSettingsDto
 // patch shape this view builds. Key rotation stays a live action.
 const staging = useDraftStaging('settings')
@@ -185,7 +185,7 @@ function setPositionCapability(
   }
 }
 
-// ── PageBuilder: pick the active page variant per slot (ADR-0001) ──
+// ── PageBuilder: pick the active page variant per slot (ADR-0013) ──
 const appConfig = useAppConfigStore()
 const pageBuilderOn = computed(() => appConfig.config.Features.PageBuilder)
 const pagesApi = useRealmPagesApi()
@@ -355,7 +355,7 @@ const clientSessionsForm = ref<ClientSessionPolicyDto>({
 })
 const originalClientSessions = ref<ClientSessionPolicyDto | null>(null)
 
-// ── Auth rate limits (ADR 0007): sparse overrides per policy × dimension ──
+// ── Auth rate limits (ADR 0019): sparse overrides per policy × dimension ──
 interface AuthRateLimitsFormState {
   overrides: RateLimitOverrides
   allowlist: string[]
@@ -815,7 +815,7 @@ async function save(tab: SavableTabId) {
   saving.value = true
   error.value = null
   try {
-    // ADR-0005: commit onto the active draft instead of writing live. Section
+    // ADR-0017: commit onto the active draft instead of writing live. Section
     // patches merge over the already-staged Settings entity; position-security
     // consequences happen at APPLY (no live preview here).
     if (stagedSave.value) {

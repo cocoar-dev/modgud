@@ -36,7 +36,7 @@ watch(language, () => ui.set((ctx) => {
 
 const liveRows = computed(() => store.apps)
 
-// ADR-0005: draft-merged roster (natural key = the app slug).
+// ADR-0017: draft-merged roster (natural key = the app slug).
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const stagedPerms = (e: Record<string, unknown>) =>
   (Array.isArray(e.Permissions) ? (e.Permissions as Record<string, unknown>[]) : [])
@@ -160,7 +160,7 @@ async function deleteSelected() {
     alert(t('admin.apps.cannotDeleteSystem', {}, 'The system app can\'t be deleted.'))
     return
   }
-  // ADR-0005 staged deletes: draft-created rows unstage, live rows stage their
+  // ADR-0017 staged deletes: draft-created rows unstage, live rows stage their
   // deletion (a still-referenced app fails at apply, exactly like live).
   if (staging.stagingActive.value) {
     if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))

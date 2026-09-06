@@ -180,7 +180,7 @@ public sealed class ClientSessionService(
         }
 
         session.DeleteWhere<ClientSession>(x => x.UserId == userId);
-        // ADR 0009 — one end marker per native session (see SessionService.RevokeAllSessionsAsync).
+        // ADR 0021 — one end marker per native session (see SessionService.RevokeAllSessionsAsync).
         foreach (var row in rows)
             await sessionGrants.StageSessionEndAsync(session, row.UserId, row.Id, AccessEndReasons.Revoked, initiatingClientId: null, ct);
         await session.SaveChangesAsync(ct);

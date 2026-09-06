@@ -30,7 +30,7 @@ export interface OAuthClientDto {
   RequireConsent: boolean
   AllowRememberConsent: boolean
   AllowedGrantTypes: string[]
-  /** ADR 0007 — granted client capabilities (`cap:trusted-forwarder`). */
+  /** ADR 0019 — granted client capabilities (`cap:trusted-forwarder`). */
   Capabilities?: string[]
   AllowedCorsOrigins: string[]
   IdentityTokenLifetime?: number | null
@@ -70,9 +70,9 @@ export interface OAuthClientDto {
   HasClientSecret?: boolean
   /** Public JSON Web Key Set for private_key_jwt client authentication. */
   JsonWebKeySet?: string | null
-  /** ADR 0009 — where Modgud POSTs a signed logout token when a session ends. */
+  /** ADR 0021 — where Modgud POSTs a signed logout token when a session ends. */
   BackChannelLogoutUri?: string | null
-  /** ADR 0009 — logout tokens carry `sid` (default true). */
+  /** ADR 0021 — logout tokens carry `sid` (default true). */
   BackChannelLogoutSessionRequired?: boolean
   /** Read-only: last delivery attempt to the logout URI. */
   BackChannelLogoutLastDeliveryAt?: string | null

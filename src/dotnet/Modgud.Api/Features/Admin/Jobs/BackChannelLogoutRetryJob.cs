@@ -4,7 +4,7 @@ using Quartz;
 namespace Modgud.Api.Features.Admin.Jobs;
 
 /// <summary>
-/// ADR 0009 — retries logout-token deliveries whose immediate attempt failed, on the
+/// ADR 0021 — retries logout-token deliveries whose immediate attempt failed, on the
 /// schedule in <see cref="BackChannelLogoutConstants.RetrySchedule"/>, and gives up after
 /// the last step (the change feed carries the same fact). Per realm, idempotent: a
 /// delivery is claimed with optimistic concurrency, so the job and the in-process first

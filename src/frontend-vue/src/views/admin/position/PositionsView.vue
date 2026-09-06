@@ -28,7 +28,7 @@ watch(language, () => ui.set((ctx) => {
 
 const liveRows = computed(() => store.entities)
 
-// ADR-0005: draft-merged roster (natural key = the lowercased account name).
+// ADR-0017: draft-merged roster (natural key = the lowercased account name).
 const staging = useDraftStaging('positions')
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const rows = useDraftListOverlay<PositionPrincipalDto>({
@@ -120,7 +120,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<PositionPr
 async function deleteRows() {
   const id = selectedIds.value[0]
   if (!id) return
-  // ADR-0005 staged deletes: single-row semantics in staging mode (the slot/
+  // ADR-0017 staged deletes: single-row semantics in staging mode (the slot/
   // session cascade runs at apply through the same canonical delete path).
   if (staging.stagingActive.value) {
     if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))

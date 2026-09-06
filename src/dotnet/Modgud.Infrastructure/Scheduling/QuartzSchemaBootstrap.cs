@@ -7,7 +7,7 @@ namespace Modgud.Infrastructure.Scheduling;
 
 /// <summary>
 /// Creates the Quartz.NET job-store tables in the master database once, before
-/// the scheduler starts (ADR 0010, D4). Quartz validates its schema at start-up
+/// the scheduler starts (ADR 0022, D4). Quartz validates its schema at start-up
 /// and does not create it, so this runs in the same bootstrap step that applies
 /// the Marten master/global schema. Idempotent and safe for two nodes booting at
 /// the same time: the existence check and the script run under a cluster lock.

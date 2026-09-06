@@ -7,7 +7,7 @@ using Npgsql;
 namespace Modgud.Infrastructure.Persistence.Tenancy;
 
 /// <summary>
-/// The ambient transaction behind a declarative manifest apply (ADR-0005 Phase 0):
+/// The ambient transaction behind a declarative manifest apply (ADR-0017 Phase 0):
 /// ONE Npgsql transaction on the target tenant's database that every Marten session
 /// opened inside the apply scope enlists in, plus a collector for consequence
 /// actions that must only run AFTER the transaction committed.

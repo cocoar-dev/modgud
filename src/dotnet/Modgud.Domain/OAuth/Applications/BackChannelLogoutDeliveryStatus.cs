@@ -1,7 +1,7 @@
 namespace Modgud.Domain.OAuth.Applications;
 
 /// <summary>
-/// ADR 0009 — outcome of the last logout-token POST to a client's back-channel logout
+/// ADR 0021 — outcome of the last logout-token POST to a client's back-channel logout
 /// URI. A separate document keyed by the client's id, written by the delivery worker:
 /// the client document itself is never rewritten from a background job (a whole-document
 /// store would silently clobber a concurrent admin edit).

@@ -34,7 +34,7 @@ watch(language, () => ui.set((ctx) => {
 
 const liveRows = computed(() => store.providers)
 
-// ADR-0005: draft-merged roster (natural key = the provider slug).
+// ADR-0017: draft-merged roster (natural key = the provider slug).
 const staging = useDraftStaging('loginProviders')
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const rows = useDraftListOverlay<LoginProviderDto>({
@@ -176,7 +176,7 @@ async function deleteSelected() {
     alert(t('admin.loginProviders.errors.internalNotEditable', {}, 'The built-in internal login provider can\'t be edited.'))
     return
   }
-  // ADR-0005 staged deletes.
+  // ADR-0017 staged deletes.
   if (staging.stagingActive.value) {
     if (staging.isDraftId(provider.Id)) return staging.unstage(staging.draftKeyOf(provider.Id))
     if ((provider as DraftRow<LoginProviderDto>).DraftStaged === 'delete')

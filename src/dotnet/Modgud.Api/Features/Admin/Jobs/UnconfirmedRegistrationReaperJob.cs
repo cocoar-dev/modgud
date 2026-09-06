@@ -12,7 +12,7 @@ using Quartz;
 namespace Modgud.Api.Features.Admin.Jobs;
 
 /// <summary>
-/// ADR 0006 legacy clean-up — erases the "ghost" accounts the old sign-up paths created
+/// ADR 0018 legacy clean-up — erases the "ghost" accounts the old sign-up paths created
 /// BEFORE the proof: passwordless users whose registration code was never redeemed.
 /// They are real, event-sourced users (the residue the pending pipeline avoids), so they
 /// go through the normal permanent-erase path (masking + archiving), never a raw delete.
@@ -35,7 +35,7 @@ public class UnconfirmedRegistrationReaperJob(
     public const string Name = "Unconfirmed registration reaper";
     public const string Description =
         "Erases passwordless accounts whose registration code was never redeemed (created by the " +
-        "pre-ADR-0006 sign-up paths): unconfirmed, no password, no passkey, no external login, " +
+        "pre-ADR-0018 sign-up paths): unconfirmed, no password, no passkey, no external login, " +
         "no consumed code, older than the configured age. Dry-run by default — set dryRun=false to erase.";
 
     /// <summary>04:30 UTC daily — after the DCR sweep.</summary>
@@ -105,7 +105,7 @@ public class UnconfirmedRegistrationReaperJob(
 
             var result = await gdpr.PermanentlyEraseAsync(
                 user.Id, adminUserId: null,
-                reason: "Unconfirmed passwordless registration never completed (ADR 0006 reaper)", ct);
+                reason: "Unconfirmed passwordless registration never completed (ADR 0018 reaper)", ct);
             if (result.IsError)
             {
                 logger.LogWarning("Reaper: erase of {UserId} refused: {Error}", user.Id, result.FirstError.Code);

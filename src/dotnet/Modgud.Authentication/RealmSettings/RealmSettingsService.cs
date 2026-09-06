@@ -620,8 +620,8 @@ public sealed class RealmSettingsService(
         };
     }
 
-    // ADR 0007 — merge-patch v2 per policy and dimension: absent = unchanged, explicit
-    // null = back to the shipped default, value = override. The pre-ADR-0007 single
+    // ADR 0019 — merge-patch v2 per policy and dimension: absent = unchanged, explicit
+    // null = back to the shipped default, value = override. The pre-ADR-0019 single
     // per-IP rules are still accepted (manifest compatibility) and stored as LEGACY
     // overrides, which keeps the realm in log-only mode until an admin picks a mode.
     // Shared with ApplicationSettingsService for the sparse per-App override.

@@ -80,12 +80,12 @@ public static class AuditEvents
     /// Carries Ip.</summary>
     public const string MagicLinkInvalid = "security.magic_link_invalid";
 
-    /// <summary>ADR 0008 — a password login was refused (or, log-only, would have been)
+    /// <summary>ADR 0020 — a password login was refused (or, log-only, would have been)
     /// because the user's device or untrusted failure bucket is exhausted. Reason =
     /// bucket. Carries Ip, TargetSubjectId.</summary>
     public const string LoginThrottled = "security.login_throttled";
 
-    /// <summary>ADR 0008 — one source crossed the untrusted-failures-per-source signal
+    /// <summary>ADR 0020 — one source crossed the untrusted-failures-per-source signal
     /// threshold (password spray / brute force across accounts). Never a block; the
     /// input for alerting. Carries Ip, Count = threshold.</summary>
     public const string LoginSprayDetected = "security.login_spray_detected";
@@ -224,12 +224,12 @@ public static class AuditEvents
     /// <summary>A DCR client was garbage-collected for inactivity (tenant-visible).</summary>
     public const string DcrClientGarbageCollected = "ops.dcr_client_garbage_collected";
 
-    /// <summary>ADR 0009 — a logout token was delivered to a client's back-channel logout
+    /// <summary>ADR 0021 — a logout token was delivered to a client's back-channel logout
     /// URI. Carries TargetSubjectId, SessionId, OAuthClientId, Count = attempt,
     /// OperationCode = session|user, ReasonCode = why the session ended.</summary>
     public const string BackChannelLogoutSent = "security.backchannel_logout_sent";
 
-    /// <summary>ADR 0009 — one delivery attempt failed (retried on a schedule, then
+    /// <summary>ADR 0021 — one delivery attempt failed (retried on a schedule, then
     /// dead-lettered). ReasonCode = failure class (<c>failed:http-503</c>, <c>failed:timeout</c>,
     /// <c>failed:connect</c>, <c>failed:ssrf</c>).</summary>
     public const string BackChannelLogoutFailed = "security.backchannel_logout_failed";

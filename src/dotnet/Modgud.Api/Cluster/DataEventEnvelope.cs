@@ -6,7 +6,7 @@ using Modgud.Domain.Common;
 namespace Modgud.Api.Cluster;
 
 /// <summary>
-/// Wire form of a <see cref="DataEvent"/> between nodes (ADR 0010, D5): the event
+/// Wire form of a <see cref="DataEvent"/> between nodes (ADR 0022, D5): the event
 /// type of the SignalARRR cluster subject that carries Modgud's live updates.
 /// Owned by Modgud so that a peer on the previous release can still read it.
 /// <para>

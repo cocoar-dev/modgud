@@ -4,7 +4,7 @@ using Cocoar.SignalARRR.Server;
 namespace Modgud.Api.Cluster;
 
 /// <summary>
-/// Cross-node transport for <see cref="DataEvent"/>s (ADR 0010, D5): a thin
+/// Cross-node transport for <see cref="DataEvent"/>s (ADR 0022, D5): a thin
 /// adapter between the in-process <see cref="DataEventDispatcher"/> and a
 /// SignalARRR cluster subject on the backplane.
 /// <para>

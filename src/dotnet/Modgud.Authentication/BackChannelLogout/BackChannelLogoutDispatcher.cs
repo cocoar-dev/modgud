@@ -8,7 +8,7 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 namespace Modgud.Authentication.BackChannelLogout;
 
 /// <summary>
-/// ADR 0009 transport A — the prompt first attempt. The fan-out drops the id of a freshly
+/// ADR 0021 transport A — the prompt first attempt. The fan-out drops the id of a freshly
 /// stored <see cref="BackChannelLogoutDelivery"/> here; the dispatcher attempts it within
 /// a second on a background thread, off the event-store subscription that produced it.
 /// In-memory on purpose: the row in the realm database is the durable record and the

@@ -1,4 +1,4 @@
-// PageBuilder variant + activation API (ADR-0001). The variant library is
+// PageBuilder variant + activation API (ADR-0013). The variant library is
 // realm-global (`/api/admin/customization/pages`); Applications only *select*
 // one of those realm variants per slot (`/api/app/{appId}/pages`).
 

@@ -69,7 +69,7 @@ public partial class OAuthAdminService
         if (!Guid.TryParse(id, out var guid)) return null;
         var state = await _session.LoadAsync<OAuthApplicationState>(guid, ct);
         if (state is null || state.IsDeleted) return null;
-        // ADR 0009 — last logout-token delivery, kept beside the client document.
+        // ADR 0021 — last logout-token delivery, kept beside the client document.
         var delivery = await _session.LoadAsync<BackChannelLogoutDeliveryStatus>(guid, ct);
         var security = await _session.LoadAsync<OAuthApplicationSecurityData>(guid, ct);
         return MapClient(state, delivery, security);

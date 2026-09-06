@@ -54,7 +54,7 @@ public class NativeRegistrationFlowTests : IntegrationTestBase
         Assert.NotNull(msg); // JIT issued a registration code to the unknown email
         var code = Regex.Match(msg!.HtmlBody, @"\b(\d{6})\b").Groups[1].Value;
         Assert.False(string.IsNullOrEmpty(code));
-        // ADR 0006: the request wrote a pending record, NOT a user.
+        // ADR 0018: the request wrote a pending record, NOT a user.
         Assert.Null(await QuerySystemUserByEmailAsync(newEmail));
 
         // 2) Redeem at /connect/token → tokens minted (the registration completes).
@@ -103,7 +103,7 @@ public class NativeRegistrationFlowTests : IntegrationTestBase
         resp.EnsureSuccessStatusCode();
         var msg = emailService.GetLastEmailTo(newEmail);
         Assert.NotNull(msg); // the registration code was issued
-        // ADR 0006: the names travel on the pending record — no user yet.
+        // ADR 0018: the names travel on the pending record — no user yet.
         Assert.Null(await QuerySystemUserByEmailAsync(newEmail));
 
         var code = Regex.Match(msg!.HtmlBody, @"\b(\d{6})\b").Groups[1].Value;

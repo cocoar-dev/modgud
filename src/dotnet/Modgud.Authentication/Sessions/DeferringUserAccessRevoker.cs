@@ -4,7 +4,7 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 namespace Modgud.Authentication.Sessions;
 
 /// <summary>
-/// Apply-scope-aware <see cref="IUserAccessRevoker"/> (ADR-0005 Phase 0): outside a
+/// Apply-scope-aware <see cref="IUserAccessRevoker"/> (ADR-0017 Phase 0): outside a
 /// <see cref="TenantApplyTransaction"/> every call passes straight through to
 /// <see cref="UserAccessRevoker"/>. Inside one, the kill switch is a CONSEQUENCE of a
 /// staged config change (user deactivation/prune) and is deferred until after the

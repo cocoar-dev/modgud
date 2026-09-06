@@ -89,7 +89,7 @@ const sections = computed<SectionDef[]>(() => [
       { label: 'admin.apps.title', labelEn: 'Applications', icon: 'layout-grid', to: '/admin/apps', requirePermissions: ['app:read'] },
       { label: 'admin.realms.title', labelEn: 'Realms', icon: 'globe', to: '/admin/realms', requirePermissions: ['realm:read'] },
       { label: 'admin.realmSettings.title', labelEn: 'Realm Settings', icon: 'sliders-horizontal', to: '/admin/realm-settings', requirePermissions: ['realm-settings:read'] },
-      // The draft workspace (ADR-0005) is gated on realm:admin only — the
+      // The draft workspace (ADR-0017) is gated on realm:admin only — the
       // backend endpoints require it (RealmConfigEndpoints), no resource perm fits.
       { label: 'admin.realmConfig.title', labelEn: 'Configuration Drafts', icon: 'file-json', to: '/admin/realm-config', requirePermissions: ['realm:admin'] },
       { label: 'admin.logs.title', labelEn: 'Logs', icon: 'scroll-text', to: '/admin/logs', requirePermissions: ['auth-log:read', 'audit-log:read', 'platform-audit:read'] },
@@ -109,7 +109,7 @@ const adminGroups = computed<SubNavGroup[]>(() =>
 
 <template>
   <SubNavLayoutGrouped :groups="adminGroups">
-    <!-- The ADR-0005 staging bar renders footer-positioned in MainLayout. -->
+    <!-- The ADR-0017 staging bar renders footer-positioned in MainLayout. -->
     <RouterView class="flex-1 min-h-0 min-w-0" />
   </SubNavLayoutGrouped>
 </template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The global staging bar (ADR-0005 Increment A) — the pendant of the OPNsense
+ * The global staging bar (ADR-0017 Increment A) — the pendant of the OPNsense
  * "apply changes" strip, rendered footer-positioned by MainLayout across the
  * whole admin area whenever a draft is checked out. Shows the active draft,
  * its pending-change count, and the branch verbs: view (workspace diff),

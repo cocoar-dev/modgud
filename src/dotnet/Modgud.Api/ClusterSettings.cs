@@ -2,7 +2,7 @@ namespace Modgud.Api;
 
 /// <summary>
 /// Deployment-wide settings for running more than one Modgud instance against
-/// one database (ADR 0010). Bound from configuration JSON (section "Cluster")
+/// one database (ADR 0022). Bound from configuration JSON (section "Cluster")
 /// with env overrides: <c>Cluster__DrainDelaySeconds</c>, <c>Cluster__NodeName</c>.
 /// <para>
 /// There is deliberately no instance count and no transport choice here.

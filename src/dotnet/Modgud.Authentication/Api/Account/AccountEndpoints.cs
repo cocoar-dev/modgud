@@ -154,7 +154,7 @@ public static class AccountEndpoints
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
             }
 
-            // ADR 0008 — device-aware throttling replaces Identity's global lockout on
+            // ADR 0020 — device-aware throttling replaces Identity's global lockout on
             // this endpoint: failures count per trusted device or in the user's
             // untrusted pool, so an attacker without the user's cookie can never lock
             // the user out of their own devices. Identity's LockoutEnd stays the
@@ -302,7 +302,7 @@ public static class AccountEndpoints
                 // next success still fires — only Identity's LOCK on it is gone.
                 if (userStore is IUserLockoutStore<ApplicationUser> lockoutStore)
                     await lockoutStore.IncrementAccessFailedCountAsync(user, context.RequestAborted);
-                // ADR 0008 — count the failure in the bucket the check resolved, raise the
+                // ADR 0020 — count the failure in the bucket the check resolved, raise the
                 // spray signal, send the unlock mail when the untrusted pool just tripped.
                 await loginThrottle.RecordFailureAsync(context, user, throttle, clientId, context.RequestAborted);
             }
@@ -412,7 +412,7 @@ public static class AccountEndpoints
             var user = await userManager.FindByEmailAsync(request.Email);
             if (user is null)
             {
-                // ADR 0006 — no account yet: the code may prove a pending registration,
+                // ADR 0018 — no account yet: the code may prove a pending registration,
                 // which creates the user (confirmed) exactly once. Any failure is the
                 // same uniform invalid-code response.
                 var proved = await registrationPipeline.ProveCodeAsync(request.Email, request.Code, ct);

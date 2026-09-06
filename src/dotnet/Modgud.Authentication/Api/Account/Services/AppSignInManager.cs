@@ -53,7 +53,7 @@ public class AppSignInManager(
 
         await base.SignInWithClaimsAsync(user, authenticationProperties, additionalClaims);
 
-        // ADR 0008 — every completed interactive login (password, MFA, passkey, magic
+        // ADR 0020 — every completed interactive login (password, MFA, passkey, magic
         // link, e-mail OTP, external) marks this browser as a trusted device for the
         // user. Best-effort: the auth cookie is already issued, a failed device write
         // must not turn a successful login into a 500.

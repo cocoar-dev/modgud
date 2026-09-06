@@ -7,7 +7,7 @@ namespace Modgud.Authentication.Api.ExternalAuth;
 // `Handle` method). One class per event keeps discovery explicit and matches
 // the pattern used by AutoMembershipSync* in the Groups feature.
 //
-// ADR 0010 (D6): these handlers no longer register or unregister schemes
+// ADR 0022 (D6): these handlers no longer register or unregister schemes
 // themselves — that would only ever affect the node that committed the change.
 // They ask the materializer to re-read the realm's providers now, so this
 // node's OIDC schemes and SAML cache are exact the moment the admin's request

@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
 
 /**
- * ADR-0005 Phase 1: named server-side configuration drafts. The store owns the
+ * ADR-0017 Phase 1: named server-side configuration drafts. The store owns the
  * open draft + its plan and funnels EVERY draft mutation through the same path:
  * PUT (optimistic version) → fresh draft DTO → automatic re-plan. Apply is gated
  * server-side (fail-fast plan, 409 with the plan while errors/conflicts exist);
@@ -367,7 +367,7 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     }
   }
 
-  /** Stages the DELETION of one live entity (ADR-0005 staged deletes) — the
+  /** Stages the DELETION of one live entity (ADR-0017 staged deletes) — the
    * targeted counterpart of prune; implicitly creates a draft when none is
    * active. Applied through the same canonical delete ops on "Draft anwenden". */
   async function stageDelete(section: string, key: string) {

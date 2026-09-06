@@ -76,7 +76,7 @@ internal static class OAuthAdminMapping
         foreach (var scope in scopes)
             permissions.Add(OAuthPermissions.Prefixes.Scope + scope);
 
-        // ADR 0007 — capabilities ride in the same list under their own prefix.
+        // ADR 0019 — capabilities ride in the same list under their own prefix.
         foreach (var capability in capabilities ?? [])
         {
             if (!permissions.Contains(capability, StringComparer.Ordinal))
@@ -208,7 +208,7 @@ internal static class OAuthAdminMapping
         // ADR-0009 — store the normalized (trimmed, lowercased) per-client RP ID; a
         // blank value leaves it realm-scoped (no key). Format is validated upstream.
         if (!string.IsNullOrWhiteSpace(dto.WebAuthnRpId)) settings[OAuthApplicationSettingKeys.WebAuthnRpId] = dto.WebAuthnRpId.Trim().ToLowerInvariant();
-        // ADR 0009 — stored as given (trimmed); format validated upstream.
+        // ADR 0021 — stored as given (trimmed); format validated upstream.
         if (!string.IsNullOrWhiteSpace(dto.BackChannelLogoutUri)) settings[OAuthApplicationSettingKeys.BackChannelLogoutUri] = dto.BackChannelLogoutUri.Trim();
         return settings;
     }
@@ -224,7 +224,7 @@ internal static class OAuthAdminMapping
         // queryable regardless of when it was set.
         bool requireDpop = false,
         bool requireDpopNonce = false,
-        // ADR 0009 — spec default is true; trailing optional for the pin tests.
+        // ADR 0021 — spec default is true; trailing optional for the pin tests.
         bool backChannelLogoutSessionRequired = true)
         => new()
         {
@@ -363,7 +363,7 @@ internal static class OAuthAdminMapping
             else
                 settings[OAuthApplicationSettingKeys.WebAuthnRpId] = dto.WebAuthnRpId.Value.Trim().ToLowerInvariant();
         }
-        // ADR 0009: absent = no change; explicit null or blank = remove; value = set.
+        // ADR 0021: absent = no change; explicit null or blank = remove; value = set.
         if (dto.BackChannelLogoutUri.HasValue)
         {
             if (string.IsNullOrWhiteSpace(dto.BackChannelLogoutUri.Value))
@@ -910,7 +910,7 @@ internal static class OAuthAdminMapping
     /// this only rejects obvious malformity that would mint unverifiable credentials.
     /// </summary>
     /// <summary>
-    /// ADR 0009 — a back-channel logout URI is an absolute URI without fragment, https
+    /// ADR 0021 — a back-channel logout URI is an absolute URI without fragment, https
     /// anywhere, http only on a loopback host (local development). Null/blank = none.
     /// Private / link-local literals are rejected here as well; the delivery handler
     /// re-checks every resolved address at send time (SSRF guard).

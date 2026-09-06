@@ -4,7 +4,7 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 namespace Modgud.Infrastructure.OpenIddict;
 
 /// <summary>
-/// Apply-scope-aware <see cref="IOAuthGrantRevoker"/> (ADR-0005 Phase 0): outside a
+/// Apply-scope-aware <see cref="IOAuthGrantRevoker"/> (ADR-0017 Phase 0): outside a
 /// <see cref="TenantApplyTransaction"/> every call passes straight through to
 /// <see cref="OpenIddictGrantRevoker"/> — byte-for-byte today's behavior. Inside one,
 /// the revocation is a CONSEQUENCE of a staged config change and is deferred until

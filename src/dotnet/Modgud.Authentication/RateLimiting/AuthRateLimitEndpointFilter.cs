@@ -14,7 +14,7 @@ public sealed class AuthRateLimitMetadata(AuthRateLimitPolicy policy)
     public AuthRateLimitPolicy Policy { get; } = policy;
 }
 
-/// <summary>Contract of a 429 (ADR 0007) — stable codes, machine-readable.</summary>
+/// <summary>Contract of a 429 (ADR 0019) — stable codes, machine-readable.</summary>
 public sealed record RateLimitedResponse(string Error, string Policy, string Dimension, int RetryAfterSeconds)
 {
     public const string ErrorCode = "rate_limited";

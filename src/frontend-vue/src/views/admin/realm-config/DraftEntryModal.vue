@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Generic draft-entry editor (ADR-0005 Phase 1b) — the interim modal behind every
+ * Generic draft-entry editor (ADR-0017 Phase 1b) — the interim modal behind every
  * resource card until the type-specific draft modals (Phase 1c) replace it, one
  * resource type at a time. Same ModalLayout frame as the admin modals.
  *

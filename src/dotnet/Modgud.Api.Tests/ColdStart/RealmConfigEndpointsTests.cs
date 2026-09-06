@@ -207,7 +207,7 @@ public class RealmConfigEndpointsTests(ColdStartFixture fixture) : ColdStartTest
         var client = await factory.CreateRealmAdminAndLoginAsync();
 
         // Apps apply before roles. The role references an unknown app, so the apply
-        // fails AFTER the app section already ran — ADR-0005 Phase 0 demands the
+        // fails AFTER the app section already ran — ADR-0017 Phase 0 demands the
         // whole transaction rolls back and the app never materializes.
         var manifest = new
         {

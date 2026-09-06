@@ -250,13 +250,13 @@ public class GdprService(
         var user = await session.LoadAsync<ApplicationUser>(userId, ct);
         if (user is not null)
         {
-            // ADR 0006 — an erased address must not leave a pending registration
+            // ADR 0018 — an erased address must not leave a pending registration
             // behind either (hard delete; no-op when there is none).
             if (!string.IsNullOrEmpty(user.NormalizedEmail))
                 session.Delete<Modgud.Authentication.Registration.PendingRegistration>(
                     Modgud.Authentication.Registration.PendingRegistration.IdFor(user.NormalizedEmail));
 
-            // ADR 0008 — the user leaves every trusted device; devices without users go.
+            // ADR 0020 — the user leaves every trusted device; devices without users go.
             await deviceTrust.ForgetUserAsync(userId, ct);
 
             user.IsDeleted = true;

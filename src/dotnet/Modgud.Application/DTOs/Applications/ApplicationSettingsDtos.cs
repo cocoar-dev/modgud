@@ -17,7 +17,7 @@ public record ApplicationSettingsDto
     public ApplicationLoginExperienceDto? LoginExperience { get; init; }
     public ApplicationSelfRegistrationDto? SelfRegistration { get; init; }
     public ApplicationNativeGrantsDto? NativeGrants { get; init; }
-    /// <summary>ADR 0007 — sparse rate-limit overrides for this App (null = inherit).</summary>
+    /// <summary>ADR 0019 — sparse rate-limit overrides for this App (null = inherit).</summary>
     public Modgud.Application.DTOs.RealmSettings.UpdateAuthRateLimitsDto? AuthRateLimits { get; init; }
     public ApplicationClientSessionsDto? ClientSessions { get; init; }
     public ApplicationDcrDto? Dcr { get; init; }

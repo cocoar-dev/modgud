@@ -5,7 +5,7 @@ using Modgud.Authentication.Events;
 namespace Modgud.Authentication.Sessions;
 
 /// <summary>
-/// ADR 0009 — "this relying party holds tokens of this session". One row per session
+/// ADR 0021 — "this relying party holds tokens of this session". One row per session
 /// and client, upserted whenever an access token is minted for the pair. Answers
 /// "which RPs does this session touch?" (back-channel logout fan-out) and "which
 /// sessions does this App see?" (change feed). Plain document in the realm database:

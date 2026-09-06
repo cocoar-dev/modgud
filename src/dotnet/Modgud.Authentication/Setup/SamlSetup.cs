@@ -77,7 +77,7 @@ public static class SamlSetup
         // Cold-start warm-up and runtime changes both go through
         // LoginProviderSchemeMaterializer (registered by the host together
         // with the OIDC side) — every node resolves SAML providers from the
-        // database on demand (ADR 0010, D6).
+        // database on demand (ADR 0022, D6).
 
         // Periodic metadata refresh — wakes every 15 min, re-fetches IdP
         // metadata for any provider whose per-provider cadence has elapsed.

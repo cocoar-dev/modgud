@@ -8,7 +8,7 @@ namespace Modgud.Authentication.Api.ExternalAuth;
 /// The framework's <see cref="AuthenticationSchemeProvider"/>, with one addition:
 /// before answering a question that involves the dynamically registered external
 /// schemes, it makes sure the current realm's login providers have been
-/// materialised on this node from the database (ADR 0010, D6).
+/// materialised on this node from the database (ADR 0022, D6).
 /// <para>
 /// Three call sites matter. The authentication middleware asks
 /// <see cref="GetRequestHandlerSchemesAsync"/> on every request to find a remote

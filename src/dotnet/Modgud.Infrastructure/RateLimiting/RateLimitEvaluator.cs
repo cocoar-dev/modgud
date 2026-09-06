@@ -23,7 +23,7 @@ public sealed record RateLimitDecision(
 }
 
 /// <summary>
-/// ADR 0007 — evaluates a policy's dimensions against the caller. Roles are fixed:
+/// ADR 0019 — evaluates a policy's dimensions against the caller. Roles are fixed:
 /// <c>target</c> and <c>app</c> are the defence (mailbox and mail budget), <c>client</c>
 /// bounds one integration, <c>source</c> is a coarse anomaly brake sized for NATs.
 /// A trusted forwarder shifts only the source dimensions.

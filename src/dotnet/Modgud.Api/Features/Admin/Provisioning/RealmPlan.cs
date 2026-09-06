@@ -52,7 +52,7 @@ public sealed record RealmPlanEntry
     /// <summary>Human-readable remarks (rotations, ignored fields, protections).</summary>
     public List<string> Notes { get; init; } = [];
 
-    /// <summary>Three-way conflicts against the draft's baseline (ADR-0005): live
+    /// <summary>Three-way conflicts against the draft's baseline (ADR-0017): live
     /// state moved since the draft was taken. Empty when no baseline was supplied.</summary>
     public List<RealmPlanConflict> Conflicts { get; init; } = [];
 }

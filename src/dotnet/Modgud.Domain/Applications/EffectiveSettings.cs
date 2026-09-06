@@ -90,7 +90,7 @@ public sealed record EffectiveSettings
 
         // Effective active page schema per slot: App selection (variant /
         // built-in) overrides the Realm selection when the App does not inherit
-        // that slot; otherwise the Realm's active selection stands (ADR-0001).
+        // that slot; otherwise the Realm's active selection stands (ADR-0013).
         Pages = ResolveEffectivePages(realm, app),
 
         // New per-App facets:
@@ -227,7 +227,7 @@ public sealed record EffectiveSettings
     /// <summary>The realm's active schema per slot: the schema of each slot's
     /// active variant. Slots with no active variant (built-in) are omitted, so
     /// the SPA falls back to its hardcoded view. Legacy <see cref="RealmSettings.Pages"/>
-    /// entries (pre-ADR-0001, not yet migrated) are honoured for any slug the
+    /// entries (pre-ADR-0013, not yet migrated) are honoured for any slug the
     /// new <c>PageSlots</c> does not cover.</summary>
     private static Dictionary<string, string>? ResolveRealmActivePages(RealmSettingsDoc realm)
     {

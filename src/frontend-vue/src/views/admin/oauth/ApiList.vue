@@ -39,7 +39,7 @@ watch(language, () => ui.set((ctx) => {
 const liveRows = computed(() =>
   store.apis.filter((a) => appCtx.matchesSingleAppId(a.AppId)))
 
-// ADR-0005: draft-merged roster (natural key = the immutable audience/Name).
+// ADR-0017: draft-merged roster (natural key = the immutable audience/Name).
 const staging = useDraftStaging('apis')
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
@@ -131,7 +131,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthApiDt
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
-  // ADR-0005 staged deletes: draft-created rows unstage, live rows stage their
+  // ADR-0017 staged deletes: draft-created rows unstage, live rows stage their
   // deletion, a second click on a staged-delete row undoes it.
   if (staging.stagingActive.value) {
     if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))

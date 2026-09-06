@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Configuration draft workspace (ADR-0005 Phase 1b).
+ * Configuration draft workspace (ADR-0017 Phase 1b).
  *
  * Two modes: the DRAFT LIST (create from export / empty / uploaded JSON, open,
  * delete, plus export & schema downloads) and the WORKSPACE for one open draft —

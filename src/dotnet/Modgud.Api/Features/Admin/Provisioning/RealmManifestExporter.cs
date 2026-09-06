@@ -397,7 +397,7 @@ public sealed class RealmManifestExporter(
             RequiredProofCapabilities = s.PositionSecurity.RequiredProofCapabilities,
             RequiredBindingCapabilities = s.PositionSecurity.RequiredBindingCapabilities,
         },
-        // ADR 0007 — only what the realm actually stores (sparse), never the effective
+        // ADR 0019 — only what the realm actually stores (sparse), never the effective
         // defaults: importing must not pin today's defaults as overrides.
         AuthRateLimits = s.AuthRateLimits.Overrides,
         Branding = new UpdateBrandingSettingsDto

@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Http;
 namespace Modgud.Infrastructure.RateLimiting;
 
 /// <summary>
-/// ADR 0007 — who is calling a public auth endpoint, resolved once per request by
+/// ADR 0019 — who is calling a public auth endpoint, resolved once per request by
 /// the caller-context middleware (Modgud.Api) and read by the rate-limit evaluator.
 ///
 /// <para><b>Addresses.</b> <see cref="RemoteAddress"/> is the connection peer after the

@@ -7,7 +7,7 @@ using Modgud.Domain.OAuth.Applications;
 namespace Modgud.Authentication.BackChannelLogout;
 
 /// <summary>
-/// ADR 0009 transport A, step 1 — reacts to the forwarded <see cref="UserAccessEndedEvent"/>
+/// ADR 0021 transport A, step 1 — reacts to the forwarded <see cref="UserAccessEndedEvent"/>
 /// and enqueues one durable <see cref="SendBackChannelLogout"/> per relying party that
 /// (a) held tokens of the ended session, (b) did not initiate the logout itself and
 /// (c) registered a back-channel logout URI. The user-facing request never waits for

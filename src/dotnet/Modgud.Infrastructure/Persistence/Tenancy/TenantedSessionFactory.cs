@@ -57,7 +57,7 @@ public sealed class TenantedSessionFactory : ISessionFactory, ITenantSessionFact
         return _store.QuerySession(tenantId);
     }
 
-    /// <summary>The ambient apply transaction (ADR-0005 Phase 0), when one is active
+    /// <summary>The ambient apply transaction (ADR-0017 Phase 0), when one is active
     /// for the resolved tenant. A session for a DIFFERENT tenant inside an apply
     /// scope is a bug — fail closed instead of silently splitting the apply across
     /// transactional and autonomous writes.</summary>

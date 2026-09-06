@@ -5,7 +5,7 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 namespace Modgud.Infrastructure.PositionTerminals;
 
 /// <summary>
-/// Apply-scope-aware <see cref="IStaffingRevoker"/> (ADR-0005 Phase 0): outside a
+/// Apply-scope-aware <see cref="IStaffingRevoker"/> (ADR-0017 Phase 0): outside a
 /// <see cref="TenantApplyTransaction"/> every call passes straight through to
 /// <see cref="StaffingRevoker"/>. Inside one, ending staffing sessions is a
 /// CONSEQUENCE of a staged config change (policy tightening, deactivation, grant

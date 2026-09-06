@@ -3,7 +3,7 @@ using JasperFx.Events.Daemon;
 namespace Modgud.Infrastructure.Cluster;
 
 /// <summary>
-/// How this host coordinates background work with its peers (ADR 0010).
+/// How this host coordinates background work with its peers (ADR 0022).
 /// <para>
 /// <see cref="WolverineManaged"/> is the Production shape: Wolverine runs in
 /// <c>Balanced</c> durability mode, distributes every Marten async projection and
@@ -50,7 +50,7 @@ public sealed record ClusterHostingOptions
 
     /// <summary>
     /// Whether this host runs the SignalARRR backplane on the master database and
-    /// relays data events to its peers over it (ADR 0010, D5). True in
+    /// relays data events to its peers over it (ADR 0022, D5). True in
     /// Production; a single-process host keeps pushes in-process. Read by
     /// readiness: two live nodes without the relay is a functional break.
     /// </summary>

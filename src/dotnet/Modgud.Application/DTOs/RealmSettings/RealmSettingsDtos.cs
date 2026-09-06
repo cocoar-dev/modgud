@@ -27,7 +27,7 @@ public record RealmSettingsDto
     public AuditSettingsDto Audit { get; init; } = new();
 
     // PageBuilder page config (variants + active selection) is served by the
-    // dedicated /api/admin/customization/pages endpoints (ADR-0001), not this
+    // dedicated /api/admin/customization/pages endpoints (ADR-0013), not this
     // bulk settings DTO — the schemas are large and independently managed.
 }
 

@@ -200,7 +200,7 @@ async function rollback() {
 }
 
 // UI-only: load the built-in default template into the editor buffer. Nothing is
-// persisted until Save (ADR-0001 — reset is non-destructive).
+// persisted until Save (ADR-0013 — reset is non-destructive).
 function loadDefaultTemplate() {
   schema.value = createDefaultAuthPageSchema(slot.value)
   resetHint.value = true

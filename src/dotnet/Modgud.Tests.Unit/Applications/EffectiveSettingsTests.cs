@@ -355,7 +355,7 @@ public class EffectiveSettingsTests
             Assert.Null(EffectiveSettings.Merge(Realm(), app).EmailBranding!.FromAddress);
         }
 
-        // ─────────────── ADR-0001: variants + activation ───────────────
+        // ─────────────── ADR-0013: variants + activation ───────────────
 
         private static RealmSettingsDoc RealmWithSlot(string slug, RealmPageSlot slot)
             => new() { PageSlots = new Dictionary<string, RealmPageSlot> { [slug] = slot } };

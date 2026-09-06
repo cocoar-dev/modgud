@@ -5,7 +5,7 @@ using Modgud.Infrastructure.RateLimiting;
 namespace Modgud.Authentication.RateLimiting;
 
 /// <summary>
-/// ADR 0007 — the silent <c>source-registration</c> ceiling, consulted by the
+/// ADR 0019 — the silent <c>source-registration</c> ceiling, consulted by the
 /// registration pipeline right before it writes a pending record for an unknown
 /// address. Outside an HTTP request (jobs, tests without a caller context) it allows.
 /// </summary>

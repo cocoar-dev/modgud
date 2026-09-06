@@ -7,7 +7,7 @@ namespace Modgud.Tests.Unit.Sessions;
 
 /// <summary>
 /// The node-local connection registry behind instant session revocation and,
-/// since ADR 0010, the periodic DB re-validation sweep: <c>Snapshot</c> must
+/// since ADR 0022, the periodic DB re-validation sweep: <c>Snapshot</c> must
 /// list every session with connections here together with its realm, and
 /// <c>Revoke</c> must abort every connection of that session.
 /// </summary>

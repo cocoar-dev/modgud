@@ -46,7 +46,7 @@ const liveRoles = computed(() =>
   roleStore.roles.filter((r) =>
     appCtx.matchesSingleAppId(r.IsRealmAdmin ? null : r.AppId)))
 
-// ADR-0005: draft-merged roster — the staged key resolves Key ?? app/name (role
+// ADR-0017: draft-merged roster — the staged key resolves Key ?? app/name (role
 // names are unique per App only), so a staged rename still overlays its live row.
 const staging = useDraftStaging('roles')
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -138,7 +138,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<RoleDto>>(
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
-  // ADR-0005 staged deletes — realm-admin roles are lockout-protected: the
+  // ADR-0017 staged deletes — realm-admin roles are lockout-protected: the
   // plan would flag the staged deletion as an error, so refuse it upfront.
   if (staging.stagingActive.value) {
     if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))

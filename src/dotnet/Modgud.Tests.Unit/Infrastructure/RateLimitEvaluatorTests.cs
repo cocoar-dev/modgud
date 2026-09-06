@@ -6,7 +6,7 @@ using Modgud.Infrastructure.RateLimiting;
 
 namespace Modgud.Tests.Unit.Infrastructure;
 
-/// <summary>ADR 0007 — dimension roles, forwarder semantics, NAT sizing, log-only.</summary>
+/// <summary>ADR 0019 — dimension roles, forwarder semantics, NAT sizing, log-only.</summary>
 public class RateLimitEvaluatorTests
 {
     private sealed class TestClock(DateTimeOffset start) : TimeProvider

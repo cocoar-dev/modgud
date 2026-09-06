@@ -11,7 +11,7 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Authentication.BackChannelLogout;
 
-/// <summary>ADR 0009 transport A — attempts pending logout-token deliveries.</summary>
+/// <summary>ADR 0021 transport A — attempts pending logout-token deliveries.</summary>
 public interface IBackChannelLogoutDeliverer
 {
     /// <summary>One attempt for one pending delivery in the given (tenant-scoped) unit of

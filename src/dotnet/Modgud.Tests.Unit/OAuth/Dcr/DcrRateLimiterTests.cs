@@ -4,7 +4,7 @@ using Modgud.Infrastructure.RateLimiting;
 namespace Modgud.Tests.Unit.OAuth.Dcr;
 
 /// <summary>
-/// Pins the two-window DCR limit logic on the shared counter store (ADR 0007). Each
+/// Pins the two-window DCR limit logic on the shared counter store (ADR 0019). Each
 /// test gets its own in-memory store, so cases share no state.
 /// </summary>
 public class DcrRateLimiterTests

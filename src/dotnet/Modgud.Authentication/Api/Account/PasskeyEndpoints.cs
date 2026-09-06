@@ -32,7 +32,7 @@ public static class PasskeyEndpoints
     /// the id of the server-side <see cref="PasskeyEnrollCeremony"/> issued by
     /// register-options. The attestation options used to live in the ASP.NET
     /// session (in-memory, per node); with two instances the register call could
-    /// land on a node that never saw them (ADR 0010, D6).</summary>
+    /// land on a node that never saw them (ADR 0022, D6).</summary>
     private const string PasskeyEnrollCookie = "Modgud.Passkey.Enroll";
 
     /// <summary>The cookie is scoped to the passkey endpoints; every Append AND

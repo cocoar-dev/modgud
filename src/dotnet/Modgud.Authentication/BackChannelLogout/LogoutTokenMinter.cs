@@ -6,7 +6,7 @@ using Modgud.Infrastructure.Realms;
 namespace Modgud.Authentication.BackChannelLogout;
 
 /// <summary>
-/// ADR 0009 — mints an OpenID Connect Back-Channel Logout 1.0 logout token (§2.4)
+/// ADR 0021 — mints an OpenID Connect Back-Channel Logout 1.0 logout token (§2.4)
 /// outside OpenIddict's request-scoped pipeline: RS256 with the realm's active
 /// signing key and <c>kid</c>, so a relying party verifies it against the realm JWKS
 /// exactly like an ID token. A fresh token is minted per delivery attempt.

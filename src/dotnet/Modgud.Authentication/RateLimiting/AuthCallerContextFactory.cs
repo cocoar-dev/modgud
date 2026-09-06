@@ -24,7 +24,7 @@ public interface IAuthCallerContextFactory
 }
 
 /// <summary>
-/// ADR 0007 — resolves who is calling. Client authentication is read from
+/// ADR 0019 — resolves who is calling. Client authentication is read from
 /// <c>client_secret_basic</c> (<c>Authorization: Basic</c>); the dedicated
 /// <c>Modgud-Forwarded-For</c> header is honoured ONLY for a confidential client that
 /// authenticated on this request and holds <c>cap:trusted-forwarder</c>. A forwarded

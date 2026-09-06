@@ -35,7 +35,7 @@ const authStore = useAuthStore()
 const appConfig = useAppConfigStore()
 const branding = computed(() => appConfig.config.Branding)
 
-// ADR-0005: the draft staging bar lives in the footer position — the page
+// ADR-0017: the draft staging bar lives in the footer position — the page
 // footer row is otherwise unused (only modals carry footer buttons). Scoped
 // to the admin area; the bar itself renders only while a draft is checked out.
 const showStagingBar = computed(() =>
