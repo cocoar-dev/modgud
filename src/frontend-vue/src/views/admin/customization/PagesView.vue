@@ -65,8 +65,14 @@ async function reload() {
         UsedByCount: v.UsedByApps.length + (v.RealmActive ? 1 : 0),
         UpdatedAt: v.UpdatedAt,
         PublishStatus: v.IsPublished
-          ? v.HasUnpublishedChanges ? 'Draft changed' : `Published r${v.PublishedRevision}`
-          : 'Not published',
+          ? v.HasUnpublishedChanges
+            ? t('admin.customization.pages.statusDraftChanged', {}, 'Draft changed')
+            : t(
+                'admin.customization.pages.statusPublished',
+                { revision: v.PublishedRevision },
+                `Published r${v.PublishedRevision}`,
+              )
+          : t('admin.customization.pages.statusNotPublished', {}, 'Not published'),
         PublishedRevision: v.PublishedRevision,
       })))
   } catch (e: any) { error.value = e?.message ?? String(e) }
@@ -112,6 +118,20 @@ async function deleteVariant(row: VariantRow | null) {
   } catch (e: any) { error.value = e?.message ?? String(e) }
 }
 
+// The toolbar button opens the same create menu as the right-click. It has to
+// wait for the current click to finish propagating: the menu closes on any
+// document click, so opening it synchronously would let this very click shut
+// it again. Stopping propagation on the component's `click` would not help —
+// that modifier governs the emitted Vue event, not the native DOM one.
+//
+// Deferred with a timer rather than requestAnimationFrame on purpose: rAF does
+// not fire while the page is not being painted (hidden tab, occluded window),
+// so the menu would silently never open there.
+function openCreateMenu(event: MouseEvent) {
+  const { clientX, clientY } = event
+  setTimeout(() => viewportMenu.open({ clientX, clientY }), 0)
+}
+
 const builder = applyListGridDefaults(CoarGridBuilder.create<VariantRow>(), { openable: true })
   .persistColumnState('platform-pages')
   .option('getRowId', (p: any) => p.data.Id)
@@ -139,13 +159,15 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<VariantRow>(), { op
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4 gap-2">
     <p class="hint">
-      {{ t('admin.customization.pages.hintV3', {}, 'Author page variants here, then choose which is live in Realm settings (and per Application). Right-click to create a new page.') }}
+      {{ t('admin.customization.pages.hintV3', {}, 'Author page variants here, then choose which is live in Realm settings (and per Application).') }}
     </p>
 
     <CoarDataGrid :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
-        <CoarButton size="s" icon-start="plus" @click="newVariant('login')">
-          {{ t('admin.customization.pages.newLogin', {}, 'New login page') }}
+        <!-- Opens the same menu as the right-click, so the button is not a
+             second, poorer path that can only create one of the four types. -->
+        <CoarButton size="s" icon-start="plus" @click="openCreateMenu">
+          {{ t('admin.customization.pages.newPage', {}, 'New page') }}
         </CoarButton>
       </template>
     </CoarDataGrid>

@@ -54,7 +54,9 @@
     "closeModal": "Dialog schließen",
     "copied": "Kopiert!",
     "readOnly": "Nur Lesen",
-    "copyAll": "Alle kopieren"
+    "copyAll": "Alle kopieren",
+    "new": "Neu",
+    "updated": "Aktualisiert"
   },
   "asset": {
     "picker": {
@@ -1175,7 +1177,7 @@
       },
       "pages": {
         "title": "Pages",
-        "hint": "Stelle die SPA-Seiten zusammen, auf denen die User landen. Pages ohne gespeichertes Schema fallen auf die hardcoded View zurück. Elemente reinziehen, konfigurieren, speichern — der Renderer (noch WIP) zieht sie zur Laufzeit.",
+        "hint": "Seitenvarianten für die Anmeldeoberfläche. Slots ohne aktive Variante fallen auf die eingebaute Ansicht zurück. Gespeichert wird zunächst ein Entwurf — live geht er erst mit dem Veröffentlichen.",
         "customised": "Angepasst",
         "default": "Default",
         "reset": "Auf Default zurücksetzen",
@@ -1190,7 +1192,35 @@
         "passwordForgot": {
           "title": "Passwort vergessen",
           "hint": "E-Mail-Adresse für den Reset-Link."
-        }
+        },
+        "hintV3": "Hier entstehen die Seitenvarianten. Welche davon live geht, wird in den Realm-Einstellungen und je Anwendung ausgewählt.",
+        "builtin": "Eingebaut (Standard)",
+        "consent": {
+          "title": "Einwilligung"
+        },
+        "deleteTitle": "Seite löschen",
+        "loadDefault": "Eingebaute Vorlage laden",
+        "nameRequired": "Diese Variante braucht zuerst einen Namen.",
+        "publish": "Speichern & veröffentlichen",
+        "resetHint": "Die eingebaute Vorlage wurde in den Editor geladen. Gespeichert wird erst beim Klick auf Speichern.",
+        "rollback": "Auf Version zurücksetzen",
+        "usedNone": "Nirgends verwendet",
+        "usedRealm": "Realm (aktiv)",
+        "variantName": "Name der Variante",
+        "type": "Typ",
+        "usedBy": "Verwendet von",
+        "statusDraftChanged": "Entwurf geändert",
+        "statusPublished": "Veröffentlicht r{revision}",
+        "statusNotPublished": "Nicht veröffentlicht",
+        "newPage": "Neue Seite",
+        "createNew": "Neue {type}-Seite anlegen"
+      },
+      "compositions": {
+        "title": "Kompositionen",
+        "publish": "Neue Version veröffentlichen",
+        "nameRequired": "Diese Komposition braucht zuerst einen Namen.",
+        "latestVersion": "Neueste Version",
+        "versions": "Versionen"
       }
     },
     "oauthClients": {
@@ -2243,7 +2273,26 @@
       "posture.inviteCode.title": "Invite-Code-Posture: So vergibst du Codes",
       "posture.inviteCode.ui": "Sofort nutzbar: Codes erzeugst du im Admin unter „Einladungscodes“ (Sidebar, OAuth & Federation) für diese App — keine weitere Einrichtung nötig.",
       "posture.inviteCode.m2m": "Für automatisches Minting durch die Backend-App (M2M): Lege einen OAuth-Scope „invite:write“ an, der an diese App gebunden ist (App-ID gesetzt), und gib einem ServiceAccount ein Credential mit diesem Scope. Die App ruft dann POST /api/app/{appId}/invite-codes mit ihrem client_credentials-Token auf.",
-      "posture.inviteCode.redeem": "Einlösung: Der Code reist auf dem nativen Sign-up-Request mit (Feld InviteCode); unbekannte E-Mails werden nur mit gültigem, unbenutztem Code zu Nutzern. Bestehende bestätigte Nutzer melden sich normal an (der Code wird ignoriert)."
+      "posture.inviteCode.redeem": "Einlösung: Der Code reist auf dem nativen Sign-up-Request mit (Feld InviteCode); unbekannte E-Mails werden nur mit gültigem, unbenutztem Code zu Nutzern. Bestehende bestätigte Nutzer melden sich normal an (der Code wird ignoriert).",
+      "tabs": {
+        "pages": "Seiten"
+      },
+      "pages": {
+        "inheritRealm": "Realm erben",
+        "hintV3": "Legt fest, welche Authentifizierungsseite diese Anwendung verwendet. „Realm erben“ folgt dem Realm; Varianten entstehen unter Plattform → Pages.",
+        "saveFirst": "Die Anwendung muss zuerst gespeichert werden, danach können ihre Authentifizierungsseiten ein eigenes Layout bekommen."
+      },
+      "pageTheme": {
+        "override": "Eigenes Seiten-Theme",
+        "scope": "Diese Tokens gelten nur innerhalb der eigenen Seiten dieser Anwendung. Eingebaute Seiten und die Modgud-Administrationsoberfläche sind nie betroffen.",
+        "accentColor": "Akzentfarbe",
+        "errorColor": "Fehlerfarbe",
+        "buttonRadius": "Button-Radius (px)",
+        "inputRadius": "Eingabefeld-Radius (px)",
+        "cardRadius": "Karten-Radius (px)",
+        "bodyFontFamily": "Schriftart Fließtext",
+        "titleFontFamily": "Schriftart Überschriften"
+      }
     },
     "emailPreview": {
       "title": "E-Mail-Vorschau",
