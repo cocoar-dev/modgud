@@ -104,7 +104,7 @@ public static class RealmConfigEndpoints
     }
 
     /// <summary>
-    /// Named server-side drafts (ADR-0005 Phase 1): the staging documents behind the
+    /// Named server-side drafts (ADR-0017 Phase 1): the staging documents behind the
     /// draft workspace. Same realm scoping and realm:admin gate as the rest of the
     /// surface; visibility (private vs shared) is enforced in <see cref="RealmDraftService"/>.
     /// </summary>
@@ -216,7 +216,7 @@ public static class RealmConfigEndpoints
         .WithName("RealmConfig_Drafts_UnstageEntity")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
 
-        // Staged deletes (ADR-0005): PUT stages the deletion of one LIVE entity —
+        // Staged deletes (ADR-0017): PUT stages the deletion of one LIVE entity —
         // implicitly creating an auto-named draft when none is active; DELETE undoes
         // it (the entity is restored from the draft's baseline).
         drafts.MapPut("active/deletions/{section}", async (
@@ -261,7 +261,7 @@ public static class RealmConfigEndpoints
         .WithName("RealmConfig_Drafts_Plan")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
 
-        // Apply gate (ADR-0005): pre-validated by a fresh plan; refused with 409 while
+        // Apply gate (ADR-0017): pre-validated by a fresh plan; refused with 409 while
         // it reports apply-errors or unresolved conflicts. Consumes the draft on success.
         drafts.MapPost("{id:guid}/apply", async (
             Guid id, HttpContext http, RealmDraftService service, CancellationToken ct, bool prune = false) =>

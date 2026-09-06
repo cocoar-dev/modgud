@@ -58,7 +58,7 @@ public class InviteCodeRegistrationFlowTests : IntegrationTestBase
         var msg = emailService.GetLastEmailTo(email);
         Assert.NotNull(msg); // a registration code was issued → the gate opened
         var otp = Regex.Match(msg!.HtmlBody, @"\b(\d{6})\b").Groups[1].Value;
-        // ADR 0006: the consumed code opened the pipeline, but no user exists before the proof.
+        // ADR 0018: the consumed code opened the pipeline, but no user exists before the proof.
         Assert.Null(await QuerySystemUserByEmailAsync(email));
 
         var token = await MintOtpTokenAsync(Host, "adr12-valid-client", email, otp);
@@ -136,7 +136,7 @@ public class InviteCodeRegistrationFlowTests : IntegrationTestBase
         (await a).EnsureSuccessStatusCode();
         (await b).EnsureSuccessStatusCode();
 
-        // ADR 0006: no user exists before a proof either way — the single-use
+        // ADR 0018: no user exists before a proof either way — the single-use
         // guarantee now shows as exactly ONE registration code being issued.
         Assert.Null(await QuerySystemUserByEmailAsync(emailA));
         Assert.Null(await QuerySystemUserByEmailAsync(emailB));

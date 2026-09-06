@@ -3,7 +3,7 @@ namespace Modgud.Api.Cluster;
 /// <summary>
 /// Process-wide "we are shutting down" flag. Readiness reads it so the reverse
 /// proxy stops routing to this node before Kestrel closes its listener
-/// (ADR 0010, D7).
+/// (ADR 0022, D7).
 /// </summary>
 public sealed class ShutdownState
 {

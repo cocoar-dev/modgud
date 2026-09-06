@@ -1,6 +1,6 @@
 namespace Modgud.Authentication.BackChannelLogout;
 
-/// <summary>ADR 0009 — shared names of the back-channel logout transport.</summary>
+/// <summary>ADR 0021 — shared names of the back-channel logout transport.</summary>
 public static class BackChannelLogoutConstants
 {
     /// <summary>OpenID Connect Back-Channel Logout 1.0 §2.4 — the <c>events</c> member key.</summary>

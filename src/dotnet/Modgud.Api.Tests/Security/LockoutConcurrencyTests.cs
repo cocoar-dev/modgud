@@ -54,7 +54,7 @@ public class LockoutConcurrencyTests : IntegrationTestBase
 
         // The decisive assertion: the CORRECT password is now refused from this
         // (untrusted) client, because the burst exhausted the user's untrusted
-        // failure bucket (ADR 0008). This is the property an attacker defeats by
+        // failure bucket (ADR 0020). This is the property an attacker defeats by
         // going parallel — a read-then-write counter would leave the bucket below
         // the threshold and this request would succeed.
         var withCorrectPassword = await anon.PostAsJsonAsync("/api/account/login",
@@ -62,7 +62,7 @@ public class LockoutConcurrencyTests : IntegrationTestBase
 
         Assert.Equal(HttpStatusCode.Unauthorized, withCorrectPassword.StatusCode);
 
-        // The per-user failure counter recorded every attempt — and, since ADR 0008,
+        // The per-user failure counter recorded every attempt — and, since ADR 0020,
         // no longer locks the account itself (LockoutEnd stays the admin's lock):
         // the owner's own trusted devices are unaffected by a stranger's burst.
         await using var qs = GetTenantedSession();

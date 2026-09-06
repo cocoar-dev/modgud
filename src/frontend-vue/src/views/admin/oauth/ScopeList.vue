@@ -39,7 +39,7 @@ watch(language, () => ui.set((ctx) => {
 const liveRows = computed(() =>
   store.scopes.filter((s) => appCtx.matchesSingleAppId(s.AppId)))
 
-// ADR-0005: draft-merged roster — staged edits overlay, draft-created scopes
+// ADR-0017: draft-merged roster — staged edits overlay, draft-created scopes
 // appear as synthetic rows (natural key = the immutable scope name).
 const staging = useDraftStaging('scopes')
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -152,7 +152,7 @@ async function deleteSelected() {
     alert(t('admin.oauthScopes.cannotDeleteStandard', {}, 'Standard OIDC scopes cannot be deleted.'))
     return
   }
-  // ADR-0005 staged deletes: in staging mode the delete is a commit too —
+  // ADR-0017 staged deletes: in staging mode the delete is a commit too —
   // draft-created rows just unstage, live rows stage their deletion, and a
   // second click on a staged-delete row undoes it.
   if (staging.stagingActive.value) {

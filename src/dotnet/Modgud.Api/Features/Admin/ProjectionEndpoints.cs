@@ -36,7 +36,7 @@ public static class ProjectionEndpoints
             HttpContext httpContext,
             CancellationToken ct) =>
         {
-            // ADR 0010 (D8): a rebuild pauses THIS node's projection agents and
+            // ADR 0022 (D8): a rebuild pauses THIS node's projection agents and
             // replays with an interactive daemon. With a second node alive the
             // realm's shards may be running there and would keep writing
             // progression rows the rebuild is about to reset. Scale to one

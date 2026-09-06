@@ -11,7 +11,7 @@ using static OpenIddict.Server.OpenIddictServerHandlers;
 namespace Modgud.Authentication.BackChannelLogout;
 
 /// <summary>
-/// ADR 0009 — records "this client holds tokens of this session" whenever an access
+/// ADR 0021 — records "this client holds tokens of this session" whenever an access
 /// token is generated for a principal that carries a <c>sid</c>. Hooks the same
 /// <see cref="GenerateTokenContext"/> the realm signing-key handler uses, one step
 /// later, so it reads the exact <c>iss</c> that goes into the token (the logout token

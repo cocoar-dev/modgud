@@ -1,7 +1,7 @@
 -- Quartz.NET job-store schema for PostgreSQL, taken verbatim from the
 -- Quartz.NET repository (database/tables/tables_postgres.sql) with the
 -- DROP preamble removed. Applied once by QuartzSchemaBootstrap into the
--- dedicated `quartz` schema of the master database (ADR 0010, D4).
+-- dedicated `quartz` schema of the master database (ADR 0022, D4).
 -- Quartz owns the shape of these tables; do not hand-edit them.
 
 CREATE SCHEMA IF NOT EXISTS quartz;

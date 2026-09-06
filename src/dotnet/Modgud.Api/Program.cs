@@ -135,7 +135,7 @@ try
             rule.For<ObservabilitySettings>().FromFile("data/configuration.local.json").Select("Observability"),
             rule.For<ObservabilitySettings>().FromEnvironment("Observability"),
 
-            // ADR 0010 — two-instance operation: drain, node name.
+            // ADR 0022 — two-instance operation: drain, node name.
             // Deployment-wide by nature, hence configuration/env and not a
             // realm setting. Env form: Cluster__DrainDelaySeconds.
             rule.For<ClusterSettings>().FromFile("data/configuration.json").Select("Cluster"),
@@ -184,7 +184,7 @@ try
     // app boots far and dies with a cryptic database error far from the cause.
     StartupValidation.ValidateRequiredConfig(conf);
 
-    // ADR 0010 (D2) — one code path. Production always runs cluster-capable:
+    // ADR 0022 (D2) — one code path. Production always runs cluster-capable:
     // Wolverine Balanced with managed projection distribution and a clustered
     // Quartz store, whether one container is running or two. Development and
     // Testing keep the single-process shape (Marten Solo daemon, in-memory
@@ -209,7 +209,7 @@ try
         NodeName = string.IsNullOrWhiteSpace(clusterSettings.NodeName)
             ? Environment.MachineName
             : clusterSettings.NodeName.Trim(),
-        // ADR 0010 (D5) — Production always runs the backplane on the master DB
+        // ADR 0022 (D5) — Production always runs the backplane on the master DB
         // and relays data events over it. Single-process hosts keep them in-process.
         CrossNodeRelay = builder.Environment.IsProduction(),
     };
@@ -293,7 +293,7 @@ try
 
     // No ASP.NET session middleware: its only consumer was the passkey
     // registration challenge, which now lives in a server-side ceremony
-    // document like every other WebAuthn ceremony (ADR 0010, D6). An in-memory
+    // document like every other WebAuthn ceremony (ADR 0022, D6). An in-memory
     // session would silently break the moment a second instance answers the
     // second request of the ceremony.
 
@@ -312,11 +312,11 @@ try
     builder.Services.AddSingleton<Modgud.Authentication.Sessions.IBrowserSessionConnectionRegistry,
         Modgud.Authentication.Sessions.BrowserSessionConnectionRegistry>();
     builder.Services.AddSingleton<Modgud.Api.Realtime.BrowserSessionHubFilter>();
-    // ADR 0010 (D6) — a session revoked on another node has no local registry
+    // ADR 0022 (D6) — a session revoked on another node has no local registry
     // entry to abort; the sweep re-validates idle connections against the DB.
     builder.Services.AddHostedService<Modgud.Api.Realtime.BrowserSessionConnectionSweeper>();
 
-    // ADR 0010 (D5) — cross-node live updates. Every hub in Modgud is a server
+    // ADR 0022 (D5) — cross-node live updates. Every hub in Modgud is a server
     // stream fed by the in-process DataEventDispatcher observable; there are no
     // targeted sends for the backplane to route. A SignalARRR cluster subject
     // makes that observable cluster-wide over the Postgres backplane on the
@@ -345,7 +345,7 @@ try
         builder.Services.AddSingleton<IDataEventRelay>(NoDataEventRelay.Instance);
     }
 
-    // ADR 0010 (D7) — graceful drain: readiness 503 first, then hold the
+    // ADR 0022 (D7) — graceful drain: readiness 503 first, then hold the
     // shutdown so the proxy's active health check drains traffic away.
     builder.Services.AddSingleton<ShutdownState>();
     builder.Services.AddSingleton<IHostedService>(sp => new ShutdownDrainService(
@@ -588,7 +588,7 @@ try
     //   * /api/account/bootstrap-admin → IP. Bootstrap-invite consume is
     //     one-shot per token; the policy is a brake on automated probing
     //     of leaked tokens.
-    // ADR 0007 — auth rate limiting is a subsystem (Modgud.Infrastructure.RateLimiting):
+    // ADR 0019 — auth rate limiting is a subsystem (Modgud.Infrastructure.RateLimiting):
     // multi-dimensional (source / target / client / app + the silent source-registration
     // ceiling), Postgres-backed counters (correct across instances), realm + App
     // configurable, and a caller context with the capability-gated trusted-forwarder
@@ -604,14 +604,14 @@ try
         Modgud.Authentication.RateLimiting.AuthCallerContextFactory>();
     builder.Services.AddScoped<Modgud.Authentication.RateLimiting.IRegistrationThrottle,
         Modgud.Authentication.RateLimiting.RegistrationThrottle>();
-    // ADR 0008 — device-aware login throttling.
+    // ADR 0020 — device-aware login throttling.
     builder.Services.AddScoped<Modgud.Authentication.Devices.IDeviceTrust,
         Modgud.Authentication.Devices.DeviceTrust>();
     builder.Services.AddScoped<Modgud.Authentication.RateLimiting.ILoginThrottle,
         Modgud.Authentication.RateLimiting.LoginThrottle>();
     builder.Services.AddScoped<Modgud.Authentication.RateLimiting.ILoginUnlockMailer,
         Modgud.Authentication.RateLimiting.LoginUnlockMailer>();
-    // ADR 0009 — back-channel logout: session grants, logout-token minter, delivery client.
+    // ADR 0021 — back-channel logout: session grants, logout-token minter, delivery client.
     builder.Services.AddScoped<Modgud.Authentication.Sessions.ISessionGrantService,
         Modgud.Authentication.Sessions.SessionGrantService>();
     builder.Services.AddSingleton<Modgud.Authentication.BackChannelLogout.LogoutTokenMinter>();
@@ -636,7 +636,7 @@ try
                 Modgud.Infrastructure.Http.SsrfSafeHttpHandlerFactory.Create(
                     "Back-channel logout delivery", sp.GetRequiredService<Modgud.Infrastructure.Http.SsrfAllowList>()));
     }
-    // ADR 0009 — record "client holds tokens of session" on every access-token mint.
+    // ADR 0021 — record "client holds tokens of session" on every access-token mint.
     builder.Services.AddOpenIddict().AddServer(options =>
         options.AddEventHandler(Modgud.Authentication.BackChannelLogout.SessionGrantTokenHandler.Descriptor));
     builder.Services.AddSingleton<Modgud.Application.Dcr.IDcrRateLimiter,
@@ -723,7 +723,7 @@ try
 
     // ADR-0011 — native passwordless registration: creates a passwordless user
     // from an email (JIT sign-up). Scoped (uses the tenant-scoped UserManager).
-    // ADR 0006 — the one registration pipeline for every public sign-up path.
+    // ADR 0018 — the one registration pipeline for every public sign-up path.
     builder.Services.AddScoped<Modgud.Authentication.Registration.IRegistrationPipeline,
         Modgud.Authentication.Registration.RegistrationPipeline>();
 
@@ -766,7 +766,7 @@ try
     builder.Services.AddSingleton<DynamicOidcSchemeManager>();
     builder.Services.AddScoped<ExternalLoginProcessor>();
 
-    // ADR 0010 (D6) — every node resolves the current realm's OIDC schemes and
+    // ADR 0022 (D6) — every node resolves the current realm's OIDC schemes and
     // SAML providers from the database on demand instead of learning about
     // them from a Wolverine handler that only ever runs on the committing node.
     // The scheme provider replacement must follow AddAuthentication above.
@@ -869,7 +869,7 @@ try
     // User-lifecycle access "kill switch" — revokes OAuth grants + sessions +
     // security stamp on delete/deactivate/force-logout. The OAuth half lives in
     // Infrastructure so the Authentication slice stays OpenIddict-free.
-    // The interfaces resolve to apply-scope-aware Deferring* decorators (ADR-0005
+    // The interfaces resolve to apply-scope-aware Deferring* decorators (ADR-0017
     // Phase 0): outside a TenantApplyTransaction they pass straight through; inside
     // one they defer the cascade until after the apply committed. The concrete
     // implementations stay registered — the deferred replay re-resolves them.
@@ -1019,7 +1019,7 @@ try
 
     // Wolverine CQRS + Marten projection side effects.
     //
-    // ADR 0010 (D3) — the environment decides, not an env var: Production runs
+    // ADR 0022 (D3) — the environment decides, not an env var: Production runs
     // Balanced (leader election over the node table in the master DB, outbox
     // agents and projection shards assigned across live nodes, stale nodes
     // recovered), Development and Testing run Solo. Two Solo instances would
@@ -1089,7 +1089,7 @@ try
 
     });
 
-    // ADR 0009 — the fan-out reads the end markers from the event store itself (a
+    // ADR 0021 — the fan-out reads the end markers from the event store itself (a
     // Marten subscription driven by the projection daemon, in order, with durable
     // progress), not from session-commit forwarding: sessions end from plain
     // endpoints whose Marten session is not Wolverine's outboxed one.
@@ -1113,7 +1113,7 @@ try
     // and are visible only from the current Control-Plane realm.
     builder.Services.AddScheduling(new SchedulingStoreOptions
     {
-        // ADR 0010 (D4) — clustered Postgres job store in the master DB; the
+        // ADR 0022 (D4) — clustered Postgres job store in the master DB; the
         // schema is created by QuartzSchemaBootstrap before the scheduler starts.
         PersistentStoreConnectionString = clusterHosting.IsWolverineManaged
             ? conf.DbSettings.ConnectionString
@@ -1130,7 +1130,7 @@ try
         name: Modgud.Api.Features.Admin.Jobs.DcrGcJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.DcrGcJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.DcrGcJob.Description);
-    // ADR 0006 — pending-registration hygiene + legacy ghost clean-up (dry-run by default).
+    // ADR 0018 — pending-registration hygiene + legacy ghost clean-up (dry-run by default).
     builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.PendingRegistrationSweepJob>(
         key: Modgud.Api.Features.Admin.Jobs.PendingRegistrationSweepJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.PendingRegistrationSweepJob.Name,
@@ -1593,7 +1593,7 @@ try
     var globalStore = app.Services.GetRequiredService<IGlobalStore>();
     await globalStore.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
 
-    // ADR 0010 (D4) — Quartz validates its tables at start and never creates
+    // ADR 0022 (D4) — Quartz validates its tables at start and never creates
     // them; do it here, once, under a cluster lock (two nodes may boot together).
     if (clusterHosting.IsWolverineManaged)
     {

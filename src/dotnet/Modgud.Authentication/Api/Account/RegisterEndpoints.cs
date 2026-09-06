@@ -95,7 +95,7 @@ public static class RegisterEndpoints
         })
         .WithName("Account_Register")
         .AllowAnonymous()
-        // ADR 0007 — per address (the defence), per source (NAT-sized brake), per
+        // ADR 0019 — per address (the defence), per source (NAT-sized brake), per
         // App budget; the silent per-source registration ceiling sits in the pipeline.
         .RequireAuthRateLimit(AuthRateLimitPolicy.SelfRegistration, target: ctx => ctx.Argument<RegisterDto>()?.Email);
 

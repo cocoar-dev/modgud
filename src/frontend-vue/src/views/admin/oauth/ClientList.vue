@@ -84,7 +84,7 @@ const liveRows = computed(() =>
     .filter((c) => appCtx.matchesAppIdList(c.AppIds))
     .filter((c) => !showDcrOnly.value || c.IsDynamicallyRegistered))
 
-// ADR-0005: draft-merged roster — staged edits overlay their live rows,
+// ADR-0017: draft-merged roster — staged edits overlay their live rows,
 // draft-created clients appear as synthetic rows (natural key = client_id).
 const staging = useDraftStaging('clients')
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -213,7 +213,7 @@ async function toggleEnabled() {
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
-  // ADR-0005 staged deletes — SA-linked and terminal-managed clients are not
+  // ADR-0017 staged deletes — SA-linked and terminal-managed clients are not
   // manifest-modeled and keep the live path.
   if (staging.stagingActive.value) {
     if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))

@@ -13,7 +13,7 @@
     <PackageVersion Include="Cocoar.JsEval.TypeScript" Version="4.1.0" />
     <PackageVersion Include="Cocoar.Reflectensions" Version="1.0.2" />
     <PackageVersion Include="Cocoar.SignalARRR.Server" Version="5.1.0" />
-    <!-- ADR 0010 — Postgres backplane on the master DB; carries Modgud's live-update cluster subject. -->
+    <!-- ADR 0022 — Postgres backplane on the master DB; carries Modgud's live-update cluster subject. -->
     <PackageVersion Include="Cocoar.SignalARRR.Server.Backplane.Postgres" Version="5.1.0" />
     <!-- Microsoft packages -->
     <PackageVersion Include="Fido2.AspNet" Version="4.0.1" />
@@ -96,7 +96,7 @@
     <!-- Slice-boundary tests under Modgud.Tests.Unit/Architecture/. -->
     <PackageVersion Include="NetArchTest.Rules" Version="1.3.2" />
     <!-- Quartz.NET — AspNetCore hosting integration. Production runs the
-         clustered Postgres job store in the master DB (ADR 0010); Development
+         clustered Postgres job store in the master DB (ADR 0022); Development
          and Testing keep the in-memory store. SchedulingBootstrap re-applies
          JobConfig overrides from Marten on every boot either way. -->
     <PackageVersion Include="Quartz.Extensions.Hosting" Version="3.18.2" />

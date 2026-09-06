@@ -25,7 +25,7 @@ using Modgud.Infrastructure.ChangeFeed;
 namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
-/// ADR 0009 — <c>sid</c> in every token of a session, the OpenID Connect Back-Channel
+/// ADR 0021 — <c>sid</c> in every token of a session, the OpenID Connect Back-Channel
 /// Logout 1.0 transport (signed logout token by POST, delivery status, retries) and the
 /// <c>session</c> entity kind of the Application change feed.
 /// </summary>

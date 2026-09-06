@@ -297,7 +297,7 @@ interface FormState {
   PostLogoutRedirectUris: string[]
   /** Pre-bound to a multi-select; sent as-is to the backend. */
   AllowedGrantTypes: string[]
-  /** ADR 0007 — `cap:` capabilities; only confidential clients may hold them. */
+  /** ADR 0019 — `cap:` capabilities; only confidential clients may hold them. */
   Capabilities: string[]
   AllowedCorsOrigins: string[]
   /** RFC 9126 — reject this client's direct (non-PAR) /connect/authorize requests. */
@@ -315,9 +315,9 @@ interface FormState {
   ClientSessionAbsoluteLifetime: number | null
   /** ADR-0009 — admin-set per-client WebAuthn RP ID for native passkeys. Empty = realm-scoped. */
   WebAuthnRpId: string
-  /** ADR 0009 — back-channel logout URI. Empty = none. */
+  /** ADR 0021 — back-channel logout URI. Empty = none. */
   BackChannelLogoutUri: string
-  /** ADR 0009 — logout tokens carry `sid`. */
+  /** ADR 0021 — logout tokens carry `sid`. */
   BackChannelLogoutSessionRequired: boolean
   /** Read-only delivery status of the last logout POST. */
   BackChannelLogoutLastDeliveryAt: string | null
@@ -449,7 +449,7 @@ function discardNewServiceAccountDraft() {
 // edited through the dedicated terminal-owned endpoint.
 const hasStaffingGrant = computed(() => form.value.AllowedGrantTypes.includes(STAFFING_GRANT))
 
-// ADR 0007 — client capabilities. The forwarder capability lets a confidential
+// ADR 0019 — client capabilities. The forwarder capability lets a confidential
 // client (a BFF) convey the end user's address; it shifts only the SOURCE rate-limit
 // dimension, never lifts a limit. Public clients cannot hold it.
 const TRUSTED_FORWARDER = 'cap:trusted-forwarder'
@@ -568,7 +568,7 @@ watch(() => form.value.TerminalBinding, (binding) => {
 const isTerminalManaged = computed(() => !isCreate.value
   && (!!form.value.ManagedTerminalEnrollmentId || !!form.value.LinkedPositionPrincipalId))
 
-// ── ADR-0005 staging: ordinary client saves commit onto the active draft. The
+// ── ADR-0017 staging: ordinary client saves commit onto the active draft. The
 // manifest deliberately does NOT model SA-linked (client_credentials),
 // terminal-/staffing-managed or just-created clients — those keep the live
 // path, exactly like the exporter skips them.
@@ -890,7 +890,7 @@ async function save() {
   loading.value = true
   error.value = null
   try {
-    // ADR-0005: commit onto the active draft instead of writing live.
+    // ADR-0017: commit onto the active draft instead of writing live.
     if (stagedSave.value) {
       await staging.stage(form.value.ClientId.trim(), toStaged())
       props.close()
@@ -1033,7 +1033,7 @@ function buildUpdateDto(): UpdateOAuthClientDto {
     // per-client RP ID.
     WebAuthnRpId: form.value.WebAuthnRpId.trim() || null,
     Capabilities: [...form.value.Capabilities],
-    // ADR 0009: null removes the logout URI.
+    // ADR 0021: null removes the logout URI.
     BackChannelLogoutUri: form.value.BackChannelLogoutUri.trim() || null,
     // private_key_jwt: null removes the key set.
     JsonWebKeySet: form.value.JsonWebKeySet.trim() || null,

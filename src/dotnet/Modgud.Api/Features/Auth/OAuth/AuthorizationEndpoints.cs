@@ -67,7 +67,7 @@ public static class AuthorizationEndpoints
             .WithName("OAuth_Token")
             .DisableAntiforgery()
             // RATE-01 — partition by client_id (60 req/min sliding window).
-            // ADR 0007 — per claimed client_id (confidential clients authenticate, public
+            // ADR 0019 — per claimed client_id (confidential clients authenticate, public
             // ones at least separate) and per source; both token buckets.
             .RequireAuthRateLimit(AuthRateLimitPolicy.OAuthToken,
                 client: ctx => AuthRateLimitEndpointExtensions.FormField(ctx.HttpContext, "client_id"));
@@ -1580,7 +1580,7 @@ public static class AuthorizationEndpoints
                     httpContext.Request.Headers.UserAgent.ToString()),
                 httpContext.RequestAborted);
             principal.SetClaim(SessionClaimTypes.ClientSessionId, clientSession.Id.ToString());
-            // ADR 0009 — a native session's sid is its ClientSession id.
+            // ADR 0021 — a native session's sid is its ClientSession id.
             principal.SetClaim(SessionClaimTypes.Sid, clientSession.Id.ToString());
         }
 
@@ -1654,7 +1654,7 @@ public static class AuthorizationEndpoints
         var user = await userManager.FindByEmailAsync(email);
         if (user is null)
         {
-            // ADR 0006 — no account yet: the code may prove a pending registration,
+            // ADR 0018 — no account yet: the code may prove a pending registration,
             // which creates the user (confirmed) exactly once in the same unit of work.
             // Every failure stays the uniform factor failure (anti-enumeration).
             var registrationPipeline = httpContext.RequestServices
@@ -1671,7 +1671,7 @@ public static class AuthorizationEndpoints
             // Defence-in-depth: native email-OTP is a PRIMARY factor, so a confirmed
             // mailbox is required at the minting site too (not only at the request
             // endpoint). Legacy exception: a passwordless, still-unconfirmed account
-            // created by the pre-ADR-0006 JIT path may still redeem its registration
+            // created by the pre-ADR-0018 JIT path may still redeem its registration
             // code here and is confirmed on success (such accounts are reaped after
             // 7 days). A password-bearing unconfirmed account must verify via the web
             // link (never gets a native code issued, and is rejected here as before).
@@ -2412,7 +2412,7 @@ public static class AuthorizationEndpoints
             }
         }
 
-        // ADR 0009 — the browser session end names the relying party that asked for
+        // ADR 0021 — the browser session end names the relying party that asked for
         // it; every other RP of that session gets a logout token, this one does not.
         if (!string.IsNullOrEmpty(hintClientId))
             httpContext.Items[Modgud.Authentication.BackChannelLogout.BackChannelLogoutConstants.InitiatingClientItem] = hintClientId;
@@ -2499,7 +2499,7 @@ public static class AuthorizationEndpoints
                 identity.AddClaim(new Claim(FederationClaimTypes.SessionGroup, carrier.Value));
             }
 
-            // ADR 0009 — sid. From the application cookie (authorize) it is the browser
+            // ADR 0021 — sid. From the application cookie (authorize) it is the browser
             // session id; from a code/refresh principal it is whatever that principal
             // already carried, so the value survives every redemption.
             var sid = cookiePrincipal.FindFirstValue(SessionClaimTypes.Sid)
@@ -2904,7 +2904,7 @@ internal static class AuthorizationEndpointHelpers
             case SessionClaimTypes.ClientSessionId:
                 yield break;
 
-            // ADR 0009 — the session identifier reaches the ID token (OIDC sid) and the
+            // ADR 0021 — the session identifier reaches the ID token (OIDC sid) and the
             // access token (so a resource server can drop tokens of an ended session);
             // introspection echoes access-token claims.
             case SessionClaimTypes.Sid:

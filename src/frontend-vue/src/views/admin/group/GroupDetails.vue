@@ -53,7 +53,7 @@ const applicationsStore = useApplicationsStore()
 const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
 
-// ── ADR-0005 staging: group saves commit onto the active draft. The manifest
+// ── ADR-0017 staging: group saves commit onto the active draft. The manifest
 // models group members as USER keys only — a Manual group whose members include
 // nested groups or service accounts cannot round-trip through the draft (apply
 // would strip them), so those groups keep the live path.
@@ -500,7 +500,7 @@ async function save() {
   saving.value = true
   saveError.value = null
   try {
-    // ADR-0005: commit onto the active draft instead of writing live.
+    // ADR-0017: commit onto the active draft instead of writing live.
     if (stagedSave.value) {
       await staging.stage(form.value.Name.trim(), toStaged())
       props.close()

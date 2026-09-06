@@ -23,7 +23,7 @@ public sealed record BrowserSessionConnection(Guid SessionId, string? Realm);
 /// Process-local registry used to abort already-upgraded SignalR connections
 /// immediately when their authoritative browser session is revoked on THIS
 /// node. A revocation processed on another node is caught by two DB-driven
-/// paths that need no cross-node message (ADR 0010, D6): every hub invocation
+/// paths that need no cross-node message (ADR 0022, D6): every hub invocation
 /// re-checks the session row, and <c>BrowserSessionConnectionSweeper</c>
 /// re-validates every idle connection's session against the database on a
 /// short interval.

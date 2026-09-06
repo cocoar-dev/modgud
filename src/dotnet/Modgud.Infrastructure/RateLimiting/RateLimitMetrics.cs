@@ -19,12 +19,12 @@ public static class RateLimitMetrics
     private static readonly Counter<long> LoginThrottledCounter = Meter.CreateCounter<long>(
         "modgud.auth.login.throttled",
         unit: "{attempt}",
-        description: "ADR 0008 — password login attempts refused (or, in log-only mode, that would have been) because a failure bucket was exhausted.");
+        description: "ADR 0020 — password login attempts refused (or, in log-only mode, that would have been) because a failure bucket was exhausted.");
 
     private static readonly Counter<long> LoginSprayCounter = Meter.CreateCounter<long>(
         "modgud.auth.login.spray_detected",
         unit: "{source}",
-        description: "ADR 0008 — a source crossed the untrusted-failures-per-source signal threshold (once per window; never blocks).");
+        description: "ADR 0020 — a source crossed the untrusted-failures-per-source signal threshold (once per window; never blocks).");
 
     public static void LoginThrottled(string bucket, bool logOnly) =>
         LoginThrottledCounter.Add(1,

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * ADR 0007 — one editor for the multi-dimensional auth rate limits, used by the realm
+ * ADR 0019 — one editor for the multi-dimensional auth rate limits, used by the realm
  * settings (baseline = shipped defaults) and by the Application settings (baseline =
  * the realm's effective values). The model is SPARSE: a cell is either `null`
  * (inherit the baseline) or an explicit rule. Dimensions that do not apply to a policy
@@ -36,7 +36,7 @@ function ruleOf(policy: string, dim: RateLimitDimensionKey): RateLimitRuleDto | 
 function isOverridden(policy: string, dim: RateLimitDimensionKey) {
   return ruleOf(policy, dim) !== null
 }
-/** ADR 0008: a signal-only cell (the login spray threshold) can be tuned but never switched off. */
+/** ADR 0020: a signal-only cell (the login spray threshold) can be tuned but never switched off. */
 function isSignalOnly(policy: string, dim: RateLimitDimensionKey) {
   return baselineOf(policy, dim)?.SignalOnly === true
 }

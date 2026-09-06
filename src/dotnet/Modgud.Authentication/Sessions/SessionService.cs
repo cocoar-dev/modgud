@@ -138,7 +138,7 @@ public class SessionService(
         if (entity.UserId != userId) return Error.Forbidden("Session.NotOwner", "Caller does not own this session.");
 
         session.Delete<UserSession>(sessionId);
-        // ADR 0009 — the session's relying parties and the end marker commit with the delete.
+        // ADR 0021 — the session's relying parties and the end marker commit with the delete.
         await grants.StageSessionEndAsync(session, userId, sessionId, reason, initiatingClientId, ct);
         await session.SaveChangesAsync(ct);
         connections.Revoke(sessionId);
@@ -162,7 +162,7 @@ public class SessionService(
         else
             session.DeleteWhere<UserSession>(s => s.UserId == userId);
 
-        // ADR 0009 — one end marker per session so every relying party of every
+        // ADR 0021 — one end marker per session so every relying party of every
         // ended session is notified with the sid it knows (a user-level end would
         // also log the caller's own, kept session out at its RPs).
         foreach (var id in ids)
@@ -206,7 +206,7 @@ public class SessionService(
             .Select(s => new { s.Id, s.UserId })
             .ToListAsync(ct);
         session.DeleteWhere<UserSession>(s => s.ExpiresAt <= now || s.AbsoluteExpiresAt <= now);
-        // ADR 0009 — an expired session ends its relying-party sessions too.
+        // ADR 0021 — an expired session ends its relying-party sessions too.
         foreach (var owner in owners)
             await grants.StageSessionEndAsync(session, owner.UserId, owner.Id, AccessEndReasons.Expired, initiatingClientId: null, ct);
         await session.SaveChangesAsync(ct);

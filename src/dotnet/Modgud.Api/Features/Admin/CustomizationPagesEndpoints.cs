@@ -10,7 +10,7 @@ using Marten;
 namespace Modgud.Api.Features.Admin;
 
 /// <summary>
-/// PageBuilder configuration (ADR-0001). The variant library is <b>realm-global</b>:
+/// PageBuilder configuration (ADR-0013). The variant library is <b>realm-global</b>:
 /// each SPA page-slug (<c>login</c>, <c>logout</c>, <c>password-forgot</c>,
 /// <c>consent</c>) owns a
 /// set of named <see cref="PageVariant"/>s on the tenant <see cref="RealmSettings"/>.

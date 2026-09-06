@@ -7,7 +7,7 @@ using Modgud.Infrastructure.Realms;
 
 namespace Modgud.Tests.Unit.Infrastructure;
 
-/// <summary>ADR 0009 — the logout token follows OpenID Connect Back-Channel Logout 1.0 §2.4.</summary>
+/// <summary>ADR 0021 — the logout token follows OpenID Connect Back-Channel Logout 1.0 §2.4.</summary>
 public class LogoutTokenMinterTests
 {
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider

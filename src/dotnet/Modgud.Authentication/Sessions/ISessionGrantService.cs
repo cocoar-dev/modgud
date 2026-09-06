@@ -4,7 +4,7 @@ using Modgud.Authentication.Events;
 namespace Modgud.Authentication.Sessions;
 
 /// <summary>
-/// ADR 0009 — maintains <see cref="SessionGrant"/> rows and appends the access
+/// ADR 0021 — maintains <see cref="SessionGrant"/> rows and appends the access
 /// events on the user stream. The <c>Stage*</c> members add to the caller's unit of
 /// work and never save: the session delete, the grant deletes and the event commit
 /// together or not at all.

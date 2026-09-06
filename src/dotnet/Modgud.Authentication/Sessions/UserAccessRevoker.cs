@@ -27,7 +27,7 @@ public sealed class UserAccessRevoker(
     {
         var subject = userId.ToString();
 
-        // 0) ADR 0009 — one user-level end marker carrying every relying party that
+        // 0) ADR 0021 — one user-level end marker carrying every relying party that
         //    held tokens for the user; committed before the per-session revocations
         //    below so those find no grants left and stay silent (no double notification).
         await sessionGrants.StageUserEndAsync(session, userId, reason switch

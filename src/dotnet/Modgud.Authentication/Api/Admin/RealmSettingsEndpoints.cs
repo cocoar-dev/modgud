@@ -32,7 +32,7 @@ public static class RealmSettingsEndpoints
             IFeatureFlags features,
             CancellationToken ct) =>
         {
-            // PageBuilder config is no longer part of this DTO (ADR-0001) — it
+            // PageBuilder config is no longer part of this DTO (ADR-0013) — it
             // is served by the /api/admin/customization/pages endpoints, which
             // already 404 while the feature flag is off, so nothing to mask here.
             var dto = await svc.GetDtoAsync(ct);

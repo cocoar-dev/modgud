@@ -42,7 +42,7 @@ Each slot defines its own list of **available actions**. Login supports credenti
 
 ## Variants and activation
 
-The variant library is **realm-global** (ADR-0001): each slot owns a set of named variants, authored in **Platform → Pages**. Three concepts stay separate — *a variant exists*, *a variant is live*, and *the built-in fixed view* — so you can:
+The variant library is **realm-global** (ADR-0013): each slot owns a set of named variants, authored in **Platform → Pages**. Three concepts stay separate — *a variant exists*, *a variant is live*, and *the built-in fixed view* — so you can:
 
 - author several variants for one slot (e.g. two login layouts) and switch which is live,
 - **deactivate** a variant (set the slot back to Built-in) without deleting it, and

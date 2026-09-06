@@ -260,7 +260,7 @@ export interface UpdateNativeGrantSettingsDto {
   RefreshTokenLifetimeDays?: number
 }
 
-// ADR 0007 — multi-dimensional auth rate limits. Every policy (one per public auth
+// ADR 0019 — multi-dimensional auth rate limits. Every policy (one per public auth
 // flow) carries ceilings per dimension: Source (effective address, a NAT-sized brake),
 // SourceRegistration (silent address-spraying ceiling), Target (the mailbox — the
 // defence), Client (one integration), App (the mail-cost brake). The read shape
@@ -272,7 +272,7 @@ export interface RateLimitRuleDto {
   /** Token-bucket capacity; null/absent = fixed window. */
   Burst?: number | null
   Enabled?: boolean
-  /** Read-only marker: evaluated and counted, never rejects (ADR 0008 login spray signal). */
+  /** Read-only marker: evaluated and counted, never rejects (ADR 0020 login spray signal). */
   SignalOnly?: boolean
 }
 

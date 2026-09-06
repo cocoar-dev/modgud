@@ -49,7 +49,7 @@ public sealed record PositionTerminalPolicy
         = [ActivationProofMethodIds.PersonalPasskey];
 
     /// <summary>Open device-binding IDs. Missing on old documents defaults to
-    /// DPoP, matching every enrollment created before ADR 0004.</summary>
+    /// DPoP, matching every enrollment created before ADR 0016.</summary>
     public IReadOnlyList<string> AllowedDeviceBindings { get; init; }
         = [DeviceBindingIds.Dpop];
 

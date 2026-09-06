@@ -7,7 +7,7 @@ namespace Modgud.Api.Realtime;
 /// <summary>
 /// Re-validates every browser session that holds a SignalR connection on this
 /// node against the database and aborts the connections of sessions that are
-/// gone or expired (ADR 0010, D6).
+/// gone or expired (ADR 0022, D6).
 /// <para>
 /// A revocation is processed on one node; the connection may live on another.
 /// Each hub invocation already re-checks the session row, so an active client

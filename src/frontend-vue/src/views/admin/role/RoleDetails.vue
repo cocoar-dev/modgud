@@ -33,7 +33,7 @@ const applicationsStore = useApplicationsStore()
 const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
 
-// ── ADR-0005 staging: role saves commit onto the active draft. Role names are
+// ── ADR-0017 staging: role saves commit onto the active draft. Role names are
 // editable, so the staged Key is pinned to the ORIGINAL key — a rename then
 // replaces the staged entry instead of cloning it. The key is `app/name` (bare
 // name for a realm-admin role): names are unique per App only.
@@ -287,7 +287,7 @@ async function save() {
   loading.value = true
   saveError.value = ''
   try {
-    // ADR-0005: commit onto the active draft instead of writing live.
+    // ADR-0017: commit onto the active draft instead of writing live.
     if (stagedSave.value) {
       const entity = toStaged()
       await staging.stage(stagedKey.value ?? roleManifestKey(

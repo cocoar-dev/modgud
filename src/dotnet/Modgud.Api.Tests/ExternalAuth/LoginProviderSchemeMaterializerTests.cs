@@ -10,7 +10,7 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 namespace Modgud.Api.Tests.ExternalAuth;
 
 /// <summary>
-/// ADR 0010 (D6): every node resolves a realm's OIDC schemes from the
+/// ADR 0022 (D6): every node resolves a realm's OIDC schemes from the
 /// <see cref="LoginProvider"/> documents. These tests play "the other node" —
 /// the one whose Wolverine handlers never ran for the change — by wiping the
 /// in-memory registration and letting the materializer rebuild it from the

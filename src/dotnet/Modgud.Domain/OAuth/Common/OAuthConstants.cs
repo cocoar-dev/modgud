@@ -14,7 +14,7 @@ public static class OAuthPermissions
         public const string GrantType = "gt:";
         public const string ResponseType = "rst:";
         public const string Endpoint = "ept:";
-        /// <summary>ADR 0007 — Modgud client capabilities (not an OpenIddict prefix).</summary>
+        /// <summary>ADR 0019 — Modgud client capabilities (not an OpenIddict prefix).</summary>
         public const string Capability = "cap:";
     }
 
@@ -42,7 +42,7 @@ public static class OAuthPermissions
         public const string PushedAuthorizationRequests = "ft:par";
     }
 
-    /// <summary>ADR 0007 — per-client capabilities a realm admin grants explicitly.
+    /// <summary>ADR 0019 — per-client capabilities a realm admin grants explicitly.
     /// Stored as <c>cap:</c>-prefixed entries in the client's permission list next to
     /// the grant-type permissions (OpenIddict ignores prefixes it does not know).
     /// A capability may shift a rate-limit dimension, never lift a limit.</summary>

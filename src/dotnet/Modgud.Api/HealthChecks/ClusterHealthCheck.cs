@@ -6,7 +6,7 @@ namespace Modgud.Api.HealthChecks;
 
 /// <summary>
 /// Readiness facts that only exist once a deployment can have more than one
-/// node (ADR 0010):
+/// node (ADR 0022):
 /// <list type="bullet">
 ///   <item>the node is draining after SIGTERM → 503 so the proxy stops routing here;</item>
 ///   <item>more than one node is alive but this host runs without the

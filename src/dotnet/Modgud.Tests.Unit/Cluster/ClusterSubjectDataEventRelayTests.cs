@@ -8,7 +8,7 @@ using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
 namespace Modgud.Tests.Unit.Cluster;
 
 /// <summary>
-/// The adapter between the dispatcher and the cluster subject (ADR 0010, D5): a
+/// The adapter between the dispatcher and the cluster subject (ADR 0022, D5): a
 /// local event goes to the subject stamped with this node's id, a peer's envelope
 /// is replayed into the dispatcher without being relayed again, the node's own
 /// envelope coming back from the subject is skipped (no echo), and an unreadable

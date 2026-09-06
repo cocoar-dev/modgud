@@ -68,7 +68,7 @@ public class ApplicationSettings
     /// inherit the realm native-grant settings.</summary>
     public ApplicationNativeGrantOverrides? NativeGrants { get; set; }
 
-    /// <summary>ADR 0007 — sparse per-App overrides of the realm's auth rate limits:
+    /// <summary>ADR 0019 — sparse per-App overrides of the realm's auth rate limits:
     /// only the dimensions set here win, the allowlist/mode replace the realm's when
     /// set. Null = inherit everything.</summary>
     public Modgud.Domain.Realms.AuthRateLimitSettings? AuthRateLimits { get; set; }
@@ -101,14 +101,14 @@ public class ApplicationSettings
     /// </summary>
     public ApplicationChangeFeedSettings? ChangeFeed { get; set; }
 
-    /// <summary>LEGACY (pre-ADR-0001): single per-Application PageBuilder
+    /// <summary>LEGACY (pre-ADR-0013): single per-Application PageBuilder
     /// schema per slot. Retained only for <see cref="MigratePagesToSlots"/> to
     /// convert on load; cleared on the next save. New reads/writes use
     /// <see cref="PageSlots"/>.</summary>
     public Dictionary<string, string>? Pages { get; set; }
 
     /// <summary>Per-Application PageBuilder selection keyed by SPA page slot
-    /// (ADR-0001). An App does not own variants — the library is realm-global;
+    /// (ADR-0013). An App does not own variants — the library is realm-global;
     /// each entry only records whether the App inherits the realm selection or
     /// overrides it (built-in / a realm variant id). Managed through the
     /// dedicated Application page endpoints so an ordinary App settings update
@@ -116,7 +116,7 @@ public class ApplicationSettings
     public Dictionary<string, AppPageSlot>? PageSlots { get; set; }
 
     /// <summary>Lazily drop the legacy single-schema <see cref="Pages"/>
-    /// dictionary (ADR-0001). Applications no longer author their own page
+    /// dictionary (ADR-0013). Applications no longer author their own page
     /// schemas — the variant library is realm-global — so a legacy App override
     /// cannot be represented; the slot falls back to inheriting the realm.
     /// Returns <c>true</c> when it changed the document.</summary>

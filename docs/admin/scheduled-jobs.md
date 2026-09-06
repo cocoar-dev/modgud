@@ -78,7 +78,7 @@ Hard-deletes expired pending registrations — sign-ups (web, native OTP, invite
 
 ### `unconfirmed-registration-reaper` — Unconfirmed registration reaper
 
-Erases the "ghost" accounts the pre-ADR-0006 sign-up paths created before the proof: passwordless users whose registration code was never redeemed.
+Erases the "ghost" accounts the pre-ADR-0018 sign-up paths created before the proof: passwordless users whose registration code was never redeemed.
 
 - **Default cron:** `0 30 4 * * ?` (04:30 UTC daily)
 - **Parameters:** `dryRun` (default **true** — only logs the candidates), `olderThanDays` (default 7).

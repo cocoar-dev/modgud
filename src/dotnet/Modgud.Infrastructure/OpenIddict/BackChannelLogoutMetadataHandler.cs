@@ -5,7 +5,7 @@ using static OpenIddict.Server.OpenIddictServerHandlers;
 namespace Modgud.Infrastructure.OpenIddict;
 
 /// <summary>
-/// ADR 0009 — advertises OpenID Connect Back-Channel Logout 1.0 support in the
+/// ADR 0021 — advertises OpenID Connect Back-Channel Logout 1.0 support in the
 /// discovery document (<c>backchannel_logout_supported</c>,
 /// <c>backchannel_logout_session_supported</c>). Realm-independent: every realm can
 /// register logout URIs on its clients and every logout token carries <c>sid</c> when

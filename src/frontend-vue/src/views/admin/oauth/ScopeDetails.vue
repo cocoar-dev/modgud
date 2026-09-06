@@ -34,7 +34,7 @@ const appContextStore = useAppContextStore()
 const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
 
-// ── ADR-0005 staging: scope saves commit onto the active draft. The scope
+// ── ADR-0017 staging: scope saves commit onto the active draft. The scope
 // name is the immutable natural key, so edits stage under it directly.
 const staging = useDraftStaging('scopes')
 const isDraftRow = computed(() => staging.isDraftId(props.id))
@@ -215,7 +215,7 @@ async function save() {
   saving.value = true
   error.value = null
   try {
-    // ADR-0005: commit onto the active draft instead of writing live.
+    // ADR-0017: commit onto the active draft instead of writing live.
     if (stagedSave.value) {
       await staging.stage(form.value.Name.trim(), toStaged())
       props.close()

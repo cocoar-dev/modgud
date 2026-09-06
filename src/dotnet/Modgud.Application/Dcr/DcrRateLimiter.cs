@@ -4,7 +4,7 @@ namespace Modgud.Application.Dcr;
 /// Rate limiter for <c>/connect/register</c>: per source address (spray-from-one-IP
 /// protection) and per realm (caps storage growth when an attacker rotates addresses).
 /// Limits come from the realm's <c>DcrSettings</c> on every call, so a patched setting
-/// applies to the next request. ADR 0007: backed by the shared Postgres counters, so
+/// applies to the next request. ADR 0019: backed by the shared Postgres counters, so
 /// every Modgud instance agrees on the count.
 /// </summary>
 public interface IDcrRateLimiter

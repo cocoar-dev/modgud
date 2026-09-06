@@ -28,7 +28,7 @@ const appContextStore = useAppContextStore()
 const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
 
-// ── ADR-0005 staging: API saves commit onto the active draft. Natural key =
+// ── ADR-0017 staging: API saves commit onto the active draft. Natural key =
 // the immutable audience (Name); permission ids map to resource:action pairs
 // via the linked app's catalog (and back).
 const staging = useDraftStaging('apis')
@@ -202,7 +202,7 @@ async function save() {
   saving.value = true
   error.value = null
   try {
-    // ADR-0005: commit onto the active draft instead of writing live.
+    // ADR-0017: commit onto the active draft instead of writing live.
     if (stagedSave.value) {
       await staging.stage(form.value.Name.trim(), toStaged())
       props.close()

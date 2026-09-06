@@ -47,11 +47,11 @@ public sealed class RealmManifestPlanner(
     /// <summary>
     /// Computes the plan; with a <paramref name="baseline"/> (the export snapshot a
     /// draft was created from) it additionally classifies three-way conflicts per
-    /// ADR-0005: live state that moved since the baseline surfaces as
+    /// ADR-0017: live state that moved since the baseline surfaces as
     /// staleOverwrite / bothChanged / deletedLive / createdLive conflict entries.
     /// Without a baseline the plan is the plain draft-vs-live diff.
     ///
-    /// <para><paramref name="deletions"/> (staged deletes, ADR-0005) are targeted
+    /// <para><paramref name="deletions"/> (staged deletes, ADR-0017) are targeted
     /// delete candidates — prune's per-entity counterpart. A targeted delete of a
     /// PROTECTED entity is an apply error (the admin explicitly asked for something
     /// the applier will never do), an already-absent target is a no-op note, and a
@@ -787,7 +787,7 @@ public sealed class RealmManifestPlanner(
 
     /// <summary>Diffs one manifest entity against its current counterpart (create when
     /// absent) with the section's merge semantics. In conflict mode the baseline
-    /// counterpart classifies every emitted change three-way (ADR-0005).</summary>
+    /// counterpart classifies every emitted change three-way (ADR-0017).</summary>
     private static RealmPlanEntry DiffEntry<T>(
         string key, T item, T? existing, T? baselineItem, bool conflictMode,
         JsonSerializerOptions json, SectionPolicy<T> policy)

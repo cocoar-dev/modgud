@@ -27,7 +27,7 @@ using Modgud.Infrastructure.Realms;
 namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
-/// ADR 0007 — caller context and multi-dimensional rate limiting end-to-end: the 429
+/// ADR 0019 — caller context and multi-dimensional rate limiting end-to-end: the 429
 /// contract, target vs source roles, the capability-gated forwarder header, the
 /// source allowlist, log-only mode, the silent registration ceiling, multi-instance
 /// correctness of the Postgres counters, and the client-capability admin path.

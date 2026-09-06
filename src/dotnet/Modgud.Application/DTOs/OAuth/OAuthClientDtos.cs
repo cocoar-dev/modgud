@@ -31,7 +31,7 @@ public record OAuthClientDto
     public bool RequireConsent { get; init; }
     public bool AllowRememberConsent { get; init; } = true;
     public List<string> AllowedGrantTypes { get; init; } = [];
-    /// <summary>ADR 0007 — granted client capabilities (<c>cap:</c> entries), e.g.
+    /// <summary>ADR 0019 — granted client capabilities (<c>cap:</c> entries), e.g.
     /// <c>cap:trusted-forwarder</c>. Confidential clients only.</summary>
     public List<string> Capabilities { get; init; } = [];
     public List<string> AllowedCorsOrigins { get; init; } = [];
@@ -76,12 +76,12 @@ public record OAuthClientDto
     /// </summary>
     public string? WebAuthnRpId { get; init; }
 
-    /// <summary>ADR 0009 — where Modgud POSTs a signed logout token when a session of
+    /// <summary>ADR 0021 — where Modgud POSTs a signed logout token when a session of
     /// this client ends. Null = no POST notifications (the change feed still carries
     /// session ends).</summary>
     public string? BackChannelLogoutUri { get; init; }
 
-    /// <summary>ADR 0009 — logout tokens carry <c>sid</c> (default true).</summary>
+    /// <summary>ADR 0021 — logout tokens carry <c>sid</c> (default true).</summary>
     public bool BackChannelLogoutSessionRequired { get; init; } = true;
 
     /// <summary>Read-only: last delivery attempt to the logout URI, if any.</summary>
@@ -181,7 +181,7 @@ public record CreateOAuthClientDto
     public bool RequireConsent { get; init; }
     public bool AllowRememberConsent { get; init; } = true;
     public List<string> AllowedGrantTypes { get; init; } = [];
-    /// <summary>ADR 0007 — granted client capabilities (<c>cap:</c> entries), e.g.
+    /// <summary>ADR 0019 — granted client capabilities (<c>cap:</c> entries), e.g.
     /// <c>cap:trusted-forwarder</c>. Confidential clients only.</summary>
     public List<string> Capabilities { get; init; } = [];
     public List<string> AllowedCorsOrigins { get; init; } = [];
@@ -215,11 +215,11 @@ public record CreateOAuthClientDto
     /// Null/blank ⇒ realm-scoped (the realm's PrimaryDomain).</summary>
     public string? WebAuthnRpId { get; init; }
 
-    /// <summary>ADR 0009 — back-channel logout URI (absolute https; http only on loopback).
+    /// <summary>ADR 0021 — back-channel logout URI (absolute https; http only on loopback).
     /// Null/blank = none.</summary>
     public string? BackChannelLogoutUri { get; init; }
 
-    /// <summary>ADR 0009 — include <c>sid</c> in logout tokens. Default true.</summary>
+    /// <summary>ADR 0021 — include <c>sid</c> in logout tokens. Default true.</summary>
     public bool BackChannelLogoutSessionRequired { get; init; } = true;
 
     public List<string> Roles { get; init; } = [];
@@ -297,7 +297,7 @@ public record UpdateOAuthClientDto
     public bool? RequireConsent { get; init; }
     public bool? AllowRememberConsent { get; init; }
     public List<string>? AllowedGrantTypes { get; init; }
-    /// <summary>ADR 0007 — null = unchanged; a list replaces the granted capabilities.</summary>
+    /// <summary>ADR 0019 — null = unchanged; a list replaces the granted capabilities.</summary>
     public List<string>? Capabilities { get; init; }
     public List<string>? AllowedCorsOrigins { get; init; }
 
@@ -338,11 +338,11 @@ public record UpdateOAuthClientDto
     /// <c>null</c> or empty = remove; a value replaces the whole set.</summary>
     public Optional<string?> JsonWebKeySet { get; init; }
 
-    /// <summary>ADR 0009 back-channel logout URI. Absent = no change; explicit
+    /// <summary>ADR 0021 back-channel logout URI. Absent = no change; explicit
     /// <c>null</c> or empty = remove; any value sets it.</summary>
     public Optional<string?> BackChannelLogoutUri { get; init; }
 
-    /// <summary>ADR 0009 — <c>null</c> = no change.</summary>
+    /// <summary>ADR 0021 — <c>null</c> = no change.</summary>
     public bool? BackChannelLogoutSessionRequired { get; init; }
 
     public List<string>? Roles { get; init; }

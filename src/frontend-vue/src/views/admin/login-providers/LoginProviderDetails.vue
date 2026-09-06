@@ -24,7 +24,7 @@ const { navigateToModal } = useFragmentNavigation()
 const props = defineProps<{ id: string; close: (result?: unknown) => void }>()
 const isCreate = computed(() => props.id === 'create')
 
-// ── ADR-0005 staging: provider saves commit onto the active draft. The seeded
+// ── ADR-0017 staging: provider saves commit onto the active draft. The seeded
 // built-in Internal provider is infra, not authored config — live path.
 const staging = useDraftStaging('loginProviders')
 const isDraftRow = computed(() => staging.isDraftId(props.id))
@@ -503,7 +503,7 @@ async function save() {
   error.value = null
   saving.value = true
   try {
-    // ADR-0005: commit onto the active draft instead of writing live.
+    // ADR-0017: commit onto the active draft instead of writing live.
     if (stagedSave.value) {
       await staging.stage(form.value.Slug.trim(), toStaged())
       newSecret.value = ''

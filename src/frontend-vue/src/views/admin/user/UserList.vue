@@ -36,7 +36,7 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-// ── ADR-0005 draft overlay ────────────────────────────────────────────────────
+// ── ADR-0017 draft overlay ────────────────────────────────────────────────────
 // While a draft is checked out, the roster shows the STAGED state: edited rows
 // carry the staged profile values, users created in the draft appear as
 // synthetic rows (no live id yet). The plan (authoritative diff) drives which
@@ -195,7 +195,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<UserRow>(), { opena
     })
       .header('Active', 'admin.users.active').width(110)
       .option('valueGetter', (p: any) => p.data?.IsActive ? 'active' : 'inactive'),
-    // ADR-0005: staged rows (edited or created in the active draft).
+    // ADR-0017: staged rows (edited or created in the active draft).
     (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
       .valueGetter((p: any) => p.data?.DraftStaged === 'create'
         ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
@@ -235,7 +235,7 @@ async function deleteUsers() {
     await staging.unstage(first.slice('draft__'.length))
     return
   }
-  // ADR-0005: ONE rule — deletes are always staged. Apply moves the user into
+  // ADR-0017: ONE rule — deletes are always staged. Apply moves the user into
   // the recycle bin (grace + restore unchanged); the live emergency lever is
   // "deactivate", not delete. A second delete on a staged row undoes it.
   if (staging.stagingActive.value) {

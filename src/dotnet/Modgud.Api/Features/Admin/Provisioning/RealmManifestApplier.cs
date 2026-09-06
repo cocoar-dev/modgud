@@ -125,7 +125,7 @@ public sealed partial class RealmManifestApplier(
     /// for that). Client secrets are only minted at create; an existing client keeps its
     /// secret (rotate via the dedicated endpoint).</para>
     ///
-    /// <para>Atomicity (ADR-0005 Phase 0): the whole update runs inside ONE
+    /// <para>Atomicity (ADR-0017 Phase 0): the whole update runs inside ONE
     /// <see cref="TenantApplyTransaction"/> on the tenant database — every canonical op's
     /// SaveChanges flushes into that shared transaction without committing it, and a failure
     /// anywhere rolls the entire apply back, leaving the realm untouched. Consequence actions
@@ -142,7 +142,7 @@ public sealed partial class RealmManifestApplier(
     /// <c>realm:admin</c> (a realm-admin role, any user who currently holds realm:admin, and any
     /// admin-conferring group). Without the flag the additive merge above is unchanged.</para>
     ///
-    /// <para><paramref name="deletions"/> (ADR-0005 staged deletes) are prune's per-entity
+    /// <para><paramref name="deletions"/> (ADR-0017 staged deletes) are prune's per-entity
     /// counterpart: only the listed (section, key) targets are deleted, through the SAME
     /// canonical delete ops, guards and reverse-dependency order — inside the same apply
     /// transaction. Protection violations throw (the draft plan gate flags them as errors
@@ -373,7 +373,7 @@ public sealed partial class RealmManifestApplier(
 
         using var _ = TenantContext.Enter(slug);
 
-        // ADR-0005 Phase 0: one transaction for the whole apply. Activate() installs
+        // ADR-0017 Phase 0: one transaction for the whole apply. Activate() installs
         // the ambient marker synchronously so TenantedSessionFactory binds every
         // session below to this transaction and the Deferring* revokers collect
         // their cascades instead of running them. Commit happens after the last

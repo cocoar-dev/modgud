@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Modgud.Api.Features.Admin.Provisioning;
 
 /// <summary>
-/// CRUD + plan/apply orchestration for <see cref="RealmDraft"/>s (ADR-0005 Phase 1).
+/// CRUD + plan/apply orchestration for <see cref="RealmDraft"/>s (ADR-0017 Phase 1).
 ///
 /// <para>Secret handling: every manifest write runs through
 /// <see cref="SanitizeManifest"/>, which moves secret-bearing field values (user
@@ -165,7 +165,7 @@ public sealed class RealmDraftService(
         return ToDto(draft, userId);
     }
 
-    // ── Active draft (ADR-0005: implicit branches) ───────────────────────────────
+    // ── Active draft (ADR-0017: implicit branches) ───────────────────────────────
 
     /// <summary>The admin's active draft, or null. Lazily heals a pointer whose
     /// draft was applied/deleted or turned invisible.</summary>
@@ -205,7 +205,7 @@ public sealed class RealmDraftService(
     }
 
     /// <summary>
-    /// The staging seam (ADR-0005 Increment A/B): upserts ONE entity into the active
+    /// The staging seam (ADR-0017 Increment A/B): upserts ONE entity into the active
     /// draft's manifest — the "commit". With no active draft, one is created
     /// implicitly (auto-named, manifest = baseline = current export) and made active;
     /// the admin never creates a draft explicitly. The entity's natural key is
@@ -253,7 +253,7 @@ public sealed class RealmDraftService(
     }
 
     /// <summary>
-    /// Stages the DELETION of one live entity (ADR-0005 staged deletes): removes it
+    /// Stages the DELETION of one live entity (ADR-0017 staged deletes): removes it
     /// from the active draft's manifest AND records the (section, key) so plan/apply
     /// treat it as a targeted delete — prune's per-entity counterpart. With no active
     /// draft, one is created implicitly (same as <see cref="StageEntityAsync"/>).
@@ -435,7 +435,7 @@ public sealed class RealmDraftService(
     }
 
     /// <summary>
-    /// Applies the draft — gated per ADR-0005: the plan runs first (fail-fast
+    /// Applies the draft — gated per ADR-0017: the plan runs first (fail-fast
     /// pre-validation, nothing written) and the apply is refused while it reports
     /// apply-errors or unresolved three-way conflicts. On success the consumed
     /// draft is deleted.

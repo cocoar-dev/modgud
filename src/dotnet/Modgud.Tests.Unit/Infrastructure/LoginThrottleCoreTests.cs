@@ -5,7 +5,7 @@ using Modgud.Infrastructure.RateLimiting;
 
 namespace Modgud.Tests.Unit.Infrastructure;
 
-/// <summary>ADR 0008 — the two failure buckets, the spray signal, the unlock guard,
+/// <summary>ADR 0020 — the two failure buckets, the spray signal, the unlock guard,
 /// log-only, and that failures (not attempts) are what count.</summary>
 public class LoginThrottleCoreTests
 {

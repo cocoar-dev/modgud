@@ -1,7 +1,7 @@
 namespace Modgud.Domain.Realms;
 
 /// <summary>
-/// The auth rate-limit policies (one per public auth flow). ADR 0007: every policy
+/// The auth rate-limit policies (one per public auth flow). ADR 0019: every policy
 /// declares ceilings per <see cref="RateLimitDimension"/>; a realm (and an Application)
 /// may override any of them, the shipped <see cref="AuthRateLimitDefaults"/> are the
 /// baseline.
@@ -26,7 +26,7 @@ public enum AuthRateLimitPolicy
     OAuthToken,
     /// <summary>Web self-registration form submit.</summary>
     SelfRegistration,
-    /// <summary>ADR 0008 — interactive password login: failures per trusted device
+    /// <summary>ADR 0020 — interactive password login: failures per trusted device
     /// (<see cref="RateLimitDimension.Device"/>), per user from untrusted clients
     /// (<see cref="RateLimitDimension.Target"/>) and the permanently silent spray
     /// signal per source (<see cref="RateLimitDimension.Source"/>).</summary>
@@ -35,7 +35,7 @@ public enum AuthRateLimitPolicy
 
 /// <summary>
 /// The dimensions a policy is limited on. Their roles are fixed and not interchangeable
-/// (ADR 0007): <see cref="Target"/> and <see cref="App"/> are the defence,
+/// (ADR 0019): <see cref="Target"/> and <see cref="App"/> are the defence,
 /// <see cref="Client"/> bounds one integration, <see cref="Source"/> is a coarse anomaly
 /// brake sized for shared addresses, <see cref="SourceRegistration"/> is the silent
 /// address-spraying ceiling.
@@ -53,7 +53,7 @@ public enum RateLimitDimension
     Client,
     /// <summary>The Application (or the realm when none): the global cost brake. Loud.</summary>
     App,
-    /// <summary>ADR 0008 — a browser that completed a login before (device cookie), per
+    /// <summary>ADR 0020 — a browser that completed a login before (device cookie), per
     /// user. Only the <c>login</c> policy has it.</summary>
     Device,
 }
@@ -135,7 +135,7 @@ public record PolicyLimits
 }
 
 /// <summary>
-/// The shipped defaults (ADR 0007). Kept in code so a realm that never touches the
+/// The shipped defaults (ADR 0019). Kept in code so a realm that never touches the
 /// feature gets the secure posture; the single source of truth for the evaluator, the
 /// admin UI (placeholders / reset target) and the docs.
 ///
@@ -154,7 +154,7 @@ public static class AuthRateLimitDefaults
         AuthRateLimitPolicy.Login,
     ];
 
-    /// <summary>ADR 0008 — a dimension that is evaluated and counted but can never
+    /// <summary>ADR 0020 — a dimension that is evaluated and counted but can never
     /// reject: the login spray signal per source. A realm admin may tune its
     /// threshold, never turn it into a block (decision 2026-05-07: no address-based
     /// lockout on login).</summary>
@@ -206,7 +206,7 @@ public static class AuthRateLimitDefaults
         },
         AuthRateLimitPolicy.Login => new PolicyLimits
         {
-            // ADR 0008: failures, not attempts. Device = a browser the user logged in
+            // ADR 0020: failures, not attempts. Device = a browser the user logged in
             // from before; Target = the untrusted pool per user (what an attacker
             // without the cookie can ever fill); Source = the spray signal, NAT-sized
             // and signal-only (see IsSignalOnly).
@@ -253,12 +253,12 @@ public static class AuthRateLimitDefaults
 }
 
 /// <summary>
-/// Per-realm overrides for the auth rate limits (ADR 0007). Lives as a nullable
+/// Per-realm overrides for the auth rate limits (ADR 0019). Lives as a nullable
 /// sub-document on the tenant-DB <see cref="RealmSettings.RealmSettings"/> (null = every
 /// policy uses its <see cref="AuthRateLimitDefaults"/>). Only the dimensions an admin
 /// actually changed are stored.
 ///
-/// <para><b>Legacy.</b> Before ADR 0007 a realm could set ONE per-IP rule per policy
+/// <para><b>Legacy.</b> Before ADR 0019 a realm could set ONE per-IP rule per policy
 /// (<see cref="NativeOtp"/> … <see cref="Bootstrap"/>). Those values are NOT migrated
 /// into the source ceiling — they were tight only because no other dimension existed.
 /// They are kept readable so the admin UI can show them, and a realm that still has any
@@ -267,7 +267,7 @@ public static class AuthRateLimitDefaults
 /// </summary>
 public record AuthRateLimitSettings
 {
-    // ── Legacy single per-IP rules (pre-ADR-0007), read-only compatibility ──────
+    // ── Legacy single per-IP rules (pre-ADR-0019), read-only compatibility ──────
     public RateLimitRule? NativeOtp { get; init; }
     public RateLimitRule? MagicLink { get; init; }
     public RateLimitRule? PasswordReset { get; init; }

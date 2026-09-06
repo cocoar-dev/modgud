@@ -6,7 +6,7 @@ using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
 namespace Modgud.Tests.Unit.Cluster;
 
 /// <summary>
-/// The wire form Modgud's cluster subject carries (ADR 0010, D5): a typed payload
+/// The wire form Modgud's cluster subject carries (ADR 0022, D5): a typed payload
 /// survives the subject's own JSON round trip into the same CLR type, the
 /// sender's own envelopes are recognised, and a payload type outside this
 /// deployment's assemblies is refused.

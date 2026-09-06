@@ -29,7 +29,7 @@ using Modgud.Domain.OAuth.Common;
 namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
-/// ADR 0009 increment 2 — a resource server on <c>Modgud.AspNetCore.ResourceServer</c>
+/// ADR 0021 increment 2 — a resource server on <c>Modgud.AspNetCore.ResourceServer</c>
 /// that validates JWTs locally learns about ended sessions from the Application change
 /// feed and rejects their tokens before expiry.
 /// </summary>

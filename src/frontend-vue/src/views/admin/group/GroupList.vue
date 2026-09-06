@@ -53,7 +53,7 @@ const liveGroups = computed<GroupListRow[]>(() =>
     appCtx.matchesBoundToSlugs(g.BoundTo, selectedAppSlug.value))
     .map((g) => ({ ...g, HasPermissions: g.RoleIds.length > 0 })))
 
-// ADR-0005: draft-merged roster (natural key = the group name).
+// ADR-0017: draft-merged roster (natural key = the group name).
 const staging = useDraftStaging('groups')
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
@@ -152,7 +152,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<GroupListR
 async function deleteSelected() {
   const id = selectedIds.value[0]
   if (!id) return
-  // ADR-0005 staged deletes (admin-conferring groups are apply-guarded; the
+  // ADR-0017 staged deletes (admin-conferring groups are apply-guarded; the
   // plan flags a staged deletion of one as an error).
   if (staging.stagingActive.value) {
     if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))

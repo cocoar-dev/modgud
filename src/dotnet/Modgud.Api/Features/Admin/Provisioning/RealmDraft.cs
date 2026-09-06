@@ -1,7 +1,7 @@
 namespace Modgud.Api.Features.Admin.Provisioning;
 
 /// <summary>
-/// A named, server-persisted configuration draft (ADR-0005 Phase 1) — the staging
+/// A named, server-persisted configuration draft (ADR-0017 Phase 1) — the staging
 /// document behind the draft workspace. Lives in the TENANT database, so tenancy
 /// isolation comes for free.
 ///
@@ -33,7 +33,7 @@ public sealed class RealmDraft
     /// <summary>Secret slot path → DataProtection-encrypted value.</summary>
     public Dictionary<string, string> Secrets { get; set; } = [];
 
-    /// <summary>Staged deletions (ADR-0005): live entities this draft removes on
+    /// <summary>Staged deletions (ADR-0017): live entities this draft removes on
     /// apply — the targeted counterpart of prune's full sync. Staging a deletion
     /// also removes the entity from <see cref="Manifest"/>; unstaging restores it
     /// from <see cref="Baseline"/>.</summary>
@@ -56,7 +56,7 @@ public sealed class RealmDraft
 }
 
 /// <summary>
-/// Per-admin active-draft pointer (ADR-0005: "each admin has an active-draft
+/// Per-admin active-draft pointer (ADR-0017: "each admin has an active-draft
 /// pointer"). Document id = the admin's user id; lives in the tenant DB so the
 /// pointer is per realm automatically. Parking clears <see cref="ActiveDraftId"/>
 /// (the draft itself stays); the pointer also clears lazily when the draft it

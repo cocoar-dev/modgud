@@ -3,7 +3,7 @@ using BuildingBlocks.EventDispatcher;
 namespace Modgud.Tests.Unit.Cluster;
 
 /// <summary>
-/// The dispatcher's cross-node seam (ADR 0010, D5): a locally raised event is
+/// The dispatcher's cross-node seam (ADR 0022, D5): a locally raised event is
 /// delivered to local subscribers AND handed to the relay; an event replayed
 /// from a peer is delivered locally and never relayed again (no ping-pong);
 /// a failing relay never reaches the producer.

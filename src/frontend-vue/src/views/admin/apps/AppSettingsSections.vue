@@ -129,7 +129,7 @@ function parseNum(s: string): number | null {
 // Shown greyed in the (always-visible) fields so a setting stays findable and its
 // effective value is visible without ticking "override" first (Modal & Form Contract R1).
 const realmSettingsStore = useRealmSettingsStore()
-// ADR 0007 — the App editor inherits the realm's EFFECTIVE limits.
+// ADR 0019 — the App editor inherits the realm's EFFECTIVE limits.
 const realmRateLimitBaseline = computed(() => realmSettingsStore.settings?.AuthRateLimits?.Policies ?? {})
 const appRateLimitModeOptions = computed(() => [
   { value: 'inherit', label: t('admin.rateLimits.mode.inherit', {}, 'Inherit from realm') },
@@ -532,7 +532,7 @@ onMounted(async () => {
 
 defineExpose({ build })
 
-// ── Application page selection (ADR-0001): pick a realm variant per slot ──
+// ── Application page selection (ADR-0013): pick a realm variant per slot ──
 const PAGE_SLOT_META = [
   { slug: 'login', label: t('admin.customization.pages.login.title', {}, 'Login') },
   { slug: 'password-forgot', label: t('admin.customization.pages.passwordForgot.title', {}, 'Forgot password') },
@@ -842,7 +842,7 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
       </div>
     </div>
 
-    <!-- Rate limits (ADR 0007) -->
+    <!-- Rate limits (ADR 0019) -->
     <div v-show="activeTab === 'rateLimits'" class="tab-content">
       <CoarCheckbox v-model="f.rateLimits.override" :label="t('admin.appSettings.rateLimits.override', {}, 'Custom rate limits for this App')" />
       <p class="text-sm">{{ t('admin.appSettings.rateLimits.hint', {}, 'Only the cells you override win over the realm; everything else inherits. The allowlist and the enforcement mode replace the realm values when set.') }}</p>

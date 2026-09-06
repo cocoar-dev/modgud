@@ -8,7 +8,7 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 namespace Modgud.Infrastructure.Scheduling;
 
 /// <summary>
-/// How the Quartz scheduler stores its jobs and triggers (ADR 0010, D4).
+/// How the Quartz scheduler stores its jobs and triggers (ADR 0022, D4).
 /// </summary>
 public sealed class SchedulingStoreOptions
 {

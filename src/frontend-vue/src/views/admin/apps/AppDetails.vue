@@ -168,7 +168,7 @@ const isSystem = computed(() => dto.value?.IsSystem === true)
 const activeTab = ref<'general' | 'catalog' | 'settings'>('general')
 const settingsRef = ref<InstanceType<typeof AppSettingsSections> | null>(null)
 
-// ── ADR-0005 staging: app saves commit onto the active draft. Two things the
+// ── ADR-0017 staging: app saves commit onto the active draft. Two things the
 // manifest cannot express keep the live path: system apps (not authored
 // config) and id-stable catalog RENAMES (the manifest matches permissions by
 // resource:action, so a rename would become remove+add and lose the FK-stable
@@ -388,7 +388,7 @@ async function save() {
     // create/update payload (the backend writes it in one tenant transaction). System
     // apps carry no per-App settings, so omit it for them.
     const settings = isSystem.value ? undefined : settingsRef.value?.build()
-    // ADR-0005: commit onto the active draft instead of writing live.
+    // ADR-0017: commit onto the active draft instead of writing live.
     if (stagedSave.value) {
       await staging.stage(form.value.Slug.trim(), toStaged(settings))
       props.close()

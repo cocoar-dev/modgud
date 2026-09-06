@@ -9,7 +9,7 @@ import {
 } from '@/stores/realmDraft.store'
 
 /**
- * The staging seam for ONE manifest section (ADR-0005 Increment B/C) — the
+ * The staging seam for ONE manifest section (ADR-0017 Increment B/C) — the
  * shared plumbing every admin Details modal and List view uses to participate
  * in the git model:
  *

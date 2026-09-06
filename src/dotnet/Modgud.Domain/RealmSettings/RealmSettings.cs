@@ -111,7 +111,7 @@ public class RealmSettings
     /// erase).</summary>
     public AuditSettings? Audit { get; set; }
 
-    /// <summary>LEGACY (pre-ADR-0001): single page-builder schema per
+    /// <summary>LEGACY (pre-ADR-0013): single page-builder schema per
     /// SPA-page-slug. Retained only so <see cref="MigratePagesToSlots"/> can
     /// convert existing data into <see cref="PageSlots"/> on load; cleared on
     /// the next save. New reads/writes use <see cref="PageSlots"/>.</summary>
@@ -119,7 +119,7 @@ public class RealmSettings
 
     /// <summary>Page-builder configuration keyed by SPA-page-slug
     /// (<c>login</c>, <c>logout</c>, <c>password-forgot</c>, …). Each entry is
-    /// a library of named variants plus which one is active (ADR-0001). A
+    /// a library of named variants plus which one is active (ADR-0013). A
     /// missing slot, or a slot whose <see cref="RealmPageSlot.ActiveVariantId"/>
     /// is null, renders the SPA's built-in hardcoded view.</summary>
     public Dictionary<string, RealmPageSlot>? PageSlots { get; set; }
@@ -130,7 +130,7 @@ public class RealmSettings
     public List<PageComposition>? PageCompositions { get; set; }
 
     /// <summary>Lazily migrate the legacy single-schema <see cref="Pages"/>
-    /// dictionary into <see cref="PageSlots"/> (ADR-0001). Idempotent and
+    /// dictionary into <see cref="PageSlots"/> (ADR-0013). Idempotent and
     /// side-effect-only-when-needed: does nothing once migrated. Each legacy
     /// <c>Pages[slug] = schema</c> becomes one active variant named "Custom".
     /// Returns <c>true</c> when it changed the document (caller should persist).</summary>

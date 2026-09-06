@@ -23,7 +23,7 @@ namespace Modgud.Authentication.SelfRegistration;
 /// <list type="bullet">
 ///   <item><c>RegisterAsync</c> — validate, captcha-verify, anti-enumerate,
 ///   hash the password and hand the sign-up to the registration pipeline
-///   (ADR 0006: pending record + verification link; NO user until proved).</item>
+///   (ADR 0018: pending record + verification link; NO user until proved).</item>
 ///   <item><c>VerifyEmailAsync</c> — prove the link: the pipeline creates the
 ///   confirmed user, attaches the snapshotted default groups and respects
 ///   RequireAdminApproval. Legacy pre-pipeline rows still consume for one release.</item>
@@ -139,7 +139,7 @@ public sealed class SelfRegistrationService(
         }
 
         // Per-address / per-source ceilings are the endpoint's rate-limit policy
-        // (ADR 0007, self-registration) plus the pipeline's cooldown — no in-memory
+        // (ADR 0019, self-registration) plus the pipeline's cooldown — no in-memory
         // limiter here any more.
         var normalizedEmail = dto.Email.Trim();
 
@@ -178,7 +178,7 @@ public sealed class SelfRegistrationService(
             .AnyAsync(f => f.AccountName == normalizedUserName && !f.IsDeleted, ct);
         if (positionNameTaken) return GenericSuccess;
 
-        // ADR 0006 — validate + hash the password NOW; the user itself is materialised
+        // ADR 0018 — validate + hash the password NOW; the user itself is materialised
         // only when the verification link is proved. Until then the sign-up is a
         // pending record keyed by the address (one per address, hard-deleted on
         // proof/expiry), so a stranger's attempt can never occupy someone's address.
@@ -251,7 +251,7 @@ public sealed class SelfRegistrationService(
         if (string.IsNullOrWhiteSpace(plaintextToken))
             return Error.Validation("SelfRegistration.TokenRequired", "Verification token is required.");
 
-        // ADR 0006 — the pending pipeline owns every new registration.
+        // ADR 0018 — the pending pipeline owns every new registration.
         var proved = await registrationPipeline.ProveLinkAsync(plaintextToken, ct);
         if (!proved.IsError)
         {
@@ -276,7 +276,7 @@ public sealed class SelfRegistrationService(
                 return proved.Errors;
         }
 
-        // Legacy: rows written by the pre-ADR-0006 flow (user created first, token
+        // Legacy: rows written by the pre-ADR-0018 flow (user created first, token
         // row keyed by UserId). Kept for one release so in-flight verifications
         // still complete; remove together with PendingSelfRegistration.
         var tokenHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(plaintextToken)));

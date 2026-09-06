@@ -14,7 +14,7 @@ using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
-/// Pins the <c>AppSettings.Features.PageBuilder</c> gate and the ADR-0001
+/// Pins the <c>AppSettings.Features.PageBuilder</c> gate and the ADR-0013
 /// variant + activation model on the customization-pages surface. While the
 /// flag is off (default) every endpoint is invisible (404). While on, a slot
 /// owns a variant library plus an active selection; the effective active
@@ -148,7 +148,7 @@ public class PageBuilderFeatureFlagTests : IntegrationTestBase
         try
         {
             // Creating a variant does NOT activate it — the slot stays built-in
-            // until explicitly activated (ADR-0001: existence ≠ active).
+            // until explicitly activated (ADR-0013: existence ≠ active).
             var post = await Client.PostAsJsonAsync("/api/admin/customization/pages/logout/variants",
                 new { Name = "Draft", Schema = "{\"type\":\"page\",\"children\":[]}" }, ct);
             Assert.Equal(HttpStatusCode.OK, post.StatusCode);

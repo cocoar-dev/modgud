@@ -9,7 +9,7 @@ namespace Modgud.Api.Tests.Account;
 
 /// <summary>
 /// The cookie-authenticated web passkey registration end to end, with a
-/// software authenticator producing a real ES256 attestation. Since ADR 0010
+/// software authenticator producing a real ES256 attestation. Since ADR 0022
 /// the attestation options live in a server-side <see cref="PasskeyEnrollCeremony"/>
 /// referenced by the <c>Modgud.Passkey.Enroll</c> cookie — the second request of
 /// the ceremony may be served by any node — and the ASP.NET session is gone.

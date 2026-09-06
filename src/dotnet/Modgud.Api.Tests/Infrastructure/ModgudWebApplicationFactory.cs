@@ -108,7 +108,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         {
             services.AddSingleton(_tokenPipelineFaults);
 
-            // ADR 0009 — every relying party's back-channel logout endpoint is this
+            // ADR 0021 — every relying party's back-channel logout endpoint is this
             // recording sink; the delivery worker's named client posts into it.
             services.AddSingleton<RecordingBackChannelLogoutSink>();
             services.AddHttpClient(Modgud.Authentication.BackChannelLogout.BackChannelLogoutConstants.HttpClientName)

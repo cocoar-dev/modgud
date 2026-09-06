@@ -1,7 +1,7 @@
 namespace Modgud.Authentication.Devices;
 
 /// <summary>
-/// ADR 0008 — "a browser that has completed a login here". Created when a user
+/// ADR 0020 — "a browser that has completed a login here". Created when a user
 /// signs in interactively, renewed on every further success, bound to the
 /// <c>Modgud.Device</c> cookie by <see cref="Id"/>. A device is <em>trusted for a
 /// user</em> only if that user's id is in <see cref="UserIds"/>; someone else's

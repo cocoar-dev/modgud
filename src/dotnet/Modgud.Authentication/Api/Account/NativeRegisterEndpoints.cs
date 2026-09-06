@@ -123,7 +123,7 @@ public static class NativeRegisterEndpoints
     /// Explicit-registration routing (ADR-0011). All outcomes are silent so the
     /// caller's uniform response + jitter is the only observable.
     /// <list type="bullet">
-    ///   <item>Unknown email → enter the registration pipeline (ADR 0006: pending
+    ///   <item>Unknown email → enter the registration pipeline (ADR 0018: pending
     ///   record + code; NO user until the code is proved).</item>
     ///   <item>Known passwordless still-unconfirmed user → re-issue the code
     ///   (resend for an in-progress sign-up).</item>
@@ -147,7 +147,7 @@ public static class NativeRegisterEndpoints
 
         if (user is null)
         {
-            // ADR 0006 — pending record + code; NO user until the code is proved.
+            // ADR 0018 — pending record + code; NO user until the code is proved.
             var trimmed = email.Trim();
             _ = await registrationPipeline.RequestAsync(new RegistrationRequest(
                 Email: trimmed,

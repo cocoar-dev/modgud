@@ -28,7 +28,7 @@ using Modgud.Infrastructure.Realms;
 namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
-/// ADR 0006 — registration before proof. One <see cref="PendingRegistration"/> per address
+/// ADR 0018 — registration before proof. One <see cref="PendingRegistration"/> per address
 /// for every sign-up path; the user is created exactly once when the proof succeeds; a
 /// pending record is a hard-deletable document that never blocks the real owner.
 /// </summary>

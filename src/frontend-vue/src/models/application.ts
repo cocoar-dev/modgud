@@ -158,7 +158,7 @@ export interface ApplicationSettingsDto {
   LoginExperience?: ApplicationLoginExperienceDto | null
   SelfRegistration?: ApplicationSelfRegistrationOverrideDto | null
   NativeGrants?: ApplicationGrantOverrideDto | null
-  /** ADR 0007 — sparse rate-limit overrides for this App (null = inherit the realm). */
+  /** ADR 0019 — sparse rate-limit overrides for this App (null = inherit the realm). */
   AuthRateLimits?: UpdateAuthRateLimitsDto | null
   ClientSessions?: ApplicationClientSessionsDto | null
   Dcr?: ApplicationDcrOverrideDto | null

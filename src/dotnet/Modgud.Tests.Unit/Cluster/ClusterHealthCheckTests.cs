@@ -6,7 +6,7 @@ using Modgud.Infrastructure.Cluster;
 namespace Modgud.Tests.Unit.Cluster;
 
 /// <summary>
-/// Readiness facts of ADR 0010: a draining node and "two nodes without the
+/// Readiness facts of ADR 0022: a draining node and "two nodes without the
 /// relay" both refuse traffic; one node, or two with the relay, are ready.
 /// </summary>
 public class ClusterHealthCheckTests

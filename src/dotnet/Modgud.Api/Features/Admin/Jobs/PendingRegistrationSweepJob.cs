@@ -6,7 +6,7 @@ using Quartz;
 namespace Modgud.Api.Features.Admin.Jobs;
 
 /// <summary>
-/// ADR 0006 — hourly hard-delete of expired (and any crash-orphaned consumed) pending
+/// ADR 0018 — hourly hard-delete of expired (and any crash-orphaned consumed) pending
 /// registrations. A pending record is a stranger's unverified input; once its proof can
 /// no longer succeed nothing may remain of it. Per realm, idempotent, cheap (indexed on
 /// <c>ExpiresAt</c>).
@@ -31,11 +31,11 @@ public class PendingRegistrationSweepJob(
     public async Task Execute(IJobExecutionContext context)
     {
         var swept = await pipeline.SweepAsync(context.CancellationToken);
-        // ADR 0007 — counters are keyed by address / mailbox / client; drop the ones nobody
+        // ADR 0019 — counters are keyed by address / mailbox / client; drop the ones nobody
         // touched for two days so the table never grows with one-off sources.
         var pruned = await rateLimits.PruneAsync(
             new RateLimitScope(TenantContext.Current), DateTimeOffset.UtcNow.AddDays(-2), context.CancellationToken);
-        // ADR 0008 — a device nobody logged in from for 90 days is forgotten.
+        // ADR 0020 — a device nobody logged in from for 90 days is forgotten.
         var devicesSwept = await devices.SweepAsync(
             DateTimeOffset.UtcNow - Modgud.Authentication.Devices.TrustedDevice.IdleLifetime, context.CancellationToken);
         context.Result = (swept == 0 ? "No expired pending registrations" : $"Deleted {swept} pending registration(s)")

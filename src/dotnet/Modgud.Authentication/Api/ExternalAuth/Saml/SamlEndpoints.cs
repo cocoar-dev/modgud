@@ -68,7 +68,7 @@ public static class SamlEndpoints
         [FromServices] SamlLoginFlow flow,
         CancellationToken ct)
     {
-        // Providers are resolved per node from the database (ADR 0010, D6).
+        // Providers are resolved per node from the database (ADR 0022, D6).
         await materializer.EnsureFreshAsync(TenantContext.Current, ct);
         if (!manager.TryGetBySlug(TenantContext.Current, slug, out var provider) || provider is null)
             return Results.NotFound();

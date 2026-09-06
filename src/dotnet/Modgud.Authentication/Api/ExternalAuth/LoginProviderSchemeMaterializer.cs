@@ -9,7 +9,7 @@ namespace Modgud.Authentication.Api.ExternalAuth;
 /// <summary>
 /// Keeps this node's registered OIDC schemes and SAML provider cache equal to
 /// what the realm's <see cref="LoginProvider"/> documents say — from the
-/// database, on demand, on every node (ADR 0010, D6).
+/// database, on demand, on every node (ADR 0022, D6).
 /// <para>
 /// Before this class, a scheme was registered by the Wolverine handler that ran
 /// on the node which saved the provider. A second node never heard about it and

@@ -13,7 +13,7 @@ public record RateLimitRuleDto
     public int? Burst { get; init; }
     public bool Enabled { get; init; } = true;
 
-    /// <summary>Read-only marker (ADR 0008): the dimension is evaluated and counted but
+    /// <summary>Read-only marker (ADR 0020): the dimension is evaluated and counted but
     /// never rejects (the login spray signal). Ignored on write.</summary>
     public bool SignalOnly { get; init; }
 }
@@ -30,7 +30,7 @@ public record PolicyLimitsDto
     public RateLimitRuleDto? Device { get; init; }
 }
 
-/// <summary>Read shape (ADR 0007). <see cref="Policies"/> carries every policy with
+/// <summary>Read shape (ADR 0019). <see cref="Policies"/> carries every policy with
 /// effective values so the SPA renders concrete numbers; <see cref="Overrides"/> is what
 /// is actually stored (sparse) — the export/import shape and the "reset" reference.</summary>
 public record AuthRateLimitsDto
@@ -44,7 +44,7 @@ public record AuthRateLimitsDto
     public string[] SourceAllowlist { get; init; } = [];
     public RateLimitEnforcementMode Mode { get; init; }
 
-    /// <summary>The realm still carries pre-ADR-0007 single per-IP rules; until an admin
+    /// <summary>The realm still carries pre-ADR-0019 single per-IP rules; until an admin
     /// picks a mode explicitly it runs log-only.</summary>
     public bool LegacyOverridesPresent { get; init; }
 
@@ -73,10 +73,10 @@ public record UpdateAuthRateLimitsDto
     public Optional<string[]?> SourceAllowlist { get; init; }
     public Optional<RateLimitEnforcementMode?> Mode { get; init; }
 
-    /// <summary>Drop the pre-ADR-0007 single per-IP rules.</summary>
+    /// <summary>Drop the pre-ADR-0019 single per-IP rules.</summary>
     public bool? ClearLegacy { get; init; }
 
-    // ── pre-ADR-0007 shape, accepted for manifest compatibility ──────────────
+    // ── pre-ADR-0019 shape, accepted for manifest compatibility ──────────────
     // A value stores a LEGACY override (single per-IP rule) — it is not migrated
     // into the source ceiling and puts the realm into log-only mode until an admin
     // chooses a mode. New configuration should use Policies.

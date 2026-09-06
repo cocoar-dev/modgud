@@ -5,7 +5,7 @@ using Npgsql;
 namespace Modgud.Infrastructure.RateLimiting;
 
 /// <summary>
-/// ADR 0007 — counters in Postgres, one atomic upsert per hit, so N Modgud instances
+/// ADR 0019 — counters in Postgres, one atomic upsert per hit, so N Modgud instances
 /// agree on every count without new infrastructure. Realm policies live in the realm's
 /// tenant database, realm-independent ones in the global store.
 ///

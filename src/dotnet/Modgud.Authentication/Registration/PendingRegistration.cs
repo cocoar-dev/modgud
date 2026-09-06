@@ -24,7 +24,7 @@ public static class RegistrationSources
 }
 
 /// <summary>
-/// ADR 0006 — the ONE pre-verification record for every public sign-up path (web with
+/// ADR 0018 — the ONE pre-verification record for every public sign-up path (web with
 /// password, native OTP under JIT / invite-code posture, explicit native register).
 /// No <c>ApplicationUser</c> exists until the proof succeeds; this document carries
 /// everything needed to create the user at that moment.

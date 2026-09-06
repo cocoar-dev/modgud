@@ -16,7 +16,7 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
-/// ADR 0008 — device-aware login throttling end-to-end: the device cookie on success,
+/// ADR 0020 — device-aware login throttling end-to-end: the device cookie on success,
 /// the untrusted pool refusing strangers while the owner's device keeps working, the
 /// unlock e-mail once per window, log-only, and the signal-only source cell.
 /// </summary>

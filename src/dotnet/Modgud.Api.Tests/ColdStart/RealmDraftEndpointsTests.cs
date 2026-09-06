@@ -10,7 +10,7 @@ using Modgud.Infrastructure.Persistence.Tenancy;
 namespace Modgud.Api.Tests.ColdStart;
 
 /// <summary>
-/// ADR-0005 Phase 1: named server-side drafts under /api/admin/realm-config/drafts —
+/// ADR-0017 Phase 1: named server-side drafts under /api/admin/realm-config/drafts —
 /// the staging documents of the draft workspace. Covered here: the draft lifecycle
 /// with write-only secret slots, the baseline-anchored three-way conflict gate on
 /// apply (stale-overwrite detection + resolution), and optimistic version conflicts
