@@ -59,8 +59,8 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
     }
 
     /// <summary>
-    /// Regression for the SecurityStamp-sign-in bug (AppBase v5.1.1/v5.1.2),
-    /// OIDC/SAML leg. Both federated flows sign in the hand-built principal this
+    /// Regression for the SecurityStamp-sign-in bug, OIDC/SAML leg. Both
+    /// federated flows sign in the hand-built principal this
     /// processor returns (ExternalAuthEndpoints + SamlLoginFlow call
     /// <c>SignInAsync(ApplicationScheme, result.Principal)</c>). The principal must
     /// carry the user's authoritative security-stamp claim, otherwise the cookie

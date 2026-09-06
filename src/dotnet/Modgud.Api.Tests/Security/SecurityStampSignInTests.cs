@@ -6,7 +6,7 @@ using Modgud.Authentication.Identity;
 namespace Modgud.Api.Tests.Security;
 
 /// <summary>
-/// Regression tests for the SecurityStamp-sign-in bug class (AppBase v5.1.1/v5.1.2).
+/// Regression tests for the SecurityStamp-sign-in bug class.
 ///
 /// The security stamp lives authoritatively on the <see cref="UserSecurityData"/>
 /// document; <c>ApplicationUser.SecurityStamp</c> is only a transient mirror that
