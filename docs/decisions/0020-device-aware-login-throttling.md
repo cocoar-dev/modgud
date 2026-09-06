@@ -2,15 +2,13 @@
 
 **Status:** Accepted — shipped 2026-09-04 (PR #220) · **Decided:** 2026-09-04
 
-# Device-aware login throttling: trusted-device buckets instead of IP limits or global lockout
-
 ## Status
 
-Proposed 2026-09-04 as a draft, approved the same day by the product owner (defaults as drafted, device cookie on every success, unlock mail in the first increment, second-factor endpoints later), **implemented 2026-09-04** on branch `feat/device-aware-login-throttling`. Picks up the "device dimension" deliberately deferred in ADR 0007.
+Proposed 2026-09-04 as a draft, approved the same day by the product owner (defaults as drafted, device cookie on every success, unlock mail in the first increment, second-factor endpoints later), **implemented 2026-09-04** on branch `feat/device-aware-login-throttling`. Picks up the "device dimension" deliberately deferred in ADR 0019.
 
 ## Context
 
-Interactive password login (`POST /api/account/login`) is the one public auth endpoint that ADR 0007 left without a rate-limit policy, on purpose:
+Interactive password login (`POST /api/account/login`) is the one public auth endpoint that ADR 0019 left without a rate-limit policy, on purpose:
 
 - **No per-IP limit, by decision (2026-05-07).** A corporate network behind one NAT address has hundreds of users; one colleague mistyping a password five times must not lock the building out. That decision stands and this ADR does not reopen it.
 - **What protected login before:** ASP.NET Identity account lockout (`MaxFailedAccessAttempts = 5`, `DefaultLockoutTimeSpan = 1 min`, fed by `PasswordSignInAsync(lockoutOnFailure: true)`), a uniform `401 Invalid credentials` for every failure, timing equalisation for unknown users, and a security-audit record with the source address per failure.
@@ -18,10 +16,10 @@ Interactive password login (`POST /api/account/login`) is the one public auth en
 Verified gaps of that status quo:
 
 1. **Lockout is a denial-of-service lever against the victim.** Anyone who knows a username can keep it locked by sending five wrong passwords per minute. The 1-minute window was chosen precisely to keep that cheap attack cheap for the victim too; it is a compromise, not a defence.
-2. **Password spray is invisible and unbounded.** One wrong password against a thousand usernames never trips any counter (each user sees one failure). ADR 0007's *target* dimension would not help either: it is the same per-user counter under another name.
+2. **Password spray is invisible and unbounded.** One wrong password against a thousand usernames never trips any counter (each user sees one failure). ADR 0019's *target* dimension would not help either: it is the same per-user counter under another name.
 3. **A legitimate user and an attacker are indistinguishable** by the only signals available (username, address). Every user of a NAT shares the address; every attacker can rotate addresses.
 
-What is different about login compared to the endpoints ADR 0007 covers: the side effect being protected is not mail, it is **the secret itself** (guessing) and **the user's availability** (lockout). The right unit of protection is therefore not the mailbox and not the address, but **the browser the user actually uses**.
+What is different about login compared to the endpoints ADR 0019 covers: the side effect being protected is not mail, it is **the secret itself** (guessing) and **the user's availability** (lockout). The right unit of protection is therefore not the mailbox and not the address, but **the browser the user actually uses**.
 
 ### Prior art
 
@@ -40,7 +38,7 @@ What is different about login compared to the endpoints ADR 0007 covers: the sid
 
 ### 2. Two failure buckets per user replace the global lockout
 
-Failed password attempts for user X are counted in exactly one of two buckets (Postgres counters via ADR 0007's `IRateLimitStore`, new policy `login`):
+Failed password attempts for user X are counted in exactly one of two buckets (Postgres counters via ADR 0019's `IRateLimitStore`, new policy `login`):
 
 | Bucket | Key | Default | On trip |
 |---|---|---|---|
@@ -59,7 +57,7 @@ Consequences that matter:
 
 ### 3. Spray is detected, not blocked
 
-Untrusted failures are additionally counted per **source key** (address / IPv6 /64, NAT-sized: default 200 / 15 min) — but this counter is **signal-only**: evaluated and counted, never rejecting, exactly as the 2026-05-07 decision demands. Crossing it produces — once per window per source — the security-audit event `security.login_spray_detected` (count = threshold) and the metric `modgud.auth.login.spray_detected`, which is the input the planned *login alerts + manual blacklist* feature needs. The realm allowlist from ADR 0007 exempts known egress ranges from the signal; failures from trusted devices never feed it. A realm admin may tune the threshold; disabling the cell is rejected by validation (`AuthRateLimits.login.Source`), and `AuthRateLimitDefaults.IsSignalOnly` marks it read-only for the UI (`RateLimitRuleDto.SignalOnly`).
+Untrusted failures are additionally counted per **source key** (address / IPv6 /64, NAT-sized: default 200 / 15 min) — but this counter is **signal-only**: evaluated and counted, never rejecting, exactly as the 2026-05-07 decision demands. Crossing it produces — once per window per source — the security-audit event `security.login_spray_detected` (count = threshold) and the metric `modgud.auth.login.spray_detected`, which is the input the planned *login alerts + manual blacklist* feature needs. The realm allowlist from ADR 0019 exempts known egress ranges from the signal; failures from trusted devices never feed it. A realm admin may tune the threshold; disabling the cell is rejected by validation (`AuthRateLimits.login.Source`), and `AuthRateLimitDefaults.IsSignalOnly` marks it read-only for the UI (`RateLimitRuleDto.SignalOnly`).
 
 ### 4. Getting a new device trusted during an attack
 
@@ -73,7 +71,7 @@ When X's untrusted bucket trips, the failure that tripped it triggers — at mos
 
 ### 6. Scope
 
-Interactive **browser** login only. Native apps talk to the token endpoint with bearer flows, which have their own limits (ADR 0007); a device identifier for native clients (attestation-backed) is a later ADR. Second-factor endpoints (`/api/account/mfa/*`, e-mail OTP) keep Identity lockout / their per-challenge attempt caps for now.
+Interactive **browser** login only. Native apps talk to the token endpoint with bearer flows, which have their own limits (ADR 0019); a device identifier for native clients (attestation-backed) is a later ADR. Second-factor endpoints (`/api/account/mfa/*`, e-mail OTP) keep Identity lockout / their per-challenge attempt caps for now.
 
 ## Architecture (as built)
 

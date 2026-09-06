@@ -2,8 +2,6 @@
 
 **Status:** Accepted — shipped 2026-09-03 (PR #216) · **Decided:** 2026-09-03
 
-# Registration before proof: one pending-registration pipeline for every sign-up path
-
 ## Status
 
 Proposed (2026-09-03). Triggered by a consumer production-readiness review, but the decision is platform-wide: Modgud is a general IdP and every sign-up path has the same defect.

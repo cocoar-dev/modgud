@@ -2,8 +2,6 @@
 
 **Status:** Accepted — shipped 2026-09-04 (PR #221, #222, #223) · **Decided:** 2026-09-04
 
-# Back-channel logout: server-initiated logout propagation to relying parties (POST and change feed)
-
 ## Status
 
 **Accepted — increment 1 merged 2026-09-04 as PR #221 (`8bc76801`), increment 2 (resource-server session revocation) as PR #222 (`b51a1e83`).** Closes the last open item of #118 (PAR and DPoP shipped in July). This body describes the design **as built**; the two deviations from the draft (fan-out via an event-store subscription instead of commit forwarding; an own delivery record and retry job instead of Wolverine's durable retries) are marked below with their reasons.

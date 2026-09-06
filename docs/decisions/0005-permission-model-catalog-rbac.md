@@ -35,4 +35,4 @@ Modgud needs an authorization model that is consistent across the IdP itself and
 ## References
 
 - Code: `PermissionEvaluator.cs`, `PermissionService.cs`, `PermissionEndpointFilter.cs`.
-- Internal design-consensus notes (migrated 2026-07-17 from the former `dev-docs/future-features/permission-modell.md`); `docs/concepts/abac`.
+- The design-consensus discussion behind this decision; [Attribute-based access control](../concepts/abac) for the row-level half that deliberately stays in the consuming application.

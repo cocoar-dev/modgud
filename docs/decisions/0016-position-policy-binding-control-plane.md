@@ -2,13 +2,13 @@
 
 **Status:** Accepted — the semantic base for the MG-FT expansion · **Decided:** 2026-08-15
 
-# Context
+## Context
 
 ADR 0015 establishes Position/Terminal/Staffing as the sole shared-device model and settles the product direction. Before the MG-FT-FLEX expansion, the exact policy, binding, evidence, and control-plane semantics underneath it needed to be pinned down: today's DPoP/passkey form is only the strong default, n:m terminals must not conflate the business subject with the control identity, and any later proof method needs method-honest lifecycle rules.
 
 This ADR extends ADR 0015. It does not supersede ADR 0015.
 
-# Decision
+## Decision
 
 **4.1 — Device binding belongs to the slot; the policy only states
 requirements.** `TerminalEnrollment` carries the actually chosen binding
@@ -86,7 +86,7 @@ terminal — with `client-secret`/`none` it is explicitly weaker
 one-time semantics uses the binding-independent action/nonce tier.
 Details in E/F5.
 
-# Invariants
+## Invariants
 
 1. The **slot** carries actual state (the real binding, the pinned
    key), the **policy** carries only requirements (minima, allowed
@@ -134,7 +134,7 @@ Details in E/F5.
 10. Unchanged and normative (ADR 0015): reference tokens, the exact
     terminal grant set, one client = one auth mode.
 
-# Consequences
+## Consequences
 
 - F0 persists open string sets for activation proofs and device binding kinds; wire IDs change neither their spelling nor their semantics.
 - Realm floors express required capabilities, not ordinal minimum tiers and not a concrete method allow-list.

@@ -2,7 +2,7 @@
 
 **Status:** Accepted — the product direction for shared workplace devices · **Decided:** 2026-08-15
 
-# Context
+## Context
 
 The MG-FT series introduced Positions (fillable functional roles), Terminal
 Slots (shared devices with key binding), and the Staffing flow (activation
@@ -15,7 +15,7 @@ concrete implementations (WebAuthn passkey for the person, DPoP for the
 device) — unlike OAuth (and Modgud itself for user login), where flows are
 normative and methods are an operator choice.
 
-# Decision
+## Decision
 
 **1. Every future shared-device / kiosk / frontline requirement extends
 Position/Terminal/Staffing — no second, parallel device/role identity
@@ -88,7 +88,7 @@ terminal (two factors: device key + activation proof) and can only START
 sessions — never obtain tokens independently from anywhere. An SA
 credential is self-identification: one factor, valid from anywhere.
 
-## Curated menu, strong default, explicit downgrade
+### Curated menu, strong default, explicit downgrade
 
 Lesson from OAuth's own history (the implicit flow / password grant
 existed as "operator choice" and became OAuth 2.1's legacy baggage; Modgud
@@ -103,7 +103,7 @@ Rational downgrades exist: terminals behind physical access control (e.g.,
 three secured doors) compensate for weaker digital factors; test realms
 need POC freedom.
 
-## Menu A — Activation proof (Staffing step 2)
+### Menu A — Activation proof (Staffing step 2)
 
 Goal: reuse the existing IdP method catalog, no staffing-specific
 authentication path of its own. Three classes with different audit
@@ -140,7 +140,7 @@ remotely-lockable kiosk fleet) should FIRST check whether the SA isn't the
 right tool; auto-activation as the lowest Menu A tier would need its own
 justification.
 
-## Menu B — Device identity (Staffing step 1 / enrollment subject)
+### Menu B — Device identity (Staffing step 1 / enrollment subject)
 
 The Terminal client remains its own client type (the slot link —
 activation lock, `terminal_id`, lifecycle cascades — is what distinguishes
@@ -166,7 +166,7 @@ core promises hang on them): **reference tokens** (require nothing from
 the device and make force-lock/revoke immediately effective) and the
 **exact terminal grant set** (semantics, not a security tier).
 
-## What the model attests — and what it does not
+### What the model attests — and what it does not
 
 The staffing audit attests **the unlock, not the action** (for a personal
 proof: "Terminal X was unlocked at T by person Y"; for a Position token:
@@ -178,7 +178,7 @@ level, not the action level**. If a case needs action-level accountability,
 the hinge is a **step-up proof per critical action** within the staffing
 flow — not a new concept.
 
-## The stable core (do not duplicate)
+### The stable core (do not duplicate)
 
 - `PositionPrincipal` — the fillable role, domain-neutral.
 - `TerminalEnrollment` (slot) — the device slot. This IS the
@@ -187,7 +187,7 @@ flow — not a new concept.
 - Enrollment and staffing flow — the basic shape authN → authZ → effect;
   the token belongs to the Position.
 
-## Delineation — the rule of thumb (three principals, no fourth)
+### Delineation — the rule of thumb (three principals, no fourth)
 
 > **Is a PERSON acting, who should appear in the business data (receipt,
 > ticket, log)? → user login (possibly with fast switching; a PIN/badge is
@@ -205,7 +205,7 @@ that nobody ever unlocks is the SA case — no matter how physical it is.
 There is no fourth concept. And a **group** is none of these three: it
 distributes rights, it never acts itself (decision 5).
 
-# Consequences
+## Consequences
 
 - The design stays domain-neutral: no consumer-specific names, fields, or
   semantics in the MG-FT core; business logic belongs in the consuming

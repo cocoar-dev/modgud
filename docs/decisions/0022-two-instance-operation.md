@@ -2,26 +2,26 @@
 
 **Status:** Accepted — shipped 2026-09-05 in v0.12.0 (PR #226) · **Decided:** 2026-09-04
 
-# Context
+## Context
 
 Modgud runs as exactly one container. Every image update is downtime. The operator's immediate pain is **the update**; a second instance also gives cheap resilience against one container crashing. "High availability" in the SLA sense (multi-box failover under load, chaos drills) stays out of scope, but the design below is the correct multi-instance design, not a rolling-update shortcut: once two instances run, they run **all the time**, both serving traffic, and everything must be correct in that steady state, not only during the update window.
 
-This ADR supersedes the "2b" section of the design note `designs/ha-multi-instance`. That note predates ADR 0007 and still lists in-memory rate limiters; those are gone (`PostgresRateLimitStore`).
+This ADR supersedes the "phase 2b" scope of an earlier high-availability design note, which predates ADR 0019 and still listed in-memory rate limiters; those are gone (`PostgresRateLimitStore`).
 
-Revision notes (all 2026-09-04/05): the first draft proposed Marten `HotCold` plus a hand-written advisory-lock election for Quartz and an optional backplane; rejected as second choice. Increment 1 was built with the SignalARRR Redis backplane on Valkey plus a Redis data-event relay; SignalARRR then shipped its Postgres backplane (5.1.0-beta.1) and the default moved to Postgres. A code audit next showed that Modgud has no targeted SignalR sends at all (no `IHubContext`, no `Clients.*`, no groups) and every hub is a server stream fed by the in-process `DataEventDispatcher` observable, so the backplane routed nothing and was removed in favour of Modgud's own LISTEN/NOTIFY relay. The finding went to SignalARRR (Atlas `cluster-aware-observables-idea-2026-09`), which shipped **cluster subjects** and Postgres catch-up the same day (5.1.0-beta.2, PRs #72/#73; 5.1.0 final the same afternoon). Final shape: the Postgres backplane carries a cluster subject with Modgud's data events; the hand-written relay is gone. Driving a complete external login across the rig then surfaced that the SSRF guard had no operator exemption for identity providers on private networks; D11 adds it. The "As built" section records what the rig showed.
+Revision notes (all 2026-09-04/05): the first draft proposed Marten `HotCold` plus a hand-written advisory-lock election for Quartz and an optional backplane; rejected as second choice. Increment 1 was built with the SignalARRR Redis backplane on Valkey plus a Redis data-event relay; SignalARRR then shipped its Postgres backplane (5.1.0-beta.1) and the default moved to Postgres. A code audit next showed that Modgud has no targeted SignalR sends at all (no `IHubContext`, no `Clients.*`, no groups) and every hub is a server stream fed by the in-process `DataEventDispatcher` observable, so the backplane routed nothing and was removed in favour of Modgud's own LISTEN/NOTIFY relay. The finding went upstream to SignalARRR, which shipped **cluster subjects** and Postgres catch-up the same day (5.1.0-beta.2, PRs #72/#73; 5.1.0 final the same afternoon). Final shape: the Postgres backplane carries a cluster subject with Modgud's data events; the hand-written relay is gone. Driving a complete external login across the rig then surfaced that the SSRF guard had no operator exemption for identity providers on private networks; D11 adds it. The "As built" section records what the rig showed.
 
-## What already works with two instances (state of v0.11.0)
+### What already works with two instances (state of v0.11.0)
 
 - DataProtection keys per realm in Marten (HA-2a).
-- OpenIddict stores, browser sessions, SecurityStamp, PendingRegistration (ADR 0006), session grants (ADR 0009), signing keys: all in the tenant database.
-- Rate limits and login throttling: Postgres (ADR 0007/0008).
+- OpenIddict stores, browser sessions, SecurityStamp, PendingRegistration (ADR 0018), session grants (ADR 0021), signing keys: all in the tenant database.
+- Rate limits and login throttling: Postgres (ADR 0019/0020).
 - Process-local caches with **bounded staleness**: `RealmCache`, `RealmKeyStore` (revalidation interval), CORS origins (60 s), CIMD metadata. This is a deliberate design (re-validate against the DB after seconds), not a gap.
 - Wolverine already has `MainDatabaseConnectionString` (master DB) for node coordination.
 
-## What broke before this ADR when two instances ran concurrently
+### What broke before this ADR when two instances ran concurrently
 
 1. **Wolverine `Solo`**: both nodes drain the outbox; emails and forwarded events execute twice.
-2. **Marten async daemon hard-wired to `DaemonMode.Solo`**: both nodes run the async `AuthAuditView` projection, the App change-feed subscription and the back-channel-logout subscription (ADR 0009).
+2. **Marten async daemon hard-wired to `DaemonMode.Solo`**: both nodes run the async `AuthAuditView` projection, the App change-feed subscription and the back-channel-logout subscription (ADR 0021).
 3. **Quartz in-memory job store**: every node runs every job; `BackChannelLogoutRetryJob` double-delivers, run history is written twice.
 4. **ASP.NET `Session` on `AddDistributedMemoryCache`**: sole consumer is the passkey registration challenge; a ceremony split across nodes fails.
 5. **No graceful drain**: nothing turns `/health/ready` to 503 on SIGTERM.
@@ -30,7 +30,7 @@ Revision notes (all 2026-09-04/05): the first draft proposed Marten `HotCold` pl
 8. **Observability buffers** (`ObservabilityActivityBuffer`, `RealmErrorBuffer`) are process-local; the admin live view shows one node's half.
 9. **Projection rebuild endpoint** pauses only the local daemon.
 
-## Verified library facts (Marten 9.23 / JasperFx.Events 2.47 / Wolverine 6.27 / Quartz 3.18 / SignalARRR 5.1.0)
+### Verified library facts (Marten 9.23 / JasperFx.Events 2.47 / Wolverine 6.27 / Quartz 3.18 / SignalARRR 5.1.0)
 
 - Wolverine `MartenIntegration.UseWolverineManagedEventSubscriptionDistribution` replaces Marten's `AddAsyncDaemon(HotCold)`; Wolverine refuses the combination at start (`ManagedDistributionDaemonModeValidator`). Its `WolverineProjectionCoordinator` implements Marten's `IProjectionCoordinator`, so the existing pause/stop gate keeps working.
 - Wolverine `Balanced`: leader election over the node table in the master DB with heartbeats; stale nodes are recovered and their agents/envelopes reassigned. Per-tenant-database distribution keeps all projections of one database on one node. Observed: JasperFx.Events 2.47 warns at start that several "extended progression writers" are attached per realm database (one per shard agent). Extended progression tracking is off in Modgud (no extended columns in `mt_event_progression`), so nothing is written twice; projections run exactly once per shard. Follow-up: check whether Wolverine ≥ 6.28 shares one daemon per database, else report upstream.
@@ -40,31 +40,31 @@ Revision notes (all 2026-09-04/05): the first draft proposed Marten `HotCold` pl
 - ASP.NET Core SignalR requires that all requests of one connection reach the same server process. Sticky sessions are therefore required at the proxy; the backplane solves fan-out, not affinity. Caddy's cookie affinity re-pins a client to the surviving node when its node is being replaced, and keeps it there afterwards.
 - Modgud's SSRF guard (`SsrfSafeHttpHandlerFactory`, security review 2026-07) resolves every admin-supplied URL itself and refuses any non-public address for OIDC discovery/back-channel, SAML metadata, CIMD documents and back-channel logout delivery, in every environment but Development/Testing for the last one. It had no operator-level exemption.
 
-# Decision
+## Decision
 
-## D1. Two-instance operation is a supported, first-class deployment shape
+### D1. Two-instance operation is a supported, first-class deployment shape
 
 Both instances serve traffic all the time. Rolling updates are the consequence, not the design goal. Failover HA across machines is not claimed.
 
-## D2. One code path: Production is always cluster-capable
+### D2. One code path: Production is always cluster-capable
 
 There is no instance-count switch. In `Production` the host always runs with Wolverine `Balanced`, Wolverine-managed projection distribution, clustered Quartz, and the SignalARRR Postgres backplane with the live-update cluster subject on the master database, also when only one container is running. `Solo`/in-memory/no backplane remain for `Development` and `Testing` only. How many nodes are alive is read from Wolverine's node table at runtime (`IClusterNodes`); a host without the relay that sees a second live node (only possible outside Production) reports **not ready**.
 
-## D3. One coordinator: Wolverine
+### D3. One coordinator: Wolverine
 
 `IntegrateWithWolverine(o => o.UseWolverineManagedEventSubscriptionDistribution = true)` plus `DurabilityMode.Balanced` in Production. Marten's own daemon coordinator is not registered in Production. The `Wolverine__DurabilityMode` env override is gone; the environment decides. Testing keeps the explicit interactive daemon per consistency boundary.
 
-## D4. Quartz: native clustering on a Postgres store in the master DB
+### D4. Quartz: native clustering on a Postgres store in the master DB
 
 `UsePersistentStore` with the Postgres provider, `UseClustering()`, System.Text.Json serialization, `SchedulerId = AUTO`, `UseProperties = true`. Tables live in schema `quartz` of the master database; `QuartzSchemaBootstrap` applies Quartz's own script once, under a cluster advisory lock, in the same startup step as the Marten master/global schema. Schedule reconciliation (`RealmJobScheduler`) runs under the same lock. Every job is `RequestRecovery`. Manual-trigger job data is string-only. Clustering needs synchronised clocks; documented.
 
-## D5. Live updates as a cluster subject on the SignalARRR Postgres backplane
+### D5. Live updates as a cluster subject on the SignalARRR Postgres backplane
 
 Production registers `AddSignalARRRPostgresBackplane` (master DB connection string, schema `signalarrr`, node id `{NodeName}-{guid}`) and one cluster subject, `modgud-data-events`, of type `DataEventEnvelope`. `ClusterSubjectDataEventRelay` is the only Modgud code involved: it implements the dispatcher's `IDataEventRelay` seam by handing every locally raised `DataEvent` to the subject as an envelope stamped with this node's id, and subscribes to the subject to replay peers' envelopes into the dispatcher (`DispatchRemoteEvent`, which never relays again). The subject notifies local subscribers of local events too, so the adapter skips envelopes carrying its own node id; each browser therefore receives every event exactly once, from the node its connection is pinned to. `DataEventEnvelope` is Modgud's wire contract (enums by name; payload items with their CLR type name and JSON). Payload types are resolved only from Modgud's own assemblies plus a closed list of plain value types (`string`, `Guid`, numbers, dates) — the id of a deleted entity travels as a `string`, which the first whitelist refused and the rig caught. Anything else is dropped with a warning, which keeps a mixed-build cluster safe. Delivery, ordering and catch-up after a listener drop are the backplane's. No hand-written transport, no `modgud_cluster` schema, no Redis option; nothing to configure.
 
 Sticky sessions at the proxy stay required.
 
-## D6. Per-node resolution instead of cross-node event propagation
+### D6. Per-node resolution instead of cross-node event propagation
 
 Every node must be able to serve any request from the database alone:
 
@@ -75,29 +75,29 @@ Every node must be able to serve any request from the database alone:
 
 Bounded-staleness caches stay as they are and are documented as the propagation bound.
 
-## D7. Graceful drain
+### D7. Graceful drain
 
 On `ApplicationStopping`, `ShutdownState` flips; a middleware in front of the health pipeline answers `/health/ready` with 503 (no framework error log for a planned drain; `ClusterHealthCheck` keeps the same rule as a backstop); the host is held for `Cluster__DrainDelaySeconds` (default 5, Production only) before Kestrel stops; `HostOptions.ShutdownTimeout` = 30 s + drain. Wolverine deregisters its node on graceful stop, so the peer takes over immediately. Docker: `STOPSIGNAL SIGTERM`, `stop_grace_period` 45 s documented.
 
-## D8. Projection rebuild is a single-instance operation
+### D8. Projection rebuild is a single-instance operation
 
 The endpoint refuses with 409 when `IClusterNodes` reports more than one live node.
 
-## D9. Schema compatibility: N-1 rule, enforced in CI (increment 2)
+### D9. Schema compatibility: N-1 rule, enforced in CI (increment 2)
 
 > **Every release must run next to its predecessor (N-1) against the same databases for the duration of an update.**
 
 Not rolling-safe (release notes: `Rolling update: stop required (reason)`): Marten bumps that replace `mt_*` functions; projection rebuilds; inline projection shape changes the old code cannot read; new event types without upcasters. The PR template carries the checkbox. The `rolling-compat` CI job (previous release image against a database migrated by the current build) is increment 2. The first update onto this release is itself a stop: a 0.11.x container (Marten Solo daemon, in-memory Quartz) cannot run beside a cluster node.
 
-## D10. Ingress and orchestration
+### D10. Ingress and orchestration
 
 Caddy `lb_policy cookie` + `health_uri /health/ready` + `health_interval 5s` + `fail_duration 30s`; nginx equivalent; Compose with two named services plus an ordered update script; Swarm `order: start-first` as the native alternative. All in `docs/operate/deployment.md`, section "Running two instances".
 
-## D11. Operator allow-list for the SSRF guard
+### D11. Operator allow-list for the SSRF guard
 
 The guard stays on for every admin-supplied URL in every environment; a realm admin cannot widen it. The platform operator declares the hosts of an identity provider or resource server on the private network deployment-wide: `OutboundHttp:AllowedPrivateHosts` (env `OutboundHttp__AllowedPrivateHosts`), exact host names or `*.suffix`, parsed once into `SsrfAllowList` and consumed by all four guarded fetchers through DI. A listed host is exempt from the address classification only — the socket still goes to the resolved address, TLS still validates the name, redirects stay off, timeouts stay tight. The refusal message names the setting. Documented under deployment ("Identity providers on private networks") and in the login-provider pitfalls. Unit tests cover parsing, matching and the guard against a loopback listener with and without the entry.
 
-# As built and verified (2026-09-05)
+## As built and verified (2026-09-05)
 
 Branch `feat/two-instance-adr-0010`, rebased onto develop `21de8f20` (v0.11.1); commits `48e0a0bb`, `d1059d93`, `89ed1847`, `4deec057`, `bf0447d2`, `1f6c354b`, `09cde375`, `62443e06`, `62869db1`, `f1bc501f`, `5e8d4b03`. Settings: `ClusterSettings` (`Cluster`: `DrainDelaySeconds`, `NodeName`), `OutboundHttpSettings` (`OutboundHttp`: `AllowedPrivateHosts`). `ClusterHostingOptions.CrossNodeRelay` (true in Production) drives the backplane and subject registration and the readiness rule. SignalARRR 5.1.0 on server (Server, Backplane.Postgres) and TypeScript client. Unit tests: dispatcher relay seam, envelope round trips (document payload, deleted-entity id) through the subject's serializer, cluster-subject adapter, cluster health check, connection registry snapshot, SSRF allow-list. Integration tests: database-driven scheme materialisation (four cases), cookie-based web passkey registration with a software authenticator; the ExternalAuth suite adapted to database semantics. Cross-node transport is the library's and tested there. Full suites green: 1666 unit, 809 integration (before the allow-list commit; the rerun after it is recorded in the memory file).
 
@@ -119,17 +119,17 @@ Local rig: two containers of the branch image, the developer's native Caddy with
 
 Nothing in this ADR's scope is left unverified by machine. Not covered here, by design: failover across machines and the database itself.
 
-# Increments
+## Increments
 
-## Increment 1: cluster-capable core — DONE (one PR)
+### Increment 1: cluster-capable core — DONE (one PR)
 
 Everything in D2–D8, D10 and D11, docs runbook, PR-template checkbox, release-notes rule.
 
-## Increment 2: observability persistence and CI enforcement
+### Increment 2: observability persistence and CI enforcement
 
 Persisted activity/error events with retention (D6); `rolling-compat` CI job (D9). Open follow-up outside the ADR: the JasperFx "extended progression writers" warning under Wolverine-managed distribution.
 
-# Consequences
+## Consequences
 
 - Single-instance operators run the cluster code (Balanced, managed distribution, clustered Quartz, Postgres backplane + cluster subject) with a small amount of extra coordination traffic to the master DB and two extra schemas there (`quartz`, `signalarrr`); the database role needs `CREATE` once. Behaviour is otherwise unchanged.
 - Two-instance operators need Postgres (primary, no transaction-pooling PgBouncer for the listener), two Modgud containers with the same OpenIddict certificates, a sticky proxy with active readiness checks, and synchronised clocks. Nothing else. Rolling-safe releases update with zero failed requests; the rest announce a short stop.

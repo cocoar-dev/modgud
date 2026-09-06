@@ -2,8 +2,6 @@
 
 **Status:** Accepted — shipped 2026-09-01 (PR #214) · **Decided:** 2026-09-01
 
-# Staged configuration (draft mode) on the manifest engine + transactional apply
-
 ## Status
 
 Accepted. Revised 2026-09-01 (evening) after the product owner corrected the product model: the draft mode is NOT a separate workspace — it is the NORMAL admin UI with git-like staging. Mental model: **live state is `main`; a draft is a branch; every modal save is a commit; apply is the push + MERGE into main — the baseline is the merge-base and the three-way conflicts ARE the merge conflicts; parking a draft is a branch switch.** The earlier "Phase 1 workspace" ships as the draft-management/diff view, not as the primary editing surface.

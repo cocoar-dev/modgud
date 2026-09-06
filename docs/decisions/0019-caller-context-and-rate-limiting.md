@@ -2,11 +2,9 @@
 
 **Status:** Accepted — shipped 2026-09-04 (PR #217) · **Decided:** 2026-09-03
 
-# Caller context and multi-dimensional rate limiting for public auth endpoints
-
 ## Status
 
-Proposed (2026-09-03), implemented 2026-09-04 on branch `feat/caller-context-rate-limits` (stacked on `feat/registration-before-proof`, ADR 0006). Companion to "Registration before proof". Platform-wide; not specific to any consumer. Revised after review: the source dimension is a coarse brake sized for NATs, not the defence; prior art from Auth0, Okta, Firebase, Supabase, Keycloak and OWASP added (see "Prior art").
+Proposed (2026-09-03), implemented 2026-09-04 on branch `feat/caller-context-rate-limits` (stacked on `feat/registration-before-proof`, ADR 0018). Companion to "Registration before proof". Platform-wide; not specific to any consumer. Revised after review: the source dimension is a coarse brake sized for NATs, not the defence; prior art from Auth0, Okta, Firebase, Supabase, Keycloak and OWASP added (see "Prior art").
 
 ## Context
 
