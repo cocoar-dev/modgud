@@ -26,7 +26,7 @@ public class CanonicalIssuerTests
     [Fact]
     public void No_application_returns_base_uri_unchanged()
     {
-        var baseUri = new Uri("https://amzettel.cocoar.app/");
+        var baseUri = new Uri("https://acmelist.cocoar.app/");
         var result = CanonicalIssuer.Resolve(baseUri, Ctx(appId: null, "cocoar.app"));
         Assert.Equal(baseUri, result);
     }
@@ -35,7 +35,7 @@ public class CanonicalIssuerTests
     public void Application_subdomain_swaps_host_to_primary_domain()
     {
         var result = CanonicalIssuer.Resolve(
-            new Uri("https://amzettel.cocoar.app/"), Ctx(Guid.NewGuid(), "cocoar.app"));
+            new Uri("https://acmelist.cocoar.app/"), Ctx(Guid.NewGuid(), "cocoar.app"));
         Assert.Equal("https://cocoar.app/", result!.AbsoluteUri);
     }
 
@@ -43,7 +43,7 @@ public class CanonicalIssuerTests
     public void Host_swap_preserves_scheme_port_and_path()
     {
         var result = CanonicalIssuer.Resolve(
-            new Uri("http://amzettel.localhost:9099/idp/"), Ctx(Guid.NewGuid(), "localhost"));
+            new Uri("http://acmelist.localhost:9099/idp/"), Ctx(Guid.NewGuid(), "localhost"));
         Assert.Equal("http://localhost:9099/idp/", result!.AbsoluteUri);
     }
 
@@ -58,7 +58,7 @@ public class CanonicalIssuerTests
     [Fact]
     public void Missing_primary_domain_falls_back_to_base_uri()
     {
-        var baseUri = new Uri("https://amzettel.cocoar.app/");
+        var baseUri = new Uri("https://acmelist.cocoar.app/");
         var result = CanonicalIssuer.Resolve(baseUri, Ctx(Guid.NewGuid(), primaryDomain: null));
         Assert.Equal(baseUri, result);
     }
@@ -66,7 +66,7 @@ public class CanonicalIssuerTests
     [Fact]
     public void Null_http_context_returns_base_uri()
     {
-        var baseUri = new Uri("https://amzettel.cocoar.app/");
+        var baseUri = new Uri("https://acmelist.cocoar.app/");
         Assert.Equal(baseUri, CanonicalIssuer.Resolve(baseUri, httpContext: null));
     }
 }

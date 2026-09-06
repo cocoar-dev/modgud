@@ -37,7 +37,7 @@ public class RealmMiddlewareTests
         var appId = Guid.NewGuid();
         var tenant = new TenantInfo("acme", IsControlPlane: false, IsActive: true);
         var mw = new RealmMiddleware(_ => Task.CompletedTask, new FakeRealmCache(new RealmResolution(tenant, appId)));
-        var ctx = Ctx("amzettel.cocoar.app");
+        var ctx = Ctx("acmelist.cocoar.app");
 
         await mw.InvokeAsync(ctx);
 

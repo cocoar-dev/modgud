@@ -1,14 +1,17 @@
 import type { PageCompositionDefinition, VisualMarkupNode } from '@cocoar/vue-page-builder'
 
 /*
- * The amZettel brand panel — the left half of https://app.amzettel.at.
+ * The AcmeList brand panel — the left half of a fictional product's login page.
  *
  * It is our reference case for "can a realm build its real login page in the
- * PageBuilder, without us shipping anything tenant-specific?" Everything below
- * is ordinary authored content: a `visual-markup` node with HTML and CSS, the
- * same thing a realm admin can write in the editor. There is no amZettel
- * branch anywhere in the renderer, and the CSS refers only to the custom
- * properties the host exposes through `createAuthVisualMarkupConfig`.
+ * PageBuilder, without us shipping anything tenant-specific?" The product is
+ * invented, but the panel is deliberately as demanding as a real one: a
+ * two-tone wordmark, a rotated card, a staggered tick-off animation and a
+ * reduced-motion escape hatch. Everything below is ordinary authored content:
+ * a `visual-markup` node with HTML and CSS, the same thing a realm admin can
+ * write in the editor. There is no product-specific branch anywhere in the
+ * renderer, and the CSS refers only to the custom properties the host exposes
+ * through `createAuthVisualMarkupConfig`.
  *
  * It lives in a composition rather than in the login document because the panel
  * is shared: login and logout pin the same immutable version, and updating it
@@ -17,14 +20,14 @@ import type { PageCompositionDefinition, VisualMarkupNode } from '@cocoar/vue-pa
 
 const HTML = `<div class="brand-panel">
   <h1 class="wordmark">
-    <span class="wordmark-lead">am</span><span class="wordmark-accent">Zettel</span>
+    <span class="wordmark-lead">Acme</span><span class="wordmark-accent">List</span>
   </h1>
-  <p class="tagline">Gemeinsam einkaufen. Einfach abhaken.</p>
+  <p class="tagline">Shop together. Tick it off.</p>
 
   <div class="list-card">
     <div class="list-head">
       <span class="list-tile">W</span>
-      <span class="list-title">Wocheneinkauf</span>
+      <span class="list-title">Weekly shop</span>
       <svg width="30" height="30" viewBox="0 0 36 36" class="progress" aria-hidden="true">
         <circle cx="18" cy="18" r="15.5" fill="none" class="progress-track" stroke-width="4.5"></circle>
         <circle cx="18" cy="18" r="15.5" fill="none" class="progress-value" stroke-width="4.5"
@@ -32,10 +35,10 @@ const HTML = `<div class="brand-panel">
       </svg>
     </div>
     <ul class="list-items">
-      <li style="--delay:1.2s;--category:#0284c7"><span class="dot"></span><span class="item">Milch</span><span class="qty">2 L</span></li>
-      <li style="--delay:2.25s;--category:#d97706"><span class="dot"></span><span class="item">Brot</span><span class="qty">1 Stk</span></li>
-      <li style="--delay:3.3s;--category:#16a34a"><span class="dot"></span><span class="item">Äpfel</span><span class="qty">6 Stk</span></li>
-      <li style="--delay:4.35s;--category:#2563eb"><span class="dot"></span><span class="item">Kaffee</span><span class="qty">500 g</span></li>
+      <li style="--delay:1.2s;--category:#0284c7"><span class="dot"></span><span class="item">Milk</span><span class="qty">2 L</span></li>
+      <li style="--delay:2.25s;--category:#d97706"><span class="dot"></span><span class="item">Bread</span><span class="qty">1 pc</span></li>
+      <li style="--delay:3.3s;--category:#16a34a"><span class="dot"></span><span class="item">Apples</span><span class="qty">6 pcs</span></li>
+      <li style="--delay:4.35s;--category:#2563eb"><span class="dot"></span><span class="item">Coffee</span><span class="qty">500 g</span></li>
       <li style="--delay:5.4s;--category:#0284c7"><span class="dot"></span><span class="item">Butter</span><span class="qty">250 g</span></li>
     </ul>
   </div>
@@ -63,9 +66,9 @@ body {
 .wordmark {
   margin: 0;
   /* Inside the sealed iframe, vw resolves against the iframe — this pane, not
-     the viewport. The panel is 44% wide, so the viewport-relative 4.5vw the
-     original design used is ~10vw here. Without this the wordmark collapses
-     onto its clamp minimum and reads far too small next to the form. */
+     the viewport. The panel is 44% wide, so the viewport-relative 4.5vw a
+     full-page design would use is ~10vw here. Without this the wordmark
+     collapses onto its clamp minimum and reads far too small next to the form. */
   font-size: clamp(2.6rem, 10vw, 3.4rem);
   display: inline-flex;
   align-items: baseline;
@@ -178,12 +181,12 @@ body {
 }
 `
 
-export const AMZETTEL_BRAND_PANEL: PageCompositionDefinition = {
-  id: 'amzettel-brand-panel',
-  name: 'amZettel brand panel',
+export const ACME_BRAND_PANEL: PageCompositionDefinition = {
+  id: 'acme-brand-panel',
+  name: 'AcmeList brand panel',
   version: '1',
   root: {
-    id: 'amzettel-brand-panel-root',
+    id: 'acme-brand-panel-root',
     type: 'visual-markup',
     name: 'brandPanel',
     props: { html: HTML, css: CSS },

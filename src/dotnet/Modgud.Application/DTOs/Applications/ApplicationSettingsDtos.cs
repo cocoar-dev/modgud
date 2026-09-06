@@ -28,7 +28,7 @@ public record ApplicationSettingsDto
 
 public record ApplicationOriginDto
 {
-    /// <summary>The App's own subdomain (e.g. <c>amzettel.cocoar.app</c>). Must be a
+    /// <summary>The App's own subdomain (e.g. <c>acmelist.cocoar.app</c>). Must be a
     /// child of the realm's primary domain. Null/empty = no own origin (the App is
     /// reached via the tenant URL). Setting it also writes the global host→App
     /// routing map; clearing it removes the route.</summary>

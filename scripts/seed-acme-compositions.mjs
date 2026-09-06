@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
 /**
- * Migrates the local amZettel auth customization from a monolithic Login
+ * Migrates the local AcmeList auth customization from a monolithic Login
  * document to a reusable PageBuilder composition and consumes the same pinned
  * version from Login and Logout.
  *
  * Usage:
- *   node scripts/seed-amzettel-compositions.mjs --password <admin-password>
+ *   node scripts/seed-acme-compositions.mjs --password <admin-password>
  */
 
 const args = new Map()
@@ -110,7 +110,7 @@ function stableJson(value) {
 
 function createLogoutPage(compositionRoot, composition) {
   return {
-    id: 'amzettel-logout-page',
+    id: 'acme-logout-page',
     type: 'page',
     schemaVersion: 5,
     enterSubmits: false,
@@ -122,9 +122,9 @@ function createLogoutPage(compositionRoot, composition) {
     },
     children: [
       {
-        id: 'amzettel-logout-shell',
+        id: 'acme-logout-shell',
         type: 'stack',
-        name: 'amzettelLogoutShell',
+        name: 'acmeLogoutShell',
         props: { direction: 'column' },
         style: {
           size: 'fill',
@@ -137,13 +137,13 @@ function createLogoutPage(compositionRoot, composition) {
           materializeComposition(
             compositionRoot,
             composition,
-            'amzettel-logout-visual-panel',
-            'amzettelLogoutVisualPanel',
+            'acme-logout-visual-panel',
+            'acmeLogoutVisualPanel',
           ),
           {
-            id: 'amzettel-logout-content',
+            id: 'acme-logout-content',
             type: 'stack',
-            name: 'amzettelLogoutContent',
+            name: 'acmeLogoutContent',
             props: { direction: 'column' },
             style: {
               size: 'fill',
@@ -160,9 +160,9 @@ function createLogoutPage(compositionRoot, composition) {
             },
             children: [
               {
-                id: 'amzettel-logout-card',
+                id: 'acme-logout-card',
                 type: 'card',
-                name: 'amzettelLogoutCard',
+                name: 'acmeLogoutCard',
                 props: {},
                 style: {
                   size: 'fill',
@@ -178,9 +178,9 @@ function createLogoutPage(compositionRoot, composition) {
                 },
                 children: [
                   {
-                    id: 'amzettel-logout-heading',
+                    id: 'acme-logout-heading',
                     type: 'heading',
-                    name: 'amzettelLogoutHeading',
+                    name: 'acmeLogoutHeading',
                     props: {
                       text: {
                         source: 'translation',
@@ -198,14 +198,14 @@ function createLogoutPage(compositionRoot, composition) {
                     },
                   },
                   {
-                    id: 'amzettel-logout-copy',
+                    id: 'acme-logout-copy',
                     type: 'paragraph',
-                    name: 'amzettelLogoutCopy',
+                    name: 'acmeLogoutCopy',
                     props: {
                       text: {
                         source: 'translation',
                         key: 'page.logoutCopy',
-                        fallback: 'Your amZettel session has ended safely.',
+                        fallback: 'Your AcmeList session has ended safely.',
                       },
                     },
                     style: {
@@ -215,15 +215,15 @@ function createLogoutPage(compositionRoot, composition) {
                     },
                   },
                   {
-                    id: 'amzettel-logout-action-error',
+                    id: 'acme-logout-action-error',
                     type: 'feedback',
-                    name: 'amzettelLogoutActionError',
+                    name: 'acmeLogoutActionError',
                     props: { kind: 'form-error' },
                   },
                   {
-                    id: 'amzettel-back-to-login',
+                    id: 'acme-back-to-login',
                     type: 'button',
-                    name: 'amzettelBackToLogin',
+                    name: 'acmeBackToLogin',
                     props: {
                       label: {
                         source: 'translation',
@@ -238,9 +238,9 @@ function createLogoutPage(compositionRoot, composition) {
                 ],
               },
               {
-                id: 'amzettel-logout-legal',
+                id: 'acme-logout-legal',
                 type: 'stack',
-                name: 'amzettelLogoutLegal',
+                name: 'acmeLogoutLegal',
                 props: { direction: 'row' },
                 style: {
                   justify: 'center',
@@ -251,25 +251,25 @@ function createLogoutPage(compositionRoot, composition) {
                 },
                 children: [
                   {
-                    id: 'amzettel-logout-privacy',
+                    id: 'acme-logout-privacy',
                     type: 'link',
-                    name: 'amzettelLogoutPrivacy',
+                    name: 'acmeLogoutPrivacy',
                     props: {
                       label: { source: 'translation', key: 'page.privacy', fallback: 'Privacy' },
                       action: 'legal:privacy',
                     },
                   },
                   {
-                    id: 'amzettel-logout-legal-separator',
+                    id: 'acme-logout-legal-separator',
                     type: 'paragraph',
-                    name: 'amzettelLogoutLegalSeparator',
+                    name: 'acmeLogoutLegalSeparator',
                     props: { text: '·' },
                     style: { foreground: 'tertiary', size: 'fit' },
                   },
                   {
-                    id: 'amzettel-logout-terms',
+                    id: 'acme-logout-terms',
                     type: 'link',
-                    name: 'amzettelLogoutTerms',
+                    name: 'acmeLogoutTerms',
                     props: {
                       label: { source: 'translation', key: 'page.legalNotice', fallback: 'Legal notice' },
                       action: 'legal:terms',
@@ -285,14 +285,14 @@ function createLogoutPage(compositionRoot, composition) {
     translations: {
       de: {
         'page.logoutHeading': 'Abgemeldet',
-        'page.logoutCopy': 'Deine amZettel-Sitzung wurde sicher beendet.',
+        'page.logoutCopy': 'Deine AcmeList-Sitzung wurde sicher beendet.',
         'page.backToLogin': 'Erneut anmelden',
         'page.privacy': 'Datenschutz',
         'page.legalNotice': 'Impressum',
       },
       en: {
         'page.logoutHeading': 'Signed out',
-        'page.logoutCopy': 'Your amZettel session has ended safely.',
+        'page.logoutCopy': 'Your AcmeList session has ended safely.',
         'page.backToLogin': 'Sign in again',
         'page.privacy': 'Privacy',
         'page.legalNotice': 'Legal notice',
@@ -340,26 +340,26 @@ const [pageLibrary, compositionSummaries, applications] = await Promise.all([
 
 const loginSlot = pageLibrary.Slots.find(slot => slot.Slug === 'login')
 const loginSummary = loginSlot?.Variants.find(variant =>
-  variant.Name === 'amZettel · Login' || variant.UsedByApps?.includes('amZettel'))
-if (!loginSummary) throw new Error('The amZettel Login variant was not found.')
+  variant.Name === 'AcmeList · Login' || variant.UsedByApps?.includes('AcmeList'))
+if (!loginSummary) throw new Error('The AcmeList Login variant was not found.')
 
 const loginVariant = await request(`/api/admin/customization/pages/login/variants/${encodeURIComponent(loginSummary.Id)}`)
 const loginSchema = JSON.parse(loginVariant.Schema)
-const existingCompositionSummary = compositionSummaries.find(item => item.Name === 'amZettel · Visual panel')
+const existingCompositionSummary = compositionSummaries.find(item => item.Name === 'AcmeList · Visual panel')
 let compositionDefinition
 
 if (existingCompositionSummary) {
   compositionDefinition = await request(`/api/admin/customization/compositions/${encodeURIComponent(existingCompositionSummary.Id)}`)
 } else {
   const visualLocation = findNodeLocation(loginSchema, node =>
-    node.id === 'amzettel-brand-panel'
-    || node.id === 'amzettel-visual-panel'
+    node.id === 'acme-brand-panel'
+    || node.id === 'acme-visual-panel'
     || (node.type === 'visual-markup' && (node.props?.html ?? node.props?.markup ?? '').includes('auth-brand')))
-  if (!visualLocation) throw new Error('The amZettel visual panel was not found in the Login variant.')
+  if (!visualLocation) throw new Error('The AcmeList visual panel was not found in the Login variant.')
   compositionDefinition = await request('/api/admin/customization/compositions', {
     method: 'POST',
     body: JSON.stringify({
-      Name: 'amZettel · Visual panel',
+      Name: 'AcmeList · Visual panel',
       Root: stripCompositionMetadata(visualLocation.node),
     }),
   })
@@ -373,32 +373,32 @@ const compositionRoot = stripCompositionMetadata(compositionDefinition.Root)
 
 const currentVisualLocation = findNodeLocation(loginSchema, node =>
   node.composition?.id === composition.id
-  || node.id === 'amzettel-brand-panel'
-  || node.id === 'amzettel-visual-panel'
+  || node.id === 'acme-brand-panel'
+  || node.id === 'acme-visual-panel'
   || (node.type === 'visual-markup' && (node.props?.html ?? node.props?.markup ?? '').includes('auth-brand')))
-if (!currentVisualLocation?.parent) throw new Error('The amZettel visual panel has no replaceable parent.')
+if (!currentVisualLocation?.parent) throw new Error('The AcmeList visual panel has no replaceable parent.')
 currentVisualLocation.parent.children[currentVisualLocation.index] = materializeComposition(
   compositionRoot,
   composition,
-  'amzettel-login-visual-panel',
-  'amzettelLoginVisualPanel',
+  'acme-login-visual-panel',
+  'acmeLoginVisualPanel',
 )
 await saveAndPublishVariant('login', loginSummary, loginSchema)
 
 const logoutSchema = createLogoutPage(compositionRoot, composition)
 const logoutSlot = pageLibrary.Slots.find(slot => slot.Slug === 'logout')
-let logoutSummary = logoutSlot?.Variants.find(variant => variant.Name === 'amZettel · Logout')
+let logoutSummary = logoutSlot?.Variants.find(variant => variant.Name === 'AcmeList · Logout')
 if (!logoutSummary) {
   logoutSummary = await request('/api/admin/customization/pages/logout/variants', {
     method: 'POST',
-    body: JSON.stringify({ Name: 'amZettel · Logout', Schema: JSON.stringify(logoutSchema) }),
+    body: JSON.stringify({ Name: 'AcmeList · Logout', Schema: JSON.stringify(logoutSchema) }),
   })
 }
 const logoutVariantId = await saveAndPublishVariant('logout', logoutSummary, logoutSchema)
 
-const amzettel = applications.find(application => application.Slug === 'amzettel')
-if (!amzettel) throw new Error('The amZettel application was not found.')
-await request(`/api/app/${encodeURIComponent(amzettel.Id)}/pages/logout/active`, {
+const acmeList = applications.find(application => application.Slug === 'acmelist')
+if (!acmeList) throw new Error('The AcmeList application was not found.')
+await request(`/api/app/${encodeURIComponent(acmeList.Id)}/pages/logout/active`, {
   method: 'PUT',
   body: JSON.stringify({ Inherit: false, ActiveVariantId: logoutVariantId }),
 })
@@ -406,6 +406,6 @@ await request(`/api/app/${encodeURIComponent(amzettel.Id)}/pages/logout/active`,
 console.log(JSON.stringify({
   composition: `${compositionDefinition.Name}@${composition.version}`,
   loginVariant: loginSummary.Name,
-  logoutVariant: 'amZettel · Logout',
-  application: amzettel.DisplayName,
+  logoutVariant: 'AcmeList · Logout',
+  application: acmeList.DisplayName,
 }, null, 2))

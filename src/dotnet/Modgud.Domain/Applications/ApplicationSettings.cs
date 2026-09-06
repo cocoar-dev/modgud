@@ -133,7 +133,7 @@ public class ApplicationSettings
 public record ApplicationOrigin
 {
     /// <summary>The Application's fully-qualified subdomain host (e.g.
-    /// <c>amzettel.cocoar.app</c>). Null = no own origin.</summary>
+    /// <c>acmelist.cocoar.app</c>). Null = no own origin.</summary>
     public string? Subdomain { get; init; }
 }
 

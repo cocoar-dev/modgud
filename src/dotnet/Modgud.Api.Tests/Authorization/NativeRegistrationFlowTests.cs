@@ -22,7 +22,7 @@ using Microsoft.AspNetCore.Http;
 namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
-/// ADR-0011 Phase 5 — native passwordless REGISTRATION (the amZettel driver). On an
+/// ADR-0011 Phase 5 — native passwordless REGISTRATION (the AcmeList driver). On an
 /// App subdomain with the JIT posture (the Application default), an unknown email
 /// at the native OTP-request endpoint creates a passwordless user and emails a
 /// registration code; redeeming it at /connect/token mints tokens AND confirms the

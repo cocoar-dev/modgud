@@ -616,7 +616,7 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
     <div v-show="activeTab === 'origin'" class="tab-content">
       <CoarCheckbox v-model="f.origin.override" :label="t('admin.appSettings.origin.override', {}, 'Dedicated subdomain for this app')" />
       <CoarFormField :label="t('admin.appSettings.origin.subdomain', {}, 'Subdomain (Child der Realm-Primary-Domain)')">
-        <CoarTextInput v-bind="fieldBind('origin', 'subdomain')" clearable placeholder="amzettel.cocoar.app" />
+        <CoarTextInput v-bind="fieldBind('origin', 'subdomain')" clearable placeholder="acmelist.cocoar.app" />
       </CoarFormField>
 
       <CoarCheckbox v-model="f.branding.override" :label="t('admin.appSettings.branding.override', {}, 'Custom Branding (Login/SPA)')" />

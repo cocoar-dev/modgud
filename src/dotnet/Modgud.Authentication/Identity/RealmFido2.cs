@@ -43,8 +43,8 @@ public static class RealmFido2
     /// actually signed (read from the ceremony's clientDataJSON). Each is accepted
     /// ONLY if it is the RP-ID host or a subdomain of it (see
     /// <see cref="IsOriginUnderRpId"/>). This is what makes a per-client RP-ID that
-    /// is a registrable SUFFIX of the app origin work: RP-ID <c>amzettel.at</c> for a
-    /// page on <c>app.amzettel.at</c> is spec-valid (the browser only ever presents
+    /// is a registrable SUFFIX of the app origin work: RP-ID <c>acmelist.example</c> for a
+    /// page on <c>app.acmelist.example</c> is spec-valid (the browser only ever presents
     /// an origin whose effective domain has the RP-ID as a suffix), but deriving the
     /// accepted origin as <c>https://{rpId}</c> wrongly rejected it. The RP-ID hash
     /// and signature checks remain the primary boundary; this only widens the origin
@@ -116,7 +116,7 @@ public static class RealmFido2
     /// <paramref name="rpId"/> or is a subdomain of it — exactly the set of origins
     /// WebAuthn already scopes to this RP-ID. The dotted-suffix test (<c>host</c> ends
     /// with <c>"." + rpId</c>) deliberately rejects look-alikes like
-    /// <c>amzettel.at.evil.com</c> and <c>evilamzettel.at</c>.
+    /// <c>acmelist.example.evil.com</c> and <c>evilacmelist.example</c>.
     /// </summary>
     public static bool IsOriginUnderRpId(string? origin, string? rpId, bool allowInsecure)
     {

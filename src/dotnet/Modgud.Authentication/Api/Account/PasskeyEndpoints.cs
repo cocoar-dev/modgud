@@ -492,7 +492,7 @@ public static class PasskeyEndpoints
             var ceremonyRpId = ceremony.RpId ?? primaryDomain;
 
             // The browser may run the hosted login on an application subdomain
-            // (for example amzettel.auth.example.com) while the realm RP ID is
+            // (for example acmelist.auth.example.com) while the realm RP ID is
             // the parent domain (auth.example.com). WebAuthn permits exactly
             // that relationship, but Fido2NetLib still requires the fully
             // qualified signed origin in its allow-list. Mirror the native

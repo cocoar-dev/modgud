@@ -27,7 +27,7 @@ public class Realm
 
     /// <summary>
     /// ADR-0011 — per-Application origin map: host → owning <c>App.Id</c>. Lets a
-    /// request on an Application subdomain (e.g. <c>amzettel.cocoar.app</c>)
+    /// request on an Application subdomain (e.g. <c>acmelist.cocoar.app</c>)
     /// resolve BOTH this tenant AND the Application at middleware time, before any
     /// tenant DB session exists. The map lives here (global store) because the
     /// <c>App</c> aggregate is per-tenant (tenant DB) and so is unreachable that

@@ -70,7 +70,7 @@ public static class MeEndpoints
                 // ADR-0011 first-signal-consistency on the introspection path: if the
                 // request arrived on an Application subdomain, the App being queried
                 // must be that App. An explicit ?app= naming a different App is a
-                // cross-app probe (e.g. amzettel.cocoar.app/me?app=portal) → reject.
+                // cross-app probe (e.g. acmelist.cocoar.app/me?app=portal) → reject.
                 // On a plain tenant host (no Host pin) the operator may query any App.
                 if (pinnedAppId is { } hostApp && verified.Id != hostApp)
                 {

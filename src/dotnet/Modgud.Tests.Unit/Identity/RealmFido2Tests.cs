@@ -9,7 +9,7 @@ namespace Modgud.Tests.Unit.Identity;
 /// <summary>
 /// Pins the per-client WebAuthn RP-ID / origin behaviour in <see cref="RealmFido2"/>.
 /// The bug: a per-client RP-ID is meant to be a registrable SUFFIX of the app origin
-/// (RP-ID <c>amzettel.at</c> for a page on <c>app.amzettel.at</c>), but the accepted
+/// (RP-ID <c>acmelist.example</c> for a page on <c>app.acmelist.example</c>), but the accepted
 /// origin was derived as <c>https://{rpId}</c>, so a passkey enroll/login from the
 /// real subdomain origin failed the FIDO2 origin allow-list. The fix accepts any
 /// signed origin that is the RP-ID host or a subdomain of it — exactly the set
@@ -21,20 +21,20 @@ public class RealmFido2Tests
 
     [Theory]
     // Same host and genuine subdomains are accepted.
-    [InlineData("https://amzettel.at", "amzettel.at", false, true)]
-    [InlineData("https://app.amzettel.at", "amzettel.at", false, true)]
-    [InlineData("https://deep.app.amzettel.at", "amzettel.at", false, true)]
+    [InlineData("https://acmelist.example", "acmelist.example", false, true)]
+    [InlineData("https://app.acmelist.example", "acmelist.example", false, true)]
+    [InlineData("https://deep.app.acmelist.example", "acmelist.example", false, true)]
     // Look-alikes and foreign hosts are rejected.
-    [InlineData("https://evil.at", "amzettel.at", false, false)]
-    [InlineData("https://amzettel.at.evil.com", "amzettel.at", false, false)]
-    [InlineData("https://evilamzettel.at", "amzettel.at", false, false)]
+    [InlineData("https://evil.at", "acmelist.example", false, false)]
+    [InlineData("https://acmelist.example.evil.com", "acmelist.example", false, false)]
+    [InlineData("https://evilacmelist.example", "acmelist.example", false, false)]
     // Scheme: https only in prod; http only when insecure (dev) is allowed.
-    [InlineData("http://app.amzettel.at", "amzettel.at", false, false)]
-    [InlineData("http://app.amzettel.at", "amzettel.at", true, true)]
+    [InlineData("http://app.acmelist.example", "acmelist.example", false, false)]
+    [InlineData("http://app.acmelist.example", "acmelist.example", true, true)]
     // Junk / empty / non-absolute is rejected.
-    [InlineData("app.amzettel.at", "amzettel.at", false, false)]
-    [InlineData("", "amzettel.at", false, false)]
-    [InlineData("https://app.amzettel.at", "", false, false)]
+    [InlineData("app.acmelist.example", "acmelist.example", false, false)]
+    [InlineData("", "acmelist.example", false, false)]
+    [InlineData("https://app.acmelist.example", "", false, false)]
     public void IsOriginUnderRpId_AcceptsOnlyRpIdHostOrSubdomain(
         string origin, string rpId, bool allowInsecure, bool expected)
         => Assert.Equal(expected, RealmFido2.IsOriginUnderRpId(origin, rpId, allowInsecure));
@@ -45,8 +45,8 @@ public class RealmFido2Tests
     public void TryGetClientDataOrigin_ReadsOrigin()
     {
         var clientData = Encoding.UTF8.GetBytes(
-            "{\"type\":\"webauthn.create\",\"challenge\":\"abc\",\"origin\":\"https://app.amzettel.at\"}");
-        Assert.Equal("https://app.amzettel.at", RealmFido2.TryGetClientDataOrigin(clientData));
+            "{\"type\":\"webauthn.create\",\"challenge\":\"abc\",\"origin\":\"https://app.acmelist.example\"}");
+        Assert.Equal("https://app.acmelist.example", RealmFido2.TryGetClientDataOrigin(clientData));
     }
 
     [Fact]
@@ -61,11 +61,11 @@ public class RealmFido2Tests
     // ── IsOriginForRequest — hosted web ceremonies stay same-origin ──────────────
 
     [Theory]
-    [InlineData("http://amzettel.auth-dev.localhost:4310", "http", "amzettel.auth-dev.localhost:4310", true)]
-    [InlineData("https://amzettel.example.com", "https", "amzettel.example.com", true)]
-    [InlineData("http://other.auth-dev.localhost:4310", "http", "amzettel.auth-dev.localhost:4310", false)]
-    [InlineData("http://amzettel.auth-dev.localhost:4300", "http", "amzettel.auth-dev.localhost:4310", false)]
-    [InlineData("https://amzettel.example.com/path", "https", "amzettel.example.com", false)]
+    [InlineData("http://acmelist.auth-dev.localhost:4310", "http", "acmelist.auth-dev.localhost:4310", true)]
+    [InlineData("https://acmelist.example.com", "https", "acmelist.example.com", true)]
+    [InlineData("http://other.auth-dev.localhost:4310", "http", "acmelist.auth-dev.localhost:4310", false)]
+    [InlineData("http://acmelist.auth-dev.localhost:4300", "http", "acmelist.auth-dev.localhost:4310", false)]
+    [InlineData("https://acmelist.example.com/path", "https", "acmelist.example.com", false)]
     public void IsOriginForRequest_RequiresExactSchemeHostAndPort(
         string origin, string scheme, string host, bool expected)
         => Assert.Equal(expected, RealmFido2.IsOriginForRequest(origin, scheme, new(host)));
@@ -78,12 +78,12 @@ public class RealmFido2Tests
         var realm = new Realm { Slug = "system", DisplayName = "Acme", PrimaryDomain = "auth.cocoar.dev" };
 
         var config = RealmFido2.BuildConfiguration(
-            realm, ProdEnv, rpIdOverride: "amzettel.at",
-            additionalOrigins: ["https://app.amzettel.at"]);
+            realm, ProdEnv, rpIdOverride: "acmelist.example",
+            additionalOrigins: ["https://app.acmelist.example"]);
 
-        Assert.Equal("amzettel.at", config.ServerDomain);          // RP-ID unchanged
-        Assert.Contains("https://amzettel.at", config.Origins);    // the RP-ID host itself
-        Assert.Contains("https://app.amzettel.at", config.Origins); // the real signed origin
+        Assert.Equal("acmelist.example", config.ServerDomain);          // RP-ID unchanged
+        Assert.Contains("https://acmelist.example", config.Origins);    // the RP-ID host itself
+        Assert.Contains("https://app.acmelist.example", config.Origins); // the real signed origin
     }
 
     [Fact]
@@ -92,11 +92,11 @@ public class RealmFido2Tests
         var realm = new Realm { Slug = "system", DisplayName = "Acme", PrimaryDomain = "auth.cocoar.dev" };
 
         var config = RealmFido2.BuildConfiguration(
-            realm, ProdEnv, rpIdOverride: "amzettel.at",
+            realm, ProdEnv, rpIdOverride: "acmelist.example",
             additionalOrigins: ["https://evil.at"]);
 
         Assert.DoesNotContain("https://evil.at", config.Origins);
-        Assert.Contains("https://amzettel.at", config.Origins);
+        Assert.Contains("https://acmelist.example", config.Origins);
     }
 
     private static readonly IWebHostEnvironment ProdEnv = new FakeWebHostEnvironment("Production");

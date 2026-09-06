@@ -170,8 +170,8 @@ public static class NativePasskeyEnrollEndpoints
 
             // Parse the attestation up-front so the origin the authenticator actually
             // signed can scope the relying party (below) — a per-client RP ID that is
-            // a registrable suffix of the app origin (RP-ID amzettel.at for a page on
-            // app.amzettel.at) is then accepted instead of failing the origin check.
+            // a registrable suffix of the app origin (RP-ID acmelist.example for a page on
+            // app.acmelist.example) is then accepted instead of failing the origin check.
             var attestation = JsonSerializer.Deserialize<AuthenticatorAttestationRawResponse>(
                 attEl.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (attestation is null)
