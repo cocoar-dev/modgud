@@ -83,19 +83,19 @@ public class ApplicationSettingsResolverTests : IntegrationTestBase
             Id = appId,
             CreatedAt = DateTimeOffset.UtcNow,
             // Override only the product name + posture; primary color must inherit the realm.
-            Branding = new BrandingSettings { ProductName = "amZettel" },
+            Branding = new BrandingSettings { ProductName = "AcmeList" },
             SelfRegistration = new ApplicationSelfRegistration { Posture = SelfRegPosture.ExplicitEndpoint },
-            Origin = new ApplicationOrigin { Subdomain = "amzettel.cocoar.app" },
+            Origin = new ApplicationOrigin { Subdomain = "acmelist.cocoar.app" },
         });
         await session.SaveChangesAsync(ct);
 
         var resolver = scope.ServiceProvider.GetRequiredService<IApplicationSettingsResolver>();
         var eff = await resolver.ResolveAsync(appId, ct);
 
-        Assert.Equal("amZettel", eff.Branding!.ProductName);          // overridden
+        Assert.Equal("AcmeList", eff.Branding!.ProductName);          // overridden
         Assert.Equal("#112233", eff.Branding.PrimaryColor);          // inherited from realm
         Assert.Equal(SelfRegPosture.ExplicitEndpoint, eff.SelfRegPosture);
-        Assert.Equal("amzettel.cocoar.app", eff.Origin!.Subdomain);
+        Assert.Equal("acmelist.cocoar.app", eff.Origin!.Subdomain);
     }
 
     private IServiceScope NewSystemTenantScope()

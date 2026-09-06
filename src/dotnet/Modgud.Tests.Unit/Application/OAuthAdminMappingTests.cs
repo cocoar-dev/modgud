@@ -1619,7 +1619,7 @@ public class OAuthAdminMappingTests
         [InlineData("")]
         [InlineData("   ")]
         [InlineData("app.example.com")]
-        [InlineData("amzettel.at")]
+        [InlineData("acmelist.example")]
         [InlineData("localhost")]
         [InlineData("a.localhost")]
         public void Accepts_null_blank_or_bare_hostname(string? value)

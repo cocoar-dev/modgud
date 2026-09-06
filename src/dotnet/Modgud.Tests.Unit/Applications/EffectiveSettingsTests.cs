@@ -283,8 +283,8 @@ public class EffectiveSettingsTests
         {
             var app = new ApplicationSettings
             {
-                Origin = new ApplicationOrigin { Subdomain = "amzettel.cocoar.app" },
-                EmailBranding = new ApplicationEmailBranding { ProductName = "amZettel" },
+                Origin = new ApplicationOrigin { Subdomain = "acmelist.cocoar.app" },
+                EmailBranding = new ApplicationEmailBranding { ProductName = "AcmeList" },
                 PageTheme = new ApplicationPageTheme
                 {
                     AccentColor = "#10b981",
@@ -296,8 +296,8 @@ public class EffectiveSettingsTests
 
             var eff = EffectiveSettings.Merge(Realm(), app);
 
-            Assert.Equal("amzettel.cocoar.app", eff.Origin!.Subdomain);
-            Assert.Equal("amZettel", eff.EmailBranding!.ProductName);
+            Assert.Equal("acmelist.cocoar.app", eff.Origin!.Subdomain);
+            Assert.Equal("AcmeList", eff.EmailBranding!.ProductName);
             Assert.Equal("#10b981", eff.PageTheme!.AccentColor);
             Assert.Equal(999, eff.PageTheme.ButtonRadiusPx);
             Assert.Equal("Instrument Sans Variable", eff.PageTheme.BodyFontFamily);

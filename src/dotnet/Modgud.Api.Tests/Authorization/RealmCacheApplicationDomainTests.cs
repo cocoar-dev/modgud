@@ -24,9 +24,9 @@ public class RealmCacheApplicationDomainTests : IntegrationTestBase
     {
         var ct = TestContext.Current.CancellationToken;
         var appId = Guid.NewGuid();
-        const string slug = "amzettel-rc";
-        const string tenantHost = "amzettel-rc.localhost";
-        const string appHost = "app.amzettel-rc.localhost";
+        const string slug = "acmelist-rc";
+        const string tenantHost = "acmelist-rc.localhost";
+        const string appHost = "app.acmelist-rc.localhost";
 
         var globalStore = Factory.Services.GetRequiredService<IGlobalStore>();
         await using (var session = globalStore.LightweightSession())
@@ -38,7 +38,7 @@ public class RealmCacheApplicationDomainTests : IntegrationTestBase
                 {
                     Id = Guid.NewGuid(),
                     Slug = slug,
-                    DisplayName = "amZettel RC",
+                    DisplayName = "AcmeList RC",
                     Domains = [tenantHost],
                     PrimaryDomain = tenantHost,
                     ApplicationDomains = new Dictionary<string, Guid> { [appHost] = appId },

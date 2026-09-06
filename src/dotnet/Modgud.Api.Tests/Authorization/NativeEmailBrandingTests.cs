@@ -46,7 +46,7 @@ public class NativeEmailBrandingTests : IntegrationTestBase
         {
             Id = appId,
             CreatedAt = DateTimeOffset.UtcNow,
-            Branding = new BrandingSettings { ProductName = "amZettel" },
+            Branding = new BrandingSettings { ProductName = "AcmeList" },
         });
         await session.SaveChangesAsync(ct);
 
@@ -61,7 +61,7 @@ public class NativeEmailBrandingTests : IntegrationTestBase
         Assert.NotNull(msg);
         // The App's branding product name flowed into the email ({{AppName}}, which
         // the OTP template renders into the subject), instead of hardcoded "Modgud".
-        Assert.Contains("amZettel", msg!.Subject);
+        Assert.Contains("AcmeList", msg!.Subject);
         Assert.DoesNotContain("Modgud", msg.Subject);
     }
 
@@ -86,9 +86,9 @@ public class NativeEmailBrandingTests : IntegrationTestBase
             CreatedAt = DateTimeOffset.UtcNow,
             EmailBranding = new ApplicationEmailBranding
             {
-                FromName = "amZettel Support",
-                FromAddress = "hello@amzettel.test",
-                ReplyTo = "help@amzettel.test",
+                FromName = "AcmeList Support",
+                FromAddress = "hello@acmelist.test",
+                ReplyTo = "help@acmelist.test",
             },
         });
         await session.SaveChangesAsync(ct);
@@ -102,8 +102,8 @@ public class NativeEmailBrandingTests : IntegrationTestBase
 
         var msg = emailService.GetLastEmailTo(Email);
         Assert.NotNull(msg);
-        Assert.Equal("hello@amzettel.test", msg!.FromAddress);
-        Assert.Equal("amZettel Support", msg.FromName);
-        Assert.Equal("help@amzettel.test", msg.ReplyTo);
+        Assert.Equal("hello@acmelist.test", msg!.FromAddress);
+        Assert.Equal("AcmeList Support", msg.FromName);
+        Assert.Equal("help@acmelist.test", msg.ReplyTo);
     }
 }

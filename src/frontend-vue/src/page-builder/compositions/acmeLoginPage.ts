@@ -7,17 +7,17 @@ import type {
 } from '@cocoar/vue-page-builder'
 
 /*
- * The amZettel login page, rebuilt as a PageBuilder document.
+ * The AcmeList login page, rebuilt as a PageBuilder document.
  *
- * This is the reference case: the real page at https://app.amzettel.at,
- * expressed entirely through the generic element, style and action contracts —
- * no auth-specific element types, no host CSS class, nothing amZettel-shaped in
- * the renderer. If this can be authored, a realm can rebuild its own login.
+ * This is the reference case: a product-grade login screen expressed entirely
+ * through the generic element, style and action contracts — no auth-specific
+ * element types, no host CSS class, nothing product-shaped in the renderer. If
+ * this can be authored, a realm can rebuild its own login.
  *
- * The form is the passwordless flow the reference shows: an email address, a
- * mailed login code, and a passkey as the alternative. The code step is not a
- * second page but the same document reacting to `runtime.viewState`, which the
- * host sets once it has sent the code.
+ * The form is a passwordless flow: an email address, a mailed login code, and a
+ * passkey as the alternative. The code step is not a second page but the same
+ * document reacting to `runtime.viewState`, which the host sets once it has
+ * sent the code.
  */
 
 const DE = {
@@ -68,7 +68,7 @@ function translated(key: string, fallback: string) {
 /** The email step: address, send, and the passkey alternative below a rule. */
 function emailStep(): ElementNode {
   return {
-    id: 'amzettel-email-step',
+    id: 'acme-email-step',
     type: 'stack',
     name: 'emailStep',
     props: { direction: 'column' },
@@ -78,21 +78,21 @@ function emailStep(): ElementNode {
     },
     children: [
       {
-        id: 'amzettel-title',
+        id: 'acme-title',
         type: 'heading',
         name: 'title',
         props: { level: 1, text: translated('page.title', EN.title) },
         style: { fontSize: 'xlarge', foreground: 'primary' },
       },
       {
-        id: 'amzettel-subtitle',
+        id: 'acme-subtitle',
         type: 'paragraph',
         name: 'subtitle',
         props: { text: translated('page.subtitle', EN.subtitle) },
         style: { foreground: 'secondary', fontSize: 'small' },
       },
       {
-        id: 'amzettel-email',
+        id: 'acme-email',
         type: 'text-input',
         name: 'email',
         props: {
@@ -102,32 +102,32 @@ function emailStep(): ElementNode {
         style: { size: 'fill' },
       },
       {
-        id: 'amzettel-send-code',
+        id: 'acme-send-code',
         type: 'button',
         name: 'sendCode',
         props: { label: translated('page.sendCode', EN.sendCode), action: 'auth:request-login-code', variant: 'primary' },
         style: { size: 'fill' },
       },
       {
-        id: 'amzettel-divider',
+        id: 'acme-divider',
         type: 'stack',
         name: 'divider',
         props: { direction: 'row' },
         style: { gap: '12px', align: 'center', size: 'fill' },
         children: [
-          { id: 'amzettel-divider-left', type: 'divider', name: 'dividerLeft', props: {}, style: { size: 'fill' } },
+          { id: 'acme-divider-left', type: 'divider', name: 'dividerLeft', props: {}, style: { size: 'fill' } },
           {
-            id: 'amzettel-divider-label',
+            id: 'acme-divider-label',
             type: 'paragraph',
             name: 'dividerLabel',
             props: { text: translated('page.or', EN.or) },
             style: { foreground: 'tertiary', fontSize: 'caption', size: 'fit' },
           },
-          { id: 'amzettel-divider-right', type: 'divider', name: 'dividerRight', props: {}, style: { size: 'fill' } },
+          { id: 'acme-divider-right', type: 'divider', name: 'dividerRight', props: {}, style: { size: 'fill' } },
         ],
       },
       {
-        id: 'amzettel-passkey',
+        id: 'acme-passkey',
         type: 'button',
         name: 'passkey',
         props: { label: translated('page.passkey', EN.passkey), action: 'auth:passkey', variant: 'secondary' },
@@ -140,7 +140,7 @@ function emailStep(): ElementNode {
 /** The code step, shown once the host has mailed a code. */
 function codeStep(): ElementNode {
   return {
-    id: 'amzettel-code-step',
+    id: 'acme-code-step',
     type: 'stack',
     name: 'codeStep',
     props: { direction: 'column' },
@@ -148,42 +148,42 @@ function codeStep(): ElementNode {
     visibleWhen: whileViewState('login-code'),
     children: [
       {
-        id: 'amzettel-code-title',
+        id: 'acme-code-title',
         type: 'heading',
         name: 'codeTitle',
         props: { level: 1, text: translated('page.codeTitle', EN.codeTitle) },
         style: { fontSize: 'xlarge', foreground: 'primary' },
       },
       {
-        id: 'amzettel-code-subtitle',
+        id: 'acme-code-subtitle',
         type: 'paragraph',
         name: 'codeSubtitle',
         props: { text: translated('page.codeSubtitle', EN.codeSubtitle) },
         style: { foreground: 'secondary', fontSize: 'small' },
       },
       {
-        id: 'amzettel-code',
+        id: 'acme-code',
         type: 'otp-input',
         name: 'otpCode',
         props: { label: translated('page.code', EN.code) },
         style: { size: 'fill' },
       },
       {
-        id: 'amzettel-verify',
+        id: 'acme-verify',
         type: 'button',
         name: 'verify',
         props: { label: translated('page.verify', EN.verify), action: 'auth:verify-login-code', variant: 'primary' },
         style: { size: 'fill' },
       },
       {
-        id: 'amzettel-resend',
+        id: 'acme-resend',
         type: 'link',
         name: 'resend',
         props: { label: translated('page.resend', EN.resend), action: 'auth:resend-login-code' },
         style: { foreground: 'primary', fontSize: 'small', size: 'fill' },
       },
       {
-        id: 'amzettel-back',
+        id: 'acme-back',
         type: 'link',
         name: 'back',
         props: { label: translated('page.back', EN.back), action: 'auth:back-to-email' },
@@ -196,7 +196,7 @@ function codeStep(): ElementNode {
 /** The white card: whichever step applies, plus feedback and the DE/EN switch. */
 function formCard(): ElementNode {
   return {
-    id: 'amzettel-card',
+    id: 'acme-card',
     type: 'card',
     name: 'loginCard',
     props: {},
@@ -205,7 +205,7 @@ function formCard(): ElementNode {
       emailStep(),
       codeStep(),
       {
-        id: 'amzettel-context-error',
+        id: 'acme-context-error',
         type: 'note',
         name: 'contextError',
         props: { variant: 'error', text: '' },
@@ -213,13 +213,13 @@ function formCard(): ElementNode {
         visibleWhen: { source: 'context', path: 'feedback.message', operator: 'isNotEmpty' },
       },
       {
-        id: 'amzettel-action-error',
+        id: 'acme-action-error',
         type: 'feedback',
         name: 'actionError',
         props: { kind: 'form-error' },
       },
       {
-        id: 'amzettel-language',
+        id: 'acme-language',
         type: 'link',
         name: 'languageSwitcher',
         props: { label: translated('page.languageSwitcher', 'DE'), action: 'auth:toggle-language' },
@@ -232,7 +232,7 @@ function formCard(): ElementNode {
 /** Privacy · Legal notice, under the card as on the reference. */
 function legalRow(): ElementNode {
   return {
-    id: 'amzettel-legal',
+    id: 'acme-legal',
     type: 'stack',
     name: 'legal',
     props: { direction: 'row' },
@@ -240,21 +240,21 @@ function legalRow(): ElementNode {
     visibleWhen: { source: 'context', path: 'branding.showLegal', operator: 'equals', value: true },
     children: [
       {
-        id: 'amzettel-privacy',
+        id: 'acme-privacy',
         type: 'link',
         name: 'privacy',
         props: { label: translated('page.privacy', EN.privacy), action: 'legal:privacy' },
         style: { foreground: 'tertiary', fontSize: 'caption', size: 'fit' },
       },
       {
-        id: 'amzettel-legal-separator',
+        id: 'acme-legal-separator',
         type: 'paragraph',
         name: 'legalSeparator',
         props: { text: '·' },
         style: { foreground: 'tertiary', fontSize: 'caption', size: 'fit' },
       },
       {
-        id: 'amzettel-imprint',
+        id: 'acme-imprint',
         type: 'link',
         name: 'imprint',
         props: { label: translated('page.legal', EN.legal), action: 'legal:terms' },
@@ -269,9 +269,9 @@ function legalRow(): ElementNode {
  * stored it, so the materialized nodes pin the id and version that actually
  * exist in this realm.
  */
-export function createAmzettelLoginDocument(composition: PageCompositionDefinition): PageNode {
+export function createAcmeLoginDocument(composition: PageCompositionDefinition): PageNode {
   const root: PageRootNode = {
-    id: 'amzettel-login',
+    id: 'acme-login',
     type: 'page',
     schemaVersion: 6,
     // No size on the root — the host container owns the box (3.0).
@@ -320,7 +320,7 @@ export function createAmzettelLoginDocument(composition: PageCompositionDefiniti
   const panel = materializePageComposition(composition, { page: root })
 
   const formPane: ElementNode = {
-    id: 'amzettel-form-pane',
+    id: 'acme-form-pane',
     type: 'stack',
     name: 'formPane',
     props: { direction: 'column' },
@@ -340,7 +340,7 @@ export function createAmzettelLoginDocument(composition: PageCompositionDefiniti
   // Taking the page's full height is a main-axis concern, so it needs grow
   // rather than a percentage height.
   const shell: ElementNode = {
-    id: 'amzettel-shell',
+    id: 'acme-shell',
     type: 'stack',
     name: 'shell',
     props: { direction: 'row' },

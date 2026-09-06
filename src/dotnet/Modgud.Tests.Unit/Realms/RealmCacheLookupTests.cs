@@ -159,9 +159,9 @@ public class RealmCacheLookupTests
         [Fact]
         public void App_subdomain_resolves_tenant_and_application()
         {
-            var appCache = AppCache(("amzettel.cocoar.app", new ApplicationDomainMatch(Acme, AppId)));
+            var appCache = AppCache(("acmelist.cocoar.app", new ApplicationDomainMatch(Acme, AppId)));
 
-            var result = RealmCacheLookup.Resolve("amzettel.cocoar.app", appCache, Cache(), singleActiveRealm: null);
+            var result = RealmCacheLookup.Resolve("acmelist.cocoar.app", appCache, Cache(), singleActiveRealm: null);
 
             Assert.NotNull(result);
             Assert.Same(Acme, result!.Tenant);
@@ -194,9 +194,9 @@ public class RealmCacheLookupTests
         [Fact]
         public void App_subdomain_match_is_case_insensitive()
         {
-            var appCache = AppCache(("AmZettel.Cocoar.App", new ApplicationDomainMatch(Acme, AppId)));
+            var appCache = AppCache(("AcmeList.Cocoar.App", new ApplicationDomainMatch(Acme, AppId)));
 
-            var result = RealmCacheLookup.Resolve("amzettel.cocoar.app", appCache, Cache(), singleActiveRealm: null);
+            var result = RealmCacheLookup.Resolve("acmelist.cocoar.app", appCache, Cache(), singleActiveRealm: null);
 
             Assert.Equal(AppId, result!.ApplicationId);
         }

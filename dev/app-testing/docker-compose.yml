@@ -40,8 +40,8 @@ services:
     image: modgud:local
     container_name: modgud-apptest
     # Container binds 8081 (non-root); exposed on the host as :18080. (18080 to
-    # dodge the busy 808x range on this box — cocoar-nexus 8081/8082, amzettel
-    # 8091, and a host process on 8080. Pick any free host port you like.)
+    # dodge the busy 808x range that other local containers tend to occupy.
+    # Pick any free host port you like.)
     ports:
       - "18080:8081"
     environment:

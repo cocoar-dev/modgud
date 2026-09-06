@@ -12,9 +12,9 @@ public class TenantApexCookieManagerTests
 {
     [Theory]
     [InlineData("cocoar.app", "cocoar.app", "cocoar.app")]          // on the primary → widen
-    [InlineData("amzettel.cocoar.app", "cocoar.app", "cocoar.app")] // child → widen to parent
+    [InlineData("acmelist.cocoar.app", "cocoar.app", "cocoar.app")] // child → widen to parent
     [InlineData("a.b.cocoar.app", "cocoar.app", "cocoar.app")]      // deep child → widen
-    [InlineData("AMZETTEL.Cocoar.App", "cocoar.app", "cocoar.app")] // case-insensitive
+    [InlineData("ACMELIST.Cocoar.App", "cocoar.app", "cocoar.app")] // case-insensitive
     public void Widens_to_primary_when_host_is_under_it(string host, string primary, string expected)
     {
         Assert.Equal(expected, TenantApexCookieManager.ResolveCookieDomain(host, primary));

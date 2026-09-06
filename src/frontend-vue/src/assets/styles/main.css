@@ -5,14 +5,6 @@
 @import "@fontsource-variable/instrument-sans/wght.css";
 @import "@fontsource-variable/fraunces/full-italic.css";
 
-/* Host-registered PageBuilder preset. The document stores only the preset id;
-   this CSS is shared by the administration preview and public auth runtime. */
-.auth-preset-amzettel-visual-panel {
-  background-image:
-    radial-gradient(700px 480px at 85% 12%, rgba(139, 92, 246, 0.1), transparent 60%),
-    radial-gradient(620px 460px at 0% 100%, rgba(16, 185, 129, 0.13), transparent 55%) !important;
-}
-
 :root {
   --color-primary: #525e76;
   --color-primary-dark: #292f3b;

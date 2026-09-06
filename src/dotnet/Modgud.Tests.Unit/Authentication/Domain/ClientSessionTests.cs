@@ -12,7 +12,7 @@ public class ClientSessionTests
         {
             Id = Guid.NewGuid(),
             UserId = Guid.NewGuid(),
-            ClientId = "amzettel-ios",
+            ClientId = "acmelist-ios",
             OAuthApplicationId = Guid.NewGuid().ToString(),
             AuthorizationId = Guid.NewGuid().ToString(),
             CreatedAt = created,

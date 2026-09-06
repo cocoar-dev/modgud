@@ -1,5 +1,5 @@
 /*
- * Seeds the amZettel reference login into a realm.
+ * Seeds the AcmeList reference login into a realm.
  *
  * Everything goes through the same API the admin UI uses, so this proves the
  * page is authorable rather than injected: create the brand panel as a
@@ -7,11 +7,11 @@
  * and activate it.
  *
  *   NODE_EXTRA_CA_CERTS=/path/to/caddy-root.crt \
- *     node --experimental-strip-types scripts/seed-amzettel-login.ts \
+ *     node --experimental-strip-types scripts/seed-acme-login.ts \
  *     --base-url https://auth-dev.localhost --password '<admin password>'
  */
-import { AMZETTEL_BRAND_PANEL } from '../src/page-builder/compositions/amzettelBrandPanel.ts'
-import { createAmzettelLoginDocument } from '../src/page-builder/compositions/amzettelLoginPage.ts'
+import { ACME_BRAND_PANEL } from '../src/page-builder/compositions/acmeBrandPanel.ts'
+import { createAcmeLoginDocument } from '../src/page-builder/compositions/acmeLoginPage.ts'
 
 const args = new Map<string, string>()
 for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i], process.argv[i + 1])
@@ -43,13 +43,13 @@ await api('/api/account/login', {
   method: 'POST',
   body: JSON.stringify({ UserName: userName, Password: password, RememberMe: false }),
 })
-console.log(`angemeldet als ${userName}`)
+console.log(`signed in as ${userName}`)
 
 // The API sets PropertyNamingPolicy = null, so every payload is PascalCase.
 // 1. The brand panel becomes a composition the realm owns. Reuse an existing
 //    one so re-running does not pile up duplicates.
 const existing: any[] = await api('/api/admin/customization/compositions')
-let definition = existing.find(c => c.Name === AMZETTEL_BRAND_PANEL.name)
+let definition = existing.find(c => c.Name === ACME_BRAND_PANEL.name)
 
 if (definition) {
   // The list returns summaries; fetch the full definition for its root.
@@ -59,45 +59,45 @@ if (definition) {
   // rather than an edit. Pages stay pinned to the version they materialized
   // until their author updates them — which is why the variant below is
   // rewritten against whatever version we end up with.
-  const unchanged = JSON.stringify(definition.Root) === JSON.stringify(AMZETTEL_BRAND_PANEL.root)
+  const unchanged = JSON.stringify(definition.Root) === JSON.stringify(ACME_BRAND_PANEL.root)
   if (unchanged) {
-    console.log(`Composition unverändert: ${definition.Id} v${definition.Version}`)
+    console.log(`Composition unchanged: ${definition.Id} v${definition.Version}`)
   } else {
     definition = await api(`/api/admin/customization/compositions/${definition.Id}/versions`, {
       method: 'POST',
-      body: JSON.stringify({ BaseVersion: String(definition.Version), Root: AMZETTEL_BRAND_PANEL.root }),
+      body: JSON.stringify({ BaseVersion: String(definition.Version), Root: ACME_BRAND_PANEL.root }),
     })
-    console.log(`Composition-Version veröffentlicht: ${definition.Id} v${definition.Version}`)
+    console.log(`Composition version published: ${definition.Id} v${definition.Version}`)
   }
 } else {
   definition = await api('/api/admin/customization/compositions', {
     method: 'POST',
-    body: JSON.stringify({ Name: AMZETTEL_BRAND_PANEL.name, Root: AMZETTEL_BRAND_PANEL.root }),
+    body: JSON.stringify({ Name: ACME_BRAND_PANEL.name, Root: ACME_BRAND_PANEL.root }),
   })
-  console.log(`Composition angelegt: ${definition.Id} v${definition.Version}`)
+  console.log(`Composition created: ${definition.Id} v${definition.Version}`)
 }
 
 // 2. Materialize it into the login document, pinning the version the server
 //    actually holds.
-const document = createAmzettelLoginDocument({
+const document = createAcmeLoginDocument({
   id: definition.Id,
   name: definition.Name,
   version: String(definition.Version),
-  root: definition.Root ?? AMZETTEL_BRAND_PANEL.root,
+  root: definition.Root ?? ACME_BRAND_PANEL.root,
 })
 
 const variant = await api('/api/admin/customization/pages/login/variants', {
   method: 'POST',
-  body: JSON.stringify({ Name: 'amZettel', Schema: JSON.stringify(document) }),
+  body: JSON.stringify({ Name: 'AcmeList', Schema: JSON.stringify(document) }),
 })
-console.log(`Variante angelegt: ${variant.Id ?? JSON.stringify(variant).slice(0, 120)}`)
+console.log(`Variant created: ${variant.Id ?? JSON.stringify(variant).slice(0, 120)}`)
 
 // 3. Activate it for the realm.
 await api('/api/admin/customization/pages/login/active', {
   method: 'PUT',
   body: JSON.stringify({ ActiveVariantId: variant.Id }),
 })
-console.log('als aktive Login-Seite gesetzt')
+console.log('set as the active login page')
 
 // 4. Brand colour, radii and fonts are NOT in the document — they belong to
 //    the application theme (ADR-0011), and both the sealed panel and the form
@@ -105,11 +105,11 @@ console.log('als aktive Login-Seite gesetzt')
 //    variant renders in each application's own colours without editing a node.
 //
 //    Which also means the theme only applies when an application is in
-//    context, i.e. on its own subdomain. So amZettel is modelled as what it
+//    context, i.e. on its own subdomain. So AcmeList is modelled as what it
 //    actually is — an application of this realm, reached at its own host,
 //    inheriting the realm's active login variant.
 const settings = {
-  Origin: { Subdomain: `amzettel.${args.get('--realm-domain') ?? 'auth-dev.localhost'}` },
+  Origin: { Subdomain: `acmelist.${args.get('--realm-domain') ?? 'auth-dev.localhost'}` },
   PageTheme: {
     AccentColor: '#10b981',
     ButtonRadiusPx: 999,
@@ -118,35 +118,35 @@ const settings = {
     BodyFontFamily: 'Instrument Sans Variable',
     TitleFontFamily: 'Fraunces Variable',
   },
-  Branding: { ProductName: 'amZettel' },
+  Branding: { ProductName: 'AcmeList' },
 }
 
 const apps: any[] = await api('/api/app')
-let app = apps.find(a => (a.Name ?? a.DisplayName) === 'amZettel')
+let app = apps.find(a => (a.Name ?? a.DisplayName) === 'AcmeList')
 
 if (app) {
   await api(`/api/app/${app.Id}`, {
     method: 'PUT',
     body: JSON.stringify({
-      DisplayName: 'amZettel',
+      DisplayName: 'AcmeList',
       Description: 'Reference application — the login rebuilt in the PageBuilder.',
       Permissions: app.Permissions ?? [],
       Settings: settings,
     }),
   })
-  console.log(`Anwendung aktualisiert: ${app.Id}`)
+  console.log(`Application updated: ${app.Id}`)
 } else {
   app = await api('/api/app', {
     method: 'POST',
     body: JSON.stringify({
-      Slug: 'amzettel',
-      DisplayName: 'amZettel',
+      Slug: 'acmelist',
+      DisplayName: 'AcmeList',
       Description: 'Reference application — the login rebuilt in the PageBuilder.',
       Permissions: [],
       Settings: settings,
     }),
   })
-  console.log(`Anwendung angelegt: ${app.Id}`)
+  console.log(`Application created: ${app.Id}`)
 }
 
-console.log(`\nfertig → https://${settings.Origin.Subdomain}/login`)
+console.log(`\ndone → https://${settings.Origin.Subdomain}/login`)
