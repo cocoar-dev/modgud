@@ -36,6 +36,9 @@ features:
   - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>'
     title: GDPR-ready
     details: Self-service data export (Article 20), confirmable account deletion, Marten data-masking that scrubs PII from event streams while preserving audit-chain integrity.
+  - icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" x2="6.01" y1="6.5" y2="6.5"/><line x1="6" x2="6.01" y1="17.5" y2="17.5"/></svg>'
+    title: Two instances, updates without downtime
+    details: Run two containers against one PostgreSQL behind a sticky proxy and replace them one after the other. Wolverine coordinates projections and the outbox, Quartz runs clustered, live updates cross nodes over a Postgres backplane — no second stateful service. Release notes say which builds are safe to roll.
 ---
 
 ## About the name
