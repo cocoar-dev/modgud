@@ -1213,14 +1213,18 @@
         "statusPublished": "Veröffentlicht r{revision}",
         "statusNotPublished": "Nicht veröffentlicht",
         "newPage": "Neue Seite",
-        "createNew": "Neue {type}-Seite anlegen"
+        "createNew": "Neue {type}-Seite anlegen",
+        "deleteMessageV2": "„{name}“ löschen? Die Seite wird derzeit an {count} Stelle(n) verwendet, die dann auf die eingebaute Ansicht zurückfallen."
       },
       "compositions": {
         "title": "Kompositionen",
         "publish": "Neue Version veröffentlichen",
         "nameRequired": "Diese Komposition braucht zuerst einen Namen.",
         "latestVersion": "Neueste Version",
-        "versions": "Versionen"
+        "versions": "Versionen",
+        "hint": "Hier entstehen wiederverwendbare Bausteine. Um einen zu verwenden: eine Seite öffnen, im Outline einen Container auswählen und Kompositionen → Einfügen wählen.",
+        "empty": "Einen Baustein einmal bauen und feste Versionen davon auf mehreren Seiten platzieren.",
+        "new": "Neue Komposition"
       }
     },
     "oauthClients": {
