@@ -1214,7 +1214,17 @@
         "statusNotPublished": "Nicht veröffentlicht",
         "newPage": "Neue Seite",
         "createNew": "Neue {type}-Seite anlegen",
-        "deleteMessageV2": "„{name}“ löschen? Die Seite wird derzeit an {count} Stelle(n) verwendet, die dann auf die eingebaute Ansicht zurückfallen."
+        "deleteMessageV2": "„{name}“ löschen? Die Seite wird derzeit an {count} Stelle(n) verwendet, die dann auf die eingebaute Ansicht zurückfallen.",
+        "hintV4": "Hier entstehen die Seitenvarianten — und hier wird pro Typ eine aktiviert. „Live“ zeigt, was der Realm gerade ausliefert; ein Typ ohne aktive Variante nutzt die eingebaute Ansicht. Einzelne Anwendungen können in ihren Einstellungen davon abweichen.",
+        "live": "Live",
+        "liveRealm": "Realm",
+        "liveNo": "—",
+        "activateTitle": "Für Realm aktivieren",
+        "activate": "Aktivieren",
+        "activateMessage": "„{name}“ geht für alle Anwendungen live, die ihre {type}-Seite vom Realm erben. Nicht veröffentlichte Änderungen werden dabei mit veröffentlicht.",
+        "deactivateTitle": "Auf Built-in zurücksetzen",
+        "deactivate": "Zurücksetzen",
+        "deactivateMessage": "Der Typ {type} fällt auf die eingebaute Ansicht zurück. „{name}“ bleibt erhalten und kann jederzeit wieder aktiviert werden."
       },
       "compositions": {
         "title": "Kompositionen",
