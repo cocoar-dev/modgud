@@ -51,9 +51,9 @@ The variant library is **realm-global** (ADR-0013): each slot owns a set of name
 
 **Where you do what:**
 
-- **Platform → Pages** is a grid of all variants (name, type, *Used By* count with a hover of the exact consumers, status, last-updated). Right-click creates a new Login / Logout / Forgot-password / Consent page (the toolbar button is the shortcut for Login); double-click edits; the context menu deletes.
-- **Realm settings → Sign-in pages** has one selector per slot choosing the realm's live variant — **Built-in** or a variant.
-- An **Application → Settings → Pages** has the same selectors, each **Inherit realm** (default) / **Built-in** / one of the realm variants. An App never authors its own variant — it only *selects* from the realm library.
+- **Platform → Pages** is a grid of all variants (name, type, *Live*, *Used By* count with a hover of the exact consumers, status, last change). Right-click or the toolbar button creates a new Login / Logout / Forgot-password / Consent page; double-click edits. The context menu also activates a variant for the realm, resets the slot to Built-in, and deletes.
+- **Realm settings → Sign-in pages** offers the same choice slot-first: one selector per slot, **Built-in** or a variant. It writes the same pointer as the Pages list, so the two views never disagree.
+- An **Application → Settings → Pages** has the same selectors, each **Inherit realm** (default) / **Built-in** / one of the realm variants. An App never authors its own variant — it only *selects* from the realm library. Two things differ from the realm view: the tab is hidden for **system applications**, and it lists only the slots that actually have something to choose from, so a slot with no realm variant does not appear until one exists.
 
 Effective resolution per slot: **app selection → realm selection → built-in**. A slot resolved to Built-in is simply absent from the schema the SPA receives, so the runtime renders the hardcoded view.
 
