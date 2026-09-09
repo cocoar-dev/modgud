@@ -328,13 +328,14 @@ public sealed class RealmManifestPlanner(
             .Concat(current.Users.Select(u => u.Email))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        void Note(string section, string key, string note)
+        RealmPlanEntry? Entry(string section, string key)
         {
             var entry = result.Sections.FirstOrDefault(x => x.Name == section)?
                 .Entries.FirstOrDefault(e => string.Equals(e.Key, key, StringComparison.Ordinal));
-            if (entry is not null && entry.Action != "delete" && entry.Action != "protected")
-                entry.Notes.Add(note);
+            return entry is null || entry.Action == "delete" || entry.Action == "protected" ? null : entry;
         }
+
+        void Note(string section, string key, string note) => Entry(section, key)?.Notes.Add(note);
 
         static string Skipped(string what) =>
             $"{what} — this realm has no such entity, so the apply SKIPS the reference and applies the rest.";
@@ -345,10 +346,18 @@ public sealed class RealmManifestPlanner(
             if (role.IsRealmAdmin == true || role.App is null) continue;
             if (!appSlugs.Contains(role.App))
             {
-                Note("roles", role.NaturalKey,
-                    $"App '{role.App}' does not exist here, so its permission catalog cannot be read: "
-                    + "the role's permissions are left UNCHANGED (an existing role keeps what it has; "
-                    + "a new one is created without permissions). Import the app first to get them.");
+                // A role must belong to an app, so a missing one is not a droppable
+                // reference: an existing role keeps the app it already has, and a role that
+                // would have to be CREATED cannot exist at all and is skipped whole.
+                if (Entry("roles", role.NaturalKey) is { } roleEntry)
+                {
+                    roleEntry.Notes.Add(roleEntry.Action == "create"
+                        ? $"App '{role.App}' does not exist here, and a role must belong to one — "
+                          + "the apply SKIPS this role entirely. Import the app first."
+                        : $"App '{role.App}' does not exist here, so its permission catalog cannot be "
+                          + "read: the role keeps its current app and permissions. Import the app first "
+                          + "to apply the listed permissions.");
+                }
                 continue;
             }
             var known = catalog.GetValueOrDefault(role.App) ?? [];
