@@ -239,12 +239,16 @@ watch([slot, variantId], load, { immediate: true })
       </CoarFormField>
       <div class="toolbar-spacer" />
       <span v-if="!isNew" class="revision-status" :title="publishedAt ?? undefined">
-        {{ publishedRevision > 0 ? `Published r${publishedRevision}` : 'Not published' }}
-        <template v-if="hasUnpublishedChanges"> · Draft changed</template>
+        {{ publishedRevision > 0
+          ? t('admin.customization.pages.statusPublished', { revision: publishedRevision }, `Published r${publishedRevision}`)
+          : t('admin.customization.pages.statusNotPublished', {}, 'Not published') }}
+        <template v-if="hasUnpublishedChanges">
+          · {{ t('admin.customization.pages.statusDraftChanged', {}, 'Draft changed') }}
+        </template>
       </span>
       <select v-if="revisions.length" v-model.number="rollbackRevision" class="revision-select">
         <option v-for="revision in revisions" :key="revision.Number" :value="revision.Number">
-          r{{ revision.Number }} · {{ new Date(revision.PublishedAt).toLocaleString() }}
+          r{{ revision.Number }} · {{ new Date(revision.PublishedAt).toLocaleString(language) }}
         </option>
       </select>
       <CoarButton v-if="revisions.length" size="s" variant="ghost" :disabled="publishing" @click="rollback">
