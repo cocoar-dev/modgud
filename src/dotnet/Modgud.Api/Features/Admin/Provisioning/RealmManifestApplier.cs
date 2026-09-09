@@ -16,6 +16,7 @@ using Modgud.Authentication.Api.Users;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Domain.LoginProviders;
+using Modgud.Authentication.Gdpr;
 using Modgud.Authentication.Identity.LoginProviders;
 using Modgud.Authentication.Identity.LoginProviders.Saml;
 using Modgud.Authentication.RealmSettings;
@@ -717,6 +718,21 @@ public sealed partial class RealmManifestApplier(
                 var created = await createUser.Handle(createCmd, ct);
                 EnsureOk(created, ctx);
                 uid = ShortGuid.TryParse(created.Value.Id, out Guid cid) ? cid : null;
+            }
+            // A user with a pending deletion (admin recycle bin OR self-service grace) is
+            // READ-ONLY: UpdateUserHandler rejects every edit until the user is restored.
+            // Such a user still has IsDeleted=false, so the exporter lists them and every
+            // later manifest carries them along — without this skip a single binned user
+            // would fail EVERY subsequent apply (the whole transaction rolls back), which
+            // also blocks deleting any OTHER user, because staged deletes apply through
+            // this same path. Leave the lifecycle state alone: the way back is a restore,
+            // then the next apply updates the profile again.
+            else if (await session.LoadAsync<UserDeletionState>(existing.Id, ct) is { IsDeletionPending: true })
+            {
+                logger.LogInformation(
+                    "Manifest apply skipped {Context}: the user has a pending deletion and is read-only. "
+                    + "Restore the user (or let the retention purge finish) to make it writable again.", ctx);
+                uid = existing.Id;
             }
             else
             {

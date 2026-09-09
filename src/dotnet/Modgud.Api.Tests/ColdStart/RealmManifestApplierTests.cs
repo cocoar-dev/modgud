@@ -9,6 +9,7 @@ using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Application.Services;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Gdpr;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
@@ -802,6 +803,94 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             Assert.True(await session.Query<App>().AnyAsync(a => !a.IsDeleted && a.IsSystem, ct), "system app protected");
             var scopes = (await sp.GetRequiredService<OAuthAdminService>().GetScopesAsync(ct)).Items;
             Assert.Contains(scopes, s => s.Name == "openid"); // auto-seeded standard scope protected
+        });
+    }
+
+    /// <summary>
+    /// Regression: a user in the recycle bin keeps <c>IsDeleted=false</c> (that is what
+    /// reserves their email for a restore), so the exporter still lists them and every
+    /// manifest written afterwards carries them along. UpdateUserHandler refuses to edit a
+    /// pending-deletion user — and because one failed op rolls the WHOLE apply transaction
+    /// back, a single binned user used to block EVERY later apply with
+    /// <c>User.DeletionPending</c>, including the staged deletion of any OTHER user (staged
+    /// deletes apply through this same path). The entry must be skipped instead: the apply
+    /// succeeds, and the binned user's profile and lifecycle state are left untouched.
+    /// </summary>
+    [Fact]
+    public async Task A_binned_user_carried_in_the_manifest_is_skipped_instead_of_failing_the_apply()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+
+        const string slug = "binned";
+        var full = new RealmManifest
+        {
+            Realm = new CreateRealmDto
+            {
+                Slug = slug,
+                DisplayName = "Binned",
+                Domains = [$"{slug}.localhost"],
+                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@binned.test" },
+            },
+            Users =
+            [
+                new RealmManifestUser { Key = "first", Email = "first@binned.test", UserName = "first", Firstname = "First", Password = "Passw0rd!23" },
+                new RealmManifestUser { Key = "second", Email = "second@binned.test", UserName = "second", Firstname = "Second", Password = "Passw0rd!23" },
+            ],
+        };
+        var import = await applier.ImportNewRealmAsync(full, ct);
+        Assert.False(import.IsError, import.IsError ? import.FirstError.Description : string.Empty);
+
+        // ── 1. The admin deletes "first" — the normal staged-delete path. ──────────
+        var binned = await applier.UpdateRealmAsync(
+            full with { Users = [full.Users[1]] },
+            deletions: [new RealmDraftDeletion("users", "first")],
+            ct: ct);
+        Assert.False(binned.IsError, binned.IsError ? binned.FirstError.Description : string.Empty);
+
+        // ── 2. The premise: the bin is reversible, so the export still lists them. ──
+        var export = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(export.IsError, export.IsError ? export.FirstError.Description : string.Empty);
+        Assert.Contains(export.Value.Users, u => u.UserName == "first");
+
+        // ── 3. Re-applying that export must NOT fail. The manifest even carries a
+        //      changed profile for the binned user — read-only means it is skipped,
+        //      not applied, so the stored Firstname survives untouched. ─────────────
+        var carried = export.Value with
+        {
+            Users = [.. export.Value.Users.Select(u =>
+                u.UserName == "first" ? u with { Firstname = "Overwritten" } : u)],
+        };
+        var reapplied = await applier.UpdateRealmAsync(carried, ct: ct);
+        Assert.False(reapplied.IsError, reapplied.IsError ? reapplied.FirstError.Description : string.Empty);
+
+        // ── 4. The real-world symptom: deleting ANOTHER user while the first sits in
+        //      the bin. This is what failed in production. ────────────────────────────
+        var second = await applier.UpdateRealmAsync(
+            carried with { Users = [.. carried.Users.Where(u => u.UserName != "second")] },
+            deletions: [new RealmDraftDeletion("users", "second")],
+            ct: ct);
+        Assert.False(second.IsError, second.IsError ? second.FirstError.Description : string.Empty);
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+
+            var first = await session.Query<Person>().SingleAsync(p => p.AccountName == "first", ct);
+            Assert.Equal("First", first.Firstname);                                  // skipped, not updated
+            Assert.False(first.IsDeleted, "the bin is reversible — IsDeleted stays false");
+            var firstState = await session.LoadAsync<UserDeletionState>(first.Id, ct);
+            Assert.True(firstState!.IsDeletionPending, "lifecycle state untouched by the apply");
+            Assert.False((await session.LoadAsync<ApplicationUser>(first.Id, ct))!.IsActive);
+
+            // And the second delete really landed rather than silently no-opping.
+            var secondPerson = await session.Query<Person>().SingleAsync(p => p.AccountName == "second", ct);
+            var secondState = await session.LoadAsync<UserDeletionState>(secondPerson.Id, ct);
+            Assert.True(secondState!.IsDeletionPending, "the other user was binned");
+            Assert.False((await session.LoadAsync<ApplicationUser>(secondPerson.Id, ct))!.IsActive);
         });
     }
 

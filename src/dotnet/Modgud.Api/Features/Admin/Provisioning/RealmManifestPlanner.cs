@@ -12,6 +12,7 @@ using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
 using Modgud.Authorization.Services;
 using Modgud.Authentication.Domain.LoginProviders;
+using Modgud.Authentication.Gdpr;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Scopes;
@@ -447,6 +448,18 @@ public sealed class RealmManifestPlanner(
                 entry.Notes.Add("EmailConfirmed is not changed on apply — the differing manifest value is ignored.");
             if ((entry.Notes.Count > 0 || entry.Conflicts.Count > 0) && entry.Action == "unchanged")
                 entry = entry with { Action = "update" };
+            // Mirrors the applier's read-only skip: a user with a pending deletion (recycle
+            // bin or self-service grace) cannot be edited, so an update entry for them is a
+            // no-op until they are restored. Deliberately added AFTER the promotion above —
+            // an otherwise untouched binned user must keep reading as "unchanged" rather
+            // than showing a pending change on every plan for the whole retention window.
+            if (entry.Action == "update" && existing is not null
+                && ShortGuid.TryParse(existing.Id, out Guid existingId)
+                && await session.LoadAsync<UserDeletionState>(existingId, ct) is { IsDeletionPending: true })
+            {
+                entry.Notes.Add("This user has a pending deletion and is read-only — the apply SKIPS this entry. "
+                    + "Restore the user first, then re-apply.");
+            }
             section.Entries.Add(entry);
         }
 
