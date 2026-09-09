@@ -118,19 +118,27 @@ public sealed partial class RealmManifestApplier(
             return Error.NotFound("Realm.NotFound",
                 $"Realm '{slug}' does not exist. Create it first (POST /api/admin/realms), then apply.");
 
+        var skips = new ManifestReferenceSkips();
         try
         {
-            var secrets = await ApplyTenantUpdateAsync(slug, manifest, prune, deletions, ct);
+            var secrets = await ApplyTenantUpdateAsync(slug, manifest, prune, deletions, skips, ct);
             logger.LogInformation(
                 "Updated realm {Slug}: {Apps} apps, {Apis} apis, {Scopes} scopes, {Clients} clients, {Roles} roles, {Users} users, {Groups} groups, {Providers} login providers, {Positions} positions (in-place merge).",
                 slug, manifest.Apps.Count, manifest.Apis.Count, manifest.Scopes.Count,
                 manifest.Clients.Count, manifest.Roles.Count, manifest.Users.Count, manifest.Groups.Count,
                 manifest.LoginProviders.Count, manifest.Positions.Count);
+            if (skips.Skips.Count > 0)
+            {
+                logger.LogWarning(
+                    "Apply of realm {Slug} skipped {Count} unresolvable manifest reference(s): {Skips}",
+                    slug, skips.Skips.Count, string.Join(" | ", skips.Skips));
+            }
             return new RealmImportResult
             {
                 Slug = slug,
                 PrimaryDomain = realm.PrimaryDomain,
                 ClientSecrets = secrets,
+                SkippedReferences = [.. skips.Skips],
             };
         }
         catch (ManifestApplyException ex)
@@ -155,7 +163,8 @@ public sealed partial class RealmManifestApplier(
     /// </summary>
     private async Task<Dictionary<string, string>> ApplyTenantUpdateAsync(
         string slug, RealmManifest manifest, bool prune,
-        IReadOnlyCollection<RealmDraftDeletion>? deletions, CancellationToken ct)
+        IReadOnlyCollection<RealmDraftDeletion>? deletions, ManifestReferenceSkips skips,
+        CancellationToken ct)
     {
         var secrets = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -170,7 +179,7 @@ public sealed partial class RealmManifestApplier(
         await using var applyTx = await TenantApplyTransaction.BeginAsync(store, slug, ct);
         using (applyTx.Activate())
         {
-            await ApplyTenantUpdateSectionsAsync(manifest, prune, deletions, secrets, ct);
+            await ApplyTenantUpdateSectionsAsync(manifest, prune, deletions, secrets, skips, ct);
             await applyTx.CommitAsync(ct);
         }
 
@@ -183,7 +192,7 @@ public sealed partial class RealmManifestApplier(
 
     private async Task ApplyTenantUpdateSectionsAsync(
         RealmManifest manifest, bool prune, IReadOnlyCollection<RealmDraftDeletion>? deletions,
-        Dictionary<string, string> secrets, CancellationToken ct)
+        Dictionary<string, string> secrets, ManifestReferenceSkips skips, CancellationToken ct)
     {
         var apps = new Dictionary<string, App>(StringComparer.Ordinal);        // slug → App (id + catalog)
         var roleIds = new Dictionary<string, Guid>(StringComparer.Ordinal);    // role key → id (for groups)
@@ -269,8 +278,8 @@ public sealed partial class RealmManifestApplier(
                     Enabled = api.Enabled ?? true,
                     Scopes = api.Scopes ?? [],
                     UserClaims = api.UserClaims ?? [],
-                    AppId = ResolveAppId(apps, OrNull(api.App), ctx),
-                    PermissionIds = ResolvePermissionIds(apps, OrNull(api.App), api.Permissions, ctx),
+                    AppId = ResolveAppId(apps, OrNull(api.App), ctx, skips),
+                    PermissionIds = ResolvePermissionIds(apps, OrNull(api.App), api.Permissions, ctx, skips) ?? [],
                     AllowDynamicRegistration = api.AllowDynamicRegistration ?? false,
                 }, ct), ctx);
             }
@@ -287,11 +296,12 @@ public sealed partial class RealmManifestApplier(
                     Scopes = api.Scopes,
                     UserClaims = api.UserClaims,
                     AppId = api.App.HasValue
-                        ? new Optional<string?>(ResolveAppId(apps, api.App.Value, ctx))
+                        ? new Optional<string?>(ResolveAppId(apps, api.App.Value, ctx, skips))
                         : default,
+                    // null = unchanged, which is also what an all-unresolvable list becomes.
                     PermissionIds = api.Permissions is null
                         ? null
-                        : ResolvePermissionIds(apps, OrNull(api.App), api.Permissions, ctx),
+                        : ResolvePermissionIds(apps, OrNull(api.App), api.Permissions, ctx, skips),
                     AllowDynamicRegistration = api.AllowDynamicRegistration,
                 }, ct), ctx);
             }
@@ -320,7 +330,7 @@ public sealed partial class RealmManifestApplier(
                     Emphasize = s.Emphasize ?? false,
                     ShowInDiscoveryDocument = s.ShowInDiscoveryDocument ?? true,
                     AllowDynamicRegistrationClients = s.AllowDynamicRegistrationClients ?? false,
-                    AppId = ResolveAppId(apps, OrNull(s.App), ctx),
+                    AppId = ResolveAppId(apps, OrNull(s.App), ctx, skips),
                 }, ct), ctx);
             }
             else
@@ -339,7 +349,7 @@ public sealed partial class RealmManifestApplier(
                     ShowInDiscoveryDocument = s.ShowInDiscoveryDocument,
                     AllowDynamicRegistrationClients = s.AllowDynamicRegistrationClients,
                     AppId = s.App.HasValue
-                        ? new Optional<string?>(ResolveAppId(apps, s.App.Value, ctx))
+                        ? new Optional<string?>(ResolveAppId(apps, s.App.Value, ctx, skips))
                         : default,
                 }, ct), ctx);
             }
@@ -355,7 +365,7 @@ public sealed partial class RealmManifestApplier(
             if (existing is not null) EnsureRenameable(false, c.ClientId, existing.ClientId, "ClientId", ctx);
             if (existing is null)
             {
-                var created = await oauth.CreateClientAsync(BuildClientCreateDto(c, apps, ctx), ct);
+                var created = await oauth.CreateClientAsync(BuildClientCreateDto(c, apps, ctx, skips), ct);
                 EnsureOk(created, ctx);
                 if (created.Value.ClientSecret is not null)
                     secrets[c.ClientId] = created.Value.ClientSecret;
@@ -365,7 +375,7 @@ public sealed partial class RealmManifestApplier(
                 // ClientType + secret are immutable through the canonical update path; an
                 // existing client keeps its secret (rotate via the dedicated endpoint).
                 EnsureOk(await oauth.UpdateClientAsync(
-                    existing.Id.ToString(), BuildClientUpdateDto(c, apps, ctx), ct), ctx);
+                    existing.Id.ToString(), BuildClientUpdateDto(c, apps, ctx, skips), ct), ctx);
             }
         }
 
@@ -458,16 +468,37 @@ public sealed partial class RealmManifestApplier(
             // v2 merge-patch: absent fields keep the existing role's values (the
             // canonical update is a full payload replace, so merge here).
             var isRealmAdmin = r.IsRealmAdmin ?? existing?.IsRealmAdmin ?? false;
+
+            // A role's app is not an ordinary skippable reference: the app OWNS the catalog
+            // the role grants from, and the domain refuses a role that is neither app-linked
+            // nor realm-admin. So an app this realm does not have cannot simply "drop out" —
+            // an existing role keeps the app it already has, and a NEW one cannot be created
+            // at all, which makes the whole role the thing that gets skipped.
+            var appId = r.App is null
+                ? isRealmAdmin || existing?.AppId is not { } keptId ? null : new ShortGuid(keptId).ToString()
+                : ResolveAppId(apps, r.App, ctx, skips)
+                  ?? (existing?.AppId is { } fallbackId ? new ShortGuid(fallbackId).ToString() : null);
+
+            if (!isRealmAdmin && appId is null && r.App is not null)
+            {
+                skips.Skip(ctx, $"app '{r.App}'",
+                    "no such app in this realm, and a role must belong to one — the whole role is skipped");
+                continue;
+            }
+
             var payload = new RolePayload(
                 r.Name,
                 r.Description.HasValue ? r.Description.Value : existing?.Description,
-                r.App is null
-                    ? isRealmAdmin || existing?.AppId is not { } appId ? null : new ShortGuid(appId).ToString()
-                    : ResolveAppId(apps, r.App, ctx),
+                appId,
                 isRealmAdmin,
+                // Absent permissions keep the stored set — and so does a list that resolved
+                // to nothing (its app is not in this realm), which is why the null coalesces
+                // onto the existing ids rather than onto an empty list.
                 r.Permissions is null && existing is not null
                     ? existing.PermissionIds.Select(pid => new ShortGuid(pid).ToString()).ToList()
-                    : ResolvePermissionIds(apps, r.App, r.Permissions ?? [], ctx),
+                    : ResolvePermissionIds(apps, r.App, r.Permissions ?? [], ctx, skips)
+                      ?? existing?.PermissionIds.Select(pid => new ShortGuid(pid).ToString()).ToList()
+                      ?? [],
                 r.Id);
             // Control-plane provisioning is trusted, so the realm-admin guard is satisfied.
             ErrorOr<PermissionRole> result = existing is null
@@ -580,7 +611,15 @@ public sealed partial class RealmManifestApplier(
                 {
                     memberIds = new List<Guid>((g.Members ?? []).Count);
                     foreach (var m in g.Members ?? [])
-                        memberIds.Add(await ResolveUserRefAsync(session, userIds, m, $"{ctx} member '{m}'", ct));
+                    {
+                        if (await ResolveUserRefAsync(session, userIds, m, $"{ctx} member '{m}'", skips, ct) is { } uid)
+                            memberIds.Add(uid);
+                    }
+                    // Every listed member was unresolvable → keep the stored membership
+                    // instead of emptying it (a replace-list of nothing is not an intent).
+                    memberIds = OrUnchangedWhenNothingResolved(
+                        memberIds, (g.Members ?? []).Count, ctx, "member", skips)
+                        ?? existing?.MemberIds.ToList() ?? [];
                 }
                 List<Guid> groupRoleIds;
                 if (g.Roles is null && existing is not null)
@@ -591,7 +630,13 @@ public sealed partial class RealmManifestApplier(
                 {
                     groupRoleIds = new List<Guid>((g.Roles ?? []).Count);
                     foreach (var rk in g.Roles ?? [])
-                        groupRoleIds.Add(await ResolveRoleRefAsync(session, roleIds, rk, $"{ctx} role '{rk}'", ct));
+                    {
+                        if (await ResolveRoleRefAsync(session, roleIds, rk, $"{ctx} role '{rk}'", skips, ct) is { } rid)
+                            groupRoleIds.Add(rid);
+                    }
+                    groupRoleIds = OrUnchangedWhenNothingResolved(
+                        groupRoleIds, (g.Roles ?? []).Count, ctx, "role", skips)
+                        ?? existing?.RoleIds.ToList() ?? [];
                 }
 
                 var mode = g.MembershipMode is null
@@ -630,7 +675,7 @@ public sealed partial class RealmManifestApplier(
         await ApplyServiceAccountsAsync(sp, manifest, ct);
 
         // ── Positions (MG-FT) — after users so grants can resolve their keys ──────
-        await ApplyPositionsAsync(sp, manifest, userIds, ct);
+        await ApplyPositionsAsync(sp, manifest, userIds, skips, ct);
 
         // ── Prune / staged deletions: removal of entities absent from the manifest. Runs
         //    AFTER the upsert so the protection checks see the desired (post-merge) role
@@ -803,7 +848,8 @@ public sealed partial class RealmManifestApplier(
     /// path can never diverge (guarded by RealmManifestParityTests).
     /// </summary>
     private static CreateOAuthClientDto BuildClientCreateDto(
-        RealmManifestClient c, IReadOnlyDictionary<string, App> apps, string ctx) => new()
+        RealmManifestClient c, IReadOnlyDictionary<string, App> apps, string ctx,
+        ManifestReferenceSkips skips) => new()
     {
         Id = c.Id,
         ClientId = c.ClientId,
@@ -843,9 +889,13 @@ public sealed partial class RealmManifestApplier(
         ClientClaimsPrefix = OrNull(c.ClientClaimsPrefix),
         AlwaysSendClientClaims = c.AlwaysSendClientClaims ?? false,
         UpdateAccessTokenClaimsOnRefresh = c.UpdateAccessTokenClaimsOnRefresh ?? false,
+        // A client's app link is optional, so an app this realm does not have simply
+        // drops out; an all-unresolvable list leaves the link alone rather than clearing it.
         AppIds = c.Apps is not { Count: > 0 }
             ? null
-            : c.Apps.Select(appSlug => ResolveAppId(apps, appSlug, ctx)!).ToList(),
+            : OrUnchangedWhenNothingResolved(
+                c.Apps.Select(slug => ResolveAppId(apps, slug, ctx, skips)).OfType<string>().ToList(),
+                c.Apps.Count, ctx, "app", skips),
     };
 
     /// <summary>
@@ -854,7 +904,8 @@ public sealed partial class RealmManifestApplier(
     /// Optionals/lists stay unchanged, explicit null clears, [] clears a list.
     /// </summary>
     private static UpdateOAuthClientDto BuildClientUpdateDto(
-        RealmManifestClient c, IReadOnlyDictionary<string, App> apps, string ctx) => new()
+        RealmManifestClient c, IReadOnlyDictionary<string, App> apps, string ctx,
+        ManifestReferenceSkips skips) => new()
     {
         DisplayName = c.DisplayName,
         ConsentType = c.ConsentType,
@@ -889,7 +940,11 @@ public sealed partial class RealmManifestApplier(
         ClientClaimsPrefix = c.ClientClaimsPrefix,
         AlwaysSendClientClaims = c.AlwaysSendClientClaims,
         UpdateAccessTokenClaimsOnRefresh = c.UpdateAccessTokenClaimsOnRefresh,
-        AppIds = c.Apps?.Select(appSlug => ResolveAppId(apps, appSlug, ctx)!).ToList(),
+        AppIds = c.Apps is null
+            ? null
+            : OrUnchangedWhenNothingResolved(
+                c.Apps.Select(slug => ResolveAppId(apps, slug, ctx, skips)).OfType<string>().ToList(),
+                c.Apps.Count, ctx, "app", skips),
     };
 
     /// <summary>
@@ -973,15 +1028,18 @@ public sealed partial class RealmManifestApplier(
     /// otherwise the <c>Key</c> (username or email) — first among the users this apply
     /// created/matched, then live. A bare string is always a key.
     /// </summary>
-    private static async Task<Guid> ResolveUserRefAsync(
-        IDocumentSession session, IReadOnlyDictionary<string, Guid> map, ManifestRef reference, string context, CancellationToken ct)
+    private static async Task<Guid?> ResolveUserRefAsync(
+        IDocumentSession session, IReadOnlyDictionary<string, Guid> map, ManifestRef reference,
+        string context, ManifestReferenceSkips skips, CancellationToken ct)
     {
         if (reference.ParsedId is { } byId &&
             await session.LoadAsync<Person>(byId, ct) is { IsDeleted: false })
             return byId;
         if (reference.Key is null)
-            throw new ManifestApplyException(context,
-                [Error.Validation("Manifest.UnknownReference", $"{context} names no live user by id and carries no key.")]);
+        {
+            skips.Skip(context, "user", "names no live user by id and carries no key");
+            return null;
+        }
         var key = reference.Key;
         if (map.TryGetValue(key, out var id)) return id;
         var lowered = key.ToLowerInvariant();
@@ -989,8 +1047,10 @@ public sealed partial class RealmManifestApplier(
         var person = await session.Query<Person>()
             .FirstOrDefaultAsync(p => !p.IsDeleted && (p.AccountName == lowered || p.NormalizedEmail == upper), ct);
         if (person is null)
-            throw new ManifestApplyException(context,
-                [Error.Validation("Manifest.UnknownReference", $"{context} resolves to no user.")]);
+        {
+            skips.Skip(context, $"user '{key}'", "no such user in this realm");
+            return null;
+        }
         return person.Id;
     }
 
@@ -1041,8 +1101,9 @@ public sealed partial class RealmManifestApplier(
     /// live — a qualified <c>app/name</c> exactly, a bare name only while it names exactly
     /// one live role.
     /// </summary>
-    private static async Task<Guid> ResolveRoleRefAsync(
-        IDocumentSession session, IReadOnlyDictionary<string, Guid> map, ManifestRef reference, string context, CancellationToken ct)
+    private static async Task<Guid?> ResolveRoleRefAsync(
+        IDocumentSession session, IReadOnlyDictionary<string, Guid> map, ManifestRef reference,
+        string context, ManifestReferenceSkips skips, CancellationToken ct)
     {
         // An explicit Id wins when a live role carries it (rename-proof); the Key is the
         // fallback for a hand-edited or cross-environment manifest. A bare string is a key.
@@ -1050,8 +1111,10 @@ public sealed partial class RealmManifestApplier(
             await session.LoadAsync<PermissionRole>(byId, ct) is { IsDeleted: false })
             return byId;
         if (reference.Key is null)
-            throw new ManifestApplyException(context,
-                [Error.Validation("Manifest.UnknownReference", $"{context} names no live role by id and carries no key.")]);
+        {
+            skips.Skip(context, "role", "names no live role by id and carries no key");
+            return null;
+        }
         var key = reference.Key;
         if (map.TryGetValue(key, out var id)) return id;
         var (appSlug, name) = RoleKeys.Split(key);
@@ -1070,38 +1133,77 @@ public sealed partial class RealmManifestApplier(
             throw new ManifestApplyException(context,
                 [Error.Validation("Manifest.AmbiguousReference",
                     $"{context} names {byName.Count} live roles — qualify it as <app slug>/{key}.")]);
-        throw new ManifestApplyException(context,
-            [Error.Validation("Manifest.UnknownReference", $"{context} resolves to no role.")]);
+        skips.Skip(context, $"role '{key}'", "no such role in this realm");
+        return null;
     }
 
-    private static string? ResolveAppId(IReadOnlyDictionary<string, App> apps, string? slug, string context)
+    /// <summary>An app reference: resolves to the app's id, or to null when this realm has no
+    /// such app. A missing app is SKIPPED, not an error — the app link is an optional
+    /// grouping (a client with no app is a legal, ordinary client), and the applier seeds its
+    /// resolver with every app already in the realm, so a file that omits an app the target
+    /// already has resolves fine. See <see cref="ManifestReferenceSkips"/>.</summary>
+    private static string? ResolveAppId(
+        IReadOnlyDictionary<string, App> apps, string? slug, string context, ManifestReferenceSkips skips)
     {
         if (string.IsNullOrEmpty(slug)) return null;
         if (!apps.TryGetValue(slug, out var app))
-            throw new ManifestApplyException(context,
-                [Error.Validation("Manifest.UnknownApp", $"{context} references unknown app '{slug}'.")]);
+        {
+            skips.Skip(context, $"app '{slug}'", "no such app in this realm");
+            return null;
+        }
         return new ShortGuid(app.Id).ToString();
     }
 
-    private static List<string> ResolvePermissionIds(
-        IReadOnlyDictionary<string, App> apps, string? appSlug, List<RealmManifestPermission>? perms, string context)
+    /// <summary>
+    /// Resolves <c>resource:action</c> permission keys against the catalog of
+    /// <paramref name="appSlug"/>. Permissions the catalog does not carry are skipped, the
+    /// rest resolve.
+    ///
+    /// <para>Returns <c>null</c> — meaning "leave the stored value alone" — when a non-empty
+    /// permission list yields nothing, which happens either because the app itself is absent
+    /// (no catalog to look in at all) or because none of the listed permissions are in it.
+    /// Writing <c>[]</c> there would CLEAR an existing role's permissions on the strength of
+    /// a lookup that never happened; rule 2 in <see cref="ManifestReferenceSkips"/>.</para>
+    /// </summary>
+    private static List<string>? ResolvePermissionIds(
+        IReadOnlyDictionary<string, App> apps, string? appSlug, List<RealmManifestPermission>? perms,
+        string context, ManifestReferenceSkips skips)
     {
         if (perms is not { Count: > 0 }) return [];
+
         if (string.IsNullOrEmpty(appSlug) || !apps.TryGetValue(appSlug, out var app))
-            throw new ManifestApplyException(context,
-                [Error.Validation("Manifest.PermissionsNeedApp", $"{context} lists permissions but has no resolvable app.")]);
+        {
+            skips.SkipWholeList(context, "permission", perms.Count);
+            return null;
+        }
 
         var catalog = app.Permissions.ToDictionary(p => $"{p.Resource}:{p.Action}", p => p.Id);
         var ids = new List<string>(perms.Count);
         foreach (var p in perms)
         {
-            if (!catalog.TryGetValue($"{p.Resource}:{p.Action}", out var pid))
-                throw new ManifestApplyException(context,
-                    [Error.Validation("Manifest.UnknownPermission",
-                        $"{context} references permission '{p.Resource}:{p.Action}' not in app '{appSlug}' catalog.")]);
-            ids.Add(new ShortGuid(pid).ToString());
+            if (catalog.TryGetValue($"{p.Resource}:{p.Action}", out var pid))
+                ids.Add(new ShortGuid(pid).ToString());
+            else
+                skips.Skip(context, $"permission '{p.Resource}:{p.Action}'",
+                    $"not in the catalog of app '{appSlug}'");
+        }
+
+        if (ids.Count == 0)
+        {
+            skips.SkipWholeList(context, "permission", perms.Count);
+            return null;
         }
         return ids;
+    }
+
+    /// <summary>Applies rule 2 to a resolved reference list: a non-empty input that resolved
+    /// to nothing becomes <c>null</c> (unchanged) instead of <c>[]</c> (cleared).</summary>
+    private static List<T>? OrUnchangedWhenNothingResolved<T>(
+        List<T> resolved, int listed, string context, string field, ManifestReferenceSkips skips)
+    {
+        if (listed == 0 || resolved.Count > 0) return resolved;
+        skips.SkipWholeList(context, field, listed);
+        return null;
     }
 
 

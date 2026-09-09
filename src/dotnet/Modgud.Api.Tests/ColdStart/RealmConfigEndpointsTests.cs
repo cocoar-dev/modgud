@@ -214,27 +214,37 @@ public class RealmConfigEndpointsTests(ColdStartFixture fixture) : ColdStartTest
         var ct = TestContext.Current.CancellationToken;
         var client = await factory.CreateRealmAdminAndLoginAsync();
 
-        // Apps apply before roles. The role references an unknown app, so the apply
-        // fails AFTER the app section already ran — ADR-0017 Phase 0 demands the
+        // Apps apply before clients. The client carries an unparseable AccessTokenType, so
+        // the apply fails AFTER the app section already ran — ADR-0017 Phase 0 demands the
         // whole transaction rolls back and the app never materializes.
+        //
+        // NOTE: an unresolvable REFERENCE is deliberately not usable as the trigger here —
+        // those are skipped rather than fatal. A malformed value still is: the manifest says
+        // something the domain cannot mean, as opposed to naming something absent.
         var manifest = new
         {
-            Realm = new { },
             Apps = new[]
             {
                 new { Slug = "atomic-app", DisplayName = "Atomic App",
                       Permissions = new[] { new { Resource = "atomic", Action = "read" } } },
             },
-            Roles = new[]
+            Clients = new[]
             {
-                new { Name = "Broken Role", App = "no-such-app", Permissions = new object[0] },
+                new
+                {
+                    ClientId = "atomic-web", DisplayName = "Atomic Web", ClientType = "public",
+                    RedirectUris = new[] { "https://atomic.test/cb" },
+                    Scopes = new[] { "openid" },
+                    AllowedGrantTypes = new[] { "authorization_code" },
+                    AccessTokenType = "Bogus",
+                },
             },
         };
 
         var resp = await client.PostAsJsonAsync(
             "/api/admin/realm-config/apply", manifest, factory.JsonOptions, ct);
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
-        Assert.Contains("Manifest.UnknownApp", await resp.Content.ReadAsStringAsync(ct));
+        Assert.Contains("Manifest.InvalidEnum", await resp.Content.ReadAsStringAsync(ct));
 
         await InTenantAsync(factory, TenantConstants.SystemTenantId, async sp =>
         {
@@ -246,7 +256,6 @@ public class RealmConfigEndpointsTests(ColdStartFixture fixture) : ColdStartTest
         // The realm is untouched, so the SAME manifest minus the broken role applies cleanly.
         var fixedManifest = new
         {
-            Realm = new { },
             Apps = new[]
             {
                 new { Slug = "atomic-app", DisplayName = "Atomic App",

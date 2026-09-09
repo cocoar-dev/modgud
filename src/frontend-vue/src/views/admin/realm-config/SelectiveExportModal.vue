@@ -3,10 +3,18 @@
  * Selective ("cart") export — pick entities from the current export and
  * download a partial manifest for another realm/instance. The dependency
  * closure is computed live: whatever the checked entities reference
- * (transitively) is pulled in automatically and shown as "required", so the
- * downloaded manifest always applies cleanly. Nothing here writes anywhere —
- * the output is a JSON download; the target imports it as a draft, reviews
- * the plan and applies.
+ * (transitively) is pulled in and pre-checked, because that is nearly always
+ * what you want.
+ *
+ * It is a DEFAULT, not a lock. Nothing here is truly required: the target
+ * resolves what it can and skips the rest, so a client can travel without its
+ * app (it simply arrives with no app linked) and its plan says so before the
+ * apply. Labelling those entries "required" while letting them be unchecked
+ * would be a lie, and labelling them required while forcing them in would be a
+ * lie about the server — so they are labelled "referenced" and left to you.
+ *
+ * Nothing here writes anywhere — the output is a JSON download; the target
+ * imports it as a draft, reviews the plan and applies.
  */
 import { computed, ref } from 'vue'
 import { CoarButton, CoarCheckbox, CoarIcon, CoarNotice, CoarTag } from '@cocoar/vue-ui'
@@ -54,6 +62,9 @@ const validPreselected = (props.preselected ?? []).filter(keyExists)
 const droppedCount = (props.preselected?.length ?? 0) - validPreselected.length
 const selected = ref<Set<SelectionKey>>(new Set(validPreselected))
 
+/** Closure entries the user deliberately unchecked — see the header note. */
+const excluded = ref<Set<SelectionKey>>(new Set())
+
 /** Review mode (preselected): list only the selection + closure. */
 const showAll = ref(!props.preselected)
 
@@ -78,7 +89,9 @@ const sections = computed(() => SELECTABLE_SECTIONS
       const key = meta.key(e)
       return { key, sel: selectionKey(section, key), info: rowInfo(section, e) }
     })
-    if (!showAll.value) rows = rows.filter((r) => isChecked(r.sel))
+    // Keep an unchecked closure entry on screen — otherwise it vanishes the moment
+    // you uncheck it and there is no way back to it.
+    if (!showAll.value) rows = rows.filter((r) => isChecked(r.sel) || closure.value.has(r.sel))
     return { section, rows }
   })
   .filter((s) => s.rows.length > 0))
@@ -108,6 +121,7 @@ const closure = computed(() =>
 const effectiveSelection = computed<Set<SelectionKey>>(() => {
   const all = new Set(selected.value)
   for (const key of closure.value.keys()) all.add(key)
+  for (const key of excluded.value) all.delete(key)
   return all
 })
 
@@ -115,22 +129,31 @@ function isChecked(sel: SelectionKey): boolean {
   return effectiveSelection.value.has(sel)
 }
 
-/** Required by the closure but not explicitly checked — locked on. */
-function isRequired(sel: SelectionKey): boolean {
+/** Pulled in by the closure rather than picked by hand — pre-checked, not locked. */
+function isReferenced(sel: SelectionKey): boolean {
   return closure.value.has(sel) && !selected.value.has(sel)
 }
 
-function requiredBy(sel: SelectionKey): string {
+function referencedBy(sel: SelectionKey): string {
   const by = closure.value.get(sel)
   if (!by) return ''
   return [...by].map((k) => k.slice(k.indexOf('/') + 1)).join(', ')
 }
 
 function toggle(sel: SelectionKey, on: boolean) {
-  const next = new Set(selected.value)
-  if (on) next.add(sel)
-  else next.delete(sel)
-  selected.value = next
+  const nextSelected = new Set(selected.value)
+  const nextExcluded = new Set(excluded.value)
+  if (on) {
+    nextSelected.add(sel)
+    nextExcluded.delete(sel)
+  } else {
+    // Unchecking must also override the closure, or a referenced entry would
+    // silently reappear in the file.
+    nextSelected.delete(sel)
+    nextExcluded.add(sel)
+  }
+  selected.value = nextSelected
+  excluded.value = nextExcluded
 }
 
 function sectionAllChecked(rows: Row[]): boolean {
@@ -138,21 +161,34 @@ function sectionAllChecked(rows: Row[]): boolean {
 }
 
 function toggleSection(rows: Row[], on: boolean) {
-  const next = new Set(selected.value)
+  const nextSelected = new Set(selected.value)
+  const nextExcluded = new Set(excluded.value)
   for (const r of rows) {
-    if (on) next.add(r.sel)
-    else next.delete(r.sel)
+    if (on) {
+      nextSelected.add(r.sel)
+      nextExcluded.delete(r.sel)
+    } else {
+      nextSelected.delete(r.sel)
+      nextExcluded.add(r.sel)
+    }
   }
-  selected.value = next
+  selected.value = nextSelected
+  excluded.value = nextExcluded
 }
 
 /** "Everything belonging to this app": check the app plus its clients, APIs,
  * scopes and roles — their own references then flow through the closure. */
 function selectAppBundle(appKey: string) {
   const next = new Set(selected.value)
-  next.add(selectionKey('apps', appKey))
-  for (const ref of relatedToApp(props.manifest, appKey)) next.add(selectionKey(ref.section, ref.key))
+  const nextExcluded = new Set(excluded.value)
+  const add = (sel: SelectionKey) => {
+    next.add(sel)
+    nextExcluded.delete(sel)
+  }
+  add(selectionKey('apps', appKey))
+  for (const ref of relatedToApp(props.manifest, appKey)) add(selectionKey(ref.section, ref.key))
   selected.value = next
+  excluded.value = nextExcluded
 }
 
 const totalCount = computed(() => effectiveSelection.value.size + (includeSettings.value ? 1 : 0))
@@ -201,7 +237,7 @@ function sectionLabel(name: string): string {
     <div class="selective-body">
       <CoarNotice variant="info" truncate>
         {{ t('admin.realmConfig.selective.hint', {},
-          'Secrets are never exported. The file names no realm — you pick the target when you import it. Apply it WITHOUT prune; with prune it would delete everything not in the file.') }}
+          'Secrets are never exported. The file names no realm — you pick the target when you import it. Referenced entities are pre-selected; uncheck any you do not want, the target skips references it cannot resolve and reports them in the plan. Apply WITHOUT prune; with prune it would delete everything not in the file.') }}
       </CoarNotice>
       <CoarNotice v-if="droppedCount > 0" variant="warning" truncate>
         {{ t('admin.realmConfig.selective.dropped', { count: droppedCount },
@@ -233,15 +269,14 @@ function sectionLabel(name: string): string {
         <div v-for="row in rows" :key="row.sel" class="entity-row">
           <CoarCheckbox
             :model-value="isChecked(row.sel)"
-            :disabled="isRequired(row.sel)"
             @update:model-value="(v: boolean) => toggle(row.sel, v)" />
           <span class="entity-key">{{ row.key }}</span>
           <span v-if="row.info" class="entity-info">{{ row.info }}</span>
           <CoarTag
-            v-if="isRequired(row.sel)"
+            v-if="isReferenced(row.sel)"
             size="s" variant="info"
-            :title="t('admin.realmConfig.selective.requiredBy', {}, 'Required by: ') + requiredBy(row.sel)">
-            {{ t('admin.realmConfig.selective.required', {}, 'Required') }}
+            :title="t('admin.realmConfig.selective.referencedBy', {}, 'Referenced by: ') + referencedBy(row.sel)">
+            {{ t('admin.realmConfig.selective.referenced', {}, 'Referenced') }}
           </CoarTag>
           <CoarButton
             v-if="section === 'apps'"

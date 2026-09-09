@@ -283,7 +283,128 @@ public sealed class RealmManifestPlanner(
                 },
             }));
 
+        AddSkippedReferenceNotes(manifest, current, result);
         return result;
+    }
+
+    /// <summary>
+    /// Predicts what the applier will SKIP: references naming something this realm does not
+    /// have. The applier resolves what it can and drops the rest, so these are the parts of
+    /// the manifest that will not land — invisible in the result afterwards (a group left
+    /// with two of three roles looks exactly like a group that asked for two), which is
+    /// precisely why the plan has to say so beforehand.
+    ///
+    /// <para>Resolution is checked against the manifest UNION the current realm, mirroring
+    /// the apply: entities the same file creates count as present, because by the time the
+    /// reference is resolved they exist.</para>
+    /// </summary>
+    private static void AddSkippedReferenceNotes(
+        RealmManifest manifest, RealmManifest current, RealmPlanResult result)
+    {
+        var appSlugs = manifest.Apps.Select(a => a.Slug)
+            .Concat(current.Apps.Select(a => a.Slug))
+            .ToHashSet(StringComparer.Ordinal);
+
+        // resource:action keys per app slug, from both sides.
+        var catalog = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var app in current.Apps.Concat(manifest.Apps))
+        {
+            if (app.Permissions is null) continue;
+            if (!catalog.TryGetValue(app.Slug, out var set))
+                catalog[app.Slug] = set = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var perm in app.Permissions) set.Add($"{perm.Resource}:{perm.Action}");
+        }
+
+        var roleKeys = manifest.Roles.Select(r => r.NaturalKey)
+            .Concat(current.Roles.Select(r => r.NaturalKey))
+            .ToHashSet(StringComparer.Ordinal);
+        var bareRoleNames = manifest.Roles.Select(r => r.Name)
+            .Concat(current.Roles.Select(r => r.Name))
+            .ToHashSet(StringComparer.Ordinal);
+        var userKeys = manifest.Users.Select(u => u.ResolveKey())
+            .Concat(current.Users.Select(u => u.ResolveKey()))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var userEmails = manifest.Users.Select(u => u.Email)
+            .Concat(current.Users.Select(u => u.Email))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        void Note(string section, string key, string note)
+        {
+            var entry = result.Sections.FirstOrDefault(x => x.Name == section)?
+                .Entries.FirstOrDefault(e => string.Equals(e.Key, key, StringComparison.Ordinal));
+            if (entry is not null && entry.Action != "delete" && entry.Action != "protected")
+                entry.Notes.Add(note);
+        }
+
+        static string Skipped(string what) =>
+            $"{what} — this realm has no such entity, so the apply SKIPS the reference and applies the rest.";
+
+        // ── Roles: the app carries the permission catalog the entries resolve against ──
+        foreach (var role in manifest.Roles)
+        {
+            if (role.IsRealmAdmin == true || role.App is null) continue;
+            if (!appSlugs.Contains(role.App))
+            {
+                Note("roles", role.NaturalKey,
+                    $"App '{role.App}' does not exist here, so its permission catalog cannot be read: "
+                    + "the role's permissions are left UNCHANGED (an existing role keeps what it has; "
+                    + "a new one is created without permissions). Import the app first to get them.");
+                continue;
+            }
+            var known = catalog.GetValueOrDefault(role.App) ?? [];
+            foreach (var perm in role.Permissions ?? [])
+            {
+                var key = $"{perm.Resource}:{perm.Action}";
+                if (!known.Contains(key))
+                    Note("roles", role.NaturalKey, Skipped($"Permission '{key}' is not in app '{role.App}'"));
+            }
+        }
+
+        // ── Clients / APIs / scopes: the app link is optional, a missing one just drops ──
+        foreach (var client in manifest.Clients)
+        {
+            foreach (var slug in client.Apps ?? [])
+                if (!appSlugs.Contains(slug))
+                    Note("clients", client.ClientId, Skipped($"App '{slug}'"));
+        }
+        foreach (var api in manifest.Apis)
+        {
+            if (api.App.HasValue && api.App.Value is { } appSlug && !appSlugs.Contains(appSlug))
+                Note("apis", api.Name, Skipped($"App '{appSlug}'"));
+        }
+        foreach (var scope in manifest.Scopes)
+        {
+            if (scope.App.HasValue && scope.App.Value is { } appSlug && !appSlugs.Contains(appSlug))
+                Note("scopes", scope.Name, Skipped($"App '{appSlug}'"));
+        }
+
+        // ── Groups: roles and members resolve one by one ──────────────────────────────
+        foreach (var group in manifest.Groups)
+        {
+            foreach (var reference in group.Roles ?? [])
+            {
+                if (reference.Key is not { } key) continue;
+                if (!roleKeys.Contains(key) && !bareRoleNames.Contains(key))
+                    Note("groups", group.Name, Skipped($"Role '{key}'"));
+            }
+            foreach (var reference in group.Members ?? [])
+            {
+                if (reference.Key is not { } key) continue;
+                if (!userKeys.Contains(key) && !userEmails.Contains(key))
+                    Note("groups", group.Name, Skipped($"Member '{key}'"));
+            }
+        }
+
+        // ── Positions: staffing grants are user references too ────────────────────────
+        foreach (var position in manifest.Positions)
+        {
+            foreach (var reference in position.Grants ?? [])
+            {
+                if (reference.Key is not { } key) continue;
+                if (!userKeys.Contains(key) && !userEmails.Contains(key))
+                    Note("positions", position.AccountName, Skipped($"Grant for user '{key}'"));
+            }
+        }
     }
 
     // ── Settings — one pseudo-entity, nested patch diff with dotted paths. ───────────

@@ -1070,13 +1070,17 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         // Members follow the same rule.
         await ApplyGroupAsync(members: [new ManifestRef { Key = "nobody", Id = new ShortGuid(alice).ToString() }]);
         Assert.Equal([alice], (await GroupAsync()).MemberIds);
-        // A bare string is ALWAYS a key — even when it happens to be an id.
+        // A bare string is ALWAYS a key — even when it happens to be an id. It therefore
+        // resolves to no role and is SKIPPED; and because it was the list's only entry,
+        // nothing resolved at all, so the stored roles survive instead of being cleared.
         var idAsKey = await applier.UpdateRealmAsync(slug, new RealmManifest
         {
             Groups = [new RealmManifestGroup { Name = "Beta writers", Roles = [new ShortGuid(betaAuthor).ToString()] }],
         }, ct: ct);
-        Assert.True(idAsKey.IsError);
-        Assert.Equal("Manifest.UnknownReference", idAsKey.FirstError.Code);
+        Assert.False(idAsKey.IsError, idAsKey.IsError ? idAsKey.FirstError.Description : string.Empty);
+        Assert.Contains(idAsKey.Value.SkippedReferences,
+            x => x.Contains(new ShortGuid(betaAuthor).ToString()));
+        Assert.Equal([betaAuthor], (await GroupAsync()).RoleIds);
 
         // Rename beta's Author live. The export taken BEFORE still references it by id...
         await InTenantAsync(factory, slug, async sp =>
@@ -1194,6 +1198,201 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 },
             ],
         };
+    }
+
+    /// <summary>
+    /// A manifest travels, so its references routinely name things the target realm does not
+    /// have. The apply resolves what it can and SKIPS the rest instead of failing — a client
+    /// arrives without the app that is not here, a group gets the roles that exist. What was
+    /// skipped is reported, because the result alone cannot show it (a group left with two of
+    /// three roles looks exactly like a group that asked for two).
+    /// </summary>
+    [Fact]
+    public async Task Unresolvable_references_are_skipped_and_reported_rather_than_failing_the_apply()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "skipref";
+        var seed = new RealmManifest
+        {
+            Apps =
+            [
+                new RealmManifestApp { Slug = "here", DisplayName = "Here",
+                    Permissions = [new RealmManifestPermission("doc", "read")] },
+            ],
+            Roles = [new RealmManifestRole { Name = "Reader", App = "here",
+                Permissions = [new RealmManifestPermission("doc", "read")] }],
+            Users = [new RealmManifestUser { Key = "alice", Email = "alice@skipref.test", UserName = "alice" }],
+            Groups = [new RealmManifestGroup { Name = "Readers", Roles = ["here/Reader"], Members = ["alice"] }],
+        };
+        var seeded = await ProvisionRealmAsync(factory, Shell(slug), seed, ct);
+        Assert.False(seeded.IsError, seeded.IsError ? seeded.FirstError.Description : string.Empty);
+
+        // Everything below names something this realm does NOT have, alongside something it does.
+        var mixed = new RealmManifest
+        {
+            Clients =
+            [
+                new RealmManifestClient
+                {
+                    ClientId = "mixed-web", DisplayName = "Mixed", ClientType = "public",
+                    RedirectUris = ["https://mixed.test/cb"], Scopes = ["openid"],
+                    AllowedGrantTypes = ["authorization_code"],
+                    Apps = ["here", "elsewhere"],          // one known, one not
+                },
+            ],
+            Roles =
+            [
+                new RealmManifestRole { Name = "Reader", App = "here",
+                    Permissions =
+                    [
+                        new RealmManifestPermission("doc", "read"),      // in the catalog
+                        new RealmManifestPermission("doc", "publish"),   // not in the catalog
+                    ] },
+            ],
+            Groups =
+            [
+                new RealmManifestGroup { Name = "Readers",
+                    Roles = ["here/Reader", "here/Ghost"], Members = ["alice", "nobody"] },
+            ],
+        };
+
+        var applied = await applier.UpdateRealmAsync(slug, mixed, ct: ct);
+        Assert.False(applied.IsError, applied.IsError ? applied.FirstError.Description : string.Empty);
+
+        var skipped = applied.Value.SkippedReferences;
+        Assert.Contains(skipped, x => x.Contains("elsewhere"));
+        Assert.Contains(skipped, x => x.Contains("doc:publish"));
+        Assert.Contains(skipped, x => x.Contains("Ghost"));
+        Assert.Contains(skipped, x => x.Contains("nobody"));
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+
+            // The client exists and is linked to the app that DOES exist here.
+            var app = await session.Query<App>().SingleAsync(a => !a.IsDeleted && a.Slug == "here", ct);
+            var client = await session.Query<OAuthApplicationState>()
+                .SingleAsync(c => !c.IsDeleted && c.ClientId == "mixed-web", ct);
+            Assert.Equal([app.Id], client.AppIds);
+
+            // The role kept the permission that resolved; the unknown one just dropped.
+            var role = await session.Query<PermissionRole>().SingleAsync(r => !r.IsDeleted && r.Name == "Reader", ct);
+            Assert.Single(role.PermissionIds);
+
+            // The group kept the resolvable role + member.
+            var group = await session.Query<Group>().SingleAsync(g => !g.IsDeleted && g.Name == "Readers", ct);
+            Assert.Equal([role.Id], group.RoleIds);
+            Assert.Single(group.MemberIds);
+        });
+    }
+
+    /// <summary>
+    /// A reference list is a REPLACE, and skipping does not turn it into a merge: applying
+    /// roles [A, B, C] to a group that holds [A, B, D] where C does not exist here leaves
+    /// [A, B] — C is skipped because it cannot resolve, D goes because the manifest did not
+    /// ask for it. Anything else would make removal via manifest impossible.
+    /// </summary>
+    [Fact]
+    public async Task A_reference_list_stays_a_replace_even_when_part_of_it_is_skipped()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "replacelist";
+        RealmManifestRole Role(string name) => new()
+        {
+            Name = name, App = "rlist",
+            Permissions = [new RealmManifestPermission("doc", "read")],
+        };
+        var seed = new RealmManifest
+        {
+            Apps = [new RealmManifestApp { Slug = "rlist", DisplayName = "RList",
+                Permissions = [new RealmManifestPermission("doc", "read")] }],
+            Roles = [Role("A"), Role("B"), Role("D")],
+            Groups = [new RealmManifestGroup { Name = "G", Roles = ["rlist/A", "rlist/B", "rlist/D"] }],
+        };
+        var seeded = await ProvisionRealmAsync(factory, Shell(slug), seed, ct);
+        Assert.False(seeded.IsError, seeded.IsError ? seeded.FirstError.Description : string.Empty);
+
+        var applied = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Groups = [new RealmManifestGroup { Name = "G", Roles = ["rlist/A", "rlist/B", "rlist/C"] }],
+        }, ct: ct);
+        Assert.False(applied.IsError, applied.IsError ? applied.FirstError.Description : string.Empty);
+        Assert.Contains(applied.Value.SkippedReferences, x => x.Contains("rlist/C"));
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var roles = (await session.Query<PermissionRole>().Where(r => !r.IsDeleted).ToListAsync(ct))
+                .ToDictionary(r => r.Name, r => r.Id, StringComparer.Ordinal);
+            var group = await session.Query<Group>().SingleAsync(g => !g.IsDeleted && g.Name == "G", ct);
+
+            Assert.Equal([roles["A"], roles["B"]], group.RoleIds);   // C skipped, D removed
+        });
+    }
+
+    /// <summary>
+    /// The one carve-out: when NOTHING in a non-empty reference list resolves, the field is
+    /// left unchanged instead of written empty. An empty list is an instruction ("clear
+    /// this") and a failed lookup is not one — otherwise exporting a role without its app
+    /// would silently strip an existing role of every permission on the target.
+    /// </summary>
+    [Fact]
+    public async Task A_list_that_resolves_to_nothing_leaves_the_stored_value_alone()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "nothingresolves";
+        var seed = new RealmManifest
+        {
+            Apps = [new RealmManifestApp { Slug = "keep", DisplayName = "Keep",
+                Permissions = [new RealmManifestPermission("doc", "read"), new RealmManifestPermission("doc", "write")] }],
+            Roles = [new RealmManifestRole { Name = "Editor", App = "keep",
+                Permissions = [new RealmManifestPermission("doc", "read"), new RealmManifestPermission("doc", "write")] }],
+        };
+        var seeded = await ProvisionRealmAsync(factory, Shell(slug), seed, ct);
+        Assert.False(seeded.IsError, seeded.IsError ? seeded.FirstError.Description : string.Empty);
+
+        Guid roleId = default;
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var role = await session.Query<PermissionRole>().SingleAsync(r => !r.IsDeleted && r.Name == "Editor", ct);
+            roleId = role.Id;
+            Assert.Equal(2, role.PermissionIds.Count);
+        });
+
+        // The same role — matched by its exported Id, which is what makes this the SAME
+        // entity even though its App no longer resolves here (an app slug is part of a
+        // role's natural key, so without the id this would read as a different role).
+        var orphaned = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Roles = [new RealmManifestRole
+            {
+                Id = new ShortGuid(roleId).ToString(),
+                Name = "Editor", App = "gone",
+                Permissions = [new RealmManifestPermission("doc", "read")],
+            }],
+        }, ct: ct);
+        Assert.False(orphaned.IsError, orphaned.IsError ? orphaned.FirstError.Description : string.Empty);
+        Assert.Contains(orphaned.Value.SkippedReferences, x => x.Contains("app 'gone'"));
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var role = await session.LoadAsync<PermissionRole>(roleId, ct);
+            Assert.Equal(2, role!.PermissionIds.Count);   // NOT stripped
+        });
     }
 
     private static async Task InTenantAsync(

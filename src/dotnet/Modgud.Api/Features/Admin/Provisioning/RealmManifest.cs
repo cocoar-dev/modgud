@@ -640,4 +640,13 @@ public sealed record RealmImportResult
     /// surfaced here for a test-kit / caller to use without a separate fetch.
     /// </summary>
     public Dictionary<string, string> ClientSecrets { get; init; } = [];
+
+    /// <summary>
+    /// Manifest references this realm could not resolve and that the apply therefore
+    /// SKIPPED — a role naming an app that lives elsewhere, a group member who is not a
+    /// user here, a permission outside the target app's catalog. The apply succeeded; these
+    /// are the parts of it that did not land, reported because a silent skip is the one
+    /// genuinely dangerous outcome. Empty on a clean apply.
+    /// </summary>
+    public List<string> SkippedReferences { get; init; } = [];
 }
