@@ -104,11 +104,11 @@ public sealed class ModgudProvisioningClient
         var body = await response.Content.ReadAsStringAsync(ct);
         try
         {
-            // Two error shapes reach this client, both using a field named "error":
-            //   manifest endpoints  → { "Error": "<code>", "Message": "<description>" }
-            //   canonical ErrorOr   → { "error": "<description>" }          (no code at all)
-            // Telling them apart by whether "Message" is present keeps a description from
-            // masquerading as an error code on the second shape.
+            // Modgud answers in ONE shape: { "Error": "<code>", "Message": "<description>" }.
+            // The description-only fallback below is for older servers, which sent
+            // { "error": "<description>" } from the non-manifest endpoints — reading that as
+            // a code would pass prose off as machine-readable. Presence of "Message" tells
+            // the two apart.
             var error = JsonSerializer.Deserialize<ErrorBody>(body, JsonOptions);
             if (error?.Message is { Length: > 0 })
             {

@@ -1,3 +1,4 @@
+using static Modgud.Authentication.ExtensionMethods.ErrorOrExtensions;
 using System.Diagnostics;
 using System.Security.Claims;
 using ErrorOr;
@@ -332,7 +333,7 @@ public static class RealmsEndpoints
                     slug,
                     prune ? "apply-manifest-prune" : "apply-manifest");
             }
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("Realms_Apply")
         .RequiresPermission("realm:write", AppSlugs.ControlPlane);
@@ -344,7 +345,7 @@ public static class RealmsEndpoints
             string slug, RealmManifestExporter exporter, CancellationToken ct) =>
         {
             var result = await exporter.ExportRealmAsync(slug, ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("Realms_Export")
         .RequiresPermission("realm:read", AppSlugs.ControlPlane);
@@ -491,20 +492,6 @@ public static class RealmsEndpoints
     // Renders a RealmManifestApplier ErrorOr error with the code in the body — the manifest
     // codes (Realm.AlreadyExists / Realm.NotFound / Manifest.*) are how a test-kit / caller
     // distinguishes outcomes, so don't collapse them through the shared ToResult.
-    private static IResult ManifestError(List<Error> errors)
-    {
-        var error = errors[0];
-        var status = error.Type switch
-        {
-            ErrorType.NotFound => StatusCodes.Status404NotFound,
-            ErrorType.Conflict => StatusCodes.Status409Conflict,
-            ErrorType.Validation => StatusCodes.Status400BadRequest,
-            ErrorType.Forbidden => StatusCodes.Status403Forbidden,
-            _ => StatusCodes.Status500InternalServerError,
-        };
-        return Results.Json(new { Error = error.Code, Message = error.Description }, statusCode: status);
-    }
-
     internal static RealmDto MapToDto(Realm realm) => new()
     {
         Id = realm.Id,

@@ -1,3 +1,4 @@
+using static Modgud.Authentication.ExtensionMethods.ErrorOrExtensions;
 using BuildingBlocks.Helper;
 using ErrorOr;
 using Marten;
@@ -107,24 +108,6 @@ public static class RolesEndpoints
             .RequiresPermission("permission-role:write");
 
         return application;
-    }
-
-    // Renders a RoleAdminService ErrorOr error as HTTP with the error code in the body.
-    // The shared ErrorOrExtensions.ToResult maps Forbidden → Results.Forbid(), which under
-    // this app's cookie auth turns /api/* into an empty-body 403 (OnRedirectToAccessDenied)
-    // — losing the code the SPA + RealmAdminEscalationGuardTests rely on. This local
-    // renderer keeps the {Error,Message} body the role endpoints have always returned.
-    private static IResult ToErrorResult(List<Error> errors)
-    {
-        var error = errors[0];
-        var status = error.Type switch
-        {
-            ErrorType.NotFound => StatusCodes.Status404NotFound,
-            ErrorType.Forbidden => StatusCodes.Status403Forbidden,
-            ErrorType.Conflict => StatusCodes.Status409Conflict,
-            _ => StatusCodes.Status400BadRequest,
-        };
-        return Results.Json(new { Error = error.Code, Message = error.Description }, statusCode: status);
     }
 
     private static object MapToResponse(PermissionRole r) => new

@@ -66,12 +66,12 @@ public class ProvisioningTestKitTests(ColdStartFixture fixture) : ColdStartTestB
         var ex = await Assert.ThrowsAsync<ModgudProvisioningException>(
             () => kit.ImportRealmAsync(BuildSpec(slug), BuildManifest(slug, "Dup"), ct));
 
-        // The duplicate is caught by the create step, which answers in the canonical
-        // ErrorOr shape — a description, no machine-readable code. The kit must surface
-        // that as-is rather than passing the description off as a Code.
+        // The duplicate is caught by the create step. Every endpoint now answers in one
+        // shape, so the machine-readable code survives the whole way to the caller —
+        // before the shapes were unified this step could only hand back prose.
         Assert.Equal("create-realm", ex.Operation);
         Assert.Equal(HttpStatusCode.Conflict, ex.StatusCode);
-        Assert.Null(ex.Code);
+        Assert.Equal("Realm.DuplicateSlug", ex.Code);
         Assert.Contains(slug, ex.Message);
     }
 
