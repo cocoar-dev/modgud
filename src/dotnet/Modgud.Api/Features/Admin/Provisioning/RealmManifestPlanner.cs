@@ -12,6 +12,7 @@ using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
 using Modgud.Authorization.Services;
 using Modgud.Authentication.Domain.LoginProviders;
+using Modgud.Authentication.Gdpr;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Scopes;
@@ -59,7 +60,7 @@ public sealed class RealmManifestPlanner(
     /// modify/delete conflict).</para>
     /// </summary>
     public async Task<ErrorOr<RealmPlanResult>> PlanAsync(
-        RealmManifest manifest, bool prune, RealmManifest? baseline = null,
+        string slug, RealmManifest manifest, bool prune, RealmManifest? baseline = null,
         IReadOnlyCollection<RealmDraftDeletion>? deletions = null, CancellationToken ct = default)
     {
         var deleteKeys = (deletions ?? [])
@@ -68,14 +69,12 @@ public sealed class RealmManifestPlanner(
                 StringComparer.Ordinal);
         HashSet<string>? DeletesFor(string section) => deleteKeys.GetValueOrDefault(section);
 
-        var slug = manifest.Realm.Slug;
         var exported = await exporter.ExportRealmAsync(slug, ct);
         if (exported.IsError) return exported.Errors;
         var current = exported.Value;
         var json = jsonOptions.Value.SerializerOptions;
 
         var result = new RealmPlanResult { Slug = slug, Prune = prune };
-        AddRealmShellWarnings(manifest, current, result.Warnings);
 
         // The protection checks for prune candidates (does this user/group confer
         // realm:admin?) need tenant-scoped queries — same scoping as the exporter.
@@ -284,26 +283,137 @@ public sealed class RealmManifestPlanner(
                 },
             }));
 
+        AddSkippedReferenceNotes(manifest, current, result);
         return result;
     }
 
-    // ── Realm shell — apply never mutates it; differing values are warnings. ─────────
-
-    private static void AddRealmShellWarnings(RealmManifest manifest, RealmManifest current, List<string> warnings)
+    /// <summary>
+    /// Predicts what the applier will SKIP: references naming something this realm does not
+    /// have. The applier resolves what it can and drops the rest, so these are the parts of
+    /// the manifest that will not land — invisible in the result afterwards (a group left
+    /// with two of three roles looks exactly like a group that asked for two), which is
+    /// precisely why the plan has to say so beforehand.
+    ///
+    /// <para>Resolution is checked against the manifest UNION the current realm, mirroring
+    /// the apply: entities the same file creates count as present, because by the time the
+    /// reference is resolved they exist.</para>
+    /// </summary>
+    private static void AddSkippedReferenceNotes(
+        RealmManifest manifest, RealmManifest current, RealmPlanResult result)
     {
-        var ignored = new List<string>();
-        if (!string.IsNullOrEmpty(manifest.Realm.DisplayName) &&
-            !string.Equals(manifest.Realm.DisplayName, current.Realm.DisplayName, StringComparison.Ordinal))
-            ignored.Add("DisplayName");
-        if (manifest.Realm.Domains is { Length: > 0 } &&
-            !manifest.Realm.Domains.ToHashSet(StringComparer.Ordinal)
-                .SetEquals(current.Realm.Domains ?? []))
-            ignored.Add("Domains");
-        if (!string.IsNullOrEmpty(manifest.Realm.PrimaryDomain) &&
-            !string.Equals(manifest.Realm.PrimaryDomain, current.Realm.PrimaryDomain, StringComparison.Ordinal))
-            ignored.Add("PrimaryDomain");
-        if (ignored.Count > 0)
-            warnings.Add($"The realm shell is not modified by apply — differing value(s) for {string.Join(", ", ignored)} are ignored.");
+        var appSlugs = manifest.Apps.Select(a => a.Slug)
+            .Concat(current.Apps.Select(a => a.Slug))
+            .ToHashSet(StringComparer.Ordinal);
+
+        // resource:action keys per app slug, from both sides.
+        var catalog = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var app in current.Apps.Concat(manifest.Apps))
+        {
+            if (app.Permissions is null) continue;
+            if (!catalog.TryGetValue(app.Slug, out var set))
+                catalog[app.Slug] = set = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var perm in app.Permissions) set.Add($"{perm.Resource}:{perm.Action}");
+        }
+
+        var roleKeys = manifest.Roles.Select(r => r.NaturalKey)
+            .Concat(current.Roles.Select(r => r.NaturalKey))
+            .ToHashSet(StringComparer.Ordinal);
+        var bareRoleNames = manifest.Roles.Select(r => r.Name)
+            .Concat(current.Roles.Select(r => r.Name))
+            .ToHashSet(StringComparer.Ordinal);
+        var userKeys = manifest.Users.Select(u => u.ResolveKey())
+            .Concat(current.Users.Select(u => u.ResolveKey()))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var userEmails = manifest.Users.Select(u => u.Email)
+            .Concat(current.Users.Select(u => u.Email))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        RealmPlanEntry? Entry(string section, string key)
+        {
+            var entry = result.Sections.FirstOrDefault(x => x.Name == section)?
+                .Entries.FirstOrDefault(e => string.Equals(e.Key, key, StringComparison.Ordinal));
+            return entry is null || entry.Action == "delete" || entry.Action == "protected" ? null : entry;
+        }
+
+        void Note(string section, string key, string note) => Entry(section, key)?.Notes.Add(note);
+
+        static string Skipped(string what) =>
+            $"{what} — this realm has no such entity, so the apply SKIPS the reference and applies the rest.";
+
+        // ── Roles: the app carries the permission catalog the entries resolve against ──
+        foreach (var role in manifest.Roles)
+        {
+            if (role.IsRealmAdmin == true || role.App is null) continue;
+            if (!appSlugs.Contains(role.App))
+            {
+                // A role must belong to an app, so a missing one is not a droppable
+                // reference: an existing role keeps the app it already has, and a role that
+                // would have to be CREATED cannot exist at all and is skipped whole.
+                if (Entry("roles", role.NaturalKey) is { } roleEntry)
+                {
+                    roleEntry.Notes.Add(roleEntry.Action == "create"
+                        ? $"App '{role.App}' does not exist here, and a role must belong to one — "
+                          + "the apply SKIPS this role entirely. Import the app first."
+                        : $"App '{role.App}' does not exist here, so its permission catalog cannot be "
+                          + "read: the role keeps its current app and permissions. Import the app first "
+                          + "to apply the listed permissions.");
+                }
+                continue;
+            }
+            var known = catalog.GetValueOrDefault(role.App) ?? [];
+            foreach (var perm in role.Permissions ?? [])
+            {
+                var key = $"{perm.Resource}:{perm.Action}";
+                if (!known.Contains(key))
+                    Note("roles", role.NaturalKey, Skipped($"Permission '{key}' is not in app '{role.App}'"));
+            }
+        }
+
+        // ── Clients / APIs / scopes: the app link is optional, a missing one just drops ──
+        foreach (var client in manifest.Clients)
+        {
+            foreach (var slug in client.Apps ?? [])
+                if (!appSlugs.Contains(slug))
+                    Note("clients", client.ClientId, Skipped($"App '{slug}'"));
+        }
+        foreach (var api in manifest.Apis)
+        {
+            if (api.App.HasValue && api.App.Value is { } appSlug && !appSlugs.Contains(appSlug))
+                Note("apis", api.Name, Skipped($"App '{appSlug}'"));
+        }
+        foreach (var scope in manifest.Scopes)
+        {
+            if (scope.App.HasValue && scope.App.Value is { } appSlug && !appSlugs.Contains(appSlug))
+                Note("scopes", scope.Name, Skipped($"App '{appSlug}'"));
+        }
+
+        // ── Groups: roles and members resolve one by one ──────────────────────────────
+        foreach (var group in manifest.Groups)
+        {
+            foreach (var reference in group.Roles ?? [])
+            {
+                if (reference.Key is not { } key) continue;
+                if (!roleKeys.Contains(key) && !bareRoleNames.Contains(key))
+                    Note("groups", group.Name, Skipped($"Role '{key}'"));
+            }
+            foreach (var reference in group.Members ?? [])
+            {
+                if (reference.Key is not { } key) continue;
+                if (!userKeys.Contains(key) && !userEmails.Contains(key))
+                    Note("groups", group.Name, Skipped($"Member '{key}'"));
+            }
+        }
+
+        // ── Positions: staffing grants are user references too ────────────────────────
+        foreach (var position in manifest.Positions)
+        {
+            foreach (var reference in position.Grants ?? [])
+            {
+                if (reference.Key is not { } key) continue;
+                if (!userKeys.Contains(key) && !userEmails.Contains(key))
+                    Note("positions", position.AccountName, Skipped($"Grant for user '{key}'"));
+            }
+        }
     }
 
     // ── Settings — one pseudo-entity, nested patch diff with dotted paths. ───────────
@@ -447,6 +557,18 @@ public sealed class RealmManifestPlanner(
                 entry.Notes.Add("EmailConfirmed is not changed on apply — the differing manifest value is ignored.");
             if ((entry.Notes.Count > 0 || entry.Conflicts.Count > 0) && entry.Action == "unchanged")
                 entry = entry with { Action = "update" };
+            // Mirrors the applier's read-only skip: a user with a pending deletion (recycle
+            // bin or self-service grace) cannot be edited, so an update entry for them is a
+            // no-op until they are restored. Deliberately added AFTER the promotion above —
+            // an otherwise untouched binned user must keep reading as "unchanged" rather
+            // than showing a pending change on every plan for the whole retention window.
+            if (entry.Action == "update" && existing is not null
+                && ShortGuid.TryParse(existing.Id, out Guid existingId)
+                && await session.LoadAsync<UserDeletionState>(existingId, ct) is { IsDeletionPending: true })
+            {
+                entry.Notes.Add("This user has a pending deletion and is read-only — the apply SKIPS this entry. "
+                    + "Restore the user first, then re-apply.");
+            }
             section.Entries.Add(entry);
         }
 

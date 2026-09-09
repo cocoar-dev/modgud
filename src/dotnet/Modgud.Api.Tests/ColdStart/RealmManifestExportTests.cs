@@ -30,13 +30,6 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
         const string slug = "exporttest";
         var manifest = new RealmManifest
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug,
-                DisplayName = slug,
-                Domains = [$"{slug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "admin", Email = $"admin@{slug}.test" },
-            },
             Apps =
             [
                 new RealmManifestApp { Slug = "ex-app", DisplayName = "Ex App",
@@ -59,7 +52,7 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
             ],
             Users = [new RealmManifestUser { Key = "bob", Email = "bob@ex.test", UserName = "bob" }], // passwordless
         };
-        Assert.False((await applier.ImportNewRealmAsync(manifest, ct)).IsError);
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), manifest, ct)).IsError);
 
         // ── Export ────────────────────────────────────────────────────────────
         var exported = await exporter.ExportRealmAsync(slug, ct);
@@ -93,7 +86,7 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
         Assert.NotNull(m.Settings.PositionSecurity);
 
         // ── Re-apply the UNEDITED export = idempotent ──────────────────────────
-        Assert.False((await applier.UpdateRealmAsync(m, ct: ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(slug, m, ct: ct)).IsError);
 
         // ── Edit a setting and re-apply → it round-trips ───────────────────────
         var withSetting = m with
@@ -103,7 +96,7 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
                 RegistrationFields = new UpdateRegistrationFieldsSettingsDto { Username = "Required" },
             },
         };
-        Assert.False((await applier.UpdateRealmAsync(withSetting, ct: ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(slug, withSetting, ct: ct)).IsError);
         var reexport = await exporter.ExportRealmAsync(slug, ct);
         Assert.Equal("Required", reexport.Value.Settings!.RegistrationFields!.Username);
 
@@ -112,7 +105,7 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
         {
             Users = m.Users.Select(u => u.UserName == "bob" ? u with { Password = "Bobsecret1!" } : u).ToList(),
         };
-        Assert.False((await applier.UpdateRealmAsync(withPassword, ct: ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(slug, withPassword, ct: ct)).IsError);
 
         await InTenantAsync(factory, slug, async sp =>
         {

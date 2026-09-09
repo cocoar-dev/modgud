@@ -40,7 +40,7 @@ public sealed partial class RealmManifestApplier
     /// </summary>
     private static async Task ApplyPositionsAsync(
         IServiceProvider sp, RealmManifest manifest,
-        IReadOnlyDictionary<string, Guid> userIds, CancellationToken ct)
+        IReadOnlyDictionary<string, Guid> userIds, ManifestReferenceSkips skips, CancellationToken ct)
     {
         if (manifest.Positions.Count == 0) return;
 
@@ -65,7 +65,17 @@ public sealed partial class RealmManifestApplier
             {
                 grantUserIds = new List<Guid>(pos.Grants.Count);
                 foreach (var key in pos.Grants)
-                    grantUserIds.Add(await ResolveUserRefAsync(session, userIds, key, $"{ctx} grant '{key}'", ct));
+                {
+                    if (await ResolveUserRefAsync(session, userIds, key, $"{ctx} grant '{key}'", skips, ct) is { } uid)
+                        grantUserIds.Add(uid);
+                }
+                // Revoking every grant is a real instruction ([]), resolving none of them is
+                // not — leave the grant set alone rather than ending everyone's shifts.
+                if (grantUserIds.Count == 0 && pos.Grants.Count > 0)
+                {
+                    skips.SkipWholeList(ctx, "grant", pos.Grants.Count);
+                    grantUserIds = null;
+                }
             }
 
             // Id first — the account name is mutable through the canonical update, so an

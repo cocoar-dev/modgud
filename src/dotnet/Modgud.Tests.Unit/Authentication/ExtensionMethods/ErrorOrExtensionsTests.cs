@@ -10,6 +10,13 @@ namespace Modgud.Tests.Unit.Authentication.ExtensionMethods;
 /// minimal-API <see cref="IResult"/>. Every error type maps to a specific status
 /// code and shape — admin endpoints rely on these to surface inline form errors,
 /// so a regression that downgrades a 400 to a 500 hides validation messages.
+///
+/// <para>The BODY is pinned here too, not just the status. It is one shape for every
+/// error — <c>{ "Error": "&lt;code&gt;", "Message": "&lt;description&gt;" }</c> — and it used
+/// to be neither: the code was dropped entirely and the description sat under a key
+/// named <c>error</c>, the key OAuth reserves for a code. Three endpoint files had each
+/// grown a private copy of this mapper to work around that. Asserting only the result
+/// TYPE is what let the shape drift unnoticed, so these tests read the payload.</para>
 /// </summary>
 public class ErrorOrExtensionsTests
 {
@@ -118,23 +125,21 @@ public class ErrorOrExtensionsTests
         }
 
         [Fact]
-        public void Unauthorized_maps_to_401()
+        public void Unauthorized_maps_to_401_with_a_body()
         {
-            ErrorOr<string> input = Error.Unauthorized(description: "no auth");
+            ErrorOr<string> input = Error.Unauthorized("Auth.Missing", "no auth");
 
-            // UnauthorizedHttpResult exposes 401 via IStatusCodeHttpResult.
-            Assert.IsType<UnauthorizedHttpResult>(input.ToResult());
+            AssertError(input.ToResult(), StatusCodes.Status401Unauthorized, "Auth.Missing", "no auth");
         }
 
         [Fact]
-        public void Forbidden_maps_to_403()
+        public void Forbidden_maps_to_403_with_a_body()
         {
-            ErrorOr<string> input = Error.Forbidden(description: "denied");
+            // Deliberately NOT Results.Forbid(): under this app's cookie auth that renders
+            // an /api/* response as an EMPTY-body 403, throwing away the code the SPA needs.
+            ErrorOr<string> input = Error.Forbidden("Role.RealmAdminForbidden", "denied");
 
-            // Results.Forbid() returns ForbidHttpResult — note: it does NOT carry a
-            // status code property (status is set by the auth handler), so we just
-            // pin the type.
-            Assert.IsType<ForbidHttpResult>(input.ToResult());
+            AssertError(input.ToResult(), StatusCodes.Status403Forbidden, "Role.RealmAdminForbidden", "denied");
         }
 
         [Fact]
@@ -146,26 +151,30 @@ public class ErrorOrExtensionsTests
         }
 
         [Fact]
-        public void Failure_maps_to_problem_500()
+        public void Failure_maps_to_500_with_a_body()
         {
-            ErrorOr<string> input = Error.Failure(description: "boom");
+            ErrorOr<string> input = Error.Failure("Some.Failure", "boom");
 
-            var result = input.ToResult();
-
-            var problem = Assert.IsType<ProblemHttpResult>(result);
-            Assert.Equal(500, problem.StatusCode);
-            Assert.Equal("boom", problem.ProblemDetails.Detail);
+            AssertError(input.ToResult(), StatusCodes.Status500InternalServerError, "Some.Failure", "boom");
         }
 
         [Fact]
-        public void Unexpected_maps_to_problem_500()
+        public void Unexpected_maps_to_500_with_a_body()
         {
             ErrorOr<string> input = Error.Unexpected(description: "weird");
 
-            var result = input.ToResult();
+            AssertError(input.ToResult(), StatusCodes.Status500InternalServerError, message: "weird");
+        }
 
-            var problem = Assert.IsType<ProblemHttpResult>(result);
-            Assert.Equal(500, problem.StatusCode);
+        [Fact]
+        public void The_body_carries_the_machine_readable_code_not_just_prose()
+        {
+            // The whole point of the shape: a client can branch on Error without matching
+            // on a human-readable Message that is free to change.
+            ErrorOr<string> input = Error.Conflict("Group.NameTaken", "A group of that name already exists.");
+
+            AssertError(input.ToResult(), StatusCodes.Status409Conflict,
+                "Group.NameTaken", "A group of that name already exists.");
         }
 
         [Fact]
@@ -188,5 +197,20 @@ public class ErrorOrExtensionsTests
     {
         var status = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
         Assert.Equal(expected, status.StatusCode);
+    }
+
+    /// <summary>Pins the status AND the one error body every endpoint answers with.</summary>
+    private static void AssertError(IResult result, int expectedStatus, string? code = null, string? message = null)
+    {
+        AssertStatus(result, expectedStatus);
+
+        var value = Assert.IsAssignableFrom<IValueHttpResult>(result).Value;
+        Assert.NotNull(value);
+
+        var type = value.GetType();
+        if (code is not null)
+            Assert.Equal(code, type.GetProperty("Error")!.GetValue(value));
+        if (message is not null)
+            Assert.Equal(message, type.GetProperty("Message")!.GetValue(value));
     }
 }

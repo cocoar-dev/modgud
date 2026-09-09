@@ -126,12 +126,6 @@ public static class RealmManifestSchema
     private static JsonNode Example() => JsonNode.Parse(
         """
         {
-          "Realm": {
-            "Slug": "acme-test",
-            "DisplayName": "Acme Test",
-            "Domains": ["acme-test.localhost"],
-            "InitialAdmin": { "UserName": "admin", "Email": "admin@acme-test.local" }
-          },
           "Apps": [
             { "Slug": "acme", "DisplayName": "Acme",
               "Permissions": [ { "Resource": "invoice", "Action": "read" },

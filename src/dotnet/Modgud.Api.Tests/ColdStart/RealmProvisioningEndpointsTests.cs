@@ -21,7 +21,7 @@ namespace Modgud.Api.Tests.ColdStart;
 public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdStartTestBase(fixture)
 {
     [Fact]
-    public async Task Import_then_apply_then_hard_delete_round_trip()
+    public async Task Create_then_apply_then_hard_delete_round_trip()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var factory = host.Factory;
@@ -32,15 +32,17 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         const string slug = "initech";
 
         // ── Import ────────────────────────────────────────────────────────────
-        var importResp = await client.PostAsJsonAsync(
-            "/api/admin/realms/import", BuildManifest(slug, "Initech App"), factory.JsonOptions, ct);
-        Assert.Equal(HttpStatusCode.Created, importResp.StatusCode);
+        await CreateRealmAsync(client, slug, factory.JsonOptions, ct);
+        Assert.NotNull(await svc.GetRealmBySlugAsync(slug, ct));
 
-        var imported = await importResp.Content.ReadFromJsonAsync<RealmImportResult>(factory.JsonOptions, ct);
+        var fillResp = await client.PostAsJsonAsync(
+            $"/api/admin/realms/{slug}/apply", BuildManifest(slug, "Initech App"), factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, fillResp.StatusCode);
+
+        var imported = await fillResp.Content.ReadFromJsonAsync<RealmImportResult>(factory.JsonOptions, ct);
         Assert.NotNull(imported);
         Assert.Equal(slug, imported!.Slug);
         Assert.True(imported.ClientSecrets.ContainsKey("initech-web"));
-        Assert.NotNull(await svc.GetRealmBySlugAsync(slug, ct));
 
         // ── Apply (in-place update: change the app display name) ───────────────
         var applyResp = await client.PostAsJsonAsync(
@@ -69,15 +71,18 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         var client = await factory.CreateRealmAdminAndLoginAsync();
 
         const string slug = "exportep";
-        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync(
-            "/api/admin/realms/import", BuildManifest(slug, "Ex EP App"), factory.JsonOptions, ct)).StatusCode);
+        await CreateRealmAsync(client, slug, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(
+            $"/api/admin/realms/{slug}/apply", BuildManifest(slug, "Ex EP App"), factory.JsonOptions, ct)).StatusCode);
 
         var resp = await client.GetAsync($"/api/admin/realms/{slug}/export", ct);
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
 
         using var json = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
         var root = json.RootElement;
-        Assert.Equal(slug, root.GetProperty("Realm").GetProperty("Slug").GetString());
+        // No realm shell: an export is content, not identity — that is what lets the same
+        // file be applied to a different realm than the one it came from.
+        Assert.False(root.TryGetProperty("Realm", out _), "the export must not carry a realm shell");
 
         // The confidential client is present but its secret is omitted (structure-only).
         var web = root.GetProperty("Clients").EnumerateArray()
@@ -86,7 +91,7 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
     }
 
     [Fact]
-    public async Task Import_rejects_duplicate_slug_with_409()
+    public async Task Creating_a_realm_twice_rejects_the_duplicate_slug_with_409()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var factory = host.Factory;
@@ -94,14 +99,11 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         var client = await factory.CreateRealmAdminAndLoginAsync();
 
         const string slug = "dup-ep";
-        var first = await client.PostAsJsonAsync(
-            "/api/admin/realms/import", BuildManifest(slug, "Dup"), factory.JsonOptions, ct);
-        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        await CreateRealmAsync(client, slug, factory.JsonOptions, ct);
 
-        var second = await client.PostAsJsonAsync(
-            "/api/admin/realms/import", BuildManifest(slug, "Dup"), factory.JsonOptions, ct);
+        var second = await client.PostAsJsonAsync("/api/admin/realms", RealmShell(slug), factory.JsonOptions, ct);
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
-        Assert.Contains("Realm.AlreadyExists", await second.Content.ReadAsStringAsync(ct));
+        Assert.Contains(slug, await second.Content.ReadAsStringAsync(ct));
     }
 
     [Fact]
@@ -118,18 +120,40 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         Assert.Contains("Realm.NotFound", await resp.Content.ReadAsStringAsync(ct));
     }
 
+    /// <summary>
+    /// The invariant that replaced the old slug-mismatch guard: a manifest names no realm, so
+    /// ONE file applies to any number of realms and the route alone decides where it lands.
+    /// There is nothing left to mismatch.
+    /// </summary>
     [Fact]
-    public async Task Apply_with_route_slug_not_matching_manifest_returns_400()
+    public async Task One_manifest_applies_unchanged_to_two_different_realms()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var factory = host.Factory;
         var ct = TestContext.Current.CancellationToken;
         var client = await factory.CreateRealmAdminAndLoginAsync();
 
-        var resp = await client.PostAsJsonAsync(
-            "/api/admin/realms/other-slug/apply", BuildManifest("manifest-slug", "X"), factory.JsonOptions, ct);
-        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
-        Assert.Contains("Manifest.SlugMismatch", await resp.Content.ReadAsStringAsync(ct));
+        const string one = "twinsone";
+        const string two = "twinstwo";
+        var manifest = BuildManifest(one, "Twins App");
+
+        foreach (var slug in new[] { one, two })
+        {
+            await CreateRealmAsync(client, slug, factory.JsonOptions, ct);
+            var resp = await client.PostAsJsonAsync(
+                $"/api/admin/realms/{slug}/apply", manifest, factory.JsonOptions, ct);
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        }
+
+        foreach (var slug in new[] { one, two })
+        {
+            await InTenantAsync(factory, slug, async sp =>
+            {
+                var session = sp.GetRequiredService<IDocumentSession>();
+                var app = await session.Query<App>().SingleAsync(a => !a.IsDeleted && a.Slug == "initech-app", ct);
+                Assert.Equal("Twins App", app.DisplayName);
+            });
+        }
     }
 
     [Fact]
@@ -141,8 +165,9 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         var client = await factory.CreateRealmAdminAndLoginAsync();
 
         const string slug = "pruneep";
-        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync(
-            "/api/admin/realms/import", BuildManifest(slug, "Prune EP"), factory.JsonOptions, ct)).StatusCode);
+        await CreateRealmAsync(client, slug, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(
+            $"/api/admin/realms/{slug}/apply", BuildManifest(slug, "Prune EP"), factory.JsonOptions, ct)).StatusCode);
 
         // Re-apply with ?prune=true a manifest that drops the client → it must be pruned.
         var withoutClient = BuildManifest(slug, "Prune EP") with { Clients = [] };
@@ -181,13 +206,14 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         Assert.Equal("object", root.GetProperty("type").GetString());
         Assert.True(root.TryGetProperty("$schema", out _));
         var props = root.GetProperty("properties");
-        foreach (var section in new[] { "Realm", "Settings", "Apps", "Apis", "Scopes", "Clients", "Roles", "Users", "Groups" })
+        foreach (var section in new[] { "Settings", "Apps", "Apis", "Scopes", "Clients", "Roles", "Users", "Groups" })
             Assert.True(props.TryGetProperty(section, out _), $"schema missing '{section}'");
 
-        // Only the realm shell is required; the entity lists default to empty.
-        var required = root.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ToList();
-        Assert.Contains("Realm", required);
-        Assert.DoesNotContain("Apps", required);
+        // A manifest is content only — no realm shell, and nothing is required: every section
+        // defaults to empty, so a partial manifest is a first-class payload.
+        Assert.False(props.TryGetProperty("Realm", out _), "the schema must not describe a realm shell");
+        if (root.TryGetProperty("required", out var required))
+            Assert.DoesNotContain("Realm", required.EnumerateArray().Select(e => e.GetString()));
 
         // Field-level [Description]s are injected (proves the docs ride along).
         Assert.Contains("permission namespace", props.GetProperty("Apps").GetProperty("description").GetString());
@@ -196,7 +222,7 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         // A worked example is attached so a consumer can author a manifest from the schema alone.
         var examples = root.GetProperty("examples");
         Assert.True(examples.GetArrayLength() >= 1);
-        Assert.Equal("acme-test", examples[0].GetProperty("Realm").GetProperty("Slug").GetString());
+        Assert.Equal("acme", examples[0].GetProperty("Apps")[0].GetProperty("Slug").GetString());
     }
 
     [Fact]
@@ -213,15 +239,25 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         Assert.Contains(resp.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
     }
 
+    private static CreateRealmDto RealmShell(string slug) => new()
+    {
+        Slug = slug,
+        DisplayName = slug,
+        Domains = [$"{slug}.localhost"],
+    };
+
+    /// <summary>Creates the realm shell — the first half of provisioning, now that a manifest
+    /// carries no realm identity. The second half is a POST to <c>{slug}/apply</c>.</summary>
+    private static async Task CreateRealmAsync(
+        HttpClient client, string slug, JsonSerializerOptions json, CancellationToken ct)
+    {
+        var resp = await client.PostAsJsonAsync("/api/admin/realms", RealmShell(slug), json, ct);
+        Assert.True(resp.IsSuccessStatusCode,
+            $"creating realm '{slug}' failed with {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync(ct)}");
+    }
+
     private static RealmManifest BuildManifest(string slug, string appDisplayName) => new()
     {
-        Realm = new CreateRealmDto
-        {
-            Slug = slug,
-            DisplayName = slug,
-            Domains = [$"{slug}.localhost"],
-            InitialAdmin = new InitialAdminDto { UserName = "admin", Email = $"admin@{slug}.test" },
-        },
         Apps =
         [
             new RealmManifestApp

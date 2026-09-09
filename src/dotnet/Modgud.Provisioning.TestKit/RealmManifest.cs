@@ -7,16 +7,16 @@ namespace Modgud.Provisioning.TestKit;
 /// control-plane provisioning API. This is the client-side mirror of the server's manifest
 /// contract — cross-references use stable KEYS (apps by slug, roles/users by key,
 /// permissions by <c>resource:action</c>), never server-generated ids. The JSON shape is
-/// what <c>POST /api/admin/realms/import</c> and <c>POST /{slug}/apply</c> bind; the
-/// round-trip is exercised end-to-end by the IdP repo's own provisioning tests so the two
-/// sides can't silently drift.
+/// what <c>POST /api/admin/realms/{slug}/apply</c> binds; the round-trip is exercised
+/// end-to-end by the IdP repo's own provisioning tests so the two sides can't silently drift.
+///
+/// <para>A manifest describes CONTENT only and carries no realm shell — the target realm is
+/// named by the route, so the same file applies to any realm. Create the realm separately
+/// with a <see cref="RealmSpec"/> (see
+/// <see cref="ModgudProvisioningClient.ImportRealmAsync"/>).</para>
 /// </summary>
 public sealed record RealmManifest
 {
-    /// <summary>Realm shell + (for import) the initial-admin placeholder. On apply only
-    /// <see cref="RealmSpec.Slug"/> is read.</summary>
-    public required RealmSpec Realm { get; init; }
-
     /// <summary>Optional raw realm-settings patch (self-registration, native grants, …).
     /// Left as a free-form JSON object so the kit doesn't have to mirror the full settings
     /// surface; <c>null</c> = no settings change.</summary>
@@ -31,6 +31,10 @@ public sealed record RealmManifest
     public List<RealmManifestGroup> Groups { get; init; } = [];
 }
 
+/// <summary>The realm shell — the payload of <c>POST /api/admin/realms</c>. Deliberately NOT
+/// part of <see cref="RealmManifest"/>: slug, routing domains and primary domain are
+/// deployment identity, and keeping them out of the manifest is what makes a manifest
+/// portable between realms and environments.</summary>
 public sealed record RealmSpec
 {
     public required string Slug { get; init; }
@@ -41,9 +45,9 @@ public sealed record RealmSpec
     public InitialAdmin InitialAdmin { get; init; } = new();
 }
 
-/// <summary>Initial-admin placeholder. Required JSON-shape-wise on import (the realm shell
-/// reuses the create-realm DTO) but ignored by the manifest flow, which provisions admins
-/// directly via <see cref="RealmManifest.Users"/> + <see cref="RealmManifest.Groups"/>.</summary>
+/// <summary>The realm's first admin, issued as a pending admin invite by the create-realm
+/// call. Optional — a manifest can equally provision admins outright via
+/// <see cref="RealmManifest.Users"/> + <see cref="RealmManifest.Groups"/>.</summary>
 public sealed record InitialAdmin
 {
     public string UserName { get; init; } = "admin";

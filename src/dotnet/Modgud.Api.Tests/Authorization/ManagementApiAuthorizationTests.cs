@@ -264,18 +264,34 @@ public class ManagementApiAuthorizationTests : IntegrationTestBase
             Assert.Contains(appSlug, body);
         }
 
-        using var foreignApply = await bearerClient.PostAsJsonAsync(
-            "/api/admin/realm-config/apply",
-            new
-            {
-                Realm = new { Slug = $"foreign-{Guid.NewGuid():N}" },
-                Apps = Array.Empty<object>(),
-            },
-            JsonOptions,
-            ct);
-        var foreignBody = await foreignApply.Content.ReadAsStringAsync(ct);
-        Assert.Equal(HttpStatusCode.BadRequest, foreignApply.StatusCode);
-        Assert.Contains("Manifest.SlugMismatch", foreignBody);
+        // A delegated bearer cannot reach another realm — and since a manifest carries no
+        // realm identity, that is now structural rather than guarded: there is no field to
+        // aim elsewhere with. A body still carrying the retired "Realm" object (an older
+        // export, a hand-written file) is accepted and IGNORED, and the write lands in the
+        // caller's own realm, which the export below proves.
+        var strayApp = $"realm-config-stray-{Guid.NewGuid():N}";
+        using (var stray = await bearerClient.PostAsJsonAsync(
+                   "/api/admin/realm-config/apply",
+                   new
+                   {
+                       Realm = new { Slug = $"foreign-{Guid.NewGuid():N}" },
+                       Apps = new[]
+                       {
+                           new { Slug = strayApp, DisplayName = "Stray", Permissions = Array.Empty<object>() },
+                       },
+                   },
+                   JsonOptions,
+                   ct))
+        {
+            var strayBody = await stray.Content.ReadAsStringAsync(ct);
+            Assert.True(stray.IsSuccessStatusCode,
+                $"stray-realm apply should be accepted and the Realm object ignored ({(int)stray.StatusCode}): {strayBody}");
+        }
+
+        using (var reexport = await bearerClient.GetAsync("/api/admin/realm-config/export", ct))
+        {
+            Assert.Contains(strayApp, await reexport.Content.ReadAsStringAsync(ct));
+        }
     }
 
     [Fact]

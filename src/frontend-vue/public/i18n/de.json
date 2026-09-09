@@ -1864,13 +1864,12 @@
       "selective": {
         "title": "Selektiver Export",
         "subTitle": "Entities auswählen — Referenzen werden automatisch mitgenommen",
-        "hint": "Secrets werden nie exportiert. Das Teil-Manifest auf dem Ziel OHNE Prune anwenden — mit Prune würde alles gelöscht, was nicht in der Datei steht.",
-        "targetSlug": "Ziel-Realm-Slug",
+        "hint": "Secrets werden nie exportiert. Die Datei benennt keinen Realm — das Ziel wählst du beim Import. Referenzierte Entities sind vorausgewählt; nimm raus, was du nicht willst — das Ziel überspringt Referenzen, die es nicht auflösen kann, und weist im Plan darauf hin. OHNE Prune anwenden; mit Prune würde alles gelöscht, was nicht in der Datei steht.",
         "includeSettings": "Realm-Einstellungen einschließen",
         "includeUsers": "User-Referenzen einschließen (Gruppen-Mitglieder, Positions-Grants)",
         "download": "Manifest herunterladen",
-        "required": "Benötigt",
-        "requiredBy": "Benötigt von: ",
+        "referenced": "Referenziert",
+        "referencedBy": "Referenziert von: ",
         "selectRelated": "Zugehörige auswählen",
         "showAll": "Alle Entities anzeigen (weitere hinzufügen)",
         "dropped": "{count} gesammelte Einträge existieren nicht mehr im Export und wurden entfernt."

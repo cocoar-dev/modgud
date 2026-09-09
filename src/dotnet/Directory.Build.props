@@ -23,4 +23,37 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
     </ItemGroup>
+
+    <!-- CVE auditing. Pinned explicitly rather than left to SDK defaults, because CI's
+         gate IS this audit (see .github/workflows/ci.yml): restore emits NU1901-NU1904
+         and the job fails on them. The `dotnet list package` vulnerability report is
+         deliberately not used: it queries the advisory database directly and ignores the
+         suppression below, leaving no supported way to record a reviewed exception.
+         Mode 'all' covers transitive packages; level 'low' means nothing is filtered out
+         by severity — an exception has to be argued, not silently outranked. -->
+    <PropertyGroup>
+        <NuGetAudit>true</NuGetAudit>
+        <NuGetAuditMode>all</NuGetAuditMode>
+        <NuGetAuditLevel>low</NuGetAuditLevel>
+    </PropertyGroup>
+
+    <!-- GHSA-23fw-v26w-5fgq — Microsoft.Build.Tasks.Git 10.0.301, pulled in
+         transitively by Microsoft.SourceLink.GitHub in the two packable
+         projects (Modgud.Provisioning.TestKit, Modgud.AspNetCore.ResourceServer).
+
+         Suppressed deliberately, and narrowly — this entry names ONE advisory,
+         it does not soften the audit:
+
+           * SourceLink is referenced with PrivateAssets=all. It is an MSBuild
+             task that runs at PACK time to embed git metadata; it ships in
+             neither the produced package nor the running product, and never
+             reaches a consumer's dependency graph.
+           * There is no fix to take. Every version above 10.0.301 is an
+             11.0.100 preview or rc; nothing stable carries the patch.
+
+         Remove this the moment a stable Microsoft.SourceLink.GitHub 11.x is
+         released — the suppression is a wait, not a verdict. -->
+    <ItemGroup>
+        <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-23fw-v26w-5fgq" />
+    </ItemGroup>
 </Project>

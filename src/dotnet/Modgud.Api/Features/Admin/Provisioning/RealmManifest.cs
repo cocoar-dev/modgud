@@ -29,12 +29,15 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// SAME canonical operation the admin UI/API uses, so the manifest path and the manual
 /// path can never diverge.
 /// </summary>
-[Description("A complete, declarative realm configuration. POST to /api/admin/realms/import to create a new realm, or to /{slug}/apply to merge into an existing one (add ?prune=true for a full sync that also deletes entities absent from the manifest). Cross-references use stable keys (app slug, role/user key, permission 'resource:action'), never server ids.")]
+[Description("A declarative realm configuration. POST to /api/admin/realms/{slug}/apply (control plane) or /api/admin/realm-config/apply (realm admin) to merge it into that realm; add ?prune=true for a full sync that also deletes entities absent from the manifest. The TARGET realm comes from the route alone — a manifest carries content, never an identity, so the same file applies to any realm. Cross-references use stable keys (app slug, role/user key, permission 'resource:action'), never server ids.")]
 public sealed record RealmManifest
 {
-    /// <summary>Realm shell + initial admin (reuses <see cref="CreateRealmDto"/>).</summary>
-    [Description("REQUIRED. The realm shell (slug, display name, routing domains) and its first admin.")]
-    public required CreateRealmDto Realm { get; init; }
+    // NOTE: a manifest deliberately carries NO realm shell. The target is named by the
+    // route, so where a file is applied is decided independently of where it was
+    // exported — and the shell (slug, routing domains, primary domain) is deployment
+    // identity that must never travel between environments. Creating a realm is its own
+    // operation (POST /api/admin/realms), followed by an apply. Older manifests that
+    // still carry a "Realm" object stay loadable: the property is simply ignored.
 
     /// <summary>Optional realm settings patch (self-registration, native grants, ...).</summary>
     [Description("Optional. Realm-settings patch (self-registration, registration fields, native grants, branding, auth rate limits, deletion, audit, DCR, CIMD). Omit to keep defaults; only the sections/fields you include are changed. Mirrors the realm-settings PATCH shape.")]
@@ -637,4 +640,13 @@ public sealed record RealmImportResult
     /// surfaced here for a test-kit / caller to use without a separate fetch.
     /// </summary>
     public Dictionary<string, string> ClientSecrets { get; init; } = [];
+
+    /// <summary>
+    /// Manifest references this realm could not resolve and that the apply therefore
+    /// SKIPPED — a role naming an app that lives elsewhere, a group member who is not a
+    /// user here, a permission outside the target app's catalog. The apply succeeded; these
+    /// are the parts of it that did not land, reported because a silent skip is the one
+    /// genuinely dangerous outcome. Empty on a clean apply.
+    /// </summary>
+    public List<string> SkippedReferences { get; init; } = [];
 }

@@ -44,15 +44,10 @@ public sealed class ProvisionedRealm : IAsyncDisposable
                 $"No client secret for '{clientId}' in realm '{Slug}'. Known clients: {string.Join(", ", ClientSecrets.Keys)}.");
 
     /// <summary>Applies <paramref name="manifest"/> to this realm in place (merge/upsert).
-    /// The manifest's realm slug must match this realm. New confidential-client secrets are
-    /// NOT surfaced — existing clients keep their secret.</summary>
+    /// A manifest names no realm, so it always targets THIS one — nothing to mismatch. New
+    /// confidential-client secrets are NOT surfaced — existing clients keep their secret.</summary>
     public Task ApplyAsync(RealmManifest manifest, CancellationToken ct = default)
-    {
-        if (!string.Equals(manifest.Realm.Slug, Slug, StringComparison.Ordinal))
-            throw new ArgumentException(
-                $"Manifest realm slug '{manifest.Realm.Slug}' does not match this realm '{Slug}'.", nameof(manifest));
-        return _client.ApplyAsync(Slug, manifest, ct);
-    }
+        => _client.ApplyAsync(Slug, manifest, ct);
 
     /// <summary>Hard-deletes the realm (drops the tenant database). Idempotent — a second call
     /// is a no-op. Called automatically by <see cref="DisposeAsync"/>.</summary>

@@ -8,9 +8,9 @@ namespace Modgud.Provisioning.TestKit;
 /// <summary>
 /// Thin client over the Modgud control-plane provisioning API. Wraps an
 /// <see cref="HttpClient"/> the caller has already pointed at a running Modgud instance and
-/// authenticated as a control-plane admin (cookie or bearer). The only entry point is
-/// <see cref="ImportRealmAsync"/>, which provisions a fresh realm and hands back a
-/// disposable <see cref="ProvisionedRealm"/> handle.
+/// authenticated as a control-plane admin (cookie or bearer). The entry point is
+/// <see cref="ImportRealmAsync"/>, which creates a fresh realm, fills it from a manifest and
+/// hands back a disposable <see cref="ProvisionedRealm"/> handle.
 /// </summary>
 public sealed class ModgudProvisioningClient
 {
@@ -30,26 +30,51 @@ public sealed class ModgudProvisioningClient
         => _http = http ?? throw new ArgumentNullException(nameof(http));
 
     /// <summary>
-    /// Provisions a brand-new realm from <paramref name="manifest"/> (the slug must not
-    /// already exist) and returns a handle that hard-deletes the realm on dispose. Throws
-    /// <see cref="ModgudProvisioningException"/> if the server rejects the import.
+    /// Provisions a brand-new realm: creates the realm named by <paramref name="realm"/>
+    /// (its slug must not already exist), then fills it from <paramref name="manifest"/>.
+    /// Returns a handle that hard-deletes the realm on dispose. Throws
+    /// <see cref="ModgudProvisioningException"/> if the server rejects either step.
+    ///
+    /// <para>The realm shell is a SEPARATE argument because a manifest deliberately carries
+    /// no realm identity — the same manifest file provisions any realm you name here. Two
+    /// server calls, one method: the kit keeps the convenience without the file having to
+    /// know where it will land.</para>
+    ///
+    /// <para>If the manifest step fails, the just-created realm is torn down before the
+    /// exception propagates, so a failed provision leaves no orphan behind for the next
+    /// test run. (The server itself no longer does this — driving the API directly keeps
+    /// the realm so a corrected manifest can simply be re-applied.)</para>
     /// </summary>
     public async Task<ProvisionedRealm> ImportRealmAsync(
-        RealmManifest manifest, CancellationToken ct = default)
+        RealmSpec realm, RealmManifest manifest, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(realm);
         ArgumentNullException.ThrowIfNull(manifest);
 
-        using var response = await _http.PostAsJsonAsync(
-            "api/admin/realms/import", manifest, JsonOptions, ct);
-        var result = await ReadResultOrThrowAsync(response, "import", manifest.Realm.Slug, ct);
-        return new ProvisionedRealm(this, result);
+        using (var created = await _http.PostAsJsonAsync("api/admin/realms", realm, JsonOptions, ct))
+        {
+            if (!created.IsSuccessStatusCode)
+                await ThrowFromResponseAsync(created, "create-realm", realm.Slug, ct);
+        }
+
+        try
+        {
+            return new ProvisionedRealm(this, await ApplyAsync(realm.Slug, manifest, ct));
+        }
+        catch
+        {
+            // Best-effort teardown: never let a cleanup failure mask the real error.
+            try { await HardDeleteAsync(realm.Slug, ct); } catch { /* ignored */ }
+            throw;
+        }
     }
 
-    internal async Task ApplyAsync(string slug, RealmManifest manifest, CancellationToken ct)
+    internal async Task<RealmImportResult> ApplyAsync(
+        string slug, RealmManifest manifest, CancellationToken ct)
     {
         using var response = await _http.PostAsJsonAsync(
             $"api/admin/realms/{slug}/apply", manifest, JsonOptions, ct);
-        await ReadResultOrThrowAsync(response, "apply", slug, ct);
+        return await ReadResultOrThrowAsync(response, "apply", slug, ct);
     }
 
     internal async Task HardDeleteAsync(string slug, CancellationToken ct)
@@ -79,9 +104,21 @@ public sealed class ModgudProvisioningClient
         var body = await response.Content.ReadAsStringAsync(ct);
         try
         {
-            var error = JsonSerializer.Deserialize<ManifestErrorBody>(body, JsonOptions);
-            code = error?.Error;
-            message = error?.Message;
+            // Modgud answers in ONE shape: { "Error": "<code>", "Message": "<description>" }.
+            // The description-only fallback below is for older servers, which sent
+            // { "error": "<description>" } from the non-manifest endpoints — reading that as
+            // a code would pass prose off as machine-readable. Presence of "Message" tells
+            // the two apart.
+            var error = JsonSerializer.Deserialize<ErrorBody>(body, JsonOptions);
+            if (error?.Message is { Length: > 0 })
+            {
+                code = error.Error;
+                message = error.Message;
+            }
+            else
+            {
+                message = error?.Error;
+            }
         }
         catch (JsonException) { /* non-JSON body — fall back to the raw text below */ }
 
@@ -89,7 +126,7 @@ public sealed class ModgudProvisioningClient
             message ?? $"Realm {op} for '{slug}' failed with {(int)response.StatusCode}: {body}");
     }
 
-    private sealed record ManifestErrorBody(string? Error, string? Message);
+    private sealed record ErrorBody(string? Error, string? Message);
 }
 
 /// <summary>The successful-provisioning response: the realm's slug + canonical host and the
@@ -101,9 +138,9 @@ public sealed record RealmImportResult
     public Dictionary<string, string> ClientSecrets { get; init; } = [];
 }
 
-/// <summary>Thrown when the provisioning API rejects an import / apply / hard-delete. Carries
+/// <summary>Thrown when the provisioning API rejects a create / apply / hard-delete. Carries
 /// the HTTP status and the server's error <see cref="Code"/> (e.g. <c>Realm.AlreadyExists</c>,
-/// <c>Realm.NotFound</c>, <c>Manifest.SlugMismatch</c>) when present.</summary>
+/// <c>Realm.NotFound</c>, <c>Manifest.UnknownReference</c>) when present.</summary>
 public sealed class ModgudProvisioningException(
     HttpStatusCode statusCode, string operation, string slug, string? code, string message)
     : Exception(message)

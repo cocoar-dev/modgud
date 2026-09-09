@@ -79,16 +79,22 @@ jobs:
       - name: Log version
         run: echo "Building version ${{ steps.dotnet.outputs.version }}"
 
-      - name: Restore backend dependencies
-        run: dotnet restore Modgud.slnx
-        working-directory: ./src/dotnet
-
-      - name: Audit NuGet dependencies for known CVEs
+      # Restore IS the CVE audit. NuGet's restore-time audit (NU1901-NU1904, configured
+      # in src/dotnet/Directory.Build.props) is used rather than
+      # `dotnet list package --vulnerable`, because that command queries the advisory
+      # database directly and IGNORES <NuGetAuditSuppress> — leaving no supported way to
+      # record a reviewed, justified exception. Restore honours it.
+      #
+      # The two steps are deliberately one: a second `dotnet restore` is incremental and
+      # emits no warnings at all, so a separate audit step would pass by doing nothing.
+      - name: Restore backend dependencies (audits for known CVEs)
         run: |
           set -o pipefail
-          out=$(dotnet list package --vulnerable --include-transitive 2>&1)
-          echo "$out"
-          if echo "$out" | grep -qE "has the following vulnerable packages"; then
+          # tee, not command substitution: a captured $(...) under `bash -e` aborts the
+          # step BEFORE anything is echoed, so a restore that fails outright prints
+          # nothing at all and the log shows only an exit code.
+          dotnet restore Modgud.slnx 2>&1 | tee restore.log
+          if grep -qE "warning NU190[1-4]" restore.log; then
             echo "::error ::Vulnerable NuGet packages detected. See log above."
             exit 1
           fi

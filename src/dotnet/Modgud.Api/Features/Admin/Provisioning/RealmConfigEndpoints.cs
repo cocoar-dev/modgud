@@ -1,3 +1,4 @@
+using static Modgud.Authentication.ExtensionMethods.ErrorOrExtensions;
 using System.Security.Claims;
 using ErrorOr;
 using Microsoft.AspNetCore.Http.Json;
@@ -20,7 +21,8 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// and require <c>realm:admin</c> in THAT realm. So a delegated per-realm credential
 /// (a service account or user holding realm:admin in one realm) can fully manage that realm's
 /// config + entities, but CANNOT create or delete realms (those stay control-plane-only) and
-/// cannot touch any other realm (tenant isolation + the slug guard below). Prune is allowed,
+/// cannot touch any other realm — a manifest names no realm at all, so the target is always
+/// the host-routed one and there is nothing to aim elsewhere. Prune is allowed,
 /// but only within the realm and with the same lockout/infra protections as the control-plane
 /// path (system app, standard scopes, SA clients, and every realm:admin path are never pruned).</para>
 /// </summary>
@@ -49,21 +51,19 @@ public static class RealmConfigEndpoints
         group.MapGet("export", async (RealmManifestExporter exporter, CancellationToken ct) =>
         {
             var result = await exporter.ExportRealmAsync(TenantContext.Current, ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Export")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
 
-        // Dry-run: what WOULD an apply of this manifest change? Same slug guard as apply,
-        // same ?prune= semantics (adds delete candidates + protections) — writes nothing.
+        // Dry-run: what WOULD an apply of this manifest change? Same ?prune= semantics
+        // (adds delete candidates + protections) — writes nothing.
         group.MapPost("plan", async (
             RealmManifest manifest, RealmManifestPlanner planner, CancellationToken ct, bool prune = false) =>
         {
-            var currentSlug = TenantContext.Current;
-            if (SlugMismatch(manifest, currentSlug) is { } mismatch) return mismatch;
-            var scoped = manifest with { Realm = manifest.Realm with { Slug = currentSlug } };
-            var result = await planner.PlanAsync(scoped, prune, baseline: null, deletions: null, ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            var result = await planner.PlanAsync(
+                TenantContext.Current, manifest, prune, baseline: null, deletions: null, ct);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Plan")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -76,26 +76,13 @@ public static class RealmConfigEndpoints
         group.MapPost("apply", async (
             RealmManifest manifest, RealmManifestApplier applier, CancellationToken ct, bool prune = false) =>
         {
-            var currentSlug = TenantContext.Current;
-
-            // A realm admin may only manage their OWN realm. A manifest aimed at a different
-            // slug is refused — this is the data-plane safety boundary (cross-realm writes and
-            // realm lifecycle stay control-plane-only).
-            if (!string.IsNullOrEmpty(manifest.Realm.Slug) &&
-                !string.Equals(manifest.Realm.Slug, currentSlug, StringComparison.Ordinal))
-            {
-                return Results.BadRequest(new
-                {
-                    Error = "Manifest.SlugMismatch",
-                    Message = $"This realm is '{currentSlug}'. A realm admin can only manage their own realm; the manifest targets '{manifest.Realm.Slug}'.",
-                });
-            }
-
-            // Pin the manifest to the current realm (covers an empty slug in the body). The
-            // realm shell (domains/display name) is not mutated by apply — only in-realm config.
-            var scoped = manifest with { Realm = manifest.Realm with { Slug = currentSlug } };
-            var result = await applier.UpdateRealmAsync(scoped, prune, deletions: null, ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            // The target is the caller's own realm, always — a manifest carries no realm
+            // identity, so there is nothing here that could aim at a different one. That
+            // IS the data-plane safety boundary: cross-realm writes and realm lifecycle
+            // are only reachable through the control-plane routes.
+            var result = await applier.UpdateRealmAsync(
+                TenantContext.Current, manifest, prune, deletions: null, ct);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Apply")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -120,11 +107,9 @@ public static class RealmConfigEndpoints
         drafts.MapPost("", async (
             CreateRealmDraftDto dto, HttpContext http, RealmDraftService service, CancellationToken ct) =>
         {
-            if (dto.Manifest is not null && SlugMismatch(dto.Manifest, TenantContext.Current) is { } mismatch)
-                return mismatch;
             var result = await service.CreateAsync(
                 dto, TenantContext.Current, RequireUserId(http), UserName(http), ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Drafts_Create")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -133,7 +118,7 @@ public static class RealmConfigEndpoints
             Guid id, HttpContext http, RealmDraftService service, CancellationToken ct) =>
         {
             var result = await service.GetAsync(id, RequireUserId(http), ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Drafts_Get")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -141,11 +126,9 @@ public static class RealmConfigEndpoints
         drafts.MapPut("{id:guid}", async (
             Guid id, UpdateRealmDraftDto dto, HttpContext http, RealmDraftService service, CancellationToken ct) =>
         {
-            if (dto.Manifest is not null && SlugMismatch(dto.Manifest, TenantContext.Current) is { } mismatch)
-                return mismatch;
             var result = await service.UpdateAsync(
                 id, dto, TenantContext.Current, RequireUserId(http), UserName(http), ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Drafts_Update")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -154,7 +137,7 @@ public static class RealmConfigEndpoints
             Guid id, HttpContext http, RealmDraftService service, CancellationToken ct) =>
         {
             var result = await service.DeleteAsync(id, RequireUserId(http), ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.NoContent();
+            return result.IsError ? ToErrorResult(result.Errors) : Results.NoContent();
         })
         .WithName("RealmConfig_Drafts_Delete")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -164,7 +147,7 @@ public static class RealmConfigEndpoints
             Guid id, string slot, HttpContext http, RealmDraftService service, CancellationToken ct) =>
         {
             var result = await service.ClearSecretAsync(id, slot, RequireUserId(http), UserName(http), ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Drafts_ClearSecret")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -187,7 +170,7 @@ public static class RealmConfigEndpoints
             Guid id, HttpContext http, RealmDraftService service, CancellationToken ct) =>
         {
             var result = await service.SwitchAsync(id, RequireUserId(http), ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Drafts_Switch")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -201,7 +184,7 @@ public static class RealmConfigEndpoints
         {
             var result = await service.StageEntityAsync(
                 section, entity, TenantContext.Current, RequireUserId(http), UserName(http), ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Drafts_StageEntity")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -211,7 +194,7 @@ public static class RealmConfigEndpoints
         {
             var result = await service.UnstageEntityAsync(
                 section, key, TenantContext.Current, RequireUserId(http), UserName(http), ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Drafts_UnstageEntity")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -224,7 +207,7 @@ public static class RealmConfigEndpoints
         {
             var result = await service.StageDeleteAsync(
                 section, key, TenantContext.Current, RequireUserId(http), UserName(http), ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Drafts_StageDelete")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -234,7 +217,7 @@ public static class RealmConfigEndpoints
         {
             var result = await service.UnstageDeleteAsync(
                 section, key, TenantContext.Current, RequireUserId(http), UserName(http), ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Drafts_UnstageDelete")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -246,7 +229,7 @@ public static class RealmConfigEndpoints
         {
             var result = await service.RebaseAsync(
                 id, TenantContext.Current, RequireUserId(http), UserName(http), ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Drafts_Rebase")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -256,7 +239,7 @@ public static class RealmConfigEndpoints
             Guid id, HttpContext http, RealmDraftService service, CancellationToken ct, bool prune = false) =>
         {
             var result = await service.PlanAsync(id, prune, RequireUserId(http), ct);
-            return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
+            return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Drafts_Plan")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
@@ -267,7 +250,7 @@ public static class RealmConfigEndpoints
             Guid id, HttpContext http, RealmDraftService service, CancellationToken ct, bool prune = false) =>
         {
             var result = await service.ApplyAsync(id, prune, RequireUserId(http), ct);
-            if (result.IsError) return ManifestError(result.Errors);
+            if (result.IsError) return ToErrorResult(result.Errors);
             return result.Value.Refused
                 ? Results.Json(new
                 {
@@ -281,39 +264,10 @@ public static class RealmConfigEndpoints
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
     }
 
-    /// <summary>The data-plane safety boundary shared by apply/plan/drafts: a manifest
-    /// aimed at a different realm slug is refused.</summary>
-    private static IResult? SlugMismatch(RealmManifest manifest, string currentSlug)
-    {
-        if (string.IsNullOrEmpty(manifest.Realm.Slug) ||
-            string.Equals(manifest.Realm.Slug, currentSlug, StringComparison.Ordinal))
-            return null;
-        return Results.BadRequest(new
-        {
-            Error = "Manifest.SlugMismatch",
-            Message = $"This realm is '{currentSlug}'. A realm admin can only manage their own realm; the manifest targets '{manifest.Realm.Slug}'.",
-        });
-    }
-
     private static Guid RequireUserId(HttpContext http)
         => http.GetUserId() ?? throw new InvalidOperationException(
             "Realm-config draft endpoints require an authenticated user principal.");
 
     private static string UserName(HttpContext http)
         => http.User.FindFirstValue(ClaimTypes.Name) ?? http.User.Identity?.Name ?? "unknown";
-
-    // Renders a manifest ErrorOr with the error code in the body (mirrors RealmsEndpoints).
-    private static IResult ManifestError(List<Error> errors)
-    {
-        var error = errors[0];
-        var status = error.Type switch
-        {
-            ErrorType.NotFound => StatusCodes.Status404NotFound,
-            ErrorType.Conflict => StatusCodes.Status409Conflict,
-            ErrorType.Validation => StatusCodes.Status400BadRequest,
-            ErrorType.Forbidden => StatusCodes.Status403Forbidden,
-            _ => StatusCodes.Status500InternalServerError,
-        };
-        return Results.Json(new { Error = error.Code, Message = error.Description }, statusCode: status);
-    }
 }
