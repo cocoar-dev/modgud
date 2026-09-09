@@ -56,25 +56,33 @@ public class RealmConfigEndpointsTests(ColdStartFixture fixture) : ColdStartTest
     }
 
     [Fact]
-    public async Task Apply_refuses_a_manifest_targeting_a_different_realm()
+    public async Task Apply_ignores_a_stray_realm_object_and_lands_in_the_callers_own_realm()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var factory = host.Factory;
         var ct = TestContext.Current.CancellationToken;
         var client = await factory.CreateRealmAdminAndLoginAsync();
 
-        // A realm admin may only manage their own realm — a foreign slug is the data-plane boundary.
-        var foreign = new
+        // A manifest names no realm any more, so the data-plane boundary is structural rather
+        // than a guard: there is no field a caller could aim elsewhere. A body that still
+        // carries the retired "Realm" object (an older export, a hand-written file) stays
+        // loadable — the property is simply ignored, NOT honoured.
+        var stray = new
         {
             Realm = new { Slug = "some-other-realm" },
-            Apps = new[] { new { Slug = "x", DisplayName = "X", Permissions = new object[0] } },
+            Apps = new[] { new { Slug = "stray-app", DisplayName = "Stray", Permissions = new object[0] } },
         };
 
         var resp = await client.PostAsJsonAsync(
-            "/api/admin/realm-config/apply", foreign, factory.JsonOptions, ct);
+            "/api/admin/realm-config/apply", stray, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
 
-        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
-        Assert.Contains("Manifest.SlugMismatch", await resp.Content.ReadAsStringAsync(ct));
+        // It landed in the caller's realm, not the one the stray object named.
+        await InTenantAsync(factory, TenantConstants.SystemTenantId, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            Assert.True(await session.Query<App>().AnyAsync(a => !a.IsDeleted && a.Slug == "stray-app", ct));
+        });
     }
 
     [Fact]

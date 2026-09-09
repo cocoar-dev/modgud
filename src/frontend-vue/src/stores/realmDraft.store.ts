@@ -17,7 +17,6 @@ import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
 export type ManifestEntity = Record<string, unknown>
 
 export interface DraftManifest extends ManifestEntity {
-  Realm?: ManifestEntity
   Settings?: ManifestEntity | null
   Apps?: ManifestEntity[]
   Apis?: ManifestEntity[]

@@ -4,6 +4,7 @@ using Modgud.Api.Tests.Infrastructure;
 using Modgud.Authorization.Apps;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
+using System.Net;
 using Modgud.Provisioning.TestKit;
 
 namespace Modgud.Api.Tests.ColdStart;
@@ -28,7 +29,7 @@ public class ProvisioningTestKitTests(ColdStartFixture fixture) : ColdStartTestB
         var kit = new ModgudProvisioningClient(httpClient);
         const string slug = "kittest";
 
-        var realm = await kit.ImportRealmAsync(BuildManifest(slug, "Kit App"), ct);
+        var realm = await kit.ImportRealmAsync(BuildSpec(slug), BuildManifest(slug, "Kit App"), ct);
 
         // The handle surfaces everything an app-under-test needs.
         Assert.Equal(slug, realm.Slug);
@@ -60,22 +61,30 @@ public class ProvisioningTestKitTests(ColdStartFixture fixture) : ColdStartTestB
         var kit = new ModgudProvisioningClient(await factory.CreateRealmAdminAndLoginAsync());
 
         const string slug = "kitdup";
-        await using var first = await kit.ImportRealmAsync(BuildManifest(slug, "Dup"), ct);
+        await using var first = await kit.ImportRealmAsync(BuildSpec(slug), BuildManifest(slug, "Dup"), ct);
 
         var ex = await Assert.ThrowsAsync<ModgudProvisioningException>(
-            () => kit.ImportRealmAsync(BuildManifest(slug, "Dup"), ct));
-        Assert.Equal("Realm.AlreadyExists", ex.Code);
+            () => kit.ImportRealmAsync(BuildSpec(slug), BuildManifest(slug, "Dup"), ct));
+
+        // The duplicate is caught by the create step, which answers in the canonical
+        // ErrorOr shape — a description, no machine-readable code. The kit must surface
+        // that as-is rather than passing the description off as a Code.
+        Assert.Equal("create-realm", ex.Operation);
+        Assert.Equal(HttpStatusCode.Conflict, ex.StatusCode);
+        Assert.Null(ex.Code);
+        Assert.Contains(slug, ex.Message);
     }
+
+    private static RealmSpec BuildSpec(string slug) => new()
+    {
+        Slug = slug,
+        DisplayName = slug,
+        Domains = [$"{slug}.localhost"],
+        InitialAdmin = new InitialAdmin { UserName = "admin", Email = $"admin@{slug}.test" },
+    };
 
     private static RealmManifest BuildManifest(string slug, string appDisplayName) => new()
     {
-        Realm = new RealmSpec
-        {
-            Slug = slug,
-            DisplayName = slug,
-            Domains = [$"{slug}.localhost"],
-            InitialAdmin = new InitialAdmin { UserName = "admin", Email = $"admin@{slug}.test" },
-        },
         Apps =
         [
             new RealmManifestApp

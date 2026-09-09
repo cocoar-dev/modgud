@@ -36,7 +36,7 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
 
         // Realm A: import just the realm + app, then create the client via the canonical
         // OAuthAdminService with an explicit DTO (the admin-API path).
-        var importA = await applier.ImportNewRealmAsync(BaseManifest(slugA), ct);
+        var importA = await ProvisionRealmAsync(factory, Shell(slugA), BaseManifest(slugA), ct);
         Assert.False(importA.IsError, importA.IsError ? importA.FirstError.Description : string.Empty);
         await InTenantAsync(factory, slugA, async sp =>
         {
@@ -99,7 +99,7 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
                 },
             ],
         };
-        var importB = await applier.ImportNewRealmAsync(manifestB, ct);
+        var importB = await ProvisionRealmAsync(factory, Shell(slugB), manifestB, ct);
         Assert.False(importB.IsError, importB.IsError ? importB.FirstError.Description : string.Empty);
 
         var shapeA = await GetClientShapeAsync(factory, slugA, "parity-web", ct);
@@ -185,13 +185,6 @@ public class RealmManifestParityTests(ColdStartFixture fixture) : ColdStartTestB
 
     private static RealmManifest BaseManifest(string slug) => new()
     {
-        Realm = new CreateRealmDto
-        {
-            Slug = slug,
-            DisplayName = slug,
-            Domains = [$"{slug}.localhost"],
-            InitialAdmin = new InitialAdminDto { UserName = "admin", Email = $"admin@{slug}.test" },
-        },
         Apps =
         [
             new RealmManifestApp

@@ -51,16 +51,9 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         };
         var manifest = new RealmManifest
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug,
-                DisplayName = slug,
-                Domains = [$"{slug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "admin", Email = $"admin@{slug}.test" },
-            },
             LoginProviders = [Provider("corp-idp", "Corp IdP"), Provider("legacy-idp", "Legacy IdP")],
         };
-        var import = await applier.ImportNewRealmAsync(manifest, ct);
+        var import = await ProvisionRealmAsync(factory, Shell(slug), manifest, ct);
         Assert.False(import.IsError, import.IsError ? import.FirstError.Description : string.Empty);
 
         await InTenantAsync(factory, slug, async sp =>
@@ -92,7 +85,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         {
             LoginProviders = [Provider("corp-idp", "Corp IdP v2") with { ClientSecret = null }],
         };
-        var applied = await applier.UpdateRealmAsync(v2, prune: true, deletions: null, ct);
+        var applied = await applier.UpdateRealmAsync(slug, v2, prune: true, deletions: null, ct);
         Assert.False(applied.IsError, applied.IsError ? applied.FirstError.Description : string.Empty);
 
         await InTenantAsync(factory, slug, async sp =>
@@ -115,7 +108,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
                 Slug = "my-internal", Flavor = "internal", DisplayName = "Nope", Type = "Internal",
             }],
         };
-        var rejected = await applier.UpdateRealmAsync(withInternal, ct: ct);
+        var rejected = await applier.UpdateRealmAsync(slug, withInternal, ct: ct);
         Assert.True(rejected.IsError);
         Assert.Equal("Manifest.InternalProviderReserved", rejected.FirstError.Code);
     }
@@ -132,13 +125,6 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         const string slug = "appset";
         RealmManifest Manifest(string productName) => new()
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug,
-                DisplayName = slug,
-                Domains = [$"{slug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "admin", Email = $"admin@{slug}.test" },
-            },
             Apps =
             [
                 new RealmManifestApp
@@ -156,7 +142,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
                 new RealmManifestApp { Slug = "plain", DisplayName = "Plain" },
             ],
         };
-        var import = await applier.ImportNewRealmAsync(Manifest("Shop!"), ct);
+        var import = await ProvisionRealmAsync(factory, Shell(slug), Manifest("Shop!"), ct);
         Assert.False(import.IsError, import.IsError ? import.FirstError.Description : string.Empty);
 
         Guid shopAppId = default;
@@ -186,7 +172,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         Assert.Null(Assert.Single(exported.Value.Apps, a => a.Slug == "plain").Settings);
 
         // ── Apply: the settings patch updates in place. ────────────────────────────
-        Assert.False((await applier.UpdateRealmAsync(Manifest("Shop v2"), ct: ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest("Shop v2"), ct: ct)).IsError);
         await InTenantAsync(factory, slug, async sp =>
         {
             var settings = await sp.GetRequiredService<IApplicationSettingsService>().GetAsync(shopAppId, ct);
@@ -208,13 +194,6 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         RealmManifest Manifest(string purpose, params string[] grants) => ManifestFor(slug, purpose, grants);
         RealmManifest ManifestFor(string realmSlug, string purpose, params string[] grants) => new()
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = realmSlug,
-                DisplayName = realmSlug,
-                Domains = [$"{realmSlug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "admin", Email = $"admin@{realmSlug}.test" },
-            },
             Users =
             [
                 new RealmManifestUser { Key = "alice", Email = $"alice@{slug}.test", UserName = "alice", Password = "Passw0rd!23" },
@@ -244,13 +223,15 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         //    the rollback hard-deletes the tenant DB, and recreating the same slug in
         //    the same host would hit the disposed tenant data source.
         appSettings.Features.PositionTerminals = false;
-        var gated = await applier.ImportNewRealmAsync(ManifestFor("posgate", "Gate", "alice"), ct);
+        // Its own realm — the feature-gate probe must not consume the slug the real
+        // import below needs (creating a realm and filling it are two operations now).
+        var gated = await ProvisionRealmAsync(factory, Shell("posgate"), ManifestFor("posgate", "Gate", "alice"), ct);
         Assert.True(gated.IsError);
         Assert.Equal("Manifest.FeatureDisabled", gated.FirstError.Code);
 
         // ── Feature on: import creates position + policy + grant. ──────────────────
         appSettings.Features.PositionTerminals = true;
-        var import = await applier.ImportNewRealmAsync(Manifest("Gate", "alice"), ct);
+        var import = await ProvisionRealmAsync(factory, Shell(slug), Manifest("Gate", "alice"), ct);
         Assert.False(import.IsError, import.IsError ? import.FirstError.Description : string.Empty);
 
         Guid positionId = default, aliceId = default, bobId = default;
@@ -282,7 +263,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         Assert.Equal(["alice"], exPos.Grants!.Select(g => g.Key));
 
         // ── Apply: merge purpose + REPLACE the grant set (alice → bob). ────────────
-        var applied = await applier.UpdateRealmAsync(Manifest("Gate v2", "bob"), ct: ct);
+        var applied = await applier.UpdateRealmAsync(slug, Manifest("Gate v2", "bob"), ct: ct);
         Assert.False(applied.IsError, applied.IsError ? applied.FirstError.Description : string.Empty);
         await InTenantAsync(factory, slug, async sp =>
         {
@@ -298,7 +279,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         // ── Prune: a position absent from the manifest is deleted via the canonical
         //    cascade (soft delete; grants stay history). ─────────────────────────────
         var noPositions = Manifest("unused") with { Positions = [] };
-        Assert.False((await applier.UpdateRealmAsync(noPositions, prune: true, deletions: null, ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(slug, noPositions, prune: true, deletions: null, ct)).IsError);
         await InTenantAsync(factory, slug, async sp =>
         {
             var session = sp.GetRequiredService<IDocumentSession>();

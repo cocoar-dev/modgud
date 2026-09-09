@@ -44,13 +44,6 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         const string slug = "acme";
         var manifest = new RealmManifest
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug,
-                DisplayName = "Acme",
-                Domains = ["acme.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "admin", Email = "admin@acme.test" },
-            },
             Apps =
             [
                 new RealmManifestApp
@@ -116,7 +109,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
 
         var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
 
-        var result = await applier.ImportNewRealmAsync(manifest, ct);
+        var result = await ProvisionRealmAsync(factory, Shell(slug), manifest, ct);
 
         Assert.False(result.IsError, result.IsError ? result.FirstError.Description : string.Empty);
         Assert.Equal(slug, result.Value.Slug);
@@ -167,25 +160,17 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         var factory = host.Factory;
         var ct = TestContext.Current.CancellationToken;
 
-        var manifest = new RealmManifest
-        {
-            Realm = new CreateRealmDto
-            {
-                Slug = "dup",
-                DisplayName = "Dup",
-                Domains = ["dup.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "admin", Email = "admin@dup.test" },
-            },
-        };
+        const string slug = "dupe";
+        var manifest = new RealmManifest();
 
-        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
-
-        var first = await applier.ImportNewRealmAsync(manifest, ct);
+        var first = await ProvisionRealmAsync(factory, Shell(slug), manifest, ct);
         Assert.False(first.IsError, first.IsError ? first.FirstError.Description : string.Empty);
 
-        var second = await applier.ImportNewRealmAsync(manifest, ct);
+        var second = await ProvisionRealmAsync(factory, Shell(slug), manifest, ct);
         Assert.True(second.IsError);
-        Assert.Equal("Realm.AlreadyExists", second.FirstError.Code);
+        // The canonical create op owns this rule now — one code for a duplicate slug,
+        // whichever way a realm is created.
+        Assert.Equal("Realm.DuplicateSlug", second.FirstError.Code);
     }
 
     [Fact]
@@ -206,13 +191,6 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         // come back — consuming apps persist them as foreign keys.
         RealmManifest Manifest(string appSlug, string roleName, string groupName) => new()
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug,
-                DisplayName = "Revive",
-                Domains = [$"{slug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@revive.test" },
-            },
             Apps =
             [
                 new RealmManifestApp
@@ -232,7 +210,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             Groups = [new RealmManifestGroup { Name = groupName, Id = new ShortGuid(groupId).ToString(), Roles = [roleName] }],
         };
 
-        var imported = await applier.ImportNewRealmAsync(Manifest("rev-app", "rev-role", "RevGroup"), ct);
+        var imported = await ProvisionRealmAsync(factory, Shell(slug), Manifest("rev-app", "rev-role", "RevGroup"), ct);
         Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
 
         // RENAME live in the admin UI (the manifest can't rename — its natural key IS the
@@ -262,7 +240,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         });
 
         // Delete all three under their CURRENT keys (staged deletes, the normal admin path).
-        var deleted = await applier.UpdateRealmAsync(
+        var deleted = await applier.UpdateRealmAsync(slug, 
             Manifest("rev-app", "rev-role", "RevGroup") with { Apps = [], Roles = [], Groups = [] },
             deletions:
             [
@@ -284,7 +262,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
 
         // Re-import the ORIGINAL manifest: the pinned ids point at soft-deleted streams, so
         // the apply revives them — under the manifest's (original) names, not the renamed ones.
-        var reimported = await applier.UpdateRealmAsync(Manifest("rev-app", "rev-role", "RevGroup"), ct: ct);
+        var reimported = await applier.UpdateRealmAsync(slug, Manifest("rev-app", "rev-role", "RevGroup"), ct: ct);
         Assert.False(reimported.IsError, reimported.IsError ? reimported.FirstError.Description : string.Empty);
 
         await InTenantAsync(factory, slug, async sp =>
@@ -319,13 +297,6 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
 
         RealmManifest Manifest(string roleName, string groupName, string? groupDescription = null) => new()
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug,
-                DisplayName = "Id match",
-                Domains = [$"{slug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@idmatch.test" },
-            },
             Apps = [new RealmManifestApp { Slug = "im-app", DisplayName = "Id Match App", Permissions = [new RealmManifestPermission("im", "read")] }],
             Roles =
             [
@@ -345,12 +316,12 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             ],
         };
 
-        var imported = await applier.ImportNewRealmAsync(Manifest("im-role", "ImGroup"), ct);
+        var imported = await ProvisionRealmAsync(factory, Shell(slug), Manifest("im-role", "ImGroup"), ct);
         Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
 
         // Same ids, DIFFERENT names: the id names the entity, so this is an update that
         // renames — not a second entity next to the old one.
-        var renamed = await applier.UpdateRealmAsync(Manifest("im-role-v2", "ImGroupV2", "renamed via id"), ct: ct);
+        var renamed = await applier.UpdateRealmAsync(slug, Manifest("im-role-v2", "ImGroupV2", "renamed via id"), ct: ct);
         Assert.False(renamed.IsError, renamed.IsError ? renamed.FirstError.Description : string.Empty);
 
         await InTenantAsync(factory, slug, async sp =>
@@ -374,7 +345,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
 
         // The plan makes the rename visible before it happens.
         var planner = factory.Services.GetRequiredService<RealmManifestPlanner>();
-        var plan = await planner.PlanAsync(Manifest("im-role-v3", "ImGroupV3"), prune: false, ct: ct);
+        var plan = await planner.PlanAsync(slug, Manifest("im-role-v3", "ImGroupV3"), prune: false, ct: ct);
         Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
 
         var roleEntry = Assert.Single(plan.Value.Sections.Single(s => s.Name == "roles").Entries);
@@ -398,27 +369,20 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
 
         RealmManifest Manifest(string appSlug) => new()
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug,
-                DisplayName = "Immutable key",
-                Domains = [$"{slug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@immutablekey.test" },
-            },
             Apps = [new RealmManifestApp { Slug = appSlug, Id = new ShortGuid(appId).ToString(), DisplayName = "App" }],
         };
 
-        var imported = await applier.ImportNewRealmAsync(Manifest("ik-app"), ct);
+        var imported = await ProvisionRealmAsync(factory, Shell(slug), Manifest("ik-app"), ct);
         Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
 
         // An app slug cannot be renamed through the canonical update — the id and the slug
         // name two different things, which is never a silent merge.
-        var renamed = await applier.UpdateRealmAsync(Manifest("ik-app-renamed"), ct: ct);
+        var renamed = await applier.UpdateRealmAsync(slug, Manifest("ik-app-renamed"), ct: ct);
         Assert.True(renamed.IsError);
         Assert.Equal("Manifest.ImmutableKey", renamed.FirstError.Code);
 
         var planner = factory.Services.GetRequiredService<RealmManifestPlanner>();
-        var plan = await planner.PlanAsync(Manifest("ik-app-renamed"), prune: false, ct: ct);
+        var plan = await planner.PlanAsync(slug, Manifest("ik-app-renamed"), prune: false, ct: ct);
         var entry = Assert.Single(plan.Value.Sections.Single(s => s.Name == "apps").Entries);
         Assert.Equal("error", entry.Action);
         Assert.Contains(entry.Notes, n => n.Contains("Slug is immutable"));
@@ -437,13 +401,6 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
 
         RealmManifest Manifest(bool withRole) => new()
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug,
-                DisplayName = "Id clash",
-                Domains = [$"{slug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@idclash.test" },
-            },
             Apps = [new RealmManifestApp { Slug = "first", Id = new ShortGuid(appId).ToString(), DisplayName = "First" }],
             // Claims the APP's id for a role — appending role events onto an app's stream
             // would corrupt it, so this stays a hard conflict (no revive, no update).
@@ -452,10 +409,10 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 : [],
         };
 
-        var imported = await applier.ImportNewRealmAsync(Manifest(withRole: false), ct);
+        var imported = await ProvisionRealmAsync(factory, Shell(slug), Manifest(withRole: false), ct);
         Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
 
-        var clash = await applier.UpdateRealmAsync(Manifest(withRole: true), ct: ct);
+        var clash = await applier.UpdateRealmAsync(slug, Manifest(withRole: true), ct: ct);
 
         Assert.True(clash.IsError);
         Assert.Equal("Role.PinnedIdTaken", clash.FirstError.Code);
@@ -472,7 +429,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
 
         // ── Import the baseline realm ──────────────────────────────────────────
-        var imported = await applier.ImportNewRealmAsync(BuildGlobexManifest(slug, version: 1), ct);
+        var imported = await ProvisionRealmAsync(factory, Shell(slug), BuildGlobexManifest(slug, version: 1), ct);
         Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
 
         // Capture the stable ids so we can prove the update was IN PLACE (not drop+recreate).
@@ -491,7 +448,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         });
 
         // ── Apply the v2 manifest: changes every existing entity + adds a new role ──
-        var updated = await applier.UpdateRealmAsync(BuildGlobexManifest(slug, version: 2), ct: ct);
+        var updated = await applier.UpdateRealmAsync(slug, BuildGlobexManifest(slug, version: 2), ct: ct);
         Assert.False(updated.IsError, updated.IsError ? updated.FirstError.Description : string.Empty);
 
         // The realm DB was never dropped.
@@ -552,13 +509,6 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         // Import a DISABLED confidential client (Enabled explicitly false).
         var manifest = new RealmManifest
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug,
-                DisplayName = slug,
-                Domains = [$"{slug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "admin", Email = $"admin@{slug}.test" },
-            },
             Apps = [new RealmManifestApp { Slug = "bp-app", DisplayName = "BP", Permissions = [new RealmManifestPermission("bp", "read")] }],
             Clients =
             [
@@ -574,12 +524,11 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 },
             ],
         };
-        Assert.False((await applier.ImportNewRealmAsync(manifest, ct)).IsError);
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), manifest, ct)).IsError);
 
         // Apply a partial update: change the redirect URI, OMIT Enabled (null = no change).
         var patch = new RealmManifest
         {
-            Realm = manifest.Realm,
             Clients =
             [
                 new RealmManifestClient
@@ -592,7 +541,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 },
             ],
         };
-        Assert.False((await applier.UpdateRealmAsync(patch, ct: ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(slug, patch, ct: ct)).IsError);
 
         await InTenantAsync(factory, slug, async sp =>
         {
@@ -623,16 +572,9 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         };
         var manifest = new RealmManifest
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug,
-                DisplayName = slug,
-                Domains = [$"{slug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "admin", Email = $"admin@{slug}.test" },
-            },
             Clients = [Client("Jwt")],
         };
-        Assert.False((await applier.ImportNewRealmAsync(manifest, ct)).IsError);
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), manifest, ct)).IsError);
 
         async Task<AccessTokenType> GetTokenTypeAsync()
         {
@@ -650,15 +592,15 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         Assert.Equal(AccessTokenType.Jwt, await GetTokenTypeAsync());
 
         // Apply with the field OMITTED: no change (same patch semantics as the bool flags).
-        Assert.False((await applier.UpdateRealmAsync(manifest with { Clients = [Client(null)] }, ct: ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(slug, manifest with { Clients = [Client(null)] }, ct: ct)).IsError);
         Assert.Equal(AccessTokenType.Jwt, await GetTokenTypeAsync());
 
         // Apply with an explicit 'Reference': the merge flips it back.
-        Assert.False((await applier.UpdateRealmAsync(manifest with { Clients = [Client("Reference")] }, ct: ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(slug, manifest with { Clients = [Client("Reference")] }, ct: ct)).IsError);
         Assert.Equal(AccessTokenType.Reference, await GetTokenTypeAsync());
 
         // An invalid value is a contextual validation error, not a silent default.
-        var invalid = await applier.UpdateRealmAsync(manifest with { Clients = [Client("Bogus")] }, ct: ct);
+        var invalid = await applier.UpdateRealmAsync(slug, manifest with { Clients = [Client("Bogus")] }, ct: ct);
         Assert.True(invalid.IsError);
         Assert.Equal("Manifest.InvalidEnum", invalid.FirstError.Code);
     }
@@ -671,7 +613,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         var ct = TestContext.Current.CancellationToken;
 
         var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
-        var result = await applier.UpdateRealmAsync(BuildGlobexManifest("ghost", version: 1), ct: ct);
+        var result = await applier.UpdateRealmAsync("ghost", BuildGlobexManifest("ghost", version: 1), ct: ct);
 
         Assert.True(result.IsError);
         Assert.Equal("Realm.NotFound", result.FirstError.Code);
@@ -694,13 +636,6 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         // all dropped too → exercises reverse-dependency-order pruning.
         var full = new RealmManifest
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug,
-                DisplayName = "Prune",
-                Domains = [$"{slug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@prune.test" },
-            },
             Apps =
             [
                 new RealmManifestApp { Slug = "keep-app", DisplayName = "Keep", Permissions = [new RealmManifestPermission("keep", "read")] },
@@ -740,13 +675,12 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 new RealmManifestGroup { Name = "AdminGroup", Members = ["adminuser"], Roles = ["super-admin"] },
             ],
         };
-        var import = await applier.ImportNewRealmAsync(full, ct);
+        var import = await ProvisionRealmAsync(factory, Shell(slug), full, ct);
         Assert.False(import.IsError, import.IsError ? import.FirstError.Description : string.Empty);
 
         // The prune manifest keeps only the keep-* entities; everything else is absent.
         var keepOnly = new RealmManifest
         {
-            Realm = full.Realm,
             Apps = [full.Apps[0]],
             Apis = [full.Apis[0]],
             Scopes = [full.Scopes[0]],
@@ -756,7 +690,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             Groups = [full.Groups[0]],
         };
 
-        var pruned = await applier.UpdateRealmAsync(keepOnly, prune: true, deletions: null, ct);
+        var pruned = await applier.UpdateRealmAsync(slug, keepOnly, prune: true, deletions: null, ct);
         Assert.False(pruned.IsError, pruned.IsError ? pruned.FirstError.Description : string.Empty);
 
         // The realm DB was never dropped.
@@ -828,24 +762,17 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         const string slug = "binned";
         var full = new RealmManifest
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug,
-                DisplayName = "Binned",
-                Domains = [$"{slug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@binned.test" },
-            },
             Users =
             [
                 new RealmManifestUser { Key = "first", Email = "first@binned.test", UserName = "first", Firstname = "First", Password = "Passw0rd!23" },
                 new RealmManifestUser { Key = "second", Email = "second@binned.test", UserName = "second", Firstname = "Second", Password = "Passw0rd!23" },
             ],
         };
-        var import = await applier.ImportNewRealmAsync(full, ct);
+        var import = await ProvisionRealmAsync(factory, Shell(slug), full, ct);
         Assert.False(import.IsError, import.IsError ? import.FirstError.Description : string.Empty);
 
         // ── 1. The admin deletes "first" — the normal staged-delete path. ──────────
-        var binned = await applier.UpdateRealmAsync(
+        var binned = await applier.UpdateRealmAsync(slug, 
             full with { Users = [full.Users[1]] },
             deletions: [new RealmDraftDeletion("users", "first")],
             ct: ct);
@@ -864,12 +791,12 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             Users = [.. export.Value.Users.Select(u =>
                 u.UserName == "first" ? u with { Firstname = "Overwritten" } : u)],
         };
-        var reapplied = await applier.UpdateRealmAsync(carried, ct: ct);
+        var reapplied = await applier.UpdateRealmAsync(slug, carried, ct: ct);
         Assert.False(reapplied.IsError, reapplied.IsError ? reapplied.FirstError.Description : string.Empty);
 
         // ── 4. The real-world symptom: deleting ANOTHER user while the first sits in
         //      the bin. This is what failed in production. ────────────────────────────
-        var second = await applier.UpdateRealmAsync(
+        var second = await applier.UpdateRealmAsync(slug, 
             carried with { Users = [.. carried.Users.Where(u => u.UserName != "second")] },
             deletions: [new RealmDraftDeletion("users", "second")],
             ct: ct);
@@ -928,11 +855,6 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
 
         var manifest = new RealmManifest
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug, DisplayName = "Authors", Domains = [$"{slug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@authors.test" },
-            },
             Apps = [AppOf("alpha"), AppOf("beta")],
             Roles = [Author("alpha"), Author("beta"), new RealmManifestRole { Name = "Reviewer", App = "beta", Permissions = [] }],
             Groups =
@@ -943,7 +865,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 new RealmManifestGroup { Name = "Reviewers", Roles = ["Reviewer"] },
             ],
         };
-        var imported = await applier.ImportNewRealmAsync(manifest, ct);
+        var imported = await ProvisionRealmAsync(factory, Shell(slug), manifest, ct);
         Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
 
         async Task<(Guid Alpha, Guid Beta, Guid Reviewer)> RoleIdsAsync()
@@ -972,17 +894,16 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         Assert.False(export.IsError, export.IsError ? export.FirstError.Description : string.Empty);
         var betaRef = Assert.Single(export.Value.Groups.Single(g => g.Name == "Beta writers").Roles!);
         Assert.Equal(("beta/Author", before.Beta), (betaRef.Key, betaRef.ParsedId));
-        var reapplied = await applier.UpdateRealmAsync(export.Value, ct: ct);
+        var reapplied = await applier.UpdateRealmAsync(slug, export.Value, ct: ct);
         Assert.False(reapplied.IsError, reapplied.IsError ? reapplied.FirstError.Description : string.Empty);
         Assert.Equal(before, await RoleIdsAsync());
 
         // A patch without App (absent = unchanged) updates a uniquely-named role...
         var patch = new RealmManifest
         {
-            Realm = manifest.Realm,
             Roles = [new RealmManifestRole { Name = "Reviewer", Description = "Reviews drafts" }],
         };
-        var patched = await applier.UpdateRealmAsync(patch, ct: ct);
+        var patched = await applier.UpdateRealmAsync(slug, patch, ct: ct);
         Assert.False(patched.IsError, patched.IsError ? patched.FirstError.Description : string.Empty);
         await InTenantAsync(factory, slug, async sp =>
         {
@@ -991,18 +912,16 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         });
 
         // ...but is refused for an ambiguous one instead of silently picking the first.
-        var ambiguous = await applier.UpdateRealmAsync(new RealmManifest
+        var ambiguous = await applier.UpdateRealmAsync(slug, new RealmManifest
         {
-            Realm = manifest.Realm,
             Roles = [new RealmManifestRole { Name = "Author", Description = "Which one?" }],
         }, ct: ct);
         Assert.True(ambiguous.IsError);
         Assert.Equal("Manifest.AmbiguousRole", ambiguous.FirstError.Code);
 
         // So is a group reference to the bare name.
-        var ambiguousRef = await applier.UpdateRealmAsync(new RealmManifest
+        var ambiguousRef = await applier.UpdateRealmAsync(slug, new RealmManifest
         {
-            Realm = manifest.Realm,
             Groups = [new RealmManifestGroup { Name = "Anyone", Roles = ["Author"] }],
         }, ct: ct);
         Assert.True(ambiguousRef.IsError);
@@ -1098,9 +1017,8 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             Slug = slug, DisplayName = "Refs", Domains = [$"{slug}.localhost"],
             InitialAdmin = new InitialAdminDto { UserName = "boot", Email = "boot@refs.test" },
         };
-        var imported = await applier.ImportNewRealmAsync(new RealmManifest
+        var imported = await ProvisionRealmAsync(factory, realm, new RealmManifest
         {
-            Realm = realm,
             Apps = [new RealmManifestApp { Slug = "alpha", DisplayName = "alpha", Permissions = [new RealmManifestPermission("doc", "write")] },
                     new RealmManifestApp { Slug = "beta", DisplayName = "beta", Permissions = [new RealmManifestPermission("doc", "write")] }],
             Roles = [new RealmManifestRole { Name = "Author", App = "alpha", Permissions = [] },
@@ -1133,10 +1051,9 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         }
         async Task ApplyGroupAsync(List<ManifestRef>? roles = null, List<ManifestRef>? members = null)
         {
-            var result = await applier.UpdateRealmAsync(new RealmManifest
+            var result = await applier.UpdateRealmAsync(slug, new RealmManifest
             {
-                Realm = realm,
-                Groups = [new RealmManifestGroup { Name = "Beta writers", Roles = roles, Members = members }],
+                    Groups = [new RealmManifestGroup { Name = "Beta writers", Roles = roles, Members = members }],
             }, ct: ct);
             Assert.False(result.IsError, result.IsError ? result.FirstError.Description : string.Empty);
         }
@@ -1154,9 +1071,8 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         await ApplyGroupAsync(members: [new ManifestRef { Key = "nobody", Id = new ShortGuid(alice).ToString() }]);
         Assert.Equal([alice], (await GroupAsync()).MemberIds);
         // A bare string is ALWAYS a key — even when it happens to be an id.
-        var idAsKey = await applier.UpdateRealmAsync(new RealmManifest
+        var idAsKey = await applier.UpdateRealmAsync(slug, new RealmManifest
         {
-            Realm = realm,
             Groups = [new RealmManifestGroup { Name = "Beta writers", Roles = [new ShortGuid(betaAuthor).ToString()] }],
         }, ct: ct);
         Assert.True(idAsKey.IsError);
@@ -1173,7 +1089,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         });
         // ...so the plan sees no change on the group (the role entry itself flags the rename),
         // and the apply keeps the group on the SAME role, stale key notwithstanding.
-        var plan = await planner.PlanAsync(exportBefore.Value, prune: false, baseline: exportBefore.Value, ct: ct);
+        var plan = await planner.PlanAsync(slug, exportBefore.Value, prune: false, baseline: exportBefore.Value, ct: ct);
         Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
         var groupEntry = plan.Value.Sections.Single(s => s.Name == "groups").Entries.Single(e => e.Key == "Beta writers");
         Assert.Equal("unchanged", groupEntry.Action);
@@ -1213,13 +1129,6 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
 
         return new RealmManifest
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = slug,
-                DisplayName = "Globex",
-                Domains = [$"{slug}.localhost"],
-                InitialAdmin = new InitialAdminDto { UserName = "admin", Email = $"admin@{slug}.test" },
-            },
             Apps =
             [
                 new RealmManifestApp

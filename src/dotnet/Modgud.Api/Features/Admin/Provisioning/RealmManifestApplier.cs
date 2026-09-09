@@ -48,8 +48,13 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// <see cref="OAuthAdminService"/>, <see cref="RoleAdminService"/>, the user/group
 /// command handlers), so the manifest path and the manual path can never drift.</para>
 ///
-/// <para>Tenant routing: the realm shell is created via the global store, then the
-/// per-tenant config runs inside <c>TenantContext.Enter(slug)</c> + a fresh DI scope —
+/// <para>A manifest describes CONTENT only — it carries no realm shell, so the target is
+/// named by the caller (the route) and the same file applies to any realm. Creating a
+/// realm is a separate operation (<c>POST /api/admin/realms</c>); this type only ever
+/// fills an existing one.</para>
+///
+/// <para>Tenant routing: the per-tenant config runs inside <c>TenantContext.Enter(slug)</c>
+/// + a fresh DI scope —
 /// <c>TenantedSessionFactory</c> prefers the AsyncLocal <c>TenantContext</c> over the
 /// ambient (control-plane) <c>HttpContext</c>. Handlers resolved in that fresh scope
 /// therefore write to the newly provisioned tenant.</para>
@@ -65,53 +70,8 @@ public sealed partial class RealmManifestApplier(
     ILogger<RealmManifestApplier> logger)
 {
     /// <summary>
-    /// Imports a brand-new realm: the slug must NOT already exist. Provisions the realm
-    /// shell (tenant DB + seed) then applies the manifest. If any step fails the whole
-    /// partially-provisioned realm is hard-deleted, so a failed import leaves nothing
-    /// behind (all-or-nothing).
-    /// </summary>
-    public async Task<ErrorOr<RealmImportResult>> ImportNewRealmAsync(
-        RealmManifest manifest, CancellationToken ct = default)
-    {
-        var slug = manifest.Realm.Slug;
-
-        if (await realms.GetRealmBySlugAsync(slug, ct) is not null)
-            return Error.Conflict("Realm.AlreadyExists",
-                $"Realm '{slug}' already exists. Use UpdateRealm to modify an existing realm.");
-
-        var realmResult = await realms.CreateRealmAsync(manifest.Realm, ct);
-        if (realmResult.IsError) return realmResult.Errors;
-        var realm = realmResult.Value;
-
-        try
-        {
-            var secrets = await ApplyTenantConfigAsync(slug, manifest, ct);
-            logger.LogInformation(
-                "Imported realm {Slug}: {Apps} apps, {Apis} apis, {Scopes} scopes, {Clients} clients, {Roles} roles, {Users} users, {Groups} groups, {Providers} login providers, {Positions} positions.",
-                slug, manifest.Apps.Count, manifest.Apis.Count, manifest.Scopes.Count,
-                manifest.Clients.Count, manifest.Roles.Count, manifest.Users.Count, manifest.Groups.Count,
-                manifest.LoginProviders.Count, manifest.Positions.Count);
-            return new RealmImportResult
-            {
-                Slug = slug,
-                PrimaryDomain = realm.PrimaryDomain,
-                ClientSecrets = secrets,
-            };
-        }
-        catch (ManifestApplyException ex)
-        {
-            // A failed import must leave nothing behind: roll the whole realm back via
-            // the prod-safe hard-delete (drops the tenant DB + the global record).
-            logger.LogError(ex,
-                "Manifest apply failed for realm {Slug} ({What}); hard-deleting the partially-provisioned realm.",
-                slug, ex.What);
-            await realms.HardDeleteRealmAsync(slug, ct);
-            return ex.Errors;
-        }
-    }
-
-    /// <summary>
-    /// Updates an existing realm in place: the slug MUST already exist. Each entity in the
+    /// Updates the realm named by <paramref name="slug"/> in place; it MUST already exist
+    /// (create it via <c>POST /api/admin/realms</c> first). Each entity in the
     /// manifest is upserted by its natural key (app slug, api/scope/role/group name, client
     /// id, user email/username) — created if absent, otherwise updated through the SAME
     /// canonical Update operation the admin API uses. The realm database is NEVER dropped
@@ -150,15 +110,13 @@ public sealed partial class RealmManifestApplier(
     /// beforehand).</para>
     /// </summary>
     public async Task<ErrorOr<RealmImportResult>> UpdateRealmAsync(
-        RealmManifest manifest, bool prune = false,
+        string slug, RealmManifest manifest, bool prune = false,
         IReadOnlyCollection<RealmDraftDeletion>? deletions = null, CancellationToken ct = default)
     {
-        var slug = manifest.Realm.Slug;
-
         var realm = await realms.GetRealmBySlugAsync(slug, ct);
         if (realm is null)
             return Error.NotFound("Realm.NotFound",
-                $"Realm '{slug}' does not exist. Use ImportNewRealm to create it.");
+                $"Realm '{slug}' does not exist. Create it first (POST /api/admin/realms), then apply.");
 
         try
         {
@@ -187,184 +145,13 @@ public sealed partial class RealmManifestApplier(
         }
     }
 
-    private async Task<Dictionary<string, string>> ApplyTenantConfigAsync(
-        string slug, RealmManifest manifest, CancellationToken ct)
-    {
-        var secrets = new Dictionary<string, string>(StringComparer.Ordinal);
-        var apps = new Dictionary<string, App>(StringComparer.Ordinal);        // slug → App (id + catalog)
-        var roleIds = new Dictionary<string, Guid>(StringComparer.Ordinal);    // role key → id (for groups)
-        var userIds = new Dictionary<string, Guid>(StringComparer.Ordinal);    // user key → id (for groups)
-
-        // Enter the new realm's tenant context, then resolve the per-tenant services in
-        // a FRESH scope so their IDocumentSession binds to this tenant.
-        using var _ = TenantContext.Enter(slug);
-        using var scope = scopeFactory.CreateScope();
-        var sp = scope.ServiceProvider;
-
-        if (manifest.Settings is not null)
-            EnsureOk(await sp.GetRequiredService<IRealmSettingsService>().PatchAsync(manifest.Settings, ct), "settings");
-
-        // ── Apps (+ permission catalog) — referenced by everything below ──────────
-        var appAdmin = sp.GetRequiredService<AppAdminService>();
-        foreach (var app in manifest.Apps)
-        {
-            var dto = new CreateAppDto(app.Slug, app.DisplayName, OrNull(app.Description),
-                (app.Permissions ?? []).Select(p => new AppPermissionDto(null, p.Resource, p.Action, p.Description)).ToList(),
-                app.Settings, app.Id);
-            var created = await appAdmin.CreateAppAsync(dto, ct);
-            EnsureOk(created, $"app '{app.Slug}'");
-            apps[app.Slug] = created.Value;
-        }
-
-        var oauth = sp.GetRequiredService<OAuthAdminService>();
-
-        // ── OAuth APIs ────────────────────────────────────────────────────────────
-        foreach (var api in manifest.Apis)
-        {
-            EnsureOk(await oauth.CreateApiAsync(new CreateOAuthApiDto
-            {
-                Id = api.Id,
-                Name = api.Name,
-                DisplayName = OrNull(api.DisplayName),
-                Description = OrNull(api.Description),
-                Enabled = api.Enabled ?? true,
-                Scopes = api.Scopes ?? [],
-                UserClaims = api.UserClaims ?? [],
-                AppId = ResolveAppId(apps, OrNull(api.App), $"api '{api.Name}'"),
-                PermissionIds = ResolvePermissionIds(apps, OrNull(api.App), api.Permissions, $"api '{api.Name}'"),
-                AllowDynamicRegistration = api.AllowDynamicRegistration ?? false,
-            }, ct), $"api '{api.Name}'");
-        }
-
-        // ── OAuth scopes ──────────────────────────────────────────────────────────
-        foreach (var s in manifest.Scopes)
-        {
-            EnsureOk(await oauth.CreateScopeAsync(new CreateOAuthScopeDto
-            {
-                Id = s.Id,
-                Name = s.Name,
-                DisplayName = OrNull(s.DisplayName),
-                Description = OrNull(s.Description),
-                Resources = s.Resources ?? [],
-                UserClaims = s.UserClaims ?? [],
-                Enabled = s.Enabled ?? true,
-                Required = s.Required ?? false,
-                Emphasize = s.Emphasize ?? false,
-                ShowInDiscoveryDocument = s.ShowInDiscoveryDocument ?? true,
-                AllowDynamicRegistrationClients = s.AllowDynamicRegistrationClients ?? false,
-                AppId = ResolveAppId(apps, OrNull(s.App), $"scope '{s.Name}'"),
-            }, ct), $"scope '{s.Name}'");
-        }
-
-        // ── OAuth clients ─────────────────────────────────────────────────────────
-        foreach (var c in manifest.Clients)
-        {
-            var created = await oauth.CreateClientAsync(
-                BuildClientCreateDto(c, apps, $"client '{c.ClientId}'"), ct);
-            EnsureOk(created, $"client '{c.ClientId}'");
-            if (created.Value.ClientSecret is not null)
-                secrets[c.ClientId] = created.Value.ClientSecret;
-        }
-
-        // ── Login providers — canonical handler on the manifest's tenant session ──
-        foreach (var lp in manifest.LoginProviders)
-        {
-            var ctx = $"login provider '{lp.Slug}'";
-            var pinnedLp = await ResolvePinnedAsync<LoginProvider>(
-                sp.GetRequiredService<IDocumentSession>(), lp.Id, "LoginProvider", ctx,
-                x => x.IsDeleted, ct);
-            EnsureOk(await BuildCreateProviderHandler(sp).Handle(
-                BuildCreateProviderCommand(lp, ctx, pinnedLp), ct), ctx);
-        }
-
-        // ── Roles (app-scoped or realm-admin) ─────────────────────────────────────
-        var roleAdmin = sp.GetRequiredService<RoleAdminService>();
-        foreach (var r in manifest.Roles)
-        {
-            var payload = new RolePayload(
-                r.Name,
-                OrNull(r.Description),
-                ResolveAppId(apps, r.App, $"role '{r.Name}'"),
-                r.IsRealmAdmin ?? false,
-                ResolvePermissionIds(apps, r.App, r.Permissions, $"role '{r.Name}'"),
-                r.Id);
-            // Control-plane provisioning is trusted, so the realm-admin guard is satisfied.
-            var created = await roleAdmin.CreateRoleAsync(payload, callerIsRealmAdmin: true, ct);
-            EnsureOk(created, $"role '{r.Name}'");
-            RegisterRole(roleIds, manifest.Roles, r, created.Value.Id);
-        }
-
-        // ── Users — canonical handler on the manifest's tenant session ────────────
-        // Realm provisioning has already initialized Wolverine's inbox/outbox.
-        // Direct invocation keeps manifest application sequential and exposes the
-        // canonical handler result immediately for contextual import errors.
-        var userSession = sp.GetRequiredService<IDocumentSession>();
-        var createUser = new CreateUserHandler(
-            userSession,
-            sp.GetRequiredService<UserManager<ApplicationUser>>(),
-            sp.GetRequiredService<IApplicationSettingsResolver>());
-        foreach (var u in manifest.Users)
-        {
-            var ctx = $"user '{u.Email}'";
-            var cmd = new CreateUserCommand(OrNull(u.Firstname), OrNull(u.Lastname), OrNull(u.Acronym), u.Email,
-                u.UserName ?? string.Empty, u.Password, u.EmailConfirmed ?? false,
-                Id: await ResolvePinnedUserAsync(userSession, u.Id, ctx, ct));
-            var created = await createUser.Handle(cmd, ct);
-            EnsureOk(created, ctx);
-            if (ShortGuid.TryParse(created.Value.Id, out Guid uid))
-                userIds[u.ResolveKey()] = uid;
-        }
-
-        // ── Groups — canonical handler on the manifest's tenant session ───────────
-        // Keep the same explicit, sequential dispatch used for users so reference
-        // resolution and contextual import failures remain deterministic.
-        if (manifest.Groups.Count > 0)
-        {
-            var groupSession = sp.GetRequiredService<IDocumentSession>();
-            var groupHandler = new CreateGroupHandler(
-                groupSession,
-                sp.GetRequiredService<IMembershipEvaluator>(),
-                sp.GetRequiredService<IAutoMembershipRecalculator>());
-
-            foreach (var g in manifest.Groups)
-            {
-                var memberIds = new List<Guid>((g.Members ?? []).Count);
-                foreach (var m in g.Members ?? [])
-                    memberIds.Add(await ResolveUserRefAsync(groupSession, userIds, m, $"group '{g.Name}' member '{m}'", ct));
-                var groupRoleIds = new List<Guid>((g.Roles ?? []).Count);
-                foreach (var rk in g.Roles ?? [])
-                    groupRoleIds.Add(await ResolveRoleRefAsync(groupSession, roleIds, rk, $"group '{g.Name}' role '{rk}'", ct));
-                var pinnedGroup = await ResolvePinnedAsync<Group>(
-                    groupSession, g.Id, "Group", $"group '{g.Name}'", x => x.IsDeleted, ct);
-                var cmd = new CreateGroupCommand(
-                    g.Name, OrNull(g.Description), memberIds, groupRoleIds,
-                    ParseEnum<MembershipMode>(g.MembershipMode ?? "Manual", $"group '{g.Name}' membershipMode"),
-                    g.MembershipScript, OrNull(g.Email),
-                    ParseEnum<EmailMode>(g.EmailMode ?? "Shared", $"group '{g.Name}' emailMode"),
-                    // Mirror the create endpoint's default (GroupEndpoints: dto.BoundTo ?? [Modgud])
-                    // so a manifest group is bound to the IdP and actually confers its roles —
-                    // CreateGroupHandler itself defaults null to [] (dormant), which would make an
-                    // imported admin group silently grant nothing.
-                    g.BoundTo ?? [AppSlugs.Modgud], g.ExternallyDrivable ?? false, CallerIsRealmAdmin: true,
-                    Id: pinnedGroup.Id, ReviveExistingStream: pinnedGroup.Revive);
-                EnsureOk(await groupHandler.Handle(cmd, ct), $"group '{g.Name}'");
-            }
-        }
-
-        // ── Service accounts (hulls, id-pinned creates) ───────────────────────────
-        await ApplyServiceAccountsAsync(sp, manifest, ct);
-
-        // ── Positions (MG-FT) — after users so grants can resolve their keys ──────
-        await ApplyPositionsAsync(sp, manifest, userIds, ct);
-
-        return secrets;
-    }
-
     /// <summary>
-    /// In-place upsert of every entity in the manifest against an already-provisioned realm.
-    /// Mirrors <see cref="ApplyTenantConfigAsync"/> but reads current state by natural key
-    /// and dispatches to the canonical Update op when the entity exists, the Create op when
-    /// it doesn't. See <see cref="UpdateRealmAsync"/> for the field-level merge semantics.
+    /// In-place upsert of every entity in the manifest against an already-provisioned realm:
+    /// reads current state by natural key and dispatches to the canonical Update op when the
+    /// entity exists, the Create op when it doesn't. This is the ONLY apply path — a fresh
+    /// realm is created first (POST /api/admin/realms) and then filled through exactly these
+    /// upserts, so provisioning and merging can never drift apart. See
+    /// <see cref="UpdateRealmAsync"/> for the field-level merge semantics.
     /// </summary>
     private async Task<Dictionary<string, string>> ApplyTenantUpdateAsync(
         string slug, RealmManifest manifest, bool prune,

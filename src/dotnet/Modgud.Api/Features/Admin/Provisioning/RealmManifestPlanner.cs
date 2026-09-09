@@ -60,7 +60,7 @@ public sealed class RealmManifestPlanner(
     /// modify/delete conflict).</para>
     /// </summary>
     public async Task<ErrorOr<RealmPlanResult>> PlanAsync(
-        RealmManifest manifest, bool prune, RealmManifest? baseline = null,
+        string slug, RealmManifest manifest, bool prune, RealmManifest? baseline = null,
         IReadOnlyCollection<RealmDraftDeletion>? deletions = null, CancellationToken ct = default)
     {
         var deleteKeys = (deletions ?? [])
@@ -69,14 +69,12 @@ public sealed class RealmManifestPlanner(
                 StringComparer.Ordinal);
         HashSet<string>? DeletesFor(string section) => deleteKeys.GetValueOrDefault(section);
 
-        var slug = manifest.Realm.Slug;
         var exported = await exporter.ExportRealmAsync(slug, ct);
         if (exported.IsError) return exported.Errors;
         var current = exported.Value;
         var json = jsonOptions.Value.SerializerOptions;
 
         var result = new RealmPlanResult { Slug = slug, Prune = prune };
-        AddRealmShellWarnings(manifest, current, result.Warnings);
 
         // The protection checks for prune candidates (does this user/group confer
         // realm:admin?) need tenant-scoped queries — same scoping as the exporter.
@@ -286,25 +284,6 @@ public sealed class RealmManifestPlanner(
             }));
 
         return result;
-    }
-
-    // ── Realm shell — apply never mutates it; differing values are warnings. ─────────
-
-    private static void AddRealmShellWarnings(RealmManifest manifest, RealmManifest current, List<string> warnings)
-    {
-        var ignored = new List<string>();
-        if (!string.IsNullOrEmpty(manifest.Realm.DisplayName) &&
-            !string.Equals(manifest.Realm.DisplayName, current.Realm.DisplayName, StringComparison.Ordinal))
-            ignored.Add("DisplayName");
-        if (manifest.Realm.Domains is { Length: > 0 } &&
-            !manifest.Realm.Domains.ToHashSet(StringComparer.Ordinal)
-                .SetEquals(current.Realm.Domains ?? []))
-            ignored.Add("Domains");
-        if (!string.IsNullOrEmpty(manifest.Realm.PrimaryDomain) &&
-            !string.Equals(manifest.Realm.PrimaryDomain, current.Realm.PrimaryDomain, StringComparison.Ordinal))
-            ignored.Add("PrimaryDomain");
-        if (ignored.Count > 0)
-            warnings.Add($"The realm shell is not modified by apply — differing value(s) for {string.Join(", ", ignored)} are ignored.");
     }
 
     // ── Settings — one pseudo-entity, nested patch diff with dotted paths. ───────────

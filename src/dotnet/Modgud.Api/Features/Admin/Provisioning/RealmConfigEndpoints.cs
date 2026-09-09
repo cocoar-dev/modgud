@@ -20,7 +20,8 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// and require <c>realm:admin</c> in THAT realm. So a delegated per-realm credential
 /// (a service account or user holding realm:admin in one realm) can fully manage that realm's
 /// config + entities, but CANNOT create or delete realms (those stay control-plane-only) and
-/// cannot touch any other realm (tenant isolation + the slug guard below). Prune is allowed,
+/// cannot touch any other realm — a manifest names no realm at all, so the target is always
+/// the host-routed one and there is nothing to aim elsewhere. Prune is allowed,
 /// but only within the realm and with the same lockout/infra protections as the control-plane
 /// path (system app, standard scopes, SA clients, and every realm:admin path are never pruned).</para>
 /// </summary>
@@ -54,15 +55,13 @@ public static class RealmConfigEndpoints
         .WithName("RealmConfig_Export")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
 
-        // Dry-run: what WOULD an apply of this manifest change? Same slug guard as apply,
-        // same ?prune= semantics (adds delete candidates + protections) — writes nothing.
+        // Dry-run: what WOULD an apply of this manifest change? Same ?prune= semantics
+        // (adds delete candidates + protections) — writes nothing.
         group.MapPost("plan", async (
             RealmManifest manifest, RealmManifestPlanner planner, CancellationToken ct, bool prune = false) =>
         {
-            var currentSlug = TenantContext.Current;
-            if (SlugMismatch(manifest, currentSlug) is { } mismatch) return mismatch;
-            var scoped = manifest with { Realm = manifest.Realm with { Slug = currentSlug } };
-            var result = await planner.PlanAsync(scoped, prune, baseline: null, deletions: null, ct);
+            var result = await planner.PlanAsync(
+                TenantContext.Current, manifest, prune, baseline: null, deletions: null, ct);
             return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Plan")
@@ -76,25 +75,12 @@ public static class RealmConfigEndpoints
         group.MapPost("apply", async (
             RealmManifest manifest, RealmManifestApplier applier, CancellationToken ct, bool prune = false) =>
         {
-            var currentSlug = TenantContext.Current;
-
-            // A realm admin may only manage their OWN realm. A manifest aimed at a different
-            // slug is refused — this is the data-plane safety boundary (cross-realm writes and
-            // realm lifecycle stay control-plane-only).
-            if (!string.IsNullOrEmpty(manifest.Realm.Slug) &&
-                !string.Equals(manifest.Realm.Slug, currentSlug, StringComparison.Ordinal))
-            {
-                return Results.BadRequest(new
-                {
-                    Error = "Manifest.SlugMismatch",
-                    Message = $"This realm is '{currentSlug}'. A realm admin can only manage their own realm; the manifest targets '{manifest.Realm.Slug}'.",
-                });
-            }
-
-            // Pin the manifest to the current realm (covers an empty slug in the body). The
-            // realm shell (domains/display name) is not mutated by apply — only in-realm config.
-            var scoped = manifest with { Realm = manifest.Realm with { Slug = currentSlug } };
-            var result = await applier.UpdateRealmAsync(scoped, prune, deletions: null, ct);
+            // The target is the caller's own realm, always — a manifest carries no realm
+            // identity, so there is nothing here that could aim at a different one. That
+            // IS the data-plane safety boundary: cross-realm writes and realm lifecycle
+            // are only reachable through the control-plane routes.
+            var result = await applier.UpdateRealmAsync(
+                TenantContext.Current, manifest, prune, deletions: null, ct);
             return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Apply")
@@ -120,8 +106,6 @@ public static class RealmConfigEndpoints
         drafts.MapPost("", async (
             CreateRealmDraftDto dto, HttpContext http, RealmDraftService service, CancellationToken ct) =>
         {
-            if (dto.Manifest is not null && SlugMismatch(dto.Manifest, TenantContext.Current) is { } mismatch)
-                return mismatch;
             var result = await service.CreateAsync(
                 dto, TenantContext.Current, RequireUserId(http), UserName(http), ct);
             return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
@@ -141,8 +125,6 @@ public static class RealmConfigEndpoints
         drafts.MapPut("{id:guid}", async (
             Guid id, UpdateRealmDraftDto dto, HttpContext http, RealmDraftService service, CancellationToken ct) =>
         {
-            if (dto.Manifest is not null && SlugMismatch(dto.Manifest, TenantContext.Current) is { } mismatch)
-                return mismatch;
             var result = await service.UpdateAsync(
                 id, dto, TenantContext.Current, RequireUserId(http), UserName(http), ct);
             return result.IsError ? ManifestError(result.Errors) : Results.Ok(result.Value);
@@ -279,20 +261,6 @@ public static class RealmConfigEndpoints
         })
         .WithName("RealmConfig_Drafts_Apply")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
-    }
-
-    /// <summary>The data-plane safety boundary shared by apply/plan/drafts: a manifest
-    /// aimed at a different realm slug is refused.</summary>
-    private static IResult? SlugMismatch(RealmManifest manifest, string currentSlug)
-    {
-        if (string.IsNullOrEmpty(manifest.Realm.Slug) ||
-            string.Equals(manifest.Realm.Slug, currentSlug, StringComparison.Ordinal))
-            return null;
-        return Results.BadRequest(new
-        {
-            Error = "Manifest.SlugMismatch",
-            Message = $"This realm is '{currentSlug}'. A realm admin can only manage their own realm; the manifest targets '{manifest.Realm.Slug}'.",
-        });
     }
 
     private static Guid RequireUserId(HttpContext http)

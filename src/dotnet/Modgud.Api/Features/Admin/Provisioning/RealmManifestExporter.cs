@@ -313,15 +313,9 @@ public sealed class RealmManifestExporter(
 
         return new RealmManifest
         {
-            Realm = new CreateRealmDto
-            {
-                Slug = realm.Slug,
-                DisplayName = realm.DisplayName,
-                Description = realm.Description,
-                Domains = realm.Domains,
-                PrimaryDomain = realm.PrimaryDomain,
-                // InitialAdmin is meaningless for an existing realm; left default (ignored on apply).
-            },
+            // No realm shell: slug, routing domains and primary domain are deployment
+            // identity, not configuration. Leaving them out is what makes an export
+            // portable — the target realm is chosen at apply time, by the route.
             Settings = settings,
             Apps = manifestApps,
             Apis = manifestApis,

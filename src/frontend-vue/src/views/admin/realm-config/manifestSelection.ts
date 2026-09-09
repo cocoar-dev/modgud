@@ -175,17 +175,14 @@ export function relatedToApp(manifest: DraftManifest, appSlug: string): EntityRe
 }
 
 export interface BuildOptions extends ClosureOptions {
-  /** Realm slug written into the manifest — the apply guard on the target
-   * rejects a foreign slug, so this is set to the TARGET realm. */
-  targetSlug: string
   /** Include the realm-settings patch. Off by default. */
   includeSettings: boolean
 }
 
 /**
  * Builds the partial manifest for the given selection (checked + closure).
- * The Realm shell is reduced to the slug (everything else in it is ignored on
- * apply and would only produce warnings). When user references are excluded,
+ * The file carries CONTENT only — no realm shell, so where it is applied is
+ * decided at import time, not here. When user references are excluded,
  * group `Members` and position `Grants` are stripped ENTIRELY — under v2
  * merge-patch an absent list means "unchanged" on the target (empty on
  * create), while `[]` would actively clear it.
@@ -195,7 +192,7 @@ export function buildSelectiveManifest(
   selectedWithClosure: ReadonlySet<SelectionKey>,
   opts: BuildOptions,
 ): DraftManifest {
-  const out: DraftManifest = { Realm: { Slug: opts.targetSlug } }
+  const out: DraftManifest = {}
   if (opts.includeSettings && manifest.Settings) {
     out.Settings = JSON.parse(JSON.stringify(manifest.Settings)) as ManifestEntity
   }

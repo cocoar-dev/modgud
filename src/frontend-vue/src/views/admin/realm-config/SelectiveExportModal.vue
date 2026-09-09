@@ -9,7 +9,7 @@
  * the plan and applies.
  */
 import { computed, ref } from 'vue'
-import { CoarButton, CoarCheckbox, CoarIcon, CoarNotice, CoarTag, CoarTextInput } from '@cocoar/vue-ui'
+import { CoarButton, CoarCheckbox, CoarIcon, CoarNotice, CoarTag } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { SECTION_META, type DraftManifest, type ManifestEntity } from '@/stores/realmDraft.store'
@@ -38,7 +38,6 @@ const { t } = useI18n()
 
 const includeUsers = ref(false)
 const includeSettings = ref(false)
-const targetSlug = ref(String(props.manifest.Realm?.Slug ?? ''))
 
 function keyExists(sel: SelectionKey): boolean {
   const slash = sel.indexOf('/')
@@ -157,7 +156,7 @@ function selectAppBundle(appKey: string) {
 }
 
 const totalCount = computed(() => effectiveSelection.value.size + (includeSettings.value ? 1 : 0))
-const canDownload = computed(() => totalCount.value > 0 && targetSlug.value.trim().length > 0)
+const canDownload = computed(() => totalCount.value > 0)
 
 // ── Download ─────────────────────────────────────────────────────────────────
 
@@ -166,13 +165,12 @@ function download() {
   const partial = buildSelectiveManifest(props.manifest, effectiveSelection.value, {
     includeUsers: includeUsers.value,
     includeSettings: includeSettings.value,
-    targetSlug: targetSlug.value.trim(),
   })
   const url = URL.createObjectURL(new Blob(
     [JSON.stringify(partial, null, 2)], { type: 'application/json' }))
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `realm-${targetSlug.value.trim()}-partial.json`
+  anchor.download = 'realm-partial.json'
   anchor.click()
   URL.revokeObjectURL(url)
   props.close()
@@ -203,7 +201,7 @@ function sectionLabel(name: string): string {
     <div class="selective-body">
       <CoarNotice variant="info" truncate>
         {{ t('admin.realmConfig.selective.hint', {},
-          'Secrets are never exported. Apply the partial manifest on the target WITHOUT prune — with prune it would delete everything not in the file.') }}
+          'Secrets are never exported. The file names no realm — you pick the target when you import it. Apply it WITHOUT prune; with prune it would delete everything not in the file.') }}
       </CoarNotice>
       <CoarNotice v-if="droppedCount > 0" variant="warning" truncate>
         {{ t('admin.realmConfig.selective.dropped', { count: droppedCount },
@@ -211,10 +209,6 @@ function sectionLabel(name: string): string {
       </CoarNotice>
 
       <div class="selective-options">
-        <div class="option-slug">
-          <label class="option-label">{{ t('admin.realmConfig.selective.targetSlug', {}, 'Target realm slug') }}</label>
-          <CoarTextInput v-model="targetSlug" />
-        </div>
         <CoarCheckbox
           v-model="includeSettings"
           :label="t('admin.realmConfig.selective.includeSettings', {}, 'Include realm settings')" />
@@ -274,16 +268,6 @@ function sectionLabel(name: string): string {
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 16px;
-}
-.option-slug {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 220px;
-}
-.option-label {
-  font-size: 12px;
-  color: var(--coar-text-secondary, #6b7280);
 }
 .selective-section {
   border: 1px solid var(--coar-border-neutral, #e5e7eb);

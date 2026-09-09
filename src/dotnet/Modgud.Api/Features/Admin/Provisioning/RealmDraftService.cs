@@ -5,6 +5,7 @@ using Marten;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Api.Features.Admin.Provisioning;
 
@@ -60,7 +61,7 @@ public sealed class RealmDraftService(
         var manifest = dto.Source.ToLowerInvariant() switch
         {
             "export" => baseline,
-            "empty" => new RealmManifest { Realm = new() { Slug = slug } },
+            "empty" => new RealmManifest(),
             "manifest" when dto.Manifest is not null => dto.Manifest,
             "manifest" => null,
             _ => null,
@@ -70,7 +71,7 @@ public sealed class RealmDraftService(
                 "Source must be 'export', 'empty', or 'manifest' (with a Manifest payload).");
 
         var secrets = new Dictionary<string, string>(StringComparer.Ordinal);
-        manifest = SanitizeManifest(PinSlug(manifest, slug), secrets);
+        manifest = SanitizeManifest(manifest, secrets);
 
         var now = time.GetUtcNow();
         var draft = new RealmDraft
@@ -116,7 +117,7 @@ public sealed class RealmDraftService(
         }
         if (dto.Shared.HasValue) draft.Shared = dto.Shared.Value;
         if (dto.Manifest is not null)
-            draft.Manifest = SanitizeManifest(PinSlug(dto.Manifest, slug), draft.Secrets);
+            draft.Manifest = SanitizeManifest(dto.Manifest, draft.Secrets);
 
         draft.LastModifiedBy = userId;
         draft.LastModifiedByName = userName;
@@ -245,7 +246,7 @@ public sealed class RealmDraftService(
         draft.Deletions.RemoveAll(d => d.Section == section && d.Key == key);
 
         draft.Manifest = SanitizeManifest(
-            PinSlug(root.Deserialize<RealmManifest>(json)!, slug), draft.Secrets);
+            root.Deserialize<RealmManifest>(json)!, draft.Secrets);
         Touch(draft, userId, userName);
         session.Store(draft);
         await session.SaveChangesAsync(ct);
@@ -322,7 +323,7 @@ public sealed class RealmDraftService(
         }
 
         draft.Manifest = SanitizeManifest(
-            PinSlug(root.Deserialize<RealmManifest>(json)!, slug), draft.Secrets);
+            root.Deserialize<RealmManifest>(json)!, draft.Secrets);
         Touch(draft, userId, userName);
         session.Store(draft);
         await session.SaveChangesAsync(ct);
@@ -431,7 +432,8 @@ public sealed class RealmDraftService(
         var draft = await LoadVisibleAsync(id, userId, ct);
         if (draft is null) return NotFound;
         var manifest = MergeSecrets(draft.Manifest, draft.Secrets);
-        return await planner.PlanAsync(manifest, prune, draft.Baseline, draft.Deletions, ct);
+        return await planner.PlanAsync(
+            TenantContext.Current, manifest, prune, draft.Baseline, draft.Deletions, ct);
     }
 
     /// <summary>
@@ -447,14 +449,16 @@ public sealed class RealmDraftService(
         if (draft is null) return NotFound;
         var manifest = MergeSecrets(draft.Manifest, draft.Secrets);
 
-        var planResult = await planner.PlanAsync(manifest, prune, draft.Baseline, draft.Deletions, ct);
+        var planResult = await planner.PlanAsync(
+            TenantContext.Current, manifest, prune, draft.Baseline, draft.Deletions, ct);
         if (planResult.IsError) return planResult.Errors;
         var plan = planResult.Value;
         var hasErrors = plan.Sections.Any(s => s.Entries.Any(e => e.Action == "error"));
         if (hasErrors || plan.HasConflicts)
             return new RealmDraftApplyResult { Refused = true, Plan = plan };
 
-        var applyResult = await applier.UpdateRealmAsync(manifest, prune, draft.Deletions, ct);
+        var applyResult = await applier.UpdateRealmAsync(
+            TenantContext.Current, manifest, prune, draft.Deletions, ct);
         if (applyResult.IsError) return applyResult.Errors;
 
         session.Delete(draft);
@@ -567,9 +571,6 @@ public sealed class RealmDraftService(
         var draft = await session.LoadAsync<RealmDraft>(id, ct);
         return draft is null || (!draft.Shared && draft.CreatedBy != userId) ? null : draft;
     }
-
-    private static RealmManifest PinSlug(RealmManifest manifest, string slug)
-        => manifest with { Realm = manifest.Realm with { Slug = slug } };
 
     private static RealmDraftSummaryDto Summary(RealmDraft d, Guid userId) => new(
         d.Id, d.Name, d.Shared, d.CreatedBy == userId,
