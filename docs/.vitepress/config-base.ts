@@ -347,6 +347,7 @@ export const baseConfig = {
             { text: '0021 · Back-channel logout', link: '/decisions/0021-back-channel-logout' },
             { text: '0022 · Two-instance operation', link: '/decisions/0022-two-instance-operation' },
             { text: '0023 · Public origin is declared', link: '/decisions/0023-public-origin-is-declared' },
+            { text: '0024 · Manifests identify by id', link: '/decisions/0024-a-manifest-identifies-by-id-never-by-name' },
           ],
         },
       ],
