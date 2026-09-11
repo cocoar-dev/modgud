@@ -34,7 +34,9 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// auto-seeded standard OIDC scopes and system apps, plus service-account-linked clients (the
 /// manifest doesn't model service accounts). Realm settings ARE exported (all sections, current
 /// values) EXCEPT the write-only captcha secret (a <c>CaptchaSecretSet</c> flag, never the
-/// plaintext) — re-applying leaves that untouched.</para>
+/// plaintext) and the settings fields that name entities by raw id — default groups, allowed
+/// login providers, branding assets (see <see cref="WithoutRealmLocalReferences"/>). Both
+/// omissions are "unchanged" under merge-patch, so re-applying an export leaves them alone.</para>
 /// </summary>
 public sealed class RealmManifestExporter(
     IRealmProvisioningService realms,
@@ -80,7 +82,7 @@ public sealed class RealmManifestExporter(
             if (await session.LoadAsync<ApplicationSettings>(a.Id, ct) is not null)
             {
                 var loaded = await appSettingsSvc.GetAsync(a.Id, ct);
-                appSettings = loaded.IsError ? null : loaded.Value;
+                appSettings = loaded.IsError ? null : WithoutRealmLocalReferences(loaded.Value);
             }
 
             manifestApps.Add(new RealmManifestApp
@@ -344,7 +346,9 @@ public sealed class RealmManifestExporter(
             RequireEmailVerification = s.SelfRegistration.RequireEmailVerification,
             AllowedEmailDomains = s.SelfRegistration.AllowedEmailDomains,
             RequireAdminApproval = s.SelfRegistration.RequireAdminApproval,
-            DefaultGroupIds = s.SelfRegistration.DefaultGroupIds,
+            // DefaultGroupIds are realm-local wiring, not portable config — see
+            // WithoutRealmLocalReferences. Absent = unchanged, so a same-realm
+            // re-apply leaves the stored groups exactly as they are.
             TermsOfServiceUrl = Opt(s.SelfRegistration.TermsOfServiceUrl),
             PrivacyPolicyUrl = Opt(s.SelfRegistration.PrivacyPolicyUrl),
             CaptchaEnabled = s.SelfRegistration.CaptchaEnabled,
@@ -397,8 +401,8 @@ public sealed class RealmManifestExporter(
         Branding = new UpdateBrandingSettingsDto
         {
             ProductName = Opt(s.Branding.ProductName),
-            LogoAssetId = Opt(s.Branding.LogoAssetId),
-            FaviconAssetId = Opt(s.Branding.FaviconAssetId),
+            // Asset ids name uploads that live in THIS realm's store — they are not
+            // portable, so they stay behind (see WithoutRealmLocalReferences).
             PrimaryColor = Opt(s.Branding.PrimaryColor),
         },
         EmailBranding = new UpdateEmailBrandingSettingsDto
@@ -428,6 +432,43 @@ public sealed class RealmManifestExporter(
         {
             VisibilityWindowDays = s.Audit.VisibilityWindowDays,
             SecurityRetentionDays = s.Audit.SecurityRetentionDays,
+        },
+    };
+
+    /// <summary>
+    /// Strips the settings fields that point at entities by raw id — a per-App override's
+    /// default groups, its allowed login providers, its branding assets.
+    ///
+    /// <para>Those are realm-local WIRING, not portable configuration — an id means nothing
+    /// in another realm — and carrying them breaks a transfer in one of two ways. Branding
+    /// assets and login-provider ids ARE validated, so an export carrying them makes the
+    /// whole cross-realm apply fail on a reference the author never chose. Default group
+    /// ids are not, so they would be stored dangling and in silence. Neither is a useful
+    /// thing to transport.</para>
+    ///
+    /// <para>They could not point at anything this same manifest creates either: settings
+    /// apply first and per-App settings second, while groups and login providers come much
+    /// later — so even a handle would resolve to nothing here.</para>
+    ///
+    /// <para>Absent means unchanged (v2 merge-patch), so leaving them out keeps a same-realm
+    /// re-apply a no-op while making a cross-realm transfer honest about what it carries.
+    /// A settings edit staged in the admin UI still applies to its own realm — it is the
+    /// TRANSPORT that drops them, not the contract. See ADR 0024 for why an id is the only
+    /// thing that can carry identity between realms, and a name is not.</para>
+    /// </summary>
+    private static ApplicationSettingsDto WithoutRealmLocalReferences(ApplicationSettingsDto s) => s with
+    {
+        Branding = s.Branding is null ? null : s.Branding with
+        {
+            LogoAssetId = null, LogoUrl = null, FaviconAssetId = null, FaviconUrl = null,
+        },
+        LoginExperience = s.LoginExperience is null ? null : s.LoginExperience with
+        {
+            LoginProviderIds = null,
+        },
+        SelfRegistration = s.SelfRegistration is null ? null : s.SelfRegistration with
+        {
+            DefaultGroupIds = null,
         },
     };
 

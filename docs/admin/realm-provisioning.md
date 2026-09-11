@@ -222,7 +222,16 @@ current admin user, or an admin-conferring group).
 **structure-only**: it never emits client secrets, login-provider secrets, or password
 hashes (those are one-way or encrypted), and it omits auto-seeded standard scopes /
 system apps / the built-in Internal login provider / SA-linked and terminal-managed
-clients / terminal slots. This is deliberate — it is *not* a backup (a real backup
+clients / terminal slots.
+
+It also leaves behind the settings fields that name entities by **raw id** — the
+self-registration `DefaultGroupIds`, an App's `LoginProviderIds`, and the branding
+`LogoAssetId` / `FaviconAssetId`. Those are realm-local *wiring*, not portable
+configuration: the id means nothing in another realm, so carrying it either fails the
+whole apply (asset and provider ids are validated against the realm) or stores a dangling
+reference in silence (group ids are not). Omitted means **unchanged** under merge-patch,
+so re-applying an export into its own realm leaves that wiring exactly as it was — set it
+there, in the realm's own settings. Manifests carry a realm's *entities*. This is deliberate — it is *not* a backup (a real backup
 needs the whole tenant database). Its purpose is **get-config → edit → re-apply**:
 export a realm, add a user password or a provider secret, tweak a setting, and `POST`
 it back to `/{slug}/apply`. Because confidential clients regenerate a secret on import

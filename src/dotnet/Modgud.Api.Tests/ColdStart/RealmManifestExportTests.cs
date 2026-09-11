@@ -5,6 +5,7 @@ using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.RealmSettings;
 using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Api.Tests.ColdStart;
@@ -113,6 +114,71 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
             var bob = await userManager.FindByNameAsync("bob");
             Assert.NotNull(bob);
             Assert.True(await userManager.HasPasswordAsync(bob!), "bob should have a password after apply");
+        });
+    }
+
+    /// <summary>
+    /// Settings that name entities by raw id — a realm's default self-registration groups,
+    /// an App's allowed login providers, branding asset ids — are realm-local WIRING and do
+    /// not travel, because an id means nothing in another realm. Carrying them breaks a
+    /// transfer either loudly (asset and provider ids ARE validated, so the whole apply
+    /// fails on a reference the author never chose) or quietly (default group ids are not,
+    /// so they would be stored dangling). They are left out instead, which under merge-patch
+    /// is "unchanged" — so a same-realm re-apply keeps the stored wiring exactly as it was,
+    /// which is what this test pins down.
+    /// </summary>
+    [Fact]
+    public async Task Export_leaves_realm_local_id_references_in_settings_behind()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+
+        const string slug = "localrefs";
+        var groupId = Guid.NewGuid();
+        var groupRef = new BuildingBlocks.Helper.ShortGuid(groupId).ToString();
+        var seeded = await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest
+        {
+            Groups = [new RealmManifestGroup { Name = "Newcomers", Id = groupRef }],
+        }, ct);
+        Assert.False(seeded.IsError, seeded.IsError ? seeded.FirstError.Description : string.Empty);
+
+        // Wire the realm up the way an admin would: new users land in a default group.
+        // (Branding assets and provider ids take the same route out of the export; they
+        // cannot be set to an arbitrary id here because the settings service validates
+        // them against the realm — which is exactly why they must not travel.)
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var patched = await sp.GetRequiredService<IRealmSettingsService>().PatchAsync(new UpdateRealmSettingsDto
+            {
+                SelfRegistration = new UpdateSelfRegistrationDto
+                {
+                    Enabled = true,
+                    DefaultGroupIds = [groupRef],
+                },
+            }, ct);
+            Assert.False(patched.IsError, patched.IsError ? patched.FirstError.Description : string.Empty);
+        });
+
+        // ── The export carries the settings, but not the ids. ──────────────────
+        var exported = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exported.IsError, exported.IsError ? exported.FirstError.Description : string.Empty);
+        var selfReg = exported.Value.Settings!.SelfRegistration!;
+        Assert.True(selfReg.Enabled);                                    // the setting travels
+        Assert.Null(selfReg.DefaultGroupIds);                            // the wiring does not
+        // Branding travels as values, never as the asset reference.
+        Assert.False(exported.Value.Settings.Branding!.LogoAssetId.HasValue);
+        Assert.False(exported.Value.Settings.Branding.FaviconAssetId.HasValue);
+
+        // ── Re-applying the export leaves the stored wiring untouched (absent =
+        //    unchanged), so "does not travel" never means "gets cleared". ───────
+        Assert.False((await applier.UpdateRealmAsync(slug, exported.Value, ct: ct)).IsError);
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var live = await sp.GetRequiredService<IRealmSettingsService>().GetDtoAsync(ct);
+            Assert.Equal([groupRef], live.SelfRegistration.DefaultGroupIds);
         });
     }
 
