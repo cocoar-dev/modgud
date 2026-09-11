@@ -7,7 +7,7 @@ import { usePrincipalStore } from '@/stores/principal.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, GROUP_CLONE } from '@/composables/useClone'
 import { useDraftStaging } from '@/composables/useDraftStaging'
-import { makeRef, refId, refKey, refList, roleManifestKey, type ManifestEntity, type ManifestRef } from '@/stores/realmDraft.store'
+import { makeRef, refId, refList, roleManifestKey, type ManifestEntity, type ManifestRef } from '@/stores/realmDraft.store'
 import type { RoleDto } from '@/models/role'
 import {
   CoarTextInput,
@@ -112,42 +112,41 @@ function roleKeyOf(role: RoleDto): string {
   return roleManifestKey(slug, role.Name)
 }
 
-/** Resolves a manifest role reference like the applier: the Id when a live role carries
- * it, else the qualified key exactly, else a bare name while it names exactly one role. */
+/** Resolves a manifest role reference the way the applier does (ADR 0024): the Id names
+ * the role, and nothing else does. A reference this realm has no role for — a `#handle`
+ * from an uploaded manifest, or an id from elsewhere — is not resolvable HERE; it is
+ * carried through the form untouched rather than shown or dropped. */
 function roleByRef(ref: ManifestRef): RoleDto | undefined {
   const id = refId(ref)
-  if (id) {
-    const byId = roleStore.roles.find((r) => r.Id === id)
-    if (byId) return byId
-  }
-  const key = refKey(ref)
-  if (!key) return undefined
-  const qualified = roleStore.roles.find((r) => roleKeyOf(r) === key)
-  if (qualified) return qualified
-  const byName = roleStore.roles.filter((r) => r.Name === key)
-  return byName.length === 1 ? byName[0] : undefined
+  return id ? roleStore.roles.find((r) => r.Id === id) : undefined
 }
 
-/** Resolves a member reference: the Id first, else username or email. */
+/** Resolves a member reference: the Id, and only the Id. */
 function memberIdOf(ref: ManifestRef): string | undefined {
-  const persons = principalStore.lookupEntities.filter((p) => p.Type === 'person')
   const id = refId(ref)
-  if (id && persons.some((p) => p.Id === id)) return id
-  const key = refKey(ref)
-  return key ? persons.find((p) => p.UserName === key || p.Email === key)?.Id : undefined
+  return id && principalStore.lookupEntities.some((p) => p.Type === 'person' && p.Id === id)
+    ? id
+    : undefined
 }
+
+// References the form cannot show — an uploaded manifest's `#handles`, or ids belonging
+// to entities this realm does not have. The picker can only offer live entities, so
+// re-emitting these verbatim on save is what keeps the staged intent intact instead of
+// quietly deleting half a group's membership the first time someone opens it.
+const unresolvedMembers = ref<ManifestRef[]>([])
+const unresolvedRoles = ref<ManifestRef[]>([])
 
 /** Loads the staged manifest entity into the form (member/role references →
  * principal/role ids — both need the lookups loaded first). */
 function fromStagedInto(e: ManifestEntity) {
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
   const arr = (v: unknown) => (Array.isArray(v) ? [...(v as string[])] : [])
-  const memberIds = refList(e.Members)
-    .map(memberIdOf)
-    .filter((id): id is string => !!id)
-  const roleIds = refList(e.Roles)
-    .map((ref) => roleByRef(ref)?.Id)
-    .filter((id): id is string => !!id)
+  const memberRefs = refList(e.Members)
+  const roleRefs = refList(e.Roles)
+  const memberIds = memberRefs.map(memberIdOf).filter((id): id is string => !!id)
+  const roleIds = roleRefs.map((ref) => roleByRef(ref)?.Id).filter((id): id is string => !!id)
+  unresolvedMembers.value = memberRefs.filter((r) => !memberIdOf(r))
+  unresolvedRoles.value = roleRefs.filter((r) => !roleByRef(r))
   form.value = {
     Name: str(e.Name),
     Description: str(e.Description),
@@ -170,19 +169,26 @@ function toStaged(): ManifestEntity {
     MembershipMode: form.value.MembershipMode,
     EmailMode: form.value.EmailMode,
     ExternallyDrivable: isAuto && form.value.ExternallyDrivable && !hasRealmAdminRole.value,
-    // References as { Key, Id }: the apply follows the Id (rename-proof), the Key is
-    // what the plan shows — the same form the export writes, so nothing diffs spuriously.
-    Members: isAuto ? [] : form.value.MemberIds
-      .map((id) => {
-        const p = principalStore.lookupEntities.find((x) => x.Id === id)
-        const key = p ? (p.UserName || p.Email || null) : null
-        return key ? makeRef(key, id) : null
-      })
-      .filter((ref): ref is ManifestRef => !!ref),
-    Roles: form.value.RoleIds
-      .map((id) => roleStore.roles.find((r) => r.Id === id))
-      .filter((r): r is RoleDto => !!r)
-      .map((r) => makeRef(roleKeyOf(r), r.Id)),
+    // References as { Key, Id }: the apply follows the Id (identity, ADR 0024), the Key
+    // is the readable hint the plan shows — the same form the export writes, so nothing
+    // diffs spuriously. Anything the form could not resolve rides along unchanged.
+    Members: isAuto ? [] : [
+      ...form.value.MemberIds
+        .map((id) => {
+          const p = principalStore.lookupEntities.find((x) => x.Id === id)
+          const key = p ? (p.UserName || p.Email || null) : null
+          return key ? makeRef(key, id) : null
+        })
+        .filter((ref): ref is ManifestRef => !!ref),
+      ...unresolvedMembers.value,
+    ],
+    Roles: [
+      ...form.value.RoleIds
+        .map((id) => roleStore.roles.find((r) => r.Id === id))
+        .filter((r): r is RoleDto => !!r)
+        .map((r) => makeRef(roleKeyOf(r), r.Id)),
+      ...unresolvedRoles.value,
+    ],
     // Explicit — empty list = dormant, matching the UI semantics (an omitted
     // BoundTo would default to ['modgud'] on a staged CREATE).
     BoundTo: [...form.value.BoundTo],

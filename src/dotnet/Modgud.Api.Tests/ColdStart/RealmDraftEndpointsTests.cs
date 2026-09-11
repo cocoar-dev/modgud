@@ -89,13 +89,16 @@ public class RealmDraftEndpointsTests(ColdStartFixture fixture) : ColdStartTestB
         var ct = TestContext.Current.CancellationToken;
         var client = await factory.CreateRealmAdminAndLoginAsync();
 
-        // Seed an app, then draft from the export (baseline = app @ "V1").
+        // Seed an app, then draft from the export (baseline = app @ "V1"). The pinned id
+        // is what makes the second apply below the SAME app (ADR 0024) — without one it
+        // would be a create, and the duplicate slug would fail.
+        var appId = new BuildingBlocks.Helper.ShortGuid(Guid.NewGuid()).ToString();
         var seed = new
         {
             Realm = new { },
             Apps = new[]
             {
-                new { Slug = "cfl-app", DisplayName = "V1",
+                new { Slug = "cfl-app", Id = appId, DisplayName = "V1",
                       Permissions = new[] { new { Resource = "cfl", Action = "read" } } },
             },
         };
@@ -114,7 +117,7 @@ public class RealmDraftEndpointsTests(ColdStartFixture fixture) : ColdStartTestB
             Realm = new { },
             Apps = new[]
             {
-                new { Slug = "cfl-app", DisplayName = "Live V2",
+                new { Slug = "cfl-app", Id = appId, DisplayName = "Live V2",
                       Permissions = new[] { new { Resource = "cfl", Action = "read" } } },
             },
         };
@@ -317,12 +320,14 @@ public class RealmDraftEndpointsTests(ColdStartFixture fixture) : ColdStartTestB
                     new { Slug = "alpha", DisplayName = "Alpha", Permissions = new[] { new { Resource = "doc", Action = "write" } } },
                     new { Slug = "beta", DisplayName = "Beta", Permissions = new[] { new { Resource = "doc", Action = "write" } } },
                 },
+                // Two roles of the same NAME: only a document-local handle can tell the
+                // group below which one it means (ADR 0024).
                 Roles = new[]
                 {
-                    new { Name = "Author", App = "alpha", Permissions = new[] { new { Resource = "doc", Action = "write" } } },
-                    new { Name = "Author", App = "beta", Permissions = new[] { new { Resource = "doc", Action = "write" } } },
+                    new { Id = "#alpha-author", Name = "Author", App = "alpha", Permissions = new[] { new { Resource = "doc", Action = "write" } } },
+                    new { Id = "#beta-author", Name = "Author", App = "beta", Permissions = new[] { new { Resource = "doc", Action = "write" } } },
                 },
-                Groups = new[] { new { Name = "Beta writers", Roles = new[] { "beta/Author" } } },
+                Groups = new[] { new { Name = "Beta writers", Roles = new[] { "#beta-author" } } },
             },
         };
         var created = await client.PostAsJsonAsync("/api/admin/realm-config/drafts", seed, factory.JsonOptions, ct);
@@ -383,15 +388,19 @@ public class RealmDraftEndpointsTests(ColdStartFixture fixture) : ColdStartTestB
             Assert.Null((await session.LoadAsync<Modgud.Authorization.Roles.PermissionRole>(alphaAuthor, ct))!.Description);
         });
 
-        // A group referencing the bare "Author" is ambiguous — the apply refuses instead
-        // of silently picking one of the two.
-        var ambiguous = await client.PutAsJsonAsync("/api/admin/realm-config/drafts/active/entities/groups",
+        // A group referencing a role by NAME is refused outright — which is the whole
+        // point: "Author" here names two roles, and even one would be the wrong question.
+        var byName = await client.PutAsJsonAsync("/api/admin/realm-config/drafts/active/entities/groups",
             new { Name = "Ambiguous", Roles = new[] { "Author" } }, factory.JsonOptions, ct);
-        Assert.Equal(HttpStatusCode.OK, ambiguous.StatusCode);
-        var ambiguousId = JsonNode.Parse(await ambiguous.Content.ReadAsStringAsync(ct))!["Id"]!.GetValue<Guid>();
-        var refused = await client.PostAsJsonAsync($"/api/admin/realm-config/drafts/{ambiguousId}/apply", new { }, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, byName.StatusCode);
+        var byNameId = JsonNode.Parse(await byName.Content.ReadAsStringAsync(ct))!["Id"]!.GetValue<Guid>();
+        // The plan says so before the apply does, as an error entry on the manifest itself.
+        var byNamePlan = await PlanAsync(client, factory, byNameId, ct);
+        var manifestErrors = byNamePlan["Sections"]!.AsArray()
+            .Single(x => x!["Name"]!.GetValue<string>() == "manifest")!["Entries"]!.AsArray();
+        Assert.Contains(manifestErrors, e => e!["Key"]!.GetValue<string>() == "Manifest.ReferenceByName");
+        var refused = await client.PostAsJsonAsync($"/api/admin/realm-config/drafts/{byNameId}/apply", new { }, factory.JsonOptions, ct);
         Assert.NotEqual(HttpStatusCode.OK, refused.StatusCode);
-        Assert.Contains("Manifest.AmbiguousReference", await refused.Content.ReadAsStringAsync(ct));
     }
 
     private static async Task<JsonNode> PlanAsync(

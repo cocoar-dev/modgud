@@ -17,7 +17,6 @@ Endpoints in `Modgud.Api/Features/Admin/RealmsEndpoints.cs`.
 | `PATCH` | `/api/admin/realms/{slug}` | `realm:write` |
 | `DELETE` | `/api/admin/realms/{slug}` | `realm:write` (soft-delete = deactivate; `?hard=true` drops the tenant database) |
 | `POST` | `/api/admin/realms/{slug}/admin-invites` | `realm:write` |
-| `POST` | `/api/admin/realms/import` | `realm:write` (create a realm from a manifest) |
 | `POST` | `/api/admin/realms/{slug}/apply` | `realm:write` (merge a manifest; `?prune=true` = full sync) |
 | `GET` | `/api/admin/realms/{slug}/export` | `realm:read` (structure-only manifest) |
 | `GET` | `/api/admin/realms/manifest-schema` | `realm:write` (JSON Schema of the manifest + example) |

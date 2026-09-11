@@ -38,8 +38,17 @@ public class ProvisioningTestKitTests(ColdStartFixture fixture) : ColdStartTestB
         Assert.False(string.IsNullOrWhiteSpace(realm.SecretFor("kit-web")));
         Assert.NotNull(await svc.GetRealmBySlugAsync(slug, ct));
 
-        // In-place apply through the kit.
-        await realm.ApplyAsync(BuildManifest(slug, "Kit App v2"), ct);
+        // In-place apply through the kit. The kit writes every declared entity as a
+        // document-local handle, so the first import CREATED them — a second manifest
+        // has to carry the real ids to mean the same entities (ADR 0024), and those
+        // come straight back from the import as AssignedIds.
+        var v2 = BuildManifest(slug, "Kit App v2");
+        await realm.ApplyAsync(v2 with
+        {
+            Apps = [v2.Apps[0] with { Id = realm.AssignedIds["#app:kit-app"] }],
+            Clients = [v2.Clients[0] with { Id = realm.AssignedIds["#client:kit-web"] }],
+            Users = [v2.Users[0] with { Id = realm.AssignedIds["#user:admin"] }],
+        }, ct);
         await InTenantAsync(factory, slug, async sp =>
         {
             var session = sp.GetRequiredService<IDocumentSession>();

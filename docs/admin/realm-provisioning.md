@@ -47,7 +47,7 @@ Control-Plane host ([404 elsewhere](../concepts/control-plane)):
 
 | Method | Path | What it does |
 |---|---|---|
-| `POST` | `/import` | Create a **new** realm from a manifest. The slug must not exist. All-or-nothing: a failed import rolls the whole realm back. |
+| `POST` | `/` | Create the **realm shell** — slug, domains, first admin. A manifest carries no realm identity, so this is its own call. |
 | `POST` | `/{slug}/apply` | **Merge** a manifest into an existing realm (upsert per entity). Never drops the database. |
 | `POST` | `/{slug}/apply?prune=true` | **Full sync** — like apply, then delete entities present in the realm but absent from the manifest. |
 | `GET` | `/{slug}/export` | Export the realm as a manifest (structure-only — never secrets or password hashes). |
@@ -81,31 +81,49 @@ and author manifests directly.
 
 ## The manifest at a glance
 
-A manifest is one object with a required `Realm` plus optional entity lists.
-**Cross-references use stable keys; group and position references may add the entity id:**
+A manifest is one object holding optional entity lists. It carries **no realm shell** —
+the target is named by the route, which is what lets the same file apply to any realm.
+Create the realm itself with `POST /api/admin/realms`, then apply.
+
+**Identity is the `Id`** ([ADR 0024](/decisions/0024-a-manifest-identifies-by-id-never-by-name)).
+An entry updates an existing entity only when its `Id` names one; otherwise it creates —
+and a name already taken there fails loudly rather than quietly rewriting a stranger that
+happens to share it. Two forms of `Id`, and nothing else:
+
+- a **real id** (ShortGuid or Guid), which is what an export writes on every entity;
+- a **`#handle`** (`"#billing"`), a document-local name for an entity *this same file*
+  creates. It is never stored: the server assigns a fresh id and resolves every `#`
+  reference in the same run. The apply returns the mapping in `AssignedIds`, so a
+  hand-written file can be made idempotent after one run without exporting first.
+
+`Id` stays optional — omit it for an entity nothing in the file refers to.
+
+**Cross-references between entities follow the same rule:**
+
+- Groups list **`Members`** (users) and **`Roles`**; positions list **`Grants`** (users).
+  Each entry is a real id (`{ "Key": "acme/Author", "Id": "…" }`, where the `Key` is a
+  *verified hint* — never followed, and reported when it disagrees), or a `"#handle"`.
+  A **bare name is an error**: the "acme/Author" in the target realm need not be the one
+  the file was written against. Exports write the object form. Group membership is the
+  *only* way users get roles.
+- A real id the target realm does not have is **skipped and reported**; a `#handle` the
+  file never declares is an **error**. A missing target is a fact about the target; a
+  dangling handle is the file contradicting itself.
+
+**Names that are vocabulary, not identity**, stay names — they are what tokens and
+permission strings actually carry:
 
 - APIs / scopes / clients / roles reference an app by its **`Slug`**.
 - Permissions are addressed as **`resource:action`** (e.g. `invoice:read`).
-- Roles are keyed **`<app slug>/<name>`** (a realm-admin role by its bare `Name`):
-  role names are unique *per app*, so two apps may each have an `Author`.
-- Groups list **`Members`** (users) and **`Roles`**; positions list **`Grants`** (users).
-  Each entry is a *reference* in one of two forms: a plain string is **always a key**
-  (`"acme/Author"`, an explicit role `Key`, a bare role name while exactly one role carries
-  it; for users the username or email), or an object **`{ "Key": "acme/Author", "Id": "..." }`**
-  where the `Id` names the entity (rename-proof) and the `Key` is the readable fallback
-  used when no entity carries that id. Exports write the object form. Group membership
-  is the *only* way users get roles.
-- Login providers are keyed by their **`Slug`** (the one in the provider's
-  callback URLs).
+- Scope names and API audiences are what clients request on the wire.
+- Roles read as **`<app slug>/<name>`** (a realm-admin role as its bare `Name`) and login
+  providers by their **`Slug`** — readable keys, never the thing an apply matches on.
 
 ```jsonc
+// No realm shell: the target comes from the route. Ids below are '#handles' —
+// this file CREATES everything, and the handles are how its entities point at
+// each other. An export of the result carries real ids in the same places.
 {
-  "Realm": {                               // REQUIRED — shell + first admin
-    "Slug": "acme",
-    "DisplayName": "Acme",
-    "Domains": ["acme.example.com"],
-    "InitialAdmin": { "UserName": "admin", "Email": "admin@acme.example.com" }
-  },
   "Settings": { /* optional realm-settings patch (self-reg, sessions, native grants, …) */ },
   "Apps":    [ { "Slug": "acme", "DisplayName": "Acme",
                  "Permissions": [ { "Resource": "invoice", "Action": "read" } ],
@@ -118,14 +136,14 @@ A manifest is one object with a required `Realm` plus optional entity lists.
                  "Scopes": ["openid", "invoice.read"],
                  "AllowedGrantTypes": ["authorization_code", "refresh_token"],
                  "Apps": ["acme"] } ],
-  "Roles":   [ { "Key": "acme-admin", "Name": "acme-admin", "App": "acme",
+  "Roles":   [ { "Id": "#acme-admin", "Name": "acme-admin", "App": "acme",
                  "Permissions": [ { "Resource": "invoice", "Action": "read" } ] } ],
-  "Users":   [ { "Key": "alice", "Email": "alice@acme.example.com", "UserName": "alice" } ],
-  "Groups":  [ { "Name": "Admins", "Members": ["alice"], "Roles": ["acme-admin"] } ],
+  "Users":   [ { "Id": "#alice", "Email": "alice@acme.example.com", "UserName": "alice" } ],
+  "Groups":  [ { "Name": "Admins", "Members": ["#alice"], "Roles": ["#acme-admin"] } ],
   "LoginProviders": [ { "Slug": "corp-idp", "Flavor": "GenericOidc", "DisplayName": "Corp IdP",
                         "ClientId": "modgud", "ClientSecret": "<from the upstream IdP>",
                         "FlavorData": { "MetadataUri": "https://idp.example.com/.well-known/openid-configuration" } } ],
-  "Positions": [ { "AccountName": "gate.porter", "Grants": ["alice"],
+  "Positions": [ { "AccountName": "gate.porter", "Grants": ["#alice"],
                    "TerminalPolicy": { "Enabled": true,
                                        "AllowedActivationProofs": ["personal-passkey"],
                                        "AllowedDeviceBindings": ["dpop"],
@@ -150,23 +168,28 @@ curl -c cookies.txt -X POST "$AUTH/api/account/login" \
   -H 'Content-Type: application/json' \
   -d '{"UserName":"admin","Password":"<password>"}'
 
-# 2) Create the realm from a manifest → 201, with any generated client secrets
-curl -b cookies.txt -X POST "$AUTH/api/admin/realms/import" \
-  -H 'Content-Type: application/json' -d @manifest.json
-# → {"Slug":"acme","PrimaryDomain":"acme.example.com","ClientSecrets":{"acme-web":"…"}}
+# 2) Create the realm SHELL — slug, domains, first admin. A manifest carries
+#    no realm identity, so where it lands is decided here, not in the file.
+curl -b cookies.txt -X POST "$AUTH/api/admin/realms" \
+  -H 'Content-Type: application/json' \
+  -d '{"Slug":"acme","DisplayName":"Acme","Domains":["acme.example.com"],
+       "InitialAdmin":{"UserName":"admin","Email":"admin@acme.example.com"}}'
 
-# 3) Later: re-apply changes in place (merge)
+# 3) Fill it from the manifest → generated client secrets + the ids the
+#    '#handles' were given
 curl -b cookies.txt -X POST "$AUTH/api/admin/realms/acme/apply" \
   -H 'Content-Type: application/json' -d @manifest.json
+# → {"Slug":"acme","PrimaryDomain":"acme.example.com",
+#    "ClientSecrets":{"acme-web":"…"},"AssignedIds":{"#alice":"…","#acme-admin":"…"}}
 
 # 4) Tear it down
 curl -b cookies.txt -X DELETE "$AUTH/api/admin/realms/acme?hard=true"
 ```
 
 ::: tip Client secrets
-Confidential clients get a **generated secret returned only at import** (in
+Confidential clients get a **generated secret returned only at create** (in
 `ClientSecrets`). Store it then — there's no way to read it back later. Existing
-clients keep their secret across `apply`.
+clients keep their secret across a later `apply`.
 :::
 
 ## Apply: merge vs. prune
@@ -215,8 +238,9 @@ the *exact same id*. A stage → prod transfer therefore keeps every id consumin
 applications persist as their foreign key — nothing has to be re-linked. The rules:
 
 **The `Id` names the entity**, and the natural key (slug, name, client id, account name)
-is ordinary data. So an entry carrying an `Id` is matched by it first, and only entries
-without one fall back to matching by key:
+is ordinary data. It is also the *only* thing an entry is matched by — see
+[ADR 0024](/decisions/0024-a-manifest-identifies-by-id-never-by-name) for why a name
+cannot carry identity across two realms that grew independently:
 
 - The id names a **live** entity → that entity is **updated** to the entry's values. If
   its natural key differs and the type can be renamed (roles, groups, users, service
@@ -239,8 +263,18 @@ without one fall back to matching by key:
   (recycle bin, grace period, GDPR purge), so a manifest never revives one. Re-importing
   a binned user's id fails with a message naming the way out — restore the user from the
   bin, then re-apply (the apply then updates it, id intact).
-- Omit `Id` (hand-written manifests) and matching falls back to the natural key, exactly
-  as before; a create then generates a fresh id.
+- Omit `Id`, or use a `#handle`, and the entry **creates**. If its natural key is already
+  taken in the target, the apply fails with that type's own error (`App.DuplicateSlug`,
+  `Group.NameTaken`, `Role.NameTaken`, …) instead of updating whatever holds the name. The
+  plan shows this as an `error` entry beforehand, so a collision is seen in review rather
+  than at deploy time.
+
+::: warning A partial export can add to a foreign realm, not update it
+Applying a manifest to a realm it was **not** exported from can only create. That is the
+point of the rule — a name collision there is a *different* entity, and updating it would
+be silent and, because reference lists replace, potentially a privilege change. To update
+across environments, carry the ids: export the target, edit, re-apply.
+:::
 
 Service accounts export as **hulls** (AccountName, Purpose, IsActive, Id): their
 credentials never travel — issue them per environment. Service accounts are

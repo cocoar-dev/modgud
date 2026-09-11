@@ -5,10 +5,17 @@ namespace Modgud.Provisioning.TestKit;
 /// <summary>
 /// Declarative description of a realm's complete configuration, posted to the Modgud
 /// control-plane provisioning API. This is the client-side mirror of the server's manifest
-/// contract — cross-references use stable KEYS (apps by slug, roles/users by key,
-/// permissions by <c>resource:action</c>), never server-generated ids. The JSON shape is
-/// what <c>POST /api/admin/realms/{slug}/apply</c> binds; the round-trip is exercised
-/// end-to-end by the IdP repo's own provisioning tests so the two sides can't silently drift.
+/// contract. The JSON shape is what <c>POST /api/admin/realms/{slug}/apply</c> binds; the
+/// round-trip is exercised end-to-end by the IdP repo's own provisioning tests so the two
+/// sides can't silently drift.
+///
+/// <para>Authoring stays name-based — a group lists its members and roles by key, the way a
+/// test wants to read. On the wire that is translated into the server's identity contract
+/// (ADR 0024: a manifest identifies by id, never by name): every entity the kit declares
+/// gets a document-local <c>#handle</c>, and every reference is rewritten to point at one.
+/// So a realm this kit provisions can never adopt an entity that merely SHARES a name with
+/// something already in the target. Set <c>Id</c> explicitly to pin a real, stable entity
+/// id instead (stage → prod), or to address an entity that already exists there.</para>
 ///
 /// <para>A manifest describes CONTENT only and carries no realm shell — the target realm is
 /// named by the route, so the same file applies to any realm. Create the realm separately
@@ -60,6 +67,12 @@ public sealed record RealmManifestPermission(string Resource, string Action, str
 
 public sealed record RealmManifestApp
 {
+    /// <summary>Optional entity identity. Leave it null and the kit assigns a
+    /// document-local <c>#handle</c> so this entry always CREATES; set a real id
+    /// (ShortGuid or Guid) to pin it across environments or to address an entity the
+    /// target realm already has. See <see cref="RealmManifest"/>.</summary>
+    public string? Id { get; init; }
+
     public required string Slug { get; init; }
     public required string DisplayName { get; init; }
     public string? Description { get; init; }
@@ -68,6 +81,12 @@ public sealed record RealmManifestApp
 
 public sealed record RealmManifestApi
 {
+    /// <summary>Optional entity identity. Leave it null and the kit assigns a
+    /// document-local <c>#handle</c> so this entry always CREATES; set a real id
+    /// (ShortGuid or Guid) to pin it across environments or to address an entity the
+    /// target realm already has. See <see cref="RealmManifest"/>.</summary>
+    public string? Id { get; init; }
+
     public required string Name { get; init; }
     public string? DisplayName { get; init; }
     public string? Description { get; init; }
@@ -82,6 +101,12 @@ public sealed record RealmManifestApi
 
 public sealed record RealmManifestScope
 {
+    /// <summary>Optional entity identity. Leave it null and the kit assigns a
+    /// document-local <c>#handle</c> so this entry always CREATES; set a real id
+    /// (ShortGuid or Guid) to pin it across environments or to address an entity the
+    /// target realm already has. See <see cref="RealmManifest"/>.</summary>
+    public string? Id { get; init; }
+
     public required string Name { get; init; }
     public string? DisplayName { get; init; }
     public string? Description { get; init; }
@@ -97,6 +122,12 @@ public sealed record RealmManifestScope
 
 public sealed record RealmManifestClient
 {
+    /// <summary>Optional entity identity. Leave it null and the kit assigns a
+    /// document-local <c>#handle</c> so this entry always CREATES; set a real id
+    /// (ShortGuid or Guid) to pin it across environments or to address an entity the
+    /// target realm already has. See <see cref="RealmManifest"/>.</summary>
+    public string? Id { get; init; }
+
     public required string ClientId { get; init; }
     public string? DisplayName { get; init; }
     public required string ClientType { get; init; }
@@ -115,6 +146,12 @@ public sealed record RealmManifestClient
 
 public sealed record RealmManifestRole
 {
+    /// <summary>Optional entity identity. Leave it null and the kit assigns a
+    /// document-local <c>#handle</c> so this entry always CREATES; set a real id
+    /// (ShortGuid or Guid) to pin it across environments or to address an entity the
+    /// target realm already has. See <see cref="RealmManifest"/>.</summary>
+    public string? Id { get; init; }
+
     public string? Key { get; init; }
     public required string Name { get; init; }
     public string? Description { get; init; }
@@ -125,6 +162,12 @@ public sealed record RealmManifestRole
 
 public sealed record RealmManifestUser
 {
+    /// <summary>Optional entity identity. Leave it null and the kit assigns a
+    /// document-local <c>#handle</c> so this entry always CREATES; set a real id
+    /// (ShortGuid or Guid) to pin it across environments or to address an entity the
+    /// target realm already has. See <see cref="RealmManifest"/>.</summary>
+    public string? Id { get; init; }
+
     public string? Key { get; init; }
     public string? Firstname { get; init; }
     public string? Lastname { get; init; }
@@ -137,6 +180,12 @@ public sealed record RealmManifestUser
 
 public sealed record RealmManifestGroup
 {
+    /// <summary>Optional entity identity. Leave it null and the kit assigns a
+    /// document-local <c>#handle</c> so this entry always CREATES; set a real id
+    /// (ShortGuid or Guid) to pin it across environments or to address an entity the
+    /// target realm already has. See <see cref="RealmManifest"/>.</summary>
+    public string? Id { get; init; }
+
     public required string Name { get; init; }
     public string? Description { get; init; }
     public List<string> Members { get; init; } = [];

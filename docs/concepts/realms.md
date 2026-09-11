@@ -207,9 +207,10 @@ configuration — settings, Apps, OAuth APIs/Scopes/Clients, roles,
 users, groups — can be described as one **manifest** document and
 applied in a single call:
 
-- `POST /api/admin/realms/import` — creates a **brand-new** realm from
-  a complete manifest. Fails if the slug already exists; a failed
-  import rolls the realm back so it's never left half-provisioned.
+A manifest describes **content only** — it carries no realm identity, so
+the same file applies to any realm and the target is named by the route.
+Creating the realm shell (`POST /api/admin/realms`) is its own call.
+
 - `POST /api/admin/realms/{slug}/apply` — applies a manifest to an
   **existing** realm as an in-place merge/upsert; it never drops the
   database. Add `?prune=true` to make it a full sync that also removes

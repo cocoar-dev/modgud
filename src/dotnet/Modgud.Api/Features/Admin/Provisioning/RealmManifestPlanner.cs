@@ -76,6 +76,24 @@ public sealed class RealmManifestPlanner(
 
         var result = new RealmPlanResult { Slug = slug, Prune = prune };
 
+        // The document's own contradictions (ADR 0024): a handle declared twice, a
+        // reference to a handle nothing declares, a reference carrying only a name. The
+        // apply refuses these outright, so the plan has to SHOW them — as errors, which is
+        // what gates the draft apply — rather than failing the whole plan and leaving the
+        // author with nothing to read.
+        var validation = ManifestIdentity.Validate(manifest);
+        if (validation.IsError)
+        {
+            var section = new RealmPlanSection { Name = "manifest" };
+            foreach (var error in validation.Errors)
+            {
+                var entry = new RealmPlanEntry { Key = error.Code, Action = "error" };
+                entry.Notes.Add(error.Description);
+                section.Entries.Add(entry);
+            }
+            result.Sections.Add(section);
+        }
+
         // The protection checks for prune candidates (does this user/group confer
         // realm:admin?) need tenant-scoped queries — same scoping as the exporter.
         using var _ = TenantContext.Enter(slug);
@@ -180,19 +198,6 @@ public sealed class RealmManifestPlanner(
                 KeyRenameable = true,
                 PinnedId = r => r.Id,
                 PinnedIdCheck = PinnedIdLookup<PermissionRole>(session, r => r.IsDeleted, r => r.Name, ct),
-                // An update patch may omit App (absent = unchanged): match the bare name
-                // when it is unambiguous, exactly like the applier; refuse when it isn't.
-                FallbackMatch = (desired, live) =>
-                {
-                    if (desired.App is not null || desired.IsRealmAdmin == true) return (null, null);
-                    var byName = live.Where(c => string.Equals(c.Name, desired.Name, StringComparison.Ordinal)).ToList();
-                    return byName.Count switch
-                    {
-                        0 => (null, null),
-                        1 => (byName[0], null),
-                        _ => (null, $"'{desired.Name}' names {byName.Count} live roles ({string.Join(", ", byName.Select(c => $"'{c.NaturalKey}'"))}) — add App (or Id) to say which one is meant; the apply FAILS for this entry."),
-                    };
-                },
                 // The matched entity supplies the App an update patch left out, so the
                 // entry is keyed (and rename-checked) by the role it actually addresses.
                 EffectiveKey = (desired, existing) => RoleKeys.Qualified(
@@ -228,12 +233,9 @@ public sealed class RealmManifestPlanner(
         // user by Id is not a change, and the same entity written as key-only, id-only or
         // both compares equal. Unresolvable references stay as written (and surface at apply).
         var roleRefs = new RefCanonicalizer();
-        foreach (var sameName in current.Roles.GroupBy(r => r.Name, StringComparer.Ordinal))
-            foreach (var r in sameName)
-                roleRefs.Add(r.NaturalKey, r.Id, sameName.Count() == 1 ? r.Name : null);
+        foreach (var r in current.Roles) roleRefs.Add(r.NaturalKey, r.Id);
         var userRefs = new RefCanonicalizer();
-        foreach (var u in current.Users)
-            userRefs.Add(u.Key ?? u.UserName ?? u.Email, u.Id, u.UserName, u.Email);
+        foreach (var u in current.Users) userRefs.Add(u.Key ?? u.UserName ?? u.Email, u.Id);
         RealmManifestGroup CanonGroup(RealmManifestGroup g)
             => g with { Members = userRefs.Canon(g.Members), Roles = roleRefs.Canon(g.Roles) };
         RealmManifestPosition CanonPosition(RealmManifestPosition p)
@@ -315,18 +317,22 @@ public sealed class RealmManifestPlanner(
             foreach (var perm in app.Permissions) set.Add($"{perm.Resource}:{perm.Action}");
         }
 
-        var roleKeys = manifest.Roles.Select(r => r.NaturalKey)
-            .Concat(current.Roles.Select(r => r.NaturalKey))
-            .ToHashSet(StringComparer.Ordinal);
-        var bareRoleNames = manifest.Roles.Select(r => r.Name)
-            .Concat(current.Roles.Select(r => r.Name))
-            .ToHashSet(StringComparer.Ordinal);
-        var userKeys = manifest.Users.Select(u => u.ResolveKey())
-            .Concat(current.Users.Select(u => u.ResolveKey()))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var userEmails = manifest.Users.Select(u => u.Email)
-            .Concat(current.Users.Select(u => u.Email))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // References resolve by identity (ADR 0024): a '#handle' this file declares, or a
+        // real id — checked against the realm UNION the manifest, because an entity this
+        // same apply creates under a pinned id exists by the time the reference resolves.
+        var roleIds = manifest.Roles.Select(r => NormalizedId(r.Id))
+            .Concat(current.Roles.Select(r => NormalizedId(r.Id)))
+            .OfType<string>().ToHashSet(StringComparer.Ordinal);
+        var userIds = manifest.Users.Select(u => NormalizedId(u.Id))
+            .Concat(current.Users.Select(u => NormalizedId(u.Id)))
+            .OfType<string>().ToHashSet(StringComparer.Ordinal);
+        // The readable name each live id actually carries, for the verified-hint check.
+        var roleKeyById = current.Roles
+            .Where(r => NormalizedId(r.Id) is not null)
+            .ToDictionary(r => NormalizedId(r.Id)!, r => r.NaturalKey, StringComparer.Ordinal);
+        var userKeyById = current.Users
+            .Where(u => NormalizedId(u.Id) is not null)
+            .ToDictionary(u => NormalizedId(u.Id)!, u => u.ResolveKey(), StringComparer.Ordinal);
 
         RealmPlanEntry? Entry(string section, string key)
         {
@@ -387,33 +393,42 @@ public sealed class RealmManifestPlanner(
                 Note("scopes", scope.Name, Skipped($"App '{appSlug}'"));
         }
 
-        // ── Groups: roles and members resolve one by one ──────────────────────────────
+        // ── Entity references: a handle from this file, or an id from this realm ───────
+        // A handle nothing declares and a name-only reference are manifest contradictions
+        // and already sit in the "manifest" section as errors — this pass only predicts
+        // what will SKIP (an id this realm does not have) and what will merely be REPORTED
+        // (a Key that has gone stale beside a perfectly good id).
+        string? ReferenceNote(
+            ManifestRef reference, string what,
+            IReadOnlySet<string> knownIds, IReadOnlyDictionary<string, string> keyById)
+        {
+            // A handle always resolves — validation refused the undeclared ones already.
+            if (reference.Handle is not null) return null;
+            if (NormalizedId(reference.Id) is not { } id) return null;
+            if (!knownIds.Contains(id))
+                return Skipped($"{what} '{reference.Display}'");
+            if (reference.Key is { Length: > 0 } hint && keyById.TryGetValue(id, out var liveKey) &&
+                !hint.Equals(liveKey, StringComparison.OrdinalIgnoreCase))
+                return $"The {what.ToLowerInvariant()} this id names is '{liveKey}', not '{hint}' — "
+                       + "the apply follows the id (identity is the Id) and reports the stale Key.";
+            return null;
+        }
+
         foreach (var group in manifest.Groups)
         {
             foreach (var reference in group.Roles ?? [])
-            {
-                if (reference.Key is not { } key) continue;
-                if (!roleKeys.Contains(key) && !bareRoleNames.Contains(key))
-                    Note("groups", group.Name, Skipped($"Role '{key}'"));
-            }
+                if (ReferenceNote(reference, "Role", roleIds, roleKeyById) is { } note)
+                    Note("groups", group.Name, note);
             foreach (var reference in group.Members ?? [])
-            {
-                if (reference.Key is not { } key) continue;
-                if (!userKeys.Contains(key) && !userEmails.Contains(key))
-                    Note("groups", group.Name, Skipped($"Member '{key}'"));
-            }
+                if (ReferenceNote(reference, "Member", userIds, userKeyById) is { } note)
+                    Note("groups", group.Name, note);
         }
 
         // ── Positions: staffing grants are user references too ────────────────────────
         foreach (var position in manifest.Positions)
-        {
             foreach (var reference in position.Grants ?? [])
-            {
-                if (reference.Key is not { } key) continue;
-                if (!userKeys.Contains(key) && !userEmails.Contains(key))
-                    Note("positions", position.AccountName, Skipped($"Grant for user '{key}'"));
-            }
-        }
+                if (ReferenceNote(reference, "Grant user", userIds, userKeyById) is { } note)
+                    Note("positions", position.AccountName, note);
     }
 
     // ── Settings — one pseudo-entity, nested patch diff with dotted paths. ───────────
@@ -522,8 +537,9 @@ public sealed class RealmManifestPlanner(
         {
             var pinned = NormalizedId(u.Id);
             RealmManifestUser? existing = null;
+            // ADR 0024: id-only. Matching by email would hand the file's author whichever
+            // person happens to hold that address in THIS realm.
             var matchedById = pinned is not null && currentById.TryGetValue(pinned, out existing);
-            existing ??= Match(u, byEmail, byUserName);
             if (existing is not null) matched.Add(existing.ResolveKey());
             var baselineUser = baselineByEmail is null
                 ? null
@@ -531,14 +547,27 @@ public sealed class RealmManifestPlanner(
 
             var entry = DiffEntry(u.ResolveKey(), u, existing, baselineUser,
                 conflictMode: baselineByEmail is not null, json, policy);
+
+            // A create whose email or username a different live person already holds: the
+            // apply fails there rather than adopting that person's account.
+            if (entry.Action == "create" && Match(u, byEmail, byUserName) is { } clash)
+            {
+                entry.Notes.Add(
+                    $"'{clash.ResolveKey()}' already exists here under a different id, and identity is the Id "
+                    + "(ADR 0024) — so this entry CREATES and the apply FAILS on the duplicate email/username. "
+                    + "Add that user's Id to update them instead.");
+                entry = entry with { Action = "error" };
+            }
             if (matchedById && existing is not null &&
                 !string.Equals(existing.ResolveKey(), u.ResolveKey(), StringComparison.Ordinal))
             {
                 entry.Changes.Add(new RealmPlanChange("Key", existing.ResolveKey(), u.ResolveKey()));
                 entry.Notes.Add($"Matched by Id — RENAMES '{existing.ResolveKey()}' to '{u.ResolveKey()}'.");
             }
-            // Pinned ids only bite on CREATE (on update the id is immutable + ignored).
-            if (entry.Action == "create" && policy.PinnedId?.Invoke(u) is { Length: > 0 } pinnedRaw &&
+            // Pinned ids only bite on CREATE (on update the id is immutable + ignored);
+            // a '#handle' is not an id, so it is never checked.
+            if (entry.Action == "create" &&
+                ManifestHandle.AsPinnedId(policy.PinnedId?.Invoke(u)) is { Length: > 0 } pinnedRaw &&
                 await policy.PinnedIdCheck!(pinnedRaw) is { } outcome)
             {
                 entry.Notes.Add(outcome.Note);
@@ -672,12 +701,6 @@ public sealed class RealmManifestPlanner(
         /// key differs an apply ERROR instead of a rename.</summary>
         public bool KeyRenameable { get; init; }
 
-        /// <summary>Last-resort match when neither the pinned Id nor the natural key found a
-        /// live entity (a patch that omits part of a composite key). Returns the match, or
-        /// an error text when the entry is ambiguous — the entry then becomes an apply
-        /// error instead of a create.</summary>
-        public Func<T, IReadOnlyList<T>, (T? Match, string? Error)>? FallbackMatch { get; init; }
-
         /// <summary>The key an entry is reported (and rename-checked) under once its live
         /// counterpart is known — lets a composite key borrow the part the patch omitted.
         /// Null = the section's key function.</summary>
@@ -701,31 +724,25 @@ public sealed class RealmManifestPlanner(
     }
 
     /// <summary>
-    /// Maps every accepted spelling of a reference (id, canonical key, unambiguous alias)
-    /// to the referenced CURRENT entity's canonical <c>{ Key, Id }</c>, so the differ
-    /// compares identities rather than spellings. Unknown references pass through as written.
+    /// Rewrites a reference to the referenced CURRENT entity's canonical
+    /// <c>{ Key, Id }</c>, so the differ compares identities rather than spellings: the same
+    /// entity written id-only or with a stale readable Key compares equal, and a rename does
+    /// not read as a membership change. Keyed by ID ONLY (ADR 0024) — a name is not a
+    /// spelling of an identity, and canonicalizing one would let the plan show "no change"
+    /// for a reference the apply will refuse. Unknown references pass through as written.
     /// </summary>
     private sealed class RefCanonicalizer
     {
         private readonly Dictionary<Guid, ManifestRef> byId = [];
-        private readonly Dictionary<string, ManifestRef> byKey = new(StringComparer.Ordinal);
 
-        public void Add(string canonicalKey, string? rawId, params string?[] aliases)
+        public void Add(string canonicalKey, string? rawId)
         {
             if (string.IsNullOrWhiteSpace(rawId) || !ShortGuid.TryParse(rawId, out Guid id)) return;
-            var canon = ManifestRef.Of(canonicalKey, id);
-            byId[id] = canon;
-            byKey.TryAdd(canonicalKey, canon);
-            foreach (var alias in aliases)
-                if (!string.IsNullOrEmpty(alias)) byKey.TryAdd(alias, canon);
+            byId[id] = ManifestRef.Of(canonicalKey, id);
         }
 
         public ManifestRef Canon(ManifestRef r)
-        {
-            if (r.ParsedId is { } id && byId.TryGetValue(id, out var canon)) return canon;
-            if (r.Key is not null && byKey.TryGetValue(r.Key, out canon)) return canon;
-            return r;
-        }
+            => r.ParsedId is { } id && byId.TryGetValue(id, out var canon) ? canon : r;
 
         public List<ManifestRef>? Canon(List<ManifestRef>? refs) => refs?.Select(Canon).ToList();
     }
@@ -778,8 +795,9 @@ public sealed class RealmManifestPlanner(
             entry.Notes.Add($"{current.Count(c => string.Equals(key(c), duplicate, StringComparison.Ordinal))} live entities share the key '{duplicate}' — the manifest cannot address them individually. Rename one of them live before applying.");
             section.Entries.Add(entry);
         }
-        // Id-first matching mirrors the applier: an entry whose pinned Id names a live entity
-        // IS that entity, even when its natural key differs (a rename).
+        // ADR 0024: identity is the id, and matching is id-ONLY. An entry whose Id names a
+        // live entity IS that entity, even when its natural key differs (a rename); an
+        // entry without such an id creates, whatever it happens to be called.
         var currentById = policy.PinnedId is null
             ? []
             : current
@@ -787,18 +805,14 @@ public sealed class RealmManifestPlanner(
                 .Where(x => x.Key is not null)
                 .GroupBy(x => x.Key!, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First().Entity, StringComparer.Ordinal);
-        // Everything the manifest matched — by id OR by key — is NOT a delete candidate.
+        // Everything the manifest matched is NOT a delete candidate.
         var matchedKeys = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var item in desired)
         {
             var pinned = NormalizedId(policy.PinnedId?.Invoke(item));
             T? existing = null;
-            string? matchError = null;
             var matchedById = pinned is not null && currentById.TryGetValue(pinned, out existing);
-            if (!matchedById) currentByKey.TryGetValue(key(item), out existing);
-            if (!matchedById && existing is null && policy.FallbackMatch is not null)
-                (existing, matchError) = policy.FallbackMatch(item, current);
             if (existing is not null) matchedKeys.Add(key(existing));
             var itemKey = policy.EffectiveKey?.Invoke(item, existing) ?? key(item);
 
@@ -808,9 +822,17 @@ public sealed class RealmManifestPlanner(
                 conflictMode: baselineByKey is not null, json, policy);
             policy.PostProcess?.Invoke(item, existing, entry);
 
-            if (matchError is not null)
+            // A create whose natural key a DIFFERENT live entity already holds. The apply
+            // fails there (App.DuplicateSlug, Group.NameTaken, …) instead of overwriting a
+            // stranger — which is the whole point of ADR 0024, and precisely the case an
+            // author needs to see before the deploy rather than during it.
+            if (entry.Action == "create" && currentByKey.ContainsKey(itemKey))
             {
-                entry.Notes.Add(matchError);
+                var field = policy.KeyField ?? "key";
+                entry.Notes.Add(
+                    $"'{itemKey}' already exists here under a different id, and identity is the Id (ADR 0024) — "
+                    + $"so this entry CREATES and the apply FAILS on the duplicate {field}. "
+                    + $"Add that entity's Id to update it instead, or give this one a different {field}.");
                 entry = entry with { Action = "error" };
             }
 
@@ -833,8 +855,9 @@ public sealed class RealmManifestPlanner(
             }
 
             // Pinned ids only bite on CREATE (on update the id names the entity itself).
+            // A '#handle' is not an id — the server assigns one — so it is never checked.
             if (entry.Action == "create" && policy.PinnedIdCheck is not null &&
-                policy.PinnedId?.Invoke(item) is { Length: > 0 } pinnedRaw &&
+                ManifestHandle.AsPinnedId(policy.PinnedId?.Invoke(item)) is { Length: > 0 } pinnedRaw &&
                 await policy.PinnedIdCheck(pinnedRaw) is { } outcome)
             {
                 entry.Notes.Add(outcome.Note);

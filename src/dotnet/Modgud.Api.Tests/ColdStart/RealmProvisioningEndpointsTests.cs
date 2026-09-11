@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using BuildingBlocks.Helper;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Features.Admin.Provisioning;
@@ -256,6 +257,13 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
             $"creating realm '{slug}' failed with {(int)resp.StatusCode}: {await resp.Content.ReadAsStringAsync(ct)}");
     }
 
+    // Stable pinned ids (ADR 0024): a second apply of this manifest means the SAME
+    // entities, and only an id can say that. The same ids in two different realms are
+    // fine — that is the stage → prod transfer these tests stand in for.
+    private static readonly string AppId = new ShortGuid(Guid.NewGuid()).ToString();
+    private static readonly string ClientId = new ShortGuid(Guid.NewGuid()).ToString();
+    private static readonly string UserId = new ShortGuid(Guid.NewGuid()).ToString();
+
     private static RealmManifest BuildManifest(string slug, string appDisplayName) => new()
     {
         Apps =
@@ -263,6 +271,7 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
             new RealmManifestApp
             {
                 Slug = "initech-app",
+                Id = AppId,
                 DisplayName = appDisplayName,
                 Permissions = [new RealmManifestPermission("initech", "read")],
             },
@@ -272,6 +281,7 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
             new RealmManifestClient
             {
                 ClientId = "initech-web",
+                Id = ClientId,
                 DisplayName = "Initech Web",
                 ClientType = "confidential",
                 RedirectUris = [$"https://{slug}.test/cb"],
@@ -282,7 +292,7 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         ],
         Users =
         [
-            new RealmManifestUser { Key = "admin", Email = $"admin@{slug}.test", UserName = "admin", Password = "Passw0rd!23" },
+            new RealmManifestUser { Key = "admin", Id = UserId, Email = $"admin@{slug}.test", UserName = "admin", Password = "Passw0rd!23" },
         ],
     };
 

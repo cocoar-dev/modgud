@@ -29,7 +29,7 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 public sealed partial class RealmManifestApplier
 {
     private static async Task ApplyServiceAccountsAsync(
-        IServiceProvider sp, RealmManifest manifest, CancellationToken ct)
+        IServiceProvider sp, RealmManifest manifest, ManifestIdentity identity, CancellationToken ct)
     {
         if (manifest.ServiceAccounts.Count == 0) return;
 
@@ -46,23 +46,26 @@ public sealed partial class RealmManifestApplier
                     "ServiceAccount.InvalidAccountName",
                     $"{ctx}: account name must be 2-64 chars, start with a letter or digit, and contain only lowercase letters, digits, dots, hyphens, or underscores.")]);
 
-            // Id first — the account name is mutable through the canonical update, so an
-            // id-matched entry renames the service account (its credentials keep working:
-            // they authenticate on the principal id, not the name).
-            var existing = await MatchByPinnedIdAsync<ServiceAccount>(session, sa.Id, x => x.IsDeleted, ct)
-                ?? await session.Query<ServiceAccount>()
-                    .FirstOrDefaultAsync(s => !s.IsDeleted && s.AccountName == normalised, ct);
+            // ADR 0024: the Id names the account, and an id-matched entry renames it (its
+            // credentials keep working — they authenticate on the principal id, not the
+            // name). Without an id the entry creates, and a taken account name fails with
+            // ServiceAccount.AccountNameTaken rather than adopting a stranger's principal,
+            // whose id consuming applications already hold as a foreign key.
+            var existing = await MatchByPinnedIdAsync<ServiceAccount>(session, sa.Id, x => x.IsDeleted, ct);
 
             if (existing is null)
-                await CreateServiceAccountAsync(session, sa, normalised, ctx, ct);
+                identity.Assign(sa.Id, await CreateServiceAccountAsync(session, sa, normalised, ctx, ct));
             else
+            {
+                identity.Assign(sa.Id, existing.Id);
                 await UpdateServiceAccountAsync(session, revoker, existing, sa, normalised, ctx, ct);
+            }
         }
     }
 
     /// <summary>Mirror of V2_ServiceAccount_Create (hull path): same shared-namespace
     /// uniqueness checks, same created event — plus the pinned-id honouring.</summary>
-    private static async Task CreateServiceAccountAsync(
+    private static async Task<Guid> CreateServiceAccountAsync(
         IDocumentSession session, RealmManifestServiceAccount sa, string normalised,
         string ctx, CancellationToken ct)
     {
@@ -78,7 +81,7 @@ public sealed partial class RealmManifestApplier
         // revived (under the manifest's account name, so a rename before the delete
         // resolves too); a live entity is a conflict.
         var pinned = await ResolvePinnedAsync<ServiceAccount>(
-            session, sa.Id, "ServiceAccount", ctx, x => x.IsDeleted, ct);
+            session, ManifestHandle.AsPinnedId(sa.Id), "ServiceAccount", ctx, x => x.IsDeleted, ct);
 
         var created = new ServiceAccount
         {
@@ -94,6 +97,7 @@ public sealed partial class RealmManifestApplier
         else
             session.Events.StartStream<ServiceAccount>(created.Id, createdEvent);
         await session.SaveChangesAsync(ct);
+        return created.Id;
     }
 
     /// <summary>Mirror of V2_ServiceAccount_Update: v2 merge-patch on Purpose/IsActive, the

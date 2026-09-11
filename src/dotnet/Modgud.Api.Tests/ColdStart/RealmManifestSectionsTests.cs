@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BuildingBlocks.Helper;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api;
@@ -36,9 +37,16 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
 
         const string slug = "lptest";
+        // Pinned ids: the v2 apply below has to mean the SAME corp-idp (ADR 0024).
+        var providerIds = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["corp-idp"] = new ShortGuid(Guid.NewGuid()).ToString(),
+            ["legacy-idp"] = new ShortGuid(Guid.NewGuid()).ToString(),
+        };
         RealmManifestLoginProvider Provider(string pslug, string name) => new()
         {
             Slug = pslug,
+            Id = providerIds.GetValueOrDefault(pslug),
             Flavor = "GenericOidc",
             DisplayName = name,
             ClientId = $"{pslug}-client",
@@ -123,6 +131,8 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
 
         const string slug = "appset";
+        var shopId = new ShortGuid(Guid.NewGuid()).ToString();
+        var plainId = new ShortGuid(Guid.NewGuid()).ToString();
         RealmManifest Manifest(string productName) => new()
         {
             Apps =
@@ -130,6 +140,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
                 new RealmManifestApp
                 {
                     Slug = "shop",
+                    Id = shopId,
                     DisplayName = "Shop",
                     Permissions = [new RealmManifestPermission("order", "read")],
                     Settings = new ApplicationSettingsDto
@@ -139,7 +150,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
                     },
                 },
                 // A second app WITHOUT settings must not grow an override on export.
-                new RealmManifestApp { Slug = "plain", DisplayName = "Plain" },
+                new RealmManifestApp { Slug = "plain", Id = plainId, DisplayName = "Plain" },
             ],
         };
         var import = await ProvisionRealmAsync(factory, Shell(slug), Manifest("Shop!"), ct);
@@ -191,19 +202,29 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         var appSettings = factory.Services.GetRequiredService<AppSettings>();
 
         const string slug = "posten";
+        // Pinned ids throughout — the apply below has to mean the SAME position, and a
+        // staffing grant has to mean a particular person (ADR 0024).
+        var aliceKey = new ShortGuid(Guid.NewGuid()).ToString();
+        var bobKey = new ShortGuid(Guid.NewGuid()).ToString();
+        var positionKey = new ShortGuid(Guid.NewGuid()).ToString();
+        ManifestRef Grant(string user) => new()
+        {
+            Key = user, Id = user == "alice" ? aliceKey : bobKey,
+        };
         RealmManifest Manifest(string purpose, params string[] grants) => ManifestFor(slug, purpose, grants);
         RealmManifest ManifestFor(string realmSlug, string purpose, params string[] grants) => new()
         {
             Users =
             [
-                new RealmManifestUser { Key = "alice", Email = $"alice@{slug}.test", UserName = "alice", Password = "Passw0rd!23" },
-                new RealmManifestUser { Key = "bob", Email = $"bob@{slug}.test", UserName = "bob", Password = "Passw0rd!23" },
+                new RealmManifestUser { Key = "alice", Id = aliceKey, Email = $"alice@{slug}.test", UserName = "alice", Password = "Passw0rd!23" },
+                new RealmManifestUser { Key = "bob", Id = bobKey, Email = $"bob@{slug}.test", UserName = "bob", Password = "Passw0rd!23" },
             ],
             Positions =
             [
                 new RealmManifestPosition
                 {
                     AccountName = "gate.porter",
+                    Id = positionKey,
                     Purpose = purpose,
                     TerminalPolicy = new PositionTerminalPolicyUpdateDto
                     {
@@ -213,7 +234,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
                         StaffingSessionLifetimeMinutes = 60,
                         MaximumStaffingSessionLifetimeMinutes = 480,
                     },
-                    Grants = [.. grants],
+                    Grants = [.. grants.Select(Grant)],
                 },
             ],
         };

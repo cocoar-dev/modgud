@@ -118,10 +118,18 @@ public sealed partial class RealmManifestApplier(
             return Error.NotFound("Realm.NotFound",
                 $"Realm '{slug}' does not exist. Create it first (POST /api/admin/realms), then apply.");
 
+        // The document has to make sense on its own before a transaction is opened: a
+        // handle declared twice, a reference to a handle nothing declares, a reference
+        // carrying only a name. All of those are the file contradicting itself (ADR 0024),
+        // and none of them depend on the realm.
+        var validated = ManifestIdentity.Validate(manifest);
+        if (validated.IsError) return validated.Errors;
+        var identity = validated.Value;
+
         var skips = new ManifestReferenceSkips();
         try
         {
-            var secrets = await ApplyTenantUpdateAsync(slug, manifest, prune, deletions, skips, ct);
+            var secrets = await ApplyTenantUpdateAsync(slug, manifest, prune, deletions, skips, identity, ct);
             logger.LogInformation(
                 "Updated realm {Slug}: {Apps} apps, {Apis} apis, {Scopes} scopes, {Clients} clients, {Roles} roles, {Users} users, {Groups} groups, {Providers} login providers, {Positions} positions (in-place merge).",
                 slug, manifest.Apps.Count, manifest.Apis.Count, manifest.Scopes.Count,
@@ -139,6 +147,8 @@ public sealed partial class RealmManifestApplier(
                 PrimaryDomain = realm.PrimaryDomain,
                 ClientSecrets = secrets,
                 SkippedReferences = [.. skips.Skips],
+                AssignedIds = identity.Assigned.ToDictionary(
+                    kv => kv.Key, kv => new ShortGuid(kv.Value).ToString(), StringComparer.Ordinal),
             };
         }
         catch (ManifestApplyException ex)
@@ -164,7 +174,7 @@ public sealed partial class RealmManifestApplier(
     private async Task<Dictionary<string, string>> ApplyTenantUpdateAsync(
         string slug, RealmManifest manifest, bool prune,
         IReadOnlyCollection<RealmDraftDeletion>? deletions, ManifestReferenceSkips skips,
-        CancellationToken ct)
+        ManifestIdentity identity, CancellationToken ct)
     {
         var secrets = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -179,7 +189,7 @@ public sealed partial class RealmManifestApplier(
         await using var applyTx = await TenantApplyTransaction.BeginAsync(store, slug, ct);
         using (applyTx.Activate())
         {
-            await ApplyTenantUpdateSectionsAsync(manifest, prune, deletions, secrets, skips, ct);
+            await ApplyTenantUpdateSectionsAsync(manifest, prune, deletions, secrets, skips, identity, ct);
             await applyTx.CommitAsync(ct);
         }
 
@@ -192,11 +202,13 @@ public sealed partial class RealmManifestApplier(
 
     private async Task ApplyTenantUpdateSectionsAsync(
         RealmManifest manifest, bool prune, IReadOnlyCollection<RealmDraftDeletion>? deletions,
-        Dictionary<string, string> secrets, ManifestReferenceSkips skips, CancellationToken ct)
+        Dictionary<string, string> secrets, ManifestReferenceSkips skips, ManifestIdentity identity,
+        CancellationToken ct)
     {
-        var apps = new Dictionary<string, App>(StringComparer.Ordinal);        // slug → App (id + catalog)
-        var roleIds = new Dictionary<string, Guid>(StringComparer.Ordinal);    // role key → id (for groups)
-        var userIds = new Dictionary<string, Guid>(StringComparer.Ordinal);    // user key → id (for groups)
+        // slug → App (id + permission catalog). App slugs are the permission VOCABULARY —
+        // they appear in every permission string and every role key — so they stay names;
+        // ADR 0024 is about which ENTITY an entry means, and that is the id below.
+        var apps = new Dictionary<string, App>(StringComparer.Ordinal);
 
         using var scope = scopeFactory.CreateScope();
         var sp = scope.ServiceProvider;
@@ -214,13 +226,16 @@ public sealed partial class RealmManifestApplier(
         var appAdmin = sp.GetRequiredService<AppAdminService>();
         foreach (var app in manifest.Apps)
         {
+            var appCtx = $"app '{app.Slug}'";
             App result;
-            // Id first: it names the entity outright. An app slug can't be renamed through
-            // the canonical update, so an id naming a differently-slugged app is an error.
-            var byId = await MatchByPinnedIdAsync<App>(session, app.Id, a => a.IsDeleted, ct);
-            if (byId is not null)
-                EnsureRenameable(false, app.Slug, byId.Slug, "Slug", $"app '{app.Slug}'");
-            var current = byId ?? apps.GetValueOrDefault(app.Slug);
+            // ADR 0024: the Id names the entity, and nothing else does. Without one this
+            // entry CREATES — and a taken slug then fails loudly (App.DuplicateSlug)
+            // instead of quietly rewriting whatever app happens to carry that slug here.
+            var current = await MatchByPinnedIdAsync<App>(session, app.Id, a => a.IsDeleted, ct);
+            // An app slug can't be renamed through the canonical update, so an id naming
+            // a differently-slugged app is an error rather than a silent merge.
+            if (current is not null)
+                EnsureRenameable(false, app.Slug, current.Slug, "Slug", appCtx);
             if (current is not null)
             {
                 // v2 merge-patch: an absent catalog keeps the current one verbatim; a
@@ -241,7 +256,7 @@ public sealed partial class RealmManifestApplier(
                 var updated = await appAdmin.UpdateAppAsync(current.Id,
                     new UpdateAppDto(app.DisplayName, description, permissions, app.Settings), ct);
 
-                EnsureOk(updated, $"app '{app.Slug}'");
+                EnsureOk(updated, appCtx);
                 result = updated.Value;
             }
             else
@@ -249,29 +264,30 @@ public sealed partial class RealmManifestApplier(
                 var permissions = (app.Permissions ?? [])
                     .Select(p => new AppPermissionDto(null, p.Resource, p.Action, p.Description)).ToList();
                 var created = await appAdmin.CreateAppAsync(
-                    new CreateAppDto(app.Slug, app.DisplayName, OrNull(app.Description), permissions, app.Settings, app.Id), ct);
-                EnsureOk(created, $"app '{app.Slug}'");
+                    new CreateAppDto(app.Slug, app.DisplayName, OrNull(app.Description), permissions,
+                        app.Settings, ManifestHandle.AsPinnedId(app.Id)), ct);
+                EnsureOk(created, appCtx);
                 result = created.Value;
             }
             apps[app.Slug] = result;
+            identity.Assign(app.Id, result.Id);
+            identity.Applied(ManifestIdentity.Sections.Apps, result.Id);
         }
 
         var oauth = sp.GetRequiredService<OAuthAdminService>();
 
-        // ── OAuth APIs (natural key = Name / aud) ──────────────────────────────────
+        // ── OAuth APIs (identity = Id; the Name is the audience it carries) ────────
         foreach (var api in manifest.Apis)
         {
             var ctx = $"api '{api.Name}'";
-            var existing = await MatchByPinnedIdAsync<OAuthApiState>(session, api.Id, x => x.IsDeleted, ct)
-                ?? await session.Query<OAuthApiState>()
-                    .FirstOrDefaultAsync(x => x.Name == api.Name && !x.IsDeleted, ct);
+            var existing = await MatchByPinnedIdAsync<OAuthApiState>(session, api.Id, x => x.IsDeleted, ct);
             // The audience IS the API's identity for every token consumer — immutable.
             if (existing is not null) EnsureRenameable(false, api.Name, existing.Name, "Name", ctx);
             if (existing is null)
             {
-                EnsureOk(await oauth.CreateApiAsync(new CreateOAuthApiDto
+                var created = await oauth.CreateApiAsync(new CreateOAuthApiDto
                 {
-                    Id = api.Id,
+                    Id = ManifestHandle.AsPinnedId(api.Id),
                     Name = api.Name,
                     DisplayName = OrNull(api.DisplayName),
                     Description = OrNull(api.Description),
@@ -281,10 +297,14 @@ public sealed partial class RealmManifestApplier(
                     AppId = ResolveAppId(apps, OrNull(api.App), ctx, skips),
                     PermissionIds = ResolvePermissionIds(apps, OrNull(api.App), api.Permissions, ctx, skips) ?? [],
                     AllowDynamicRegistration = api.AllowDynamicRegistration ?? false,
-                }, ct), ctx);
+                }, ct);
+                EnsureOk(created, ctx);
+                RegisterApplied(identity, ManifestIdentity.Sections.Apis, api.Id, created.Value.Id, ctx);
             }
             else
             {
+                identity.Assign(api.Id, existing.Id);
+                identity.Applied(ManifestIdentity.Sections.Apis, existing.Id);
                 // v2 merge-patch: presence passes straight through — absent lists
                 // stay null (unchanged), [] clears; Optionals carry clears
                 // (an explicit null App detaches the RS).
@@ -307,19 +327,17 @@ public sealed partial class RealmManifestApplier(
             }
         }
 
-        // ── OAuth scopes (natural key = Name) ──────────────────────────────────────
+        // ── OAuth scopes (identity = Id; the Name is what clients request) ─────────
         foreach (var s in manifest.Scopes)
         {
             var ctx = $"scope '{s.Name}'";
-            var existing = await MatchByPinnedIdAsync<OAuthScopeState>(session, s.Id, x => x.IsDeleted, ct)
-                ?? await session.Query<OAuthScopeState>()
-                    .FirstOrDefaultAsync(x => x.Name == s.Name && !x.IsDeleted, ct);
+            var existing = await MatchByPinnedIdAsync<OAuthScopeState>(session, s.Id, x => x.IsDeleted, ct);
             if (existing is not null) EnsureRenameable(false, s.Name, existing.Name, "Name", ctx);
             if (existing is null)
             {
-                EnsureOk(await oauth.CreateScopeAsync(new CreateOAuthScopeDto
+                var created = await oauth.CreateScopeAsync(new CreateOAuthScopeDto
                 {
-                    Id = s.Id,
+                    Id = ManifestHandle.AsPinnedId(s.Id),
                     Name = s.Name,
                     DisplayName = OrNull(s.DisplayName),
                     Description = OrNull(s.Description),
@@ -331,10 +349,14 @@ public sealed partial class RealmManifestApplier(
                     ShowInDiscoveryDocument = s.ShowInDiscoveryDocument ?? true,
                     AllowDynamicRegistrationClients = s.AllowDynamicRegistrationClients ?? false,
                     AppId = ResolveAppId(apps, OrNull(s.App), ctx, skips),
-                }, ct), ctx);
+                }, ct);
+                EnsureOk(created, ctx);
+                RegisterApplied(identity, ManifestIdentity.Sections.Scopes, s.Id, created.Value.Id, ctx);
             }
             else
             {
+                identity.Assign(s.Id, existing.Id);
+                identity.Applied(ManifestIdentity.Sections.Scopes, existing.Id);
                 // v2 merge-patch: presence passes straight through (an explicit
                 // null App detaches the scope back to realm-wide).
                 EnsureOk(await oauth.UpdateScopeAsync(existing.Id.ToString(), new UpdateOAuthScopeDto
@@ -355,13 +377,11 @@ public sealed partial class RealmManifestApplier(
             }
         }
 
-        // ── OAuth clients (natural key = ClientId) ─────────────────────────────────
+        // ── OAuth clients (identity = Id; the ClientId is what the client sends) ───
         foreach (var c in manifest.Clients)
         {
             var ctx = $"client '{c.ClientId}'";
-            var existing = await MatchByPinnedIdAsync<OAuthApplicationState>(session, c.Id, x => x.IsDeleted, ct)
-                ?? await session.Query<OAuthApplicationState>()
-                    .FirstOrDefaultAsync(x => x.ClientId == c.ClientId && !x.IsDeleted, ct);
+            var existing = await MatchByPinnedIdAsync<OAuthApplicationState>(session, c.Id, x => x.IsDeleted, ct);
             if (existing is not null) EnsureRenameable(false, c.ClientId, existing.ClientId, "ClientId", ctx);
             if (existing is null)
             {
@@ -369,9 +389,12 @@ public sealed partial class RealmManifestApplier(
                 EnsureOk(created, ctx);
                 if (created.Value.ClientSecret is not null)
                     secrets[c.ClientId] = created.Value.ClientSecret;
+                RegisterApplied(identity, ManifestIdentity.Sections.Clients, c.Id, created.Value.Client.Id, ctx);
             }
             else
             {
+                identity.Assign(c.Id, existing.Id);
+                identity.Applied(ManifestIdentity.Sections.Clients, existing.Id);
                 // ClientType + secret are immutable through the canonical update path; an
                 // existing client keeps its secret (rotate via the dedicated endpoint).
                 EnsureOk(await oauth.UpdateClientAsync(
@@ -379,23 +402,26 @@ public sealed partial class RealmManifestApplier(
             }
         }
 
-        // ── Login providers (natural key = Slug) ───────────────────────────────────
+        // ── Login providers (identity = Id; the Slug owns the callback URLs) ───────
         foreach (var lp in manifest.LoginProviders)
         {
             var ctx = $"login provider '{lp.Slug}'";
-            var existing = await MatchByPinnedIdAsync<LoginProvider>(session, lp.Id, x => x.IsDeleted, ct)
-                ?? await session.Query<LoginProvider>()
-                    .FirstOrDefaultAsync(x => x.Slug == lp.Slug && !x.IsDeleted, ct);
+            var existing = await MatchByPinnedIdAsync<LoginProvider>(session, lp.Id, x => x.IsDeleted, ct);
             // The slug owns the provider's callback URLs — immutable after create.
             if (existing is not null) EnsureRenameable(false, lp.Slug, existing.Slug, "Slug", ctx);
             if (existing is null)
             {
-                EnsureOk(await BuildCreateProviderHandler(sp).Handle(
+                var createdProvider = await BuildCreateProviderHandler(sp).Handle(
                     BuildCreateProviderCommand(lp, ctx,
                         await ResolvePinnedAsync<LoginProvider>(
-                            session, lp.Id, "LoginProvider", ctx, x => x.IsDeleted, ct)), ct), ctx);
+                            session, ManifestHandle.AsPinnedId(lp.Id), "LoginProvider", ctx, x => x.IsDeleted, ct)), ct);
+                EnsureOk(createdProvider, ctx);
+                identity.Assign(lp.Id, createdProvider.Value.Id);
+                identity.Applied(ManifestIdentity.Sections.LoginProviders, createdProvider.Value.Id);
                 continue;
             }
+            identity.Assign(lp.Id, existing.Id);
+            identity.Applied(ManifestIdentity.Sections.LoginProviders, existing.Id);
 
             if (existing.IsBuiltIn)
                 throw new ManifestApplyException(ctx, [Error.Validation("Manifest.InternalProviderReserved",
@@ -457,14 +483,15 @@ public sealed partial class RealmManifestApplier(
             }
         }
 
-        // ── Roles (natural key = App/Name — names are unique per App only) ─────────
+        // ── Roles (identity = Id; a role's name is unique per App only) ────────────
         var roleAdmin = sp.GetRequiredService<RoleAdminService>();
         foreach (var r in manifest.Roles)
         {
             var ctx = $"role '{r.NaturalKey}'";
-            // Id first — a role's name is mutable, so an id-matched entry RENAMES it.
-            var existing = await MatchByPinnedIdAsync<PermissionRole>(session, r.Id, x => x.IsDeleted, ct)
-                ?? await MatchRoleByKeyAsync(session, apps, r, ctx, ct);
+            // ADR 0024: the Id names the role, and an id-matched entry RENAMES it. Without
+            // an id this creates — `app/name` is not identity, because the app it names in
+            // THIS realm need not be the app the file was written against.
+            var existing = await MatchByPinnedIdAsync<PermissionRole>(session, r.Id, x => x.IsDeleted, ct);
             // v2 merge-patch: absent fields keep the existing role's values (the
             // canonical update is a full payload replace, so merge here).
             var isRealmAdmin = r.IsRealmAdmin ?? existing?.IsRealmAdmin ?? false;
@@ -499,16 +526,17 @@ public sealed partial class RealmManifestApplier(
                     : ResolvePermissionIds(apps, r.App, r.Permissions ?? [], ctx, skips)
                       ?? existing?.PermissionIds.Select(pid => new ShortGuid(pid).ToString()).ToList()
                       ?? [],
-                r.Id);
+                ManifestHandle.AsPinnedId(r.Id));
             // Control-plane provisioning is trusted, so the realm-admin guard is satisfied.
             ErrorOr<PermissionRole> result = existing is null
                 ? await roleAdmin.CreateRoleAsync(payload, callerIsRealmAdmin: true, ct)
                 : await roleAdmin.UpdateRoleAsync(existing.Id, payload, callerIsRealmAdmin: true, ct);
             EnsureOk(result, ctx);
-            RegisterRole(roleIds, manifest.Roles, r, result.Value.Id);
+            identity.Assign(r.Id, result.Value.Id);
+            identity.Applied(ManifestIdentity.Sections.Roles, result.Value.Id);
         }
 
-        // ── Users (natural key = email or username) ────────────────────────────────
+        // ── Users (identity = Id; email and username are mutable profile fields) ───
         var setPassword = sp.GetRequiredService<SetUserPasswordHandler>();
         var createUser = new CreateUserHandler(
             session,
@@ -517,22 +545,17 @@ public sealed partial class RealmManifestApplier(
         foreach (var u in manifest.Users)
         {
             var ctx = $"user '{u.Email}'";
-            var normalizedEmail = u.Email.ToUpperInvariant();
-            var normalizedUserName = u.UserName?.ToLowerInvariant();
-            // Id first — the person's email/username are mutable profile fields, so an
-            // id-matched entry updates (and renames) that person.
-            var existing = await MatchByPinnedIdAsync<Person>(session, u.Id, x => x.IsDeleted, ct)
-                ?? await session.Query<Person>()
-                    .FirstOrDefaultAsync(p => !p.IsDeleted &&
-                        (p.NormalizedEmail == normalizedEmail ||
-                         (normalizedUserName != null && p.AccountName == normalizedUserName)), ct);
+            // ADR 0024: an id-matched entry updates (and renames) that person; without an
+            // id the entry creates, and a taken email fails loudly. Matching by email would
+            // hand a stranger's account to whoever wrote the file.
+            var existing = await MatchByPinnedIdAsync<Person>(session, u.Id, x => x.IsDeleted, ct);
 
             Guid? uid;
             if (existing is null)
             {
                 var createCmd = new CreateUserCommand(OrNull(u.Firstname), OrNull(u.Lastname), OrNull(u.Acronym),
                     u.Email, u.UserName ?? string.Empty, u.Password, u.EmailConfirmed ?? false,
-                    Id: await ResolvePinnedUserAsync(session, u.Id, ctx, ct));
+                    Id: await ResolvePinnedUserAsync(session, ManifestHandle.AsPinnedId(u.Id), ctx, ct));
                 var created = await createUser.Handle(createCmd, ct);
                 EnsureOk(created, ctx);
                 uid = ShortGuid.TryParse(created.Value.Id, out Guid cid) ? cid : null;
@@ -576,10 +599,14 @@ public sealed partial class RealmManifestApplier(
                 if (!string.IsNullOrWhiteSpace(u.Password))
                     EnsureOk(await setPassword.Handle(existing.Id, u.Password, ct), $"{ctx} password");
             }
-            if (uid.HasValue) userIds[u.ResolveKey()] = uid.Value;
+            if (uid.HasValue)
+            {
+                identity.Assign(u.Id, uid.Value);
+                identity.Applied(ManifestIdentity.Sections.Users, uid.Value);
+            }
         }
 
-        // ── Groups (natural key = Name) ───────────────────────────────────────────
+        // ── Groups (identity = Id; the Name is mutable) ───────────────────────────
         if (manifest.Groups.Count > 0)
         {
             var groupSession = sp.GetRequiredService<IDocumentSession>();
@@ -592,16 +619,15 @@ public sealed partial class RealmManifestApplier(
             foreach (var g in manifest.Groups)
             {
                 var ctx = $"group '{g.Name}'";
-                // Id first — a group's name is mutable, so an id-matched entry RENAMES it
-                // (this is what makes a rename survive an export → import round trip).
-                var existing = await MatchByPinnedIdAsync<Group>(session, g.Id, x => x.IsDeleted, ct)
-                    ?? await session.Query<Group>()
-                        .FirstOrDefaultAsync(x => x.Name == g.Name && !x.IsDeleted, ct);
+                // ADR 0024: the Id names the group, so an id-matched entry RENAMES it (this
+                // is what makes a rename survive an export → apply round trip). Without an
+                // id the entry creates, and a taken name fails with Group.NameTaken —
+                // never a silent takeover of a same-named group that means something else.
+                var existing = await MatchByPinnedIdAsync<Group>(session, g.Id, x => x.IsDeleted, ct);
 
                 // v2 merge-patch: absent lists/fields keep the existing group's values
                 // (the canonical update is a full payload replace, so merge here).
-                // Members/roles may reference entities created this run OR pre-existing
-                // ones, so fall back to a DB lookup by key when the in-run map misses.
+                // Members/roles name entities by id, or by a handle this same file declared.
                 List<Guid> memberIds;
                 if (g.Members is null && existing is not null)
                 {
@@ -612,7 +638,7 @@ public sealed partial class RealmManifestApplier(
                     memberIds = new List<Guid>((g.Members ?? []).Count);
                     foreach (var m in g.Members ?? [])
                     {
-                        if (await ResolveUserRefAsync(session, userIds, m, $"{ctx} member '{m}'", skips, ct) is { } uid)
+                        if (await ResolveUserRefAsync(session, identity, m, $"{ctx} member '{m}'", skips, ct) is { } uid)
                             memberIds.Add(uid);
                     }
                     // Every listed member was unresolvable → keep the stored membership
@@ -631,7 +657,7 @@ public sealed partial class RealmManifestApplier(
                     groupRoleIds = new List<Guid>((g.Roles ?? []).Count);
                     foreach (var rk in g.Roles ?? [])
                     {
-                        if (await ResolveRoleRefAsync(session, roleIds, rk, $"{ctx} role '{rk}'", skips, ct) is { } rid)
+                        if (await ResolveRoleRefAsync(session, identity, rk, $"{ctx} role '{rk}'", skips, ct) is { } rid)
                             groupRoleIds.Add(rid);
                     }
                     groupRoleIds = OrUnchangedWhenNothingResolved(
@@ -653,16 +679,21 @@ public sealed partial class RealmManifestApplier(
                 if (existing is null)
                 {
                     var pinnedGroup = await ResolvePinnedAsync<Group>(
-                        session, g.Id, "Group", ctx, x => x.IsDeleted, ct);
+                        session, ManifestHandle.AsPinnedId(g.Id), "Group", ctx, x => x.IsDeleted, ct);
                     // Create-branch mirrors the create endpoint's BoundTo default (see import).
-                    EnsureOk(await createHandler.Handle(new CreateGroupCommand(
+                    var createdGroup = await createHandler.Handle(new CreateGroupCommand(
                         g.Name, description, memberIds, groupRoleIds, mode,
                         script, email, emailMode,
                         g.BoundTo ?? [AppSlugs.Modgud], externallyDrivable, CallerIsRealmAdmin: true,
-                        Id: pinnedGroup.Id, ReviveExistingStream: pinnedGroup.Revive), ct), ctx);
+                        Id: pinnedGroup.Id, ReviveExistingStream: pinnedGroup.Revive), ct);
+                    EnsureOk(createdGroup, ctx);
+                    identity.Assign(g.Id, createdGroup.Value.Id);
+                    identity.Applied(ManifestIdentity.Sections.Groups, createdGroup.Value.Id);
                 }
                 else
                 {
+                    identity.Assign(g.Id, existing.Id);
+                    identity.Applied(ManifestIdentity.Sections.Groups, existing.Id);
                     EnsureOk(await updateHandler.Handle(new UpdateGroupCommand(
                         existing.Id, g.Name, description, memberIds, groupRoleIds, mode,
                         script, email, emailMode,
@@ -672,16 +703,16 @@ public sealed partial class RealmManifestApplier(
         }
 
         // ── Service accounts (hulls, id-pinned creates) ───────────────────────────
-        await ApplyServiceAccountsAsync(sp, manifest, ct);
+        await ApplyServiceAccountsAsync(sp, manifest, identity, ct);
 
-        // ── Positions (MG-FT) — after users so grants can resolve their keys ──────
-        await ApplyPositionsAsync(sp, manifest, userIds, skips, ct);
+        // ── Positions (MG-FT) — after users so grants can resolve their handles ───
+        await ApplyPositionsAsync(sp, manifest, identity, skips, ct);
 
         // ── Prune / staged deletions: removal of entities absent from the manifest. Runs
         //    AFTER the upsert so the protection checks see the desired (post-merge) role
         //    graph. Prune sweeps everything; staged deletions target only their keys.
         if (prune || deletions is { Count: > 0 })
-            await PruneAsync(sp, session, manifest, appAdmin, oauth, roleAdmin, prune,
+            await PruneAsync(sp, session, identity, appAdmin, oauth, roleAdmin, prune,
                 DeletionTargets(deletions), ct);
     }
 
@@ -706,6 +737,11 @@ public sealed partial class RealmManifestApplier(
     /// → users → roles → apps. An app still referenced by a manifest-KEPT role / resource server
     /// correctly errors (surfaced via <see cref="ManifestApplyException"/>).
     ///
+    /// <para>"Absent from the manifest" is read by IDENTITY (ADR 0024): the sweep runs AFTER
+    /// the upsert and keeps exactly the entity ids that upsert touched. Keeping by name would
+    /// mean a manifest entry that renamed an entity no longer matches the live one, which
+    /// would prune the very entity the apply just wrote.</para>
+    ///
     /// <para>NEVER pruned (infrastructure + lockout protection — the robust superset of "System
     /// + last admin": protect ALL admins so no manifest can lock the realm out): the system app
     /// (<c>IsSystem</c>), auto-seeded standard scopes (<c>StandardScopes.IsStandard</c>),
@@ -722,9 +758,10 @@ public sealed partial class RealmManifestApplier(
     /// services on the same scoped session.</para>
     /// </summary>
     private async Task PruneAsync(
-        IServiceProvider sp, IDocumentSession session, RealmManifest manifest,
-        AppAdminService appAdmin, OAuthAdminService oauth, RoleAdminService roleAdmin,
-        bool prune, IReadOnlyDictionary<string, HashSet<string>>? targeted,
+        IServiceProvider sp, IDocumentSession session,
+        ManifestIdentity identity, AppAdminService appAdmin, OAuthAdminService oauth,
+        RoleAdminService roleAdmin, bool prune,
+        IReadOnlyDictionary<string, HashSet<string>>? targeted,
         CancellationToken ct)
     {
         var perms = sp.GetRequiredService<IPermissionService>();
@@ -732,68 +769,69 @@ public sealed partial class RealmManifestApplier(
         // Targeted (staged) deletions restrict the sweep to their keys; a full prune
         // deletes every candidate. Everything else — keep-sets, infra/lockout guards,
         // canonical delete ops, ordering — is byte-identical for both modes.
+        //
+        // The keys are what the admin picked off a LIVE list ("delete this row"), which is
+        // a different question from "which entity does this manifest entry mean" — so they
+        // stay names while identity (below) is the id.
         bool Wants(string section, string key)
             => prune || (targeted?.TryGetValue(section, out var keys) == true && keys.Contains(key));
 
-        // ── Positions (natural key = AccountName) — first: pruning a position cascades its
-        //    terminal slots + their terminal-managed clients (see the Positions partial). ─────
-        await PrunePositionsAsync(sp, session, oauth, manifest, prune, targeted, ct);
+        // "Represented in the manifest" is an IDENTITY question (ADR 0024), so the keep-set
+        // is what the apply just created or updated, by id — not what shares a name with a
+        // manifest entry. That also closes the old hole where an entry that RENAMED an
+        // entity left the live one (still carrying its old name) looking prunable.
+        bool Keep(string section, Guid id) => identity.WasApplied(section, id);
 
-        // ── Clients (natural key = ClientId) — keep SA-linked and terminal-managed clients
-        //    (both are auto-managed credential material the manifest doesn't model). ─────────
-        var keepClients = manifest.Clients.Select(c => c.ClientId).ToHashSet(StringComparer.Ordinal);
+        // ── Positions — first: pruning a position cascades its terminal slots + their
+        //    terminal-managed clients (see the Positions partial). ─────────────────────────
+        await PrunePositionsAsync(sp, session, oauth, identity, prune, targeted, ct);
+
+        // ── Clients — keep SA-linked and terminal-managed clients (both are auto-managed
+        //    credential material the manifest doesn't model). ───────────────────────────────
         foreach (var c in await session.Query<OAuthApplicationState>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepClients.Contains(c.ClientId)
+            if (Keep(ManifestIdentity.Sections.Clients, c.Id)
                 || c.LinkedServiceAccountId.HasValue
                 || c.LinkedPositionPrincipalId.HasValue
                 || !Wants("clients", c.ClientId)) continue;
             EnsureOk(await oauth.DeleteClientAsync(c.Id.ToString(), ct), $"prune client '{c.ClientId}'");
         }
 
-        // ── Login providers (natural key = Slug) — keep the built-in Internal provider. ──────
-        var keepProviders = manifest.LoginProviders.Select(p => p.Slug).ToHashSet(StringComparer.Ordinal);
+        // ── Login providers — keep the built-in Internal provider. ───────────────────────────
         var deleteProvider = new DeleteLoginProviderHandler(session, sp.GetRequiredService<TimeProvider>());
         foreach (var p in await session.Query<LoginProvider>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepProviders.Contains(p.Slug) || p.IsBuiltIn || !Wants("loginProviders", p.Slug)) continue;
+            if (Keep(ManifestIdentity.Sections.LoginProviders, p.Id) || p.IsBuiltIn
+                || !Wants("loginProviders", p.Slug)) continue;
             EnsureOk(await deleteProvider.Handle(new DeleteLoginProviderCommand(p.Id), ct),
                 $"prune login provider '{p.Slug}'");
         }
 
-        // ── Scopes (natural key = Name) — keep auto-seeded standard scopes. ──────────────────
-        var keepScopes = manifest.Scopes.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
+        // ── Scopes — keep auto-seeded standard scopes. ───────────────────────────────────────
         foreach (var s in await session.Query<OAuthScopeState>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepScopes.Contains(s.Name) || StandardScopes.IsStandard(s.Name)
+            if (Keep(ManifestIdentity.Sections.Scopes, s.Id) || StandardScopes.IsStandard(s.Name)
                 || !Wants("scopes", s.Name)) continue;
             EnsureOk(await oauth.DeleteScopeAsync(s.Id.ToString(), ct), $"prune scope '{s.Name}'");
         }
 
-        // ── APIs (natural key = Name / aud). ─────────────────────────────────────────────────
-        var keepApis = manifest.Apis.Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
+        // ── APIs. ────────────────────────────────────────────────────────────────────────────
         foreach (var a in await session.Query<OAuthApiState>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepApis.Contains(a.Name) || !Wants("apis", a.Name)) continue;
+            if (Keep(ManifestIdentity.Sections.Apis, a.Id) || !Wants("apis", a.Name)) continue;
             EnsureOk(await oauth.DeleteApiAsync(a.Id.ToString(), ct), $"prune api '{a.Name}'");
         }
 
-        // ── Groups (natural key = Name) — keep admin-conferring groups (lockout guard). ──────
-        var keepGroups = manifest.Groups.Select(g => g.Name).ToHashSet(StringComparer.Ordinal);
+        // ── Groups — keep admin-conferring groups (lockout guard). ───────────────────────────
         var groupHandler = new DeleteGroupHandler(session);
         foreach (var g in await session.Query<Group>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepGroups.Contains(g.Name) || !Wants("groups", g.Name)) continue;
+            if (Keep(ManifestIdentity.Sections.Groups, g.Id) || !Wants("groups", g.Name)) continue;
             if (await GroupMembershipGuards.GroupConfersRealmAdminAsync(session, perms, g, ct)) continue;
             EnsureOk(await groupHandler.Handle(new DeleteGroupCommand(g.Id), ct), $"prune group '{g.Name}'");
         }
 
-        // ── Users (natural key = email / username) — keep anyone who holds realm:admin. ──────
-        var keepEmails = manifest.Users.Select(u => u.Email.ToUpperInvariant()).ToHashSet(StringComparer.Ordinal);
-        var keepUserNames = manifest.Users
-            .Where(u => !string.IsNullOrEmpty(u.UserName))
-            .Select(u => u.UserName!.ToLowerInvariant())
-            .ToHashSet(StringComparer.Ordinal);
+        // ── Users — keep anyone who holds realm:admin. ───────────────────────────────────────
         // A staged user deletion carries whatever key the list row showed (username
         // or email) — match either, case-insensitively.
         var targetedUsers = targeted?.GetValueOrDefault("users");
@@ -809,35 +847,29 @@ public sealed partial class RealmManifestApplier(
             sp.GetRequiredService<TimeProvider>());
         foreach (var p in await session.Query<Person>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepEmails.Contains(p.NormalizedEmail ?? string.Empty) ||
-                (p.AccountName is not null && keepUserNames.Contains(p.AccountName)) ||
-                !WantsUser(p)) continue;
+            if (Keep(ManifestIdentity.Sections.Users, p.Id) || !WantsUser(p)) continue;
             if (await perms.HasPermissionAsync(p.Id, AppSlugs.Modgud, PermissionEvaluator.RealmAdminPermission, ct))
                 continue;
             EnsureOk(await userHandler.Handle(new DeleteUsersCommand([p.Id]), ct), $"prune user '{p.AccountName ?? p.Id.ToString()}'");
         }
 
-        // ── Roles (natural key = App/Name) — keep realm-admin roles (lockout guard). ─────────
-        // The manifest's roles were just upserted, so a live role is kept when its qualified
-        // key is listed — or its bare name, for a patch entry that omitted App.
-        var keepRoles = manifest.Roles.Select(r => r.NaturalKey).ToHashSet(StringComparer.Ordinal);
-        var keepBareRoleNames = manifest.Roles.Where(r => r.App is null).Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+        // ── Roles — keep realm-admin roles (lockout guard). ──────────────────────────────────
         var roleAppSlugById = (await session.Query<App>().Where(a => !a.IsDeleted).ToListAsync(ct))
             .ToDictionary(a => a.Id, a => a.Slug);
         foreach (var r in await session.Query<PermissionRole>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
             var roleKey = RoleKeys.Qualified(
                 !r.IsRealmAdmin && r.AppId is { } aid ? roleAppSlugById.GetValueOrDefault(aid) : null, r.Name);
-            if (keepRoles.Contains(roleKey) || keepBareRoleNames.Contains(r.Name) || r.IsRealmAdmin
+            if (Keep(ManifestIdentity.Sections.Roles, r.Id) || r.IsRealmAdmin
                 || !Wants("roles", roleKey)) continue;
             EnsureOk(await roleAdmin.DeleteRoleAsync(r.Id, ct), $"prune role '{roleKey}'");
         }
 
-        // ── Apps (natural key = Slug) — keep the system app; a still-referenced app errors. ──
-        var keepApps = manifest.Apps.Select(a => a.Slug).ToHashSet(StringComparer.Ordinal);
+        // ── Apps — keep the system app; a still-referenced app errors. ───────────────────────
         foreach (var a in await session.Query<App>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
-            if (keepApps.Contains(a.Slug) || a.IsSystem || !Wants("apps", a.Slug)) continue;
+            if (Keep(ManifestIdentity.Sections.Apps, a.Id) || a.IsSystem
+                || !Wants("apps", a.Slug)) continue;
             EnsureOk(await appAdmin.DeleteAppAsync(a.Id, ct), $"prune app '{a.Slug}'");
         }
     }
@@ -851,7 +883,7 @@ public sealed partial class RealmManifestApplier(
         RealmManifestClient c, IReadOnlyDictionary<string, App> apps, string ctx,
         ManifestReferenceSkips skips) => new()
     {
-        Id = c.Id,
+        Id = ManifestHandle.AsPinnedId(c.Id),
         ClientId = c.ClientId,
         DisplayName = OrNull(c.DisplayName),
         ClientType = c.ClientType,
@@ -1024,117 +1056,86 @@ public sealed partial class RealmManifestApplier(
         => value.HasValue ? new Optional<string>(value.Value!) : default;
 
     /// <summary>
-    /// Resolves a user reference. An explicit <c>Id</c> wins when a live user carries it;
-    /// otherwise the <c>Key</c> (username or email) — first among the users this apply
-    /// created/matched, then live. A bare string is always a key.
+    /// Resolves a user reference (ADR 0024). A <c>#handle</c> names a user this same
+    /// manifest creates and always resolves — the validation pass already refused a handle
+    /// nothing declares. A real id resolves against this realm; a realm that has no such
+    /// user makes it a reported SKIP. A <c>Key</c> beside the id is a verified hint: never
+    /// followed, but reported when it disagrees with the user the id names.
     /// </summary>
     private static async Task<Guid?> ResolveUserRefAsync(
-        IDocumentSession session, IReadOnlyDictionary<string, Guid> map, ManifestRef reference,
+        IDocumentSession session, ManifestIdentity identity, ManifestRef reference,
         string context, ManifestReferenceSkips skips, CancellationToken ct)
     {
-        if (reference.ParsedId is { } byId &&
-            await session.LoadAsync<Person>(byId, ct) is { IsDeleted: false })
-            return byId;
-        if (reference.Key is null)
+        if (reference.Handle is { } handle)
+            return identity.Resolve(handle);
+
+        if (reference.ParsedId is not { } byId)
         {
-            skips.Skip(context, "user", "names no live user by id and carries no key");
+            // Unreachable after ManifestIdentity.Validate — kept so a future caller that
+            // skips the validation fails loudly instead of silently dropping the reference.
+            skips.Skip(context, "user", "carries no id or #handle, and a name is never resolved (ADR 0024)");
             return null;
         }
-        var key = reference.Key;
-        if (map.TryGetValue(key, out var id)) return id;
-        var lowered = key.ToLowerInvariant();
-        var upper = key.ToUpperInvariant();
-        var person = await session.Query<Person>()
-            .FirstOrDefaultAsync(p => !p.IsDeleted && (p.AccountName == lowered || p.NormalizedEmail == upper), ct);
-        if (person is null)
+        if (identity.WasApplied(ManifestIdentity.Sections.Users, byId)) return byId;
+        var person = await session.LoadAsync<Person>(byId, ct);
+        if (person is null || person.IsDeleted)
         {
-            skips.Skip(context, $"user '{key}'", "no such user in this realm");
+            skips.Skip(context, $"user '{reference.Display}'", "no user with that id in this realm");
             return null;
         }
+        VerifyHint(reference, context, "user", skips, person.AccountName, person.Email);
         return person.Id;
     }
 
     /// <summary>
-    /// Registers an applied role for group references: under its reference key
-    /// (<c>Key</c>, else <c>app/name</c>) and — when the bare name occurs only once in the
-    /// manifest — under the bare name too, so hand-written manifests that reference
-    /// <c>"Roles": ["acme-admin"]</c> keep working. An ambiguous bare name is never
-    /// registered: the reference then resolves live (and fails if still ambiguous).
-    /// </summary>
-    private static void RegisterRole(
-        Dictionary<string, Guid> roleIds, IReadOnlyList<RealmManifestRole> all, RealmManifestRole r, Guid id)
-    {
-        roleIds[r.ResolveKey()] = id;
-        if (all.Count(x => string.Equals(x.Name, r.Name, StringComparison.Ordinal)) == 1)
-            roleIds.TryAdd(r.Name, id);
-    }
-
-    /// <summary>
-    /// The live role a manifest entry without a matching pinned Id addresses. With <c>App</c>
-    /// the match is exact (that app's role of that name); a realm-admin entry matches the
-    /// realm-admin role of that name; an entry that omits both (a merge patch) matches the
-    /// bare name only while it is unambiguous — two apps each owning an "Author" make it an
-    /// apply error rather than a silent pick of whichever comes first.
-    /// </summary>
-    private static async Task<PermissionRole?> MatchRoleByKeyAsync(
-        IDocumentSession session, IReadOnlyDictionary<string, App> apps, RealmManifestRole r,
-        string context, CancellationToken ct)
-    {
-        var candidates = await session.Query<PermissionRole>()
-            .Where(x => !x.IsDeleted && x.Name == r.Name).ToListAsync(ct);
-        if (r.App is not null)
-        {
-            // An unknown app slug falls through to the create path, which reports it.
-            if (!apps.TryGetValue(r.App, out var app)) return null;
-            return candidates.FirstOrDefault(x => !x.IsRealmAdmin && x.AppId == app.Id);
-        }
-        if (r.IsRealmAdmin == true) return candidates.FirstOrDefault(x => x.IsRealmAdmin);
-        if (candidates.Count > 1)
-            throw new ManifestApplyException(context,
-                [Error.Validation("Manifest.AmbiguousRole",
-                    $"{context} names {candidates.Count} live roles — add App (or Id) to say which one is meant.")]);
-        return candidates.SingleOrDefault();
-    }
-
-    /// <summary>
-    /// Resolves a group's role reference: the keys registered by this apply first, then
-    /// live — a qualified <c>app/name</c> exactly, a bare name only while it names exactly
-    /// one live role.
+    /// Resolves a group's role reference (ADR 0024) — same three forms as a user reference:
+    /// a <c>#handle</c> from this manifest, a real id against this realm (missing = reported
+    /// skip), and a <c>Key</c> that is only a verified hint.
     /// </summary>
     private static async Task<Guid?> ResolveRoleRefAsync(
-        IDocumentSession session, IReadOnlyDictionary<string, Guid> map, ManifestRef reference,
+        IDocumentSession session, ManifestIdentity identity, ManifestRef reference,
         string context, ManifestReferenceSkips skips, CancellationToken ct)
     {
-        // An explicit Id wins when a live role carries it (rename-proof); the Key is the
-        // fallback for a hand-edited or cross-environment manifest. A bare string is a key.
-        if (reference.ParsedId is { } byId &&
-            await session.LoadAsync<PermissionRole>(byId, ct) is { IsDeleted: false })
-            return byId;
-        if (reference.Key is null)
+        if (reference.Handle is { } handle)
+            return identity.Resolve(handle);
+
+        if (reference.ParsedId is not { } byId)
         {
-            skips.Skip(context, "role", "names no live role by id and carries no key");
+            skips.Skip(context, "role", "carries no id or #handle, and a name is never resolved (ADR 0024)");
             return null;
         }
-        var key = reference.Key;
-        if (map.TryGetValue(key, out var id)) return id;
-        var (appSlug, name) = RoleKeys.Split(key);
-        var candidates = await session.Query<PermissionRole>()
-            .Where(r => !r.IsDeleted && (r.Name == key || r.Name == name)).ToListAsync(ct);
-        if (appSlug is not null)
+        if (identity.WasApplied(ManifestIdentity.Sections.Roles, byId)) return byId;
+        var role = await session.LoadAsync<PermissionRole>(byId, ct);
+        if (role is null || role.IsDeleted)
         {
-            var app = await session.Query<App>().FirstOrDefaultAsync(a => !a.IsDeleted && a.Slug == appSlug, ct);
-            if (app is not null &&
-                candidates.FirstOrDefault(r => !r.IsRealmAdmin && r.AppId == app.Id && r.Name == name) is { } qualified)
-                return qualified.Id;
+            skips.Skip(context, $"role '{reference.Display}'", "no role with that id in this realm");
+            return null;
         }
-        var byName = candidates.Where(r => string.Equals(r.Name, key, StringComparison.Ordinal)).ToList();
-        if (byName.Count == 1) return byName[0].Id;
-        if (byName.Count > 1)
-            throw new ManifestApplyException(context,
-                [Error.Validation("Manifest.AmbiguousReference",
-                    $"{context} names {byName.Count} live roles — qualify it as <app slug>/{key}.")]);
-        skips.Skip(context, $"role '{key}'", "no such role in this realm");
-        return null;
+        VerifyHint(reference, context, "role", skips, role.Name);
+        return role.Id;
+    }
+
+    /// <summary>
+    /// A <c>Key</c> next to a real id is documentation, not identity: the apply follows the
+    /// id and never the name. But a name that has gone stale still misleads whoever reads
+    /// the file next, so a disagreement is reported — the one thing a silent resolution
+    /// cannot do. The live key is matched loosely (the reference may spell a role as
+    /// <c>app/name</c> or a user as either username or email), so only a genuine mismatch
+    /// is called out.
+    /// </summary>
+    private static void VerifyHint(
+        ManifestRef reference, string context, string what, ManifestReferenceSkips skips,
+        params string?[] liveKeys)
+    {
+        if (reference.Key is not { Length: > 0 } hint) return;
+        var live = liveKeys.Where(k => !string.IsNullOrEmpty(k)).ToList();
+        if (live.Count == 0) return;
+        var (_, bare) = RoleKeys.Split(hint);
+        if (live.Any(k => hint.Equals(k, StringComparison.OrdinalIgnoreCase)
+                          || bare.Equals(k, StringComparison.OrdinalIgnoreCase))) return;
+        skips.Note(context,
+            $"the {what} named by this id is '{live[0]}', not '{hint}' — the id was followed "
+            + "(identity is the id); update the Key so the file reads true.");
     }
 
     /// <summary>An app reference: resolves to the app's id, or to null when this realm has no
@@ -1241,20 +1242,39 @@ public sealed partial class RealmManifestApplier(
     }
 
     /// <summary>
-    /// Id-first entity matching: a manifest entity carrying an <c>Id</c> that resolves to a
-    /// LIVE document of its own type IS that entity — an import updates it to the manifest's
-    /// values, INCLUDING its natural key (the id is the identity; the key is mutable
-    /// metadata). Returns null when the entity carries no id, or when the id is free / owned
-    /// by a soft-deleted entity (then the caller falls back to the natural key, and a create
-    /// pins or revives the id).
+    /// Entity matching, and the ONLY form of it (ADR 0024): a manifest entity whose
+    /// <c>Id</c> resolves to a LIVE document of its own type IS that entity — the apply
+    /// updates it to the manifest's values, INCLUDING its natural key, because the id is
+    /// the identity and the key is mutable metadata.
+    ///
+    /// <para>Returns null — meaning "this entry CREATES" — when the entity carries no id,
+    /// carries a <c>#handle</c> (a name for something this file is about to create), or
+    /// carries an id this realm does not have: free (the create pins it, which is what
+    /// keeps ids identical across environments) or owned by a soft-deleted entity of the
+    /// same type (the create revives it). A name is never consulted, so a create whose
+    /// natural key is already taken fails loudly instead of overwriting a stranger.</para>
     /// </summary>
     private static async Task<TDoc?> MatchByPinnedIdAsync<TDoc>(
         IDocumentSession session, string? raw, Func<TDoc, bool> isDeleted, CancellationToken ct)
         where TDoc : class
     {
-        if (string.IsNullOrWhiteSpace(raw) || !ShortGuid.TryParse(raw, out Guid id)) return null;
+        if (ManifestHandle.AsPinnedId(raw) is not { } pinned
+            || !ShortGuid.TryParse(pinned, out Guid id)) return null;
         var doc = await session.LoadAsync<TDoc>(id, ct);
         return doc is not null && !isDeleted(doc) ? doc : null;
+    }
+
+    /// <summary>Binds a handle to the id a create actually produced and records the entity
+    /// as touched (prune's keep-set). The id comes back from the canonical op as a string,
+    /// so an unparseable one is a contract break worth failing on rather than dropping.</summary>
+    private static void RegisterApplied(
+        ManifestIdentity identity, string section, string? manifestId, string createdId, string ctx)
+    {
+        if (!ShortGuid.TryParse(createdId, out Guid id))
+            throw new ManifestApplyException(ctx, [Error.Unexpected("Manifest.UnreadableId",
+                $"{ctx}: the create returned '{createdId}', which is not a valid id.")]);
+        identity.Assign(manifestId, id);
+        identity.Applied(section, id);
     }
 
     /// <summary>

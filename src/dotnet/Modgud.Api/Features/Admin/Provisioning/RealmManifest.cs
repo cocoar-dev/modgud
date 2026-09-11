@@ -22,14 +22,16 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 
 /// <summary>
 /// A declarative description of a realm's complete configuration, applied in-process by
-/// <see cref="RealmManifestApplier"/>. Cross-references use stable KEYS (apps by slug,
-/// roles/users by key, permissions by <c>resource:action</c>); group/position references
-/// may additionally carry the entity Id (<see cref="ManifestRef"/>), which wins when it
-/// resolves. The applier resolves references as it creates entities in dependency order. Each section maps onto the
+/// <see cref="RealmManifestApplier"/>. Identity is the entity <c>Id</c> (ADR 0024): an
+/// entry matches an existing entity only through its id, and cross-references between
+/// entities carry an id or a document-local <c>#handle</c> (<see cref="ManifestRef"/>) —
+/// a name is never resolved against the realm. App slugs, scope names and
+/// <c>resource:action</c> permission keys remain what they are everywhere else in the
+/// system: the permission vocabulary, not entity references. Each section maps onto the
 /// SAME canonical operation the admin UI/API uses, so the manifest path and the manual
 /// path can never diverge.
 /// </summary>
-[Description("A declarative realm configuration. POST to /api/admin/realms/{slug}/apply (control plane) or /api/admin/realm-config/apply (realm admin) to merge it into that realm; add ?prune=true for a full sync that also deletes entities absent from the manifest. The TARGET realm comes from the route alone — a manifest carries content, never an identity, so the same file applies to any realm. Cross-references use stable keys (app slug, role/user key, permission 'resource:action'), never server ids.")]
+[Description("A declarative realm configuration. POST to /api/admin/realms/{slug}/apply (control plane) or /api/admin/realm-config/apply (realm admin) to merge it into that realm; add ?prune=true for a full sync that also deletes entities absent from the manifest. The TARGET realm comes from the route alone — a manifest carries content, never an identity, so the same file applies to any realm. IDENTITY IS THE ID (ADR 0024): an entry updates an existing entity only when its Id names one, otherwise it creates; entity names are never matched, and cross-references between entities use an id or a '#handle' declared in this same file. App slugs, scope/API names and permission 'resource:action' keys stay names — they are the permission vocabulary, not entity identity.")]
 public sealed record RealmManifest
 {
     // NOTE: a manifest deliberately carries NO realm shell. The target is named by the
@@ -87,7 +89,7 @@ public sealed record RealmManifestApp
     [Description("Stable key for this app: 3-63 chars, lowercase letters/digits/hyphens, starts with a letter. APIs/scopes/clients/roles reference the app by this Slug.")]
     public required string Slug { get; init; }
 
-    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    [Description("The entity's IDENTITY (ADR 0024). A real id (ShortGuid or Guid) names the entity: the apply updates it where it exists, and creates it UNDER THAT ID where it doesn't — which is what keeps ids identical across environments (stage → prod). A '#handle' (e.g. '#billing') is a document-local name, never stored: the server assigns a fresh id and other entries in THIS file reference the new entity by that handle. Omit it for an entity nothing references. Names are never matched, so an entry without a real id always CREATES — and fails loudly if its natural key is already taken.")]
     public string? Id { get; init; }
 
     [Description("Human-readable app name.")]
@@ -109,7 +111,7 @@ public sealed record RealmManifestApi
     [Description("The API's audience ('aud') — the natural key. This is what clients request and resource servers validate.")]
     public required string Name { get; init; }
 
-    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    [Description("The entity's IDENTITY (ADR 0024). A real id (ShortGuid or Guid) names the entity: the apply updates it where it exists, and creates it UNDER THAT ID where it doesn't — which is what keeps ids identical across environments (stage → prod). A '#handle' (e.g. '#billing') is a document-local name, never stored: the server assigns a fresh id and other entries in THIS file reference the new entity by that handle. Omit it for an entity nothing references. Names are never matched, so an entry without a real id always CREATES — and fails loudly if its natural key is already taken.")]
     public string? Id { get; init; }
 
     [Description("Optional display name. Absent = unchanged; explicit null clears.")]
@@ -145,7 +147,7 @@ public sealed record RealmManifestScope
     [Description("Scope name — the natural key (e.g. 'invoice.read', 'openid').")]
     public required string Name { get; init; }
 
-    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    [Description("The entity's IDENTITY (ADR 0024). A real id (ShortGuid or Guid) names the entity: the apply updates it where it exists, and creates it UNDER THAT ID where it doesn't — which is what keeps ids identical across environments (stage → prod). A '#handle' (e.g. '#billing') is a document-local name, never stored: the server assigns a fresh id and other entries in THIS file reference the new entity by that handle. Omit it for an entity nothing references. Names are never matched, so an entry without a real id always CREATES — and fails loudly if its natural key is already taken.")]
     public string? Id { get; init; }
 
     [Description("Optional display name shown on the consent screen. Absent = unchanged; explicit null clears.")]
@@ -187,7 +189,7 @@ public sealed record RealmManifestClient
     [Description("The OAuth client_id — the natural key.")]
     public required string ClientId { get; init; }
 
-    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    [Description("The entity's IDENTITY (ADR 0024). A real id (ShortGuid or Guid) names the entity: the apply updates it where it exists, and creates it UNDER THAT ID where it doesn't — which is what keeps ids identical across environments (stage → prod). A '#handle' (e.g. '#billing') is a document-local name, never stored: the server assigns a fresh id and other entries in THIS file reference the new entity by that handle. Omit it for an entity nothing references. Names are never matched, so an entry without a real id always CREATES — and fails loudly if its natural key is already taken.")]
     public string? Id { get; init; }
 
     [Description("Optional display name. Absent = unchanged; explicit null clears.")]
@@ -309,13 +311,13 @@ public sealed record RealmManifestClientClaim(
 /// <summary>A role. <see cref="App"/> is a slug; <see cref="Permissions"/> resolve into the linked app's catalog. <see cref="Key"/> (default <see cref="Name"/>) is how groups reference it.</summary>
 public sealed record RealmManifestRole
 {
-    [Description("Optional stable key groups use to reference this role. Defaults to '<App>/<Name>' (the bare Name for a realm-admin role); a bare Name is also accepted as a reference while exactly one role carries it.")]
+    [Description("Optional readable key ('<App>/<Name>' by default, the bare Name for a realm-admin role). It is what a group reference SHOWS next to the role's Id — never what the apply follows (identity is the Id, ADR 0024); a Key that disagrees with the referenced role is reported.")]
     public string? Key { get; init; }
 
     [Description("Role name — unique per App, so the natural key for upsert is App + Name (two apps may each have an 'Author').")]
     public required string Name { get; init; }
 
-    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    [Description("The entity's IDENTITY (ADR 0024). A real id (ShortGuid or Guid) names the entity: the apply updates it where it exists, and creates it UNDER THAT ID where it doesn't — which is what keeps ids identical across environments (stage → prod). A '#handle' (e.g. '#billing') is a document-local name, never stored: the server assigns a fresh id and other entries in THIS file reference the new entity by that handle. Omit it for an entity nothing references. Names are never matched, so an entry without a real id always CREATES — and fails loudly if its natural key is already taken.")]
     public string? Id { get; init; }
 
     [Description("Optional description. Absent = unchanged; explicit null clears.")]
@@ -368,7 +370,7 @@ public static class RoleKeys
 /// <summary>A user. <see cref="Key"/> (default <see cref="UserName"/> ?? <see cref="Email"/>) is how groups reference it as a member.</summary>
 public sealed record RealmManifestUser
 {
-    [Description("Optional stable key groups use to reference this user as a member. Defaults to UserName, else Email.")]
+    [Description("Optional readable key (UserName, else Email, by default). It is what a group or position reference SHOWS next to the user's Id — never what the apply follows (identity is the Id, ADR 0024); a Key that disagrees with the referenced user is reported.")]
     public string? Key { get; init; }
 
     [Description("Optional first name. Absent = unchanged; explicit null clears.")]
@@ -383,7 +385,7 @@ public sealed record RealmManifestUser
     [Description("Email — the user's natural key (also the login identifier when no UserName is set).")]
     public required string Email { get; init; }
 
-    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    [Description("The entity's IDENTITY (ADR 0024). A real id (ShortGuid or Guid) names the entity: the apply updates it where it exists, and creates it UNDER THAT ID where it doesn't — which is what keeps ids identical across environments (stage → prod). A '#handle' (e.g. '#billing') is a document-local name, never stored: the server assigns a fresh id and other entries in THIS file reference the new entity by that handle. Omit it for an entity nothing references. Names are never matched, so an entry without a real id always CREATES — and fails loudly if its natural key is already taken.")]
     public string? Id { get; init; }
 
     [Description("Optional username. Falls back to the email local-part if omitted.")]
@@ -404,16 +406,16 @@ public sealed record RealmManifestGroup
     [Description("Group name — the natural key.")]
     public required string Name { get; init; }
 
-    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    [Description("The entity's IDENTITY (ADR 0024). A real id (ShortGuid or Guid) names the entity: the apply updates it where it exists, and creates it UNDER THAT ID where it doesn't — which is what keeps ids identical across environments (stage → prod). A '#handle' (e.g. '#billing') is a document-local name, never stored: the server assigns a fresh id and other entries in THIS file reference the new entity by that handle. Omit it for an entity nothing references. Names are never matched, so an entry without a real id always CREATES — and fails loudly if its natural key is already taken.")]
     public string? Id { get; init; }
 
     [Description("Optional description. Absent = unchanged; explicit null clears.")]
     public Optional<string?> Description { get; init; }
 
-    [Description("Members (users) for MembershipMode=Manual. Each entry is a reference: a string user key (RealmManifestUser.Key), or { \"Key\": \"alice\", \"Id\": \"<user id>\" } — the Id wins, the Key is the readable fallback. Absent = unchanged; [] clears the member list.")]
+    [Description("Members (users) for MembershipMode=Manual. Each entry names a user by IDENTITY (ADR 0024): { \"Key\": \"alice\", \"Id\": \"<user id>\" } for a user that exists here (missing = reported skip), or \"#alice\" for a user this same manifest creates (undeclared = error). A bare name is an error. Absent = unchanged; [] clears the member list.")]
     public List<ManifestRef>? Members { get; init; }
 
-    [Description("Roles this group grants to its members. Each entry is a reference: a string role key (\"<app slug>/<name>\", or the explicit RealmManifestRole.Key), or { \"Key\": \"acme/Author\", \"Id\": \"<role id>\" } — the Id wins, the Key is the readable fallback. Absent = unchanged; [] clears.")]
+    [Description("Roles this group grants to its members. Each entry names a role by IDENTITY (ADR 0024): { \"Key\": \"acme/Author\", \"Id\": \"<role id>\" } for a role that exists here (missing = reported skip), or \"#author\" for a role this same manifest creates (undeclared = error). A bare name is an error. Absent = unchanged; [] clears.")]
     public List<ManifestRef>? Roles { get; init; }
 
     [Description("'Manual' (explicit Members) or 'Auto' (members computed from MembershipScript). Absent = unchanged / default 'Manual' on create.")]
@@ -441,7 +443,7 @@ public sealed record RealmManifestLoginProvider
     [Description("URL-stable identifier — the natural key (appears in /signin-oidc/{slug} and /saml/{slug}/... URLs). Immutable after create.")]
     public required string Slug { get; init; }
 
-    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    [Description("The entity's IDENTITY (ADR 0024). A real id (ShortGuid or Guid) names the entity: the apply updates it where it exists, and creates it UNDER THAT ID where it doesn't — which is what keeps ids identical across environments (stage → prod). A '#handle' (e.g. '#billing') is a document-local name, never stored: the server assigns a fresh id and other entries in THIS file reference the new entity by that handle. Omit it for an entity nothing references. Names are never matched, so an entry without a real id always CREATES — and fails loudly if its natural key is already taken.")]
     public string? Id { get; init; }
 
     [Description("Provider type: 'Oidc' (default) or 'Saml'. 'Internal' is reserved (seeded automatically). Immutable after create.")]
@@ -514,7 +516,7 @@ public sealed record RealmManifestServiceAccount
     [Description("Account name — the natural key (2-64 chars, lowercase letters/digits/dots/hyphens/underscores, starts with a letter or digit). Shares the account-name namespace with users and positions.")]
     public required string AccountName { get; init; }
 
-    [Description("Optional stable principal id (ShortGuid or Guid). Applied ONLY at create, so consuming applications can rely on the SAME id across environments (stage → prod); ignored on update (the id is immutable). A create whose pinned id is already taken fails the apply.")]
+    [Description("The principal's IDENTITY (ADR 0024). A real id (ShortGuid or Guid) names the account: the apply updates it where it exists and creates it UNDER THAT ID where it doesn't — consuming applications persist this id as their foreign key, so it must survive a stage → prod transfer. A '#handle' is a document-local name (never stored) for an account this same file creates. Names are never matched, so an entry without a real id always CREATES — and fails if the account name is taken.")]
     public string? Id { get; init; }
 
     [Description("Optional purpose/description. Absent = unchanged; explicit null clears.")]
@@ -531,7 +533,7 @@ public sealed record RealmManifestPosition
     [Description("Account name — the natural key (2-64 chars, lowercase letters/digits/dots/hyphens/underscores, starts with a letter or digit). Shares the account-name namespace with users and service accounts.")]
     public required string AccountName { get; init; }
 
-    [Description("Optional stable entity id (ShortGuid or Guid). Applied ONLY at create so ids stay identical across environments (stage → prod); ignored on update (ids are immutable). A create whose pinned id is already taken fails the apply.")]
+    [Description("The entity's IDENTITY (ADR 0024). A real id (ShortGuid or Guid) names the entity: the apply updates it where it exists, and creates it UNDER THAT ID where it doesn't — which is what keeps ids identical across environments (stage → prod). A '#handle' (e.g. '#billing') is a document-local name, never stored: the server assigns a fresh id and other entries in THIS file reference the new entity by that handle. Omit it for an entity nothing references. Names are never matched, so an entry without a real id always CREATES — and fails loudly if its natural key is already taken.")]
     public string? Id { get; init; }
 
     [Description("Optional purpose/description of the position. Absent = unchanged; explicit null clears.")]
@@ -543,47 +545,90 @@ public sealed record RealmManifestPosition
     [Description("Optional partial terminal policy (patch semantics: omitted fields keep the stored/default value). Omitted entirely = terminal use stays disabled on create / unchanged on apply. Tightening the policy on apply ends affected staffing sessions (declarative apply auto-confirms the consequences).")]
     public PositionTerminalPolicyUpdateDto? TerminalPolicy { get; init; }
 
-    [Description("Users authorized to staff this position. Each entry is a reference: a string user key (RealmManifestUser.Key), or { \"Key\": \"alice\", \"Id\": \"<user id>\" } — the Id wins, the Key is the readable fallback. Present = replaces the live grant set (missing grants are issued, absent ones revoked — revoking ends that user's running shifts; [] revokes all); absent = no change.")]
+    [Description("Users authorized to staff this position. Each entry names a user by IDENTITY (ADR 0024): { \"Key\": \"alice\", \"Id\": \"<user id>\" }, or \"#alice\" for a user this same manifest creates; a bare name is an error. Present = replaces the live grant set (missing grants are issued, absent ones revoked — revoking ends that user's running shifts; [] revokes all); absent = no change.")]
     public List<ManifestRef>? Grants { get; init; }
 }
 
 /// <summary>
+/// A DOCUMENT-LOCAL handle: an <c>Id</c> (or a reference) whose value starts with
+/// <c>#</c> is not an id at all but a name for something inside this one manifest.
+///
+/// <para>It exists for the one case ids cannot serve (ADR 0024): a hand-written file that
+/// creates several entities which reference EACH OTHER has no ids to point with, and
+/// making authors invent ids only moves the collision — people copy the example. A handle
+/// is never stored: the server assigns a real id at create and resolves every <c>#</c>
+/// reference in the same run against what the file itself declared.</para>
+///
+/// <para><c>#</c> can never begin a ShortGuid, a slug, an email address or a role key, so
+/// the two meanings are separable by construction and no extra property is needed.</para>
+/// </summary>
+public static class ManifestHandle
+{
+    public const char Prefix = '#';
+
+    /// <summary>True for a well-formed handle (<c>#</c> plus at least one character).</summary>
+    public static bool Is(string? raw) => raw is { Length: > 1 } && raw[0] == Prefix;
+
+    /// <summary>True for a bare <c>"#"</c> — the prefix without a name, which is a typo
+    /// rather than a handle and must be rejected instead of silently ignored.</summary>
+    public static bool IsMalformed(string? raw) => raw is { Length: 1 } && raw[0] == Prefix;
+
+    /// <summary>The value as a PINNED id, or null when it is a handle: a handle must never
+    /// reach the create ops, which would try to parse it as a Guid.</summary>
+    public static string? AsPinnedId(string? raw)
+        => raw is null || raw.Length == 0 || raw[0] == Prefix ? null : raw;
+}
+
+/// <summary>
 /// A cross-reference from one manifest entity to another (group → role, group → member,
-/// position → grant). Two wire shapes, no heuristics:
+/// position → grant). Identity is the id (ADR 0024) — a name is never resolved against the
+/// realm — so a reference is one of three things:
 /// <list type="bullet">
-///   <item>a plain string — ALWAYS a key (role <c>app/name</c>, user key), never an id;</item>
-///   <item>an object <c>{ "Key": "...", "Id": "..." }</c> — the <c>Id</c> names the entity
-///   (rename-proof), the <c>Key</c> is the readable fallback used when no entity carries
-///   that id (a hand-edited or cross-environment manifest).</item>
+///   <item>a real id (<c>{ "Id": "9fA1xR…" }</c>, or the object form with a readable
+///   <c>Key</c> beside it) — resolved against the REALM; a realm that has no such entity
+///   makes the reference a reported SKIP;</item>
+///   <item>a handle (<c>"#author"</c>, or <c>{ "Id": "#author" }</c>) — resolved against
+///   THIS manifest; a handle the file never declares is an ERROR;</item>
+///   <item>a bare name (<c>"acme/Author"</c>) — an error, being a form that no longer
+///   exists. Export the realm to get the ids, or use a handle for an entity this same
+///   file creates.</item>
 /// </list>
-/// The exporter writes the object form; hand-written manifests may use either. Names are
-/// unrestricted, so no string format could ever separate "key" from "id" by construction —
-/// the object form is what makes the distinction unambiguous.
+/// A <c>Key</c> next to a real id is a VERIFIED HINT: it is never followed, but when it
+/// disagrees with the entity the id names, the apply reports it — so a stale name in a
+/// hand-edited file cannot mislead the reader.
 /// </summary>
 [System.Text.Json.Serialization.JsonConverter(typeof(ManifestRefJsonConverter))]
 public sealed record ManifestRef
 {
     public string? Key { get; init; }
 
-    /// <summary>Entity id (ShortGuid or Guid). Wins over <see cref="Key"/> when it resolves.</summary>
+    /// <summary>The entity's id — a real ShortGuid/Guid, or a <c>#handle</c> naming an
+    /// entity this same manifest creates.</summary>
     public string? Id { get; init; }
 
     public static ManifestRef Of(string key, Guid id) => new() { Key = key, Id = new ShortGuid(id).ToString() };
 
-    /// <summary>The id as a Guid, null when absent or unparseable.</summary>
-    public Guid? ParsedId => !string.IsNullOrWhiteSpace(Id) && ShortGuid.TryParse(Id, out Guid id) ? id : null;
+    /// <summary>The document-local handle this reference names, or null when it is not one.</summary>
+    public string? Handle => ManifestHandle.Is(Id) ? Id : null;
+
+    /// <summary>The id as a Guid, null when absent, a handle, or unparseable.</summary>
+    public Guid? ParsedId => !ManifestHandle.Is(Id) && !string.IsNullOrWhiteSpace(Id)
+        && ShortGuid.TryParse(Id, out Guid id) ? id : null;
 
     /// <summary>What a human reads in messages: the key, else the id.</summary>
     public string Display => Key ?? Id ?? string.Empty;
 
     public override string ToString() => Display;
 
-    /// <summary>A bare string is a key — the manifest's original reference form.</summary>
-    public static implicit operator ManifestRef(string key) => new() { Key = key };
+    /// <summary>A bare string is a key — unless it starts with <c>#</c>, which makes it a
+    /// document-local handle (a name can never start with <c>#</c>; it is reserved).</summary>
+    public static implicit operator ManifestRef(string key)
+        => ManifestHandle.Is(key) ? new() { Id = key } : new() { Key = key };
 }
 
-/// <summary>String ⇄ key, object ⇄ { Key, Id }. Property names are matched case-insensitively
-/// on read (hand-written manifests); the exporter writes PascalCase like the rest.</summary>
+/// <summary>String ⇄ key (or <c>#handle</c>), object ⇄ { Key, Id }. Property names are
+/// matched case-insensitively on read (hand-written manifests); the exporter writes
+/// PascalCase like the rest.</summary>
 public sealed class ManifestRefJsonConverter : System.Text.Json.Serialization.JsonConverter<ManifestRef>
 {
     public override ManifestRef? Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
@@ -591,7 +636,11 @@ public sealed class ManifestRefJsonConverter : System.Text.Json.Serialization.Js
         switch (reader.TokenType)
         {
             case System.Text.Json.JsonTokenType.String:
-                return new ManifestRef { Key = reader.GetString() };
+            {
+                var s = reader.GetString();
+                // A leading '#' is reserved: the string is a document-local handle, not a name.
+                return ManifestHandle.Is(s) ? new ManifestRef { Id = s } : new ManifestRef { Key = s };
+            }
             case System.Text.Json.JsonTokenType.Null:
                 return null;
             case System.Text.Json.JsonTokenType.StartObject:
@@ -621,6 +670,13 @@ public sealed class ManifestRefJsonConverter : System.Text.Json.Serialization.Js
             writer.WriteStringValue(value.Key);
             return;
         }
+        // A bare handle round-trips as the string it was written as; a real id never
+        // does, because a bare string without '#' reads back as a key.
+        if (value.Key is null && ManifestHandle.Is(value.Id))
+        {
+            writer.WriteStringValue(value.Id);
+            return;
+        }
         writer.WriteStartObject();
         if (value.Key is not null) writer.WriteString("Key", value.Key);
         writer.WriteString("Id", value.Id);
@@ -647,6 +703,19 @@ public sealed record RealmImportResult
     /// user here, a permission outside the target app's catalog. The apply succeeded; these
     /// are the parts of it that did not land, reported because a silent skip is the one
     /// genuinely dangerous outcome. Empty on a clean apply.
+    ///
+    /// <para>Also carries the VERIFIED-HINT mismatches: a reference whose <c>Key</c>
+    /// disagrees with the entity its <c>Id</c> names. The id was followed (identity is the
+    /// id), so nothing went wrong — but a file whose readable names have gone stale is
+    /// worth saying out loud before someone reads it as documentation.</para>
     /// </summary>
     public List<string> SkippedReferences { get; init; } = [];
+
+    /// <summary>
+    /// The real ids the apply assigned to this manifest's <c>#handles</c> (handle → id).
+    /// A hand-written file can be made idempotent from this alone — replace each handle
+    /// with the id it got — without exporting the realm first. Empty when the manifest
+    /// used no handles.
+    /// </summary>
+    public Dictionary<string, string> AssignedIds { get; init; } = [];
 }

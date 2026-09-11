@@ -108,18 +108,28 @@ export function roleManifestKey(appSlug: string | null | undefined, name: string
 
 /**
  * A manifest cross-reference (group → role / member, position → grant), mirroring the
- * backend's `ManifestRef`: a bare string is ALWAYS a key, never an id; the object form
- * carries the entity `Id` (which wins — rename-proof) plus the readable `Key`.
+ * backend's `ManifestRef`. Identity is the `Id` (ADR 0024): a real id names an entity in
+ * the realm, a `#handle` names one the same manifest creates, and a bare name resolves to
+ * nothing at all. The object form carries the `Id` plus a readable `Key` — a verified
+ * hint the apply never follows.
  */
 export type ManifestRef = string | { Key?: string; Id?: string }
 
+/** True for a document-local handle (`"#alice"`) — a name for something inside the
+ * manifest, never an entity in this realm. */
+export function isHandle(value: string | null | undefined): boolean {
+  return typeof value === 'string' && value.length > 1 && value.startsWith('#')
+}
+
 export function refKey(ref: ManifestRef): string | null {
-  if (typeof ref === 'string') return ref || null
+  // A leading '#' is reserved: the string is a handle (an Id), not a key.
+  if (typeof ref === 'string') return ref && !isHandle(ref) ? ref : null
   return typeof ref.Key === 'string' && ref.Key ? ref.Key : null
 }
 
 export function refId(ref: ManifestRef): string | null {
-  return typeof ref === 'object' && typeof ref.Id === 'string' && ref.Id ? ref.Id : null
+  if (typeof ref === 'string') return isHandle(ref) ? ref : null
+  return typeof ref.Id === 'string' && ref.Id ? ref.Id : null
 }
 
 export function refList(value: unknown): ManifestRef[] {
