@@ -660,6 +660,7 @@ try
     builder.Services.AddScoped<Modgud.Api.Features.Admin.Provisioning.RealmManifestApplier>();
     builder.Services.AddScoped<Modgud.Api.Features.Admin.Provisioning.RealmManifestExporter>();
     builder.Services.AddScoped<Modgud.Api.Features.Admin.Provisioning.RealmManifestPlanner>();
+    builder.Services.AddScoped<Modgud.Api.Features.Admin.Provisioning.ManifestApplyConfirmation>();
     builder.Services.AddScoped<Modgud.Api.Features.Admin.Provisioning.RealmDraftService>();
 
     // C16: Demo-seed runs as an API client now — see scripts/seed-demo.mjs.

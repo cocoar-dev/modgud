@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using BuildingBlocks.Helper;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
@@ -170,11 +171,45 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(
             $"/api/admin/realms/{slug}/apply", BuildManifest(slug, "Prune EP"), factory.JsonOptions, ct)).StatusCode);
 
-        // Re-apply with ?prune=true a manifest that drops the client → it must be pruned.
+        // ── A pruning apply does NOT just run. The first call answers with the plan,
+        //    a confirmation token and a review link — the raw API used to delete on the
+        //    spot, so a script could empty a realm on a typo with nobody having looked.
         var withoutClient = BuildManifest(slug, "Prune EP") with { Clients = [] };
-        var applyResp = await client.PostAsJsonAsync(
+        var first = await client.PostAsJsonAsync(
             $"/api/admin/realms/{slug}/apply?prune=true", withoutClient, factory.JsonOptions, ct);
-        Assert.Equal(HttpStatusCode.OK, applyResp.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, first.StatusCode);
+
+        var gate = JsonNode.Parse(await first.Content.ReadAsStringAsync(ct))!;
+        Assert.Equal("Manifest.ConfirmationRequired", gate["Error"]!.GetValue<string>());
+        var token = gate["ConfirmationToken"]!.GetValue<string>();
+        // The deletion is visible in the answer the caller already has in hand.
+        var clientEntries = gate["Plan"]!["Sections"]!.AsArray()
+            .Single(s => s!["Name"]!.GetValue<string>() == "clients")!["Entries"]!.AsArray();
+        Assert.Contains(clientEntries, e =>
+            e!["Key"]!.GetValue<string>() == "initech-web" && e["Action"]!.GetValue<string>() == "delete");
+        // …and a human can be sent to the same change instead of the script deciding.
+        Assert.False(string.IsNullOrWhiteSpace(gate["ReviewUrl"]?.GetValue<string>()));
+
+        // Nothing was deleted by the refused call.
+        await InTenantAsync(factory, slug, async sp =>
+            Assert.True(await sp.GetRequiredService<IDocumentSession>()
+                .Query<Modgud.Domain.OAuth.Applications.OAuthApplicationState>()
+                .AnyAsync(x => !x.IsDeleted && x.ClientId == "initech-web", ct),
+                "the refused call must not have pruned anything"));
+
+        // ── A token is bound to the manifest it was issued for: confirming a DIFFERENT
+        //    payload with it is refused, so nobody can plan one file and apply another.
+        var swapped = await client.PostAsJsonAsync(
+            $"/api/admin/realms/{slug}/apply?prune=true&confirm={Uri.EscapeDataString(token)}",
+            BuildManifest(slug, "Prune EP") with { Clients = [], Users = [] }, factory.JsonOptions, ct);
+        Assert.NotEqual(HttpStatusCode.OK, swapped.StatusCode);
+        Assert.Contains("Manifest.Confirmation", await swapped.Content.ReadAsStringAsync(ct));
+
+        // ── Confirmed → it runs.
+        var confirmed = await client.PostAsJsonAsync(
+            $"/api/admin/realms/{slug}/apply?prune=true&confirm={Uri.EscapeDataString(token)}",
+            withoutClient, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, confirmed.StatusCode);
 
         await InTenantAsync(factory, slug, async sp =>
         {

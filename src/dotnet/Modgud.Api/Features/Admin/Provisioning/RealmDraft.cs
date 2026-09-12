@@ -43,6 +43,14 @@ public sealed class RealmDraft
     /// True: every realm admin can see, edit and apply it (collaboration).</summary>
     public bool Shared { get; set; }
 
+    /// <summary>
+    /// Set when this draft was PARKED by a destructive apply that asked for review
+    /// (<c>?prune=true</c> without a confirmation token). Applying it always prunes,
+    /// whatever the apply call passes — the caller who parked it asked for a full sync,
+    /// and a reviewer who applied it without prune would silently do only half of it.
+    /// </summary>
+    public bool PruneOnApply { get; set; }
+
     public Guid CreatedBy { get; set; }
     public string CreatedByName { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }

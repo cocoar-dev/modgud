@@ -48,6 +48,50 @@ public sealed class RealmDraftService(
         return drafts.Select(d => Summary(d, userId)).ToList();
     }
 
+    /// <summary>
+    /// Parks a manifest that a destructive apply wanted to run, so a HUMAN can look at it
+    /// before it happens. The script that posted it gets the draft's id back and can mail
+    /// the link on ("please review this import"); the reviewer opens the ordinary draft
+    /// workspace, reads the plan with its deletions in red, and applies — or throws the
+    /// draft away.
+    ///
+    /// <para>SHARED by construction: the parker is often a control-plane admin or a machine
+    /// identity that does not exist in this realm, and a private draft would be invisible to
+    /// exactly the people who are supposed to review it.</para>
+    /// </summary>
+    public async Task<ErrorOr<RealmDraftDto>> ParkForReviewAsync(
+        RealmManifest manifest, string slug, string parkedBy, Guid userId, string userName,
+        CancellationToken ct)
+    {
+        var exportResult = await exporter.ExportRealmAsync(slug, ct);
+        if (exportResult.IsError) return exportResult.Errors;
+
+        var secrets = new Dictionary<string, string>(StringComparer.Ordinal);
+        var sanitized = SanitizeManifest(manifest, secrets);
+        var now = time.GetUtcNow();
+
+        var draft = new RealmDraft
+        {
+            Id = Guid.NewGuid(),
+            Name = $"Pending apply (prune) — {now:yyyy-MM-dd HH:mm} UTC, by {parkedBy}",
+            Manifest = sanitized,
+            Baseline = exportResult.Value,
+            Secrets = secrets,
+            Shared = true,
+            PruneOnApply = true,
+            CreatedBy = userId,
+            CreatedByName = parkedBy,
+            CreatedAt = now,
+            LastModifiedBy = userId,
+            LastModifiedByName = parkedBy,
+            LastModifiedAt = now,
+            Version = 1,
+        };
+        session.Store(draft);
+        await session.SaveChangesAsync(ct);
+        return ToDto(draft, userId);
+    }
+
     public async Task<ErrorOr<RealmDraftDto>> CreateAsync(
         CreateRealmDraftDto dto, string slug, Guid userId, string userName, CancellationToken ct)
     {
@@ -448,6 +492,10 @@ public sealed class RealmDraftService(
         var draft = await LoadVisibleAsync(id, userId, ct);
         if (draft is null) return NotFound;
         var manifest = MergeSecrets(draft.Manifest, draft.Secrets);
+        // A parked pruning apply prunes however it is applied: the caller who parked it
+        // asked for a full sync, and applying only the additive half would be a different
+        // operation wearing the same name.
+        prune |= draft.PruneOnApply;
 
         var planResult = await planner.PlanAsync(
             TenantContext.Current, manifest, prune, draft.Baseline, draft.Deletions, ct);
