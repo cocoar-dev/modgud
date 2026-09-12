@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Modgud.Api.Features.Admin.Apps;
 using Modgud.Api.Features.Roles;
 using Modgud.Api.Features.Users.Commands;
+using Modgud.Application.DTOs.Applications;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.DTOs.User;
 using Modgud.Application.Services;
@@ -254,7 +255,8 @@ public sealed partial class RealmManifestApplier(
                         p.Resource, p.Action, p.Description)).ToList();
                 var description = app.Description.HasValue ? app.Description.Value : current.Description;
                 var updated = await appAdmin.UpdateAppAsync(current.Id,
-                    new UpdateAppDto(app.DisplayName, description, permissions, app.Settings), ct);
+                    new UpdateAppDto(app.DisplayName, description, permissions,
+                        await KeepRealmLocalSettingsAsync(sp, current.Id, app.Settings, ct)), ct);
 
                 EnsureOk(updated, appCtx);
                 result = updated.Value;
@@ -1067,7 +1069,7 @@ public sealed partial class RealmManifestApplier(
         string context, ManifestReferenceSkips skips, CancellationToken ct)
     {
         if (reference.Handle is { } handle)
-            return identity.Resolve(handle);
+            return ResolveHandle(identity, handle, "user", context, skips);
 
         if (reference.ParsedId is not { } byId)
         {
@@ -1097,7 +1099,7 @@ public sealed partial class RealmManifestApplier(
         string context, ManifestReferenceSkips skips, CancellationToken ct)
     {
         if (reference.Handle is { } handle)
-            return identity.Resolve(handle);
+            return ResolveHandle(identity, handle, "role", context, skips);
 
         if (reference.ParsedId is not { } byId)
         {
@@ -1113,6 +1115,23 @@ public sealed partial class RealmManifestApplier(
         }
         VerifyHint(reference, context, "role", skips, role.Name);
         return role.Id;
+    }
+
+    /// <summary>
+    /// A declared handle should always resolve — the validation pass rejects one that is
+    /// undeclared, of the wrong kind, or declared in a section applied later. It can still
+    /// come back empty for a reason validation cannot see: the entry that declares it was
+    /// itself SKIPPED at apply time (a role whose app this realm does not have). That is a
+    /// legitimate outcome, but not a silent one — the reference has to say it dropped, or
+    /// the group simply comes out with fewer roles and the response claims success.
+    /// </summary>
+    private static Guid? ResolveHandle(
+        ManifestIdentity identity, string handle, string what, string context, ManifestReferenceSkips skips)
+    {
+        if (identity.Resolve(handle) is { } id) return id;
+        skips.Skip(context, $"{what} '{handle}'",
+            "the entry declaring this handle was itself skipped, so there is no entity to point at");
+        return null;
     }
 
     /// <summary>
@@ -1262,6 +1281,47 @@ public sealed partial class RealmManifestApplier(
             || !ShortGuid.TryParse(pinned, out Guid id)) return null;
         var doc = await session.LoadAsync<TDoc>(id, ct);
         return doc is not null && !isDeleted(doc) ? doc : null;
+    }
+
+    /// <summary>
+    /// Re-attaches the per-App settings that a manifest deliberately never carries: the
+    /// branding asset ids, the login-provider allow-list and the default self-registration
+    /// groups (see <c>RealmManifestExporter.WithoutRealmLocalReferences</c>).
+    ///
+    /// <para>Necessary because a per-App settings section is REPLACE, not merge-patch:
+    /// <c>ApplicationSettingsService.StageNonOriginAsync</c> rebuilds a whole section from
+    /// the DTO whenever the section is present, so a section that arrives with those fields
+    /// nulled does not leave them alone — it CLEARS them. Re-applying an unedited export
+    /// would have wiped an App's logo and, worse, turned an allow-list of one login provider
+    /// into "every enabled provider".</para>
+    ///
+    /// <para>Reading them back from the stored override restores the intent the transport
+    /// drops: the manifest cannot carry these, therefore the manifest never changes them.
+    /// On a realm that has no override yet there is nothing to restore, so nothing dangles.</para>
+    /// </summary>
+    private static async Task<ApplicationSettingsDto?> KeepRealmLocalSettingsAsync(
+        IServiceProvider sp, Guid appId, ApplicationSettingsDto? incoming, CancellationToken ct)
+    {
+        if (incoming is null) return null;
+        var stored = await sp.GetRequiredService<IApplicationSettingsService>().GetAsync(appId, ct);
+        if (stored.IsError) return incoming;
+
+        return incoming with
+        {
+            Branding = incoming.Branding is null ? null : incoming.Branding with
+            {
+                LogoAssetId = stored.Value.Branding?.LogoAssetId,
+                FaviconAssetId = stored.Value.Branding?.FaviconAssetId,
+            },
+            LoginExperience = incoming.LoginExperience is null ? null : incoming.LoginExperience with
+            {
+                LoginProviderIds = stored.Value.LoginExperience?.LoginProviderIds,
+            },
+            SelfRegistration = incoming.SelfRegistration is null ? null : incoming.SelfRegistration with
+            {
+                DefaultGroupIds = stored.Value.SelfRegistration?.DefaultGroupIds,
+            },
+        };
     }
 
     /// <summary>Binds a handle to the id a create actually produced and records the entity

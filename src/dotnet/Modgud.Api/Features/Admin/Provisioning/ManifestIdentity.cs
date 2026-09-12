@@ -28,11 +28,18 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// </summary>
 public sealed class ManifestIdentity
 {
-    private readonly HashSet<string> _declared;
+    /// <summary>handle → the section that declared it. The SECTION matters as much as the
+    /// handle: without it, <c>"Members": ["#platform"]</c> pointing at a group would resolve
+    /// to that group's id and be stored as a member, because the handle path never loads a
+    /// document and so never learns the type the real-id path checks for free.</summary>
+    private readonly Dictionary<string, string> _declared;
     private readonly Dictionary<string, Guid> _assigned = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<Guid>> _applied = new(StringComparer.Ordinal);
 
-    private ManifestIdentity(HashSet<string> declared) => _declared = declared;
+    private ManifestIdentity(Dictionary<string, string> declared) => _declared = declared;
+
+    /// <summary>The section a handle was declared in, or null when nothing declared it.</summary>
+    public string? SectionOf(string handle) => _declared.GetValueOrDefault(handle);
 
     /// <summary>Handle → the real id the apply gave it. What the response reports back so a
     /// hand-written file can be made idempotent without exporting the realm.</summary>
@@ -79,9 +86,9 @@ public sealed class ManifestIdentity
     public static ErrorOr<ManifestIdentity> Validate(RealmManifest manifest)
     {
         var errors = new List<Error>();
-        var declared = new HashSet<string>(StringComparer.Ordinal);
+        var declared = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        void Declare(string? id, string ctx)
+        void Declare(string? id, string section, string ctx)
         {
             if (ManifestHandle.IsMalformed(id))
             {
@@ -90,30 +97,50 @@ public sealed class ManifestIdentity
                 return;
             }
             if (!ManifestHandle.Is(id)) return;
-            if (!declared.Add(id!))
+            if (!declared.TryAdd(id!, section))
                 errors.Add(Error.Validation("Manifest.DuplicateHandle",
                     $"{ctx}: the handle '{id}' is declared more than once — a handle names exactly one entity in this manifest."));
         }
 
-        foreach (var a in manifest.Apps) Declare(a.Id, $"app '{a.Slug}'");
-        foreach (var a in manifest.Apis) Declare(a.Id, $"api '{a.Name}'");
-        foreach (var s in manifest.Scopes) Declare(s.Id, $"scope '{s.Name}'");
-        foreach (var c in manifest.Clients) Declare(c.Id, $"client '{c.ClientId}'");
-        foreach (var p in manifest.LoginProviders) Declare(p.Id, $"login provider '{p.Slug}'");
-        foreach (var r in manifest.Roles) Declare(r.Id, $"role '{r.NaturalKey}'");
-        foreach (var u in manifest.Users) Declare(u.Id, $"user '{u.Email}'");
-        foreach (var s in manifest.ServiceAccounts) Declare(s.Id, $"service account '{s.AccountName}'");
-        foreach (var g in manifest.Groups) Declare(g.Id, $"group '{g.Name}'");
-        foreach (var p in manifest.Positions) Declare(p.Id, $"position '{p.AccountName}'");
+        foreach (var a in manifest.Apps) Declare(a.Id, Sections.Apps, $"app '{a.Slug}'");
+        foreach (var a in manifest.Apis) Declare(a.Id, Sections.Apis, $"api '{a.Name}'");
+        foreach (var s in manifest.Scopes) Declare(s.Id, Sections.Scopes, $"scope '{s.Name}'");
+        foreach (var c in manifest.Clients) Declare(c.Id, Sections.Clients, $"client '{c.ClientId}'");
+        foreach (var p in manifest.LoginProviders) Declare(p.Id, Sections.LoginProviders, $"login provider '{p.Slug}'");
+        foreach (var r in manifest.Roles) Declare(r.Id, Sections.Roles, $"role '{r.NaturalKey}'");
+        foreach (var u in manifest.Users) Declare(u.Id, Sections.Users, $"user '{u.Email}'");
+        foreach (var s in manifest.ServiceAccounts) Declare(s.Id, Sections.ServiceAccounts, $"service account '{s.AccountName}'");
+        foreach (var g in manifest.Groups) Declare(g.Id, Sections.Groups, $"group '{g.Name}'");
+        foreach (var p in manifest.Positions) Declare(p.Id, Sections.Positions, $"position '{p.AccountName}'");
 
-        void CheckRef(ManifestRef? reference, string what, string ctx)
+        // A declared handle is a PROMISE that the reference resolves. Two things can
+        // break that promise, and neither shows up at apply time as anything but a
+        // missing member: the handle names an entity of the wrong kind, or one whose
+        // section is applied later. A real id needs neither check — loading the document
+        // proves the type, and the realm already holds it. A handle proves nothing, so
+        // the declaration site is the only place either can be caught.
+        void CheckRef(ManifestRef? reference, string what, string wantedSection, string fromSection, string ctx)
         {
             if (reference is null) return;
             if (reference.Handle is { } handle)
             {
-                if (!declared.Contains(handle))
+                if (!declared.TryGetValue(handle, out var declaredIn))
+                {
                     errors.Add(Error.Validation("Manifest.UnknownHandle",
                         $"{ctx}: '{handle}' is not declared in this manifest. A '#handle' only works inside the file that declares it — declare the {what} with \"Id\": \"{handle}\", or reference an existing {what} by its real id."));
+                    return;
+                }
+                if (declaredIn != wantedSection)
+                {
+                    errors.Add(Error.Validation("Manifest.HandleKindMismatch",
+                        $"{ctx}: '{handle}' is declared in '{declaredIn}', but this reference needs a {what}."));
+                    return;
+                }
+                if (ApplyOrder(declaredIn) > ApplyOrder(fromSection))
+                {
+                    errors.Add(Error.Validation("Manifest.HandleAppliedTooLate",
+                        $"{ctx}: '{handle}' names a {what} in the '{declaredIn}' section, which is applied AFTER '{fromSection}' — it would not exist yet. Reference that {what} by its real id instead."));
+                }
                 return;
             }
             if (ManifestHandle.IsMalformed(reference.Id))
@@ -135,12 +162,15 @@ public sealed class ManifestIdentity
 
         foreach (var g in manifest.Groups)
         {
-            foreach (var m in g.Members ?? []) CheckRef(m, "user", $"group '{g.Name}' member '{m}'");
-            foreach (var r in g.Roles ?? []) CheckRef(r, "role", $"group '{g.Name}' role '{r}'");
+            foreach (var m in g.Members ?? [])
+                CheckRef(m, "user", Sections.Users, Sections.Groups, $"group '{g.Name}' member '{m}'");
+            foreach (var r in g.Roles ?? [])
+                CheckRef(r, "role", Sections.Roles, Sections.Groups, $"group '{g.Name}' role '{r}'");
         }
         foreach (var p in manifest.Positions)
             foreach (var grant in p.Grants ?? [])
-                CheckRef(grant, "user", $"position '{p.AccountName}' grant '{grant}'");
+                CheckRef(grant, "user", Sections.Users, Sections.Positions,
+                    $"position '{p.AccountName}' grant '{grant}'");
 
         // App slugs, scope names and API audiences are VOCABULARY, not identity: they are
         // what tokens and permission strings carry, and an entity is required to have one,
@@ -180,6 +210,27 @@ public sealed class ManifestIdentity
         return errors.Count > 0 ? errors : new ManifestIdentity(declared);
     }
 
+    /// <summary>
+    /// Position of a section in the applier's dependency order — the order
+    /// <c>ApplyTenantUpdateSectionsAsync</c> actually runs them in. A handle can only be
+    /// referenced from a section at or after the one that declares it; anything else
+    /// resolves to nothing, and quietly.
+    /// </summary>
+    private static int ApplyOrder(string section) => section switch
+    {
+        Sections.Apps => 1,
+        Sections.Apis => 2,
+        Sections.Scopes => 3,
+        Sections.Clients => 4,
+        Sections.LoginProviders => 5,
+        Sections.Roles => 6,
+        Sections.Users => 7,
+        Sections.Groups => 8,
+        Sections.ServiceAccounts => 9,
+        Sections.Positions => 10,
+        _ => int.MaxValue,
+    };
+
     /// <summary>The manifest sections, as the plan, the prune sweep and the staged-delete
     /// targets all spell them. Named once so the applier's keep-sets and the planner's
     /// section names cannot drift apart.</summary>
@@ -193,6 +244,7 @@ public sealed class ManifestIdentity
         public const string Roles = "roles";
         public const string Users = "users";
         public const string Groups = "groups";
+        public const string ServiceAccounts = "serviceAccounts";
         public const string Positions = "positions";
     }
 }

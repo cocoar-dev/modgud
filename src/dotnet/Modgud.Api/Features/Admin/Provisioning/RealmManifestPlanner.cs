@@ -838,8 +838,12 @@ public sealed class RealmManifestPlanner(
 
             // A rename: the Id named a live entity whose natural key differs. Show WHAT is
             // being renamed (the key field is otherwise skipped, being the match key).
+            // Case-insensitive for the non-renameable sections, matching the applier's
+            // EnsureRenameable — comparing Ordinal here made the plan report an apply
+            // error for a client the applier would have accepted (`MyApp` vs `myapp`).
             if (matchedById && existing is not null &&
-                !string.Equals(key(existing), itemKey, StringComparison.Ordinal))
+                !string.Equals(key(existing), itemKey,
+                    policy.KeyRenameable ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase))
             {
                 var field = policy.KeyField ?? "Key";
                 if (policy.KeyRenameable)

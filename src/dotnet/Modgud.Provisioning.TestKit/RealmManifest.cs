@@ -63,6 +63,45 @@ public sealed record InitialAdmin
     public string? Lastname { get; init; }
 }
 
+/// <summary>
+/// A cross-reference to another entity in the manifest. Author it as a plain string — the
+/// kit rewrites it before sending (see <see cref="RealmManifest"/>). On the wire it is
+/// either a <c>"#handle"</c> for an entity this manifest creates, or
+/// <c>{ "Key": "...", "Id": "..." }</c> for one addressed by a real id; a bare name is
+/// refused by the server, which is why the kit never sends one.
+/// </summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(ManifestRefJsonConverter))]
+public sealed record ManifestRef
+{
+    public string? Key { get; init; }
+    public string? Id { get; init; }
+
+    public static implicit operator ManifestRef(string value) => new() { Key = value };
+
+    public override string ToString() => Key ?? Id ?? string.Empty;
+}
+
+/// <summary>Writes the two wire forms the server accepts. A real id MUST go out as the
+/// object form: a bare string without '#' reads back as a name, and the server refuses
+/// names outright.</summary>
+public sealed class ManifestRefJsonConverter : System.Text.Json.Serialization.JsonConverter<ManifestRef>
+{
+    public override ManifestRef Read(ref System.Text.Json.Utf8JsonReader reader, Type t, System.Text.Json.JsonSerializerOptions o)
+        => reader.TokenType == System.Text.Json.JsonTokenType.String
+            ? new ManifestRef { Key = reader.GetString() }
+            : throw new System.Text.Json.JsonException("A reference reads as a string here.");
+
+    public override void Write(System.Text.Json.Utf8JsonWriter writer, ManifestRef value, System.Text.Json.JsonSerializerOptions o)
+    {
+        if (value.Id is null) { writer.WriteStringValue(value.Key); return; }
+        if (value.Key is null && value.Id.StartsWith('#')) { writer.WriteStringValue(value.Id); return; }
+        writer.WriteStartObject();
+        if (value.Key is not null) writer.WriteString("Key", value.Key);
+        writer.WriteString("Id", value.Id);
+        writer.WriteEndObject();
+    }
+}
+
 public sealed record RealmManifestPermission(string Resource, string Action, string? Description = null);
 
 public sealed record RealmManifestApp
@@ -188,8 +227,8 @@ public sealed record RealmManifestGroup
 
     public required string Name { get; init; }
     public string? Description { get; init; }
-    public List<string> Members { get; init; } = [];
-    public List<string> Roles { get; init; } = [];
+    public List<ManifestRef> Members { get; init; } = [];
+    public List<ManifestRef> Roles { get; init; } = [];
     public string MembershipMode { get; init; } = "Manual";
     public string? MembershipScript { get; init; }
     public string? Email { get; init; }

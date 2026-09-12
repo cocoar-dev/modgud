@@ -23,8 +23,11 @@ internal static class ManifestHandles
     {
         // Handles are namespaced per entity kind: a role and a user may share a key
         // without colliding, and a handle stays readable in a server error message.
-        var roleHandles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var userHandles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        // key/alias -> the reference to send. A handle goes out as a bare "#..." string;
+        // a pinned REAL id has to go out as { Key, Id }, because a bare string without '#'
+        // reads back as a name and the server refuses names.
+        var roleHandles = new Dictionary<string, ManifestRef>(StringComparer.OrdinalIgnoreCase);
+        var userHandles = new Dictionary<string, ManifestRef>(StringComparer.OrdinalIgnoreCase);
 
         var roles = new List<RealmManifestRole>(manifest.Roles.Count);
         foreach (var r in manifest.Roles)
@@ -33,7 +36,8 @@ internal static class ManifestHandles
             var id = r.Id ?? $"#role:{natural}";
             // Every spelling a group may use for this role: the explicit Key, the qualified
             // key, and the bare name (which the kit has always accepted).
-            Register(roleHandles, id, r.Key, natural, r.Name);
+            Register(roleHandles, new ManifestRef { Key = r.Id is null ? null : natural, Id = id },
+                r.Key, natural, r.Name);
             roles.Add(r.Id is null ? r with { Id = id } : r);
         }
 
@@ -42,7 +46,8 @@ internal static class ManifestHandles
         {
             var natural = u.Key ?? u.UserName ?? u.Email;
             var id = u.Id ?? $"#user:{natural}";
-            Register(userHandles, id, u.Key, natural, u.UserName, u.Email);
+            Register(userHandles, new ManifestRef { Key = u.Id is null ? null : natural, Id = id },
+                u.Key, natural, u.UserName, u.Email);
             users.Add(u.Id is null ? u with { Id = id } : u);
         }
 
@@ -50,8 +55,8 @@ internal static class ManifestHandles
             .Select(g => g with
             {
                 Id = g.Id ?? $"#group:{g.Name}",
-                Members = g.Members.Select(m => userHandles.GetValueOrDefault(m, m)).ToList(),
-                Roles = g.Roles.Select(r => roleHandles.GetValueOrDefault(r, r)).ToList(),
+                Members = g.Members.Select(m => Resolve(userHandles, m)).ToList(),
+                Roles = g.Roles.Select(r => Resolve(roleHandles, r)).ToList(),
             })
             .ToList();
 
@@ -67,13 +72,18 @@ internal static class ManifestHandles
         };
     }
 
+    /// <summary>Rewrites an authored reference to the form the server accepts, leaving one
+    /// it does not recognise untouched so the server can name the problem.</summary>
+    private static ManifestRef Resolve(IReadOnlyDictionary<string, ManifestRef> map, ManifestRef authored)
+        => authored.Key is { Length: > 0 } key && map.TryGetValue(key, out var wire) ? wire : authored;
+
     /// <summary>Records every alias a reference may use for one entity. First declaration
     /// wins: with two entities sharing an alias the ambiguous spelling stays pointing at
     /// the first, and the second is still reachable by its own unambiguous key.</summary>
     private static void Register(
-        Dictionary<string, string> map, string handle, params string?[] aliases)
+        Dictionary<string, ManifestRef> map, ManifestRef wire, params string?[] aliases)
     {
         foreach (var alias in aliases)
-            if (!string.IsNullOrEmpty(alias)) map.TryAdd(alias, handle);
+            if (!string.IsNullOrEmpty(alias)) map.TryAdd(alias, wire);
     }
 }

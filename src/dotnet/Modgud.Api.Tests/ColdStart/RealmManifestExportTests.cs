@@ -1,10 +1,13 @@
+using Marten;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Features.Admin.Provisioning;
 using Modgud.Api.Tests.Infrastructure;
+using Modgud.Application.DTOs.Applications;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Applications;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Infrastructure.Persistence.Tenancy;
 
@@ -179,6 +182,79 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
         {
             var live = await sp.GetRequiredService<IRealmSettingsService>().GetDtoAsync(ct);
             Assert.Equal([groupRef], live.SelfRegistration.DefaultGroupIds);
+        });
+    }
+
+    /// <summary>
+    /// Regression, and the sharp edge of "these ids do not travel": a PER-APP settings
+    /// section is REPLACE, not merge-patch — <c>StageNonOriginAsync</c> rebuilds the whole
+    /// section from the DTO whenever the section is present. So stripping the ids out of a
+    /// section that still carries other values does not leave them alone, it CLEARS them.
+    /// Re-applying an unedited export wiped an App's login-provider allow-list, and
+    /// <c>LoginProviderIds = null</c> means "every enabled provider" — a silent widening of
+    /// the App's authentication surface, with a plan that read "unchanged".
+    /// </summary>
+    [Fact]
+    public async Task Re_applying_an_export_keeps_per_app_settings_that_do_not_travel()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+
+        const string slug = "appwiring";
+        var groupId = Guid.NewGuid();
+        var groupRef = new BuildingBlocks.Helper.ShortGuid(groupId).ToString();
+        var providerId = Guid.NewGuid();
+        var providerRef = new BuildingBlocks.Helper.ShortGuid(providerId).ToString();
+
+        var provisioned = await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest
+        {
+            Apps = [new RealmManifestApp { Slug = "shop", DisplayName = "Shop" }],
+            Groups = [new RealmManifestGroup { Name = "Newcomers", Id = groupRef }],
+            LoginProviders =
+            [
+                new RealmManifestLoginProvider
+                {
+                    Slug = "corp", Id = providerRef, Flavor = "GenericOidc", DisplayName = "Corp",
+                    ClientId = "corp-client",
+                    FlavorData = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
+                        """{"MetadataUri":"https://idp.example.com/.well-known/openid-configuration"}"""),
+                },
+            ],
+        }, ct);
+        Assert.False(provisioned.IsError,
+            provisioned.IsError ? provisioned.FirstError.Description : string.Empty);
+
+        // Wire the App up through its own admin surface — the only place these belong.
+        Guid appId = default;
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            appId = (await session.Query<Modgud.Authorization.Apps.App>()
+                .SingleAsync(a => !a.IsDeleted && a.Slug == "shop", ct)).Id;
+            var staged = await sp.GetRequiredService<IApplicationSettingsService>().StageNonOriginAsync(appId,
+                new ApplicationSettingsDto
+                {
+                    LoginExperience = new ApplicationLoginExperienceDto { LoginProviderIds = [providerRef] },
+                    SelfRegistration = new ApplicationSelfRegistrationDto { Enabled = true, DefaultGroupIds = [groupRef] },
+                }, ct);
+            Assert.False(staged.IsError, staged.IsError ? staged.FirstError.Description : string.Empty);
+            await session.SaveChangesAsync(ct);
+        });
+
+        // Export → re-apply unedited. This is the plain "draft from export, apply" flow.
+        var exported = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exported.IsError, exported.IsError ? exported.FirstError.Description : string.Empty);
+        Assert.False((await applier.UpdateRealmAsync(slug, exported.Value, ct: ct)).IsError);
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var live = await sp.GetRequiredService<IApplicationSettingsService>().GetAsync(appId, ct);
+            Assert.False(live.IsError, live.IsError ? live.FirstError.Description : string.Empty);
+            Assert.Equal([providerRef], live.Value.LoginExperience?.LoginProviderIds);
+            Assert.Equal([groupRef], live.Value.SelfRegistration?.DefaultGroupIds);
         });
     }
 

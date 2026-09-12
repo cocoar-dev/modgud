@@ -1510,6 +1510,71 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         });
     }
 
+    /// <summary>
+    /// A `#handle` proves nothing about what it names — unlike a real id, which proves its
+    /// type by loading the document. Three ways that can go wrong, all of which used to
+    /// pass validation and then quietly produce a group with the wrong contents:
+    /// the handle names an entity of another KIND, it is declared in a section applied
+    /// LATER, or its declaring entry was itself SKIPPED at apply time.
+    /// </summary>
+    [Fact]
+    public async Task A_handle_that_cannot_honour_its_promise_is_refused_or_reported()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "handles";
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest(), ct)).IsError);
+
+        // ── Wrong KIND: a group handle used where a role is expected. Resolving it would
+        //    have written a GROUP id into RoleIds, which nothing downstream validates. ──
+        var wrongKind = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Groups =
+            [
+                new RealmManifestGroup { Name = "Platform", Id = "#platform" },
+                new RealmManifestGroup { Name = "Ops", Roles = ["#platform"] },
+            ],
+        }, ct: ct);
+        Assert.True(wrongKind.IsError);
+        Assert.Equal("Manifest.HandleKindMismatch", wrongKind.FirstError.Code);
+
+        // ── Wrong ORDER: positions apply after groups, so a group referencing a position
+        //    handle would resolve to nothing — declared, but not yet assigned. ──────────
+        var tooLate = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Users = [new RealmManifestUser { Id = "#late", Email = "late@handles.test", UserName = "late" }],
+            Positions = [new RealmManifestPosition { AccountName = "kiosk", Id = "#kiosk" }],
+            Groups = [new RealmManifestGroup { Name = "Ops2", Members = ["#late", "#kiosk"] }],
+        }, ct: ct);
+        Assert.True(tooLate.IsError);
+        Assert.Contains(tooLate.Errors, e =>
+            e.Code is "Manifest.HandleKindMismatch" or "Manifest.HandleAppliedTooLate");
+
+        // ── Declaring entry SKIPPED: the role's app is not in this realm, so the role is
+        //    skipped and its handle never gets an id. The group must SAY the reference
+        //    dropped — a group that silently comes out with fewer roles is the exact
+        //    failure mode ADR 0024 exists to prevent. ─────────────────────────────────
+        var skipped = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Roles = [new RealmManifestRole { Id = "#orphan", Name = "Orphan", App = "not-here" }],
+            Groups = [new RealmManifestGroup { Name = "Ops3", Roles = ["#orphan"] }],
+        }, ct: ct);
+        Assert.False(skipped.IsError, skipped.IsError ? skipped.FirstError.Description : string.Empty);
+        Assert.Contains(skipped.Value.SkippedReferences, x => x.Contains("#orphan"));
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var ops3 = await session.Query<Group>().SingleAsync(g => !g.IsDeleted && g.Name == "Ops3", ct);
+            Assert.Empty(ops3.RoleIds);
+            Assert.False(await session.Query<Group>().AnyAsync(g => !g.IsDeleted && g.Name == "Ops", ct),
+                "the wrong-kind manifest must not have been applied at all");
+        });
+    }
+
     private static async Task InTenantAsync(
         ColdStartWebApplicationFactory factory, string slug, Func<IServiceProvider, Task> body)
     {

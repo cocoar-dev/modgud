@@ -1,6 +1,6 @@
 # A manifest identifies by id, never by name
 
-**Status:** Accepted — not yet implemented · **Decided:** 2026-09-10 · **Relates to:** [ADR 0017](./0017-staged-configuration-draft-mode)
+**Status:** Accepted · **Decided:** 2026-09-10 · **Relates to:** [ADR 0017](./0017-staged-configuration-draft-mode)
 
 ## Context
 

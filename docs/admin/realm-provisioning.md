@@ -304,7 +304,7 @@ team or an agent — so they can fully manage *that* realm's config and entities
 
 - **Scope is the calling realm** — resolved from the request host, never from a slug in
   the body. A manifest whose `Realm.Slug` names a *different* realm is rejected
-  (`Manifest.SlugMismatch`). There is no `import` and no realm-delete here — realm
+  There is no realm-create and no realm-delete here — realm
   lifecycle stays control-plane-only.
 - **Permission**: `realm:admin` in the realm being called. Nothing control-plane.
 - **Same engine, same protections** as the control-plane path: prune is bounded to the
@@ -315,7 +315,7 @@ team or an agent — so they can fully manage *that* realm's config and entities
 
 To grant someone management of exactly one realm:
 
-1. **Create the realm** (control-plane: `import`, or the admin UI).
+1. **Create the realm** (control-plane: `POST /api/admin/realms`, or the admin UI).
 2. **In that realm, give the principal `realm:admin`** — either a **user** (interactive)
    or a **service account** (machine / agent, `client_credentials`). Both work. For a
    bearer caller, Modgud evaluates `realm:admin` live from the principal's current groups
@@ -369,7 +369,7 @@ await http.PostAsJsonAsync("/api/account/login",
     new { UserName = "admin", Password = "<password>" });
 
 var kit = new ModgudProvisioningClient(http);
-await using var realm = await kit.ImportRealmAsync(manifest);   // dispose → hard-delete
+await using var realm = await kit.ImportRealmAsync(spec, manifest);  // dispose → hard-delete
 var secret = realm.SecretFor("acme-web");
 ```
 

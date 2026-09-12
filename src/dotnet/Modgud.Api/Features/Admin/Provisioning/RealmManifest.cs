@@ -60,13 +60,13 @@ public sealed record RealmManifest
     [Description("Roles (named permission sets). Either app-scoped (App + Permissions) or a pure realm-admin role (IsRealmAdmin=true).")]
     public List<RealmManifestRole> Roles { get; init; } = [];
 
-    [Description("Users. Created passwordless unless a Password is given. Referenced by groups via Key.")]
+    [Description("Users. Created passwordless unless a Password is given. A group references a user by Id or by a '#handle' this manifest declares — never by name.")]
     public List<RealmManifestUser> Users { get; init; } = [];
 
     [Description("Service-account HULLS (machine principals): AccountName, Purpose, IsActive and an optional pinned Id. Credentials (client_credentials OAuth clients + secrets) are deliberately NOT modelled — issue them per environment via the service-account admin. Apply upserts only; service accounts are never pruned or staged-deleted (delete stays a live operation).")]
     public List<RealmManifestServiceAccount> ServiceAccounts { get; init; } = [];
 
-    [Description("Groups. The ONLY way users get roles: a user is a group member, the group carries roles. Members/Roles are references: a string key, or { Key, Id } where the Id wins and the Key is the readable fallback.")]
+    [Description("Groups. The ONLY way users get roles: a user is a group member, the group carries roles. Members/Roles name entities by identity (ADR 0024): { \"Key\": \"alice\", \"Id\": \"<id>\" } for one that exists here, or \"#alice\" for one this same manifest creates. A bare name is an error.")]
     public List<RealmManifestGroup> Groups { get; init; } = [];
 
     [Description("External login providers (OIDC/SAML federation). The built-in Internal provider is seeded automatically and cannot be declared here. Slug is the natural key; Type and Flavor are immutable after create.")]
@@ -341,8 +341,9 @@ public sealed record RealmManifestRole
     public string NaturalKey => RoleKeys.Qualified(App, Name);
 
     /// <summary>The key groups reference this role by: the explicit <see cref="Key"/>, else
-    /// the <see cref="NaturalKey"/>. A bare name is also accepted as a reference as long
-    /// as it names exactly one role (see the applier's role-reference resolution).</summary>
+    /// the <see cref="NaturalKey"/>. It is only ever DISPLAYED beside a reference's Id —
+    /// never resolved (ADR 0024), and reported when it disagrees with the role the id
+    /// names.</summary>
     public string ResolveKey() => Key ?? NaturalKey;
 }
 

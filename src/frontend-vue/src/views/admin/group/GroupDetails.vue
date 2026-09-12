@@ -136,6 +136,12 @@ function memberIdOf(ref: ManifestRef): string | undefined {
 const unresolvedMembers = ref<ManifestRef[]>([])
 const unresolvedRoles = ref<ManifestRef[]>([])
 
+/** What to tell the admin about the references the pickers cannot show. */
+const unresolvedRefs = computed(() =>
+  [...unresolvedMembers.value, ...unresolvedRoles.value]
+    .map((r) => (typeof r === 'string' ? r : r.Key || r.Id || ''))
+    .filter((label) => label.length > 0))
+
 /** Loads the staged manifest entity into the form (member/role references →
  * principal/role ids — both need the lookups loaded first). */
 function fromStagedInto(e: ManifestEntity) {
@@ -612,6 +618,15 @@ async function save() {
       <CoarNotice v-if="saveError" variant="error">
         <strong>{{ t('admin.groupDetails.saveError', {}, 'Save failed') }}</strong>
         <pre class="notice-message">{{ saveError }}</pre>
+      </CoarNotice>
+
+      <!-- The pickers below can only offer entities that exist in THIS realm. A staged
+           group from an uploaded manifest may reference others (a '#handle', or an id
+           from elsewhere); those are kept on save rather than dropped, so they have to
+           be visible — otherwise clearing the picker looks like it did nothing. -->
+      <CoarNotice v-if="unresolvedRefs.length > 0" variant="info">
+        {{ t('admin.groupDetails.unresolvedRefs', { refs: unresolvedRefs.join(', ') },
+             'This staged group also references entities that do not exist in this realm: {refs}. They are not shown in the pickers and are kept unchanged when you save.') }}
       </CoarNotice>
 
       <!-- Tab: General -->
