@@ -63,7 +63,7 @@ public sealed record RealmManifest
     [Description("Users. Created passwordless unless a Password is given. A group references a user by Id or by a '#handle' this manifest declares — never by name.")]
     public List<RealmManifestUser> Users { get; init; } = [];
 
-    [Description("Service-account HULLS (machine principals): AccountName, Purpose, IsActive and an optional pinned Id. Credentials (client_credentials OAuth clients + secrets) are deliberately NOT modelled — issue them per environment via the service-account admin. Apply upserts only; service accounts are never pruned or staged-deleted (delete stays a live operation).")]
+    [Description("Service accounts (machine principals) and their credentials. The ACCOUNT is upsert-only — never pruned or staged-deleted, because deleting one kills every credential it owns, so that stays a deliberate live operation. Its CREDENTIALS are ordinary manifest entries: declared, updated, and with ?prune=true deleted when the file drops them. Secrets never travel — a credential created by an apply is minted a fresh one, returned once in ClientSecrets.")]
     public List<RealmManifestServiceAccount> ServiceAccounts { get; init; } = [];
 
     [Description("Groups. The ONLY way users get roles: a user is a group member, the group carries roles. Members/Roles name entities by identity (ADR 0024): { \"Key\": \"alice\", \"Id\": \"<id>\" } for one that exists here, or \"#alice\" for one this same manifest creates. A bare name is an error.")]
@@ -535,6 +535,51 @@ public sealed record RealmManifestServiceAccount
 
     [Description("Optional. Omit = no change / default true on create. Deactivating on apply revokes the account's outstanding tokens across all its credentials.")]
     public bool? IsActive { get; init; }
+
+    [Description("The account's machine credentials — each one a client_credentials OAuth client bound to this account. Absent = unchanged; [] declares none (with ?prune=true the account's existing credentials are then deleted, which cuts off whatever uses them — the plan shows it and a pruning apply asks first). Secrets are NEVER carried: a credential created here is minted a fresh secret, returned once in the apply result's ClientSecrets under its ClientId.")]
+    public List<RealmManifestServiceAccountCredential>? Credentials { get; init; }
+}
+
+/// <summary>
+/// One machine credential of a service account: technically a confidential OAuth client
+/// with the <c>client_credentials</c> grant, bound to the account, which is also how the
+/// service-account admin creates one.
+///
+/// <para>It lives UNDER its account rather than in the manifest's Clients list for two
+/// reasons: a credential has no meaning apart from the account that owns it, and the
+/// account has to exist before the credential can be bound to it — nesting makes that
+/// ordering true by construction instead of a rule to remember.</para>
+///
+/// <para>No secret field, deliberately. A credential's secret is minted by the server and
+/// shown once; letting a manifest carry one would put a live machine password into a file
+/// that gets committed, copied and mailed around — and the draft workspace, which strips
+/// the secrets it knows about, does not look inside this list.</para>
+/// </summary>
+public sealed record RealmManifestServiceAccountCredential
+{
+    [Description("The OAuth client_id this credential authenticates with.")]
+    public required string ClientId { get; init; }
+
+    [Description("The credential's IDENTITY (ADR 0024). A real id (ShortGuid or Guid) names it: the apply updates it where it exists and creates it under that id where it doesn't. Names are never matched, so an entry without a real id always CREATES — and fails if the client_id is taken.")]
+    public string? Id { get; init; }
+
+    [Description("Optional display name. Absent = unchanged; explicit null clears.")]
+    public Optional<string?> DisplayName { get; init; }
+
+    [Description("Scope names this credential may request. Absent = unchanged; [] clears.")]
+    public List<string>? Scopes { get; init; }
+
+    [Description("App slugs this credential operates in. Absent = unchanged; [] detaches all.")]
+    public List<string>? Apps { get; init; }
+
+    [Description("Optional. Omit = no change / default true on create.")]
+    public bool? Enabled { get; init; }
+
+    [Description("Optional access token format: 'Jwt' or 'Reference'. Omit = no change / default 'Reference' on create.")]
+    public string? AccessTokenType { get; init; }
+
+    [Description("Optional access token lifetime in SECONDS. Absent = unchanged; explicit null clears the override.")]
+    public Optional<int?> AccessTokenLifetime { get; init; }
 }
 
 /// <summary>A position principal (MG-FT). <see cref="AccountName"/> is the natural key;

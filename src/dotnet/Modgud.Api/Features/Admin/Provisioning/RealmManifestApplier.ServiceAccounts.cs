@@ -3,8 +3,14 @@ using ErrorOr;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Features.ServiceAccounts;
+using Modgud.Application.DTOs.OAuth;
+using Modgud.Application.DTOs.ServiceAccount;
+using Modgud.Application.Services;
+using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Authorization.Principals;
+using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Common;
 using Modgud.Infrastructure.OpenIddict;
 
 namespace Modgud.Api.Features.Admin.Provisioning;
@@ -29,12 +35,15 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 public sealed partial class RealmManifestApplier
 {
     private static async Task ApplyServiceAccountsAsync(
-        IServiceProvider sp, RealmManifest manifest, ManifestIdentity identity, CancellationToken ct)
+        IServiceProvider sp, RealmManifest manifest, ManifestIdentity identity,
+        IReadOnlyDictionary<string, App> apps, Dictionary<string, string> secrets,
+        ManifestReferenceSkips skips, CancellationToken ct)
     {
         if (manifest.ServiceAccounts.Count == 0) return;
 
         var session = sp.GetRequiredService<IDocumentSession>();
         var revoker = sp.GetRequiredService<IOAuthGrantRevoker>();
+        var oauth = sp.GetRequiredService<OAuthAdminService>();
 
         foreach (var sa in manifest.ServiceAccounts)
         {
@@ -53,12 +62,98 @@ public sealed partial class RealmManifestApplier
             // whose id consuming applications already hold as a foreign key.
             var existing = await MatchByPinnedIdAsync<ServiceAccount>(session, sa.Id, x => x.IsDeleted, ct);
 
+            Guid accountId;
             if (existing is null)
-                identity.Assign(sa.Id, await CreateServiceAccountAsync(session, sa, normalised, ctx, ct));
+            {
+                accountId = await CreateServiceAccountAsync(session, sa, normalised, ctx, ct);
+            }
             else
             {
-                identity.Assign(sa.Id, existing.Id);
+                accountId = existing.Id;
                 await UpdateServiceAccountAsync(session, revoker, existing, sa, normalised, ctx, ct);
+            }
+            identity.Assign(sa.Id, accountId);
+            // The ACCOUNT is never pruned (deleting it kills every credential it owns), but
+            // recording it tells prune that the manifest speaks for this account — which is
+            // what makes it safe to prune the account's credentials below.
+            identity.Applied(ManifestIdentity.Sections.ServiceAccounts, accountId);
+
+            await ApplyCredentialsAsync(session, oauth, identity, apps, secrets, skips, sa, accountId, ctx, ct);
+        }
+    }
+
+    /// <summary>
+    /// Upserts an account's machine credentials — each one a confidential OAuth client with
+    /// the <c>client_credentials</c> grant, bound to the account, created through the SAME
+    /// canonical op the service-account admin uses.
+    ///
+    /// <para>Identity is the Id, as everywhere (ADR 0024): an entry whose Id names a live
+    /// credential updates it, one without creates — and a taken client_id then fails loudly
+    /// rather than adopting some other client. A created credential's secret is minted by
+    /// the server and handed back once, in the apply result's ClientSecrets, exactly as an
+    /// ordinary confidential client's is; a manifest never carries one in.</para>
+    /// </summary>
+    private static async Task ApplyCredentialsAsync(
+        IDocumentSession session, OAuthAdminService oauth, ManifestIdentity identity,
+        IReadOnlyDictionary<string, App> apps,
+        Dictionary<string, string> secrets, ManifestReferenceSkips skips,
+        RealmManifestServiceAccount sa, Guid accountId, string accountCtx, CancellationToken ct)
+    {
+        if (sa.Credentials is null) return;
+
+        foreach (var cred in sa.Credentials)
+        {
+            var ctx = $"{accountCtx} credential '{cred.ClientId}'";
+            var live = await MatchByPinnedIdAsync<OAuthApplicationState>(
+                session, cred.Id, x => x.IsDeleted, ct);
+            if (live is not null)
+                EnsureRenameable(false, cred.ClientId, live.ClientId, "ClientId", ctx);
+
+            var appIds = cred.Apps is null
+                ? null
+                : OrUnchangedWhenNothingResolved(
+                    cred.Apps.Select(slug => ResolveAppId(apps, slug, ctx, skips)).OfType<string>().ToList(),
+                    cred.Apps.Count, ctx, "app", skips);
+
+            if (live is null)
+            {
+                // The SA-scoped issue op, not the ordinary client create: an SA-owned
+                // client pins its grant type, its secret policy and its link to the
+                // account, and /admin/oauth/clients refuses to mutate one at all. Going
+                // around that would be exactly the "new write logic" this applier exists
+                // to avoid.
+                var issued = await oauth.IssueServiceAccountCredentialAsync(accountId,
+                    new IssueServiceAccountCredentialDto
+                    {
+                        ClientId = cred.ClientId,
+                        DisplayName = OrNull(cred.DisplayName),
+                        Scopes = cred.Scopes ?? [],
+                        AppIds = appIds ?? [],
+                        Enabled = cred.Enabled ?? true,
+                        AccessTokenLifetime = OrNull(cred.AccessTokenLifetime),
+                        AccessTokenType = ParseOptionalEnum<AccessTokenType>(
+                            cred.AccessTokenType, $"{ctx} accessTokenType") ?? AccessTokenType.Reference,
+                    }, ct);
+                EnsureOk(issued, ctx);
+                secrets[cred.ClientId] = issued.Value.ClientSecret;
+                RegisterApplied(identity, ManifestIdentity.Sections.Clients,
+                    cred.Id, issued.Value.Credential.Id, ctx);
+            }
+            else
+            {
+                identity.Assign(cred.Id, live.Id);
+                identity.Applied(ManifestIdentity.Sections.Clients, live.Id);
+                EnsureOk(await oauth.UpdateServiceAccountCredentialAsync(accountId, live.Id.ToString(),
+                    new UpdateServiceAccountCredentialDto
+                    {
+                        DisplayName = cred.DisplayName.HasValue ? cred.DisplayName.Value : null,
+                        Scopes = cred.Scopes,
+                        AppIds = appIds,
+                        AccessTokenLifetime = cred.AccessTokenLifetime,
+                        Enabled = cred.Enabled,
+                        AccessTokenType = ParseOptionalEnum<AccessTokenType>(
+                            cred.AccessTokenType, $"{ctx} accessTokenType"),
+                    }, ct), ctx);
             }
         }
     }

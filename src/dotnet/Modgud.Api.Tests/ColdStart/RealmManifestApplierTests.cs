@@ -1787,6 +1787,92 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         });
     }
 
+    /// <summary>
+    /// A service account's machine credentials travel as ordinary manifest entries — what
+    /// does NOT travel is the secret, which is minted fresh on the target and handed back
+    /// once. Before this, an export carried the account hull only, so a transferred service
+    /// account arrived unable to authenticate and nothing said so.
+    ///
+    /// <para>Prune reaches them, deliberately: the plan shows a credential deletion in red
+    /// and a pruning apply asks before it runs, so the admin decides rather than the code
+    /// refusing on their behalf. But only for an account the manifest actually speaks for —
+    /// an account the file never mentions keeps everything it has.</para>
+    /// </summary>
+    [Fact]
+    public async Task Service_account_credentials_travel_without_their_secret_and_prune_only_within_a_declared_account()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+
+        const string slug = "sacreds";
+        Guid billing = Guid.NewGuid(), other = Guid.NewGuid();
+        var seeded = await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest
+        {
+            ServiceAccounts =
+            [
+                new RealmManifestServiceAccount
+                {
+                    AccountName = "billing-sync", Id = Pin(billing),
+                    Credentials =
+                    [
+                        new RealmManifestServiceAccountCredential { ClientId = "billing-sync.primary" },
+                        new RealmManifestServiceAccountCredential { ClientId = "billing-sync.spare" },
+                    ],
+                },
+                new RealmManifestServiceAccount
+                {
+                    AccountName = "untouched", Id = Pin(other),
+                    Credentials = [new RealmManifestServiceAccountCredential { ClientId = "untouched.only" }],
+                },
+            ],
+        }, ct);
+        Assert.False(seeded.IsError, seeded.IsError ? seeded.FirstError.Description : string.Empty);
+
+        // The secret comes back once, keyed by client id — exactly like an ordinary
+        // confidential client's, and the only time it is ever readable.
+        Assert.False(string.IsNullOrWhiteSpace(seeded.Value.ClientSecrets["billing-sync.primary"]));
+        Assert.False(string.IsNullOrWhiteSpace(seeded.Value.ClientSecrets["billing-sync.spare"]));
+
+        // The export carries the credentials under their account — and no secret.
+        var exported = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exported.IsError, exported.IsError ? exported.FirstError.Description : string.Empty);
+        var exportedAccount = exported.Value.ServiceAccounts.Single(s => s.AccountName == "billing-sync");
+        Assert.Equal(
+            ["billing-sync.primary", "billing-sync.spare"],
+            exportedAccount.Credentials!.Select(c => c.ClientId).OrderBy(x => x, StringComparer.Ordinal));
+        // They are NOT ordinary clients — the Clients section stays clean.
+        Assert.DoesNotContain(exported.Value.Clients, c => c.ClientId.StartsWith("billing-sync."));
+
+        // ── Prune with the spare dropped, and the OTHER account left out of the file
+        //    entirely. The spare goes; the unmentioned account keeps everything. ──────
+        var pruned = await applier.UpdateRealmAsync(slug, exported.Value with
+        {
+            ServiceAccounts =
+            [
+                exportedAccount with
+                {
+                    Credentials = [exportedAccount.Credentials!.Single(c => c.ClientId == "billing-sync.primary")],
+                },
+            ],
+        }, prune: true, deletions: null, ct);
+        Assert.False(pruned.IsError, pruned.IsError ? pruned.FirstError.Description : string.Empty);
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var live = await session.Query<OAuthApplicationState>()
+                .Where(c => !c.IsDeleted && c.LinkedServiceAccountId != null).ToListAsync(ct);
+            var ids = live.Select(c => c.ClientId).ToHashSet(StringComparer.Ordinal);
+
+            Assert.Contains("billing-sync.primary", ids);
+            Assert.DoesNotContain("billing-sync.spare", ids);   // declared away → pruned
+            Assert.Contains("untouched.only", ids);             // account never mentioned → untouched
+        });
+    }
+
     private static async Task InTenantAsync(
         ColdStartWebApplicationFactory factory, string slug, Func<IServiceProvider, Task> body)
     {

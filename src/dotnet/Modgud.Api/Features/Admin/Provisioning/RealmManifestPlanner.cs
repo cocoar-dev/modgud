@@ -252,6 +252,24 @@ public sealed class RealmManifestPlanner(
                 PinnedId = x => x.Id,
                 PinnedIdCheck = PinnedIdLookup<ServiceAccount>(
                     session, x => x.IsDeleted, x => x.AccountName, ct),
+                // A diff compares what both sides HAVE; it cannot point at what neither
+                // mentions. An account arriving without credentials is exactly that — no
+                // difference, just an absence — so it has to be said out loud, or the
+                // integration pointed at it fails at the worst possible moment.
+                PostProcess = (desired, existing, entry) =>
+                {
+                    if (existing is null && desired.Credentials is not { Count: > 0 })
+                        entry.Notes.Add(
+                            "This service account arrives with NO credentials — a machine pointed at it "
+                            + "cannot authenticate. Declare them under Credentials, or issue one here in "
+                            + "the service-account admin afterwards.");
+                    foreach (var cred in desired.Credentials ?? [])
+                        if (existing?.Credentials?.Any(c =>
+                                string.Equals(c.ClientId, cred.ClientId, StringComparison.Ordinal)) != true)
+                            entry.Notes.Add(
+                                $"Credential '{cred.ClientId}' is created with a FRESH secret, returned once "
+                                + "in the apply result — secrets never travel in a manifest.");
+                },
             }));
 
         // Cross-references ({ Key, Id } or a bare key) normalize to the CURRENT entity's

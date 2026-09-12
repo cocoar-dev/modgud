@@ -722,7 +722,7 @@ public sealed partial class RealmManifestApplier(
         }
 
         // ── Service accounts (hulls, id-pinned creates) ───────────────────────────
-        await ApplyServiceAccountsAsync(sp, manifest, identity, ct);
+        await ApplyServiceAccountsAsync(sp, manifest, identity, apps, secrets, skips, ct);
 
         // ── Positions (MG-FT) — after users so grants can resolve their handles ───
         await ApplyPositionsAsync(sp, manifest, identity, skips, ct);
@@ -810,9 +810,22 @@ public sealed partial class RealmManifestApplier(
         foreach (var c in await session.Query<OAuthApplicationState>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
             if (Keep(ManifestIdentity.Sections.Clients, c.Id)
-                || c.LinkedServiceAccountId.HasValue
                 || c.LinkedPositionPrincipalId.HasValue
                 || !Wants("clients", c.ClientId)) continue;
+            // A service-account credential is only prunable when the manifest actually
+            // speaks for its account. An account the file never mentions keeps every
+            // credential it has — the alternative is that omitting an account silently
+            // cuts off whatever authenticates as it.
+            if (c.LinkedServiceAccountId is { } ownerId)
+            {
+                if (!Keep(ManifestIdentity.Sections.ServiceAccounts, ownerId)) continue;
+                // …and it goes through the SA-scoped delete: /admin/oauth/clients refuses
+                // to mutate an SA-owned client at all, which is the guard that keeps a
+                // credential's lifecycle attached to its account.
+                EnsureOk(await oauth.DeleteServiceAccountCredentialAsync(ownerId, c.Id.ToString(), ct),
+                    $"prune service-account credential '{c.ClientId}'");
+                continue;
+            }
             EnsureOk(await oauth.DeleteClientAsync(c.Id.ToString(), ct), $"prune client '{c.ClientId}'");
         }
 

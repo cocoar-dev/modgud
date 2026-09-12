@@ -258,12 +258,37 @@ public sealed class RealmManifestExporter(
         //    (the applier pins it at create). ────────────────────────────────────────
         var serviceAccounts = await session.Query<ServiceAccount>()
             .Where(s => !s.IsDeleted).ToListAsync(ct);
+        // An account's credentials are the SA-linked clients — skipped in the Clients
+        // section above (they are not ordinary clients) and carried here instead, where
+        // they belong to the account that owns them. The SECRET never travels: a
+        // credential recreated elsewhere is minted a fresh one at apply.
+        var credentialsByAccount = (await oauth.GetClientsAsync(
+                new PaginationRequest { PageSize = 1000 }, ct))
+            .Items.Where(c => c.LinkedServiceAccountId is not null)
+            .GroupBy(c => c.LinkedServiceAccountId!)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
         var manifestServiceAccounts = serviceAccounts.Select(s => new RealmManifestServiceAccount
         {
             AccountName = s.AccountName,
             Id = new ShortGuid(s.Id).ToString(),
             Purpose = Opt(s.Purpose),
             IsActive = s.IsActive,
+            Credentials = credentialsByAccount
+                .GetValueOrDefault(new ShortGuid(s.Id).ToString(), [])
+                .Select(c => new RealmManifestServiceAccountCredential
+                {
+                    ClientId = c.ClientId,
+                    Id = PinId(c.Id),
+                    DisplayName = Opt(c.DisplayName),
+                    Scopes = c.Permissions.Where(p => p.StartsWith(ScopePrefix, StringComparison.Ordinal))
+                        .Select(p => p[ScopePrefix.Length..]).ToList(),
+                    Apps = c.AppIds.Select(id => SlugOfShort(appSlugById, id))
+                        .Where(x => x is not null).Select(x => x!).ToList(),
+                    Enabled = c.Enabled,
+                    AccessTokenType = c.AccessTokenType.ToString(),
+                    AccessTokenLifetime = Opt(c.AccessTokenLifetime),
+                }).ToList(),
         }).ToList();
 
         // ── Groups (raw — ids are Guids; resolve members→principal keys, roles→role names) ─
