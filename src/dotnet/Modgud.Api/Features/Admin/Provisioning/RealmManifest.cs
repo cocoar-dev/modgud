@@ -76,12 +76,19 @@ public sealed record RealmManifest
     public List<RealmManifestPosition> Positions { get; init; } = [];
 }
 
-/// <summary>A permission catalog entry referenced by <c>resource:action</c>.</summary>
+/// <summary>
+/// A permission catalog entry. Roles and resource servers hold its <c>Id</c> as a foreign
+/// key, so the entry has an identity of its own — the same rule as everywhere else in the
+/// manifest (ADR 0024). Without one, renaming <c>invoice:read</c> to <c>invoice:view</c>
+/// reads as "the old one is gone, a new one appeared", which trips the catalog-delete
+/// guard; that is why a catalog rename used to be impossible through a manifest.
+/// </summary>
 [Description("A permission catalog entry, addressed elsewhere as 'resource:action' (e.g. 'invoice:read'). Both segments must match ^[a-z0-9-]+$. 'realm:admin' is reserved and cannot be a catalog entry (use a role's IsRealmAdmin flag).")]
 public sealed record RealmManifestPermission(
     [property: Description("Resource segment, e.g. 'invoice'. ^[a-z0-9-]+$.")] string Resource,
     [property: Description("Action segment, e.g. 'read'. ^[a-z0-9-]+$.")] string Action,
-    [property: Description("Optional human-readable description of the permission.")] string? Description = null);
+    [property: Description("Optional human-readable description of the permission.")] string? Description = null,
+    [property: Description("The entry's identity (ShortGuid or Guid). Roles and APIs hold it as a foreign key, so carrying it is what lets a manifest RENAME a permission instead of replacing it — an entry with an Id keeps its grants when Resource or Action changes. Exports always carry it; omit it and the entry is matched by 'resource:action' and created if that is new.")] string? Id = null);
 
 /// <summary>An App + its permission catalog (the per-app permission namespace).</summary>
 public sealed record RealmManifestApp
@@ -398,6 +405,9 @@ public sealed record RealmManifestUser
     [Description("Mark the email as already verified. Absent = unchanged / default false on create.")]
     public bool? EmailConfirmed { get; init; }
 
+    [Description("Whether the account may sign in. Absent = unchanged / default true on create. Setting it to false is a KILL SWITCH: the apply revokes the user's OAuth grants, sessions and cookie — like deactivating in the admin UI. The revocation runs after the apply commits, so a rolled-back apply revokes nothing.")]
+    public bool? IsActive { get; init; }
+
     public string ResolveKey() => Key ?? UserName ?? Email;
 }
 
@@ -413,7 +423,7 @@ public sealed record RealmManifestGroup
     [Description("Optional description. Absent = unchanged; explicit null clears.")]
     public Optional<string?> Description { get; init; }
 
-    [Description("Members (users) for MembershipMode=Manual. Each entry names a user by IDENTITY (ADR 0024): { \"Key\": \"alice\", \"Id\": \"<user id>\" } for a user that exists here (missing = reported skip), or \"#alice\" for a user this same manifest creates (undeclared = error). A bare name is an error. Absent = unchanged; [] clears the member list.")]
+    [Description("Members for MembershipMode=Manual — a user, a NESTED GROUP, or a service account. Each entry names one by IDENTITY (ADR 0024): { \"Key\": \"alice\", \"Id\": \"<id>\" } for one that exists here (missing = reported skip), or \"#alice\" for one this same manifest creates (undeclared = error). A bare name is an error. A service-account member must use a real id — service accounts apply after groups, so a handle would not exist yet. Absent = unchanged; [] clears the member list.")]
     public List<ManifestRef>? Members { get; init; }
 
     [Description("Roles this group grants to its members. Each entry names a role by IDENTITY (ADR 0024): { \"Key\": \"acme/Author\", \"Id\": \"<role id>\" } for a role that exists here (missing = reported skip), or \"#author\" for a role this same manifest creates (undeclared = error). A bare name is an error. Absent = unchanged; [] clears.")]

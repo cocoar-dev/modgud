@@ -104,8 +104,34 @@ public sealed class RealmManifestPlanner(
 
         result.Sections.Add(PlanSettings(manifest, current, baseline, json));
 
+        // A catalog entry carries its Id so a rename stays a rename (ADR 0024). A
+        // hand-written entry has none, and the applier then matches it by resource:action —
+        // so filling the live id in before the diff is what keeps the plan honest. Without
+        // it every hand-written catalog reads as "update" against an export that carries ids,
+        // for a change the apply would not make.
+        List<RealmManifestApp> CanonApps(List<RealmManifestApp> apps) => [.. apps.Select(a =>
+        {
+            if (a.Permissions is null) return a;
+            var live = current.Apps.FirstOrDefault(c =>
+                          NormalizedId(c.Id) is { } cid && cid == NormalizedId(a.Id))
+                       ?? current.Apps.FirstOrDefault(c => c.Slug == a.Slug);
+            if (live?.Permissions is not { } livePerms) return a;
+            var byKey = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var lp in livePerms)
+                if (lp.Id is { Length: > 0 }) byKey.TryAdd($"{lp.Resource}:{lp.Action}", lp.Id);
+            return a with
+            {
+                Permissions = [.. a.Permissions.Select(perm => perm.Id is { Length: > 0 }
+                    ? perm
+                    : byKey.TryGetValue($"{perm.Resource}:{perm.Action}", out var id)
+                        ? perm with { Id = id }
+                        : perm)],
+            };
+        })];
+
         result.Sections.Add(await PlanSectionAsync("apps", json, prune, DeletesFor("apps"),
-            manifest.Apps, current.Apps, baseline?.Apps, a => a.Slug,
+            CanonApps(manifest.Apps), current.Apps, baseline is null ? null : CanonApps(baseline.Apps),
+            a => a.Slug,
             new SectionPolicy<RealmManifestApp>
             {
                 Skip = ["Slug"],

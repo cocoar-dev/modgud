@@ -130,7 +130,7 @@ public sealed class ManifestIdentity
                         $"{ctx}: '{handle}' is not declared in this manifest. A '#handle' only works inside the file that declares it — declare the {what} with \"Id\": \"{handle}\", or reference an existing {what} by its real id."));
                     return;
                 }
-                if (declaredIn != wantedSection)
+                if (!wantedSection.Split('|').Contains(declaredIn))
                 {
                     errors.Add(Error.Validation("Manifest.HandleKindMismatch",
                         $"{ctx}: '{handle}' is declared in '{declaredIn}', but this reference needs a {what}."));
@@ -162,8 +162,13 @@ public sealed class ManifestIdentity
 
         foreach (var g in manifest.Groups)
         {
+            // A member may be a user, a nested group, or a service account. Service
+            // accounts apply AFTER groups, so one of those has to be named by its real id
+            // — the order check says so up front rather than dropping it at apply time.
             foreach (var m in g.Members ?? [])
-                CheckRef(m, "user", Sections.Users, Sections.Groups, $"group '{g.Name}' member '{m}'");
+                CheckRef(m, "user, group or service account",
+                    $"{Sections.Users}|{Sections.Groups}|{Sections.ServiceAccounts}",
+                    Sections.Groups, $"group '{g.Name}' member '{m}'");
             foreach (var r in g.Roles ?? [])
                 CheckRef(r, "role", Sections.Roles, Sections.Groups, $"group '{g.Name}' role '{r}'");
         }

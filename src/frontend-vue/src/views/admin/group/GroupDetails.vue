@@ -53,17 +53,14 @@ const applicationsStore = useApplicationsStore()
 const { consume } = useClone()
 const isCreate = computed(() => props.id === 'create')
 
-// ── ADR-0017 staging: group saves commit onto the active draft. The manifest
-// models group members as USER keys only — a Manual group whose members include
-// nested groups or service accounts cannot round-trip through the draft (apply
-// would strip them), so those groups keep the live path.
+// ── ADR-0017 staging: EVERY group save commits onto the active draft.
+// This used to carve out groups whose members include nested groups or service
+// accounts, because the manifest could only name users and an apply would have
+// stripped them. The manifest names any principal now, so the carve-out is gone —
+// and with it a save that wrote live while a draft was open, without saying so.
 const staging = useDraftStaging('groups')
 const isDraftRow = computed(() => staging.isDraftId(props.id))
-const membersAreUsersOnly = computed(() =>
-  form.value.MembershipMode === 'Auto'
-  || form.value.MemberIds.every((id) =>
-    principalStore.lookupEntities.find((p) => p.Id === id)?.Type === 'person'))
-const stagedSave = computed(() => staging.stagingActive.value && membersAreUsersOnly.value)
+const stagedSave = computed(() => staging.stagingActive.value)
 
 const initialLoad = ref(false)
 const saving = ref(false)
@@ -121,12 +118,11 @@ function roleByRef(ref: ManifestRef): RoleDto | undefined {
   return id ? roleStore.roles.find((r) => r.Id === id) : undefined
 }
 
-/** Resolves a member reference: the Id, and only the Id. */
+/** Resolves a member reference: the Id, and only the Id. A member may be a user, a
+ * nested group or a service account — the picker offers all three. */
 function memberIdOf(ref: ManifestRef): string | undefined {
   const id = refId(ref)
-  return id && principalStore.lookupEntities.some((p) => p.Type === 'person' && p.Id === id)
-    ? id
-    : undefined
+  return id && principalStore.lookupEntities.some((p) => p.Id === id) ? id : undefined
 }
 
 // References the form cannot show — an uploaded manifest's `#handles`, or ids belonging
@@ -179,13 +175,13 @@ function toStaged(): ManifestEntity {
     // is the readable hint the plan shows — the same form the export writes, so nothing
     // diffs spuriously. Anything the form could not resolve rides along unchanged.
     Members: isAuto ? [] : [
-      ...form.value.MemberIds
-        .map((id) => {
-          const p = principalStore.lookupEntities.find((x) => x.Id === id)
-          const key = p ? (p.UserName || p.Email || null) : null
-          return key ? makeRef(key, id) : null
-        })
-        .filter((ref): ref is ManifestRef => !!ref),
+      ...form.value.MemberIds.map((id) => {
+        const p = principalStore.lookupEntities.find((x) => x.Id === id)
+        // Readable half only — the apply follows the Id. A nested group or service
+        // account has no UserName/Email, so fall back to whatever names it.
+        const key = p ? (p.UserName || p.Email || p.Label || null) : null
+        return key ? makeRef(key, id) : ({ Id: id } as ManifestRef)
+      }),
       ...unresolvedMembers.value,
     ],
     Roles: [

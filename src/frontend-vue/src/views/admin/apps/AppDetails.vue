@@ -175,8 +175,11 @@ const settingsRef = ref<InstanceType<typeof AppSettingsSections> | null>(null)
 // id the modal's rename affordance guarantees).
 const staging = useDraftStaging('apps')
 const isDraftRow = computed(() => staging.isDraftId(props.id))
-const stagedSave = computed(() =>
-  staging.stagingActive.value && !isSystem.value && renamedCount.value === 0)
+// Catalog renames used to force an immediate live save, because the manifest
+// identified a catalog entry by its resource:action string. It carries the entry's
+// Id now, so a rename stages like any other change. The system app stays out: it is
+// seeded infrastructure the manifest deliberately does not model.
+const stagedSave = computed(() => staging.stagingActive.value && !isSystem.value)
 
 function fromStagedInto(e: ManifestEntity) {
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -217,6 +220,11 @@ function toStaged(settings: ApplicationSettingsDto | undefined): ManifestEntity 
     .map((r) => ({
       Resource: r.resource.trim(),
       Action: r.action.trim(),
+      // The entry's identity (ADR 0024). Roles and resource servers hold it as a
+      // foreign key, so staging it is what makes renaming resource/action a RENAME
+      // rather than "the old one is gone, a new one appeared" — which is why a
+      // catalog rename used to fall back to an immediate live save.
+      ...(r.id ? { Id: r.id } : {}),
       ...(r.description.trim() ? { Description: r.description.trim() } : {}),
     }))
   // Settings ride the same entity (ADR-0011: an App is ONE resource). Keep the
@@ -512,6 +520,7 @@ async function save() {
           {{ t('admin.apps.renamedWarningShort', { count: renamedCount }, '{count} entry/entries renamed — string form changed, id stays stable.') }}
           <template #details>
             {{ t('admin.apps.renamedWarning', { count: renamedCount }, '{count} entry/entries were renamed. The string form changes (e.g. in UserInfo), but role grants and RS subsets follow automatically via the stable id.') }}
+            {{ t('admin.apps.renamedWarningStaged', {}, 'The rename goes through the draft like every other change — review it in the plan before applying.') }}
           </template>
         </CoarNotice>
 

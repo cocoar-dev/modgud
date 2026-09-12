@@ -68,7 +68,8 @@ public sealed class RealmManifestExporter(
         var permKeyById = new Dictionary<Guid, RealmManifestPermission>();
         foreach (var a in apps)
             foreach (var p in a.Permissions)
-                permKeyById[p.Id] = new RealmManifestPermission(p.Resource, p.Action, p.Description);
+                permKeyById[p.Id] = new RealmManifestPermission(
+                    p.Resource, p.Action, p.Description, new ShortGuid(p.Id).ToString());
 
         // System apps are auto-seeded — not part of a realm's authored config.
         // Settings: only apps that HAVE an override doc export one — an app without an
@@ -92,7 +93,8 @@ public sealed class RealmManifestExporter(
                 DisplayName = a.DisplayName,
                 Description = Opt(a.Description),
                 Permissions = a.Permissions
-                    .Select(p => new RealmManifestPermission(p.Resource, p.Action, p.Description)).ToList(),
+                    .Select(p => new RealmManifestPermission(
+                        p.Resource, p.Action, p.Description, new ShortGuid(p.Id).ToString())).ToList(),
                 Settings = appSettings,
             });
         }
@@ -247,6 +249,7 @@ public sealed class RealmManifestExporter(
             UserName = p.AccountName,
             // No Password — stored as a hash. Add one before re-applying to set it.
             EmailConfirmed = appUsers.TryGetValue(p.Id, out var au) && au.EmailConfirmed,
+            IsActive = appUsers.TryGetValue(p.Id, out var active) ? active.IsActive : p.IsActive,
         }).ToList();
 
         // ── Service accounts — HULLS only (credentials are per-environment secret
@@ -263,8 +266,12 @@ public sealed class RealmManifestExporter(
             IsActive = s.IsActive,
         }).ToList();
 
-        // ── Groups (raw — ids are Guids; resolve members→user keys, roles→role names) ─
+        // ── Groups (raw — ids are Guids; resolve members→principal keys, roles→role names) ─
         var groups = await session.Query<Group>().Where(g => !g.IsDeleted).ToListAsync(ct);
+        // Readable names for every kind of member a group can hold.
+        var memberKeyById = new Dictionary<Guid, string>(userKeyById);
+        foreach (var g in groups) memberKeyById.TryAdd(g.Id, g.Name);
+        foreach (var sa in serviceAccounts) memberKeyById.TryAdd(sa.Id, sa.AccountName);
         var manifestGroups = groups.Select(g => new RealmManifestGroup
         {
             Name = g.Name,
@@ -272,7 +279,15 @@ public sealed class RealmManifestExporter(
             Description = Opt(g.Description),
             // References carry Key + Id: the Id is what the apply follows (rename-proof), the
             // Key is what a human reads. A plain string would ALWAYS mean "key".
-            Members = g.MemberIds.Where(userKeyById.ContainsKey).Select(id => ManifestRef.Of(userKeyById[id], id)).ToList(),
+            // EVERY member, not just the users. A group may hold nested groups and
+            // service accounts, and the domain really expands them (permissions via
+            // ApplicationScopeResolver, mail via Group.GetEmailsAsync). Filtering them
+            // out here made export -> apply silently DELETE them, because Members is a
+            // replace-list. An id names the member; the Key is only the readable half,
+            // so a member with no readable name still travels.
+            Members = g.MemberIds.Select(id => memberKeyById.TryGetValue(id, out var mk)
+                ? ManifestRef.Of(mk, id)
+                : new ManifestRef { Id = new ShortGuid(id).ToString() }).ToList(),
             Roles = g.RoleIds.Where(roleKeyById.ContainsKey).Select(id => ManifestRef.Of(roleKeyById[id], id)).ToList(),
             MembershipMode = g.MembershipMode.ToString(),
             MembershipScript = g.MembershipScript,

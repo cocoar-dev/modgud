@@ -60,17 +60,21 @@ public class UpdateGroupHandler(
                     $"A group with the name '{normalized}' already exists.");
         }
 
-        // Cycle-detection: if any new member id is one of this group's descendants
-        // (transitively), adding it would create a cycle.
+        // Cycle-detection. Adding M as a member of G closes a loop exactly when M can
+        // ALREADY reach G — that is, when M is an ancestor of G.
+        //
+        // This used to test the opposite (is M among G's descendants?), which got both
+        // answers wrong: it refused a member G already had, so no group holding a nested
+        // group could be saved a second time; and it waved through the edge that actually
+        // closes a loop, because a not-yet-member is by definition not a descendant.
         if (command.MembershipMode == MembershipMode.Manual && command.MemberIds.Count > 0)
         {
-            var descendants = await permissionService.GetDescendantGroupIdsAsync(command.Id, ct);
-
             if (command.MemberIds.Contains(command.Id))
                 return Error.Validation("Group.SelfMembership",
                     "A group cannot be its own member.");
 
-            var cycleMembers = command.MemberIds.Where(id => descendants.Contains(id)).ToList();
+            var ancestors = await permissionService.GetAncestorGroupIdsAsync(command.Id, ct);
+            var cycleMembers = command.MemberIds.Where(ancestors.Contains).ToList();
             if (cycleMembers.Count > 0)
                 return Error.Validation("Group.Cycle",
                     $"Adding group {cycleMembers[0]} as a member would create a cycle.");

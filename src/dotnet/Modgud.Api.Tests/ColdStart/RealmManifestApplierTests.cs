@@ -1575,6 +1575,218 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         });
     }
 
+    /// <summary>
+    /// A group's members may be users, NESTED GROUPS or service accounts — the domain really
+    /// expands them (permissions via ApplicationScopeResolver, mail via Group.GetEmailsAsync).
+    /// The manifest used to model members as users only, so the exporter filtered the others
+    /// out and, Members being a replace-list, re-applying an untouched export DELETED them.
+    /// That is also what forced such groups onto a live save in the admin UI, silently
+    /// bypassing the draft.
+    /// </summary>
+    [Fact]
+    public async Task A_nested_group_member_survives_an_export_and_re_apply()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+
+        const string slug = "nested";
+        Guid inner = Guid.NewGuid(), outer = Guid.NewGuid(), alice = Guid.NewGuid();
+        var seeded = await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest
+        {
+            Users = [new RealmManifestUser { Id = Pin(alice), Email = "alice@nested.test", UserName = "alice" }],
+            Groups =
+            [
+                new RealmManifestGroup { Name = "Inner", Id = Pin(inner), Members = [Ref(alice, "alice")] },
+                // A group whose member is another GROUP — expressible now, and it must
+                // still be there after a round trip.
+                new RealmManifestGroup { Name = "Outer", Id = Pin(outer), Members = [Ref(inner, "Inner")] },
+            ],
+        }, ct);
+        Assert.False(seeded.IsError, seeded.IsError ? seeded.FirstError.Description : string.Empty);
+
+        var exported = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exported.IsError, exported.IsError ? exported.FirstError.Description : string.Empty);
+        // The export carries the nested member rather than quietly dropping it.
+        var outerExport = exported.Value.Groups.Single(g => g.Name == "Outer");
+        Assert.Equal([inner], outerExport.Members!.Select(m => m.ParsedId));
+
+        var reapplied = await applier.UpdateRealmAsync(slug, exported.Value, ct: ct);
+        Assert.False(reapplied.IsError, reapplied.IsError ? reapplied.FirstError.Description : string.Empty);
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            Assert.Equal([inner], (await session.LoadAsync<Group>(outer, ct))!.MemberIds);
+        });
+    }
+
+    /// <summary>
+    /// The group cycle guard, both directions. It used to ask "is this member already one
+    /// of my descendants?", which answered the wrong question twice over: it refused a
+    /// member the group ALREADY had (so no group holding a nested group could be saved a
+    /// second time — the failure that hid behind the admin UI's live-save carve-out), and
+    /// it let through the edge that actually closes a loop, because a not-yet-member is by
+    /// definition not a descendant.
+    /// </summary>
+    [Fact]
+    public async Task The_group_cycle_guard_allows_a_repeat_and_refuses_a_real_loop()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+
+        const string slug = "cycles";
+        Guid inner = Guid.NewGuid(), outer = Guid.NewGuid();
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest
+        {
+            Groups =
+            [
+                new RealmManifestGroup { Name = "Inner", Id = Pin(inner) },
+                new RealmManifestGroup { Name = "Outer", Id = Pin(outer), Members = [Ref(inner, "Inner")] },
+            ],
+        }, ct)).IsError);
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var handler = new UpdateGroupHandler(session,
+                sp.GetRequiredService<IMembershipEvaluator>(),
+                sp.GetRequiredService<IPermissionService>(),
+                sp.GetRequiredService<IAutoMembershipRecalculator>());
+
+            // Re-stating the existing member is not a cycle — it changes nothing.
+            var repeat = await handler.Handle(new UpdateGroupCommand(
+                outer, "Outer", null, [inner], [], CallerIsRealmAdmin: true), ct);
+            Assert.False(repeat.IsError, repeat.IsError ? repeat.FirstError.Description : string.Empty);
+
+            // Closing the loop the other way round IS a cycle: Inner already reaches Outer.
+            var loop = await handler.Handle(new UpdateGroupCommand(
+                inner, "Inner", null, [outer], [], CallerIsRealmAdmin: true), ct);
+            Assert.True(loop.IsError, "adding the parent as a member must be refused");
+            Assert.Equal("Group.Cycle", loop.FirstError.Code);
+        });
+    }
+
+    /// <summary>
+    /// A user's active state is declarative, exactly like a service account's or a
+    /// position's. Deactivating is a kill switch, but the revocation cascade is DEFERRED
+    /// until the apply commits — which is why it can live in a manifest at all, and why
+    /// toggling it no longer has to bypass the draft.
+    /// </summary>
+    [Fact]
+    public async Task User_active_state_applies_through_the_manifest_and_is_idempotent()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "useractive";
+        var bob = Guid.NewGuid();
+        RealmManifest Manifest(bool? active) => new()
+        {
+            Users =
+            [
+                new RealmManifestUser
+                {
+                    Id = Pin(bob), Email = "bob@useractive.test", UserName = "bob", IsActive = active,
+                },
+            ],
+        };
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), Manifest(null), ct)).IsError);
+
+        async Task<bool> ActiveAsync()
+        {
+            var active = false;
+            await InTenantAsync(factory, slug, async sp =>
+                active = (await sp.GetRequiredService<IDocumentSession>()
+                    .LoadAsync<ApplicationUser>(bob, ct))!.IsActive);
+            return active;
+        }
+        Assert.True(await ActiveAsync());                                   // default on create
+
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(false), ct: ct)).IsError);
+        Assert.False(await ActiveAsync());
+        // Re-applying the same manifest is a no-op, not a second kill switch.
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(false), ct: ct)).IsError);
+        Assert.False(await ActiveAsync());
+        // Omitted = unchanged, the same as every other patch field.
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(null), ct: ct)).IsError);
+        Assert.False(await ActiveAsync());
+
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(true), ct: ct)).IsError);
+        Assert.True(await ActiveAsync());
+    }
+
+    /// <summary>
+    /// A permission catalog entry has an identity of its own, because roles and resource
+    /// servers hold it as a foreign key. Without one, renaming <c>doc:read</c> read as
+    /// "the old entry is gone, a new one appeared" — which trips the catalog-delete guard,
+    /// and is why a catalog rename used to force an immediate live save instead of going
+    /// through the draft. With the Id carried, the rename is a rename and the grants follow.
+    /// </summary>
+    [Fact]
+    public async Task A_permission_catalog_entry_can_be_renamed_and_roles_keep_their_grant()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+
+        const string slug = "catrename";
+        var roleId = Guid.NewGuid();
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest
+        {
+            Apps = [new RealmManifestApp { Slug = "docs", DisplayName = "Docs",
+                Permissions = [new RealmManifestPermission("doc", "read")] }],
+            Roles = [new RealmManifestRole { Id = Pin(roleId), Name = "Reader", App = "docs",
+                Permissions = [new RealmManifestPermission("doc", "read")] }],
+        }, ct)).IsError);
+
+        Guid permId = default;
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var app = await session.Query<App>().SingleAsync(a => !a.IsDeleted && a.Slug == "docs", ct);
+            permId = Assert.Single(app.Permissions).Id;
+            Assert.Equal([permId], (await session.LoadAsync<PermissionRole>(roleId, ct))!.PermissionIds);
+        });
+
+        // Rename through the manifest, carrying the entry's Id — the export already does.
+        var exported = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exported.IsError, exported.IsError ? exported.FirstError.Description : string.Empty);
+        var exportedApp = exported.Value.Apps.Single(a => a.Slug == "docs");
+        Assert.Equal(Pin(permId), Assert.Single(exportedApp.Permissions!).Id);
+
+        var renamed = await applier.UpdateRealmAsync(slug, exported.Value with
+        {
+            Apps = [exportedApp with
+            {
+                Permissions = [new RealmManifestPermission("doc", "view", Id: Pin(permId))],
+            }],
+            // The role's permission list follows the new spelling; the id is what binds them.
+            Roles = [exported.Value.Roles.Single() with
+            {
+                Permissions = [new RealmManifestPermission("doc", "view")],
+            }],
+        }, ct: ct);
+        Assert.False(renamed.IsError, renamed.IsError ? renamed.FirstError.Description : string.Empty);
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var app = await session.Query<App>().SingleAsync(a => !a.IsDeleted && a.Slug == "docs", ct);
+            var perm = Assert.Single(app.Permissions);
+            Assert.Equal(permId, perm.Id);                       // same entry, renamed
+            Assert.Equal(("doc", "view"), (perm.Resource, perm.Action));
+            // The grant survived because it never pointed at the string.
+            Assert.Equal([permId], (await session.LoadAsync<PermissionRole>(roleId, ct))!.PermissionIds);
+        });
+    }
+
     private static async Task InTenantAsync(
         ColdStartWebApplicationFactory factory, string slug, Func<IServiceProvider, Task> body)
     {

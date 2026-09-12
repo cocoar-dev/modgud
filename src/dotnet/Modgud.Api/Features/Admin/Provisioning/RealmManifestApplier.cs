@@ -17,6 +17,7 @@ using Modgud.Authentication.Api.Users;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Domain.LoginProviders;
+using Modgud.Authentication.Events;
 using Modgud.Authentication.Gdpr;
 using Modgud.Authentication.Identity.LoginProviders;
 using Modgud.Authentication.Identity.LoginProviders.Saml;
@@ -240,19 +241,26 @@ public sealed partial class RealmManifestApplier(
             if (current is not null)
             {
                 // v2 merge-patch: an absent catalog keeps the current one verbatim; a
-                // present catalog (incl. []) replaces. Preserve existing catalog-entry
-                // ids by resource:action so an unchanged permission keeps its id —
-                // otherwise it would look "removed + re-added" and trip the
-                // catalog-delete block (which guards FK references from roles/RSes).
+                // present catalog (incl. []) replaces. A catalog entry keeps its id, and
+                // its ID is what identifies it (ADR 0024) — carrying that is what makes a
+                // RENAME a rename. Falling back to resource:action keeps an entry written
+                // without an id (a hand-written file) from looking "removed + re-added",
+                // which would trip the catalog-delete guard on roles/RSes holding the FK.
+                var live = current.Permissions.ToDictionary(p => p.Id);
                 var byKey = current.Permissions.ToDictionary(p => $"{p.Resource}:{p.Action}", p => p.Id);
+                string? CatalogId(RealmManifestPermission p)
+                {
+                    if (ShortGuid.TryParse(p.Id ?? string.Empty, out Guid pinned) && live.ContainsKey(pinned))
+                        return new ShortGuid(pinned).ToString();
+                    return byKey.TryGetValue($"{p.Resource}:{p.Action}", out var existingId)
+                        ? new ShortGuid(existingId).ToString()
+                        : null;
+                }
                 var permissions = app.Permissions is null
                     ? current.Permissions.Select(p => new AppPermissionDto(
                         new ShortGuid(p.Id).ToString(), p.Resource, p.Action, p.Description)).ToList()
                     : app.Permissions.Select(p => new AppPermissionDto(
-                        byKey.TryGetValue($"{p.Resource}:{p.Action}", out var existingId)
-                            ? new ShortGuid(existingId).ToString()
-                            : null,
-                        p.Resource, p.Action, p.Description)).ToList();
+                        CatalogId(p), p.Resource, p.Action, p.Description)).ToList();
                 var description = app.Description.HasValue ? app.Description.Value : current.Description;
                 var updated = await appAdmin.UpdateAppAsync(current.Id,
                     new UpdateAppDto(app.DisplayName, description, permissions,
@@ -557,6 +565,7 @@ public sealed partial class RealmManifestApplier(
             {
                 var createCmd = new CreateUserCommand(OrNull(u.Firstname), OrNull(u.Lastname), OrNull(u.Acronym),
                     u.Email, u.UserName ?? string.Empty, u.Password, u.EmailConfirmed ?? false,
+                    IsActive: u.IsActive ?? true,
                     Id: await ResolvePinnedUserAsync(session, ManifestHandle.AsPinnedId(u.Id), ctx, ct));
                 var created = await createUser.Handle(createCmd, ct);
                 EnsureOk(created, ctx);
@@ -600,6 +609,13 @@ public sealed partial class RealmManifestApplier(
                 // get their password at create via CreateUserCommand above.
                 if (!string.IsNullOrWhiteSpace(u.Password))
                     EnsureOk(await setPassword.Handle(existing.Id, u.Password, ct), $"{ctx} password");
+
+                // Active state is declarative here exactly as it is for service accounts
+                // and positions. Deactivating is a kill switch, but its cascade is
+                // DEFERRED (DeferringUserAccessRevoker) until the apply commits — which
+                // is the whole reason this can live in a manifest at all.
+                if (u.IsActive is { } wantActive)
+                    await SetUserActiveAsync(session, sp, existing.Id, wantActive, ct);
             }
             if (uid.HasValue)
             {
@@ -640,7 +656,8 @@ public sealed partial class RealmManifestApplier(
                     memberIds = new List<Guid>((g.Members ?? []).Count);
                     foreach (var m in g.Members ?? [])
                     {
-                        if (await ResolveUserRefAsync(session, identity, m, $"{ctx} member '{m}'", skips, ct) is { } uid)
+                        if (await ResolvePrincipalRefAsync(
+                                session, identity, m, $"{ctx} member '{m}'", skips, membersOnly: true, ct) is { } uid)
                             memberIds.Add(uid);
                     }
                     // Every listed member was unresolvable → keep the stored membership
@@ -1067,9 +1084,25 @@ public sealed partial class RealmManifestApplier(
     private static async Task<Guid?> ResolveUserRefAsync(
         IDocumentSession session, ManifestIdentity identity, ManifestRef reference,
         string context, ManifestReferenceSkips skips, CancellationToken ct)
+        => await ResolvePrincipalRefAsync(session, identity, reference, context, skips, membersOnly: false, ct);
+
+    /// <summary>
+    /// Resolves a reference to a PRINCIPAL. A group's members may be users, nested groups
+    /// (the domain really expands them — permissions via ApplicationScopeResolver, mail via
+    /// Group.GetEmailsAsync) or service accounts, so the manifest has to be able to name all
+    /// three; filtering the others out is what made export → apply DELETE them, Members
+    /// being a replace-list. A position grant is narrower — only a person can staff a shift —
+    /// so <paramref name="membersOnly"/> keeps that distinction where it belongs.
+    ///
+    /// <para>The in-run check comes before the document load in each case: an entity this
+    /// apply just created may not be readable from the projection yet.</para>
+    /// </summary>
+    private static async Task<Guid?> ResolvePrincipalRefAsync(
+        IDocumentSession session, ManifestIdentity identity, ManifestRef reference,
+        string context, ManifestReferenceSkips skips, bool membersOnly, CancellationToken ct)
     {
         if (reference.Handle is { } handle)
-            return ResolveHandle(identity, handle, "user", context, skips);
+            return ResolveHandle(identity, handle, membersOnly ? "member" : "user", context, skips);
 
         if (reference.ParsedId is not { } byId)
         {
@@ -1078,15 +1111,35 @@ public sealed partial class RealmManifestApplier(
             skips.Skip(context, "user", "carries no id or #handle, and a name is never resolved (ADR 0024)");
             return null;
         }
+
         if (identity.WasApplied(ManifestIdentity.Sections.Users, byId)) return byId;
-        var person = await session.LoadAsync<Person>(byId, ct);
-        if (person is null || person.IsDeleted)
+        if (await session.LoadAsync<Person>(byId, ct) is { IsDeleted: false } person)
+        {
+            VerifyHint(reference, context, "user", skips, person.AccountName, person.Email);
+            return person.Id;
+        }
+
+        if (!membersOnly)
         {
             skips.Skip(context, $"user '{reference.Display}'", "no user with that id in this realm");
             return null;
         }
-        VerifyHint(reference, context, "user", skips, person.AccountName, person.Email);
-        return person.Id;
+
+        if (identity.WasApplied(ManifestIdentity.Sections.Groups, byId)
+            || identity.WasApplied(ManifestIdentity.Sections.ServiceAccounts, byId)) return byId;
+        if (await session.LoadAsync<Group>(byId, ct) is { IsDeleted: false } group)
+        {
+            VerifyHint(reference, context, "group", skips, group.Name);
+            return group.Id;
+        }
+        if (await session.LoadAsync<ServiceAccount>(byId, ct) is { IsDeleted: false } sa)
+        {
+            VerifyHint(reference, context, "service account", skips, sa.AccountName);
+            return sa.Id;
+        }
+        skips.Skip(context, $"member '{reference.Display}'",
+            "no user, group or service account with that id in this realm");
+        return null;
     }
 
     /// <summary>
@@ -1115,6 +1168,33 @@ public sealed partial class RealmManifestApplier(
         }
         VerifyHint(reference, context, "role", skips, role.Name);
         return role.Id;
+    }
+
+    /// <summary>
+    /// Mirrors the canonical active-state write (<c>V2_User_Update</c>): flip the flag,
+    /// append the lifecycle event, and run the kill switch ONLY on a real active → inactive
+    /// transition, so a re-applied manifest does not churn the security stamp. Inside an
+    /// apply the revoker is the deferring decorator, so the revocation happens after the
+    /// commit — and not at all if the apply rolls back.
+    /// </summary>
+    private static async Task SetUserActiveAsync(
+        IDocumentSession session, IServiceProvider sp, Guid userId, bool wanted, CancellationToken ct)
+    {
+        var appUser = await session.LoadAsync<ApplicationUser>(userId, ct);
+        if (appUser is null) return;
+        var wasActive = appUser.IsActive;
+        if (wasActive == wanted) return;
+
+        appUser.IsActive = wanted;
+        session.Store(appUser);
+        session.Events.Append(userId, wanted
+            ? new UserActivatedEvent(userId)
+            : (object)new UserDeactivatedEvent(userId));
+        await session.SaveChangesAsync(ct);
+
+        if (!wanted)
+            await sp.GetRequiredService<IUserAccessRevoker>()
+                .RevokeAllAccessAsync(userId, AccessRevocationReason.Deactivation, ct);
     }
 
     /// <summary>
