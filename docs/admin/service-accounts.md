@@ -159,6 +159,12 @@ Deleting a Service Account (`DELETE /api/service-account/{id}`) cascade-deletes 
 
 There is no "unlink credential" operation. The only way to detach a credential from its SA is delete-and-reissue under a different SA.
 
+## Service accounts in manifests
+
+A [realm manifest](realm-provisioning) carries a service account **with its credentials** — under `ServiceAccounts[].Credentials`, one entry per OAuth client (client id, display name, scopes, apps, enabled, token type and lifetime). What it never carries is a **secret**: a credential the target realm lacks is issued there through the same operation as **Issue credential** above, and its fresh secret comes back **once**, in the apply result's `ClientSecrets`, keyed by client id. A stage → prod transfer therefore recreates the account and the shape of its credentials with the same ids, and each environment holds its own secret.
+
+Deleting the account stays a deliberate action here — a manifest never prunes one. Its credentials are pruned like any other entity, but only when the manifest declares the account, and a [pruning apply asks first](realm-provisioning#a-pruning-apply-asks-first). See [service accounts and their credentials](realm-provisioning#service-accounts-and-their-credentials) for the rules.
+
 ## Migrating clients created before Service Account credentials
 
 Realms that existed before the Service-Account-credentials feature shipped may still hold standalone `client_credentials` clients with no `LinkedServiceAccountId`. The token endpoint falls back to the legacy `sub = client_id` behaviour for these so production callers keep working, but their tokens skip the SA-derived `resource_access` block and they show up in audit as raw client IDs.

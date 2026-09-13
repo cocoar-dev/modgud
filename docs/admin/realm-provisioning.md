@@ -49,7 +49,7 @@ Control-Plane host ([404 elsewhere](../concepts/control-plane)):
 |---|---|---|
 | `POST` | `/` | Create the **realm shell** — slug, domains, first admin. A manifest carries no realm identity, so this is its own call. |
 | `POST` | `/{slug}/apply` | **Merge** a manifest into an existing realm (upsert per entity). Never drops the database. |
-| `POST` | `/{slug}/apply?prune=true` | **Full sync** — like apply, then delete entities present in the realm but absent from the manifest. |
+| `POST` | `/{slug}/apply?prune=true` | **Full sync** — like apply, then delete entities present in the realm but absent from the manifest. The first call answers with the plan and a token instead of deleting — see [a pruning apply asks first](#a-pruning-apply-asks-first). |
 | `GET` | `/{slug}/export` | Export the realm as a manifest (structure-only — never secrets or password hashes). |
 | `GET` | `/manifest-schema` | The JSON Schema for the manifest (see [below](#discover-the-schema)). |
 | `DELETE` | `/{slug}?hard=true` | **Hard-delete** — drop the tenant database. Without `?hard=true` it's the reversible soft-delete. |
@@ -140,6 +140,9 @@ permission strings actually carry:
                  "Permissions": [ { "Resource": "invoice", "Action": "read" } ] } ],
   "Users":   [ { "Id": "#alice", "Email": "alice@acme.example.com", "UserName": "alice" } ],
   "Groups":  [ { "Name": "Admins", "Members": ["#alice"], "Roles": ["#acme-admin"] } ],
+  "ServiceAccounts": [ { "AccountName": "ci.deploy", "Purpose": "Deploy pipeline",
+                         "Credentials": [ { "ClientId": "ci.deploy.main",
+                                            "Scopes": ["invoice.read"], "Apps": ["acme"] } ] } ],
   "LoginProviders": [ { "Slug": "corp-idp", "Flavor": "GenericOidc", "DisplayName": "Corp IdP",
                         "ClientId": "modgud", "ClientSecret": "<from the upstream IdP>",
                         "FlavorData": { "MetadataUri": "https://idp.example.com/.well-known/openid-configuration" } } ],
@@ -187,9 +190,10 @@ curl -b cookies.txt -X DELETE "$AUTH/api/admin/realms/acme?hard=true"
 ```
 
 ::: tip Client secrets
-Confidential clients get a **generated secret returned only at create** (in
-`ClientSecrets`). Store it then — there's no way to read it back later. Existing
-clients keep their secret across a later `apply`.
+Confidential clients — and service-account credentials — get a **generated secret
+returned only at create** (in `ClientSecrets`, keyed by client id). Store it then —
+there's no way to read it back later. Existing clients keep their secret across a
+later `apply`.
 :::
 
 ## Apply: merge vs. prune
@@ -212,17 +216,58 @@ the stored value, and `[]` clears a list. Concretely:
 Add **`?prune=true`** to make it a full sync: after the merge, entities in the realm
 that are *absent* from the manifest are deleted (in dependency order). To prevent a
 manifest from locking a realm out, prune **never deletes** the system app, auto-seeded
-standard scopes, service-account-linked and terminal-managed clients, the built-in
-Internal login provider, or anything conferring `realm:admin` (a realm-admin role, any
-current admin user, or an admin-conferring group).
+standard scopes, terminal-managed clients, the built-in Internal login provider, a
+service account itself or the credentials of a service account the manifest does not
+declare, or anything conferring `realm:admin` (a realm-admin role, any current admin
+user, or an admin-conferring group).
+
+### A pruning apply asks first
+
+The admin UI has always shown a plan with deletions in red before an apply. The API
+does the same, in two steps. A `POST …/apply?prune=true` that **would delete
+something** does not delete it — it answers **`409`** with the plan, a confirmation
+token, and a review link:
+
+```jsonc
+{
+  "Error": "Manifest.ConfirmationRequired",
+  "Message": "This apply would DELETE 3 entit(ies) from realm 'acme'. Repeat the call with ?confirm=<ConfirmationToken> to go ahead, or send ReviewUrl to someone who should decide — it opens this exact change as a draft.",
+  "ConfirmationToken": "CfDJ8…",
+  "DraftId": "3ce3d9a3-…",
+  "ReviewUrl": "https://acme.example.com/admin/realm-config?draft=3ce3d9a3-…",
+  "Plan": { "Sections": [ { "Name": "clients", "Entries": [ { "Key": "old-web", "Action": "delete", … } ] }, … ] }
+}
+```
+
+Two ways forward, and a script can pick either:
+
+- **Confirm** — repeat the *same* call with `&confirm=<ConfirmationToken>`. The token is
+  valid for **15 minutes** and bound to the realm, to the manifest as sent, and to the
+  exact set of deletions shown. If the manifest or the realm changed in between so that
+  a *different* set would now be deleted, the token is refused
+  (`Manifest.ConfirmationStale` / `Manifest.ConfirmationPayloadMismatch`) and the caller
+  has to look again; an expired or foreign token answers `Manifest.ConfirmationExpired` /
+  `Manifest.ConfirmationRealmMismatch`.
+- **Hand it to a human** — the pending apply is also **parked as a shared draft** in the
+  target realm, named *Pending apply (prune) — {time}, by {caller}*. Mail the `ReviewUrl`
+  to whoever should decide: it opens the ordinary [draft workspace](configuration-drafts)
+  with the deletions in red, and they apply or discard it there. A parked pruning draft
+  prunes however it is applied — that is what the caller asked for.
+
+A pruning apply that would delete **nothing** is not destructive and runs on the first
+call; an apply without `?prune=true` never deletes and is never gated. None of this stops
+a script from confirming blindly — nothing can, any more than the UI can stop someone
+clicking through without reading. It makes the information unavoidable, which is the
+part that can be controlled.
 
 ## Export
 
 `GET /{slug}/export` returns the realm as a manifest — the inverse of import. It is
 **structure-only**: it never emits client secrets, login-provider secrets, or password
 hashes (those are one-way or encrypted), and it omits auto-seeded standard scopes /
-system apps / the built-in Internal login provider / SA-linked and terminal-managed
-clients / terminal slots.
+system apps / the built-in Internal login provider / terminal-managed clients / terminal
+slots. Service-account credentials are not in `Clients` either — they travel under the
+account that owns them (see [service accounts](#service-accounts-and-their-credentials)).
 
 It also leaves behind the settings fields that name entities by **raw id** — the
 self-registration `DefaultGroupIds`, an App's `LoginProviderIds`, and the branding
@@ -285,9 +330,34 @@ be silent and, because reference lists replace, potentially a privilege change. 
 across environments, carry the ids: export the target, edit, re-apply.
 :::
 
-Service accounts export as **hulls** (AccountName, Purpose, IsActive, Id): their
-credentials never travel — issue them per environment. Service accounts are
-upsert-only: prune never deletes them.
+### Service accounts and their credentials
+
+A service account exports with its **credentials** — `ServiceAccounts[].Credentials`,
+each one the shape of a `client_credentials` client: `ClientId`, `Id`, `DisplayName`,
+`Scopes`, `Apps`, `Enabled`, `AccessTokenType`, `AccessTokenLifetime`. They are nested
+under the account rather than listed in `Clients` because a credential has no meaning
+apart from its account, and the account has to exist before a credential can be bound
+to it — under the account, that ordering holds by construction.
+
+**Secrets still do not travel, and there is deliberately no field for one.** A manifest
+gets committed, copied and mailed around. On apply, a credential the target lacks is
+issued through the same operation the service-account admin uses, with a **fresh
+secret returned once** in `ClientSecrets` (keyed by client id) — exactly as an ordinary
+confidential client's is. A credential whose `Id` names a live one is updated in place;
+one without an `Id` creates, and a taken client id fails loudly rather than adopting
+another client.
+
+The account itself is **never pruned** — deleting one kills every credential it owns,
+so that stays a deliberate action in the service-account admin. Its credentials *are*
+pruned, but only when the manifest **declares the account**: an account the file never
+mentions keeps every credential it has, because otherwise forgetting to list an account
+would quietly cut off whatever authenticates as it. The plan shows a credential deletion
+in red like any other, and a [pruning apply asks first](#a-pruning-apply-asks-first).
+
+One thing a diff cannot show is an absence, so the plan states it outright: an account
+that arrives with **no credentials** carries a note saying a machine pointed at it cannot
+authenticate until one is issued, and each new credential notes that its secret is
+returned once.
 
 ## Per-realm self-service
 
@@ -300,7 +370,7 @@ team or an agent — so they can fully manage *that* realm's config and entities
 |---|---|---|
 | `GET`  | `/api/admin/realm-config/manifest-schema` | The manifest JSON Schema (identical to the control-plane one). |
 | `GET`  | `/api/admin/realm-config/export` | Export **this** realm as a manifest. |
-| `POST` | `/api/admin/realm-config/apply` | Apply a manifest to **this** realm (merge; `?prune=true` = full sync within the realm). |
+| `POST` | `/api/admin/realm-config/apply` | Apply a manifest to **this** realm (merge; `?prune=true` = full sync within the realm, [asks first](#a-pruning-apply-asks-first) when it would delete). |
 
 - **Scope is the calling realm** — resolved from the request host, never from a slug in
   the body. A manifest whose `Realm.Slug` names a *different* realm is rejected
@@ -308,8 +378,9 @@ team or an agent — so they can fully manage *that* realm's config and entities
   lifecycle stays control-plane-only.
 - **Permission**: `realm:admin` in the realm being called. Nothing control-plane.
 - **Same engine, same protections** as the control-plane path: prune is bounded to the
-  realm and never removes the system app, standard scopes, service-account clients, or any
-  `realm:admin` path — so a manifest can't lock the realm out.
+  realm, asks first when it would delete, and never removes the system app, standard
+  scopes, the credentials of an undeclared service account, or any `realm:admin` path — so
+  a manifest can't lock the realm out.
 
 ### Delegating a realm
 
