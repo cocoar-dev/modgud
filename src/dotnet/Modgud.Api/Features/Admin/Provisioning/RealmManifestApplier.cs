@@ -764,10 +764,12 @@ public sealed partial class RealmManifestApplier(
     /// <para>NEVER pruned (infrastructure + lockout protection — the robust superset of "System
     /// + last admin": protect ALL admins so no manifest can lock the realm out): the system app
     /// (<c>IsSystem</c>), auto-seeded standard scopes (<c>StandardScopes.IsStandard</c>),
-    /// service-account-linked clients (<c>LinkedServiceAccountId</c>), any realm-admin role
-    /// (<c>IsRealmAdmin</c>), any user who currently holds <c>realm:admin</c>, and any group that
-    /// confers <c>realm:admin</c> (else pruning an admin's group silently strips their admin path
-    /// even though the role + user survive).</para>
+    /// terminal-managed clients, the credentials of any service account the manifest does NOT
+    /// declare (<c>LinkedServiceAccountId</c> — a declared account's credentials are ordinary
+    /// entries and prune like any other; the account itself is never pruned), any realm-admin
+    /// role (<c>IsRealmAdmin</c>), any user who currently holds <c>realm:admin</c>, and any group
+    /// that confers <c>realm:admin</c> (else pruning an admin's group silently strips their admin
+    /// path even though the role + user survive).</para>
     ///
     /// <para>Tenant durability (same trap as create/update): user delete runs through
     /// <see cref="DeleteUsersHandler"/> and group delete through <see cref="DeleteGroupHandler"/>

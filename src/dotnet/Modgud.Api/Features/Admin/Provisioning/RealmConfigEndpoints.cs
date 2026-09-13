@@ -24,8 +24,9 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// config + entities, but CANNOT create or delete realms (those stay control-plane-only) and
 /// cannot touch any other realm — a manifest names no realm at all, so the target is always
 /// the host-routed one and there is nothing to aim elsewhere. Prune is allowed,
-/// but only within the realm and with the same lockout/infra protections as the control-plane
-/// path (system app, standard scopes, SA clients, and every realm:admin path are never pruned).</para>
+/// but only within the realm, behind the same two-step confirmation and with the same
+/// lockout/infra protections as the control-plane path (system app, standard scopes, the
+/// credentials of undeclared service accounts, and every realm:admin path are never pruned).</para>
 /// </summary>
 public static class RealmConfigEndpoints
 {

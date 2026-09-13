@@ -35,6 +35,9 @@ import {
   type DraftManifest,
   type ManifestEntity,
   type PlanAction,
+  refId,
+  refKey,
+  refList,
   type PlanEntry,
 } from '@/stores/realmDraft.store'
 import DraftEntryModal, { type DraftEntryModalResult } from './DraftEntryModal.vue'
@@ -216,8 +219,11 @@ function cardInfo(section: string, entry: PlanEntry): string[] {
       return [s(e.App) ?? (e.IsRealmAdmin ? 'realm:admin' : null), `${n(e.Permissions)} ${t('admin.realmConfig.card.permissions', {}, 'permissions')}`].filter(Boolean) as string[]
     case 'users':
       return [[s(e.Firstname), s(e.Lastname)].filter(Boolean).join(' ') || null, s(e.Email)].filter(Boolean) as string[]
-    case 'groups':
-      return [`${n(e.Members)} ${t('admin.realmConfig.card.members', {}, 'members')}`, (e.Roles as string[] | undefined)?.join(', ') ?? null].filter(Boolean) as string[]
+    case 'groups': {
+      // Roles are references ({ Key, Id } or a '#handle'), not strings — show the readable half.
+      const roles = refList(e.Roles).map((r) => refKey(r) ?? refId(r) ?? '').filter(Boolean).join(', ')
+      return [`${n(e.Members)} ${t('admin.realmConfig.card.members', {}, 'members')}`, roles || null].filter(Boolean) as string[]
+    }
     case 'serviceAccounts':
       return [s(e.Purpose)].filter(Boolean) as string[]
     case 'positions':
