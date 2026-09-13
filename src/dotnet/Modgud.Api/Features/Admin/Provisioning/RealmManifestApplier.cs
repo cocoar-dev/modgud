@@ -566,6 +566,8 @@ public sealed partial class RealmManifestApplier(
                 var createCmd = new CreateUserCommand(OrNull(u.Firstname), OrNull(u.Lastname), OrNull(u.Acronym),
                     u.Email, u.UserName ?? string.Empty, u.Password, u.EmailConfirmed ?? false,
                     IsActive: u.IsActive ?? true,
+                    GracePeriodDaysOverride: u.GracePeriodDaysOverride.HasValue ? u.GracePeriodDaysOverride.Value : null,
+                    TwoFactorExempt: u.TwoFactorExempt ?? false,
                     Id: await ResolvePinnedUserAsync(session, ManifestHandle.AsPinnedId(u.Id), ctx, ct));
                 var created = await createUser.Handle(createCmd, ct);
                 EnsureOk(created, ctx);
@@ -588,9 +590,10 @@ public sealed partial class RealmManifestApplier(
             }
             else
             {
-                // UpdateUserCommand mutates only the profile fields. Password / EmailConfirmed
-                // / active-state are divergent inline ops (Stage 2) — left untouched here.
-                // v2 merge-patch: an explicit manifest null clears the profile field.
+                // UpdateUserCommand mutates only the profile fields; password, active state,
+                // EmailConfirmed and the 2FA policy follow below, each through the same write
+                // its admin endpoint does. v2 merge-patch: an explicit manifest null clears
+                // the profile field.
                 var updateCmd = new UpdateUserCommand(existing.Id,
                     OptThrough(u.Firstname), OptThrough(u.Lastname), OptThrough(u.Acronym),
                     new Optional<string>(u.Email), OptionalOf(u.UserName));
@@ -616,6 +619,19 @@ public sealed partial class RealmManifestApplier(
                 // is the whole reason this can live in a manifest at all.
                 if (u.IsActive is { } wantActive)
                     await SetUserActiveAsync(session, sp, existing.Id, wantActive, ct);
+
+                // EmailConfirmed is the admin override V2_User_Update writes: a plain document
+                // update on ApplicationUser, not an event. It used to be "ignored on apply",
+                // which made the staged checkbox a silent no-op for existing users.
+                if (u.EmailConfirmed is { } wantConfirmed)
+                    await SetUserEmailConfirmedAsync(session, existing.Id, wantConfirmed, ct);
+
+                // The per-user 2FA policy mirrors Admin_SetGracePolicy — a document write on
+                // UserSecurityData. Absent = unchanged; an explicit null override falls back
+                // to the realm default, the same clear the endpoint spells as -1.
+                if (u.GracePeriodDaysOverride.HasValue || u.TwoFactorExempt is not null)
+                    await SetUserTwoFactorPolicyAsync(session, existing.Id,
+                        u.GracePeriodDaysOverride, u.TwoFactorExempt, ct);
             }
             if (uid.HasValue)
             {
@@ -1210,6 +1226,48 @@ public sealed partial class RealmManifestApplier(
         if (!wanted)
             await sp.GetRequiredService<IUserAccessRevoker>()
                 .RevokeAllAccessAsync(userId, AccessRevocationReason.Deactivation, ct);
+    }
+
+    /// <summary>Mirror of the EmailConfirmed branch in V2_User_Update: a direct write on the
+    /// ApplicationUser document (not event-sourced), skipped when nothing changes.</summary>
+    private static async Task SetUserEmailConfirmedAsync(
+        IDocumentSession session, Guid userId, bool confirmed, CancellationToken ct)
+    {
+        var appUser = await session.LoadAsync<ApplicationUser>(userId, ct);
+        if (appUser is null || appUser.EmailConfirmed == confirmed) return;
+        appUser.EmailConfirmed = confirmed;
+        session.Store(appUser);
+        await session.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Mirror of Admin_SetGracePolicy: the per-user grace override and the hard
+    /// exempt flag on <see cref="UserSecurityData"/>. Negative days clamp to 0 exactly as
+    /// the endpoint clamps them; nothing is written when the stored policy already matches,
+    /// so a re-applied manifest does not churn the document.</summary>
+    private static async Task SetUserTwoFactorPolicyAsync(
+        IDocumentSession session, Guid userId, Optional<int?> graceOverride, bool? exempt,
+        CancellationToken ct)
+    {
+        var security = await session.LoadAsync<UserSecurityData>(userId, ct)
+            ?? UserSecurityData.Create(userId);
+        var changed = false;
+        if (graceOverride.HasValue)
+        {
+            var wanted = graceOverride.Value is { } days ? Math.Max(0, days) : (int?)null;
+            if (security.GracePeriodDaysOverride != wanted)
+            {
+                security.GracePeriodDaysOverride = wanted;
+                changed = true;
+            }
+        }
+        if (exempt is { } wantExempt && security.TwoFactorExempt != wantExempt)
+        {
+            security.TwoFactorExempt = wantExempt;
+            changed = true;
+        }
+        if (!changed) return;
+        session.Store(security);
+        await session.SaveChangesAsync(ct);
     }
 
     /// <summary>

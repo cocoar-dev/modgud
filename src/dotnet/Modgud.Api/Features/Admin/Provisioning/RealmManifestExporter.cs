@@ -237,6 +237,10 @@ public sealed class RealmManifestExporter(
         var persons = await session.Query<Person>().Where(p => !p.IsDeleted).ToListAsync(ct);
         var appUsers = (await session.Query<ApplicationUser>().ToListAsync(ct))
             .ToDictionary(u => u.Id, u => u);
+        // The per-user 2FA policy lives on UserSecurityData next to the password hash.
+        // Exactly these two fields travel — hashes, stamps and authenticator keys never do.
+        var securityById = (await session.Query<UserSecurityData>().ToListAsync(ct))
+            .ToDictionary(s => s.Id, s => s);
         var userKeyById = persons.ToDictionary(p => p.Id, p => p.AccountName ?? p.Email ?? p.Id.ToString());
         var manifestUsers = persons.Select(p => new RealmManifestUser
         {
@@ -250,6 +254,8 @@ public sealed class RealmManifestExporter(
             // No Password — stored as a hash. Add one before re-applying to set it.
             EmailConfirmed = appUsers.TryGetValue(p.Id, out var au) && au.EmailConfirmed,
             IsActive = appUsers.TryGetValue(p.Id, out var active) ? active.IsActive : p.IsActive,
+            GracePeriodDaysOverride = Opt(securityById.TryGetValue(p.Id, out var sec) ? sec.GracePeriodDaysOverride : null),
+            TwoFactorExempt = securityById.TryGetValue(p.Id, out var policy) && policy.TwoFactorExempt,
         }).ToList();
 
         // ── Service accounts — HULLS only (credentials are per-environment secret

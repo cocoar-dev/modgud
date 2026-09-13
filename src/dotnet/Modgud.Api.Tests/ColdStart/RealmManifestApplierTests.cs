@@ -10,6 +10,7 @@ using Modgud.Application.DTOs.Realms;
 using Modgud.Application.Services;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Gdpr;
+using Modgud.Domain.Common;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
@@ -1718,6 +1719,72 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
 
         Assert.False((await applier.UpdateRealmAsync(slug, Manifest(true), ct: ct)).IsError);
         Assert.True(await ActiveAsync());
+    }
+
+    /// <summary>
+    /// The per-user 2FA policy (grace override, exempt flag) and the EmailConfirmed
+    /// override are configuration, and they were the last user fields the admin modal
+    /// still wrote live with a draft open. They apply through the manifest with the usual
+    /// patch semantics: absent = unchanged, an explicit null override = back to the realm
+    /// default (what the admin endpoint spells as -1).
+    /// </summary>
+    [Fact]
+    public async Task User_two_factor_policy_and_email_confirmed_apply_through_the_manifest()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "userpolicy";
+        var bob = Guid.NewGuid();
+        RealmManifest Manifest(Optional<int?> grace, bool? exempt, bool? confirmed) => new()
+        {
+            Users =
+            [
+                new RealmManifestUser
+                {
+                    Id = Pin(bob), Email = "bob@userpolicy.test", UserName = "bob",
+                    GracePeriodDaysOverride = grace, TwoFactorExempt = exempt, EmailConfirmed = confirmed,
+                },
+            ],
+        };
+
+        async Task<(int? Grace, bool Exempt, bool Confirmed)> ReadAsync()
+        {
+            (int?, bool, bool) state = default;
+            await InTenantAsync(factory, slug, async sp =>
+            {
+                var session = sp.GetRequiredService<IDocumentSession>();
+                var security = (await session.LoadAsync<UserSecurityData>(bob, ct))!;
+                var appUser = (await session.LoadAsync<ApplicationUser>(bob, ct))!;
+                state = (security.GracePeriodDaysOverride, security.TwoFactorExempt, appUser.EmailConfirmed);
+            });
+            return state;
+        }
+
+        // Create carries the policy in — the same CreateUserCommand fields the endpoint uses.
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), Manifest(90, true, true), ct)).IsError);
+        Assert.Equal((90, true, true), await ReadAsync());
+
+        // Absent = unchanged, all three.
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(default, null, null), ct: ct)).IsError);
+        Assert.Equal((90, true, true), await ReadAsync());
+
+        // Present = set. 0 days is "enforce at the next login", not "no override".
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(0, false, false), ct: ct)).IsError);
+        Assert.Equal((0, false, false), await ReadAsync());
+
+        // An explicit null override clears it back to the realm default; the flags stay.
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(new Optional<int?>(null), null, null), ct: ct)).IsError);
+        Assert.Equal((null, false, false), await ReadAsync());
+
+        // An export carries the policy, so a round trip is stable.
+        var export = await factory.Services.GetRequiredService<RealmManifestExporter>().ExportRealmAsync(slug, ct);
+        var exported = Assert.Single(export.Value.Users, u => u.Email == "bob@userpolicy.test");
+        Assert.False(exported.GracePeriodDaysOverride.HasValue);   // no override → absent, like every cleared optional
+        Assert.False(exported.TwoFactorExempt);
+        Assert.False(exported.EmailConfirmed);
     }
 
     /// <summary>

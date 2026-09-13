@@ -408,6 +408,12 @@ public sealed record RealmManifestUser
     [Description("Whether the account may sign in. Absent = unchanged / default true on create. Setting it to false is a KILL SWITCH: the apply revokes the user's OAuth grants, sessions and cookie — like deactivating in the admin UI. The revocation runs after the apply commits, so a rolled-back apply revokes nothing.")]
     public bool? IsActive { get; init; }
 
+    [Description("Per-user 2FA grace-period override, in days (0 = enforce at the next login). Absent = unchanged / the realm's TwoFactorGracePeriodDays on create; explicit null clears the override back to that realm default.")]
+    public Optional<int?> GracePeriodDaysOverride { get; init; }
+
+    [Description("Exempts the user from 2FA enforcement entirely — no grace period, no prompt. Absent = unchanged / false on create. Meant for explicitly approved exception or legacy accounts; every exempt request is logged.")]
+    public bool? TwoFactorExempt { get; init; }
+
     public string ResolveKey() => Key ?? UserName ?? Email;
 }
 

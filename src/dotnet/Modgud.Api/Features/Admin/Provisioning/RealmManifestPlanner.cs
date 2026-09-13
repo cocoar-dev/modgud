@@ -550,7 +550,7 @@ public sealed class RealmManifestPlanner(
 
         var policy = new SectionPolicy<RealmManifestUser>
         {
-            Skip = ["Key", "Password", "EmailConfirmed"],
+            Skip = ["Key", "Password"],
             ImmutableIgnored = ["Id"],
             KeyField = "Key",
             KeyRenameable = true,
@@ -623,11 +623,6 @@ public sealed class RealmManifestPlanner(
                     : "Password will be UPDATED for this existing user (value not shown).");
             else if (existing is null)
                 entry.Notes.Add("Created passwordless (no password in the manifest).");
-            // EmailConfirmed is never changed on apply (divergent inline op) — an explicit
-            // manifest value that differs from the stored one earns the "ignored" note.
-            if (existing is not null && u.EmailConfirmed is { } confirmed &&
-                confirmed != (existing.EmailConfirmed ?? false))
-                entry.Notes.Add("EmailConfirmed is not changed on apply — the differing manifest value is ignored.");
             if ((entry.Notes.Count > 0 || entry.Conflicts.Count > 0) && entry.Action == "unchanged")
                 entry = entry with { Action = "update" };
             // Mirrors the applier's read-only skip: a user with a pending deletion (recycle

@@ -215,6 +215,16 @@ public sealed record RealmManifestUser
     public string? UserName { get; init; }
     public string? Password { get; init; }
     public bool EmailConfirmed { get; init; }
+    /// <summary>Null = unchanged (true on create). False is the kill switch: the apply
+    /// revokes the user's grants, sessions and cookie after it commits.</summary>
+    public bool? IsActive { get; init; }
+    /// <summary>Per-user 2FA grace-period override in days; null = unchanged (the realm
+    /// default on create). The kit cannot express "clear an existing override" — use the
+    /// admin API for that.</summary>
+    public int? GracePeriodDaysOverride { get; init; }
+    /// <summary>Null = unchanged (false on create). True exempts the user from 2FA
+    /// enforcement entirely.</summary>
+    public bool? TwoFactorExempt { get; init; }
 }
 
 public sealed record RealmManifestGroup
