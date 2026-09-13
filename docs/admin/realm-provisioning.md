@@ -151,13 +151,23 @@ permission strings actually carry:
                                        "AllowedActivationProofs": ["personal-passkey"],
                                        "AllowedDeviceBindings": ["dpop"],
                                        "StaffingSessionLifetimeMinutes": 60,
-                                       "MaximumStaffingSessionLifetimeMinutes": 480 } } ]
+                                       "MaximumStaffingSessionLifetimeMinutes": 480 } } ],
+  "Jobs": [ { "Key": "inbox-retention", "Enabled": true, "CronOverride": "0 0 3 * * ?" } ],
+  "InboxSettings": { "ChangeRequestFeedback": { "MaxUnreadDays": 60, "AutoExpireDaysAfterRead": 30 } }
 }
 ```
 
 Positions require the `PositionTerminals` feature flag; terminal **slots** (device
 enrollments and their one-time-secret clients) are credential material, not config —
 provision them through the position/terminal admin APIs after import.
+
+**`Jobs`** configures the realm's scheduled jobs by their compiled **`Key`** (`Enabled`,
+`CronOverride`, `Parameters`). Jobs are built into the server, so a manifest only ever
+*configures* one: a key this deployment does not have is skipped and reported, nothing is
+created or pruned, and an explicit `"CronOverride": null` clears the override back to the
+job's default. **`InboxSettings`** is the inbox retention policy — one singleton whose
+sections replace the stored ones when present; inside a section `null` is the *value*
+"never", not "unchanged", so leave a section out to keep it as it is.
 
 See the [schema](#discover-the-schema) for every field and its meaning.
 

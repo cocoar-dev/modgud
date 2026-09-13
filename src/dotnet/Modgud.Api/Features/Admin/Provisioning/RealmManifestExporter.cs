@@ -376,6 +376,52 @@ public sealed class RealmManifestExporter(
             Groups = manifestGroups,
             LoginProviders = manifestProviders,
             Positions = manifestPositions,
+            Jobs = await ExportJobsAsync(sp, ct),
+            InboxSettings = await ExportInboxSettingsAsync(session, ct),
+        };
+    }
+
+    /// <summary>The realm's own jobs, with their current configuration. System jobs (visible
+    /// on the control plane) are deployment-wide and no realm's configuration.</summary>
+    private static async Task<List<RealmManifestJob>> ExportJobsAsync(IServiceProvider sp, CancellationToken ct)
+    {
+        var jobs = await sp.GetRequiredService<Modgud.Application.Scheduling.IJobsService>().GetAllAsync(ct);
+        return jobs
+            .Where(j => string.Equals(j.Scope, "Realm", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(j => j.Key, StringComparer.Ordinal)
+            .Select(j => new RealmManifestJob
+            {
+                Key = j.Key,
+                Enabled = j.Enabled,
+                // No override exports as absent (= unchanged on apply), never as an explicit
+                // null (= clear) — the same rule as every other optional.
+                CronOverride = j.HasOverride ? new Optional<string?>(j.EffectiveCron) : default,
+                Parameters = j.Parameters.Count == 0 ? null : new Dictionary<string, object?>(j.Parameters, StringComparer.Ordinal),
+            })
+            .ToList();
+    }
+
+    private static async Task<RealmManifestInboxSettings> ExportInboxSettingsAsync(IDocumentSession session, CancellationToken ct)
+    {
+        var s = await session.LoadAsync<Modgud.Application.Inbox.InboxRetentionSettings>(
+                    Modgud.Application.Inbox.InboxRetentionSettings.SingletonId, ct)
+                ?? new Modgud.Application.Inbox.InboxRetentionSettings();
+        return new RealmManifestInboxSettings
+        {
+            AdminChangeRequest = new RealmManifestInboxAdminChangeRequestRetention
+            {
+                HardDeleteDaysAfterDismissed = s.AdminChangeRequest.HardDeleteDaysAfterDismissed,
+            },
+            ChangeRequestFeedback = new RealmManifestInboxFeedbackRetention
+            {
+                MaxUnreadDays = s.ChangeRequestFeedback.MaxUnreadDays,
+                AutoExpireDaysAfterRead = s.ChangeRequestFeedback.AutoExpireDaysAfterRead,
+            },
+            ScheduledJobFeedback = new RealmManifestInboxFeedbackRetention
+            {
+                MaxUnreadDays = s.ScheduledJobFeedback.MaxUnreadDays,
+                AutoExpireDaysAfterRead = s.ScheduledJobFeedback.AutoExpireDaysAfterRead,
+            },
         };
     }
 

@@ -161,6 +161,8 @@ const SECTION_ICONS: Record<string, string> = {
   groups: 'users-round',
   serviceAccounts: 'bot',
   positions: 'briefcase',
+  jobs: 'clock',
+  inboxSettings: 'inbox',
 }
 
 const ACTION_VARIANTS: Record<PlanAction, 'neutral' | 'success' | 'warning' | 'error' | 'info' | 'accent'> = {
@@ -188,7 +190,7 @@ function sectionLabel(name: string): string {
     settings: 'Realm settings', apps: 'Applications', apis: 'OAuth APIs',
     scopes: 'OAuth scopes', clients: 'OAuth clients', loginProviders: 'Login providers',
     roles: 'Roles', users: 'Users', groups: 'Groups', positions: 'Positions',
-    serviceAccounts: 'Service accounts',
+    serviceAccounts: 'Service accounts', jobs: 'Scheduled jobs', inboxSettings: 'Inbox retention',
   }[name] ?? name)
 }
 
@@ -228,6 +230,13 @@ function cardInfo(section: string, entry: PlanEntry): string[] {
       return [s(e.Purpose)].filter(Boolean) as string[]
     case 'positions':
       return [s(e.Purpose), `${n(e.Grants)} ${t('admin.realmConfig.card.grants', {}, 'grants')}`].filter(Boolean) as string[]
+    case 'jobs':
+      return [
+        e.Enabled === false ? t('admin.realmConfig.card.jobDisabled', {}, 'disabled') : null,
+        s(e.CronOverride) ? `cron ${s(e.CronOverride)}` : null,
+      ].filter(Boolean) as string[]
+    case 'inboxSettings':
+      return [t('admin.realmConfig.card.inboxSettings', {}, 'Inbox retention policy')]
     default:
       return []
   }

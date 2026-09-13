@@ -74,6 +74,59 @@ public sealed record RealmManifest
 
     [Description("Position principals (shared-terminal staffing identities). Requires the PositionTerminals feature flag. AccountName is the natural key. Terminal SLOTS (device enrollments + their OAuth clients) are credential material and are NOT modelled — provision them via the position/terminal admin APIs after import.")]
     public List<RealmManifestPosition> Positions { get; init; } = [];
+
+    [Description("Configuration of the realm's scheduled jobs, keyed by the job's registration Key (e.g. 'inbox-retention'). Jobs are compiled into the server, so an entry can only CONFIGURE one — a Key this deployment does not have is skipped and reported; nothing is ever created or pruned here.")]
+    public List<RealmManifestJob> Jobs { get; init; } = [];
+
+    [Description("Optional inbox retention policy — how long inbox items (admin change requests, request feedback, scheduled-job feedback) are kept. A section that is present REPLACES the stored section (null inside a section means 'never'); an absent section stays unchanged.")]
+    public RealmManifestInboxSettings? InboxSettings { get; init; }
+}
+
+/// <summary>
+/// The configuration of one scheduled job: its schedule override, whether it runs, and its
+/// declared parameters. The Key is the job's compiled registration key — vocabulary, not an
+/// entity id: a job cannot be created or deleted by a manifest, only configured.
+/// </summary>
+[Description("The configuration of one scheduled job. Mirrors PUT /api/admin/jobs/{key}.")]
+public sealed record RealmManifestJob
+{
+    [Description("The job's registration key — the natural key (e.g. 'inbox-retention', 'session-prune').")]
+    public required string Key { get; init; }
+
+    [Description("Whether the job runs on its schedule. Absent = unchanged.")]
+    public bool? Enabled { get; init; }
+
+    [Description("Quartz cron override. Absent = unchanged; explicit null clears the override back to the job's default cron.")]
+    public Optional<string?> CronOverride { get; init; }
+
+    [Description("The job's declared parameters, keyed by parameter key. Absent = unchanged; a present object replaces the stored parameters wholesale (keys the job does not declare are dropped).")]
+    public Dictionary<string, object?>? Parameters { get; init; }
+}
+
+/// <summary>Inbox retention policy, section by section. Mirrors the singleton
+/// InboxRetentionSettings document behind PUT /api/admin/inbox-settings.</summary>
+[Description("Inbox retention policy. Each present section replaces the stored one; inside a section, null means 'never'.")]
+public sealed record RealmManifestInboxSettings
+{
+    [Description("Admin change-request items: how many days a completed (approved/rejected) item stays before it is hard-deleted; null = never.")]
+    public RealmManifestInboxAdminChangeRequestRetention? AdminChangeRequest { get; init; }
+
+    [Description("Feedback to the requester (approved / rejected): dismiss unread after N days, expire read after N days; null = never.")]
+    public RealmManifestInboxFeedbackRetention? ChangeRequestFeedback { get; init; }
+
+    [Description("Scheduled-job feedback (failures, manual-trigger completions): dismiss unread after N days, expire read after N days; null = never.")]
+    public RealmManifestInboxFeedbackRetention? ScheduledJobFeedback { get; init; }
+}
+
+public sealed record RealmManifestInboxAdminChangeRequestRetention
+{
+    public int? HardDeleteDaysAfterDismissed { get; init; }
+}
+
+public sealed record RealmManifestInboxFeedbackRetention
+{
+    public int? MaxUnreadDays { get; init; }
+    public int? AutoExpireDaysAfterRead { get; init; }
 }
 
 /// <summary>

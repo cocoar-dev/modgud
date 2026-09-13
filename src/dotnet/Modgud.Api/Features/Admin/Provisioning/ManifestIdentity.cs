@@ -211,6 +211,8 @@ public sealed class ManifestIdentity
             CheckVocabulary(r.App, "app", $"role '{r.NaturalKey}'");
         foreach (var g in manifest.Groups)
             foreach (var b in g.BoundTo ?? []) CheckVocabulary(b, "app", $"group '{g.Name}'");
+        foreach (var j in manifest.Jobs)
+            CheckVocabulary(j.Key, "scheduled job", $"job '{j.Key}'");
 
         return errors.Count > 0 ? errors : new ManifestIdentity(declared);
     }

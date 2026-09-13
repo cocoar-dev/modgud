@@ -296,6 +296,28 @@ public sealed class RealmManifestPlanner(
             clients.Entries.AddRange(credentialRemovals);
         }
 
+        // ── Scheduled jobs — configured by compiled key, never created or pruned. A key this
+        //    deployment does not have is an error entry (the apply skips it and says so). ──
+        {
+            var knownKeys = current.Jobs.Select(j => j.Key).ToHashSet(StringComparer.Ordinal);
+            var jobsSection = await PlanSectionAsync("jobs", json, prune: false, null,
+                manifest.Jobs.Where(j => knownKeys.Contains(j.Key)).ToList(), current.Jobs, baseline?.Jobs,
+                j => j.Key,
+                new SectionPolicy<RealmManifestJob> { Skip = ["Key"], KeyField = "Key", MatchByKey = true });
+            foreach (var unknown in manifest.Jobs.Where(j => !knownKeys.Contains(j.Key)))
+            {
+                var entry = new RealmPlanEntry { Key = unknown.Key, Action = "error" };
+                entry.Notes.Add("No scheduled job with this key exists in this deployment (or it is a deployment-wide "
+                                + "system job, not realm configuration) — the apply SKIPS this entry and reports it.");
+                jobsSection.Entries.Add(entry);
+            }
+            result.Sections.Add(jobsSection);
+        }
+
+        // ── Inbox retention — one singleton, nested diff like the settings. ─────────────
+        result.Sections.Add(PlanSingleton("inboxSettings", manifest.InboxSettings, current.InboxSettings,
+            baseline?.InboxSettings, json));
+
         // Cross-references ({ Key, Id } or a bare key) normalize to the CURRENT entity's
         // canonical { Key, Id } before diffing: a reference that follows a renamed role or
         // user by Id is not a change, and the same entity written as key-only, id-only or
@@ -497,6 +519,23 @@ public sealed class RealmManifestPlanner(
             foreach (var reference in position.Grants ?? [])
                 if (ReferenceNote(reference, "Grant user", userIds, userKeyById) is { } note)
                     Note("positions", position.AccountName, note);
+    }
+
+    /// <summary>A singleton section (one pseudo-entity keyed by the section name), diffed the
+    /// way the realm settings are: nested patch, dotted paths, three-way against the baseline.</summary>
+    private static RealmPlanSection PlanSingleton<T>(
+        string name, T? desired, T? current, T? baseline, JsonSerializerOptions json) where T : class
+    {
+        var section = new RealmPlanSection { Name = name };
+        if (desired is null) return section;
+        var entry = new RealmPlanEntry { Key = name, Action = "unchanged" };
+        var desiredNode = JsonSerializer.SerializeToNode(desired, json)!.AsObject();
+        var currentNode = current is null ? new JsonObject() : JsonSerializer.SerializeToNode(current, json)!.AsObject();
+        var baselineNode = baseline is null ? null : JsonSerializer.SerializeToNode(baseline, json)!.AsObject();
+        NestedPatchDiff(string.Empty, desiredNode, currentNode, baselineNode, entry.Changes, entry.Conflicts);
+        if (entry.Changes.Count > 0 || entry.Conflicts.Count > 0) entry = entry with { Action = "update" };
+        section.Entries.Add(entry);
+        return section;
     }
 
     // ── Settings — one pseudo-entity, nested patch diff with dotted paths. ───────────
@@ -767,6 +806,11 @@ public sealed class RealmManifestPlanner(
         /// none) so a CREATE can be checked against the live event streams.</summary>
         public Func<T, string?>? PinnedId { get; init; }
 
+        /// <summary>The natural key IS the identity for this section — vocabulary rather
+        /// than an entity id (a scheduled job's compiled key). An entry without an id then
+        /// matches the current item of the same key instead of reading as a create.</summary>
+        public bool MatchByKey { get; init; }
+
         /// <summary>Resolves what a create with this pinned id would do — revive a
         /// soft-deleted entity, or fail because the id is taken. Null = no check.</summary>
         public Func<string, Task<PinnedIdOutcome?>>? PinnedIdCheck { get; init; }
@@ -902,6 +946,10 @@ public sealed class RealmManifestPlanner(
             var pinned = NormalizedId(policy.PinnedId?.Invoke(item));
             T? existing = null;
             var matchedById = pinned is not null && currentById.TryGetValue(pinned, out existing);
+            // Sections keyed by vocabulary (no entity id) match by that key — the only way
+            // an entry there can mean "the one that exists".
+            if (existing is null && policy.MatchByKey && currentByKey.TryGetValue(key(item), out var byKey))
+                existing = byKey;
             if (existing is not null) matchedKeys.Add(key(existing));
             var itemKey = policy.EffectiveKey?.Invoke(item, existing) ?? key(item);
 

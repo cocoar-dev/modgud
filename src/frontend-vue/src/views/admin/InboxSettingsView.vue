@@ -4,7 +4,9 @@ import { useI18n } from '@cocoar/vue-localization'
 import {
   CoarCard, CoarNumberInput, CoarFormField, CoarButton, CoarIcon,
 } from '@cocoar/vue-ui'
+import { computed } from 'vue'
 import { useUI } from '@/composables/useUI'
+import { useDraftStaging } from '@/composables/useDraftStaging'
 import { useInboxSettingsStore } from '@/stores/inboxSettings.store'
 import type { InboxRetentionSettings } from '@/models/inboxSettings'
 
@@ -23,9 +25,25 @@ const form = ref<InboxRetentionSettings | null>(null)
 const saving = ref(false)
 const saveResult = ref<{ ok: boolean; message: string } | null>(null)
 
+// ADR-0017 staging: the retention policy is realm configuration (InboxSettings in
+// the manifest — one singleton, section by section), so for a realm admin this Save
+// commits onto the draft. Inside a section, an empty field is the VALUE "never".
+const staging = useDraftStaging('inboxSettings')
+const stagedSave = computed(() => staging.stagingActive.value)
+
 onMounted(async () => {
   await store.load()
   form.value = JSON.parse(JSON.stringify(store.settings))
+  // Staging overlay: a staged section replaces the loaded one.
+  if (stagedSave.value && staging.draftStore.current && form.value) {
+    const staged = staging.findStaged('inboxSettings')
+    if (staged) {
+      for (const section of ['AdminChangeRequest', 'ChangeRequestFeedback', 'ScheduledJobFeedback'] as const) {
+        if (staged[section] && typeof staged[section] === 'object')
+          (form.value as unknown as Record<string, unknown>)[section] = { ...(staged[section] as object) }
+      }
+    }
+  }
 })
 
 /**
@@ -45,6 +63,15 @@ async function save() {
   saving.value = true
   saveResult.value = null
   try {
+    if (stagedSave.value) {
+      await staging.stage('inboxSettings', {
+        AdminChangeRequest: { ...form.value.AdminChangeRequest },
+        ChangeRequestFeedback: { ...form.value.ChangeRequestFeedback },
+        ScheduledJobFeedback: { ...form.value.ScheduledJobFeedback },
+      })
+      saveResult.value = { ok: true, message: t('admin.inboxSettings.staged', {}, 'Staged onto the draft.') }
+      return
+    }
     await store.save(form.value)
     saveResult.value = { ok: true, message: t('admin.inboxSettings.saved', {}, 'Settings saved.') }
   } catch (e: any) {
@@ -153,7 +180,9 @@ async function save() {
 
       <div class="flex items-center gap-3 mt-2">
         <CoarButton variant="primary" :loading="saving" @click="save">
-          {{ t('common.save', {}, 'Save') }}
+          {{ stagedSave
+            ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+            : t('common.save', {}, 'Save') }}
         </CoarButton>
         <span v-if="saveResult" :class="saveResult.ok ? 'text-green-700' : 'text-red-700'" class="text-sm">
           {{ saveResult.message }}

@@ -28,6 +28,8 @@ export interface DraftManifest extends ManifestEntity {
   Groups?: ManifestEntity[]
   LoginProviders?: ManifestEntity[]
   Positions?: ManifestEntity[]
+  Jobs?: ManifestEntity[]
+  InboxSettings?: ManifestEntity | null
 }
 
 export interface DraftSummary {
@@ -144,9 +146,18 @@ export function makeRef(key: string, id: string): ManifestRef {
   return { Key: key, Id: id }
 }
 
-/** Manifest collection + natural key per plan section (mirrors the backend). */
-export const SECTION_META: Record<string, { collection: keyof DraftManifest | null; key: (e: ManifestEntity) => string }> = {
-  settings: { collection: null, key: () => 'settings' },
+/** Manifest collection + natural key per plan section (mirrors the backend). A
+ * singleton section (collection null) stages into the manifest property named by
+ * `singleton` instead of a list. */
+export const SECTION_META: Record<string, {
+  collection: keyof DraftManifest | null
+  key: (e: ManifestEntity) => string
+  singleton?: 'Settings' | 'InboxSettings'
+}> = {
+  settings: { collection: null, key: () => 'settings', singleton: 'Settings' },
+  inboxSettings: { collection: null, key: () => 'inboxSettings', singleton: 'InboxSettings' },
+  // Jobs are configured by their compiled key — never created, never deleted.
+  jobs: { collection: 'Jobs', key: (e) => String(e.Key ?? '') },
   apps: { collection: 'Apps', key: (e) => String(e.Slug ?? '') },
   apis: { collection: 'Apis', key: (e) => String(e.Name ?? '') },
   scopes: { collection: 'Scopes', key: (e) => String(e.Name ?? '') },
@@ -423,8 +434,8 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     const meta = SECTION_META[section]
     if (!meta) return []
     if (meta.collection === null) {
-      const settings = current.value.Manifest.Settings
-      return settings ? [settings as ManifestEntity] : []
+      const single = current.value.Manifest[meta.singleton ?? 'Settings']
+      return single ? [single as ManifestEntity] : []
     }
     return (current.value.Manifest[meta.collection] as ManifestEntity[] | undefined) ?? []
   }
@@ -433,7 +444,7 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     if (!current.value) return null
     const meta = SECTION_META[section]
     if (!meta) return null
-    if (meta.collection === null) return (current.value.Manifest.Settings as ManifestEntity) ?? null
+    if (meta.collection === null) return (current.value.Manifest[meta.singleton ?? 'Settings'] as ManifestEntity) ?? null
     const list = (current.value.Manifest[meta.collection] as ManifestEntity[] | undefined) ?? []
     return list.find((e) => meta.key(e) === key) ?? null
   }

@@ -274,7 +274,7 @@ public sealed class RealmDraftService(
         var root = JsonSerializer.SerializeToNode(draft.Manifest, json)!.AsObject();
         if (meta.Collection is null)
         {
-            root["Settings"] = entity.DeepClone();
+            root[meta.Singleton ?? "Settings"] = entity.DeepClone();
         }
         else
         {

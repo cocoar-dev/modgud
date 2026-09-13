@@ -36,6 +36,23 @@ public sealed record RealmManifest
     public List<RealmManifestRole> Roles { get; init; } = [];
     public List<RealmManifestUser> Users { get; init; } = [];
     public List<RealmManifestGroup> Groups { get; init; } = [];
+
+    /// <summary>Configuration of the realm's scheduled jobs by compiled key (enabled, cron
+    /// override, parameters). A key the deployment lacks is skipped and reported.</summary>
+    public List<RealmManifestJob> Jobs { get; init; } = [];
+
+    /// <summary>Optional inbox retention policy, free-form (mirrors the server's
+    /// InboxSettings shape); <c>null</c> = unchanged.</summary>
+    public JsonObject? InboxSettings { get; init; }
+}
+
+public sealed record RealmManifestJob
+{
+    public required string Key { get; init; }
+    public bool? Enabled { get; init; }
+    /// <summary>Null = unchanged (the kit cannot express "clear the override"; use the admin API).</summary>
+    public string? CronOverride { get; init; }
+    public Dictionary<string, object?>? Parameters { get; init; }
 }
 
 /// <summary>The realm shell — the payload of <c>POST /api/admin/realms</c>. Deliberately NOT

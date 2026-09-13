@@ -8,6 +8,8 @@ using Modgud.Api.Features.Roles;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Application.Services;
+using Modgud.Application.Inbox;
+using Modgud.Application.Scheduling;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Gdpr;
 using Modgud.Domain.Common;
@@ -1959,6 +1961,82 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             ServiceAccounts = [new RealmManifestServiceAccount { AccountName = "billing-sync", Id = Pin(billing), Purpose = "renamed purpose" }],
         }, ct: ct)).IsError);
         Assert.Contains("billing-sync.primary", await LiveCredentialIdsAsync());
+    }
+
+    /// <summary>
+    /// Scheduled-job configuration and the inbox retention policy are realm configuration
+    /// with no entity identity: a job is configured by its compiled key (never created or
+    /// pruned; an unknown key is skipped and reported), the inbox policy is one singleton
+    /// whose sections replace when present (null inside a section is the value "never").
+    /// Both used to be admin-UI-only live writes.
+    /// </summary>
+    [Fact]
+    public async Task Job_configuration_and_inbox_retention_apply_through_the_manifest()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+
+        const string slug = "jobsinbox";
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest(), ct)).IsError);
+
+        // Any realm job of this deployment will do — the manifest configures, never creates.
+        var key = string.Empty;
+        await InTenantAsync(factory, slug, async sp =>
+            key = (await sp.GetRequiredService<IJobsService>().GetAllAsync(ct)).First(j => j.Scope == "Realm").Key);
+
+        const string cron = "0 0 3 * * ?";
+        var applied = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Jobs =
+            [
+                new RealmManifestJob { Key = key, Enabled = false, CronOverride = cron },
+                new RealmManifestJob { Key = "no-such-job", Enabled = false },
+            ],
+            InboxSettings = new RealmManifestInboxSettings
+            {
+                ChangeRequestFeedback = new RealmManifestInboxFeedbackRetention { MaxUnreadDays = 7, AutoExpireDaysAfterRead = null },
+            },
+        }, ct: ct);
+        Assert.False(applied.IsError, applied.IsError ? applied.FirstError.Description : string.Empty);
+        Assert.Contains(applied.Value.SkippedReferences, s => s.Contains("no-such-job"));
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var job = (await sp.GetRequiredService<IJobsService>().GetAsync(key, ct))!;
+            Assert.False(job.Enabled);
+            Assert.True(job.HasOverride);
+            Assert.Equal(cron, job.EffectiveCron);
+
+            var inbox = (await sp.GetRequiredService<IDocumentSession>()
+                .LoadAsync<InboxRetentionSettings>(InboxRetentionSettings.SingletonId, ct))!;
+            Assert.Equal(7, inbox.ChangeRequestFeedback.MaxUnreadDays);
+            Assert.Null(inbox.ChangeRequestFeedback.AutoExpireDaysAfterRead);      // null = never, a VALUE
+            Assert.Equal(30, inbox.AdminChangeRequest.HardDeleteDaysAfterDismissed); // absent section = untouched default
+        });
+
+        // The export carries both, and re-applying it changes nothing.
+        var exported = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exported.IsError);
+        var exportedJob = Assert.Single(exported.Value.Jobs, j => j.Key == key);
+        Assert.False(exportedJob.Enabled);
+        Assert.Equal(cron, exportedJob.CronOverride.Value);
+        Assert.Equal(7, exported.Value.InboxSettings!.ChangeRequestFeedback!.MaxUnreadDays);
+        Assert.False((await applier.UpdateRealmAsync(slug, exported.Value, ct: ct)).IsError);
+
+        // An explicit null override clears it back to the job's default cron.
+        Assert.False((await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Jobs = [new RealmManifestJob { Key = key, Enabled = true, CronOverride = new Optional<string?>(null) }],
+        }, ct: ct)).IsError);
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var job = (await sp.GetRequiredService<IJobsService>().GetAsync(key, ct))!;
+            Assert.True(job.Enabled);
+            Assert.False(job.HasOverride);
+        });
     }
 
     private static async Task InTenantAsync(

@@ -747,6 +747,12 @@ public sealed partial class RealmManifestApplier(
         // ── Positions (MG-FT) — after users so grants can resolve their handles ───
         await ApplyPositionsAsync(sp, manifest, identity, skips, ct);
 
+        // ── Scheduled jobs + inbox retention — realm configuration with no entity
+        //    identity: jobs are configured by their compiled key, the inbox policy is
+        //    one singleton. Neither is ever created or pruned. ────────────────────────
+        await ApplyJobsAsync(sp, manifest, skips, ct);
+        await ApplyInboxSettingsAsync(session, manifest, ct);
+
         // ── Prune / staged deletions: removal of entities absent from the manifest. Runs
         //    AFTER the upsert so the protection checks see the desired (post-merge) role
         //    graph. Prune sweeps everything; staged deletions target only their keys.
@@ -1230,6 +1236,67 @@ public sealed partial class RealmManifestApplier(
         if (!wanted)
             await sp.GetRequiredService<IUserAccessRevoker>()
                 .RevokeAllAccessAsync(userId, AccessRevocationReason.Deactivation, ct);
+    }
+
+    /// <summary>
+    /// Mirror of V2_AdminJobs_Update per entry: the same cron validation up front, the same
+    /// JobUpdateDto through IJobsService (which reschedules the Quartz trigger). A key this
+    /// deployment does not have — or a deployment-wide system job, which is no realm's
+    /// configuration — is skipped and reported, never fatal: a manifest written against a
+    /// newer or older build must still apply everything else.
+    /// </summary>
+    private static async Task ApplyJobsAsync(
+        IServiceProvider sp, RealmManifest manifest, ManifestReferenceSkips skips, CancellationToken ct)
+    {
+        if (manifest.Jobs.Count == 0) return;
+        var jobs = sp.GetRequiredService<Modgud.Application.Scheduling.IJobsService>();
+        foreach (var job in manifest.Jobs)
+        {
+            var ctx = $"job '{job.Key}'";
+            var live = await jobs.GetAsync(job.Key, ct);
+            if (live is null || !string.Equals(live.Scope, "Realm", StringComparison.OrdinalIgnoreCase))
+            {
+                skips.Skip(ctx, $"job '{job.Key}'", live is null
+                    ? "no scheduled job with that key in this deployment"
+                    : "a deployment-wide system job, not realm configuration");
+                continue;
+            }
+            if (job.CronOverride.HasValue && !string.IsNullOrWhiteSpace(job.CronOverride.Value)
+                && !Quartz.CronExpression.IsValidExpression(job.CronOverride.Value))
+                throw new ManifestApplyException(ctx, [Error.Validation("Job.InvalidCron",
+                    $"{ctx}: '{job.CronOverride.Value}' is not a valid Quartz cron expression.")]);
+
+            await jobs.UpdateAsync(job.Key, new Modgud.Application.Scheduling.JobUpdateDto
+            {
+                CronOverride = job.CronOverride,
+                Enabled = job.Enabled,
+                Parameters = job.Parameters,
+            }, ct);
+        }
+    }
+
+    /// <summary>
+    /// Mirror of V2_AdminInboxSettings_Update, per section: a present section replaces the
+    /// stored one (inside it, null is a VALUE — "never" — not "unchanged"), an absent section
+    /// stays as it is. One singleton document, stored on the tenant session like the endpoint.
+    /// </summary>
+    private static async Task ApplyInboxSettingsAsync(
+        IDocumentSession session, RealmManifest manifest, CancellationToken ct)
+    {
+        if (manifest.InboxSettings is not { } wanted) return;
+        var doc = await session.LoadAsync<Modgud.Application.Inbox.InboxRetentionSettings>(
+                      Modgud.Application.Inbox.InboxRetentionSettings.SingletonId, ct)
+                  ?? new Modgud.Application.Inbox.InboxRetentionSettings();
+        if (wanted.AdminChangeRequest is { } acr)
+            doc.AdminChangeRequest = new() { HardDeleteDaysAfterDismissed = acr.HardDeleteDaysAfterDismissed };
+        if (wanted.ChangeRequestFeedback is { } crf)
+            doc.ChangeRequestFeedback = new() { MaxUnreadDays = crf.MaxUnreadDays, AutoExpireDaysAfterRead = crf.AutoExpireDaysAfterRead };
+        if (wanted.ScheduledJobFeedback is { } sjf)
+            doc.ScheduledJobFeedback = new() { MaxUnreadDays = sjf.MaxUnreadDays, AutoExpireDaysAfterRead = sjf.AutoExpireDaysAfterRead };
+        doc.Id = Modgud.Application.Inbox.InboxRetentionSettings.SingletonId;
+        doc.UpdatedAt = DateTime.UtcNow;
+        session.Store(doc);
+        await session.SaveChangesAsync(ct);
     }
 
     /// <summary>Mirror of the EmailConfirmed branch in V2_User_Update: a direct write on the
