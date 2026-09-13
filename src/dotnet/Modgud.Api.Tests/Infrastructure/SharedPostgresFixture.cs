@@ -24,7 +24,7 @@ public class SharedPostgresFixture : IAsyncLifetime
         .WithCommand("-c", "max_connections=500")
         .Build();
 
-    public string ConnectionString => Container.GetConnectionString();
+    public string ConnectionString => TestPostgres.WithGenerousConnectTimeout(Container.GetConnectionString());
 
     /// <summary>
     /// Test configuration context - created after container starts.

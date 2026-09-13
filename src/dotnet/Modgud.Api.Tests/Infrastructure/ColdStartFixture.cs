@@ -115,7 +115,7 @@ public class ColdStartFixture : IAsyncLifetime
                 CertPath = null, // Disable certificate loading
                 DbSettings =
                 {
-                    ConnectionString = connectionString
+                    ConnectionString = TestPostgres.WithGenerousConnectTimeout(connectionString)
                 }
             }),
             rule.For<AppSettings>().FromStatic(_ => new AppSettings { AuthenticationMinimumLevel = 0 }),
