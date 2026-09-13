@@ -190,6 +190,53 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
             var settings = await sp.GetRequiredService<IApplicationSettingsService>().GetAsync(shopAppId, ct);
             Assert.Equal("Shop v2", settings.Value.Branding?.ProductName);
         });
+
+        // ── The Origin route is a POST-COMMIT consequence of the apply. A manifest that
+        //    moves the subdomain and then fails further down rolls back — and the global
+        //    host map must still point the OLD host at the app, with no trace of the new one.
+        //    (The route lives in another database; before this it was written mid-apply.) ──
+        RealmManifest MovedOrigin(bool andFail) => new()
+        {
+            Apps =
+            [
+                new RealmManifestApp
+                {
+                    Slug = "shop", Id = shopId, DisplayName = "Shop",
+                    Permissions = [new RealmManifestPermission("order", "read")],
+                    Settings = new ApplicationSettingsDto
+                    {
+                        Branding = new ApplicationBrandingDto { ProductName = "Shop v2" },
+                        Origin = new ApplicationOriginDto { Subdomain = $"shop2.{slug}.localhost" },
+                    },
+                },
+                // Without an Id this entry CREATES, and the taken slug fails the apply (ADR 0024).
+                .. andFail ? new[] { new RealmManifestApp { Slug = "plain", DisplayName = "Plain again" } } : [],
+            ],
+        };
+        var failed = await applier.UpdateRealmAsync(slug, MovedOrigin(andFail: true), ct: ct);
+        Assert.True(failed.IsError);
+        Assert.Equal("App.DuplicateSlug", failed.FirstError.Code);
+        var realms = factory.Services.GetRequiredService<IRealmProvisioningService>();
+        var afterRollback = (await realms.GetRealmBySlugAsync(slug, ct))!;
+        Assert.Equal(shopAppId, afterRollback.ApplicationDomains[$"shop.{slug}.localhost"]);
+        Assert.False(afterRollback.ApplicationDomains.ContainsKey($"shop2.{slug}.localhost"), "no route for a rolled-back apply");
+        await InTenantAsync(factory, slug, async sp =>
+            Assert.Equal($"shop.{slug}.localhost",
+                (await sp.GetRequiredService<IApplicationSettingsService>().GetAsync(shopAppId, ct)).Value.Origin?.Subdomain));
+
+        // The same move without the failure lands: route moved, stale host gone.
+        Assert.False((await applier.UpdateRealmAsync(slug, MovedOrigin(andFail: false), ct: ct)).IsError);
+        var afterMove = (await realms.GetRealmBySlugAsync(slug, ct))!;
+        Assert.Equal(shopAppId, afterMove.ApplicationDomains[$"shop2.{slug}.localhost"]);
+        Assert.False(afterMove.ApplicationDomains.ContainsKey($"shop.{slug}.localhost"));
+
+        // Pruning the app removes its route — after the commit, like the write.
+        var pruned = await applier.UpdateRealmAsync(slug,
+            new RealmManifest { Apps = [new RealmManifestApp { Slug = "plain", Id = plainId, DisplayName = "Plain" }] },
+            prune: true, deletions: null, ct);
+        Assert.False(pruned.IsError, pruned.IsError ? pruned.FirstError.Description : string.Empty);
+        var afterPrune = (await realms.GetRealmBySlugAsync(slug, ct))!;
+        Assert.DoesNotContain(afterPrune.ApplicationDomains, kv => kv.Value == shopAppId);
     }
 
     [Fact]

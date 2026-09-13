@@ -7,6 +7,7 @@ using Modgud.Authorization.Events;
 using Modgud.Domain.Applications;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Authorization.Roles;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Api.Features.Admin.Apps;
 
@@ -23,8 +24,11 @@ namespace Modgud.Api.Features.Admin.Apps;
 /// is written in the SAME tenant transaction as the App aggregate (atomic). The only piece
 /// that cannot be — the <c>Origin</c> subdomain, which drives the GLOBAL host→App routing
 /// map in a different database — is validated up-front (so an invalid subdomain rejects the
-/// whole call before any commit) and its routing applied right after the atomic commit. The
-/// applier passes no settings, so its behaviour is unchanged.</para>
+/// whole call before any commit) and its routing applied right after the atomic commit.
+/// Inside a manifest apply (<see cref="TenantApplyTransaction"/>) "after the commit" is
+/// after the WHOLE apply commits: the route write is deferred like every other consequence,
+/// so a later section failing and rolling the apply back never leaves a host routed to an
+/// App state that was never committed.</para>
 /// </summary>
 public sealed class AppAdminService(IDocumentSession session, IApplicationSettingsService settingsSvc)
 {
@@ -165,11 +169,24 @@ public sealed class AppAdminService(IDocumentSession session, IApplicationSettin
     /// transaction). Already validated in <see cref="StageSettingsAsync"/>, so this only
     /// fails on a race or infrastructure error — and then the App + its other settings are
     /// already persisted (a valid state; only the subdomain route is missing).
+    ///
+    /// <para>Inside a manifest apply the tenant commit has not happened yet when this runs —
+    /// <c>SaveChangesAsync</c> only flushed into the shared transaction — so the route is
+    /// recorded as a deferred consequence and written once the whole apply committed. On
+    /// rollback it is discarded; the previous route stays as it was.</para>
     /// </summary>
     private async Task<ErrorOr<Success>> ApplyOriginIfAnyAsync(Guid appId, ApplicationSettingsDto? settings, CancellationToken ct)
     {
         if (settings?.Origin is null) return Result.Success;
-        var r = await settingsSvc.PatchAsync(appId, new ApplicationSettingsDto { Origin = settings.Origin }, ct);
+        var origin = settings.Origin;
+        if (TenantApplyTransaction.Current is { } apply)
+        {
+            apply.Defer($"apply origin route for app '{appId}'", (sp, c) =>
+                sp.GetRequiredService<IApplicationSettingsService>()
+                    .PatchAsync(appId, new ApplicationSettingsDto { Origin = origin }, c));
+            return Result.Success;
+        }
+        var r = await settingsSvc.PatchAsync(appId, new ApplicationSettingsDto { Origin = origin }, ct);
         return r.IsError ? r.Errors : Result.Success;
     }
 
@@ -228,8 +245,21 @@ public sealed class AppAdminService(IDocumentSession session, IApplicationSettin
         // The global host map lives outside the tenant transaction. Remove it first:
         // a failed tenant commit then merely leaves a live App without its vanity host,
         // whereas the opposite order could route traffic to a deleted App indefinitely.
-        var originRemoved = await settingsSvc.RemoveOriginRoutingAsync(id, ct);
-        if (originRemoved.IsError) return originRemoved.Errors;
+        // Inside a manifest apply the trade-off flips: the delete is one step of a long
+        // transaction that may still roll back for an unrelated reason, and removing the
+        // route up-front would strip a live App of its host for nothing. So the removal is
+        // deferred to after the apply committed (a deferred failure is logged and the
+        // next admin operation on the App retries it).
+        if (TenantApplyTransaction.Current is { } apply)
+        {
+            apply.Defer($"remove origin routes of deleted app '{id}'", (sp, c) =>
+                sp.GetRequiredService<IApplicationSettingsService>().RemoveOriginRoutingAsync(id, c));
+        }
+        else
+        {
+            var originRemoved = await settingsSvc.RemoveOriginRoutingAsync(id, ct);
+            if (originRemoved.IsError) return originRemoved.Errors;
+        }
 
         session.Delete<ApplicationSettings>(id);
         session.Events.Append(id, new AppDeletedEvent(id));
