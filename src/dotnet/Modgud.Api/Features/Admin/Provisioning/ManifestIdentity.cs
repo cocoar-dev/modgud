@@ -173,9 +173,17 @@ public sealed class ManifestIdentity
                 CheckRef(r, "role", Sections.Roles, Sections.Groups, $"group '{g.Name}' role '{r}'");
         }
         foreach (var p in manifest.Positions)
+        {
             foreach (var grant in p.Grants ?? [])
                 CheckRef(grant, "user", Sections.Users, Sections.Positions,
                     $"position '{p.AccountName}' grant '{grant}'");
+            // Slots apply after EVERY position, so a served position may be any position
+            // of this manifest — including one declared further down.
+            foreach (var t in p.Terminals ?? [])
+                foreach (var served in t.AllowedPositions ?? [])
+                    CheckRef(served, "position", Sections.Positions, Sections.Positions,
+                        $"position '{p.AccountName}' terminal '{t.DisplayName}' allowed position '{served}'");
+        }
 
         // App slugs, scope names and API audiences are VOCABULARY, not identity: they are
         // what tokens and permission strings carry, and an entity is required to have one,
@@ -213,6 +221,12 @@ public sealed class ManifestIdentity
             foreach (var b in g.BoundTo ?? []) CheckVocabulary(b, "app", $"group '{g.Name}'");
         foreach (var j in manifest.Jobs)
             CheckVocabulary(j.Key, "scheduled job", $"job '{j.Key}'");
+        foreach (var p in manifest.Positions)
+            foreach (var t in p.Terminals ?? [])
+            {
+                foreach (var s in t.Scopes ?? []) CheckVocabulary(s, "scope", $"position '{p.AccountName}' terminal '{t.DisplayName}'");
+                foreach (var a in t.Apps ?? []) CheckVocabulary(a, "app", $"position '{p.AccountName}' terminal '{t.DisplayName}'");
+            }
 
         return errors.Count > 0 ? errors : new ManifestIdentity(declared);
     }

@@ -229,7 +229,11 @@ function cardInfo(section: string, entry: PlanEntry): string[] {
     case 'serviceAccounts':
       return [s(e.Purpose)].filter(Boolean) as string[]
     case 'positions':
-      return [s(e.Purpose), `${n(e.Grants)} ${t('admin.realmConfig.card.grants', {}, 'grants')}`].filter(Boolean) as string[]
+      return [
+        s(e.Purpose),
+        `${n(e.Grants)} ${t('admin.realmConfig.card.grants', {}, 'grants')}`,
+        Array.isArray(e.Terminals) ? `${n(e.Terminals)} ${t('admin.realmConfig.card.terminals', {}, 'terminal slots')}` : '',
+      ].filter(Boolean) as string[]
     case 'jobs':
       return [
         e.Enabled === false ? t('admin.realmConfig.card.jobDisabled', {}, 'disabled') : null,

@@ -151,15 +151,16 @@ permission strings actually carry:
                                        "AllowedActivationProofs": ["personal-passkey"],
                                        "AllowedDeviceBindings": ["dpop"],
                                        "StaffingSessionLifetimeMinutes": 60,
-                                       "MaximumStaffingSessionLifetimeMinutes": 480 } } ],
+                                       "MaximumStaffingSessionLifetimeMinutes": 480 },
+                   "Terminals": [ { "DisplayName": "Gate left", "Location": "Hall A",
+                                    "WebAuthnRpId": "kiosk.acme.example.com", "Binding": "dpop",
+                                    "Scopes": ["invoice.read"], "Apps": ["acme"] } ] } ],
   "Jobs": [ { "Key": "inbox-retention", "Enabled": true, "CronOverride": "0 0 3 * * ?" } ],
   "InboxSettings": { "ChangeRequestFeedback": { "MaxUnreadDays": 60, "AutoExpireDaysAfterRead": 30 } }
 }
 ```
 
-Positions require the `PositionTerminals` feature flag; terminal **slots** (device
-enrollments and their one-time-secret clients) are credential material, not config —
-provision them through the position/terminal admin APIs after import.
+Positions require the `PositionTerminals` feature flag. A position's **terminal slots** travel as configuration under `Terminals`, the way a service account's credentials do: name, location, the WebAuthn RP ID, the device binding, the further positions the slot serves (`AllowedPositions`, by identity; the owner is always included) and its client's access profile (`Scopes`, app slugs in `Apps`). A slot the position lacks is created with a fresh terminal-managed client (a client-secret slot's secret comes back once in `ClientSecrets`); one whose `Id` names a live slot is updated. What never travels is the device **enrollment**: a slot created by an apply is *Pending* until a device enrolls through the device ceremony. RP ID and binding are immutable after create, and a manifest never removes a slot — revoking is terminal and stays an action in the position admin, so a slot the entry does not list is kept (the plan says so).
 
 **`Jobs`** configures the realm's scheduled jobs by their compiled **`Key`** (`Enabled`,
 `CronOverride`, `Parameters`). Jobs are built into the server, so a manifest only ever

@@ -745,7 +745,7 @@ public sealed partial class RealmManifestApplier(
         await ApplyServiceAccountsAsync(sp, manifest, identity, apps, secrets, skips, ct);
 
         // ── Positions (MG-FT) — after users so grants can resolve their handles ───
-        await ApplyPositionsAsync(sp, manifest, identity, skips, ct);
+        await ApplyPositionsAsync(sp, manifest, identity, apps, secrets, skips, ct);
 
         // ── Scheduled jobs + inbox retention — realm configuration with no entity
         //    identity: jobs are configured by their compiled key, the inbox policy is
@@ -833,12 +833,17 @@ public sealed partial class RealmManifestApplier(
         //    terminal-managed clients (see the Positions partial). ─────────────────────────
         await PrunePositionsAsync(sp, session, oauth, identity, prune, targeted, ct);
 
-        // ── Clients — keep SA-linked and terminal-managed clients (both are auto-managed
-        //    credential material the manifest doesn't model). ───────────────────────────────
+        // ── Clients — a terminal-managed client is never pruned here: it lives and dies
+        //    with its slot (a pruned position cascades it above; otherwise revoke is the
+        //    action). A V2 terminal client is linked to its ENROLLMENT only, the position
+        //    link being the legacy form, so both links are tested — testing the position
+        //    link alone sent V2 slot clients into the generic delete, which refuses them
+        //    and failed the whole pruning apply. ───────────────────────────────────────────
         foreach (var c in await session.Query<OAuthApplicationState>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
             if (Keep(ManifestIdentity.Sections.Clients, c.Id)
                 || c.LinkedPositionPrincipalId.HasValue
+                || c.ManagedTerminalEnrollmentId.HasValue
                 || !Wants("clients", c.ClientId)) continue;
             // A service-account credential is only prunable when the manifest actually
             // speaks for its account. An account the file never mentions keeps every

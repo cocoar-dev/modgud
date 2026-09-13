@@ -150,6 +150,11 @@ function toStaged(): ManifestEntity {
         return key ? makeRef(key, id) : ({ Id: id } as ManifestRef)
       })
   }
+  // Terminal slots: what this modal staged (new slots, changed served sets). Nothing
+  // staged = the key is dropped, which the apply reads as "leave the slots alone".
+  const staged = terminalsToStaged()
+  if (staged) entity.Terminals = staged
+  else delete entity.Terminals
   // Stage the LIVE entity's id: the apply matches by identity, so editing the name
   // is a RENAME of this entity instead of staging a second one.
   if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
@@ -282,11 +287,14 @@ async function transitionGrant(grant: PositionGrantDto, action: 'suspend' | 'res
   }
 }
 
-// ── Terminal slots (MG-FT-03). Create mode STAGES slots the same way it
-// stages grants (rule 5: the entity is creatable completely — mirrors the
-// service account's initial credential, which is staged into the same
-// atomic create). Edit mode operates on live slots immediately (rule 2),
-// where the PERSISTED policy has to allow them.
+// ── Terminal slots (MG-FT-03). A slot's SHAPE — name, location, RP ID, binding,
+// the positions it serves — is configuration and travels in the manifest as
+// Positions[].Terminals, like a service account's credentials: a realm admin
+// stages new slots and served-position changes onto the draft (creates, draft
+// rows and edits alike), and the apply creates the slot's terminal-managed
+// client. What never stages is the ENROLLMENT — the device ceremony — and the
+// slot's disable / reactivate / revoke, which are actions. The classic path
+// (no draft) still writes live, where the PERSISTED policy has to allow it.
 const terminals = ref<TerminalDto[]>([])
 const terminalsLoading = ref(false)
 const newTerminal = ref({
@@ -297,6 +305,7 @@ const newTerminal = ref({
   AllowedPositionIds: (isCreate.value ? [] : [props.id]) as string[],
 })
 const terminalsHttp = computed(() => useHttpClient(`/api/position/${props.id}/terminals`))
+/** New slots not yet applied: the create's picks, or what the draft carries for this position. */
 const stagedTerminals = ref<{
   DisplayName: string
   Location: string
@@ -304,13 +313,80 @@ const stagedTerminals = ref<{
   Binding: string
   AllowedPositionIds: string[]
 }[]>([])
+/** Staged served-position sets of LIVE slots, by slot id (owner included). */
+const stagedSlotPositions = ref<Record<string, string[]>>({})
 const revealedTerminalSecret = ref<string | null>(null)
 const editingTerminalPositionsId = ref<string | null>(null)
 const terminalPositionDrafts = ref<Record<string, string[]>>({})
-// In create the staged policy decides (it is committed in the same save); in
-// edit only the persisted one does, because the server validates against it.
+/** Stage instead of writing live: creates, draft rows and staged edits alike. */
+const terminalsStaged = computed(() => isCreate.value || isDraftRow.value || stagedSave.value)
+// When slots stage, the STAGED policy decides (the apply updates the position
+// before it creates the slots); on the classic path only the persisted one does,
+// because the server validates the live create against it.
 const canAddTerminal = computed(() =>
-  isCreate.value ? form.value.TerminalEnabled : original.value.TerminalEnabled)
+  terminalsStaged.value ? form.value.TerminalEnabled : original.value.TerminalEnabled)
+/** The served positions a live slot will have: staged set if any, else live. */
+function effectiveAllowedPositions(terminal: TerminalDto): string[] {
+  return stagedSlotPositions.value[terminal.Id] ?? terminal.AllowedPositionIds
+}
+function slotPositionsStaged(terminal: TerminalDto): boolean {
+  const staged = stagedSlotPositions.value[terminal.Id]
+  return !!staged && [...staged].sort().join('\0') !== [...terminal.AllowedPositionIds].sort().join('\0')
+}
+/** A position reference for the manifest — { Key, Id } for a live position. */
+function positionRef(id: string): ManifestRef {
+  const p = store.entities.find((x) => x.Id === id)
+  return p ? makeRef(p.AccountName, id) : ({ Id: id } as ManifestRef)
+}
+/** Reads the draft's Terminals for this position back into the two staging buckets. */
+function terminalsFromStaged(entity: ManifestEntity) {
+  if (!Array.isArray(entity.Terminals)) return
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  const additions: typeof stagedTerminals.value = []
+  const overlays: Record<string, string[]> = {}
+  for (const raw of entity.Terminals as ManifestEntity[]) {
+    const served = refList(raw.AllowedPositions).map(refId).filter((id): id is string => !!id)
+    const id = str(raw.Id)
+    if (id && !id.startsWith('#')) {
+      overlays[id] = Array.from(new Set([props.id, ...served]))
+      continue
+    }
+    additions.push({
+      DisplayName: str(raw.DisplayName),
+      Location: str(raw.Location),
+      WebAuthnRpId: str(raw.WebAuthnRpId),
+      Binding: str(raw.Binding) || 'dpop',
+      AllowedPositionIds: served,
+    })
+  }
+  stagedTerminals.value = additions
+  stagedSlotPositions.value = overlays
+}
+/** The manifest's Terminals for this position: staged additions plus staged
+ *  served-position changes of live slots. Absent = unchanged (a manifest never
+ *  removes a slot), so only what was actually staged is written. */
+function terminalsToStaged(): ManifestEntity[] | undefined {
+  const items: ManifestEntity[] = []
+  for (const [id, served] of Object.entries(stagedSlotPositions.value)) {
+    const live = terminals.value.find((x) => x.Id === id)
+    if (!live) continue
+    items.push({
+      Id: id,
+      DisplayName: live.DisplayName,
+      AllowedPositions: served.filter((pid) => pid !== props.id).map(positionRef),
+    })
+  }
+  for (const slot of stagedTerminals.value) {
+    items.push({
+      DisplayName: slot.DisplayName,
+      Location: slot.Location || null,
+      WebAuthnRpId: slot.WebAuthnRpId,
+      Binding: slot.Binding,
+      AllowedPositions: slot.AllowedPositionIds.filter((pid) => pid !== props.id).map(positionRef),
+    })
+  }
+  return items.length > 0 ? items : undefined
+}
 
 // Passkeys hang off the RP ID, not the client: the existing hardware tokens of
 // this position unlock a new slot only when it carries the SAME RP ID. So once
@@ -422,11 +498,11 @@ function positionLabel(positionId: string): string {
 
 function editTerminalPositions(terminal: TerminalDto) {
   editingTerminalPositionsId.value = terminal.Id
-  terminalPositionDrafts.value[terminal.Id] = [...terminal.AllowedPositionIds]
+  terminalPositionDrafts.value[terminal.Id] = [...effectiveAllowedPositions(terminal)]
 }
 
 function setTerminalPosition(terminal: TerminalDto, positionId: string, enabled: boolean) {
-  const current = terminalPositionDrafts.value[terminal.Id] ?? [...terminal.AllowedPositionIds]
+  const current = terminalPositionDrafts.value[terminal.Id] ?? [...effectiveAllowedPositions(terminal)]
   terminalPositionDrafts.value[terminal.Id] = enabled
     ? Array.from(new Set([...current, positionId]))
     : current.filter((id) => id !== positionId)
@@ -442,8 +518,15 @@ function positionsForTerminal(terminal: TerminalDto) {
 }
 
 async function saveTerminalPositions(terminal: TerminalDto) {
-  const allowed = terminalPositionDrafts.value[terminal.Id] ?? terminal.AllowedPositionIds
+  const allowed = terminalPositionDrafts.value[terminal.Id] ?? effectiveAllowedPositions(terminal)
   if (allowed.length === 0) return
+  if (terminalsStaged.value) {
+    // Onto the draft with the rest of the position; the apply runs the same
+    // re-enrollment guard and ends the staffing sessions of a removed position.
+    stagedSlotPositions.value = { ...stagedSlotPositions.value, [terminal.Id]: [...allowed] }
+    editingTerminalPositionsId.value = null
+    return
+  }
   try {
     await terminalsHttp.value.addPath(terminal.Id, 'positions').put({ AllowedPositionIds: allowed })
     editingTerminalPositionsId.value = null
@@ -580,6 +663,7 @@ onMounted(async () => {
     if (entity) {
       fromStagedInto(entity)
       stagedGrantUserIds.value = refList(entity.Grants).map(refId).filter((id): id is string => !!id)
+      terminalsFromStaged(entity)
     }
     grantsLoaded.value = true
     return
@@ -602,7 +686,10 @@ onMounted(async () => {
       // Staging overlay: show the STAGED position state when the draft carries it.
       if (stagedSave.value && staging.draftStore.current) {
         const entity = staging.findStaged(fn.AccountName.trim().toLowerCase())
-        if (entity) fromStagedInto(entity)
+        if (entity) {
+          fromStagedInto(entity)
+          terminalsFromStaged(entity)
+        }
       }
       // Grants + terminals + sessions load alongside — they must not block the form fields.
       void loadGrants()
@@ -896,13 +983,12 @@ async function save() {
             </CoarNotice>
           </div>
 
-          <!-- Terminal slots (MG-FT-03). A slot is a device enrollment with a
-               one-time secret — the one live ceremony here — so a position that
-               only exists in the draft gets its slots after the apply. -->
-          <CoarNotice v-if="(isCreate && stagedSave) || isDraftRow" variant="info" class="mt-4">
-            {{ t('admin.positionTerminals.afterApply', {}, 'Terminal slots are enrolled after the draft is applied: a slot is a device ceremony with a one-time secret, not configuration. Everything else on this position is staged.') }}
-          </CoarNotice>
-          <div v-else-if="!props.draftOnly" class="mt-4">
+          <!-- Terminal slots (MG-FT-03). The slot's shape stages with the position;
+               its client is created at apply, the device enrolls afterwards. -->
+          <div v-if="!props.draftOnly" class="mt-4">
+            <CoarNotice v-if="terminalsStaged && !isCreate" variant="info" class="mb-3">
+              {{ t('admin.positionTerminals.stagedHint', {}, 'New slots and changes to the positions a slot serves go onto the draft; the client of a slot is created when the draft is applied and the device enrolls afterwards. Disable, reactivate and revoke act at once.') }}
+            </CoarNotice>
             <div class="mb-3 flex flex-wrap items-end gap-2">
               <CoarFormField class="min-w-0 flex-1" :label="t('admin.positionTerminals.name', {}, 'Terminal name')">
                 <CoarTextInput v-model="newTerminal.DisplayName" :disabled="!canAddTerminal"
@@ -925,7 +1011,7 @@ async function save() {
               </CoarFormField>
               <CoarButton size="s" icon-start="plus" class="shrink-0 mb-1"
                 :disabled="!canAddTerminal || !newTerminal.DisplayName.trim() || !newTerminal.WebAuthnRpId.trim()"
-                @click="isCreate ? stageTerminal() : createTerminal()">
+                @click="terminalsStaged ? stageTerminal() : createTerminal()">
                 {{ t('admin.positionTerminals.createButton', {}, 'Add slot') }}
               </CoarButton>
             </div>
@@ -938,7 +1024,7 @@ async function save() {
               </p>
               <div class="mb-2 flex items-center gap-2 text-sm">
                 <CoarCheckbox :model-value="true" disabled />
-                <span>{{ isCreate ? (form.AccountName || t('admin.positions.thisPosition', {}, 'This new position')) : positionLabel(props.id) }}</span>
+                <span>{{ isCreate || isDraftRow ? (form.AccountName || t('admin.positions.thisPosition', {}, 'This new position')) : positionLabel(props.id) }}</span>
                 <CoarTag variant="neutral">{{ t('admin.positions.thisPosition', {}, 'This position') }}</CoarTag>
               </div>
               <div v-for="position in compatibleAdditionalPositions" :key="position.Id"
@@ -953,7 +1039,7 @@ async function save() {
               </div>
             </div>
             <CoarNotice v-if="!canAddTerminal" variant="info" class="mb-3">
-              {{ isCreate
+              {{ terminalsStaged
                 ? t('admin.positionTerminals.enablePolicyStaged', {}, 'Turn terminal use on to add slots — they are created together with the position.')
                 : t('admin.positionTerminals.enablePolicyFirst', {}, 'Enable terminal use and save before creating slots.') }}
             </CoarNotice>
@@ -970,12 +1056,13 @@ async function save() {
               </div>
             </CoarNotice>
 
-            <!-- Create: the staged slots, committed by the single Save. -->
-            <template v-if="isCreate">
-              <div v-if="stagedTerminals.length === 0" class="grant-empty">
+            <!-- The staged slots: a create's picks, or what the draft adds to a
+                 live / draft-created position. Committed by the single Save. -->
+            <template v-if="terminalsStaged">
+              <div v-if="stagedTerminals.length === 0 && (isCreate || isDraftRow)" class="grant-empty">
                 {{ t('admin.positionTerminals.emptyStaged', {}, 'No terminal slots staged yet.') }}
               </div>
-              <ul v-else class="flex flex-col gap-2">
+              <ul v-else-if="stagedTerminals.length > 0" class="mb-2 flex flex-col gap-2">
                 <li v-for="(slot, index) in stagedTerminals" :key="`${slot.DisplayName}-${index}`"
                     class="flex flex-wrap items-center gap-2 rounded border border-surface-200 p-3">
                   <div class="flex min-w-0 flex-1 flex-col">
@@ -983,10 +1070,14 @@ async function save() {
                     <span class="truncate text-xs text-surface-500">
                       {{ slot.WebAuthnRpId }} · {{ slot.Binding }}
                       <template v-if="slot.Location"> · {{ slot.Location }}</template>
-                      · {{ slot.AllowedPositionIds.length + 1 }} {{ t('admin.positionTerminals.positions', {}, 'position(s)') }}
+                      · {{ slot.AllowedPositionIds.filter((id) => id !== props.id).length + 1 }} {{ t('admin.positionTerminals.positions', {}, 'position(s)') }}
                     </span>
                   </div>
-                  <CoarTag variant="info">{{ t('admin.positionTerminals.statusStaged', {}, 'On save') }}</CoarTag>
+                  <CoarTag variant="info">
+                    {{ stagedSave || isDraftRow
+                      ? t('admin.positionTerminals.statusOnApply', {}, 'On apply')
+                      : t('admin.positionTerminals.statusStaged', {}, 'On save') }}
+                  </CoarTag>
                   <CoarButton size="s" variant="ghost" icon-start="x" @click="unstageTerminal(index)">
                     {{ t('common.remove', {}, 'Remove') }}
                   </CoarButton>
@@ -994,7 +1085,7 @@ async function save() {
               </ul>
             </template>
 
-            <template v-else>
+            <template v-if="!isCreate && !isDraftRow">
               <div v-if="terminalsLoading" class="text-xs text-surface-500">
                 {{ t('common.loading', {}, 'Loading...') }}
               </div>
@@ -1009,9 +1100,12 @@ async function save() {
                     <span class="truncate text-xs text-surface-500">
                       <code>{{ terminal.ClientId }}</code>
                       <template v-if="terminal.Location"> · {{ terminal.Location }}</template>
-                      · {{ terminal.AllowedPositionIds?.length ?? 1 }} {{ t('admin.positionTerminals.positions', {}, 'position(s)') }}
+                      · {{ effectiveAllowedPositions(terminal).length || 1 }} {{ t('admin.positionTerminals.positions', {}, 'position(s)') }}
                     </span>
                   </div>
+                  <CoarTag v-if="slotPositionsStaged(terminal)" variant="info">
+                    {{ t('admin.positionTerminals.positionsStaged', {}, 'Positions: on apply') }}
+                  </CoarTag>
                   <CoarTag :variant="terminal.Status === 'Active' ? 'success'
                     : terminal.Status === 'Pending' ? 'info'
                     : terminal.Status === 'Disabled' ? 'warning' : 'neutral'">
@@ -1054,7 +1148,7 @@ async function save() {
                     <div v-for="position in positionsForTerminal(terminal)" :key="position.Id"
                         class="mb-2 flex items-center gap-2 text-sm">
                       <CoarCheckbox
-                        :model-value="(terminalPositionDrafts[terminal.Id] ?? terminal.AllowedPositionIds).includes(position.Id)"
+                        :model-value="(terminalPositionDrafts[terminal.Id] ?? effectiveAllowedPositions(terminal)).includes(position.Id)"
                         :disabled="terminal.Enrolled && !terminal.AllowedPositionIds.includes(position.Id)"
                         @update:model-value="(value) => setTerminalPosition(terminal, position.Id, !!value)" />
                       <span>{{ position.AccountName }}</span>
@@ -1067,9 +1161,9 @@ async function save() {
                         {{ t('common.cancel', {}, 'Cancel') }}
                       </CoarButton>
                       <CoarButton size="s"
-                        :disabled="(terminalPositionDrafts[terminal.Id] ?? terminal.AllowedPositionIds).length === 0"
+                        :disabled="(terminalPositionDrafts[terminal.Id] ?? effectiveAllowedPositions(terminal)).length === 0"
                         @click="saveTerminalPositions(terminal)">
-                        {{ t('common.save', {}, 'Save') }}
+                        {{ terminalsStaged ? t('admin.positionTerminals.stagePositions', {}, 'Stage') : t('common.save', {}, 'Save') }}
                       </CoarButton>
                     </div>
                   </div>

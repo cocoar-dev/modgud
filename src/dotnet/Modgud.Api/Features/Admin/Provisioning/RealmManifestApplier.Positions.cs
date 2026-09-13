@@ -5,12 +5,16 @@ using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Features.Positions;
 using Modgud.Application.DTOs.Positions;
 using Modgud.Application.Services;
+using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Authorization.Principals;
+using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.PositionTerminals;
 using Modgud.Domain.ValueObjects;
 using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.PositionTerminals;
+using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Api.Features.Admin.Provisioning;
 
@@ -22,9 +26,13 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// is duplicated here. When positions grow an application service, both call sites
 /// should collapse onto it.
 ///
-/// <para>Terminal SLOTS (device enrollments + their terminal-managed OAuth clients) are
-/// deliberately NOT modelled: like service-account credentials they are one-time-secret
-/// credential material bound to a device ceremony, not declarative config.</para>
+/// <para>Terminal SLOTS travel as CONFIGURATION (name, location, RP ID, binding, the
+/// positions they serve, the client's access profile), exactly like a service account's
+/// credentials: a slot the position lacks is created with a fresh terminal-managed client
+/// (a client-secret slot's secret returned once), one whose Id names a live slot is
+/// updated. What never travels is the device ENROLLMENT — the DPoP key and the device-flow
+/// approval are the ceremony, and a slot created by an apply is Pending until a device
+/// enrolls. A manifest never removes a slot: revoking is terminal and stays an action.</para>
 /// </summary>
 public sealed partial class RealmManifestApplier
 {
@@ -41,7 +49,8 @@ public sealed partial class RealmManifestApplier
     /// </summary>
     private static async Task ApplyPositionsAsync(
         IServiceProvider sp, RealmManifest manifest,
-        ManifestIdentity identity, ManifestReferenceSkips skips, CancellationToken ct)
+        ManifestIdentity identity, IReadOnlyDictionary<string, App> apps,
+        Dictionary<string, string> secrets, ManifestReferenceSkips skips, CancellationToken ct)
     {
         if (manifest.Positions.Count == 0) return;
 
@@ -55,6 +64,7 @@ public sealed partial class RealmManifestApplier
         var staffingRevoker = sp.GetRequiredService<IStaffingRevoker>();
         var revoker = sp.GetRequiredService<IOAuthGrantRevoker>();
         var now = DateTimeOffset.UtcNow;
+        var appliedIds = new List<(RealmManifestPosition Position, Guid Id)>();
 
         foreach (var pos in manifest.Positions)
         {
@@ -95,7 +105,226 @@ public sealed partial class RealmManifestApplier
             }
             identity.Assign(pos.Id, appliedId);
             identity.Applied(ManifestIdentity.Sections.Positions, appliedId);
+            appliedIds.Add((pos, appliedId));
         }
+
+        // Slots after EVERY position: a slot's AllowedPositions may name a position this
+        // same manifest creates further down the list.
+        var oauth = sp.GetRequiredService<OAuthAdminService>();
+        foreach (var (pos, ownerId) in appliedIds)
+        {
+            if (pos.Terminals is null) continue;
+            await ApplyTerminalsAsync(session, oauth, staffingRevoker, identity, apps, secrets, skips,
+                pos, ownerId, $"position '{pos.AccountName}'", now, ct);
+        }
+    }
+
+    /// <summary>
+    /// Mirror of V2_PositionTerminals_Create / _Update / _SetPositions and
+    /// V2_PositionTerminal_SetOAuthAccess, per slot: the same policy, binding, floor and
+    /// allowed-position checks, the same events, the same post-commit cascades (ending the
+    /// staffing sessions a removed position or a changed access profile invalidates).
+    /// </summary>
+    private static async Task ApplyTerminalsAsync(
+        IDocumentSession session, OAuthAdminService oauth, IStaffingRevoker staffingRevoker,
+        ManifestIdentity identity, IReadOnlyDictionary<string, App> apps, Dictionary<string, string> secrets,
+        ManifestReferenceSkips skips, RealmManifestPosition pos, Guid ownerId, string posCtx,
+        DateTimeOffset now, CancellationToken ct)
+    {
+        var owner = await session.LoadAsync<PositionPrincipal>(ownerId, ct)
+                    ?? throw new ManifestApplyException(posCtx, [Error.Unexpected("Position.NotFound", $"{posCtx}: the position is not readable after its own apply.")]);
+        var realm = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        var requiredBinding = realm?.PositionSecurity?.RequiredBindingCapabilities ?? BindingCapability.None;
+
+        foreach (var slot in pos.Terminals!)
+        {
+            var ctx = $"{posCtx} terminal '{slot.DisplayName}'";
+            var name = slot.DisplayName.Trim();
+            if (name.Length == 0)
+                throw new ManifestApplyException(ctx, [Error.Validation("Terminal.DisplayNameRequired", $"{ctx}: a display name is required.")]);
+
+            // The served positions, by identity; the owner is always among them.
+            List<Guid>? allowed = null;
+            if (slot.AllowedPositions is not null)
+            {
+                allowed = [ownerId];
+                foreach (var reference in slot.AllowedPositions)
+                    if (await ResolvePositionRefAsync(session, identity, reference, $"{ctx} allowed position '{reference}'", skips, ct) is { } pid
+                        && !allowed.Contains(pid))
+                        allowed.Add(pid);
+            }
+
+            var live = await MatchByPinnedIdAsync<TerminalEnrollment>(
+                session, slot.Id, x => x.Status == TerminalEnrollmentStatus.Revoked, ct);
+
+            if (live is null)
+            {
+                if (!owner.TerminalPolicy.Enabled)
+                    throw new ManifestApplyException(ctx, [Error.Validation("Terminal.TerminalPolicyDisabled",
+                        $"{ctx}: enable terminal use on the position before declaring terminal slots.")]);
+                var binding = string.IsNullOrWhiteSpace(slot.Binding) ? DeviceBindingIds.Dpop : slot.Binding;
+                if (!PositionTerminalSecurity.TryGetWritableBinding(binding, out _))
+                    throw new ManifestApplyException(ctx, [Error.Validation("Terminal.UnknownDeviceBinding", $"{ctx}: device binding '{binding}' is unknown or unavailable.")]);
+                if (!owner.TerminalPolicy.AllowedDeviceBindings.Contains(binding, StringComparer.Ordinal))
+                    throw new ManifestApplyException(ctx, [Error.Validation("Terminal.DeviceBindingNotAllowed", $"{ctx}: device binding '{binding}' is not allowed by the position policy.")]);
+                if (!PositionTerminalSecurity.BindingMeetsFloor(binding, requiredBinding))
+                    throw new ManifestApplyException(ctx, [Error.Validation("Terminal.DeviceBindingBelowRealmFloor", $"{ctx}: device binding '{binding}' does not meet the realm capability floor.")]);
+                if (string.IsNullOrWhiteSpace(slot.WebAuthnRpId))
+                    throw new ManifestApplyException(ctx, [Error.Validation("Terminal.RpIdRequired", $"{ctx}: WebAuthnRpId is required to create a slot.")]);
+                foreach (var allowedId in allowed ?? [ownerId])
+                    await EnsurePositionServableAsync(session, allowedId, binding, requiredBinding, ctx, ct);
+
+                var access = await ResolveTerminalAccessAsync(oauth, apps, slot.Scopes ?? [], slot.Apps ?? [], ctx, skips, ct);
+
+                // A free pinned id is honoured (ids stay identical across environments); a
+                // REVOKED slot's id is not revived — revoke is terminal, the device needs a
+                // fresh slot, so the manifest has to drop that Id.
+                var pinned = await ResolvePinnedAsync<TerminalEnrollment>(
+                    session, ManifestHandle.AsPinnedId(slot.Id), "Terminal", ctx,
+                    x => x.Status == TerminalEnrollmentStatus.Revoked, ct);
+                if (pinned.Revive)
+                    throw new ManifestApplyException(ctx, [Error.Conflict("Terminal.Revoked",
+                        $"{ctx}: the slot named by this Id was revoked; revoke is terminal — remove the Id to create a fresh slot.")]);
+                var enrollmentId = pinned.Id ?? Guid.NewGuid();
+                var applicationId = Guid.NewGuid();
+                var clientId = $"terminal.{new ShortGuid(Guid.NewGuid()).ToString()[..8]}";
+                if (oauth.StageCreateTerminalClient(applicationId, clientId, $"{owner.DisplayName} — {name}",
+                        ownerId, enrollmentId, slot.WebAuthnRpId, binding, access, out var clientSecret) is { } clientError)
+                    throw new ManifestApplyException(ctx, [clientError]);
+
+                session.Events.StartStream<TerminalEnrollment>(enrollmentId, new TerminalEnrollmentCreated(
+                    enrollmentId, ownerId, name,
+                    slot.Location.HasValue && !string.IsNullOrWhiteSpace(slot.Location.Value) ? slot.Location.Value.Trim() : null,
+                    applicationId, clientId, slot.WebAuthnRpId.Trim().ToLowerInvariant(),
+                    ProvisioningActor, now, binding, (allowed ?? [ownerId]).ToArray()));
+                await session.SaveChangesAsync(ct);
+                if (clientSecret is not null) secrets[clientId] = clientSecret;
+                identity.Assign(slot.Id, enrollmentId);
+                continue;
+            }
+
+            // ── Update ───────────────────────────────────────────────────────────────
+            if (live.PositionPrincipalId != ownerId)
+                throw new ManifestApplyException(ctx, [Error.Conflict("Terminal.OwnedByAnotherPosition",
+                    $"{ctx}: the slot named by this Id is owned by another position.")]);
+            if (!string.IsNullOrWhiteSpace(slot.WebAuthnRpId)
+                && !string.Equals(slot.WebAuthnRpId.Trim(), live.WebAuthnRpId, StringComparison.OrdinalIgnoreCase))
+                throw new ManifestApplyException(ctx, [Error.Validation("Terminal.RpIdImmutable",
+                    $"{ctx}: WebAuthnRpId is immutable (staff passkeys hang off it) — create a new slot for '{slot.WebAuthnRpId}'.")]);
+            if (!string.IsNullOrWhiteSpace(slot.Binding) && !string.Equals(slot.Binding, live.Binding, StringComparison.Ordinal))
+                throw new ManifestApplyException(ctx, [Error.Validation("Terminal.BindingImmutable",
+                    $"{ctx}: the device binding is immutable after create — create a new slot for '{slot.Binding}'.")]);
+
+            var location = !slot.Location.HasValue
+                ? live.Location
+                : string.IsNullOrWhiteSpace(slot.Location.Value) ? null : slot.Location.Value.Trim();
+            if (name != live.DisplayName || location != live.Location)
+                session.Events.Append(live.Id, new TerminalEnrollmentDetailsChanged(live.Id, name, location));
+
+            var previous = live.EffectiveAllowedPositionIds.ToHashSet();
+            var removedPositions = new List<Guid>();
+            if (allowed is not null && !previous.SetEquals(allowed))
+            {
+                if (live.EnrollmentAuthorizationId is not null && allowed.Except(previous).Any())
+                    throw new ManifestApplyException(ctx, [Error.Conflict("Terminal.ReenrollmentRequired",
+                        $"{ctx}: adding a position to an enrolled terminal requires a fresh multi-position slot and enrollment.")]);
+                foreach (var id in allowed)
+                    await EnsurePositionServableAsync(session, id, live.Binding, requiredBinding, ctx, ct);
+                session.Events.Append(live.Id, new TerminalAllowedPositionsChanged(live.Id, allowed.ToArray(), ProvisioningActor, now));
+                removedPositions = previous.Except(allowed).ToList();
+            }
+
+            var accessChanged = false;
+            if (slot.Scopes is not null || slot.Apps is not null)
+            {
+                var client = await session.LoadAsync<OAuthApplicationState>(live.OAuthApplicationId, ct);
+                var currentScopes = client?.Permissions
+                    .Where(x => x.StartsWith(OAuthPermissions.Prefixes.Scope, StringComparison.Ordinal))
+                    .Select(x => x[OAuthPermissions.Prefixes.Scope.Length..]).ToList() ?? [];
+                var currentAppIds = client?.AppIds.Select(ShortGuid.Encode).ToList() ?? [];
+                var access = await ResolveTerminalAccessAsync(oauth, apps,
+                    slot.Scopes ?? currentScopes, slot.Apps, ctx, skips, ct, currentAppIds);
+                // The client's display name is not the manifest's to set — pass the current
+                // one, otherwise the service reads null as "clear it".
+                var change = await oauth.StageSetTerminalClientAccessAsync(
+                    live.OAuthApplicationId, live.Id, client?.DisplayName, access, ct);
+                EnsureOk(change, ctx);
+                accessChanged = change.Value.AccessChanged;
+            }
+
+            await session.SaveChangesAsync(ct);
+            identity.Assign(slot.Id, live.Id);
+
+            // Post-commit cascades, as the endpoints run them.
+            foreach (var removedPositionId in removedPositions)
+            {
+                var active = await session.Query<StaffingSession>()
+                    .Where(s => s.TerminalEnrollmentId == live.Id && s.PositionPrincipalId == removedPositionId
+                                && s.Status == StaffingSessionStatus.Active)
+                    .ToListAsync(ct);
+                foreach (var staffing in active)
+                    await staffingRevoker.EndSessionAsync(staffing.Id, StaffingSessionEndReason.PolicyTightened, ct);
+            }
+            if (accessChanged)
+                await staffingRevoker.EndAllForTerminalAsync(live.Id, StaffingSessionEndReason.PolicyTightened, ct);
+        }
+    }
+
+    /// <summary>Same availability rule as the terminal endpoints: the position must be live,
+    /// active, opted into terminal use, and allow the slot's binding above the realm floor.</summary>
+    private static async Task EnsurePositionServableAsync(
+        IDocumentSession session, Guid positionId, string binding, BindingCapability requiredBinding,
+        string ctx, CancellationToken ct)
+    {
+        var position = await session.LoadAsync<PositionPrincipal>(positionId, ct);
+        if (position is null || position.IsDeleted || !position.IsActive || !position.TerminalPolicy.Enabled
+            || !position.TerminalPolicy.AllowedDeviceBindings.Contains(binding, StringComparer.Ordinal)
+            || !PositionTerminalSecurity.BindingMeetsFloor(binding, requiredBinding))
+            throw new ManifestApplyException(ctx, [Error.Validation("Terminal.PositionUnavailable",
+                $"{ctx}: position '{ShortGuid.Encode(positionId)}' is not compatible with this terminal (inactive, terminal use off, or binding not allowed).")]);
+    }
+
+    /// <summary>The slot client's access profile through the same validator the endpoints
+    /// use. Apps arrive as slugs; an unknown slug is skipped and reported, and a list that
+    /// resolves to nothing keeps the client's current apps rather than clearing them.</summary>
+    private static async Task<TerminalClientAccessConfiguration> ResolveTerminalAccessAsync(
+        OAuthAdminService oauth, IReadOnlyDictionary<string, App> apps, IReadOnlyList<string> scopes,
+        List<string>? appSlugs, string ctx, ManifestReferenceSkips skips, CancellationToken ct,
+        List<string>? currentAppIds = null)
+    {
+        var appIds = appSlugs is null
+            ? currentAppIds ?? []
+            : OrUnchangedWhenNothingResolved(
+                  appSlugs.Select(slug => ResolveAppId(apps, slug, ctx, skips)).OfType<string>().ToList(),
+                  appSlugs.Count, ctx, "app", skips)
+              ?? currentAppIds ?? [];
+        var access = await oauth.ValidateTerminalClientAccessAsync(scopes, appIds, ct);
+        EnsureOk(access, ctx);
+        return access.Value;
+    }
+
+    /// <summary>A reference to a position, by identity (ADR 0024): a <c>#handle</c> from this
+    /// manifest, or a real id the realm has; anything else is skipped and reported.</summary>
+    private static async Task<Guid?> ResolvePositionRefAsync(
+        IDocumentSession session, ManifestIdentity identity, ManifestRef reference,
+        string context, ManifestReferenceSkips skips, CancellationToken ct)
+    {
+        if (reference.Handle is { } handle)
+            return ResolveHandle(identity, handle, "position", context, skips);
+        if (reference.ParsedId is not { } byId)
+        {
+            skips.Skip(context, "position", "carries no id or #handle, and a name is never resolved (ADR 0024)");
+            return null;
+        }
+        if (identity.WasApplied(ManifestIdentity.Sections.Positions, byId)) return byId;
+        var position = await session.LoadAsync<PositionPrincipal>(byId, ct);
+        if (position is null || position.IsDeleted)
+        {
+            skips.Skip(context, $"position '{reference.Display}'", "no position with that id in this realm");
+            return null;
+        }
+        VerifyHint(reference, context, "position", skips, position.AccountName);
+        return position.Id;
     }
 
     /// <summary>Mirror of V2_Position_Create minus terminal-slot staging: same validators,

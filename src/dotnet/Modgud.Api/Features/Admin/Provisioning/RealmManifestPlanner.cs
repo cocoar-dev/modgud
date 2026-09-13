@@ -328,8 +328,14 @@ public sealed class RealmManifestPlanner(
         foreach (var u in current.Users) userRefs.Add(u.Key ?? u.UserName ?? u.Email, u.Id);
         RealmManifestGroup CanonGroup(RealmManifestGroup g)
             => g with { Members = userRefs.Canon(g.Members), Roles = roleRefs.Canon(g.Roles) };
+        var positionRefs = new RefCanonicalizer();
+        foreach (var p in current.Positions) positionRefs.Add(p.AccountName.Trim().ToLowerInvariant(), p.Id);
         RealmManifestPosition CanonPosition(RealmManifestPosition p)
-            => p with { Grants = userRefs.Canon(p.Grants) };
+            => p with
+            {
+                Grants = userRefs.Canon(p.Grants),
+                Terminals = p.Terminals?.Select(t => t with { AllowedPositions = positionRefs.Canon(t.AllowedPositions) }).ToList(),
+            };
 
         result.Sections.Add(await PlanSectionAsync("groups", json, prune, DeletesFor("groups"),
             manifest.Groups.Select(CanonGroup).ToList(), current.Groups.Select(CanonGroup).ToList(),
@@ -372,6 +378,19 @@ public sealed class RealmManifestPlanner(
                 {
                     if (existing is { IsActive: true } && desired.IsActive == false)
                         entry.Notes.Add("Deactivating revokes the position's outstanding tokens and ends its running staffing sessions.");
+                    // A slot the position does not have yet is CREATED with a fresh client; the
+                    // device still has to enroll, and a client-secret slot's secret comes back once.
+                    foreach (var slot in desired.Terminals ?? [])
+                        if (existing?.Terminals?.Any(t => NormalizedId(t.Id) is { } tid && tid == NormalizedId(slot.Id)) != true)
+                            entry.Notes.Add(
+                                $"Terminal slot '{slot.DisplayName}' is created with a fresh terminal client (Pending until a device "
+                                + "enrolls); a client-secret slot's secret is returned once in the apply result.");
+                    // A slot the position has but the entry does not list is NOT removed —
+                    // revoking is terminal and stays an action in the position admin.
+                    if (existing?.Terminals is { Count: > 0 } liveSlots && desired.Terminals is not null)
+                        foreach (var gone in liveSlots)
+                            if (!desired.Terminals.Any(t => NormalizedId(t.Id) is { } tid && tid == NormalizedId(gone.Id)))
+                                entry.Notes.Add($"Terminal slot '{gone.DisplayName}' is not listed — it is KEPT; a manifest never revokes a slot.");
                 },
             }));
 

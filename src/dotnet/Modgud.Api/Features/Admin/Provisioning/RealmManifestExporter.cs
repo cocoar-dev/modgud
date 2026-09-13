@@ -134,12 +134,15 @@ public sealed class RealmManifestExporter(
             AllowDynamicRegistrationClients = s.AllowDynamicRegistrationClients,
         }).ToList();
 
-        // Service-account-linked clients are M2M credentials the manifest can't model — skip.
-        // Terminal-managed clients (position slots) are likewise credential material bound to
-        // a device enrollment: exporting them would produce a manifest whose staffing grant
-        // fails the position-link invariant on re-apply, so they are skipped too.
+        // Service-account-linked clients travel under their account (Credentials), and a
+        // terminal-managed client travels under its position's slot (Positions[].Terminals):
+        // both are managed through their owner, and the generic client update refuses them.
+        // A V2 terminal client is linked to its ENROLLMENT only (the position link is the
+        // legacy single-position form), so the enrollment link is the one to test.
         var clients = (await oauth.GetClientsAsync(new PaginationRequest { PageSize = 1000 }, ct))
-            .Items.Where(c => c.LinkedServiceAccountId is null && c.LinkedPositionPrincipalId is null);
+            .Items.Where(c => c.LinkedServiceAccountId is null
+                              && c.LinkedPositionPrincipalId is null
+                              && c.ManagedTerminalEnrollmentId is null);
         var manifestClients = clients.Select(c => new RealmManifestClient
         {
             ClientId = c.ClientId,
@@ -340,6 +343,38 @@ public sealed class RealmManifestExporter(
                     .Where(g => g.Status != Modgud.Domain.PositionTerminals.PositionGrantStatus.Revoked)
                     .ToListAsync(ct))
                 .ToLookup(g => g.PositionPrincipalId);
+            // Terminal slots travel as configuration under their OWNING position (the one
+            // the slot was created on); the enrollment, DPoP key and client secret never do.
+            var positionKeyById = positions.ToDictionary(p => p.Id, p => p.AccountName);
+            var slots = (await session.Query<Modgud.Domain.PositionTerminals.TerminalEnrollment>().ToListAsync(ct))
+                .Where(t => t.Status != Modgud.Domain.PositionTerminals.TerminalEnrollmentStatus.Revoked)
+                .ToList();
+            var slotClientIds = slots.Select(t => t.OAuthApplicationId).ToList();
+            var slotClients = slotClientIds.Count == 0
+                ? new Dictionary<Guid, Modgud.Domain.OAuth.Applications.OAuthApplicationState>()
+                : (await session.LoadManyAsync<Modgud.Domain.OAuth.Applications.OAuthApplicationState>(ct, slotClientIds)).ToDictionary(c => c.Id);
+            var slotsByOwner = slots.ToLookup(t => t.PositionPrincipalId);
+            List<RealmManifestTerminal> TerminalsOf(Guid ownerId) => slotsByOwner[ownerId]
+                .OrderBy(t => t.DisplayName, StringComparer.Ordinal)
+                .Select(t =>
+                {
+                    slotClients.TryGetValue(t.OAuthApplicationId, out var client);
+                    return new RealmManifestTerminal
+                    {
+                        Id = new ShortGuid(t.Id).ToString(),
+                        DisplayName = t.DisplayName,
+                        Location = Opt(t.Location),
+                        WebAuthnRpId = t.WebAuthnRpId,
+                        Binding = t.Binding,
+                        AllowedPositions = t.EffectiveAllowedPositionIds
+                            .Where(id => id != ownerId && positionKeyById.ContainsKey(id))
+                            .Select(id => ManifestRef.Of(positionKeyById[id], id)).ToList(),
+                        Scopes = client?.Permissions
+                            .Where(x => x.StartsWith(ScopePrefix, StringComparison.Ordinal))
+                            .Select(x => x[ScopePrefix.Length..]).ToList() ?? [],
+                        Apps = client?.AppIds.Where(appSlugById.ContainsKey).Select(id => appSlugById[id]).ToList() ?? [],
+                    };
+                }).ToList();
             manifestPositions = positions.Select(p => new RealmManifestPosition
             {
                 AccountName = p.AccountName,
@@ -357,6 +392,7 @@ public sealed class RealmManifestExporter(
                 Grants = liveGrants[p.Id]
                     .Where(g => userKeyById.ContainsKey(g.UserId))
                     .Select(g => ManifestRef.Of(userKeyById[g.UserId], g.UserId)).ToList(),
+                Terminals = TerminalsOf(p.Id),
             }).ToList();
         }
 

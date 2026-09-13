@@ -72,7 +72,7 @@ public sealed record RealmManifest
     [Description("External login providers (OIDC/SAML federation). The built-in Internal provider is seeded automatically and cannot be declared here. Slug is the natural key; Type and Flavor are immutable after create.")]
     public List<RealmManifestLoginProvider> LoginProviders { get; init; } = [];
 
-    [Description("Position principals (shared-terminal staffing identities). Requires the PositionTerminals feature flag. AccountName is the natural key. Terminal SLOTS (device enrollments + their OAuth clients) are credential material and are NOT modelled — provision them via the position/terminal admin APIs after import.")]
+    [Description("Position principals (shared-terminal staffing identities). Requires the PositionTerminals feature flag. AccountName is the natural key. A position's terminal SLOTS travel as configuration under Terminals (name, location, RP ID, binding, served positions, the client's scopes/apps); the device ENROLLMENT and its secret never do — a slot created by an apply still has to enroll.")]
     public List<RealmManifestPosition> Positions { get; init; } = [];
 
     [Description("Configuration of the realm's scheduled jobs, keyed by the job's registration Key (e.g. 'inbox-retention'). Jobs are compiled into the server, so an entry can only CONFIGURE one — a Key this deployment does not have is skipped and reported; nothing is ever created or pruned here.")]
@@ -662,6 +662,39 @@ public sealed record RealmManifestPosition
 
     [Description("Users authorized to staff this position. Each entry names a user by IDENTITY (ADR 0024): { \"Key\": \"alice\", \"Id\": \"<user id>\" }, or \"#alice\" for a user this same manifest creates; a bare name is an error. Present = replaces the live grant set (missing grants are issued, absent ones revoked — revoking ends that user's running shifts; [] revokes all); absent = no change.")]
     public List<ManifestRef>? Grants { get; init; }
+
+    [Description("Terminal slots owned by this position — each the SHAPE of a device slot and its terminal-managed OAuth client. A slot whose Id names a live slot is updated; one without creates a slot with a fresh client (a client-secret slot's secret is returned once in ClientSecrets). The device still has to ENROLL through the device ceremony — that never travels. A manifest never removes a slot (revoking is terminal, an action in the position admin); absent = unchanged.")]
+    public List<RealmManifestTerminal>? Terminals { get; init; }
+}
+
+/// <summary>A terminal slot's configuration — never its enrollment. Mirrors the create/update
+/// shapes of <c>/api/position/{id}/terminals</c> and the client's oauth-access route.</summary>
+[Description("A terminal slot of a position: its configuration, never its enrollment.")]
+public sealed record RealmManifestTerminal
+{
+    [Description("The slot's id (ShortGuid or Guid) — identity, ADR 0024. Absent creates a slot; the plan shows the create.")]
+    public string? Id { get; init; }
+
+    [Description("Display name — required; a slot always has a name.")]
+    public required string DisplayName { get; init; }
+
+    [Description("Optional location. Absent = unchanged; explicit null clears.")]
+    public Optional<string?> Location { get; init; }
+
+    [Description("The WebAuthn RP ID staff passkeys verify against on this terminal. Required on create, immutable afterwards (a differing value is an error).")]
+    public string? WebAuthnRpId { get; init; }
+
+    [Description("Device binding: 'dpop' (default), 'client-secret' or 'none'. Immutable after create; must be allowed by the owning position's policy and the realm floor.")]
+    public string? Binding { get; init; }
+
+    [Description("Further positions this slot may serve, by identity ({ Key, Id } or '#handle'); the owning position is always included. Absent = unchanged. Adding a position to an already ENROLLED slot is refused (a fresh slot and enrollment are required), exactly as in the admin API.")]
+    public List<ManifestRef>? AllowedPositions { get; init; }
+
+    [Description("Business scopes the slot's client may request. Absent = unchanged; [] clears. Changing the access profile ends the slot's running staffing session.")]
+    public List<string>? Scopes { get; init; }
+
+    [Description("App slugs authorizing app-scoped scopes for the slot's client. Absent = unchanged; [] clears.")]
+    public List<string>? Apps { get; init; }
 }
 
 /// <summary>

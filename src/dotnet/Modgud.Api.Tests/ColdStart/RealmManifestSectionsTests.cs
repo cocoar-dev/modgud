@@ -12,6 +12,7 @@ using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
+using Modgud.Domain.Common;
 using Modgud.Domain.PositionTerminals;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
@@ -274,7 +275,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
             Assert.Equal(aliceId, grant.UserId);
         });
 
-        // ── Export: position + grant keys round-trip (terminal slots never do). ────
+        // ── Export: position + grant keys round-trip (slots are covered separately). ─
         var exported = await exporter.ExportRealmAsync(slug, ct);
         Assert.False(exported.IsError);
         var exPos = Assert.Single(exported.Value.Positions);
@@ -307,6 +308,143 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
             Assert.False(await session.Query<PositionPrincipal>().AnyAsync(p => !p.IsDeleted && p.AccountName == "gate.porter", ct),
                 "position pruned");
         });
+    }
+
+    [Fact]
+    public async Task Terminal_slots_travel_as_configuration_and_never_as_enrollment()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+        var planner = factory.Services.GetRequiredService<RealmManifestPlanner>();
+        factory.Services.GetRequiredService<AppSettings>().Features.PositionTerminals = true;
+
+        const string slug = "termslots";
+        var frontKey = new ShortGuid(Guid.NewGuid()).ToString();
+        var backKey = new ShortGuid(Guid.NewGuid()).ToString();
+        PositionTerminalPolicyUpdateDto Policy() => new()
+        {
+            Enabled = true,
+            AllowedActivationProofs = [ActivationProofMethodIds.PersonalPasskey],
+            AllowedDeviceBindings = [DeviceBindingIds.Dpop],
+            StaffingSessionLifetimeMinutes = 60,
+            MaximumStaffingSessionLifetimeMinutes = 480,
+        };
+        RealmManifest Manifest(List<RealmManifestTerminal>? terminals) => new()
+        {
+            Positions =
+            [
+                // The slot serves a position declared FURTHER DOWN — slots apply after
+                // every position, so a forward handle is fine.
+                new RealmManifestPosition
+                {
+                    AccountName = "gate.front", Id = frontKey, TerminalPolicy = Policy(), Terminals = terminals,
+                },
+                new RealmManifestPosition { AccountName = "gate.back", Id = backKey, TerminalPolicy = Policy() },
+            ],
+        };
+
+        // ── Create: the slot and its terminal-managed client, Pending (no enrollment). ─
+        var import = await ProvisionRealmAsync(factory, Shell(slug), Manifest(
+        [
+            new RealmManifestTerminal
+            {
+                DisplayName = "Gate left", WebAuthnRpId = "Kiosk.Example.Test", Location = "Hall A",
+                AllowedPositions = [new ManifestRef { Key = "gate.back", Id = backKey }],
+            },
+        ]), ct);
+        Assert.False(import.IsError, import.IsError ? import.FirstError.Description : string.Empty);
+
+        Guid slotId = default;
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var slot = Assert.Single(await session.Query<TerminalEnrollment>().ToListAsync(ct));
+            slotId = slot.Id;
+            Assert.Equal(new ShortGuid(frontKey).Guid, slot.PositionPrincipalId);
+            Assert.Equal("Gate left", slot.DisplayName);
+            Assert.Equal("Hall A", slot.Location);
+            Assert.Equal("kiosk.example.test", slot.WebAuthnRpId);
+            Assert.Equal(DeviceBindingIds.Dpop, slot.Binding);
+            Assert.Equal(TerminalEnrollmentStatus.Pending, slot.Status);
+            Assert.Null(slot.EnrollmentAuthorizationId);
+            Assert.Equal(
+                new[] { new ShortGuid(frontKey).Guid, new ShortGuid(backKey).Guid }.Order(),
+                slot.EffectiveAllowedPositionIds.Order());
+            var client = await session.LoadAsync<Modgud.Domain.OAuth.Applications.OAuthApplicationState>(slot.OAuthApplicationId, ct);
+            Assert.NotNull(client);
+            Assert.Equal(slot.ClientId, client.ClientId);
+        });
+
+        // ── Export carries the slot (by id, served positions by identity); re-applying
+        //    the export is a no-op, not a second slot. ──────────────────────────────────
+        var exported = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exported.IsError);
+        var exSlot = Assert.Single(exported.Value.Positions.Single(p => p.AccountName == "gate.front").Terminals!);
+        Assert.Equal(new ShortGuid(slotId).ToString(), exSlot.Id);
+        Assert.Equal("Hall A", exSlot.Location.Value);
+        Assert.Equal(["gate.back"], exSlot.AllowedPositions!.Select(r => r.Key));
+        Assert.Empty(exported.Value.Positions.Single(p => p.AccountName == "gate.back").Terminals!);
+        // The slot's client is terminal-managed and never travels in Clients.
+        Assert.DoesNotContain(exported.Value.Clients, c => c.ClientId.StartsWith("terminal.", StringComparison.Ordinal));
+        var reapplied = await applier.UpdateRealmAsync(slug, exported.Value, ct: ct);
+        Assert.False(reapplied.IsError, reapplied.IsError
+            ? $"{reapplied.FirstError.Code}: {reapplied.FirstError.Description} [{string.Join(", ", reapplied.FirstError.Metadata?.Select(kv => $"{kv.Key}={kv.Value}") ?? [])}]"
+            : string.Empty);
+        await InTenantAsync(factory, slug, async sp =>
+            Assert.Single(await sp.GetRequiredService<IDocumentSession>().Query<TerminalEnrollment>().ToListAsync(ct)));
+
+        // ── Update by id: name/location change, the served set shrinks to the owner;
+        //    a slot the entry does not list is KEPT (the plan says so). ──────────────────
+        var renamed = Manifest(
+        [
+            new RealmManifestTerminal { Id = exSlot.Id, DisplayName = "Gate left (renamed)", Location = new Optional<string?>(null), AllowedPositions = [] },
+            new RealmManifestTerminal { DisplayName = "Gate right", WebAuthnRpId = "kiosk.example.test" },
+        ]);
+        var plan = await planner.PlanAsync(slug, renamed, prune: false, ct: ct);
+        Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
+        var frontEntry = plan.Value.Sections.Single(s => s.Name == "positions").Entries.Single(e => e.Key == "gate.front");
+        Assert.Contains(frontEntry.Notes, n => n.Contains("'Gate right' is created with a fresh terminal client"));
+
+        Assert.False((await applier.UpdateRealmAsync(slug, renamed, ct: ct)).IsError);
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var slots = await sp.GetRequiredService<IDocumentSession>().Query<TerminalEnrollment>().ToListAsync(ct);
+            Assert.Equal(2, slots.Count);
+            var left = slots.Single(s => s.Id == slotId);
+            Assert.Equal("Gate left (renamed)", left.DisplayName);
+            Assert.Null(left.Location);
+            Assert.Equal([new ShortGuid(frontKey).Guid], left.EffectiveAllowedPositionIds);
+        });
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest([]), ct: ct)).IsError);
+        var kept = await planner.PlanAsync(slug, Manifest([]), prune: false, ct: ct);
+        Assert.Contains(kept.Value.Sections.Single(s => s.Name == "positions").Entries.Single(e => e.Key == "gate.front").Notes,
+            n => n.Contains("'Gate right' is not listed — it is KEPT"));
+        await InTenantAsync(factory, slug, async sp =>
+            Assert.Equal(2, (await sp.GetRequiredService<IDocumentSession>().Query<TerminalEnrollment>().ToListAsync(ct)).Count));
+
+        // ── The RP ID is immutable — passkeys hang off it. ─────────────────────────────
+        var moved = await applier.UpdateRealmAsync(slug, Manifest(
+            [new RealmManifestTerminal { Id = exSlot.Id, DisplayName = "Gate left (renamed)", WebAuthnRpId = "other.example.test" }]), ct: ct);
+        Assert.True(moved.IsError);
+        Assert.Equal("Terminal.RpIdImmutable", moved.FirstError.Code);
+
+        // ── A slot needs a position that allows terminals; a bare handle is validated. ─
+        var noPolicy = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Positions =
+            [
+                new RealmManifestPosition
+                {
+                    AccountName = "gate.side", Id = "#side",
+                    Terminals = [new RealmManifestTerminal { DisplayName = "Side", WebAuthnRpId = "kiosk.example.test" }],
+                },
+            ],
+        }, ct: ct);
+        Assert.True(noPolicy.IsError);
+        Assert.Equal("Terminal.TerminalPolicyDisabled", noPolicy.FirstError.Code);
     }
 
     private static async Task InTenantAsync(
