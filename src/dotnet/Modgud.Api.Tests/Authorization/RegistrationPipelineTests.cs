@@ -7,6 +7,7 @@ using Marten;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using Modgud.Api.Features.Admin.Jobs;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.OAuth;
@@ -236,9 +237,11 @@ public class RegistrationPipelineTests : IntegrationTestBase
     {
         var ct = TestContext.Current.CancellationToken;
         const string ghostEmail = "rp-ghost@example.test";
+        const string youngEmail = "rp-young-ghost@example.test";
         const string keepEmail = "rp-keep-password@example.test";
+        const int olderThanDays = 7;
 
-        Guid ghostId, keepId;
+        Guid ghostId, youngId, keepId;
         using (var scope = CreateTenantScope())
         {
             var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
@@ -254,6 +257,23 @@ public class RegistrationPipelineTests : IntegrationTestBase
                 CreatedAt = DateTimeOffset.UtcNow.AddDays(-10), ExpiresAt = DateTimeOffset.UtcNow.AddDays(-10),
             });
             await session.SaveChangesAsync(ct);
+            // The reaper ages a candidate by its STREAM's creation time, and Postgres stamps
+            // that with its own now() — not this process's clock. Backdate it in the database
+            // so the ghost is old by any clock; the assertion must never ride on the DB host
+            // and the test host agreeing to the second (a Docker VM clock running ahead of
+            // Windows made a zero-day window miss the ghost in streaks).
+            await BackdateStreamAsync(session, ghost.Id, TimeSpan.FromDays(10), ct);
+
+            // Same signature, but created just now → inside the window, must survive.
+            var young = new ApplicationUser(youngEmail, youngEmail) { IsActive = true };
+            Assert.True((await userManager.CreateAsync(young)).Succeeded);
+            youngId = young.Id;
+            session.Store(new EmailOtpChallenge
+            {
+                Id = young.Id, CodeHash = "dead", Email = youngEmail,
+                CreatedAt = DateTimeOffset.UtcNow, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
+            });
+            await session.SaveChangesAsync(ct);
 
             // Unconfirmed but WITH a password → outside the signature, must survive.
             var keep = new ApplicationUser("rp-keep-password", keepEmail) { IsActive = true };
@@ -264,7 +284,7 @@ public class RegistrationPipelineTests : IntegrationTestBase
         using (var scope = CreateTenantScope())
         {
             var job = ActivatorUtilities.CreateInstance<UnconfirmedRegistrationReaperJob>(scope.ServiceProvider);
-            var dry = await job.RunAsync(dryRun: true, olderThanDays: 0, ct);
+            var dry = await job.RunAsync(dryRun: true, olderThanDays, ct);
             Assert.Equal(1, dry.Matched);
             Assert.Equal(0, dry.Erased);
         }
@@ -273,7 +293,7 @@ public class RegistrationPipelineTests : IntegrationTestBase
         using (var scope = CreateTenantScope())
         {
             var job = ActivatorUtilities.CreateInstance<UnconfirmedRegistrationReaperJob>(scope.ServiceProvider);
-            var run = await job.RunAsync(dryRun: false, olderThanDays: 0, ct);
+            var run = await job.RunAsync(dryRun: false, olderThanDays, ct);
             Assert.Equal((1, 1), run);
         }
 
@@ -283,11 +303,32 @@ public class RegistrationPipelineTests : IntegrationTestBase
             var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
             var erased = await session.LoadAsync<ApplicationUser>(ghostId, ct);
             Assert.True(erased is null || erased.IsDeleted);
+            var young = await session.LoadAsync<ApplicationUser>(youngId, ct);
+            Assert.NotNull(young);
+            Assert.False(young!.IsDeleted);
             var kept = await session.LoadAsync<ApplicationUser>(keepId, ct);
             Assert.NotNull(kept);
             Assert.False(kept!.IsDeleted);
             Assert.Equal(keepEmail, kept.Email);
         }
+    }
+
+    /// <summary>
+    /// Moves a stream's <c>created</c> stamp into the past. Marten leaves that column to the
+    /// database default (<c>now()</c>) and offers no API to set it, so age-based tests have to
+    /// reach into <c>mt_streams</c> directly.
+    /// </summary>
+    private static async Task BackdateStreamAsync(IDocumentSession session, Guid streamId, TimeSpan by, CancellationToken ct)
+    {
+        var schema = session.DocumentStore.Options.Events.DatabaseSchemaName;
+        // CA2100: the schema name is Marten's own configuration, not input; the values are bound.
+#pragma warning disable CA2100
+        await using var cmd = new NpgsqlCommand($"update {schema}.mt_streams set created = created - @by where id = @id");
+#pragma warning restore CA2100
+        cmd.Parameters.AddWithValue("by", by);
+        cmd.Parameters.AddWithValue("id", streamId);
+        var rows = await session.ExecuteAsync(cmd, ct);
+        Assert.Equal(1, rows);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
