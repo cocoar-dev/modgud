@@ -721,8 +721,8 @@ public partial class OAuthAdminService
         if (aggregate.LinkedServiceAccountId != serviceAccountId)
             return OAuthErrors.ClientNotFound(credentialId);
 
-        if (dto.DisplayName is not null && dto.DisplayName != aggregate.DisplayName)
-            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName));
+        if (dto.DisplayName.HasValue && dto.DisplayName.Value != aggregate.DisplayName)
+            _session.Events.Append(guid, aggregate.SetDisplayName(dto.DisplayName.Value));
 
         if (dto.Scopes is not null)
         {

@@ -8,6 +8,7 @@ import { useServiceAccountStore } from '@/stores/serviceAccount.store'
 import { useUI } from '@/composables/useUI'
 import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import { useGridLocale } from '@/composables/useGridLocale'
+import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
 import type { ServiceAccountDto } from '@/models/serviceAccount'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -25,7 +26,29 @@ watch(language, () => ui.set((ctx) => {
   ctx.content.container = false
 }), { immediate: true })
 
-const rows = computed(() => store.entities)
+const liveRows = computed(() => store.entities)
+
+// ADR-0017: draft-merged roster (natural key = the lowercased account name).
+const staging = useDraftStaging('serviceAccounts')
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
+const rows = useDraftListOverlay<ServiceAccountDto>({
+  section: 'serviceAccounts',
+  rows: liveRows,
+  liveKey: (row) => row.AccountName.trim().toLowerCase(),
+  matchLive: (row, e) => row.AccountName.trim().toLowerCase() === str(e.AccountName).toLowerCase(),
+  overlay: (row, e) => ({
+    ...row,
+    AccountName: str(e.AccountName) || row.AccountName,
+    Purpose: e.Purpose === null ? null : (str(e.Purpose) || row.Purpose),
+    IsActive: typeof e.IsActive === 'boolean' ? e.IsActive : row.IsActive,
+  }),
+  synthesize: (key, e) => ({
+    Id: `draft__${key}`,
+    AccountName: str(e.AccountName) || key,
+    Purpose: str(e.Purpose) || null,
+    IsActive: e.IsActive !== false,
+  } as unknown as ServiceAccountDto),
+})
 
 const cellMenu = useContextMenu()
 const viewportMenu = useContextMenu()
@@ -33,15 +56,16 @@ const selectedIds = ref<string[]>([])
 
 const showEmpty = computed(() => store.allLoaded && rows.value.length === 0)
 
-// Service accounts export as HULLS (AccountName/Purpose/IsActive + pinned Id) —
-// credentials never travel; the manifest key is the lowercased account name.
+// Service accounts export with their credentials (never a secret); the manifest
+// key is the lowercased account name.
 const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('serviceAccounts',
   computed(() => {
     const row = rows.value.find((r) => r.Id === selectedIds.value[0])
-    return row ? row.AccountName.trim().toLowerCase() : null
+    if (!row || row.DraftStaged === 'create') return null
+    return row.AccountName.trim().toLowerCase()
   }))
 
-const builder = applyListGridDefaults(CoarGridBuilder.create<ServiceAccountDto>(), { openable: true })
+const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<ServiceAccountDto>>(), { openable: true })
   .persistColumnState('admin-service-accounts')
   .option('getRowId', (p: any) => p.data.Id)
   .rowDataRef(rows)
@@ -64,6 +88,14 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<ServiceAccountDto>(
   .columns([
     (col) => col.field('AccountName').header('Account name', 'admin.serviceAccounts.accountName').width(220).pinned('left').cellClass('account-name-cell'),
     (col) => col.field('Purpose').header('Purpose', 'admin.serviceAccounts.purpose').flex(1),
+    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
+        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
+        : p.data?.DraftStaged === 'update'
+          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
+          : '')
+      .width(120)
+      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged),
     (col) => col.icon('IsActive', { color: '#16a34a', size: 's' })
       .option('valueGetter', (p: any) => p.data?.IsActive ? 'check' : '')
       .option('tooltipValueGetter', () => null)
@@ -71,8 +103,14 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<ServiceAccountDto>(
   ])
 
 async function deleteRows() {
-  if (selectedIds.value.length > 0 && confirm(t('common.confirmDelete', {}, 'Really delete?'))) {
-    await store.deleteEntities(selectedIds.value)
+  const id = selectedIds.value[0]
+  if (!id) return
+  // A row the draft created is simply taken back out of the draft. Deleting a LIVE
+  // account stays a live action: it kills every credential the account owns, so the
+  // manifest never prunes or staged-deletes one.
+  if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))
+  if (confirm(t('common.confirmDelete', {}, 'Really delete?'))) {
+    await store.deleteEntities(selectedIds.value.filter((x) => !staging.isDraftId(x)))
   }
 }
 

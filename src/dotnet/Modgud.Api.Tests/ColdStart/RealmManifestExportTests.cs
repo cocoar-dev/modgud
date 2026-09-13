@@ -122,16 +122,14 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
 
     /// <summary>
     /// Settings that name entities by raw id — a realm's default self-registration groups,
-    /// an App's allowed login providers, branding asset ids — are realm-local WIRING and do
-    /// not travel, because an id means nothing in another realm. Carrying them breaks a
-    /// transfer either loudly (asset and provider ids ARE validated, so the whole apply
-    /// fails on a reference the author never chose) or quietly (default group ids are not,
-    /// so they would be stored dangling). They are left out instead, which under merge-patch
-    /// is "unchanged" — so a same-realm re-apply keeps the stored wiring exactly as it was,
-    /// which is what this test pins down.
+    /// branding asset ids — travel like every other id (ADR 0024). What the target realm has
+    /// is applied; what it does not have is SKIPPED and reported, never fatal, and never
+    /// stored dangling: an unresolvable reference is dropped from the patch, which under
+    /// merge-patch leaves the stored value unchanged. An export therefore round-trips as a
+    /// no-op, and a plan can show a staged clear or replace of these fields honestly.
     /// </summary>
     [Fact]
-    public async Task Export_leaves_realm_local_id_references_in_settings_behind()
+    public async Task Settings_id_references_travel_and_unresolvable_ones_are_skipped()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var factory = host.Factory;
@@ -165,37 +163,81 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
             Assert.False(patched.IsError, patched.IsError ? patched.FirstError.Description : string.Empty);
         });
 
-        // ── The export carries the settings, but not the ids. ──────────────────
+        // ── The export carries the settings AND the ids. ───────────────────────
         var exported = await exporter.ExportRealmAsync(slug, ct);
         Assert.False(exported.IsError, exported.IsError ? exported.FirstError.Description : string.Empty);
         var selfReg = exported.Value.Settings!.SelfRegistration!;
-        Assert.True(selfReg.Enabled);                                    // the setting travels
-        Assert.Null(selfReg.DefaultGroupIds);                            // the wiring does not
-        // Branding travels as values, never as the asset reference.
+        Assert.True(selfReg.Enabled);
+        Assert.Equal([groupRef], selfReg.DefaultGroupIds);
+        // No asset uploaded → no id; a stored null exports as absent, like every optional.
         Assert.False(exported.Value.Settings.Branding!.LogoAssetId.HasValue);
-        Assert.False(exported.Value.Settings.Branding.FaviconAssetId.HasValue);
 
-        // ── Re-applying the export leaves the stored wiring untouched (absent =
-        //    unchanged), so "does not travel" never means "gets cleared". ───────
-        Assert.False((await applier.UpdateRealmAsync(slug, exported.Value, ct: ct)).IsError);
-        await InTenantAsync(factory, slug, async sp =>
+        async Task<string[]?> DefaultGroupsAsync()
         {
-            var live = await sp.GetRequiredService<IRealmSettingsService>().GetDtoAsync(ct);
-            Assert.Equal([groupRef], live.SelfRegistration.DefaultGroupIds);
-        });
+            string[]? ids = null;
+            await InTenantAsync(factory, slug, async sp =>
+                ids = (await sp.GetRequiredService<IRealmSettingsService>().GetDtoAsync(ct)).SelfRegistration.DefaultGroupIds);
+            return ids;
+        }
+
+        // ── Re-applying the export is a no-op. ─────────────────────────────────
+        var reapplied = await applier.UpdateRealmAsync(slug, exported.Value, ct: ct);
+        Assert.False(reapplied.IsError);
+        Assert.Empty(reapplied.Value.SkippedReferences);
+        Assert.Equal([groupRef], await DefaultGroupsAsync());
+
+        // ── A group id from another realm is skipped and reported; the one this realm
+        //    has is applied; a logo asset that does not exist here is skipped too, and
+        //    none of it fails the apply. ─────────────────────────────────────────
+        var foreignGroup = new BuildingBlocks.Helper.ShortGuid(Guid.NewGuid()).ToString();
+        var foreignAsset = new BuildingBlocks.Helper.ShortGuid(Guid.NewGuid()).ToString();
+        var mixed = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Settings = new UpdateRealmSettingsDto
+            {
+                SelfRegistration = new UpdateSelfRegistrationDto { DefaultGroupIds = [foreignGroup, groupRef] },
+                Branding = new UpdateBrandingSettingsDto { LogoAssetId = foreignAsset },
+            },
+        }, ct: ct);
+        Assert.False(mixed.IsError, mixed.IsError ? mixed.FirstError.Description : string.Empty);
+        Assert.Contains(mixed.Value.SkippedReferences, s => s.Contains(foreignGroup));
+        Assert.Contains(mixed.Value.SkippedReferences, s => s.Contains(foreignAsset));
+        Assert.Equal([groupRef], await DefaultGroupsAsync());
+
+        // ── A list that resolves to NOTHING leaves the stored value unchanged (never
+        //    cleared by accident); an explicit empty list still clears. ──────────
+        var nothing = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Settings = new UpdateRealmSettingsDto
+            {
+                SelfRegistration = new UpdateSelfRegistrationDto { DefaultGroupIds = [foreignGroup] },
+            },
+        }, ct: ct);
+        Assert.False(nothing.IsError);
+        Assert.Equal([groupRef], await DefaultGroupsAsync());
+        Assert.False((await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Settings = new UpdateRealmSettingsDto
+            {
+                SelfRegistration = new UpdateSelfRegistrationDto { DefaultGroupIds = [] },
+            },
+        }, ct: ct)).IsError);
+        Assert.Empty(await DefaultGroupsAsync() ?? []);
     }
 
     /// <summary>
-    /// Regression, and the sharp edge of "these ids do not travel": a PER-APP settings
-    /// section is REPLACE, not merge-patch — <c>StageNonOriginAsync</c> rebuilds the whole
-    /// section from the DTO whenever the section is present. So stripping the ids out of a
-    /// section that still carries other values does not leave them alone, it CLEARS them.
-    /// Re-applying an unedited export wiped an App's login-provider allow-list, and
-    /// <c>LoginProviderIds = null</c> means "every enabled provider" — a silent widening of
-    /// the App's authentication surface, with a plan that read "unchanged".
+    /// The per-App sharp edge: a PER-APP settings section is REPLACE, not merge-patch —
+    /// <c>StageNonOriginAsync</c> rebuilds the whole section from the DTO whenever the
+    /// section is present, and <c>LoginProviderIds = null</c> means "every enabled provider".
+    /// Three things have to hold at once: re-applying an unedited export keeps the
+    /// allow-list; a same-realm CHANGE staged in the admin UI is applied (an earlier version
+    /// restored the stored ids unconditionally, which made narrowing the allow-list through
+    /// the draft a silent no-op while the plan promised it); and a provider id the realm does
+    /// not have is skipped and reported, with a list that resolves to nothing leaving the
+    /// stored allow-list alone instead of widening it to everyone.
     /// </summary>
     [Fact]
-    public async Task Re_applying_an_export_keeps_per_app_settings_that_do_not_travel()
+    public async Task Per_app_settings_references_apply_when_resolvable_and_keep_the_stored_value_otherwise()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var factory = host.Factory;
@@ -244,18 +286,71 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
             await session.SaveChangesAsync(ct);
         });
 
-        // Export → re-apply unedited. This is the plain "draft from export, apply" flow.
+        async Task<(string[]? Providers, string[]? Groups)> LiveAsync()
+        {
+            (string[]?, string[]?) state = default;
+            await InTenantAsync(factory, slug, async sp =>
+            {
+                var live = await sp.GetRequiredService<IApplicationSettingsService>().GetAsync(appId, ct);
+                Assert.False(live.IsError, live.IsError ? live.FirstError.Description : string.Empty);
+                state = (live.Value.LoginExperience?.LoginProviderIds, live.Value.SelfRegistration?.DefaultGroupIds);
+            });
+            return state;
+        }
+        async Task AssertLiveAsync(string[] providers, string[] groups)
+        {
+            var (liveProviders, liveGroups) = await LiveAsync();
+            Assert.Equal(providers, liveProviders);
+            Assert.Equal(groups, liveGroups);
+        }
+
+        // ── Export → re-apply unedited: the plain "draft from export, apply" flow. The
+        //    export CARRIES the ids, and nothing changes. ────────────────────────
         var exported = await exporter.ExportRealmAsync(slug, ct);
         Assert.False(exported.IsError, exported.IsError ? exported.FirstError.Description : string.Empty);
-        Assert.False((await applier.UpdateRealmAsync(slug, exported.Value, ct: ct)).IsError);
+        var shop = Assert.Single(exported.Value.Apps, a => a.Slug == "shop");
+        Assert.Equal([providerRef], shop.Settings?.LoginExperience?.LoginProviderIds);
+        Assert.Equal([groupRef], shop.Settings?.SelfRegistration?.DefaultGroupIds);
+        var reapplied = await applier.UpdateRealmAsync(slug, exported.Value, ct: ct);
+        Assert.False(reapplied.IsError);
+        Assert.Empty(reapplied.Value.SkippedReferences);
+        await AssertLiveAsync([providerRef], [groupRef]);
 
-        await InTenantAsync(factory, slug, async sp =>
+        // ── A same-realm change is APPLIED: narrowing the allow-list to nobody. ───
+        var narrowed = exported.Value with
         {
-            var live = await sp.GetRequiredService<IApplicationSettingsService>().GetAsync(appId, ct);
-            Assert.False(live.IsError, live.IsError ? live.FirstError.Description : string.Empty);
-            Assert.Equal([providerRef], live.Value.LoginExperience?.LoginProviderIds);
-            Assert.Equal([groupRef], live.Value.SelfRegistration?.DefaultGroupIds);
-        });
+            Apps = [shop with
+            {
+                Settings = shop.Settings! with
+                {
+                    LoginExperience = shop.Settings!.LoginExperience! with { LoginProviderIds = [] },
+                },
+            }],
+        };
+        Assert.False((await applier.UpdateRealmAsync(slug, narrowed, ct: ct)).IsError);
+        await AssertLiveAsync([], [groupRef]);
+        // …and back.
+        Assert.False((await applier.UpdateRealmAsync(slug, exported.Value, ct: ct)).IsError);
+        await AssertLiveAsync([providerRef], [groupRef]);
+
+        // ── A provider id this realm does not have is skipped and reported; a list that
+        //    resolves to nothing keeps the stored allow-list rather than becoming null
+        //    ("every provider"). ───────────────────────────────────────────────────
+        var foreignProvider = new BuildingBlocks.Helper.ShortGuid(Guid.NewGuid()).ToString();
+        var foreign = exported.Value with
+        {
+            Apps = [shop with
+            {
+                Settings = shop.Settings! with
+                {
+                    LoginExperience = shop.Settings!.LoginExperience! with { LoginProviderIds = [foreignProvider] },
+                },
+            }],
+        };
+        var skipped = await applier.UpdateRealmAsync(slug, foreign, ct: ct);
+        Assert.False(skipped.IsError, skipped.IsError ? skipped.FirstError.Description : string.Empty);
+        Assert.Contains(skipped.Value.SkippedReferences, s => s.Contains(foreignProvider));
+        await AssertLiveAsync([providerRef], [groupRef]);
     }
 
     private static async Task InTenantAsync(

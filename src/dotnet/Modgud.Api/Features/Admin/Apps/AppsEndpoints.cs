@@ -33,7 +33,8 @@ public record CreateAppDto(
     List<AppPermissionDto> Permissions,
     // ADR-0011 — an App is ONE resource: the optional per-App settings override is created
     // in the SAME tenant transaction as the App (see AppAdminService). Null = inherit the
-    // realm everywhere (the zero-config default). The applier never sends it.
+    // realm everywhere (the zero-config default). The manifest applier sends Apps[].Settings
+    // through here as well, with unresolvable id references already skipped.
     ApplicationSettingsDto? Settings = null,
     // Optional pinned entity id (Guid/ShortGuid) — provisioning only; a taken id is a conflict.
     string? Id = null);

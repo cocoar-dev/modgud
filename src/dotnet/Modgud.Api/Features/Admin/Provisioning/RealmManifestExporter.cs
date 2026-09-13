@@ -31,12 +31,13 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 ///
 /// <para>Cross-references are reversed back to KEYS (app slug, role/user key,
 /// <c>resource:action</c>). Entities that can't be cleanly re-applied are omitted: the
-/// auto-seeded standard OIDC scopes and system apps, plus service-account-linked clients (the
-/// manifest doesn't model service accounts). Realm settings ARE exported (all sections, current
-/// values) EXCEPT the write-only captcha secret (a <c>CaptchaSecretSet</c> flag, never the
-/// plaintext) and the settings fields that name entities by raw id — default groups, allowed
-/// login providers, branding assets (see <see cref="WithoutRealmLocalReferences"/>). Both
-/// omissions are "unchanged" under merge-patch, so re-applying an export leaves them alone.</para>
+/// auto-seeded standard OIDC scopes and system apps, plus service-account-linked clients (they
+/// travel under their account, see the ServiceAccounts section). Realm settings ARE exported
+/// (all sections, current values) EXCEPT the write-only captcha secret (a
+/// <c>CaptchaSecretSet</c> flag, never the plaintext) — which is "unchanged" under merge-patch,
+/// so re-applying an export leaves it alone. Settings that name entities by raw id (default
+/// groups, allowed login providers, branding assets) travel like every other id: the applier
+/// skips and reports one the target realm does not have (ADR 0024).</para>
 /// </summary>
 public sealed class RealmManifestExporter(
     IRealmProvisioningService realms,
@@ -83,7 +84,7 @@ public sealed class RealmManifestExporter(
             if (await session.LoadAsync<ApplicationSettings>(a.Id, ct) is not null)
             {
                 var loaded = await appSettingsSvc.GetAsync(a.Id, ct);
-                appSettings = loaded.IsError ? null : WithoutRealmLocalReferences(loaded.Value);
+                appSettings = loaded.IsError ? null : WithoutDerivedUrls(loaded.Value);
             }
 
             manifestApps.Add(new RealmManifestApp
@@ -392,9 +393,8 @@ public sealed class RealmManifestExporter(
             RequireEmailVerification = s.SelfRegistration.RequireEmailVerification,
             AllowedEmailDomains = s.SelfRegistration.AllowedEmailDomains,
             RequireAdminApproval = s.SelfRegistration.RequireAdminApproval,
-            // DefaultGroupIds are realm-local wiring, not portable config — see
-            // WithoutRealmLocalReferences. Absent = unchanged, so a same-realm
-            // re-apply leaves the stored groups exactly as they are.
+            // Ids travel (ADR 0024); a group the target does not have is skipped on apply.
+            DefaultGroupIds = s.SelfRegistration.DefaultGroupIds,
             TermsOfServiceUrl = Opt(s.SelfRegistration.TermsOfServiceUrl),
             PrivacyPolicyUrl = Opt(s.SelfRegistration.PrivacyPolicyUrl),
             CaptchaEnabled = s.SelfRegistration.CaptchaEnabled,
@@ -447,8 +447,10 @@ public sealed class RealmManifestExporter(
         Branding = new UpdateBrandingSettingsDto
         {
             ProductName = Opt(s.Branding.ProductName),
-            // Asset ids name uploads that live in THIS realm's store — they are not
-            // portable, so they stay behind (see WithoutRealmLocalReferences).
+            // Asset ids travel like every other id; the applier skips one the target
+            // realm's asset store does not have and keeps the stored value.
+            LogoAssetId = Opt(s.Branding.LogoAssetId),
+            FaviconAssetId = Opt(s.Branding.FaviconAssetId),
             PrimaryColor = Opt(s.Branding.PrimaryColor),
         },
         EmailBranding = new UpdateEmailBrandingSettingsDto
@@ -482,40 +484,13 @@ public sealed class RealmManifestExporter(
     };
 
     /// <summary>
-    /// Strips the settings fields that point at entities by raw id — a per-App override's
-    /// default groups, its allowed login providers, its branding assets.
-    ///
-    /// <para>Those are realm-local WIRING, not portable configuration — an id means nothing
-    /// in another realm — and carrying them breaks a transfer in one of two ways. Branding
-    /// assets and login-provider ids ARE validated, so an export carrying them makes the
-    /// whole cross-realm apply fail on a reference the author never chose. Default group
-    /// ids are not, so they would be stored dangling and in silence. Neither is a useful
-    /// thing to transport.</para>
-    ///
-    /// <para>They could not point at anything this same manifest creates either: settings
-    /// apply first and per-App settings second, while groups and login providers come much
-    /// later — so even a handle would resolve to nothing here.</para>
-    ///
-    /// <para>Absent means unchanged (v2 merge-patch), so leaving them out keeps a same-realm
-    /// re-apply a no-op while making a cross-realm transfer honest about what it carries.
-    /// A settings edit staged in the admin UI still applies to its own realm — it is the
-    /// TRANSPORT that drops them, not the contract. See ADR 0024 for why an id is the only
-    /// thing that can carry identity between realms, and a name is not.</para>
+    /// Drops the read-only URLs the settings read shape derives from the asset ids. The ids
+    /// themselves travel (ADR 0024 — the applier skips one the target realm does not have);
+    /// the URLs are computed on read and would only diff spuriously in a plan.
     /// </summary>
-    private static ApplicationSettingsDto WithoutRealmLocalReferences(ApplicationSettingsDto s) => s with
+    private static ApplicationSettingsDto WithoutDerivedUrls(ApplicationSettingsDto s) => s with
     {
-        Branding = s.Branding is null ? null : s.Branding with
-        {
-            LogoAssetId = null, LogoUrl = null, FaviconAssetId = null, FaviconUrl = null,
-        },
-        LoginExperience = s.LoginExperience is null ? null : s.LoginExperience with
-        {
-            LoginProviderIds = null,
-        },
-        SelfRegistration = s.SelfRegistration is null ? null : s.SelfRegistration with
-        {
-            DefaultGroupIds = null,
-        },
+        Branding = s.Branding is null ? null : s.Branding with { LogoUrl = null, FaviconUrl = null },
     };
 
     /// <summary>Export-side of the v2 merge-patch contract: a stored null exports as an

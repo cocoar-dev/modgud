@@ -54,7 +54,8 @@ public class IssueServiceAccountCredentialDto
 /// </summary>
 public class UpdateServiceAccountCredentialDto
 {
-    public string? DisplayName { get; set; }
+    /// <summary>v2 merge-patch: absent = unchanged, explicit null clears, value sets.</summary>
+    public Optional<string?> DisplayName { get; set; }
     public List<string>? Scopes { get; set; }
     public List<string>? AppIds { get; set; }
     /// <summary>v2 merge-patch: absent = unchanged, explicit null clears the

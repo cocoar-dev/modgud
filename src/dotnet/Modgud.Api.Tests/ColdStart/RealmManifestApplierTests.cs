@@ -1860,19 +1860,21 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
     /// once. Before this, an export carried the account hull only, so a transferred service
     /// account arrived unable to authenticate and nothing said so.
     ///
-    /// <para>Prune reaches them, deliberately: the plan shows a credential deletion in red
-    /// and a pruning apply asks before it runs, so the admin decides rather than the code
-    /// refusing on their behalf. But only for an account the manifest actually speaks for —
-    /// an account the file never mentions keeps everything it has.</para>
+    /// <para>The Credentials list is the desired set for its account, like Members on a
+    /// group: a credential the account has but the list does not is deleted at apply — no
+    /// prune needed — and the plan shows that as a red delete entry beforehand, which also
+    /// makes a pruning apply ask first. An account the file never mentions keeps everything
+    /// it has, and an entry without a Credentials list leaves them alone.</para>
     /// </summary>
     [Fact]
-    public async Task Service_account_credentials_travel_without_their_secret_and_prune_only_within_a_declared_account()
+    public async Task Service_account_credentials_travel_without_their_secret_and_the_list_is_the_desired_set()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var factory = host.Factory;
         var ct = TestContext.Current.CancellationToken;
         var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
         var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+        var planner = factory.Services.GetRequiredService<RealmManifestPlanner>();
 
         const string slug = "sacreds";
         Guid billing = Guid.NewGuid(), other = Guid.NewGuid();
@@ -1913,9 +1915,22 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         // They are NOT ordinary clients — the Clients section stays clean.
         Assert.DoesNotContain(exported.Value.Clients, c => c.ClientId.StartsWith("billing-sync."));
 
-        // ── Prune with the spare dropped, and the OTHER account left out of the file
-        //    entirely. The spare goes; the unmentioned account keeps everything. ──────
-        var pruned = await applier.UpdateRealmAsync(slug, exported.Value with
+        async Task<HashSet<string>> LiveCredentialIdsAsync()
+        {
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            await InTenantAsync(factory, slug, async sp =>
+            {
+                var live = await sp.GetRequiredService<IDocumentSession>().Query<OAuthApplicationState>()
+                    .Where(c => !c.IsDeleted && c.LinkedServiceAccountId != null).ToListAsync(ct);
+                foreach (var c in live) ids.Add(c.ClientId);
+            });
+            return ids;
+        }
+
+        // ── The spare dropped from the list, the OTHER account left out of the file
+        //    entirely, NO prune. The plan shows the spare as a deletion in the clients
+        //    section; the apply deletes it; the unmentioned account keeps everything. ──
+        var withoutSpare = exported.Value with
         {
             ServiceAccounts =
             [
@@ -1924,20 +1939,26 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                     Credentials = [exportedAccount.Credentials!.Single(c => c.ClientId == "billing-sync.primary")],
                 },
             ],
-        }, prune: true, deletions: null, ct);
-        Assert.False(pruned.IsError, pruned.IsError ? pruned.FirstError.Description : string.Empty);
+        };
+        var plan = await planner.PlanAsync(slug, withoutSpare, prune: false, ct: ct);
+        Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
+        var clientEntries = plan.Value.Sections.Single(s => s.Name == "clients").Entries;
+        Assert.Contains(clientEntries, e => e.Key == "billing-sync.spare" && e.Action == "delete");
+        Assert.DoesNotContain(clientEntries, e => e.Key == "billing-sync.primary" && e.Action == "delete");
 
-        await InTenantAsync(factory, slug, async sp =>
+        var applied = await applier.UpdateRealmAsync(slug, withoutSpare, ct: ct);
+        Assert.False(applied.IsError, applied.IsError ? applied.FirstError.Description : string.Empty);
+        var ids = await LiveCredentialIdsAsync();
+        Assert.Contains("billing-sync.primary", ids);
+        Assert.DoesNotContain("billing-sync.spare", ids);   // dropped from the desired set → deleted
+        Assert.Contains("untouched.only", ids);             // account never mentioned → untouched
+
+        // ── An entry WITHOUT a Credentials list leaves them alone (absent = unchanged). ──
+        Assert.False((await applier.UpdateRealmAsync(slug, new RealmManifest
         {
-            var session = sp.GetRequiredService<IDocumentSession>();
-            var live = await session.Query<OAuthApplicationState>()
-                .Where(c => !c.IsDeleted && c.LinkedServiceAccountId != null).ToListAsync(ct);
-            var ids = live.Select(c => c.ClientId).ToHashSet(StringComparer.Ordinal);
-
-            Assert.Contains("billing-sync.primary", ids);
-            Assert.DoesNotContain("billing-sync.spare", ids);   // declared away → pruned
-            Assert.Contains("untouched.only", ids);             // account never mentioned → untouched
-        });
+            ServiceAccounts = [new RealmManifestServiceAccount { AccountName = "billing-sync", Id = Pin(billing), Purpose = "renamed purpose" }],
+        }, ct: ct)).IsError);
+        Assert.Contains("billing-sync.primary", await LiveCredentialIdsAsync());
     }
 
     private static async Task InTenantAsync(

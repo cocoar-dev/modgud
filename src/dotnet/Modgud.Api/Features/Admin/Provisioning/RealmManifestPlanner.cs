@@ -13,6 +13,7 @@ using Modgud.Authorization.Roles;
 using Modgud.Authorization.Services;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Gdpr;
+using Modgud.Authentication.RealmSettings;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Scopes;
@@ -102,7 +103,8 @@ public sealed class RealmManifestPlanner(
         var session = sp.GetRequiredService<IDocumentSession>();
         var perms = sp.GetRequiredService<IPermissionService>();
 
-        result.Sections.Add(PlanSettings(manifest, current, baseline, json));
+        result.Sections.Add(await PlanSettingsAsync(manifest, current, baseline, json,
+            sp.GetRequiredService<IRealmSettingsService>(), ct));
 
         // A catalog entry carries its Id so a rename stays a rename (ADR 0024). A
         // hand-written entry has none, and the applier then matches it by resource:action —
@@ -235,9 +237,12 @@ public sealed class RealmManifestPlanner(
 
         result.Sections.Add(await PlanUsersAsync(manifest, current, baseline, json, prune, DeletesFor("users"), session, perms, ct));
 
-        // Service accounts are UPSERT-ONLY in the manifest (deleting one kills live
-        // credentials — that stays a deliberate live operation), so this section
-        // never emits delete candidates: prune off, no staged-deletion keys.
+        // Service ACCOUNTS are upsert-only in the manifest (deleting one kills every
+        // credential it owns — that stays a deliberate live operation), so this section
+        // never emits delete candidates: prune off, no staged-deletion keys. Their
+        // CREDENTIALS are a desired set, and a removal from that set is a deletion — it
+        // is collected here and shown as one in the clients section below.
+        var credentialRemovals = new List<RealmPlanEntry>();
         result.Sections.Add(await PlanSectionAsync("serviceAccounts", json, prune: false, null,
             manifest.ServiceAccounts, current.ServiceAccounts, baseline?.ServiceAccounts,
             s => s.AccountName.Trim().ToLowerInvariant(),
@@ -264,13 +269,32 @@ public sealed class RealmManifestPlanner(
                             + "cannot authenticate. Declare them under Credentials, or issue one here in "
                             + "the service-account admin afterwards.");
                     foreach (var cred in desired.Credentials ?? [])
-                        if (existing?.Credentials?.Any(c =>
-                                string.Equals(c.ClientId, cred.ClientId, StringComparison.Ordinal)) != true)
+                        if (existing?.Credentials?.Any(c => SameCredential(c, cred)) != true)
                             entry.Notes.Add(
                                 $"Credential '{cred.ClientId}' is created with a FRESH secret, returned once "
                                 + "in the apply result — secrets never travel in a manifest.");
+                    // The list is the desired set: a credential the account has but the list
+                    // does not is DELETED at apply — the machine using it stops. That is a
+                    // deletion, so it is shown as one (red, and it makes a pruning apply ask).
+                    if (existing is not null && desired.Credentials is not null)
+                        foreach (var gone in existing.Credentials ?? [])
+                            if (!desired.Credentials.Any(c => SameCredential(c, gone)))
+                            {
+                                entry.Notes.Add($"Credential '{gone.ClientId}' is removed from the list — DELETED at apply.");
+                                var removal = new RealmPlanEntry { Key = gone.ClientId, Action = "delete" };
+                                removal.Notes.Add(
+                                    $"Removed from service account '{existing.AccountName}' — deleted at apply; "
+                                    + "whatever authenticates with it stops.");
+                                credentialRemovals.Add(removal);
+                            }
                 },
             }));
+        if (credentialRemovals.Count > 0)
+        {
+            var clients = result.Sections.FirstOrDefault(s => s.Name == "clients");
+            if (clients is null) result.Sections.Add(clients = new RealmPlanSection { Name = "clients" });
+            clients.Entries.AddRange(credentialRemovals);
+        }
 
         // Cross-references ({ Key, Id } or a bare key) normalize to the CURRENT entity's
         // canonical { Key, Id } before diffing: a reference that follows a renamed role or
@@ -477,13 +501,28 @@ public sealed class RealmManifestPlanner(
 
     // ── Settings — one pseudo-entity, nested patch diff with dotted paths. ───────────
 
-    private static RealmPlanSection PlanSettings(
-        RealmManifest manifest, RealmManifest current, RealmManifest? baseline, JsonSerializerOptions json)
+    private static async Task<RealmPlanSection> PlanSettingsAsync(
+        RealmManifest manifest, RealmManifest current, RealmManifest? baseline, JsonSerializerOptions json,
+        IRealmSettingsService settingsService, CancellationToken ct)
     {
         var section = new RealmPlanSection { Name = "settings" };
         if (manifest.Settings is null) return section;
 
         var entry = new RealmPlanEntry { Key = "settings", Action = "unchanged" };
+
+        // A stricter position-security floor has consequences the settings service makes a
+        // live caller confirm first. The plan IS that confirmation for an apply (the applier
+        // confirms on its behalf), so the consequences have to be readable here — otherwise
+        // the plan reads clean and the admin learns about the ended shifts afterwards.
+        if (manifest.Settings.PositionSecurity is { } floor)
+        {
+            var consequences = await settingsService.PreviewPositionSecurityAsync(floor, ct);
+            if (consequences.HasConsequences)
+                entry.Notes.Add(
+                    $"The position-security floor affects {consequences.Positions.Count} position(s) and "
+                    + $"{consequences.TerminalIds.Count} terminal slot(s), and ENDS {consequences.StaffingSessionIds.Count} "
+                    + "active staffing session(s) at apply.");
+        }
         var desired = JsonSerializer.SerializeToNode(manifest.Settings, json)!.AsObject();
         var currentNode = current.Settings is null
             ? new JsonObject()
@@ -508,7 +547,8 @@ public sealed class RealmManifestPlanner(
         return section;
     }
 
-    // ── Users — matched by email OR username (the applier's lookup), password note. ──
+    // ── Users — matched by Id only (ADR 0024); the email/username maps exist for the
+    //    duplicate-clash note and the baseline lookup. Password note. ──────────────────
 
     private static async Task<RealmPlanSection> PlanUsersAsync(
         RealmManifest manifest, RealmManifest current, RealmManifest? baseline,
@@ -790,6 +830,16 @@ public sealed class RealmManifestPlanner(
     /// matches the export's; null when absent or unparseable.</summary>
     private static string? NormalizedId(string? raw)
         => !string.IsNullOrWhiteSpace(raw) && ShortGuid.TryParse(raw, out Guid id) ? id.ToString() : null;
+
+    /// <summary>Two credential entries mean the same client: by id when both carry one
+    /// (identity, ADR 0024), else by client id — a hand-written entry has no id yet.</summary>
+    private static bool SameCredential(RealmManifestServiceAccountCredential a, RealmManifestServiceAccountCredential b)
+    {
+        var aid = NormalizedId(a.Id);
+        var bid = NormalizedId(b.Id);
+        if (aid is not null && bid is not null) return aid == bid;
+        return string.Equals(a.ClientId, b.ClientId, StringComparison.Ordinal);
+    }
 
     /// <summary>What the applier will do with a create's pinned id: revive the
     /// soft-deleted entity that owns it, or fail because a live entity does.</summary>

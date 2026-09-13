@@ -224,8 +224,8 @@ onMounted(() => store.initialize())
       <CoarMenuItem
         v-if="selectedProvider"
         :label="selectedProvider.Enabled
-          ? t('admin.loginProviders.disable', {}, 'Disable')
-          : t('admin.loginProviders.enable', {}, 'Enable')"
+          ? t('admin.loginProviders.disableNow', {}, 'Disable (immediate)')
+          : t('admin.loginProviders.enableNow', {}, 'Enable (immediate)')"
         :icon="selectedProvider.Enabled ? 'circle-pause' : 'circle-play'"
         :disabled="selectedProvider.IsBuiltIn"
         @clicked="toggleEnabled"

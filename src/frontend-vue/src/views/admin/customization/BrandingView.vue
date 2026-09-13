@@ -10,7 +10,9 @@ import {
 } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
+import { useDraftStaging } from '@/composables/useDraftStaging'
 import { useRealmSettingsStore } from '@/stores/realmSettings.store'
+import type { ManifestEntity } from '@/stores/realmDraft.store'
 import AssetPicker from '@/components/AssetPicker.vue'
 import ColorField from '@/components/ColorField.vue'
 import BrandingPreview from '@/components/BrandingPreview.vue'
@@ -27,6 +29,36 @@ const { t, language } = useI18n()
 const ui = useUI()
 const settingsStore = useRealmSettingsStore()
 const dialog = useDialog()
+
+// ADR-0017 staging: branding IS realm settings — Settings.Branding /
+// Settings.EmailBranding in the manifest — so for a realm admin this Save commits
+// onto the active draft's settings entity, exactly like the Realm Settings tabs,
+// and the logo, colours and sender change for end users at apply, not on click.
+const staging = useDraftStaging('settings')
+const stagedSave = computed(() => staging.stagingActive.value)
+
+function fold<T extends object>(orig: T, patch: unknown): T {
+  if (!patch || typeof patch !== 'object') return orig
+  const out: Record<string, unknown> = { ...(orig as Record<string, unknown>) }
+  for (const [k, v] of Object.entries(patch as Record<string, unknown>)) if (v !== undefined) out[k] = v
+  return out as T
+}
+
+/** Folds a staged Settings patch over the loaded originals and re-derives the
+ * form, so the working state equals the staged state. The asset URLs are derived
+ * on read, so a staged asset id gets its URL rebuilt here. */
+function applyStaged(e: ManifestEntity) {
+  if (original.value && e.Branding) {
+    const b = fold(original.value, e.Branding)
+    original.value = {
+      ...b,
+      LogoUrl: b.LogoAssetId ? `/api/assets/${b.LogoAssetId}` : null,
+      FaviconUrl: b.FaviconAssetId ? `/api/assets/${b.FaviconAssetId}` : null,
+    } as BrandingSettingsDto
+  }
+  if (originalEmail.value && e.EmailBranding) originalEmail.value = fold(originalEmail.value, e.EmailBranding)
+  if (original.value) form.value = fromDto(original.value, originalEmail.value ?? undefined)
+}
 
 watch(language, () => ui.set((ctx) => {
   ctx.header.title = t('nav.platform', {}, 'Platform')
@@ -136,6 +168,11 @@ onMounted(async () => {
     original.value = dto.Branding
     originalEmail.value = dto.EmailBranding
     form.value = fromDto(dto.Branding, dto.EmailBranding)
+    // Staging overlay: the draft's settings entity is the working state.
+    if (stagedSave.value && staging.draftStore.current) {
+      const staged = staging.findStaged('settings')
+      if (staged) applyStaged(staged)
+    }
   } catch (e: any) {
     error.value = e?.body?.detail ?? e?.message ?? String(e)
   } finally {
@@ -208,6 +245,19 @@ async function save() {
   saving.value = true
   error.value = null
   try {
+    if (stagedSave.value) {
+      // Merge over the already-staged Settings entity: the Realm Settings tabs
+      // stage into the same entity, and a patch must not drop their sections.
+      const base = staging.findStaged('settings') ?? {}
+      const merged: ManifestEntity = { ...base }
+      if (patch) merged.Branding = { ...((base.Branding as Record<string, unknown> | undefined) ?? {}), ...patch }
+      if (emailPatch) merged.EmailBranding = { ...((base.EmailBranding as Record<string, unknown> | undefined) ?? {}), ...emailPatch }
+      await staging.stage('settings', merged)
+      applyStaged({ Branding: patch, EmailBranding: emailPatch } as ManifestEntity)
+      savedFlash.value = true
+      setTimeout(() => { savedFlash.value = false }, 1500)
+      return
+    }
     const updated = await settingsStore.patch({ Branding: patch, EmailBranding: emailPatch })
     original.value = updated.Branding
     originalEmail.value = updated.EmailBranding
@@ -278,7 +328,9 @@ async function save() {
 
         <div class="flex">
           <CoarButton :loading="saving" @click="save">
-            {{ t('common.save', {}, 'Save') }}
+            {{ stagedSave
+              ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+              : t('common.save', {}, 'Save') }}
           </CoarButton>
         </div>
 

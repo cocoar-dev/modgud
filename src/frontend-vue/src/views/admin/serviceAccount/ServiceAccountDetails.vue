@@ -18,9 +18,11 @@ import CredentialEditModal from './CredentialEditModal.vue'
 import { MODAL_LIST_FORM } from '@/router/modal-sizes'
 import { useModalOverlay } from '@/composables/useModalOverlay'
 import { useHttpClient } from '@/composables/useHttpClient'
+import { useDraftStaging } from '@/composables/useDraftStaging'
 import { useOAuthScopeStore } from '@/stores/oauthScope.store'
 import { useApplicationsStore } from '@/stores/applications.store'
-import type { OAuthClientDto } from '@/models/oauth'
+import type { ManifestEntity } from '@/stores/realmDraft.store'
+import type { OAuthClientDto, AccessTokenType } from '@/models/oauth'
 import type { ClientSecretDto } from '@/models/oauth'
 import type { IssueServiceAccountCredentialDto, ServiceAccountCreateDto } from '@/models/serviceAccount'
 
@@ -45,6 +47,117 @@ const applicationsStore = useApplicationsStore()
 const isCreate = computed(() => props.id === 'create')
 const loading = ref(false)
 const error = ref<string | null>(null)
+
+// ── ADR-0017 staging: the account and its credentials' CONFIGURATION — display
+// name, scopes, apps, enabled, token settings — commit onto the active draft as
+// one ServiceAccounts[] entity with its Credentials list. The plan shows every
+// change (a removed credential in red), the apply writes them through the
+// SA-scoped ops, and a credential staged here is minted its secret at apply and
+// handed back once in the apply result. What stays live is credential MATERIAL:
+// rotating a secret. The embedded draftOnly flow belongs to the parent client
+// create and stays untouched.
+const staging = useDraftStaging('serviceAccounts')
+const isDraftRow = computed(() => staging.isDraftId(props.id))
+const stagedSave = computed(() => staging.stagingActive.value && !props.draftOnly)
+/** The section's natural key: the lowercased account name. */
+const stagingKey = computed(() => form.value.AccountName.trim().toLowerCase())
+/** The staged entity's credentials in MANIFEST shape (ClientId, Id, DisplayName,
+ * Scopes, Apps as slugs, Enabled, AccessTokenType, AccessTokenLifetime). */
+const stagedCredentials = ref<ManifestEntity[]>([])
+/** Credentials is a desired set — only ever written once the list was really loaded. */
+const stagedCredentialsLoaded = ref(false)
+
+function appSlugsOf(appIds: string[]): string[] {
+  return appIds
+    .map((id) => applicationsStore.apps.find((a) => a.Id === id)?.Slug)
+    .filter((s): s is string => !!s)
+}
+function appIdsOf(slugs: unknown): string[] {
+  return (Array.isArray(slugs) ? (slugs as string[]) : [])
+    .map((slug) => applicationsStore.apps.find((a) => a.Slug === slug)?.Id)
+    .filter((id): id is string => !!id)
+}
+function credentialToManifest(cred: OAuthClientDto): ManifestEntity {
+  return {
+    Id: cred.Id,
+    ClientId: cred.ClientId,
+    DisplayName: cred.DisplayName ?? null,
+    Scopes: extractScopes(cred),
+    Apps: appSlugsOf(cred.AppIds),
+    Enabled: cred.Enabled,
+    AccessTokenType: cred.AccessTokenType ?? 'Reference',
+    AccessTokenLifetime: cred.AccessTokenLifetime ?? null,
+  }
+}
+function issueDtoToManifest(dto: IssueServiceAccountCredentialDto, clientId: string): ManifestEntity {
+  return {
+    ClientId: clientId,
+    DisplayName: dto.DisplayName?.trim() || null,
+    Scopes: [...dto.Scopes],
+    Apps: appSlugsOf(dto.AppIds),
+    Enabled: dto.Enabled ?? true,
+    AccessTokenType: dto.AccessTokenType ?? 'Reference',
+    AccessTokenLifetime: dto.AccessTokenLifetime ?? null,
+  }
+}
+/** Same convention the server uses when it mints one: `{accountName}.{8 chars}`. */
+function newClientId(): string {
+  const bytes = new Uint8Array(8)
+  crypto.getRandomValues(bytes)
+  const suffix = Array.from(bytes, (b) => (b % 36).toString(36)).join('')
+  return `${stagingKey.value}.${suffix}`
+}
+
+/** One row per credential for the list — from the staged list with a draft open,
+ * from the live list otherwise. `live` is the OAuth client behind it, if any. */
+interface CredentialRow {
+  key: string
+  Id: string | null
+  ClientId: string
+  DisplayName: string | null
+  Enabled: boolean
+  Scopes: string[]
+  AppCount: number
+  AccessTokenLifetime: number | null
+  live: OAuthClientDto | null
+}
+const credentialRows = computed<CredentialRow[]>(() => stagedSave.value
+  ? stagedCredentials.value.map((c, i) => ({
+      key: typeof c.ClientId === 'string' ? c.ClientId : String(i),
+      Id: typeof c.Id === 'string' ? c.Id : null,
+      ClientId: typeof c.ClientId === 'string' ? c.ClientId : '',
+      DisplayName: typeof c.DisplayName === 'string' ? c.DisplayName : null,
+      Enabled: c.Enabled !== false,
+      Scopes: Array.isArray(c.Scopes) ? (c.Scopes as string[]) : [],
+      AppCount: Array.isArray(c.Apps) ? c.Apps.length : 0,
+      AccessTokenLifetime: typeof c.AccessTokenLifetime === 'number' ? c.AccessTokenLifetime : null,
+      live: credentials.value.find((l) => l.Id === c.Id) ?? null,
+    }))
+  : credentials.value.map((c) => ({
+      key: c.Id,
+      Id: c.Id,
+      ClientId: c.ClientId,
+      DisplayName: c.DisplayName ?? null,
+      Enabled: c.Enabled,
+      Scopes: extractScopes(c),
+      AppCount: c.AppIds.length,
+      AccessTokenLifetime: c.AccessTokenLifetime ?? null,
+      live: c,
+    })))
+
+function toStaged(): ManifestEntity {
+  const entity: ManifestEntity = { ...(staging.findStaged(stagingKey.value) ?? {}) }
+  entity.AccountName = stagingKey.value
+  // v2 merge-patch: explicit null stages the clear (absent would keep live).
+  entity.Purpose = form.value.Purpose.trim() || null
+  entity.IsActive = form.value.IsActive
+  // The desired set of credentials: the apply upserts what is listed and removes
+  // what the account has but the list does not — the plan shows each removal.
+  if (stagedCredentialsLoaded.value) entity.Credentials = stagedCredentials.value
+  // Stage the LIVE entity's id: the apply matches by identity (ADR 0024).
+  if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
+  return entity
+}
 
 const form = ref({
   AccountName: props.initial?.AccountName ?? '',
@@ -91,6 +204,8 @@ const footerButton = computed(() => ({
     ? t('common.done', {}, 'Fertig')
     : props.draftOnly
     ? t('admin.oauthClients.newServiceAccount.apply', {}, 'Übernehmen')
+    : stagedSave.value
+      ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
     : isCreate.value
       ? t('common.create', {}, 'Create')
       : t('common.save', {}, 'Save'),
@@ -101,14 +216,36 @@ const footerButton = computed(() => ({
 }))
 
 onMounted(async () => {
-  // Pre-load reference data the credentials sub-modal needs — doing it from
-  // here means the sub-modal opens with picker data already in memory instead
-  // of showing empty lists on first paint.
-  if (!isCreate.value) {
-    void Promise.all([
-      scopeStore.scopes.length === 0 ? scopeStore.loadAll() : Promise.resolve(),
-      applicationsStore.apps.length === 0 ? applicationsStore.loadAll() : Promise.resolve(),
-    ])
+  // Reference data the credentials sub-modal needs — and, with a draft open, the
+  // app-id ↔ slug mapping the manifest shape is written in. Awaited in staging
+  // mode so the mapping is complete before the first credential is staged.
+  const referenceData = Promise.all([
+    scopeStore.scopes.length === 0 ? scopeStore.loadAll() : Promise.resolve(),
+    applicationsStore.apps.length === 0 ? applicationsStore.loadAll() : Promise.resolve(),
+  ])
+  if (stagedSave.value) await referenceData
+  else if (!isCreate.value) void referenceData
+
+  if (isDraftRow.value) {
+    // Draft-created account: the staged manifest entity IS the state.
+    const entity = staging.findStaged(staging.draftKeyOf(props.id))
+    if (entity) {
+      const str = (v: unknown) => (typeof v === 'string' ? v : '')
+      form.value = {
+        AccountName: str(entity.AccountName),
+        Purpose: str(entity.Purpose),
+        IsActive: entity.IsActive !== false,
+      }
+      stagedCredentials.value = Array.isArray(entity.Credentials)
+        ? [...(entity.Credentials as ManifestEntity[])]
+        : []
+    }
+    stagedCredentialsLoaded.value = true
+    return
+  }
+  if (isCreate.value) {
+    stagedCredentialsLoaded.value = true
+    return
   }
 
   if (!isCreate.value) {
@@ -123,6 +260,21 @@ onMounted(async () => {
       originalAccountName.value = sa.AccountName
       originalIsActive.value = sa.IsActive
       await loadCredentials()
+      // Staging overlay: the draft's entity is the working state — for the hull
+      // and for the credential list, which starts from the live clients when the
+      // draft does not carry the account yet.
+      if (stagedSave.value) {
+        const entity = staging.findStaged(sa.AccountName.trim().toLowerCase())
+        if (entity) {
+          if (typeof entity.Purpose === 'string') form.value.Purpose = entity.Purpose
+          else if (entity.Purpose === null) form.value.Purpose = ''
+          if (typeof entity.IsActive === 'boolean') form.value.IsActive = entity.IsActive
+        }
+        stagedCredentials.value = entity && Array.isArray(entity.Credentials)
+          ? [...(entity.Credentials as ManifestEntity[])]
+          : credentials.value.map(credentialToManifest)
+        stagedCredentialsLoaded.value = true
+      }
     } catch (e: unknown) {
       const err = e as { data?: { Message?: string }; message?: string }
       error.value = err?.data?.Message ?? err?.message ?? String(e)
@@ -147,6 +299,12 @@ async function save() {
   loading.value = true
   error.value = null
   try {
+    // ADR-0017: commit onto the active draft instead of writing live.
+    if (stagedSave.value) {
+      await staging.stage(stagingKey.value, toStaged())
+      props.close()
+      return
+    }
     if (isCreate.value) {
       const createDto: ServiceAccountCreateDto = {
         AccountName: form.value.AccountName.trim(),
@@ -204,6 +362,50 @@ async function openInitialCredential() {
 
 function removeInitialCredential() {
   initialCredential.value = null
+}
+
+/** Staged add / edit of a credential: the sub-modal hands the DTO back, the
+ * parent keeps it in manifest shape on the staged entity. */
+async function openStagedCredential(row?: CredentialRow) {
+  const staged = row ? stagedCredentials.value.find((c) => c.ClientId === row.ClientId) : undefined
+  const initial: IssueServiceAccountCredentialDto | undefined = row
+    ? {
+        ClientId: row.ClientId,
+        DisplayName: row.DisplayName ?? undefined,
+        Scopes: [...row.Scopes],
+        AppIds: appIdsOf(staged?.Apps),
+        AccessTokenLifetime: row.AccessTokenLifetime ?? undefined,
+        AccessTokenType: (typeof staged?.AccessTokenType === 'string'
+          ? staged.AccessTokenType as AccessTokenType
+          : 'Reference'),
+        Enabled: row.Enabled,
+      }
+    : undefined
+  const result = await modalOverlay.open<IssueServiceAccountCredentialDto>(
+    CredentialEditModal,
+    MODAL_LIST_FORM,
+    { saId: props.id, id: row ? row.ClientId : 'create', draftOnly: true, stagedEdit: !!row, initial },
+  )
+  if (!result) return
+  if (row) {
+    stagedCredentials.value = stagedCredentials.value.map((c) => c.ClientId === row.ClientId
+      ? { ...c, ...issueDtoToManifest(result, row.ClientId) }
+      : c)
+  } else {
+    stagedCredentials.value = [
+      ...stagedCredentials.value,
+      issueDtoToManifest(result, result.ClientId?.trim() || newClientId()),
+    ]
+  }
+}
+
+function addCredential() {
+  if (stagedSave.value) return openStagedCredential()
+  return isCreate.value ? openInitialCredential() : openCredentialModal('create')
+}
+
+function removeStagedCredential(row: CredentialRow) {
+  stagedCredentials.value = stagedCredentials.value.filter((c) => c.ClientId !== row.ClientId)
 }
 
 // Opened from inside this modal, so there is no routed fragment for it — but
@@ -342,15 +544,19 @@ function extractScopes(cred: OAuthClientDto): string[] {
           </CoarNotice>
           <!-- shrink-0: the label is `white-space:nowrap; overflow:hidden`, so a
                shrinking button silently cuts its own text off. -->
-          <CoarButton v-if="!props.draftOnly" size="s" :icon-start="initialCredential && isCreate ? 'pencil' : 'plus'"
-            class="shrink-0" @click="isCreate ? openInitialCredential() : openCredentialModal('create')">
-            {{ initialCredential && isCreate
+          <CoarButton v-if="!props.draftOnly" size="s" :icon-start="initialCredential && isCreate && !stagedSave ? 'pencil' : 'plus'"
+            class="shrink-0" @click="addCredential">
+            {{ initialCredential && isCreate && !stagedSave
               ? t('admin.serviceAccountCredentials.editInitialButton', {}, 'Edit OAuth client')
               : t('admin.serviceAccountCredentials.issueButton', {}, 'Add OAuth client') }}
           </CoarButton>
         </div>
 
-        <div v-if="isCreate && initialCredential" class="initial-credential">
+        <CoarNotice v-if="stagedSave" truncate variant="info" class="mb-3">
+          {{ t('admin.serviceAccountCredentials.stagedHint', {}, 'Credentials are staged with the account. A new one is issued at apply and its secret shown once in the apply result; a removed one is deleted at apply.') }}
+        </CoarNotice>
+
+        <div v-if="isCreate && initialCredential && !stagedSave" class="initial-credential">
           <div class="initial-credential__body">
             <strong>{{ initialCredential.DisplayName || t('admin.serviceAccountCredentials.initialDefaultName', {}, 'Initial OAuth client') }}</strong>
             <span>
@@ -390,58 +596,66 @@ function extractScopes(cred: OAuthClientDto): string[] {
           </div>
         </CoarNotice>
 
-        <div v-if="isCreate && !initialCredential && !props.draftOnly" class="credential-empty">
+        <div v-if="isCreate && !initialCredential && !props.draftOnly && !stagedSave" class="credential-empty">
           {{ t('admin.serviceAccountCredentials.initialEmpty', {}, 'No initial OAuth client configured yet.') }}
         </div>
         <div v-else-if="isCreate && props.draftOnly" class="credential-empty">
           {{ t('admin.serviceAccountCredentials.outerClientConfigured', {}, 'Scopes, apps, token settings, and the secret are configured in the parent OAuth client.') }}
         </div>
-        <template v-if="!isCreate">
+        <template v-if="!isCreate || stagedSave">
           <div v-if="credentialsLoading" class="text-xs text-surface-500">
             {{ t('common.loading', {}, 'Loading...') }}
           </div>
-          <div v-else-if="credentials.length === 0" class="credential-empty">
+          <div v-else-if="credentialRows.length === 0" class="credential-empty">
             {{ t('admin.serviceAccountCredentials.empty', {}, 'No OAuth clients yet.') }}
           </div>
           <ul v-else class="flex flex-col gap-2">
-            <li v-for="cred in credentials" :key="cred.Id"
+            <li v-for="row in credentialRows" :key="row.key"
                 class="flex flex-col gap-2 rounded border border-surface-200 p-3">
             <div class="flex flex-wrap items-baseline gap-2">
-              <code class="text-sm font-medium">{{ cred.ClientId }}</code>
-              <span v-if="cred.DisplayName" class="text-xs text-surface-500">— {{ cred.DisplayName }}</span>
-              <CoarTag v-if="!cred.Enabled" variant="warning">
+              <code class="text-sm font-medium">{{ row.ClientId }}</code>
+              <span v-if="row.DisplayName" class="text-xs text-surface-500">— {{ row.DisplayName }}</span>
+              <CoarTag v-if="!row.Enabled" variant="warning">
                 {{ t('admin.serviceAccountCredentials.disabled', {}, 'Disabled') }}
+              </CoarTag>
+              <CoarTag v-if="stagedSave && !row.live" variant="info">
+                {{ t('admin.serviceAccountCredentials.statusStaged', {}, 'Issued at apply') }}
               </CoarTag>
             </div>
             <div class="flex flex-wrap items-center gap-1.5 text-xs text-surface-500">
-              <span v-if="extractScopes(cred).length > 0" class="flex flex-wrap gap-1">
-                <CoarTag v-for="s in extractScopes(cred)" :key="s">{{ s }}</CoarTag>
+              <span v-if="row.Scopes.length > 0" class="flex flex-wrap gap-1">
+                <CoarTag v-for="s in row.Scopes" :key="s">{{ s }}</CoarTag>
               </span>
               <span v-else>{{ t('admin.serviceAccountCredentials.noScopes', {}, 'No scopes set') }}</span>
               <span class="mx-1">·</span>
-              <span>{{ cred.AppIds.length }} {{ t('admin.serviceAccountCredentials.appsLinked', {}, 'app(s)') }}</span>
-              <span v-if="cred.AccessTokenLifetime != null" class="mx-1">·</span>
-              <span v-if="cred.AccessTokenLifetime != null">{{ cred.AccessTokenLifetime }}s</span>
+              <span>{{ row.AppCount }} {{ t('admin.serviceAccountCredentials.appsLinked', {}, 'app(s)') }}</span>
+              <span v-if="row.AccessTokenLifetime != null" class="mx-1">·</span>
+              <span v-if="row.AccessTokenLifetime != null">{{ row.AccessTokenLifetime }}s</span>
             </div>
             <div class="flex items-center justify-end gap-1">
-              <CoarButton size="s" variant="ghost" icon-start="pencil" @click="openCredentialModal(cred.Id)">
+              <CoarButton size="s" variant="ghost" icon-start="pencil"
+                @click="stagedSave ? openStagedCredential(row) : openCredentialModal(row.Id!)">
                 {{ t('common.edit', {}, 'Edit') }}
               </CoarButton>
+              <!-- Rotation is credential MATERIAL — live in every mode, and only for a client that exists. -->
               <CoarPopconfirm
+                v-if="row.live"
                 :title="t('admin.serviceAccountCredentials.rotateTitle', {}, 'Rotate secret?')"
                 :message="t('admin.serviceAccountCredentials.rotateConfirm', {}, 'The old secret stops working immediately and the new one is shown only once.')"
-                @confirmed="rotateCredential(cred)">
+                @confirmed="rotateCredential(row.live!)">
                 <CoarButton size="s" variant="ghost" icon-start="rotate-ccw">
                   {{ t('admin.serviceAccountCredentials.rotateButton', {}, 'Rotate') }}
                 </CoarButton>
               </CoarPopconfirm>
               <CoarPopconfirm
                 :title="t('admin.serviceAccountCredentials.deleteTitle', {}, 'Delete OAuth client?')"
-                :message="t('admin.serviceAccountCredentials.deleteConfirm', {}, 'Existing tokens stay valid until expiry but no new tokens can be minted.')"
+                :message="stagedSave
+                  ? t('admin.serviceAccountCredentials.deleteStagedConfirm', {}, 'Removed from the draft — deleted when the draft is applied; the plan shows it.')
+                  : t('admin.serviceAccountCredentials.deleteConfirm', {}, 'Existing tokens stay valid until expiry but no new tokens can be minted.')"
                 confirm-variant="danger"
-                @confirmed="deleteCredential(cred)">
+                @confirmed="stagedSave ? removeStagedCredential(row) : deleteCredential(row.live!)">
                 <CoarButton size="s" variant="ghost" icon-start="trash-2">
-                  {{ t('common.delete', {}, 'Delete') }}
+                  {{ stagedSave ? t('common.remove', {}, 'Remove') : t('common.delete', {}, 'Delete') }}
                 </CoarButton>
               </CoarPopconfirm>
             </div>

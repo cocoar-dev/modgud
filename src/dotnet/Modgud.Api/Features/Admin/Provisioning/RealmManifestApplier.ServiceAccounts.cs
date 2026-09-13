@@ -16,10 +16,13 @@ using Modgud.Infrastructure.OpenIddict;
 namespace Modgud.Api.Features.Admin.Provisioning;
 
 /// <summary>
-/// Service-account section of the manifest applier — HULLS only (AccountName,
-/// Purpose, IsActive, optional pinned Id). Credentials (client_credentials
-/// OAuth clients + secrets) are deliberately NOT modelled: they are per-
-/// environment secret material, issued via the service-account admin.
+/// Service-account section of the manifest applier: the account (AccountName, Purpose,
+/// IsActive, optional pinned Id) and its <c>Credentials</c> — each one the SHAPE of a
+/// client_credentials client, never a secret. A credential the account lacks is issued
+/// through the SA-scoped op with a fresh secret returned once in the apply result; one
+/// whose Id names a live credential is updated. The list is the desired set: when it is
+/// present, a credential the account has but the list does not is deleted (the plan shows
+/// it in red); an absent list leaves the credentials alone.
 ///
 /// <para>Id pinning: a create honours the manifest's <c>Id</c> so a
 /// stage → prod transfer keeps the SAME principal id — consuming applications
@@ -27,10 +30,9 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// id is immutable and a differing manifest value is ignored (the planner
 /// surfaces it as a note).</para>
 ///
-/// <para>Upsert-only: service accounts are never pruned or staged-deleted —
-/// deleting one kills live credentials, so that stays a deliberate live
-/// operation in the SA admin. The planner mirrors this by never emitting
-/// delete candidates for this section.</para>
+/// <para>The ACCOUNT is never pruned or staged-deleted — deleting one kills every
+/// credential it owns, so that stays a deliberate action in the SA admin. The planner
+/// mirrors this by never emitting delete candidates for this section.</para>
 /// </summary>
 public sealed partial class RealmManifestApplier
 {
@@ -101,6 +103,9 @@ public sealed partial class RealmManifestApplier
     {
         if (sa.Credentials is null) return;
 
+        // Every credential the list speaks for, by id — what is left over afterwards is
+        // what the list does NOT want the account to have.
+        var listed = new HashSet<Guid>();
         foreach (var cred in sa.Credentials)
         {
             var ctx = $"{accountCtx} credential '{cred.ClientId}'";
@@ -138,15 +143,18 @@ public sealed partial class RealmManifestApplier
                 secrets[cred.ClientId] = issued.Value.ClientSecret;
                 RegisterApplied(identity, ManifestIdentity.Sections.Clients,
                     cred.Id, issued.Value.Credential.Id, ctx);
+                if (ShortGuid.TryParse(issued.Value.Credential.Id, out Guid issuedId)) listed.Add(issuedId);
             }
             else
             {
                 identity.Assign(cred.Id, live.Id);
                 identity.Applied(ManifestIdentity.Sections.Clients, live.Id);
+                listed.Add(live.Id);
                 EnsureOk(await oauth.UpdateServiceAccountCredentialAsync(accountId, live.Id.ToString(),
                     new UpdateServiceAccountCredentialDto
                     {
-                        DisplayName = cred.DisplayName.HasValue ? cred.DisplayName.Value : null,
+                        // Optional passes through: absent = unchanged, explicit null clears.
+                        DisplayName = cred.DisplayName,
                         Scopes = cred.Scopes,
                         AppIds = appIds,
                         AccessTokenLifetime = cred.AccessTokenLifetime,
@@ -155,6 +163,19 @@ public sealed partial class RealmManifestApplier
                             cred.AccessTokenType, $"{ctx} accessTokenType"),
                     }, ct), ctx);
             }
+        }
+
+        // The list is the desired set — like Members on a group or Grants on a position.
+        // A credential the account has but the list does not is deleted through the
+        // SA-scoped op, so the machine that authenticated with it stops at apply; the
+        // plan listed it as a deletion beforehand, and a pruning apply asked first.
+        foreach (var leftover in await session.Query<OAuthApplicationState>()
+                     .Where(x => !x.IsDeleted && x.LinkedServiceAccountId == accountId)
+                     .ToListAsync(ct))
+        {
+            if (listed.Contains(leftover.Id)) continue;
+            EnsureOk(await oauth.DeleteServiceAccountCredentialAsync(accountId, leftover.Id.ToString(), ct),
+                $"{accountCtx} credential '{leftover.ClientId}' (removed from the list)");
         }
     }
 

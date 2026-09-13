@@ -249,6 +249,29 @@ async function createImplicitScope() {
   actionLoading.value = true
   error.value = null
   try {
+    // ADR-0017: the implicit scope is an ordinary Scopes[] entry, so with a draft
+    // open it is STAGED — the same two writes the live op does (create the scope,
+    // list it on the API), reviewed in the plan and landing at apply.
+    if (stagedSave.value) {
+      const name = dto.value.Name
+      const app = appOf(form.value.AppId)
+      await staging.draftStore.upsertEntity('scopes', name, {
+        Name: name,
+        DisplayName: form.value.DisplayName.trim() || name,
+        Description: `Implicit scope granting access to the ${name} resource server.`,
+        Resources: [name],
+        App: app?.Slug ?? null,
+        Enabled: true,
+        Required: false,
+        Emphasize: false,
+        // Same default as the live op: one RS = one scope, not advertised in discovery.
+        ShowInDiscoveryDocument: false,
+      })
+      if (!form.value.Scopes.includes(name)) form.value.Scopes.push(name)
+      await staging.stage(name, toStaged())
+      dto.value = { ...dto.value, Scopes: [...form.value.Scopes], HasImplicitScope: true }
+      return
+    }
     await store.createImplicitScope(dto.value.Id)
     const reloaded = await store.loadOne(dto.value.Id)
     if (reloaded) {

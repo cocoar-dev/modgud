@@ -22,7 +22,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useDraftStaging } from '@/composables/useDraftStaging'
-import { makeRef, type ManifestEntity, type ManifestRef } from '@/stores/realmDraft.store'
+import { makeRef, refId, refList, type ManifestEntity, type ManifestRef } from '@/stores/realmDraft.store'
 import { useUserStore } from '@/stores/user.store'
 import type { PositionCreateDto, PositionUpdateDto, PositionTerminalPolicyUpdateDto, PositionTerminalPolicyConsequencesDto, PositionGrantDto, TerminalDto, StaffingSessionDto, ActivationTokenDto } from '@/models/position'
 import type { RealmSettingsDto } from '@/models/realmSettings'
@@ -46,16 +46,16 @@ const store = usePositionStore()
 const userStore = useUserStore()
 const isCreate = computed(() => props.id === 'create')
 
-// ── ADR-0017 staging: position identity + policy + grants commit onto the
-// active draft. Terminal SLOTS are deliberately not manifest-modeled
-// (credential material), so a create that stages slots takes the live path;
-// the embedded draftOnly flow belongs to the parent client create and stays
-// untouched. Grant/slot/session OPERATIONS in edit mode remain live actions.
+// ── ADR-0017 staging: position identity + policy + the set of authorized users
+// (Grants) commit onto the active draft — on creates AND edits. Terminal SLOTS
+// are the one live ceremony (a device enrolls with a one-time secret), so they
+// are enrolled after the apply and never pull the rest of the position out of
+// the draft. Suspend/resume of a grant and slot/session/token operations stay
+// live: the manifest says WHO is authorized, not the state machine. The
+// embedded draftOnly flow belongs to the parent client create and stays untouched.
 const staging = useDraftStaging('positions')
 const isDraftRow = computed(() => staging.isDraftId(props.id))
-const stagedSave = computed(() => staging.stagingActive.value
-  && !props.draftOnly
-  && !(isCreate.value && stagedTerminals.value.length > 0))
+const stagedSave = computed(() => staging.stagingActive.value && !props.draftOnly)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const creationCompleted = ref(false)
@@ -137,17 +137,18 @@ function toStaged(): ManifestEntity {
     StaffingSessionLifetimeMinutes: form.value.StaffingSessionLifetimeMinutes,
     MaximumStaffingSessionLifetimeMinutes: form.value.MaximumStaffingSessionLifetimeMinutes,
   }
-  // Staged CREATE carries its staged grants as { Key, Id } references (the apply follows
-  // the Id, the Key is what the plan shows); on edits the merge base keeps whatever the
-  // draft already holds (grant ops stay live).
-  if (isCreate.value && stagedGrantUserIds.value.length > 0) {
+  // Grants are the desired set of authorized users, as { Key, Id } references (the
+  // apply follows the Id, the Key is what the plan shows). A create carries the picks;
+  // an edit carries the live non-revoked grants plus/minus what the Authorized-users
+  // tab changed — written only once that list was actually loaded, never as an
+  // accidental [] that would revoke everyone.
+  if (isCreate.value || grantsLoaded.value) {
     entity.Grants = stagedGrantUserIds.value
       .map((id) => {
         const u = userStore.entities.find((x) => x.Id === id)
         const key = u ? (u.UserName || u.Email || null) : null
-        return key ? makeRef(key, id) : null
+        return key ? makeRef(key, id) : ({ Id: id } as ManifestRef)
       })
-      .filter((ref): ref is ManifestRef => !!ref)
   }
   // Stage the LIVE entity's id: the apply matches by identity, so editing the name
   // is a RENAME of this entity instead of staging a second one.
@@ -197,19 +198,24 @@ const footerButton = computed(() => ({
   onClick: save,
 }))
 
-// ── Activation grants (MG-FT-02) — edit-mode only. Operations, not staged
-// edits (modal-contract rule 2): grants have their own lifecycle and audit
-// identity, mirroring the SA credentials tab, so issue/suspend/resume/revoke
-// act immediately with explicit buttons, apart from the primary Save.
+// ── Activation grants (MG-FT-02). Issue and revoke are edits of the position's
+// Grants list — staged with the rest of the form for a realm admin, live only
+// on the classic path. Suspend/resume flip a grant's own state machine and stay
+// live operations in both modes.
 const grants = ref<PositionGrantDto[]>([])
 const grantsLoading = ref(false)
+const grantsLoaded = ref(false)
 const selectedGrantUserId = ref<string | null>(null)
 const grantsHttp = computed(() => useHttpClient(`/api/position/${props.id}/grants`))
 
-// Create mode stages grants (rule 5: the entity is creatable completely — the
-// one Save commits position + grants atomically); edit mode operates on live
-// grants immediately (rule 2, they have their own lifecycle + audit identity).
+// The desired set of authorized users: the create's picks, or — staged edit —
+// the live non-revoked grants overlaid with what the draft already carries.
 const stagedGrantUserIds = ref<string[]>([])
+/** Stage instead of writing live: creates, draft rows and staged edits alike. */
+const grantsStaged = computed(() => isCreate.value || isDraftRow.value || stagedSave.value)
+function liveGrantOf(userId: string): PositionGrantDto | undefined {
+  return grants.value.find((g) => g.UserId === userId && g.Status !== 'Revoked')
+}
 
 function userLabel(userId: string): string {
   const u = userStore.entities.find((x) => x.Id === userId)
@@ -217,7 +223,7 @@ function userLabel(userId: string): string {
 }
 
 const grantableUserOptions = computed(() => {
-  const taken = isCreate.value
+  const taken = grantsStaged.value
     ? new Set(stagedGrantUserIds.value)
     : new Set(grants.value.filter((g) => g.Status !== 'Revoked').map((g) => g.UserId))
   return userStore.entities
@@ -240,6 +246,15 @@ async function loadGrants() {
   grantsLoading.value = true
   try {
     grants.value = await grantsHttp.value.get<PositionGrantDto[]>()
+    if (stagedSave.value) {
+      // Baseline = who is authorized live; a staged Grants list overrides it, so a
+      // change made here does not look undone on reopen.
+      stagedGrantUserIds.value = grants.value.filter((g) => g.Status !== 'Revoked').map((g) => g.UserId)
+      const entity = staging.findStaged(form.value.AccountName.trim().toLowerCase())
+      if (entity && Array.isArray(entity.Grants))
+        stagedGrantUserIds.value = refList(entity.Grants).map(refId).filter((id): id is string => !!id)
+    }
+    grantsLoaded.value = true
   } finally {
     grantsLoading.value = false
   }
@@ -559,10 +574,14 @@ onMounted(async () => {
     .then((dto) => { realmPositionSecurity.value = dto.PositionSecurity })
     .catch(() => { realmPositionSecurity.value = null })
   if (isDraftRow.value) {
-    // Draft-created position: the staged manifest entity IS the state; the
-    // operational tabs (slots/grants/sessions) exist only after apply.
+    // Draft-created position: the staged manifest entity IS the state, grants
+    // included; slots, tokens and sessions exist only after apply.
     const entity = staging.findStaged(staging.draftKeyOf(props.id))
-    if (entity) fromStagedInto(entity)
+    if (entity) {
+      fromStagedInto(entity)
+      stagedGrantUserIds.value = refList(entity.Grants).map(refId).filter((id): id is string => !!id)
+    }
+    grantsLoaded.value = true
     return
   }
   if (!isCreate.value) {
@@ -730,7 +749,7 @@ async function save() {
             </CoarPopover>
           </span>
         </CoarTab>
-        <CoarTab v-if="!props.draftOnly && !isDraftRow" id="terminals">
+        <CoarTab v-if="!props.draftOnly" id="terminals">
           <span class="tab-label">
             {{ t('admin.positions.tabs.terminals', {}, 'Terminals') }}
             <CoarPopover v-if="terminalIssues.length" mode="hover" :offset="8">
@@ -748,7 +767,7 @@ async function save() {
             </CoarPopover>
           </span>
         </CoarTab>
-        <CoarTab v-if="!props.draftOnly && !isDraftRow" id="grants">{{ t('admin.positions.tabs.grants', {}, 'Authorized users') }}</CoarTab>
+        <CoarTab v-if="!props.draftOnly" id="grants">{{ t('admin.positions.tabs.grants', {}, 'Authorized users') }}</CoarTab>
         <CoarTab v-if="!isCreate && !isDraftRow" id="tokens">{{ t('admin.positions.tabs.tokens', {}, 'Activation tokens') }}</CoarTab>
         <!-- Rule 5: absent in create — sessions cannot exist before the position. -->
         <CoarTab v-if="!isCreate && !isDraftRow" id="sessions">{{ t('admin.positions.tabs.sessions', {}, 'Staffing sessions') }}</CoarTab>
@@ -805,7 +824,7 @@ async function save() {
       <!-- Tab: Terminals. Rule 1 — the lifetime fields stay VISIBLE when
            terminal use is off (disabled, showing the effective defaults);
            hiding them would make the policy unfindable. -->
-      <div v-if="!props.draftOnly && !isDraftRow" v-show="activeTab === 'terminals'" class="tab-content modal-form">
+      <div v-if="!props.draftOnly" v-show="activeTab === 'terminals'" class="tab-content modal-form">
         <section class="form-section">
           <div class="modal-form-grid">
             <CoarFormField class="col-full"
@@ -877,10 +896,13 @@ async function save() {
             </CoarNotice>
           </div>
 
-          <!-- Terminal slots (MG-FT-03). Rule 1: visible in every state — the
-               create row is disabled (with the reason as hint) until the
-               PERSISTED policy allows slots. Slot ops are immediate actions. -->
-          <div v-if="!props.draftOnly" class="mt-4">
+          <!-- Terminal slots (MG-FT-03). A slot is a device enrollment with a
+               one-time secret — the one live ceremony here — so a position that
+               only exists in the draft gets its slots after the apply. -->
+          <CoarNotice v-if="(isCreate && stagedSave) || isDraftRow" variant="info" class="mt-4">
+            {{ t('admin.positionTerminals.afterApply', {}, 'Terminal slots are enrolled after the draft is applied: a slot is a device ceremony with a one-time secret, not configuration. Everything else on this position is staged.') }}
+          </CoarNotice>
+          <div v-else-if="!props.draftOnly" class="mt-4">
             <div class="mb-3 flex flex-wrap items-end gap-2">
               <CoarFormField class="min-w-0 flex-1" :label="t('admin.positionTerminals.name', {}, 'Terminal name')">
                 <CoarTextInput v-model="newTerminal.DisplayName" :disabled="!canAddTerminal"
@@ -1151,10 +1173,10 @@ async function save() {
         </ul>
       </section>
 
-      <!-- Rule 5: same section in both modes — create STAGES grants (the one
-           Save commits position + grants atomically), edit operates on live
-           grants immediately (rule 2: own lifecycle, explicit actions). -->
-      <section v-if="!isDraftRow" v-show="activeTab === 'grants'" class="form-section tab-content">
+      <!-- Same section in every mode. Grant / Remove edit the Grants list — staged
+           for a realm admin (creates, draft rows and edits alike), live only on the
+           classic path. Suspend / resume act on a live grant's own state at once. -->
+      <section v-show="activeTab === 'grants'" class="form-section tab-content">
         <div class="mb-3 flex items-center gap-2">
           <CoarSelect
             v-model="selectedGrantUserId"
@@ -1163,19 +1185,37 @@ async function save() {
             class="min-w-0 flex-1"
             :placeholder="t('admin.positionGrants.pickUser', {}, 'Select a user…')" />
           <CoarButton size="s" icon-start="plus" class="shrink-0" :disabled="!selectedGrantUserId"
-            @click="isCreate ? stageGrant() : issueGrant()">
+            @click="grantsStaged ? stageGrant() : issueGrant()">
             {{ t('admin.positionGrants.issueButton', {}, 'Grant') }}
           </CoarButton>
         </div>
 
-        <template v-if="isCreate">
+        <template v-if="grantsStaged">
           <div v-if="stagedGrantUserIds.length === 0" class="grant-empty">
-            {{ t('admin.positionGrants.stagedEmpty', {}, 'No users staged yet — they are authorized together with the create.') }}
+            {{ isCreate || isDraftRow
+              ? t('admin.positionGrants.stagedEmpty', {}, 'No users staged yet — they are authorized together with the create.')
+              : t('admin.positionGrants.empty', {}, 'No user is authorized to staff this position yet.') }}
           </div>
           <ul v-else class="flex flex-col gap-2">
             <li v-for="userId in stagedGrantUserIds" :key="userId"
-                class="flex items-center gap-2 rounded border border-surface-200 p-3">
+                class="flex flex-wrap items-center gap-2 rounded border border-surface-200 p-3">
               <span class="min-w-0 flex-1 truncate font-medium">{{ userLabel(userId) }}</span>
+              <template v-if="liveGrantOf(userId)">
+                <CoarTag :variant="liveGrantOf(userId)!.Status === 'Active' ? 'success' : 'warning'">
+                  {{ liveGrantOf(userId)!.Status === 'Active'
+                    ? t('admin.positionGrants.statusActive', {}, 'Active')
+                    : t('admin.positionGrants.statusSuspended', {}, 'Suspended') }}
+                </CoarTag>
+                <CoarButton v-if="liveGrantOf(userId)!.Status === 'Active'" size="s" variant="ghost" icon-start="pause"
+                  @click="transitionGrant(liveGrantOf(userId)!, 'suspend')">
+                  {{ t('admin.positionGrants.suspendButton', {}, 'Suspend') }}
+                </CoarButton>
+                <CoarButton v-else size="s" variant="ghost" icon-start="play"
+                  @click="transitionGrant(liveGrantOf(userId)!, 'resume')">
+                  {{ t('admin.positionGrants.resumeButton', {}, 'Resume') }}
+                </CoarButton>
+              </template>
+              <CoarTag v-else variant="info">{{ t('admin.positionGrants.statusStaged', {}, 'On apply') }}</CoarTag>
               <CoarButton size="s" variant="ghost" icon-start="trash-2" @click="unstageGrant(userId)">
                 {{ t('common.remove', {}, 'Remove') }}
               </CoarButton>

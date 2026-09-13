@@ -269,14 +269,20 @@ system apps / the built-in Internal login provider / terminal-managed clients / 
 slots. Service-account credentials are not in `Clients` either — they travel under the
 account that owns them (see [service accounts](#service-accounts-and-their-credentials)).
 
-It also leaves behind the settings fields that name entities by **raw id** — the
-self-registration `DefaultGroupIds`, an App's `LoginProviderIds`, and the branding
-`LogoAssetId` / `FaviconAssetId`. Those are realm-local *wiring*, not portable
-configuration: the id means nothing in another realm, so carrying it either fails the
-whole apply (asset and provider ids are validated against the realm) or stores a dangling
-reference in silence (group ids are not). Omitted means **unchanged** under merge-patch,
-so re-applying an export into its own realm leaves that wiring exactly as it was — set it
-there, in the realm's own settings. Manifests carry a realm's *entities*. This is deliberate — it is *not* a backup (a real backup
+Settings that name entities by **raw id** — the self-registration `DefaultGroupIds`, an
+App's `LoginProviderIds`, the branding `LogoAssetId` / `FaviconAssetId` — travel like every
+other id ([ADR 0024](/decisions/0024-a-manifest-identifies-by-id-never-by-name)): one the
+target realm has is applied, one it does not have is **skipped and reported** in
+`SkippedReferences`, never fatal and never stored dangling. For the realm-level settings a
+skipped reference is simply dropped from the patch, which leaves the stored value
+unchanged. A per-App settings section is a *replace*, so there "unchanged" is spelled out:
+a skipped asset keeps the App's stored one, and a provider or group list that resolves to
+**nothing** keeps the stored list rather than clearing it — on a brand-new App an
+unresolvable provider allow-list becomes `[]` (no external provider) rather than `null`
+(every provider), because an authentication surface fails closed. Real ids only: settings
+apply before groups and providers, so a `#handle` cannot resolve there and is reported.
+
+A manifest is *not* a backup (a real backup
 needs the whole tenant database). Its purpose is **get-config → edit → re-apply**:
 export a realm, add a user password or a provider secret, tweak a setting, and `POST`
 it back to `/{slug}/apply`. Because confidential clients regenerate a secret on import
@@ -348,11 +354,14 @@ one without an `Id` creates, and a taken client id fails loudly rather than adop
 another client.
 
 The account itself is **never pruned** — deleting one kills every credential it owns,
-so that stays a deliberate action in the service-account admin. Its credentials *are*
-pruned, but only when the manifest **declares the account**: an account the file never
-mentions keeps every credential it has, because otherwise forgetting to list an account
-would quietly cut off whatever authenticates as it. The plan shows a credential deletion
-in red like any other, and a [pruning apply asks first](#a-pruning-apply-asks-first).
+so that stays a deliberate action in the service-account admin. Its `Credentials` list is
+the **desired set** for that account, like `Members` on a group: when the list is present,
+a credential the account has but the list does not is **deleted at apply**, no prune
+needed — the plan shows it as a red delete entry under *Clients* beforehand, and a
+[pruning apply asks first](#a-pruning-apply-asks-first). An entry **without** a
+`Credentials` list leaves the credentials alone (absent = unchanged), and an account the
+file never mentions keeps everything it has — otherwise forgetting to list an account
+would quietly cut off whatever authenticates as it.
 
 One thing a diff cannot show is an absence, so the plan states it outright: an account
 that arrives with **no credentials** carries a note saying a machine pointed at it cannot

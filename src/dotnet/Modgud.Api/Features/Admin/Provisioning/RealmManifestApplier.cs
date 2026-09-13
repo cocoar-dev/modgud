@@ -10,6 +10,7 @@ using Modgud.Api.Features.Roles;
 using Modgud.Api.Features.Users.Commands;
 using Modgud.Application.DTOs.Applications;
 using Modgud.Application.DTOs.OAuth;
+using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Application.DTOs.User;
 using Modgud.Application.Services;
 using Modgud.Authentication.Api.Admin.LoginProviders.Commands;
@@ -29,6 +30,7 @@ using Modgud.Authorization.Membership;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
 using Modgud.Authorization.Services;
+using Modgud.Domain.Assets;
 using Modgud.Domain.Common;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Applications;
@@ -80,13 +82,13 @@ public sealed partial class RealmManifestApplier(
     /// (that would discard signing keys, the OpenIddict token store and user <c>sub</c>s),
     /// so this is a strict in-place merge.
     ///
-    /// <para>Semantics (v1, merge/upsert — entity-level prune is a separate later stage):
-    /// the manifest is the desired state for the fields it carries. Boolean flags are always
-    /// applied; scalar strings and non-empty lists replace the stored value; an omitted /
-    /// empty list and a null app-link leave the stored value unchanged (UpdateRealm sets and
-    /// changes, but never clears a list to empty or detaches an app-link — use the admin API
-    /// for that). Client secrets are only minted at create; an existing client keeps its
-    /// secret (rotate via the dedicated endpoint).</para>
+    /// <para>Semantics (v2 merge-patch, RFC 7386 in spirit): the manifest is the desired
+    /// state for the fields it carries. A field ABSENT from an entry is unchanged (shipped
+    /// default on create); a present field is applied — an explicit <c>null</c> clears a
+    /// scalar or detaches an app-link, <c>[]</c> clears a list, a non-empty list replaces it.
+    /// Reference lists (group members and roles, position grants, an account's credentials)
+    /// are desired sets: what they omit is removed. Client secrets are only minted at
+    /// create; an existing client keeps its secret (rotate via the dedicated endpoint).</para>
     ///
     /// <para>Atomicity (ADR-0017 Phase 0): the whole update runs inside ONE
     /// <see cref="TenantApplyTransaction"/> on the tenant database — every canonical op's
@@ -217,7 +219,8 @@ public sealed partial class RealmManifestApplier(
         var session = sp.GetRequiredService<IDocumentSession>();
 
         if (manifest.Settings is not null)
-            EnsureOk(await sp.GetRequiredService<IRealmSettingsService>().PatchAsync(manifest.Settings, ct), "settings");
+            EnsureOk(await sp.GetRequiredService<IRealmSettingsService>().PatchAsync(
+                await ResolveRealmSettingsReferencesAsync(session, manifest.Settings, skips, ct), ct), "settings");
 
         // ── Apps (+ permission catalog) ───────────────────────────────────────────
         // Seed the resolver with every existing app so downstream entities can reference
@@ -264,7 +267,7 @@ public sealed partial class RealmManifestApplier(
                 var description = app.Description.HasValue ? app.Description.Value : current.Description;
                 var updated = await appAdmin.UpdateAppAsync(current.Id,
                     new UpdateAppDto(app.DisplayName, description, permissions,
-                        await KeepRealmLocalSettingsAsync(sp, current.Id, app.Settings, ct)), ct);
+                        await ResolveAppSettingsReferencesAsync(sp, session, current.Id, app.Settings, appCtx, skips, ct)), ct);
 
                 EnsureOk(updated, appCtx);
                 result = updated.Value;
@@ -275,7 +278,8 @@ public sealed partial class RealmManifestApplier(
                     .Select(p => new AppPermissionDto(null, p.Resource, p.Action, p.Description)).ToList();
                 var created = await appAdmin.CreateAppAsync(
                     new CreateAppDto(app.Slug, app.DisplayName, OrNull(app.Description), permissions,
-                        app.Settings, ManifestHandle.AsPinnedId(app.Id)), ct);
+                        await ResolveAppSettingsReferencesAsync(sp, session, null, app.Settings, appCtx, skips, ct),
+                        ManifestHandle.AsPinnedId(app.Id)), ct);
                 EnsureOk(created, appCtx);
                 result = created.Value;
             }
@@ -1437,44 +1441,189 @@ public sealed partial class RealmManifestApplier(
     }
 
     /// <summary>
-    /// Re-attaches the per-App settings that a manifest deliberately never carries: the
-    /// branding asset ids, the login-provider allow-list and the default self-registration
-    /// groups (see <c>RealmManifestExporter.WithoutRealmLocalReferences</c>).
+    /// Settings that name entities by raw id — branding assets, the default self-registration
+    /// groups — travel like every other id (ADR 0024): one this realm has is applied, one it
+    /// does not have is SKIPPED and reported, never fatal. Without this the settings service
+    /// would refuse the whole patch on an asset id from another realm, and a dangling group
+    /// id would be stored in silence. The realm patch is merge-patch, so dropping an
+    /// unresolvable reference from it leaves the stored value unchanged.
     ///
-    /// <para>Necessary because a per-App settings section is REPLACE, not merge-patch:
-    /// <c>ApplicationSettingsService.StageNonOriginAsync</c> rebuilds a whole section from
-    /// the DTO whenever the section is present, so a section that arrives with those fields
-    /// nulled does not leave them alone — it CLEARS them. Re-applying an unedited export
-    /// would have wiped an App's logo and, worse, turned an allow-list of one login provider
-    /// into "every enabled provider".</para>
-    ///
-    /// <para>Reading them back from the stored override restores the intent the transport
-    /// drops: the manifest cannot carry these, therefore the manifest never changes them.
-    /// On a realm that has no override yet there is nothing to restore, so nothing dangles.</para>
+    /// <para>Real ids only: settings apply before groups, so a <c>#handle</c> for a group this
+    /// same manifest creates cannot resolve here and is reported like any other miss.</para>
     /// </summary>
-    private static async Task<ApplicationSettingsDto?> KeepRealmLocalSettingsAsync(
-        IServiceProvider sp, Guid appId, ApplicationSettingsDto? incoming, CancellationToken ct)
+    private static async Task<UpdateRealmSettingsDto> ResolveRealmSettingsReferencesAsync(
+        IDocumentSession session, UpdateRealmSettingsDto settings, ManifestReferenceSkips skips,
+        CancellationToken ct)
+    {
+        const string ctx = "settings";
+        var branding = settings.Branding;
+        if (branding is not null)
+        {
+            branding = branding with
+            {
+                LogoAssetId = await ResolveOptionalAssetAsync(session, branding.LogoAssetId, "branding logo asset", ctx, skips, ct),
+                FaviconAssetId = await ResolveOptionalAssetAsync(session, branding.FaviconAssetId, "branding favicon asset", ctx, skips, ct),
+            };
+        }
+        var selfReg = settings.SelfRegistration;
+        if (selfReg?.DefaultGroupIds is { } groupIds)
+        {
+            var resolved = await ResolveGroupIdsAsync(session, groupIds, ctx, skips, ct);
+            selfReg = selfReg with
+            {
+                DefaultGroupIds = OrUnchangedWhenNothingResolved(resolved, groupIds.Length, ctx, "default group", skips)?.ToArray(),
+            };
+        }
+        return settings with
+        {
+            Branding = branding,
+            SelfRegistration = selfReg,
+            // The settings service makes a live caller confirm a stricter position-security
+            // floor first. For an apply the PLAN is that confirmation — it states the ended
+            // sessions and affected slots beforehand — so confirm here, as the positions
+            // section already does for its own policy gate. Without this the plan read clean
+            // and the whole apply rolled back at the last step.
+            ConfirmPositionSecurityConsequences =
+                settings.ConfirmPositionSecurityConsequences || settings.PositionSecurity is not null,
+        };
+    }
+
+    /// <summary>
+    /// The per-App counterpart. A per-App settings section is REPLACE, not merge-patch:
+    /// <c>ApplicationSettingsService.StageNonOriginAsync</c> rebuilds a whole section from the
+    /// DTO, so "unchanged" for an unresolvable reference has to be spelled out as the value
+    /// the stored override already holds — the same rule the reference lists on groups and
+    /// clients follow (a non-empty list that resolves to nothing leaves the field alone).
+    /// On a create there is no stored value: an unresolvable allow-list becomes <c>[]</c>
+    /// (no external provider) rather than <c>null</c> (EVERY provider), because failing
+    /// closed on an authentication surface is the only safe default, and it is reported.
+    ///
+    /// <para>What arrives resolvable is applied as sent — including a same-realm change staged
+    /// in the admin UI. The earlier version of this method restored the stored ids
+    /// unconditionally, which made narrowing an App's provider allow-list through the draft
+    /// a silent no-op while the plan promised the change.</para>
+    /// </summary>
+    private static async Task<ApplicationSettingsDto?> ResolveAppSettingsReferencesAsync(
+        IServiceProvider sp, IDocumentSession session, Guid? appId, ApplicationSettingsDto? incoming,
+        string ctx, ManifestReferenceSkips skips, CancellationToken ct)
     {
         if (incoming is null) return null;
-        var stored = await sp.GetRequiredService<IApplicationSettingsService>().GetAsync(appId, ct);
-        if (stored.IsError) return incoming;
-
-        return incoming with
+        ApplicationSettingsDto? stored = null;
+        if (appId is { } id)
         {
-            Branding = incoming.Branding is null ? null : incoming.Branding with
+            var loaded = await sp.GetRequiredService<IApplicationSettingsService>().GetAsync(id, ct);
+            if (!loaded.IsError) stored = loaded.Value;
+        }
+
+        var branding = incoming.Branding;
+        if (branding is not null)
+        {
+            branding = branding with
             {
-                LogoAssetId = stored.Value.Branding?.LogoAssetId,
-                FaviconAssetId = stored.Value.Branding?.FaviconAssetId,
-            },
-            LoginExperience = incoming.LoginExperience is null ? null : incoming.LoginExperience with
+                LogoAssetId = await ResolveAssetAsync(session, branding.LogoAssetId,
+                    stored?.Branding?.LogoAssetId, "branding logo asset", ctx, skips, ct),
+                FaviconAssetId = await ResolveAssetAsync(session, branding.FaviconAssetId,
+                    stored?.Branding?.FaviconAssetId, "branding favicon asset", ctx, skips, ct),
+            };
+        }
+        var login = incoming.LoginExperience;
+        if (login?.LoginProviderIds is { } providerIds)
+        {
+            var resolved = await ResolveLoginProviderIdsAsync(session, providerIds, ctx, skips, ct);
+            login = login with
             {
-                LoginProviderIds = stored.Value.LoginExperience?.LoginProviderIds,
-            },
-            SelfRegistration = incoming.SelfRegistration is null ? null : incoming.SelfRegistration with
+                LoginProviderIds = OrUnchangedWhenNothingResolved(resolved, providerIds.Length, ctx, "login provider", skips)?.ToArray()
+                    ?? stored?.LoginExperience?.LoginProviderIds
+                    ?? [],
+            };
+        }
+        var selfReg = incoming.SelfRegistration;
+        if (selfReg?.DefaultGroupIds is { } groupIds)
+        {
+            var resolved = await ResolveGroupIdsAsync(session, groupIds, ctx, skips, ct);
+            selfReg = selfReg with
             {
-                DefaultGroupIds = stored.Value.SelfRegistration?.DefaultGroupIds,
-            },
-        };
+                DefaultGroupIds = OrUnchangedWhenNothingResolved(resolved, groupIds.Length, ctx, "default group", skips)?.ToArray()
+                    ?? stored?.SelfRegistration?.DefaultGroupIds,
+            };
+        }
+        return incoming with { Branding = branding, LoginExperience = login, SelfRegistration = selfReg };
+    }
+
+    private static async Task<Optional<string?>> ResolveOptionalAssetAsync(
+        IDocumentSession session, Optional<string?> value, string what, string ctx,
+        ManifestReferenceSkips skips, CancellationToken ct)
+    {
+        if (!value.HasValue || string.IsNullOrWhiteSpace(value.Value)) return value;
+        // Unresolvable → drop the field from the patch = unchanged.
+        return await ResolveAssetAsync(session, value.Value, null, what, ctx, skips, ct) is { } ok
+            ? new Optional<string?>(ok)
+            : default;
+    }
+
+    /// <summary>A single asset reference: the id when the asset exists here, else the
+    /// fallback (the stored value, or null on a create), with the miss reported.</summary>
+    private static async Task<string?> ResolveAssetAsync(
+        IDocumentSession session, string? raw, string? fallback, string what, string ctx,
+        ManifestReferenceSkips skips, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return raw;
+        if (!ShortGuid.TryParse(raw, out Guid id))
+        {
+            skips.Skip(ctx, $"{what} '{raw}'", "not a valid Guid or ShortGuid");
+            return fallback;
+        }
+        if (await session.LoadAsync<Asset>(id, ct) is null)
+        {
+            skips.Skip(ctx, $"{what} '{raw}'", "no such asset in this realm");
+            return fallback;
+        }
+        return raw;
+    }
+
+    private static async Task<List<string>> ResolveGroupIdsAsync(
+        IDocumentSession session, IEnumerable<string> raws, string ctx,
+        ManifestReferenceSkips skips, CancellationToken ct)
+    {
+        var resolved = new List<string>();
+        foreach (var raw in raws)
+        {
+            if (!ShortGuid.TryParse(raw, out Guid id))
+            {
+                skips.Skip(ctx, $"default group '{raw}'", "not a valid Guid or ShortGuid");
+                continue;
+            }
+            if (await session.LoadAsync<Group>(id, ct) is not { IsDeleted: false })
+            {
+                skips.Skip(ctx, $"default group '{raw}'", "no group with that id in this realm");
+                continue;
+            }
+            resolved.Add(raw);
+        }
+        return resolved;
+    }
+
+    private static async Task<List<string>> ResolveLoginProviderIdsAsync(
+        IDocumentSession session, IEnumerable<string> raws, string ctx,
+        ManifestReferenceSkips skips, CancellationToken ct)
+    {
+        var resolved = new List<string>();
+        foreach (var raw in raws)
+        {
+            if (!ShortGuid.TryParse(raw, out Guid id))
+            {
+                skips.Skip(ctx, $"login provider '{raw}'", "not a valid Guid or ShortGuid");
+                continue;
+            }
+            var provider = await session.LoadAsync<LoginProvider>(id, ct);
+            if (provider is null || provider.IsDeleted || provider.Type == LoginProviderType.Internal)
+            {
+                skips.Skip(ctx, $"login provider '{raw}'", "no external login provider with that id in this realm");
+                continue;
+            }
+            resolved.Add(raw);
+        }
+        return resolved;
     }
 
     /// <summary>Binds a handle to the id a create actually produced and records the entity
