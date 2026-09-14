@@ -18,6 +18,7 @@ public sealed class ProvisionedRealm : IAsyncDisposable
         Slug = result.Slug;
         PrimaryDomain = result.PrimaryDomain;
         ClientSecrets = result.ClientSecrets;
+        AssignedIds = result.AssignedIds;
     }
 
     /// <summary>The realm's slug — its identity in the control-plane API.</summary>
@@ -43,10 +44,23 @@ public sealed class ProvisionedRealm : IAsyncDisposable
             : throw new KeyNotFoundException(
                 $"No client secret for '{clientId}' in realm '{Slug}'. Known clients: {string.Join(", ", ClientSecrets.Keys)}.");
 
+    /// <summary>
+    /// The real ids the provisioning apply assigned to the manifest's entities, keyed by the
+    /// document-local handle the kit generated for each: <c>AssignedIds["#user:alice"]</c>,
+    /// <c>["#role:acme/Author"]</c>, <c>["#client:web"]</c>, <c>["#app:acme"]</c>. This is how a
+    /// test gets at an id it never chose — no export, no lookup call.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> AssignedIds { get; }
+
     /// <summary>Applies <paramref name="manifest"/> to this realm in place (merge/upsert).
     /// A manifest names no realm, so it always targets THIS one — nothing to mismatch. New
-    /// confidential-client secrets are NOT surfaced — existing clients keep their secret.</summary>
-    public Task ApplyAsync(RealmManifest manifest, CancellationToken ct = default)
+    /// confidential-client secrets are NOT surfaced — existing clients keep their secret.
+    ///
+    /// <para>Identity is the id (ADR 0024): an entity the kit declares without an explicit
+    /// <c>Id</c> gets a fresh handle and is therefore CREATED, so a second apply of the same
+    /// manifest fails on the duplicate name rather than updating in place. To update, carry
+    /// the id — take it from the returned <c>AssignedIds</c> and set it on the entry.</para></summary>
+    public Task<RealmImportResult> ApplyAsync(RealmManifest manifest, CancellationToken ct = default)
         => _client.ApplyAsync(Slug, manifest, ct);
 
     /// <summary>Hard-deletes the realm (drops the tenant database). Idempotent — a second call

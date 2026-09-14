@@ -33,7 +33,12 @@ const props = defineProps<{
   saId: string
   id: string
   close: (result?: unknown) => void
+  /** Return the validated DTO to the parent instead of calling the API (embedded flows,
+   * and every credential edit with a draft open — the parent stages it). */
   draftOnly?: boolean
+  /** Edit of a credential the parent holds in manifest shape: the form comes from
+   * `initial`, nothing is fetched, and Save hands the DTO back. */
+  stagedEdit?: boolean
   initial?: IssueServiceAccountCredentialDto
 }>()
 
@@ -137,7 +142,7 @@ const footerButton = computed(() => {
   }
   return {
     visible: true,
-    text: props.draftOnly
+    text: props.draftOnly || props.stagedEdit
       ? t('admin.oauthClients.newServiceAccount.apply', {}, 'Übernehmen')
       : isCreate.value
         ? t('common.issue', {}, 'Issue')
@@ -155,6 +160,11 @@ onMounted(async () => {
     applicationsStore.apps.length === 0 ? applicationsStore.loadAll() : Promise.resolve(),
   ])
 
+  if (props.stagedEdit) {
+    // The parent handed the staged shape in through `initial`; there is nothing live to read.
+    originalForm.value = JSON.parse(JSON.stringify(form.value))
+    return
+  }
   if (!isCreate.value) {
     loading.value = true
     try {
@@ -191,18 +201,20 @@ async function save() {
   loading.value = true
   error.value = null
   try {
+    // Embedded / staged: the parent owns the write (a live create, or the draft).
+    if (props.draftOnly || props.stagedEdit) {
+      props.close({
+        ClientId: props.initial?.ClientId,
+        DisplayName: form.value.DisplayName.trim() || undefined,
+        Scopes: form.value.Scopes,
+        AppIds: form.value.AppIds,
+        AccessTokenLifetime: form.value.AccessTokenLifetime ?? undefined,
+        AccessTokenType: form.value.AccessTokenType,
+        Enabled: form.value.Enabled,
+      } satisfies IssueServiceAccountCredentialDto)
+      return
+    }
     if (isCreate.value) {
-      if (props.draftOnly) {
-        props.close({
-          DisplayName: form.value.DisplayName.trim() || undefined,
-          Scopes: form.value.Scopes,
-          AppIds: form.value.AppIds,
-          AccessTokenLifetime: form.value.AccessTokenLifetime ?? undefined,
-          AccessTokenType: form.value.AccessTokenType,
-          Enabled: form.value.Enabled,
-        } satisfies IssueServiceAccountCredentialDto)
-        return
-      }
       const res = await credentialsHttp.value.post<ServiceAccountCredentialIssuedDto>({
         DisplayName: form.value.DisplayName.trim() || undefined,
         Scopes: form.value.Scopes,

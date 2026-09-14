@@ -8,8 +8,11 @@ using Modgud.Api.Features.Roles;
 using Modgud.Application.DTOs.OAuth;
 using Modgud.Application.DTOs.Realms;
 using Modgud.Application.Services;
+using Modgud.Application.Inbox;
+using Modgud.Application.Scheduling;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Gdpr;
+using Modgud.Domain.Common;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
@@ -27,13 +30,31 @@ namespace Modgud.Api.Tests.ColdStart;
 
 /// <summary>
 /// Stage 1b: the RealmManifestApplier imports a fully-configured realm in-process by
-/// reusing the canonical admin operations, resolving key-based cross-references
+/// reusing the canonical admin operations, resolving cross-references
 /// (apps↔apis/scopes/clients/roles, groups↔users/roles) in dependency order. Proves the
 /// writes land in the NEW realm's tenant database (not the control-plane/system tenant
 /// the call runs under).
+///
+/// <para>Identity is the entity Id (ADR 0024). A manifest that creates entities referencing
+/// each other declares <c>#handles</c>; one that updates carries the real ids. Nothing here
+/// matches by name, which is why the manifests below always say which entity they mean.</para>
 /// </summary>
 public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTestBase(fixture)
 {
+    /// <summary>A manifest id in the ShortGuid spelling the applier pins with.</summary>
+    private static string Pin(Guid id) => new ShortGuid(id).ToString();
+
+    /// <summary>A cross-reference by id — with an optional readable Key, which the apply
+    /// never follows and only reports when it disagrees.</summary>
+    private static ManifestRef Ref(Guid id, string? key = null) => new() { Id = Pin(id), Key = key };
+
+    /// <summary>Reads a manifest id back out of an apply result.</summary>
+    private static Guid Unpin(string raw)
+    {
+        Assert.True(ShortGuid.TryParse(raw, out Guid id), $"'{raw}' is not a valid id.");
+        return id;
+    }
+
     [Fact]
     public async Task Import_provisions_a_fully_configured_realm_with_resolved_cross_references()
     {
@@ -88,6 +109,10 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             [
                 new RealmManifestRole
                 {
+                    // A hand-written manifest names the entities it creates with handles —
+                    // the file has no ids to point with, and inventing them would just move
+                    // the collision (ADR 0024).
+                    Id = "#acme-admin",
                     Name = "acme-admin",
                     App = "acme-app",
                     Permissions =
@@ -99,11 +124,11 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             ],
             Users =
             [
-                new RealmManifestUser { Key = "alice", Email = "alice@acme.test", UserName = "alice", Password = "Passw0rd!23" },
+                new RealmManifestUser { Id = "#alice", Key = "alice", Email = "alice@acme.test", UserName = "alice", Password = "Passw0rd!23" },
             ],
             Groups =
             [
-                new RealmManifestGroup { Name = "Admins", Members = ["alice"], Roles = ["acme-admin"] },
+                new RealmManifestGroup { Name = "Admins", Members = ["#alice"], Roles = ["#acme-admin"] },
             ],
         };
 
@@ -116,6 +141,10 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         Assert.Equal("acme.localhost", result.Value.PrimaryDomain);
         Assert.True(result.Value.ClientSecrets.ContainsKey("acme-web"));
         Assert.False(string.IsNullOrWhiteSpace(result.Value.ClientSecrets["acme-web"]));
+        // The apply hands back the real ids it gave the handles, so the same file can be
+        // made idempotent without exporting the realm first.
+        Assert.True(ShortGuid.TryParse(result.Value.AssignedIds["#alice"], out Guid _));
+        Assert.True(ShortGuid.TryParse(result.Value.AssignedIds["#acme-admin"], out Guid _));
 
         var realms = factory.Services.GetRequiredService<IRealmProvisioningService>();
         Assert.NotNull(await realms.GetRealmBySlugAsync(slug, ct));
@@ -207,7 +236,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                     Permissions = [new RealmManifestPermission("rev", "read")],
                 },
             ],
-            Groups = [new RealmManifestGroup { Name = groupName, Id = new ShortGuid(groupId).ToString(), Roles = [roleName] }],
+            Groups = [new RealmManifestGroup { Name = groupName, Id = Pin(groupId), Roles = [Ref(roleId, roleName)] }],
         };
 
         var imported = await ProvisionRealmAsync(factory, Shell(slug), Manifest("rev-app", "rev-role", "RevGroup"), ct);
@@ -292,17 +321,18 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
 
         const string slug = "idmatch";
+        var appId = Guid.NewGuid();
         var roleId = Guid.NewGuid();
         var groupId = Guid.NewGuid();
 
         RealmManifest Manifest(string roleName, string groupName, string? groupDescription = null) => new()
         {
-            Apps = [new RealmManifestApp { Slug = "im-app", DisplayName = "Id Match App", Permissions = [new RealmManifestPermission("im", "read")] }],
+            Apps = [new RealmManifestApp { Slug = "im-app", Id = Pin(appId), DisplayName = "Id Match App", Permissions = [new RealmManifestPermission("im", "read")] }],
             Roles =
             [
                 new RealmManifestRole
                 {
-                    Name = roleName, Id = new ShortGuid(roleId).ToString(), App = "im-app",
+                    Name = roleName, Id = Pin(roleId), App = "im-app",
                     Permissions = [new RealmManifestPermission("im", "read")],
                 },
             ],
@@ -310,8 +340,8 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             [
                 new RealmManifestGroup
                 {
-                    Name = groupName, Id = new ShortGuid(groupId).ToString(),
-                    Description = groupDescription, Roles = [roleName],
+                    Name = groupName, Id = Pin(groupId),
+                    Description = groupDescription, Roles = [Ref(roleId, roleName)],
                 },
             ],
         };
@@ -506,6 +536,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
 
         const string slug = "boolpatch";
+        var clientId = Guid.NewGuid();
         // Import a DISABLED confidential client (Enabled explicitly false).
         var manifest = new RealmManifest
         {
@@ -515,6 +546,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 new RealmManifestClient
                 {
                     ClientId = "bp-web",
+                    Id = Pin(clientId),
                     ClientType = "confidential",
                     RedirectUris = ["https://bp.test/cb1"],
                     Scopes = ["openid"],
@@ -527,6 +559,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         Assert.False((await ProvisionRealmAsync(factory, Shell(slug), manifest, ct)).IsError);
 
         // Apply a partial update: change the redirect URI, OMIT Enabled (null = no change).
+        // The Id is what makes this the SAME client — the client_id is only its name.
         var patch = new RealmManifest
         {
             Clients =
@@ -534,6 +567,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 new RealmManifestClient
                 {
                     ClientId = "bp-web",
+                    Id = Pin(clientId),
                     ClientType = "confidential",
                     RedirectUris = ["https://bp.test/cb2"],
                     Apps = ["bp-app"],
@@ -561,9 +595,11 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
 
         const string slug = "tokentype";
+        var ttWebId = Guid.NewGuid();
         RealmManifestClient Client(string? accessTokenType) => new()
         {
             ClientId = "tt-web",
+            Id = Pin(ttWebId),
             ClientType = "confidential",
             RedirectUris = ["https://tt.test/cb"],
             Scopes = ["openid"],
@@ -628,6 +664,16 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
 
         const string slug = "prune";
+        // Pinned ids throughout: the prune manifest has to say "the SAME keep-* entities",
+        // and under ADR 0024 only an id says that. It is also what makes the sweep's
+        // keep-set exact — the applier keeps what it just wrote, by id.
+        Guid keepApp = Guid.NewGuid(), dropApp = Guid.NewGuid();
+        Guid keepApi = Guid.NewGuid(), dropApi = Guid.NewGuid();
+        Guid keepScope = Guid.NewGuid(), dropScope = Guid.NewGuid();
+        Guid keepClient = Guid.NewGuid(), dropClient = Guid.NewGuid();
+        Guid keepRole = Guid.NewGuid(), dropRole = Guid.NewGuid(), adminRole = Guid.NewGuid();
+        Guid keepUser = Guid.NewGuid(), dropUser = Guid.NewGuid(), adminUser = Guid.NewGuid();
+        Guid keepGroup = Guid.NewGuid(), dropGroup = Guid.NewGuid(), adminGroup = Guid.NewGuid();
 
         // Import a realm with keep-* + drop-* entities AND a full admin path
         // (realm-admin role + user + group). The prune manifest will OMIT every drop-*
@@ -638,41 +684,41 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         {
             Apps =
             [
-                new RealmManifestApp { Slug = "keep-app", DisplayName = "Keep", Permissions = [new RealmManifestPermission("keep", "read")] },
-                new RealmManifestApp { Slug = "drop-app", DisplayName = "Drop", Permissions = [new RealmManifestPermission("drop", "read")] },
+                new RealmManifestApp { Slug = "keep-app", Id = Pin(keepApp), DisplayName = "Keep", Permissions = [new RealmManifestPermission("keep", "read")] },
+                new RealmManifestApp { Slug = "drop-app", Id = Pin(dropApp), DisplayName = "Drop", Permissions = [new RealmManifestPermission("drop", "read")] },
             ],
             Apis =
             [
-                new RealmManifestApi { Name = "keep-api", DisplayName = "Keep API", App = "keep-app" },
-                new RealmManifestApi { Name = "drop-api", DisplayName = "Drop API", App = "drop-app" },
+                new RealmManifestApi { Name = "keep-api", Id = Pin(keepApi), DisplayName = "Keep API", App = "keep-app" },
+                new RealmManifestApi { Name = "drop-api", Id = Pin(dropApi), DisplayName = "Drop API", App = "drop-app" },
             ],
             Scopes =
             [
-                new RealmManifestScope { Name = "keep.read", DisplayName = "Keep", App = "keep-app", Resources = ["keep-api"] },
-                new RealmManifestScope { Name = "drop.read", DisplayName = "Drop", App = "drop-app", Resources = ["drop-api"] },
+                new RealmManifestScope { Name = "keep.read", Id = Pin(keepScope), DisplayName = "Keep", App = "keep-app", Resources = ["keep-api"] },
+                new RealmManifestScope { Name = "drop.read", Id = Pin(dropScope), DisplayName = "Drop", App = "drop-app", Resources = ["drop-api"] },
             ],
             Clients =
             [
-                new RealmManifestClient { ClientId = "keep-web", ClientType = "confidential", RedirectUris = ["https://k.test/cb"], Scopes = ["openid"], AllowedGrantTypes = ["authorization_code"], Apps = ["keep-app"] },
-                new RealmManifestClient { ClientId = "drop-web", ClientType = "confidential", RedirectUris = ["https://d.test/cb"], Scopes = ["openid"], AllowedGrantTypes = ["authorization_code"], Apps = ["drop-app"] },
+                new RealmManifestClient { ClientId = "keep-web", Id = Pin(keepClient), ClientType = "confidential", RedirectUris = ["https://k.test/cb"], Scopes = ["openid"], AllowedGrantTypes = ["authorization_code"], Apps = ["keep-app"] },
+                new RealmManifestClient { ClientId = "drop-web", Id = Pin(dropClient), ClientType = "confidential", RedirectUris = ["https://d.test/cb"], Scopes = ["openid"], AllowedGrantTypes = ["authorization_code"], Apps = ["drop-app"] },
             ],
             Roles =
             [
-                new RealmManifestRole { Name = "keep-role", App = "keep-app", Permissions = [new RealmManifestPermission("keep", "read")] },
-                new RealmManifestRole { Name = "drop-role", App = "drop-app", Permissions = [new RealmManifestPermission("drop", "read")] },
-                new RealmManifestRole { Name = "super-admin", IsRealmAdmin = true },
+                new RealmManifestRole { Name = "keep-role", Id = Pin(keepRole), App = "keep-app", Permissions = [new RealmManifestPermission("keep", "read")] },
+                new RealmManifestRole { Name = "drop-role", Id = Pin(dropRole), App = "drop-app", Permissions = [new RealmManifestPermission("drop", "read")] },
+                new RealmManifestRole { Name = "super-admin", Id = Pin(adminRole), IsRealmAdmin = true },
             ],
             Users =
             [
-                new RealmManifestUser { Key = "keepuser", Email = "keep@prune.test", UserName = "keepuser", Password = "Passw0rd!23" },
-                new RealmManifestUser { Key = "dropuser", Email = "drop@prune.test", UserName = "dropuser", Password = "Passw0rd!23" },
-                new RealmManifestUser { Key = "adminuser", Email = "admin2@prune.test", UserName = "adminuser", Password = "Passw0rd!23" },
+                new RealmManifestUser { Key = "keepuser", Id = Pin(keepUser), Email = "keep@prune.test", UserName = "keepuser", Password = "Passw0rd!23" },
+                new RealmManifestUser { Key = "dropuser", Id = Pin(dropUser), Email = "drop@prune.test", UserName = "dropuser", Password = "Passw0rd!23" },
+                new RealmManifestUser { Key = "adminuser", Id = Pin(adminUser), Email = "admin2@prune.test", UserName = "adminuser", Password = "Passw0rd!23" },
             ],
             Groups =
             [
-                new RealmManifestGroup { Name = "KeepGroup", Members = ["keepuser"], Roles = ["keep-role"] },
-                new RealmManifestGroup { Name = "DropGroup", Members = ["dropuser"], Roles = ["drop-role"] },
-                new RealmManifestGroup { Name = "AdminGroup", Members = ["adminuser"], Roles = ["super-admin"] },
+                new RealmManifestGroup { Name = "KeepGroup", Id = Pin(keepGroup), Members = [Ref(keepUser, "keepuser")], Roles = [Ref(keepRole, "keep-app/keep-role")] },
+                new RealmManifestGroup { Name = "DropGroup", Id = Pin(dropGroup), Members = [Ref(dropUser, "dropuser")], Roles = [Ref(dropRole, "drop-app/drop-role")] },
+                new RealmManifestGroup { Name = "AdminGroup", Id = Pin(adminGroup), Members = [Ref(adminUser, "adminuser")], Roles = [Ref(adminRole, "super-admin")] },
             ],
         };
         var import = await ProvisionRealmAsync(factory, Shell(slug), full, ct);
@@ -760,12 +806,13 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
 
         const string slug = "binned";
+        Guid firstId = Guid.NewGuid(), secondId = Guid.NewGuid();
         var full = new RealmManifest
         {
             Users =
             [
-                new RealmManifestUser { Key = "first", Email = "first@binned.test", UserName = "first", Firstname = "First", Password = "Passw0rd!23" },
-                new RealmManifestUser { Key = "second", Email = "second@binned.test", UserName = "second", Firstname = "Second", Password = "Passw0rd!23" },
+                new RealmManifestUser { Key = "first", Id = Pin(firstId), Email = "first@binned.test", UserName = "first", Firstname = "First", Password = "Passw0rd!23" },
+                new RealmManifestUser { Key = "second", Id = Pin(secondId), Email = "second@binned.test", UserName = "second", Firstname = "Second", Password = "Passw0rd!23" },
             ],
         };
         var import = await ProvisionRealmAsync(factory, Shell(slug), full, ct);
@@ -828,11 +875,12 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
     /// exercising both the update and the upsert-create branch.
     /// </summary>
     /// <summary>
-    /// Role names are unique per App, so the manifest keys roles <c>app/name</c>: an export
-    /// with two "Author" roles round-trips without duplicating either, a group reference
-    /// resolves the qualified key (and a bare name only while unambiguous), a patch that
-    /// omits App still finds a uniquely-named role, and one app may not own two roles of
-    /// the same name.
+    /// Role names are unique per App, so the manifest READS roles as <c>app/name</c> — but
+    /// it never resolves them that way (ADR 0024). An export with two "Author" roles
+    /// round-trips without duplicating either because every entry carries its id; a second
+    /// entry of the same name without one CREATES and is refused by the domain; and the
+    /// database, not the service's pre-check, is the authority on the uniqueness the
+    /// readable key rests on.
     /// </summary>
     [Fact]
     public async Task Roles_are_keyed_per_app_and_round_trip_through_export()
@@ -850,19 +898,25 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         };
         static RealmManifestRole Author(string appSlug) => new()
         {
+            // Two roles of the same NAME in one file — only a handle can tell a group which
+            // one it means, which is exactly the gap handles exist for.
+            Id = $"#author:{appSlug}",
             Name = "Author", App = appSlug, Permissions = [new RealmManifestPermission("doc", "write")],
         };
 
         var manifest = new RealmManifest
         {
             Apps = [AppOf("alpha"), AppOf("beta")],
-            Roles = [Author("alpha"), Author("beta"), new RealmManifestRole { Name = "Reviewer", App = "beta", Permissions = [] }],
+            Roles =
+            [
+                Author("alpha"), Author("beta"),
+                new RealmManifestRole { Id = "#reviewer", Name = "Reviewer", App = "beta", Permissions = [] },
+            ],
             Groups =
             [
-                new RealmManifestGroup { Name = "Alpha writers", Roles = ["alpha/Author"] },
-                new RealmManifestGroup { Name = "Beta writers", Roles = ["beta/Author"] },
-                // A bare name is fine while exactly one role carries it.
-                new RealmManifestGroup { Name = "Reviewers", Roles = ["Reviewer"] },
+                new RealmManifestGroup { Name = "Alpha writers", Roles = ["#author:alpha"] },
+                new RealmManifestGroup { Name = "Beta writers", Roles = ["#author:beta"] },
+                new RealmManifestGroup { Name = "Reviewers", Roles = ["#reviewer"] },
             ],
         };
         var imported = await ProvisionRealmAsync(factory, Shell(slug), manifest, ct);
@@ -898,10 +952,11 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         Assert.False(reapplied.IsError, reapplied.IsError ? reapplied.FirstError.Description : string.Empty);
         Assert.Equal(before, await RoleIdsAsync());
 
-        // A patch without App (absent = unchanged) updates a uniquely-named role...
+        // A patch that carries the role's Id updates it — even omitting App, which the id
+        // makes redundant. This is the only form that can mean "that role".
         var patch = new RealmManifest
         {
-            Roles = [new RealmManifestRole { Name = "Reviewer", Description = "Reviews drafts" }],
+            Roles = [new RealmManifestRole { Id = Pin(before.Reviewer), Name = "Reviewer", Description = "Reviews drafts" }],
         };
         var patched = await applier.UpdateRealmAsync(slug, patch, ct: ct);
         Assert.False(patched.IsError, patched.IsError ? patched.FirstError.Description : string.Empty);
@@ -911,21 +966,31 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             Assert.Equal("Reviews drafts", (await session.LoadAsync<PermissionRole>(before.Reviewer, ct))!.Description);
         });
 
-        // ...but is refused for an ambiguous one instead of silently picking the first.
-        var ambiguous = await applier.UpdateRealmAsync(slug, new RealmManifest
+        // Without an Id the entry is a CREATE, whatever it is called — so a name already
+        // taken in that app fails loudly instead of quietly editing the role that has it.
+        var byNameOnly = await applier.UpdateRealmAsync(slug, new RealmManifest
         {
-            Roles = [new RealmManifestRole { Name = "Author", Description = "Which one?" }],
+            Roles = [new RealmManifestRole { Name = "Reviewer", App = "beta", Description = "Which one?" }],
         }, ct: ct);
-        Assert.True(ambiguous.IsError);
-        Assert.Equal("Manifest.AmbiguousRole", ambiguous.FirstError.Code);
+        Assert.True(byNameOnly.IsError);
+        Assert.Equal("Role.NameTaken", byNameOnly.FirstError.Code);
 
-        // So is a group reference to the bare name.
-        var ambiguousRef = await applier.UpdateRealmAsync(slug, new RealmManifest
+        // And a group reference by name is refused before anything is written — with the
+        // two ways out named.
+        var refByName = await applier.UpdateRealmAsync(slug, new RealmManifest
         {
-            Groups = [new RealmManifestGroup { Name = "Anyone", Roles = ["Author"] }],
+            Groups = [new RealmManifestGroup { Name = "Anyone", Roles = ["beta/Author"] }],
         }, ct: ct);
-        Assert.True(ambiguousRef.IsError);
-        Assert.Equal("Manifest.AmbiguousReference", ambiguousRef.FirstError.Code);
+        Assert.True(refByName.IsError);
+        Assert.Equal("Manifest.ReferenceByName", refByName.FirstError.Code);
+
+        // A '#handle' only means something inside the file that declares it.
+        var danglingHandle = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Groups = [new RealmManifestGroup { Name = "Anyone", Roles = ["#nowhere"] }],
+        }, ct: ct);
+        Assert.True(danglingHandle.IsError);
+        Assert.Equal("Manifest.UnknownHandle", danglingHandle.FirstError.Code);
 
         // One app may not own two roles of the same name — that is the invariant the key
         // rests on (the manifest path can't even express it: `beta/Reviewer` matches the
@@ -996,13 +1061,15 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
     }
 
     /// <summary>
-    /// Cross-references are <c>{ Key, Id }</c>: the Id wins when a live entity carries it
-    /// (a stale key after a rename is harmless), the Key is the fallback when the id is
-    /// unknown, and a bare string is always a key. The planner compares references by the
-    /// entity they name, so a rename the reference follows by Id is not a change.
+    /// Cross-references resolve by identity and by nothing else (ADR 0024): a real id
+    /// against this realm, a <c>#handle</c> against this manifest, and a bare name not at
+    /// all. The <c>Key</c> beside an id is documentation — never followed, and REPORTED
+    /// when it has gone stale, because a file that reads wrong is the only thing a silent
+    /// resolution leaves behind. The planner compares references by the entity they name,
+    /// so a rename the reference follows by id is not a change.
     /// </summary>
     [Fact]
-    public async Task References_follow_the_id_and_fall_back_to_the_key()
+    public async Task References_follow_the_id_and_never_the_key()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var factory = host.Factory;
@@ -1021,22 +1088,30 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         {
             Apps = [new RealmManifestApp { Slug = "alpha", DisplayName = "alpha", Permissions = [new RealmManifestPermission("doc", "write")] },
                     new RealmManifestApp { Slug = "beta", DisplayName = "beta", Permissions = [new RealmManifestPermission("doc", "write")] }],
-            Roles = [new RealmManifestRole { Name = "Author", App = "alpha", Permissions = [] },
-                     new RealmManifestRole { Name = "Author", App = "beta", Permissions = [] }],
-            Users = [new RealmManifestUser { Key = "alice", Email = "alice@refs.test", UserName = "alice" }],
-            Groups = [new RealmManifestGroup { Name = "Beta writers", Members = ["alice"], Roles = ["beta/Author"] }],
+            Roles = [new RealmManifestRole { Id = "#alpha-author", Name = "Author", App = "alpha", Permissions = [] },
+                     new RealmManifestRole { Id = "#beta-author", Name = "Author", App = "beta", Permissions = [] }],
+            Users = [new RealmManifestUser { Id = "#alice", Key = "alice", Email = "alice@refs.test", UserName = "alice" }],
+            // Handles: everything here is created by this same file, and two roles share the
+            // name "Author" — only the handle says which one the group means.
+            Groups = [new RealmManifestGroup { Id = "#beta-writers", Name = "Beta writers", Members = ["#alice"], Roles = ["#beta-author"] }],
         }, ct);
         Assert.False(imported.IsError, imported.IsError ? imported.FirstError.Description : string.Empty);
 
-        Guid alphaAuthor = default, betaAuthor = default, alice = default;
+        // The handles come back as real ids — no export needed to learn them.
+        var assigned = imported.Value.AssignedIds;
+        var alphaAuthor = Unpin(assigned["#alpha-author"]);
+        var betaAuthor = Unpin(assigned["#beta-author"]);
+        var alice = Unpin(assigned["#alice"]);
+        var betaWriters = Unpin(assigned["#beta-writers"]);
+
         await InTenantAsync(factory, slug, async sp =>
         {
             var session = sp.GetRequiredService<IDocumentSession>();
             var apps = (await session.Query<App>().Where(a => !a.IsDeleted).ToListAsync(ct)).ToDictionary(a => a.Slug, a => a.Id);
             var authors = await session.Query<PermissionRole>().Where(r => !r.IsDeleted && r.Name == "Author").ToListAsync(ct);
-            alphaAuthor = authors.Single(r => r.AppId == apps["alpha"]).Id;
-            betaAuthor = authors.Single(r => r.AppId == apps["beta"]).Id;
-            alice = (await session.Query<Person>().SingleAsync(p => !p.IsDeleted && p.AccountName == "alice", ct)).Id;
+            Assert.Equal(alphaAuthor, authors.Single(r => r.AppId == apps["alpha"]).Id);
+            Assert.Equal(betaAuthor, authors.Single(r => r.AppId == apps["beta"]).Id);
+            Assert.Equal(alice, (await session.Query<Person>().SingleAsync(p => !p.IsDeleted && p.AccountName == "alice", ct)).Id);
         });
         var exportBefore = await exporter.ExportRealmAsync(slug, ct);
         Assert.False(exportBefore.IsError);
@@ -1049,37 +1124,47 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                     .SingleAsync(g => !g.IsDeleted && g.Name == "Beta writers", ct));
             return group!;
         }
-        async Task ApplyGroupAsync(List<ManifestRef>? roles = null, List<ManifestRef>? members = null)
+        async Task<RealmImportResult> ApplyGroupAsync(
+            List<ManifestRef>? roles = null, List<ManifestRef>? members = null)
         {
             var result = await applier.UpdateRealmAsync(slug, new RealmManifest
             {
-                    Groups = [new RealmManifestGroup { Name = "Beta writers", Roles = roles, Members = members }],
+                Groups = [new RealmManifestGroup { Id = Pin(betaWriters), Name = "Beta writers", Roles = roles, Members = members }],
             }, ct: ct);
             Assert.False(result.IsError, result.IsError ? result.FirstError.Description : string.Empty);
+            return result.Value;
         }
 
-        // A stale key next to a valid id: the id wins.
-        await ApplyGroupAsync(roles: [new ManifestRef { Key = "beta/Renamed long ago", Id = new ShortGuid(betaAuthor).ToString() }]);
+        // A stale key next to a valid id: the id wins — and the staleness is REPORTED, which
+        // is the only way a reader ever learns the file no longer says what it means.
+        var stale = await ApplyGroupAsync(roles: [Ref(betaAuthor, "beta/Renamed long ago")]);
         Assert.Equal([betaAuthor], (await GroupAsync()).RoleIds);
-        // An unknown id next to a valid key: the key is the fallback.
-        await ApplyGroupAsync(roles: [new ManifestRef { Key = "alpha/Author", Id = new ShortGuid(Guid.NewGuid()).ToString() }]);
+        Assert.Contains(stale.SkippedReferences,
+            x => x.Contains("is 'Author', not 'beta/Renamed long ago'"));
+
+        // An unknown id next to a perfectly good key: SKIPPED. The key is never a fallback —
+        // the "alpha/Author" in this realm need not be the one the file was written against.
+        var unknown = await ApplyGroupAsync(roles: [Ref(Guid.NewGuid(), "alpha/Author")]);
+        Assert.Contains(unknown.SkippedReferences, x => x.Contains("no role with that id"));
+        // Nothing resolved, so the stored roles survive rather than being cleared.
+        Assert.Equal([betaAuthor], (await GroupAsync()).RoleIds);
+
+        // Id only, in either spelling.
+        await ApplyGroupAsync(roles: [new ManifestRef { Id = alphaAuthor.ToString() }]);
         Assert.Equal([alphaAuthor], (await GroupAsync()).RoleIds);
-        // Id only.
-        await ApplyGroupAsync(roles: [new ManifestRef { Id = betaAuthor.ToString() }]);
-        Assert.Equal([betaAuthor], (await GroupAsync()).RoleIds);
         // Members follow the same rule.
-        await ApplyGroupAsync(members: [new ManifestRef { Key = "nobody", Id = new ShortGuid(alice).ToString() }]);
+        await ApplyGroupAsync(members: [Ref(alice, "nobody")]);
         Assert.Equal([alice], (await GroupAsync()).MemberIds);
-        // A bare string is ALWAYS a key — even when it happens to be an id. It therefore
-        // resolves to no role and is SKIPPED; and because it was the list's only entry,
-        // nothing resolved at all, so the stored roles survive instead of being cleared.
-        var idAsKey = await applier.UpdateRealmAsync(slug, new RealmManifest
+
+        // A bare string is a NAME, and a name is not resolved against the realm — even when
+        // it happens to spell an id. Refused before anything is written.
+        var byName = await applier.UpdateRealmAsync(slug, new RealmManifest
         {
-            Groups = [new RealmManifestGroup { Name = "Beta writers", Roles = [new ShortGuid(betaAuthor).ToString()] }],
+            Groups = [new RealmManifestGroup { Id = Pin(betaWriters), Name = "Beta writers", Roles = [Pin(betaAuthor)] }],
         }, ct: ct);
-        Assert.False(idAsKey.IsError, idAsKey.IsError ? idAsKey.FirstError.Description : string.Empty);
-        Assert.Contains(idAsKey.Value.SkippedReferences,
-            x => x.Contains(new ShortGuid(betaAuthor).ToString()));
+        Assert.True(byName.IsError);
+        Assert.Equal("Manifest.ReferenceByName", byName.FirstError.Code);
+        await ApplyGroupAsync(roles: [Ref(betaAuthor)]);
         Assert.Equal([betaAuthor], (await GroupAsync()).RoleIds);
 
         // Rename beta's Author live. The export taken BEFORE still references it by id...
@@ -1104,6 +1189,18 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             Assert.Equal("Writer", (await sp.GetRequiredService<IDocumentSession>().LoadAsync<PermissionRole>(betaAuthor, ct))!.Name));
     }
 
+    // Pinned ids: v1 CREATES under them, v2 finds the very same entities again. That is the
+    // stage → prod story in miniature, and under ADR 0024 it is the only way a second
+    // manifest can mean "the same entity" — a matching name would not.
+    private static readonly Guid GlobexAppId = Guid.NewGuid();
+    private static readonly Guid GlobexApiId = Guid.NewGuid();
+    private static readonly Guid GlobexScopeId = Guid.NewGuid();
+    private static readonly Guid GlobexClientId = Guid.NewGuid();
+    private static readonly Guid GlobexAdminRoleId = Guid.NewGuid();
+    private static readonly Guid GlobexViewerRoleId = Guid.NewGuid();
+    private static readonly Guid GlobexUserId = Guid.NewGuid();
+    private static readonly Guid GlobexGroupId = Guid.NewGuid();
+
     private static RealmManifest BuildGlobexManifest(string slug, int version)
     {
         var v2 = version == 2;
@@ -1119,6 +1216,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             new()
             {
                 Name = "globex-admin",
+                Id = Pin(GlobexAdminRoleId),
                 App = "globex-app",
                 Permissions = catalog.ToList(),
             },
@@ -1127,6 +1225,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             roles.Add(new RealmManifestRole
             {
                 Name = "globex-viewer",
+                Id = Pin(GlobexViewerRoleId),
                 App = "globex-app",
                 Permissions = [new RealmManifestPermission("globex", "read")],
             });
@@ -1138,6 +1237,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 new RealmManifestApp
                 {
                     Slug = "globex-app",
+                    Id = Pin(GlobexAppId),
                     DisplayName = v2 ? "Globex App v2" : "Globex App",
                     Permissions = catalog,
                 },
@@ -1147,6 +1247,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 new RealmManifestApi
                 {
                     Name = "globex-api",
+                    Id = Pin(GlobexApiId),
                     DisplayName = v2 ? "Globex API v2" : "Globex API",
                     App = "globex-app",
                     Permissions = [new RealmManifestPermission("globex", "read")],
@@ -1157,6 +1258,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 new RealmManifestScope
                 {
                     Name = "globex.read",
+                    Id = Pin(GlobexScopeId),
                     DisplayName = v2 ? "Globex Read v2" : "Globex Read",
                     App = "globex-app",
                     Resources = ["globex-api"],
@@ -1167,6 +1269,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 new RealmManifestClient
                 {
                     ClientId = "globex-web",
+                    Id = Pin(GlobexClientId),
                     DisplayName = v2 ? "Globex Web v2" : "Globex Web",
                     ClientType = "confidential",
                     RedirectUris = [v2 ? "https://globex.test/cb2" : "https://globex.test/cb1"],
@@ -1181,6 +1284,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 new RealmManifestUser
                 {
                     Key = "alice",
+                    Id = Pin(GlobexUserId),
                     Email = "alice@globex.test",
                     UserName = "alice",
                     Firstname = v2 ? "Alice" : null,
@@ -1192,9 +1296,12 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 new RealmManifestGroup
                 {
                     Name = "Admins",
+                    Id = Pin(GlobexGroupId),
                     Description = v2 ? "Updated admins" : "Admins",
-                    Members = ["alice"],
-                    Roles = v2 ? ["globex-admin", "globex-viewer"] : ["globex-admin"],
+                    Members = [Ref(GlobexUserId, "alice")],
+                    Roles = v2
+                        ? [Ref(GlobexAdminRoleId, "globex-app/globex-admin"), Ref(GlobexViewerRoleId, "globex-app/globex-viewer")]
+                        : [Ref(GlobexAdminRoleId, "globex-app/globex-admin")],
                 },
             ],
         };
@@ -1216,6 +1323,10 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
 
         const string slug = "skipref";
+        Guid readerRole = Guid.NewGuid(), alice = Guid.NewGuid(), readers = Guid.NewGuid();
+        // Ids nothing in this realm carries — the "names something the target does not have"
+        // case, now expressed the only way identity can express it.
+        Guid ghostRole = Guid.NewGuid(), nobody = Guid.NewGuid();
         var seed = new RealmManifest
         {
             Apps =
@@ -1223,10 +1334,11 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 new RealmManifestApp { Slug = "here", DisplayName = "Here",
                     Permissions = [new RealmManifestPermission("doc", "read")] },
             ],
-            Roles = [new RealmManifestRole { Name = "Reader", App = "here",
+            Roles = [new RealmManifestRole { Name = "Reader", Id = Pin(readerRole), App = "here",
                 Permissions = [new RealmManifestPermission("doc", "read")] }],
-            Users = [new RealmManifestUser { Key = "alice", Email = "alice@skipref.test", UserName = "alice" }],
-            Groups = [new RealmManifestGroup { Name = "Readers", Roles = ["here/Reader"], Members = ["alice"] }],
+            Users = [new RealmManifestUser { Key = "alice", Id = Pin(alice), Email = "alice@skipref.test", UserName = "alice" }],
+            Groups = [new RealmManifestGroup { Name = "Readers", Id = Pin(readers),
+                Roles = [Ref(readerRole, "here/Reader")], Members = [Ref(alice, "alice")] }],
         };
         var seeded = await ProvisionRealmAsync(factory, Shell(slug), seed, ct);
         Assert.False(seeded.IsError, seeded.IsError ? seeded.FirstError.Description : string.Empty);
@@ -1246,7 +1358,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             ],
             Roles =
             [
-                new RealmManifestRole { Name = "Reader", App = "here",
+                new RealmManifestRole { Name = "Reader", Id = Pin(readerRole), App = "here",
                     Permissions =
                     [
                         new RealmManifestPermission("doc", "read"),      // in the catalog
@@ -1255,8 +1367,9 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             ],
             Groups =
             [
-                new RealmManifestGroup { Name = "Readers",
-                    Roles = ["here/Reader", "here/Ghost"], Members = ["alice", "nobody"] },
+                new RealmManifestGroup { Name = "Readers", Id = Pin(readers),
+                    Roles = [Ref(readerRole, "here/Reader"), Ref(ghostRole, "here/Ghost")],
+                    Members = [Ref(alice, "alice"), Ref(nobody, "nobody")] },
             ],
         };
 
@@ -1305,24 +1418,29 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
 
         const string slug = "replacelist";
-        RealmManifestRole Role(string name) => new()
+        Guid roleA = Guid.NewGuid(), roleB = Guid.NewGuid(), roleD = Guid.NewGuid(), groupG = Guid.NewGuid();
+        // C is an id this realm does not have — the reference that will be skipped.
+        var roleC = Guid.NewGuid();
+        RealmManifestRole Role(string name, Guid id) => new()
         {
-            Name = name, App = "rlist",
+            Name = name, Id = Pin(id), App = "rlist",
             Permissions = [new RealmManifestPermission("doc", "read")],
         };
         var seed = new RealmManifest
         {
             Apps = [new RealmManifestApp { Slug = "rlist", DisplayName = "RList",
                 Permissions = [new RealmManifestPermission("doc", "read")] }],
-            Roles = [Role("A"), Role("B"), Role("D")],
-            Groups = [new RealmManifestGroup { Name = "G", Roles = ["rlist/A", "rlist/B", "rlist/D"] }],
+            Roles = [Role("A", roleA), Role("B", roleB), Role("D", roleD)],
+            Groups = [new RealmManifestGroup { Name = "G", Id = Pin(groupG),
+                Roles = [Ref(roleA, "rlist/A"), Ref(roleB, "rlist/B"), Ref(roleD, "rlist/D")] }],
         };
         var seeded = await ProvisionRealmAsync(factory, Shell(slug), seed, ct);
         Assert.False(seeded.IsError, seeded.IsError ? seeded.FirstError.Description : string.Empty);
 
         var applied = await applier.UpdateRealmAsync(slug, new RealmManifest
         {
-            Groups = [new RealmManifestGroup { Name = "G", Roles = ["rlist/A", "rlist/B", "rlist/C"] }],
+            Groups = [new RealmManifestGroup { Name = "G", Id = Pin(groupG),
+                Roles = [Ref(roleA, "rlist/A"), Ref(roleB, "rlist/B"), Ref(roleC, "rlist/C")] }],
         }, ct: ct);
         Assert.False(applied.IsError, applied.IsError ? applied.FirstError.Description : string.Empty);
         Assert.Contains(applied.Value.SkippedReferences, x => x.Contains("rlist/C"));
@@ -1392,6 +1510,532 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             var session = sp.GetRequiredService<IDocumentSession>();
             var role = await session.LoadAsync<PermissionRole>(roleId, ct);
             Assert.Equal(2, role!.PermissionIds.Count);   // NOT stripped
+        });
+    }
+
+    /// <summary>
+    /// A `#handle` proves nothing about what it names — unlike a real id, which proves its
+    /// type by loading the document. Three ways that can go wrong, all of which used to
+    /// pass validation and then quietly produce a group with the wrong contents:
+    /// the handle names an entity of another KIND, it is declared in a section applied
+    /// LATER, or its declaring entry was itself SKIPPED at apply time.
+    /// </summary>
+    [Fact]
+    public async Task A_handle_that_cannot_honour_its_promise_is_refused_or_reported()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "handles";
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest(), ct)).IsError);
+
+        // ── Wrong KIND: a group handle used where a role is expected. Resolving it would
+        //    have written a GROUP id into RoleIds, which nothing downstream validates. ──
+        var wrongKind = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Groups =
+            [
+                new RealmManifestGroup { Name = "Platform", Id = "#platform" },
+                new RealmManifestGroup { Name = "Ops", Roles = ["#platform"] },
+            ],
+        }, ct: ct);
+        Assert.True(wrongKind.IsError);
+        Assert.Equal("Manifest.HandleKindMismatch", wrongKind.FirstError.Code);
+
+        // ── Wrong ORDER: positions apply after groups, so a group referencing a position
+        //    handle would resolve to nothing — declared, but not yet assigned. ──────────
+        var tooLate = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Users = [new RealmManifestUser { Id = "#late", Email = "late@handles.test", UserName = "late" }],
+            Positions = [new RealmManifestPosition { AccountName = "kiosk", Id = "#kiosk" }],
+            Groups = [new RealmManifestGroup { Name = "Ops2", Members = ["#late", "#kiosk"] }],
+        }, ct: ct);
+        Assert.True(tooLate.IsError);
+        Assert.Contains(tooLate.Errors, e =>
+            e.Code is "Manifest.HandleKindMismatch" or "Manifest.HandleAppliedTooLate");
+
+        // ── Declaring entry SKIPPED: the role's app is not in this realm, so the role is
+        //    skipped and its handle never gets an id. The group must SAY the reference
+        //    dropped — a group that silently comes out with fewer roles is the exact
+        //    failure mode ADR 0024 exists to prevent. ─────────────────────────────────
+        var skipped = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Roles = [new RealmManifestRole { Id = "#orphan", Name = "Orphan", App = "not-here" }],
+            Groups = [new RealmManifestGroup { Name = "Ops3", Roles = ["#orphan"] }],
+        }, ct: ct);
+        Assert.False(skipped.IsError, skipped.IsError ? skipped.FirstError.Description : string.Empty);
+        Assert.Contains(skipped.Value.SkippedReferences, x => x.Contains("#orphan"));
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var ops3 = await session.Query<Group>().SingleAsync(g => !g.IsDeleted && g.Name == "Ops3", ct);
+            Assert.Empty(ops3.RoleIds);
+            Assert.False(await session.Query<Group>().AnyAsync(g => !g.IsDeleted && g.Name == "Ops", ct),
+                "the wrong-kind manifest must not have been applied at all");
+        });
+    }
+
+    /// <summary>
+    /// A group's members may be users, NESTED GROUPS or service accounts — the domain really
+    /// expands them (permissions via ApplicationScopeResolver, mail via Group.GetEmailsAsync).
+    /// The manifest used to model members as users only, so the exporter filtered the others
+    /// out and, Members being a replace-list, re-applying an untouched export DELETED them.
+    /// That is also what forced such groups onto a live save in the admin UI, silently
+    /// bypassing the draft.
+    /// </summary>
+    [Fact]
+    public async Task A_nested_group_member_survives_an_export_and_re_apply()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+
+        const string slug = "nested";
+        Guid inner = Guid.NewGuid(), outer = Guid.NewGuid(), alice = Guid.NewGuid();
+        var seeded = await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest
+        {
+            Users = [new RealmManifestUser { Id = Pin(alice), Email = "alice@nested.test", UserName = "alice" }],
+            Groups =
+            [
+                new RealmManifestGroup { Name = "Inner", Id = Pin(inner), Members = [Ref(alice, "alice")] },
+                // A group whose member is another GROUP — expressible now, and it must
+                // still be there after a round trip.
+                new RealmManifestGroup { Name = "Outer", Id = Pin(outer), Members = [Ref(inner, "Inner")] },
+            ],
+        }, ct);
+        Assert.False(seeded.IsError, seeded.IsError ? seeded.FirstError.Description : string.Empty);
+
+        var exported = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exported.IsError, exported.IsError ? exported.FirstError.Description : string.Empty);
+        // The export carries the nested member rather than quietly dropping it.
+        var outerExport = exported.Value.Groups.Single(g => g.Name == "Outer");
+        Assert.Equal([inner], outerExport.Members!.Select(m => m.ParsedId));
+
+        var reapplied = await applier.UpdateRealmAsync(slug, exported.Value, ct: ct);
+        Assert.False(reapplied.IsError, reapplied.IsError ? reapplied.FirstError.Description : string.Empty);
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            Assert.Equal([inner], (await session.LoadAsync<Group>(outer, ct))!.MemberIds);
+        });
+    }
+
+    /// <summary>
+    /// The group cycle guard, both directions. It used to ask "is this member already one
+    /// of my descendants?", which answered the wrong question twice over: it refused a
+    /// member the group ALREADY had (so no group holding a nested group could be saved a
+    /// second time — the failure that hid behind the admin UI's live-save carve-out), and
+    /// it let through the edge that actually closes a loop, because a not-yet-member is by
+    /// definition not a descendant.
+    /// </summary>
+    [Fact]
+    public async Task The_group_cycle_guard_allows_a_repeat_and_refuses_a_real_loop()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+
+        const string slug = "cycles";
+        Guid inner = Guid.NewGuid(), outer = Guid.NewGuid();
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest
+        {
+            Groups =
+            [
+                new RealmManifestGroup { Name = "Inner", Id = Pin(inner) },
+                new RealmManifestGroup { Name = "Outer", Id = Pin(outer), Members = [Ref(inner, "Inner")] },
+            ],
+        }, ct)).IsError);
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var handler = new UpdateGroupHandler(session,
+                sp.GetRequiredService<IMembershipEvaluator>(),
+                sp.GetRequiredService<IPermissionService>(),
+                sp.GetRequiredService<IAutoMembershipRecalculator>());
+
+            // Re-stating the existing member is not a cycle — it changes nothing.
+            var repeat = await handler.Handle(new UpdateGroupCommand(
+                outer, "Outer", null, [inner], [], CallerIsRealmAdmin: true), ct);
+            Assert.False(repeat.IsError, repeat.IsError ? repeat.FirstError.Description : string.Empty);
+
+            // Closing the loop the other way round IS a cycle: Inner already reaches Outer.
+            var loop = await handler.Handle(new UpdateGroupCommand(
+                inner, "Inner", null, [outer], [], CallerIsRealmAdmin: true), ct);
+            Assert.True(loop.IsError, "adding the parent as a member must be refused");
+            Assert.Equal("Group.Cycle", loop.FirstError.Code);
+        });
+    }
+
+    /// <summary>
+    /// A user's active state is declarative, exactly like a service account's or a
+    /// position's. Deactivating is a kill switch, but the revocation cascade is DEFERRED
+    /// until the apply commits — which is why it can live in a manifest at all, and why
+    /// toggling it no longer has to bypass the draft.
+    /// </summary>
+    [Fact]
+    public async Task User_active_state_applies_through_the_manifest_and_is_idempotent()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "useractive";
+        var bob = Guid.NewGuid();
+        RealmManifest Manifest(bool? active) => new()
+        {
+            Users =
+            [
+                new RealmManifestUser
+                {
+                    Id = Pin(bob), Email = "bob@useractive.test", UserName = "bob", IsActive = active,
+                },
+            ],
+        };
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), Manifest(null), ct)).IsError);
+
+        async Task<bool> ActiveAsync()
+        {
+            var active = false;
+            await InTenantAsync(factory, slug, async sp =>
+                active = (await sp.GetRequiredService<IDocumentSession>()
+                    .LoadAsync<ApplicationUser>(bob, ct))!.IsActive);
+            return active;
+        }
+        Assert.True(await ActiveAsync());                                   // default on create
+
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(false), ct: ct)).IsError);
+        Assert.False(await ActiveAsync());
+        // Re-applying the same manifest is a no-op, not a second kill switch.
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(false), ct: ct)).IsError);
+        Assert.False(await ActiveAsync());
+        // Omitted = unchanged, the same as every other patch field.
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(null), ct: ct)).IsError);
+        Assert.False(await ActiveAsync());
+
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(true), ct: ct)).IsError);
+        Assert.True(await ActiveAsync());
+    }
+
+    /// <summary>
+    /// The per-user 2FA policy (grace override, exempt flag) and the EmailConfirmed
+    /// override are configuration, and they were the last user fields the admin modal
+    /// still wrote live with a draft open. They apply through the manifest with the usual
+    /// patch semantics: absent = unchanged, an explicit null override = back to the realm
+    /// default (what the admin endpoint spells as -1).
+    /// </summary>
+    [Fact]
+    public async Task User_two_factor_policy_and_email_confirmed_apply_through_the_manifest()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "userpolicy";
+        var bob = Guid.NewGuid();
+        RealmManifest Manifest(Optional<int?> grace, bool? exempt, bool? confirmed) => new()
+        {
+            Users =
+            [
+                new RealmManifestUser
+                {
+                    Id = Pin(bob), Email = "bob@userpolicy.test", UserName = "bob",
+                    GracePeriodDaysOverride = grace, TwoFactorExempt = exempt, EmailConfirmed = confirmed,
+                },
+            ],
+        };
+
+        async Task<(int? Grace, bool Exempt, bool Confirmed)> ReadAsync()
+        {
+            (int?, bool, bool) state = default;
+            await InTenantAsync(factory, slug, async sp =>
+            {
+                var session = sp.GetRequiredService<IDocumentSession>();
+                var security = (await session.LoadAsync<UserSecurityData>(bob, ct))!;
+                var appUser = (await session.LoadAsync<ApplicationUser>(bob, ct))!;
+                state = (security.GracePeriodDaysOverride, security.TwoFactorExempt, appUser.EmailConfirmed);
+            });
+            return state;
+        }
+
+        // Create carries the policy in — the same CreateUserCommand fields the endpoint uses.
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), Manifest(90, true, true), ct)).IsError);
+        Assert.Equal((90, true, true), await ReadAsync());
+
+        // Absent = unchanged, all three.
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(default, null, null), ct: ct)).IsError);
+        Assert.Equal((90, true, true), await ReadAsync());
+
+        // Present = set. 0 days is "enforce at the next login", not "no override".
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(0, false, false), ct: ct)).IsError);
+        Assert.Equal((0, false, false), await ReadAsync());
+
+        // An explicit null override clears it back to the realm default; the flags stay.
+        Assert.False((await applier.UpdateRealmAsync(slug, Manifest(new Optional<int?>(null), null, null), ct: ct)).IsError);
+        Assert.Equal((null, false, false), await ReadAsync());
+
+        // An export carries the policy, so a round trip is stable.
+        var export = await factory.Services.GetRequiredService<RealmManifestExporter>().ExportRealmAsync(slug, ct);
+        var exported = Assert.Single(export.Value.Users, u => u.Email == "bob@userpolicy.test");
+        Assert.False(exported.GracePeriodDaysOverride.HasValue);   // no override → absent, like every cleared optional
+        Assert.False(exported.TwoFactorExempt);
+        Assert.False(exported.EmailConfirmed);
+    }
+
+    /// <summary>
+    /// A permission catalog entry has an identity of its own, because roles and resource
+    /// servers hold it as a foreign key. Without one, renaming <c>doc:read</c> read as
+    /// "the old entry is gone, a new one appeared" — which trips the catalog-delete guard,
+    /// and is why a catalog rename used to force an immediate live save instead of going
+    /// through the draft. With the Id carried, the rename is a rename and the grants follow.
+    /// </summary>
+    [Fact]
+    public async Task A_permission_catalog_entry_can_be_renamed_and_roles_keep_their_grant()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+
+        const string slug = "catrename";
+        var roleId = Guid.NewGuid();
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest
+        {
+            Apps = [new RealmManifestApp { Slug = "docs", DisplayName = "Docs",
+                Permissions = [new RealmManifestPermission("doc", "read")] }],
+            Roles = [new RealmManifestRole { Id = Pin(roleId), Name = "Reader", App = "docs",
+                Permissions = [new RealmManifestPermission("doc", "read")] }],
+        }, ct)).IsError);
+
+        Guid permId = default;
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var app = await session.Query<App>().SingleAsync(a => !a.IsDeleted && a.Slug == "docs", ct);
+            permId = Assert.Single(app.Permissions).Id;
+            Assert.Equal([permId], (await session.LoadAsync<PermissionRole>(roleId, ct))!.PermissionIds);
+        });
+
+        // Rename through the manifest, carrying the entry's Id — the export already does.
+        var exported = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exported.IsError, exported.IsError ? exported.FirstError.Description : string.Empty);
+        var exportedApp = exported.Value.Apps.Single(a => a.Slug == "docs");
+        Assert.Equal(Pin(permId), Assert.Single(exportedApp.Permissions!).Id);
+
+        var renamed = await applier.UpdateRealmAsync(slug, exported.Value with
+        {
+            Apps = [exportedApp with
+            {
+                Permissions = [new RealmManifestPermission("doc", "view", Id: Pin(permId))],
+            }],
+            // The role's permission list follows the new spelling; the id is what binds them.
+            Roles = [exported.Value.Roles.Single() with
+            {
+                Permissions = [new RealmManifestPermission("doc", "view")],
+            }],
+        }, ct: ct);
+        Assert.False(renamed.IsError, renamed.IsError ? renamed.FirstError.Description : string.Empty);
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var app = await session.Query<App>().SingleAsync(a => !a.IsDeleted && a.Slug == "docs", ct);
+            var perm = Assert.Single(app.Permissions);
+            Assert.Equal(permId, perm.Id);                       // same entry, renamed
+            Assert.Equal(("doc", "view"), (perm.Resource, perm.Action));
+            // The grant survived because it never pointed at the string.
+            Assert.Equal([permId], (await session.LoadAsync<PermissionRole>(roleId, ct))!.PermissionIds);
+        });
+    }
+
+    /// <summary>
+    /// A service account's machine credentials travel as ordinary manifest entries — what
+    /// does NOT travel is the secret, which is minted fresh on the target and handed back
+    /// once. Before this, an export carried the account hull only, so a transferred service
+    /// account arrived unable to authenticate and nothing said so.
+    ///
+    /// <para>The Credentials list is the desired set for its account, like Members on a
+    /// group: a credential the account has but the list does not is deleted at apply — no
+    /// prune needed — and the plan shows that as a red delete entry beforehand, which also
+    /// makes a pruning apply ask first. An account the file never mentions keeps everything
+    /// it has, and an entry without a Credentials list leaves them alone.</para>
+    /// </summary>
+    [Fact]
+    public async Task Service_account_credentials_travel_without_their_secret_and_the_list_is_the_desired_set()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+        var planner = factory.Services.GetRequiredService<RealmManifestPlanner>();
+
+        const string slug = "sacreds";
+        Guid billing = Guid.NewGuid(), other = Guid.NewGuid();
+        var seeded = await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest
+        {
+            ServiceAccounts =
+            [
+                new RealmManifestServiceAccount
+                {
+                    AccountName = "billing-sync", Id = Pin(billing),
+                    Credentials =
+                    [
+                        new RealmManifestServiceAccountCredential { ClientId = "billing-sync.primary" },
+                        new RealmManifestServiceAccountCredential { ClientId = "billing-sync.spare" },
+                    ],
+                },
+                new RealmManifestServiceAccount
+                {
+                    AccountName = "untouched", Id = Pin(other),
+                    Credentials = [new RealmManifestServiceAccountCredential { ClientId = "untouched.only" }],
+                },
+            ],
+        }, ct);
+        Assert.False(seeded.IsError, seeded.IsError ? seeded.FirstError.Description : string.Empty);
+
+        // The secret comes back once, keyed by client id — exactly like an ordinary
+        // confidential client's, and the only time it is ever readable.
+        Assert.False(string.IsNullOrWhiteSpace(seeded.Value.ClientSecrets["billing-sync.primary"]));
+        Assert.False(string.IsNullOrWhiteSpace(seeded.Value.ClientSecrets["billing-sync.spare"]));
+
+        // The export carries the credentials under their account — and no secret.
+        var exported = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exported.IsError, exported.IsError ? exported.FirstError.Description : string.Empty);
+        var exportedAccount = exported.Value.ServiceAccounts.Single(s => s.AccountName == "billing-sync");
+        Assert.Equal(
+            ["billing-sync.primary", "billing-sync.spare"],
+            exportedAccount.Credentials!.Select(c => c.ClientId).OrderBy(x => x, StringComparer.Ordinal));
+        // They are NOT ordinary clients — the Clients section stays clean.
+        Assert.DoesNotContain(exported.Value.Clients, c => c.ClientId.StartsWith("billing-sync."));
+
+        async Task<HashSet<string>> LiveCredentialIdsAsync()
+        {
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            await InTenantAsync(factory, slug, async sp =>
+            {
+                var live = await sp.GetRequiredService<IDocumentSession>().Query<OAuthApplicationState>()
+                    .Where(c => !c.IsDeleted && c.LinkedServiceAccountId != null).ToListAsync(ct);
+                foreach (var c in live) ids.Add(c.ClientId);
+            });
+            return ids;
+        }
+
+        // ── The spare dropped from the list, the OTHER account left out of the file
+        //    entirely, NO prune. The plan shows the spare as a deletion in the clients
+        //    section; the apply deletes it; the unmentioned account keeps everything. ──
+        var withoutSpare = exported.Value with
+        {
+            ServiceAccounts =
+            [
+                exportedAccount with
+                {
+                    Credentials = [exportedAccount.Credentials!.Single(c => c.ClientId == "billing-sync.primary")],
+                },
+            ],
+        };
+        var plan = await planner.PlanAsync(slug, withoutSpare, prune: false, ct: ct);
+        Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
+        var clientEntries = plan.Value.Sections.Single(s => s.Name == "clients").Entries;
+        Assert.Contains(clientEntries, e => e.Key == "billing-sync.spare" && e.Action == "delete");
+        Assert.DoesNotContain(clientEntries, e => e.Key == "billing-sync.primary" && e.Action == "delete");
+
+        var applied = await applier.UpdateRealmAsync(slug, withoutSpare, ct: ct);
+        Assert.False(applied.IsError, applied.IsError ? applied.FirstError.Description : string.Empty);
+        var ids = await LiveCredentialIdsAsync();
+        Assert.Contains("billing-sync.primary", ids);
+        Assert.DoesNotContain("billing-sync.spare", ids);   // dropped from the desired set → deleted
+        Assert.Contains("untouched.only", ids);             // account never mentioned → untouched
+
+        // ── An entry WITHOUT a Credentials list leaves them alone (absent = unchanged). ──
+        Assert.False((await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            ServiceAccounts = [new RealmManifestServiceAccount { AccountName = "billing-sync", Id = Pin(billing), Purpose = "renamed purpose" }],
+        }, ct: ct)).IsError);
+        Assert.Contains("billing-sync.primary", await LiveCredentialIdsAsync());
+    }
+
+    /// <summary>
+    /// Scheduled-job configuration and the inbox retention policy are realm configuration
+    /// with no entity identity: a job is configured by its compiled key (never created or
+    /// pruned; an unknown key is skipped and reported), the inbox policy is one singleton
+    /// whose sections replace when present (null inside a section is the value "never").
+    /// Both used to be admin-UI-only live writes.
+    /// </summary>
+    [Fact]
+    public async Task Job_configuration_and_inbox_retention_apply_through_the_manifest()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+
+        const string slug = "jobsinbox";
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest(), ct)).IsError);
+
+        // Any realm job of this deployment will do — the manifest configures, never creates.
+        var key = string.Empty;
+        await InTenantAsync(factory, slug, async sp =>
+            key = (await sp.GetRequiredService<IJobsService>().GetAllAsync(ct)).First(j => j.Scope == "Realm").Key);
+
+        const string cron = "0 0 3 * * ?";
+        var applied = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Jobs =
+            [
+                new RealmManifestJob { Key = key, Enabled = false, CronOverride = cron },
+                new RealmManifestJob { Key = "no-such-job", Enabled = false },
+            ],
+            InboxSettings = new RealmManifestInboxSettings
+            {
+                ChangeRequestFeedback = new RealmManifestInboxFeedbackRetention { MaxUnreadDays = 7, AutoExpireDaysAfterRead = null },
+            },
+        }, ct: ct);
+        Assert.False(applied.IsError, applied.IsError ? applied.FirstError.Description : string.Empty);
+        Assert.Contains(applied.Value.SkippedReferences, s => s.Contains("no-such-job"));
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var job = (await sp.GetRequiredService<IJobsService>().GetAsync(key, ct))!;
+            Assert.False(job.Enabled);
+            Assert.True(job.HasOverride);
+            Assert.Equal(cron, job.EffectiveCron);
+
+            var inbox = (await sp.GetRequiredService<IDocumentSession>()
+                .LoadAsync<InboxRetentionSettings>(InboxRetentionSettings.SingletonId, ct))!;
+            Assert.Equal(7, inbox.ChangeRequestFeedback.MaxUnreadDays);
+            Assert.Null(inbox.ChangeRequestFeedback.AutoExpireDaysAfterRead);      // null = never, a VALUE
+            Assert.Equal(30, inbox.AdminChangeRequest.HardDeleteDaysAfterDismissed); // absent section = untouched default
+        });
+
+        // The export carries both, and re-applying it changes nothing.
+        var exported = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exported.IsError);
+        var exportedJob = Assert.Single(exported.Value.Jobs, j => j.Key == key);
+        Assert.False(exportedJob.Enabled);
+        Assert.Equal(cron, exportedJob.CronOverride.Value);
+        Assert.Equal(7, exported.Value.InboxSettings!.ChangeRequestFeedback!.MaxUnreadDays);
+        Assert.False((await applier.UpdateRealmAsync(slug, exported.Value, ct: ct)).IsError);
+
+        // An explicit null override clears it back to the job's default cron.
+        Assert.False((await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Jobs = [new RealmManifestJob { Key = key, Enabled = true, CronOverride = new Optional<string?>(null) }],
+        }, ct: ct)).IsError);
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var job = (await sp.GetRequiredService<IJobsService>().GetAsync(key, ct))!;
+            Assert.True(job.Enabled);
+            Assert.False(job.HasOverride);
         });
     }
 

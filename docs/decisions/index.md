@@ -31,3 +31,4 @@ Records are numbered once and never renumbered or reused. A superseded record ke
 | [0021](./0021-back-channel-logout) | Back-channel logout | Accepted |
 | [0022](./0022-two-instance-operation) | Two-instance operation | Accepted |
 | [0023](./0023-public-origin-is-declared) | The public origin is declared, not derived | Accepted |
+| [0024](./0024-a-manifest-identifies-by-id-never-by-name) | A manifest identifies by id, never by name | Accepted |

@@ -81,19 +81,18 @@ public static class RealmManifestSchema
                 new JsonObject
                 {
                     ["type"] = "string",
-                    ["description"] = "A key (role: '<app slug>/<name>' or its explicit Key; user: username or email). A bare string is never an id.",
+                    ["pattern"] = "^#.+",
+                    ["description"] = "A '#handle' - a document-local name for an entity THIS manifest creates (e.g. '#alice'). A bare name is NOT accepted: identity is the Id (ADR 0024), because the entity of that name in the target realm need not be the one this file means.",
                 },
                 new JsonObject
                 {
                     ["type"] = "object",
                     ["properties"] = new JsonObject
                     {
-                        ["Key"] = new JsonObject { ["type"] = "string", ["description"] = "Readable key - the fallback when no entity carries the Id." },
-                        ["Id"] = new JsonObject { ["type"] = "string", ["description"] = "Entity id (ShortGuid or Guid) - wins when it resolves; rename-proof." },
+                        ["Key"] = new JsonObject { ["type"] = "string", ["description"] = "Readable name, shown for humans. NEVER followed - the apply reports it when it disagrees with the entity the Id names." },
+                        ["Id"] = new JsonObject { ["type"] = "string", ["description"] = "The entity's id (ShortGuid or Guid), resolved against the target realm - or a '#handle' declared in this manifest. This is what the apply follows." },
                     },
-                    ["anyOf"] = new JsonArray(
-                        new JsonObject { ["required"] = new JsonArray("Key") },
-                        new JsonObject { ["required"] = new JsonArray("Id") }),
+                    ["required"] = new JsonArray("Id"),
                     ["additionalProperties"] = false,
                 }),
         };
@@ -146,15 +145,15 @@ public static class RealmManifestSchema
               "Apps": ["acme"] }
           ],
           "Roles": [
-            { "Key": "acme-admin", "Name": "acme-admin", "App": "acme",
+            { "Id": "#acme-admin", "Name": "acme-admin", "App": "acme",
               "Permissions": [ { "Resource": "invoice", "Action": "read" },
                                { "Resource": "invoice", "Action": "write" } ] }
           ],
           "Users": [
-            { "Key": "alice", "Email": "alice@acme.test", "UserName": "alice", "Password": "Passw0rd!23" }
+            { "Id": "#alice", "Email": "alice@acme.test", "UserName": "alice", "Password": "Passw0rd!23" }
           ],
           "Groups": [
-            { "Name": "Acme Admins", "Members": ["alice"], "Roles": ["acme-admin"], "BoundTo": ["acme"] }
+            { "Name": "Acme Admins", "Members": ["#alice"], "Roles": ["#acme-admin"], "BoundTo": ["acme"] }
           ],
           "LoginProviders": [
             { "Slug": "corp-idp", "Flavor": "GenericOidc", "DisplayName": "Corp IdP",
@@ -162,7 +161,7 @@ public static class RealmManifestSchema
               "FlavorData": { "MetadataUri": "https://idp.example.com/.well-known/openid-configuration" } }
           ],
           "Positions": [
-            { "AccountName": "gate.porter", "Grants": ["alice"],
+            { "AccountName": "gate.porter", "Grants": ["#alice"],
               "TerminalPolicy": { "Enabled": true,
                                   "AllowedActivationProofs": ["personal-passkey"],
                                   "AllowedDeviceBindings": ["dpop"],

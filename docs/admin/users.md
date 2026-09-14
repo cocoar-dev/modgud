@@ -69,7 +69,7 @@ Overview of the user's 2FA status:
 
 - **2FA status** — a badge showing which methods are active, whether the user is exempt, or that 2FA isn't configured yet.
 - **Grace period** (when 2FA is required but not yet set up) — days remaining before enforcement kicks in, with **Reset grace** and **Force immediate enforcement** actions.
-- **Individual policy override** — a per-user grace-period-days override, and a checkbox to exempt this user from the 2FA requirement entirely (for service-style accounts or migrated legacy users). Use sparingly; changes here are audited.
+- **Individual policy override** — a per-user grace-period-days override, and a checkbox to exempt this user from the 2FA requirement entirely (for service-style accounts or migrated legacy users). Use sparingly; changes here are audited. The policy is configuration: for a realm admin it saves onto the [draft](./configuration-drafts) with the rest of the form (and travels in a manifest as `GracePeriodDaysOverride` / `TwoFactorExempt`), while the two grace-clock buttons above act at once.
 
 Actions that live elsewhere but affect the same user: **Set password** and **Send Magic Link** are right-click actions on the user list (see [User list](#user-list) above), not fields inside this tab.
 
@@ -79,7 +79,7 @@ Right-click a user on the list → **Show IdP Claims** opens a standalone panel 
 
 ## Sessions
 
-Modgud tracks sign-in sessions per user (device, browser, IP, last activity), but today there is no admin-UI surface to list or end another user's sessions — that view only exists for end users managing their own sessions, under **Profile → Sessions** (see [Profile](../end-user/profile#sessions)). If you need to force a user out of all their sessions as an admin today, deactivating the account (see below) revokes live access immediately.
+Modgud tracks sign-in sessions per user (device, browser, IP, last activity), but today there is no admin-UI surface to list or end another user's sessions — that view only exists for end users managing their own sessions, under **Profile → Sessions** (see [Profile](../end-user/profile#sessions)). If you need to force a user out of all their sessions as an admin today, deactivating the account (see below) revokes live access — as soon as the change lands, which for a realm admin is when the [draft](./configuration-drafts) is applied.
 
 ## Failed sign-ins
 

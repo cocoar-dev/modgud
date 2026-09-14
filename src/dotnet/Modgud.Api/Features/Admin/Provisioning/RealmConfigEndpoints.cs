@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Modgud.Api.Features.Management;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Infrastructure.Persistence.Tenancy;
+using Modgud.Infrastructure.Realms;
 using Modgud.Permissions;
 
 namespace Modgud.Api.Features.Admin.Provisioning;
@@ -23,8 +24,9 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// config + entities, but CANNOT create or delete realms (those stay control-plane-only) and
 /// cannot touch any other realm — a manifest names no realm at all, so the target is always
 /// the host-routed one and there is nothing to aim elsewhere. Prune is allowed,
-/// but only within the realm and with the same lockout/infra protections as the control-plane
-/// path (system app, standard scopes, SA clients, and every realm:admin path are never pruned).</para>
+/// but only within the realm, behind the same two-step confirmation and with the same
+/// lockout/infra protections as the control-plane path (system app, standard scopes, the
+/// credentials of undeclared service accounts, and every realm:admin path are never pruned).</para>
 /// </summary>
 public static class RealmConfigEndpoints
 {
@@ -74,12 +76,39 @@ public static class RealmConfigEndpoints
         // sync (deletes entities absent from the manifest) — bounded to this realm, protections
         // as on the control-plane path. Never drops the realm database.
         group.MapPost("apply", async (
-            RealmManifest manifest, RealmManifestApplier applier, CancellationToken ct, bool prune = false) =>
+            RealmManifest manifest, RealmManifestApplier applier,
+            ManifestApplyConfirmation confirmation, RealmDraftService drafts,
+            HttpContext http, IRealmProvisioningService realms,
+            CancellationToken ct, bool prune = false, string? confirm = null) =>
         {
             // The target is the caller's own realm, always — a manifest carries no realm
             // identity, so there is nothing here that could aim at a different one. That
             // IS the data-plane safety boundary: cross-realm writes and realm lifecycle
             // are only reachable through the control-plane routes.
+            //
+            // Same two-step gate as the control-plane route: a pruning apply shows what it
+            // would delete before it deletes it (see ManifestApplyConfirmation).
+            var gate = await confirmation.CheckAsync(TenantContext.Current, manifest, prune, confirm, ct);
+            if (gate.IsError) return ToErrorResult(gate.Errors);
+            if (gate.Value is { } required)
+            {
+                var parked = await drafts.ParkForReviewAsync(
+                    manifest, TenantContext.Current, UserName(http), RequireUserId(http), UserName(http), ct);
+                if (parked.IsError) return ToErrorResult(parked.Errors);
+                return Results.Json(new
+                {
+                    Error = "Manifest.ConfirmationRequired",
+                    Message = $"This apply would DELETE {required.Deletions} entit(ies) from this realm. "
+                              + "Repeat the call with ?confirm=<ConfirmationToken> to go ahead, or send "
+                              + "ReviewUrl to someone who should decide — it opens this exact change as a draft.",
+                    required.ConfirmationToken,
+                    DraftId = parked.Value.Id,
+                    ReviewUrl = ManifestApplyConfirmation.ReviewUrl(
+                        await realms.GetRealmBySlugAsync(TenantContext.Current, ct), parked.Value.Id),
+                    required.Plan,
+                }, statusCode: StatusCodes.Status409Conflict);
+            }
+
             var result = await applier.UpdateRealmAsync(
                 TenantContext.Current, manifest, prune, deletions: null, ct);
             return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);

@@ -28,6 +28,8 @@ export interface DraftManifest extends ManifestEntity {
   Groups?: ManifestEntity[]
   LoginProviders?: ManifestEntity[]
   Positions?: ManifestEntity[]
+  Jobs?: ManifestEntity[]
+  InboxSettings?: ManifestEntity | null
 }
 
 export interface DraftSummary {
@@ -108,18 +110,28 @@ export function roleManifestKey(appSlug: string | null | undefined, name: string
 
 /**
  * A manifest cross-reference (group → role / member, position → grant), mirroring the
- * backend's `ManifestRef`: a bare string is ALWAYS a key, never an id; the object form
- * carries the entity `Id` (which wins — rename-proof) plus the readable `Key`.
+ * backend's `ManifestRef`. Identity is the `Id` (ADR 0024): a real id names an entity in
+ * the realm, a `#handle` names one the same manifest creates, and a bare name resolves to
+ * nothing at all. The object form carries the `Id` plus a readable `Key` — a verified
+ * hint the apply never follows.
  */
 export type ManifestRef = string | { Key?: string; Id?: string }
 
+/** True for a document-local handle (`"#alice"`) — a name for something inside the
+ * manifest, never an entity in this realm. */
+export function isHandle(value: string | null | undefined): boolean {
+  return typeof value === 'string' && value.length > 1 && value.startsWith('#')
+}
+
 export function refKey(ref: ManifestRef): string | null {
-  if (typeof ref === 'string') return ref || null
+  // A leading '#' is reserved: the string is a handle (an Id), not a key.
+  if (typeof ref === 'string') return ref && !isHandle(ref) ? ref : null
   return typeof ref.Key === 'string' && ref.Key ? ref.Key : null
 }
 
 export function refId(ref: ManifestRef): string | null {
-  return typeof ref === 'object' && typeof ref.Id === 'string' && ref.Id ? ref.Id : null
+  if (typeof ref === 'string') return isHandle(ref) ? ref : null
+  return typeof ref.Id === 'string' && ref.Id ? ref.Id : null
 }
 
 export function refList(value: unknown): ManifestRef[] {
@@ -134,9 +146,18 @@ export function makeRef(key: string, id: string): ManifestRef {
   return { Key: key, Id: id }
 }
 
-/** Manifest collection + natural key per plan section (mirrors the backend). */
-export const SECTION_META: Record<string, { collection: keyof DraftManifest | null; key: (e: ManifestEntity) => string }> = {
-  settings: { collection: null, key: () => 'settings' },
+/** Manifest collection + natural key per plan section (mirrors the backend). A
+ * singleton section (collection null) stages into the manifest property named by
+ * `singleton` instead of a list. */
+export const SECTION_META: Record<string, {
+  collection: keyof DraftManifest | null
+  key: (e: ManifestEntity) => string
+  singleton?: 'Settings' | 'InboxSettings'
+}> = {
+  settings: { collection: null, key: () => 'settings', singleton: 'Settings' },
+  inboxSettings: { collection: null, key: () => 'inboxSettings', singleton: 'InboxSettings' },
+  // Jobs are configured by their compiled key — never created, never deleted.
+  jobs: { collection: 'Jobs', key: (e) => String(e.Key ?? '') },
   apps: { collection: 'Apps', key: (e) => String(e.Slug ?? '') },
   apis: { collection: 'Apis', key: (e) => String(e.Name ?? '') },
   scopes: { collection: 'Scopes', key: (e) => String(e.Name ?? '') },
@@ -413,8 +434,8 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     const meta = SECTION_META[section]
     if (!meta) return []
     if (meta.collection === null) {
-      const settings = current.value.Manifest.Settings
-      return settings ? [settings as ManifestEntity] : []
+      const single = current.value.Manifest[meta.singleton ?? 'Settings']
+      return single ? [single as ManifestEntity] : []
     }
     return (current.value.Manifest[meta.collection] as ManifestEntity[] | undefined) ?? []
   }
@@ -423,7 +444,7 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     if (!current.value) return null
     const meta = SECTION_META[section]
     if (!meta) return null
-    if (meta.collection === null) return (current.value.Manifest.Settings as ManifestEntity) ?? null
+    if (meta.collection === null) return (current.value.Manifest[meta.singleton ?? 'Settings'] as ManifestEntity) ?? null
     const list = (current.value.Manifest[meta.collection] as ManifestEntity[] | undefined) ?? []
     return list.find((e) => meta.key(e) === key) ?? null
   }

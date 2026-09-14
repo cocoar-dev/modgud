@@ -319,11 +319,41 @@ public static class RealmsEndpoints
             string slug,
             RealmManifest manifest,
             RealmManifestApplier applier,
+            ManifestApplyConfirmation confirmation,
+            IServiceScopeFactory scopeFactory,
+            IRealmProvisioningService realms,
             HttpContext http,
             ISecurityAuditLog securityAudit,
             CancellationToken ct,
-            bool prune = false) =>
+            bool prune = false,
+            string? confirm = null) =>
         {
+            // A pruning apply deletes whatever the file does not mention. The first call
+            // answers with the plan and a token instead of doing it, and PARKS the manifest
+            // as a shared draft in the target realm — so the caller can either repeat with
+            // ?confirm=<token> or hand the review link to a human who decides in the UI.
+            // See ManifestApplyConfirmation.
+            var gate = await confirmation.CheckAsync(slug, manifest, prune, confirm, ct);
+            if (gate.IsError) return ToErrorResult(gate.Errors);
+            if (gate.Value is { } required)
+            {
+                var actor = http.User.FindFirstValue(ClaimTypes.Name)
+                            ?? http.User.Identity?.Name ?? "control-plane";
+                var parked = await ManifestApplyConfirmation.ParkAsync(
+                    scopeFactory, realms, slug, manifest, actor, http.GetUserId() ?? Guid.Empty, ct);
+                return Results.Json(new
+                {
+                    Error = "Manifest.ConfirmationRequired",
+                    Message = $"This apply would DELETE {required.Deletions} entit(ies) from realm '{slug}'. "
+                              + "Repeat the call with ?confirm=<ConfirmationToken> to go ahead, or send "
+                              + "ReviewUrl to someone who should decide — it opens this exact change as a draft.",
+                    required.ConfirmationToken,
+                    parked.DraftId,
+                    parked.ReviewUrl,
+                    required.Plan,
+                }, statusCode: StatusCodes.Status409Conflict);
+            }
+
             var result = await applier.UpdateRealmAsync(slug, manifest, prune, deletions: null, ct);
             if (!result.IsError)
             {

@@ -2,8 +2,10 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useUserStore, type UserGroupDto, type InheritedUserGroupDto, type EffectiveGroupDto, type EffectiveGroupDiagnostic } from '@/stores/user.store'
 import { useAuthStore } from '@/stores/auth.store'
-import { useRealmDraftStore, type ManifestEntity } from '@/stores/realmDraft.store'
+import { useRealmDraftStore, isHandle, makeRef, refId, refList, type ManifestEntity, type ManifestRef } from '@/stores/realmDraft.store'
 import { useGroupStore } from '@/stores/group.store'
+import type { GroupDto } from '@/models/group'
+import { usePrincipalStore } from '@/stores/principal.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import { CoarNotice, CoarTextInput, CoarPasswordInput, CoarNumberInput, CoarFormField, CoarIcon, CoarTabGroup, CoarTab, CoarListbox, CoarDualListbox, CoarButton, CoarCheckbox, CoarTag, CoarDivider, CoarPopover } from '@cocoar/vue-ui'
 import type { CoarListboxOption } from '@cocoar/vue-ui'
@@ -19,15 +21,22 @@ const props = defineProps<{
 
 const userStore = useUserStore()
 const groupStore = useGroupStore()
+const principalStore = usePrincipalStore()
 const appConfig = useAppConfigStore()
 const isCreate = computed(() => props.id === 'create')
 
 // ── ADR-0017 staging (Increment B) ────────────────────────────────────────────
-// For realm admins the admin UI is always in staging mode: profile saves commit
-// onto the active draft (implicitly creating one) instead of writing live.
-// Rows created in a draft open with a "draft__<key>" id and edit the manifest
-// entity directly. Live-only concerns (active state, 2FA policy, groups) keep
-// their immediate behavior on existing users and are hidden on staged creates.
+// For realm admins the admin UI is always in staging mode: the save commits onto
+// the active draft (implicitly creating one) instead of writing live — the
+// profile, the active flag, the EmailConfirmed override, the per-user 2FA policy
+// (all fields of RealmManifestUser) and the direct-group memberships, which are
+// staged onto the affected GROUPS' entities because a membership is a fact about
+// the group's Members list. Rows created in a draft open with a "draft__<key>" id
+// and edit the manifest entity directly; they carry a document-local '#handle'
+// as their Id, so groups in the same draft can already list them as members.
+//
+// What acts immediately here is exactly what is an ACTION, not state: the grace
+// clock (reset / force enforcement) and, on the Security tab, nothing else.
 const authStore = useAuthStore()
 const draftStore = useRealmDraftStore()
 const isDraftRow = computed(() => props.id.startsWith('draft__'))
@@ -38,17 +47,36 @@ const stagingActive = computed(() => authStore.hasPermission('realm:admin'))
 const stagedKey = ref<string | null>(null)
 /** Snapshot of the loaded profile — staging only commits when it changed. */
 const profileBaseline = ref('')
-const stagedCreateHidesLiveControls = computed(() =>
-  (isCreate.value && stagingActive.value) || isDraftRow.value)
+/** A user this draft CREATES (staged create or draft row) — no live id exists. */
+const stagedCreate = computed(() => (isCreate.value && stagingActive.value) || isDraftRow.value)
+/** The '#handle' a draft-created user is known by inside the draft. Pinned once
+ * (from the entity when it already has one), so a later rename in the draft keeps
+ * every group reference valid. */
+const stagedHandle = ref<string | null>(null)
+function selfHandle(): string {
+  return stagedHandle.value ?? `#${form.value.UserName.trim() || form.value.Email.trim()}`
+}
+/** What a group's Members entry for THIS user resolves to — the live id, or the
+ * handle while the user only exists in the draft. */
+const selfRefId = computed(() => (stagedCreate.value ? selfHandle() : props.id))
 
 function profileSnapshot(): string {
-  return JSON.stringify({ ...form.value, emailConfirmed: emailConfirmed.value })
+  return JSON.stringify({
+    ...form.value,
+    emailConfirmed: emailConfirmed.value,
+    isActive: isActive.value,
+    graceOverride: parsedOverride.value,
+    exempt: exemptLocal.value,
+  })
 }
 
 function buildStagedEntity(): ManifestEntity {
   const entity: ManifestEntity = {
     Email: form.value.Email.trim(),
     EmailConfirmed: emailConfirmed.value,
+    // Declarative like everything else here: false is the kill switch, and the
+    // apply runs the same revocation cascade a live deactivation does.
+    IsActive: isActive.value,
   }
   if (stagedKey.value) entity.Key = stagedKey.value
   // v2 merge-patch: explicit null stages the clear (absent would keep live).
@@ -57,9 +85,15 @@ function buildStagedEntity(): ManifestEntity {
   entity.Acronym = form.value.Acronym.trim() || null
   if (form.value.UserName.trim()) entity.UserName = form.value.UserName.trim()
   if (initialPassword.value) entity.Password = initialPassword.value
+  // Per-user 2FA policy, manifest-modelled like the rest: an explicit null override
+  // clears it back to the realm default (what the admin endpoint spells as -1).
+  entity.GracePeriodDaysOverride = parsedOverride.value
+  entity.TwoFactorExempt = exemptLocal.value
   // Stage the LIVE entity's id: the apply matches by identity, so editing the name
-  // is a RENAME of this entity instead of staging a second one.
-  if (!isCreate.value && !isDraftRow.value) entity.Id = props.id
+  // is a RENAME of this entity instead of staging a second one. A user the draft
+  // creates gets a '#handle' instead — the apply assigns the real id and resolves
+  // every group that already lists the handle.
+  entity.Id = stagedCreate.value ? selfHandle() : props.id
   return entity
 }
 const loading = ref(false)
@@ -134,26 +168,85 @@ const effectiveDiagnostics = ref<EffectiveGroupDiagnostic[]>([])
 const groupsLoaded = ref(false)
 
 async function loadGroups() {
-  if (isDraftRow.value) { groupsLoaded.value = true; return }
-  // On create there is nothing to read yet — the user has no memberships and
-  // no id. The picker still works: it stages against an empty baseline and the
-  // save commits the additions once the id exists.
-  if (isCreate.value) {
-    groupsLoaded.value = true
-    return
+  if (isCreate.value || isDraftRow.value) {
+    // Nothing live to read: a user the draft creates has no memberships except
+    // the ones already staged onto groups in this draft — the overlay below
+    // finds those by the user's handle.
+    stagedGroupIds.value = []
+  } else {
+    // Both endpoints in parallel — independent reads, both per-tab one-shot.
+    const [data, eff] = await Promise.all([
+      userStore.getGroups(props.id),
+      userStore.getEffectiveGroups(props.id),
+    ])
+    directGroups.value = data.Direct
+    inheritedGroups.value = data.Inherited
+    effectiveGroups.value = eff.Groups
+    effectiveDiagnostics.value = eff.Diagnostics
+    stagedGroupIds.value = data.Direct.map(g => g.Id)
   }
-  // Both endpoints in parallel — independent reads, both per-tab one-shot.
-  const [data, eff] = await Promise.all([
-    userStore.getGroups(props.id),
-    userStore.getEffectiveGroups(props.id),
-  ])
-  directGroups.value = data.Direct
-  inheritedGroups.value = data.Inherited
-  effectiveGroups.value = eff.Groups
-  effectiveDiagnostics.value = eff.Diagnostics
-  stagedGroupIds.value = data.Direct.map(g => g.Id)
+  // Staging overlay: a group the draft already carries decides this user's
+  // membership by its STAGED Members, not by the live roster — otherwise a change
+  // staged from this very modal would look undone on reopen, and the next save
+  // would diff against the wrong baseline.
+  if (stagingActive.value && draftStore.current) {
+    for (const g of groupStore.groups) {
+      const staged = stagedGroupEntity(g)
+      if (!staged || !Array.isArray(staged.Members)) continue
+      const member = refList(staged.Members).some(r => refId(r) === selfRefId.value)
+      const idx = stagedGroupIds.value.indexOf(g.Id)
+      if (member && idx < 0) stagedGroupIds.value.push(g.Id)
+      if (!member && idx >= 0) stagedGroupIds.value.splice(idx, 1)
+    }
+  }
   originalGroupIds.value = [...stagedGroupIds.value]
   groupsLoaded.value = true
+}
+
+/** The active draft's entity for a live group — by id first (the draft may have
+ * renamed it), then by name. */
+function stagedGroupEntity(group: GroupDto): ManifestEntity | null {
+  return draftStore.sectionEntities('groups').find(e => e.Id === group.Id)
+    ?? draftStore.findEntity('groups', group.Name)
+}
+
+/**
+ * Commits the direct-membership diff onto the GROUPS it touches. A membership is
+ * a fact about the group (Members is the group's list), so each affected group is
+ * staged: the entity the draft already carries when there is one, else a minimal
+ * merge-patch — Id, Name, Members — built from the live group. Everything else
+ * about the group is absent, i.e. unchanged. References are { Key, Id } as the
+ * export writes them: the apply follows the Id, the Key is the readable hint.
+ */
+async function stageGroupMembership() {
+  const added = stagedGroupIds.value.filter(id => !originalGroupIds.value.includes(id))
+  const removed = originalGroupIds.value.filter(id => !stagedGroupIds.value.includes(id))
+  if (added.length === 0 && removed.length === 0) return
+  await principalStore.loadLookup()
+  const refFor = (id: string): ManifestRef => {
+    const p = principalStore.findById(id)
+    const key = p ? (p.UserName || p.Email || p.Label || null) : null
+    return key ? makeRef(key, id) : { Id: id }
+  }
+  // A live user is referenced as { Key, Id }; one the draft creates by its bare
+  // '#handle' — the string form a handle reference takes on the wire.
+  const self: ManifestRef = stagedCreate.value
+    ? selfHandle()
+    : makeRef(form.value.UserName.trim() || form.value.Email.trim(), props.id)
+  for (const groupId of [...added, ...removed]) {
+    const group = groupStore.groups.find(g => g.Id === groupId)
+    if (!group) continue
+    const staged = stagedGroupEntity(group)
+    const members = staged && Array.isArray(staged.Members)
+      ? refList(staged.Members)
+      : group.MemberIds.map(refFor)
+    const without = members.filter(r => refId(r) !== selfRefId.value)
+    const entity: ManifestEntity = {
+      ...(staged ?? { Id: group.Id, Name: group.Name }),
+      Members: added.includes(groupId) ? [...without, self] : without,
+    }
+    await draftStore.upsertEntity('groups', String(entity.Name ?? group.Name), entity)
+  }
 }
 
 // Both Gruppen and Effektiv tabs read from the same loadGroups() call
@@ -335,6 +428,8 @@ onMounted(async () => {
 
   // Draft-created user: no live id exists — the form IS the manifest entity.
   if (isDraftRow.value) {
+    // The group picker needs the assignable-groups list here too.
+    await groupStore.initialize()
     const entity = draftStore.findEntity('users', draftKey.value!)
     if (entity) {
       const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -346,7 +441,11 @@ onMounted(async () => {
         UserName: str(entity.UserName),
       }
       emailConfirmed.value = entity.EmailConfirmed === true
+      isActive.value = entity.IsActive !== false
+      overrideInput.value = typeof entity.GracePeriodDaysOverride === 'number' ? entity.GracePeriodDaysOverride : null
+      exemptLocal.value = entity.TwoFactorExempt === true
       stagedKey.value = str(entity.Key) || draftKey.value
+      if (isHandle(entity.Id as string)) stagedHandle.value = entity.Id as string
     }
     profileBaseline.value = profileSnapshot()
     return
@@ -395,6 +494,11 @@ onMounted(async () => {
             Email: str(entity.Email) || form.value.Email,
             UserName: str(entity.UserName) || form.value.UserName,
           }
+          if (typeof entity.IsActive === 'boolean') isActive.value = entity.IsActive
+          if (typeof entity.EmailConfirmed === 'boolean') emailConfirmed.value = entity.EmailConfirmed
+          if ('GracePeriodDaysOverride' in entity)
+            overrideInput.value = typeof entity.GracePeriodDaysOverride === 'number' ? entity.GracePeriodDaysOverride : null
+          if (typeof entity.TwoFactorExempt === 'boolean') exemptLocal.value = entity.TwoFactorExempt
         }
       } else {
         stagedKey.value = user.UserName || user.Email || null
@@ -413,6 +517,7 @@ async function save() {
     // ── Staged paths (ADR-0017): the save is a COMMIT onto the active draft. ──
     if (isDraftRow.value) {
       await draftStore.upsertEntity('users', draftKey.value!, buildStagedEntity())
+      if (groupsLoaded.value) await stageGroupMembership()
       props.close()
       return
     }
@@ -420,6 +525,8 @@ async function save() {
       const entity = buildStagedEntity()
       const key = (form.value.UserName.trim() || form.value.Email.trim())
       await draftStore.upsertEntity('users', key, entity)
+      // Memberships picked before the first save point at the user's '#handle'.
+      if (groupsLoaded.value) await stageGroupMembership()
       props.close()
       return
     }
@@ -442,33 +549,30 @@ async function save() {
         TwoFactorExempt: exemptLocal.value,
       })
     } else {
-      // Optimistic update — update store immediately with expected state
-      const existing = userStore.getFromStore(props.id)
-      if (existing) {
-        userStore.setStoreEntities([{
-          ...existing,
-          Firstname: form.value.Firstname,
-          Lastname: form.value.Lastname,
-          Acronym: form.value.Acronym || undefined,
-          Email: form.value.Email || undefined,
-          UserName: form.value.UserName || existing.UserName,
-          IsActive: isActive.value,
-          Status: 'Pending' as const,
-        }])
-      }
-
       if (stagingActive.value) {
-        // Profile edits are STAGED (commit onto the active draft) — pinned to
-        // the original identity key so a username change replaces, not clones.
+        // Profile + active flag are STAGED (commit onto the active draft) — pinned
+        // to the original identity key so a username change replaces, not clones.
+        // No optimistic live-store write here: the list shows the staged state
+        // through the draft overlay, and the live row is still the truth until apply.
         if (profileSnapshot() !== profileBaseline.value) {
           await draftStore.upsertEntity('users', stagedKey.value ?? form.value.Email, buildStagedEntity())
         }
-        // Active state stays a live operation (deactivation is an action with
-        // a revocation cascade — the manifest does not model it).
-        if (isActive.value !== originalActive.value) {
-          await userStore.httpClient.addPath(props.id).put({ IsActive: isActive.value })
-        }
       } else {
+        // Optimistic update — update store immediately with expected state
+        const existing = userStore.getFromStore(props.id)
+        if (existing) {
+          userStore.setStoreEntities([{
+            ...existing,
+            Firstname: form.value.Firstname,
+            Lastname: form.value.Lastname,
+            Acronym: form.value.Acronym || undefined,
+            Email: form.value.Email || undefined,
+            UserName: form.value.UserName || existing.UserName,
+            IsActive: isActive.value,
+            Status: 'Pending' as const,
+          }])
+        }
+
         // Single request — profile + active state + email-verified override.
         // Only emit EmailConfirmed when the admin actually changed it; otherwise
         // a no-op PUT could still rewrite (and audit-log) the flag.
@@ -485,9 +589,10 @@ async function save() {
         })
       }
 
-      // Grace policy (per-user override + exempt). Only write when something changed,
+      // Grace policy (per-user override + exempt) — live path only; in staging mode
+      // it travels inside the staged user entity. Only write when something changed,
       // since this hits a separate endpoint and we don't want noise in the auth log.
-      if (policyDirty.value) {
+      if (!stagingActive.value && policyDirty.value) {
         await userStore.setGracePolicy(props.id, {
           // Sentinel -1 clears the per-user override on the backend; null would skip it.
           GracePeriodDaysOverride: parsedOverride.value === null ? -1 : parsedOverride.value,
@@ -495,14 +600,19 @@ async function save() {
         })
       }
 
-      // Direct-group membership: commit the staged diff as part of the one Save.
-      // Guarded on groupsLoaded so a user whose Groups tab was never opened does
-      // not get every membership stripped by an empty staged list.
+      // Direct-group membership: commit the diff as part of the one Save — onto the
+      // affected groups' draft entities in staging mode, live otherwise. Guarded on
+      // groupsLoaded so a user whose Groups tab was never opened does not get every
+      // membership stripped by an empty list.
       if (groupsLoaded.value) {
-        const added = stagedGroupIds.value.filter(id => !originalGroupIds.value.includes(id))
-        const removed = originalGroupIds.value.filter(id => !stagedGroupIds.value.includes(id))
-        for (const id of added) await userStore.addGroup(props.id, id)
-        for (const id of removed) await userStore.removeGroup(props.id, id)
+        if (stagingActive.value) {
+          await stageGroupMembership()
+        } else {
+          const added = stagedGroupIds.value.filter(id => !originalGroupIds.value.includes(id))
+          const removed = originalGroupIds.value.filter(id => !stagedGroupIds.value.includes(id))
+          for (const id of added) await userStore.addGroup(props.id, id)
+          for (const id of removed) await userStore.removeGroup(props.id, id)
+        }
       }
     }
     props.close()
@@ -558,9 +668,9 @@ watch(() => form.value.UserName, () => {
             </CoarPopover>
           </span>
         </CoarTab>
-        <CoarTab v-if="!stagedCreateHidesLiveControls" id="groups">{{ t('admin.userDetails.tabs.groups', {}, 'Direct Groups') }}</CoarTab>
+        <CoarTab id="groups">{{ t('admin.userDetails.tabs.groups', {}, 'Direct Groups') }}</CoarTab>
         <CoarTab v-if="!isCreate && !isDraftRow" id="effective">{{ t('admin.userDetails.tabs.effective', {}, 'Effektiv') }}</CoarTab>
-        <CoarTab v-if="!stagedCreateHidesLiveControls" id="security">{{ t('admin.userDetails.tabs.security', {}, 'Security') }}</CoarTab>
+        <CoarTab id="security">{{ t('admin.userDetails.tabs.security', {}, 'Security') }}</CoarTab>
       </CoarTabGroup>
 
       <!-- Tab: General -->
@@ -610,10 +720,9 @@ watch(() => form.value.UserName, () => {
                 :hint="t('admin.userDetails.initialPasswordHint', {}, 'Optional. Leave empty for an account that signs in via magic link, passkey or an external identity provider.')">
                 <CoarPasswordInput v-model="initialPassword" autocomplete="new-password" />
               </CoarFormField>
-              <!-- Not manifest-modeled (deactivation is a live action with a
-                   revocation cascade) — hidden on staged creates / draft rows. -->
+              <!-- Manifest-modeled (RealmManifestUser.IsActive): stages with the
+                   rest of the form, on creates and draft rows too. -->
               <CoarFormField
-                v-if="!stagedCreateHidesLiveControls"
                 class="col-half account-flag-field"
                 :label="t('admin.userDetails.activeCheckbox', {}, 'Benutzer aktiv')"
                 :hint="t('admin.userDetails.activeHint', {}, 'Deaktivierte Benutzer können sich nicht anmelden.')"
@@ -640,11 +749,12 @@ watch(() => form.value.UserName, () => {
 
       <!-- Tab: Security -->
       <div v-show="activeTab === 'security'" class="tab-content">
-        <!-- Create: only the per-user policy is meaningful. 2FA status and the
-             grace actions describe a history the account does not have yet.
-             The status remains visible for create/edit layout parity, but is
-             explicitly marked as only becoming available after creation. -->
-        <section v-if="isCreate" class="flex flex-col gap-4 text-sm">
+        <!-- Create (live or staged, and a draft row): only the per-user policy is
+             meaningful. 2FA status and the grace actions describe a history the
+             account does not have yet. The status remains visible for create/edit
+             layout parity, but is explicitly marked as only becoming available
+             after creation. -->
+        <section v-if="isCreate || isDraftRow" class="flex flex-col gap-4 text-sm">
           <div>
             <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
               <h3 class="section-divider__title">{{ t('admin.userDetails.twoFactorHeading', {}, 'Zwei-Faktor-Authentifizierung') }}</h3>

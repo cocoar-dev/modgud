@@ -13,6 +13,7 @@ import {
   CoarTab,
 } from '@cocoar/vue-ui'
 import ModalLayout from '@/components/ModalLayout.vue'
+import { useDraftStaging } from '@/composables/useDraftStaging'
 import { useScheduledJobStore } from '@/stores/scheduledJob.store'
 import type {
   ScheduledJobDto,
@@ -38,6 +39,13 @@ const triggering = ref(false)
 
 const activeTab = ref<'schedule' | 'config' | 'history'>('schedule')
 
+// ADR-0017 staging: a realm job's schedule, enabled flag and parameters are realm
+// configuration (Jobs[] in the manifest, keyed by the job's compiled key), so for a
+// realm admin this Save commits onto the draft. A deployment-wide SYSTEM job is no
+// realm's configuration and keeps the live path; "Run now" is an action and stays live.
+const staging = useDraftStaging('jobs')
+const stagedSave = computed(() => staging.stagingActive.value && job.value?.Scope === 'Realm')
+
 // Editable form state — separated from `job` so a user can edit and discard.
 const form = ref({
   cronOverride: '',
@@ -61,6 +69,16 @@ async function load() {
       form.value.cronOverride = j.HasOverride ? j.EffectiveCron : ''
       form.value.enabled = j.Enabled
       form.value.params = seedParams(j)
+      // Staging overlay: the draft's entry for this job is the working state.
+      if (staging.stagingActive.value && j.Scope === 'Realm' && staging.draftStore.current) {
+        const staged = staging.findStaged(j.Key)
+        if (staged) {
+          if (typeof staged.Enabled === 'boolean') form.value.enabled = staged.Enabled
+          if ('CronOverride' in staged) form.value.cronOverride = typeof staged.CronOverride === 'string' ? staged.CronOverride : ''
+          if (staged.Parameters && typeof staged.Parameters === 'object')
+            form.value.params = seedParams({ ...j, Parameters: { ...j.Parameters, ...(staged.Parameters as Record<string, unknown>) } })
+        }
+      }
     }
   } finally {
     loading.value = false
@@ -109,6 +127,16 @@ async function save() {
   if (!jobKey.value || !job.value) return
   saving.value = true
   try {
+    if (stagedSave.value) {
+      await staging.stage(jobKey.value, {
+        Key: jobKey.value,
+        CronOverride: form.value.cronOverride.trim() || null,
+        Enabled: form.value.enabled,
+        Parameters: buildParamsPayload(job.value),
+      })
+      await load()
+      return
+    }
     await store.update(jobKey.value, {
       CronOverride: form.value.cronOverride.trim() || null,
       Enabled: form.value.enabled,
@@ -167,7 +195,9 @@ const hasParams = computed(() => (job.value?.ParameterSchema.length ?? 0) > 0)
 
 const footerButton = computed(() => ({
   visible: !!job.value,
-  text: t('common.save', {}, 'Save'),
+  text: stagedSave.value
+    ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+    : t('common.save', {}, 'Save'),
   loading: saving.value,
   onClick: save,
 }))

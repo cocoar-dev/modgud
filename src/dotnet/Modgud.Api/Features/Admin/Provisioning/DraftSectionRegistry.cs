@@ -11,14 +11,20 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// </summary>
 public static class DraftSectionRegistry
 {
-    public sealed record SectionMeta(string? Collection, Func<JsonObject, string?> Key);
+    /// <param name="Collection">The manifest list this section stages into, or null for a
+    /// singleton section, which stages into the manifest property named by
+    /// <paramref name="Singleton"/> instead.</param>
+    public sealed record SectionMeta(string? Collection, Func<JsonObject, string?> Key, string? Singleton = null);
 
     private static string? Str(JsonObject o, string prop)
         => o[prop] is JsonValue v && v.TryGetValue<string>(out var s) && s.Length > 0 ? s : null;
 
     private static readonly Dictionary<string, SectionMeta> Sections = new(StringComparer.Ordinal)
     {
-        ["settings"] = new(null, _ => "settings"),
+        ["settings"] = new(null, _ => "settings", "Settings"),
+        ["inboxSettings"] = new(null, _ => "inboxSettings", "InboxSettings"),
+        // Jobs are configured by their compiled key — never created, never deleted.
+        ["jobs"] = new("Jobs", o => Str(o, "Key")),
         ["apps"] = new("Apps", o => Str(o, "Slug")),
         ["apis"] = new("Apis", o => Str(o, "Name")),
         ["scopes"] = new("Scopes", o => Str(o, "Name")),

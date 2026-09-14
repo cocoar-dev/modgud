@@ -379,6 +379,24 @@ public class PermissionService(IQuerySession session) : IPermissionService
         return descendants;
     }
 
+    /// <inheritdoc />
+    public async Task<HashSet<Guid>> GetAncestorGroupIdsAsync(Guid groupId, CancellationToken ct = default)
+    {
+        var allGroups = await session.Query<Group>().Where(g => !g.IsDeleted).ToListAsync(ct);
+        var parentMap = BuildParentMap([.. allGroups]);
+
+        var ancestors = new HashSet<Guid>();
+        var queue = new Queue<Guid>();
+        queue.Enqueue(groupId);
+        while (queue.Count > 0)
+        {
+            if (!parentMap.TryGetValue(queue.Dequeue(), out var parents)) continue;
+            foreach (var parent in parents)
+                if (ancestors.Add(parent.Id)) queue.Enqueue(parent.Id);
+        }
+        return ancestors;
+    }
+
     /// <summary>
     /// For each principal id, returns the list of groups that have it as a direct
     /// member. Enables reverse "who am I a member of?" lookup without per-id queries.

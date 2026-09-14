@@ -52,6 +52,13 @@ public interface IPermissionService
     /// </summary>
     Task<HashSet<Guid>> GetDescendantGroupIdsAsync(Guid groupId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Every group that reaches <paramref name="groupId"/> through membership, transitively —
+    /// the inverse of <see cref="GetDescendantGroupIdsAsync"/>. This is the set a cycle check
+    /// needs: adding M as a member of G closes a loop exactly when M can already reach G.
+    /// </summary>
+    Task<HashSet<Guid>> GetAncestorGroupIdsAsync(Guid groupId, CancellationToken ct = default);
+
     // ── Federation v1 union overloads (decision D) ────────────────────────
     // These add the live-session, externally-derived group set on top of the
     // durable membership. <paramref name="sessionGroupIds"/> are the

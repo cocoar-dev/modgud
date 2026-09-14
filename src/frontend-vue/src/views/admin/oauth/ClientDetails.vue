@@ -568,10 +568,12 @@ watch(() => form.value.TerminalBinding, (binding) => {
 const isTerminalManaged = computed(() => !isCreate.value
   && (!!form.value.ManagedTerminalEnrollmentId || !!form.value.LinkedPositionPrincipalId))
 
-// ── ADR-0017 staging: ordinary client saves commit onto the active draft. The
-// manifest deliberately does NOT model SA-linked (client_credentials),
-// terminal-/staffing-managed or just-created clients — those keep the live
-// path, exactly like the exporter skips them.
+// ── ADR-0017 staging: ordinary client saves commit onto the active draft. What
+// keeps the live path is exactly what the exporter leaves out of Clients[]:
+// SA-linked clients (they travel under their service account and are read-only
+// here anyway), terminal-/staffing-managed clients (device enrollment), and a
+// client just created live in this same modal. An unlinked client_credentials
+// client is an ordinary client — it is exported, so it is staged.
 const staging = useDraftStaging('clients')
 const isDraftRow = computed(() => staging.isDraftId(props.id))
 const stagedSave = computed(() => staging.stagingActive.value
@@ -579,8 +581,7 @@ const stagedSave = computed(() => staging.stagingActive.value
   && !isTerminalManaged.value
   && !hasStaffingGrant.value
   && !form.value.LinkedServiceAccountId
-  && !useNewServiceAccountDraft.value
-  && !form.value.AllowedGrantTypes.includes('client_credentials'))
+  && !useNewServiceAccountDraft.value)
 
 function appSlugsOf(appIds: string[]): string[] {
   return appIds

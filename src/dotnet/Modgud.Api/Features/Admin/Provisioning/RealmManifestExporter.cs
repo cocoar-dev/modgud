@@ -31,10 +31,13 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 ///
 /// <para>Cross-references are reversed back to KEYS (app slug, role/user key,
 /// <c>resource:action</c>). Entities that can't be cleanly re-applied are omitted: the
-/// auto-seeded standard OIDC scopes and system apps, plus service-account-linked clients (the
-/// manifest doesn't model service accounts). Realm settings ARE exported (all sections, current
-/// values) EXCEPT the write-only captcha secret (a <c>CaptchaSecretSet</c> flag, never the
-/// plaintext) — re-applying leaves that untouched.</para>
+/// auto-seeded standard OIDC scopes and system apps, plus service-account-linked clients (they
+/// travel under their account, see the ServiceAccounts section). Realm settings ARE exported
+/// (all sections, current values) EXCEPT the write-only captcha secret (a
+/// <c>CaptchaSecretSet</c> flag, never the plaintext) — which is "unchanged" under merge-patch,
+/// so re-applying an export leaves it alone. Settings that name entities by raw id (default
+/// groups, allowed login providers, branding assets) travel like every other id: the applier
+/// skips and reports one the target realm does not have (ADR 0024).</para>
 /// </summary>
 public sealed class RealmManifestExporter(
     IRealmProvisioningService realms,
@@ -66,7 +69,8 @@ public sealed class RealmManifestExporter(
         var permKeyById = new Dictionary<Guid, RealmManifestPermission>();
         foreach (var a in apps)
             foreach (var p in a.Permissions)
-                permKeyById[p.Id] = new RealmManifestPermission(p.Resource, p.Action, p.Description);
+                permKeyById[p.Id] = new RealmManifestPermission(
+                    p.Resource, p.Action, p.Description, new ShortGuid(p.Id).ToString());
 
         // System apps are auto-seeded — not part of a realm's authored config.
         // Settings: only apps that HAVE an override doc export one — an app without an
@@ -80,7 +84,7 @@ public sealed class RealmManifestExporter(
             if (await session.LoadAsync<ApplicationSettings>(a.Id, ct) is not null)
             {
                 var loaded = await appSettingsSvc.GetAsync(a.Id, ct);
-                appSettings = loaded.IsError ? null : loaded.Value;
+                appSettings = loaded.IsError ? null : WithoutDerivedUrls(loaded.Value);
             }
 
             manifestApps.Add(new RealmManifestApp
@@ -90,7 +94,8 @@ public sealed class RealmManifestExporter(
                 DisplayName = a.DisplayName,
                 Description = Opt(a.Description),
                 Permissions = a.Permissions
-                    .Select(p => new RealmManifestPermission(p.Resource, p.Action, p.Description)).ToList(),
+                    .Select(p => new RealmManifestPermission(
+                        p.Resource, p.Action, p.Description, new ShortGuid(p.Id).ToString())).ToList(),
                 Settings = appSettings,
             });
         }
@@ -129,12 +134,15 @@ public sealed class RealmManifestExporter(
             AllowDynamicRegistrationClients = s.AllowDynamicRegistrationClients,
         }).ToList();
 
-        // Service-account-linked clients are M2M credentials the manifest can't model — skip.
-        // Terminal-managed clients (position slots) are likewise credential material bound to
-        // a device enrollment: exporting them would produce a manifest whose staffing grant
-        // fails the position-link invariant on re-apply, so they are skipped too.
+        // Service-account-linked clients travel under their account (Credentials), and a
+        // terminal-managed client travels under its position's slot (Positions[].Terminals):
+        // both are managed through their owner, and the generic client update refuses them.
+        // A V2 terminal client is linked to its ENROLLMENT only (the position link is the
+        // legacy single-position form), so the enrollment link is the one to test.
         var clients = (await oauth.GetClientsAsync(new PaginationRequest { PageSize = 1000 }, ct))
-            .Items.Where(c => c.LinkedServiceAccountId is null && c.LinkedPositionPrincipalId is null);
+            .Items.Where(c => c.LinkedServiceAccountId is null
+                              && c.LinkedPositionPrincipalId is null
+                              && c.ManagedTerminalEnrollmentId is null);
         var manifestClients = clients.Select(c => new RealmManifestClient
         {
             ClientId = c.ClientId,
@@ -233,6 +241,10 @@ public sealed class RealmManifestExporter(
         var persons = await session.Query<Person>().Where(p => !p.IsDeleted).ToListAsync(ct);
         var appUsers = (await session.Query<ApplicationUser>().ToListAsync(ct))
             .ToDictionary(u => u.Id, u => u);
+        // The per-user 2FA policy lives on UserSecurityData next to the password hash.
+        // Exactly these two fields travel — hashes, stamps and authenticator keys never do.
+        var securityById = (await session.Query<UserSecurityData>().ToListAsync(ct))
+            .ToDictionary(s => s.Id, s => s);
         var userKeyById = persons.ToDictionary(p => p.Id, p => p.AccountName ?? p.Email ?? p.Id.ToString());
         var manifestUsers = persons.Select(p => new RealmManifestUser
         {
@@ -245,6 +257,9 @@ public sealed class RealmManifestExporter(
             UserName = p.AccountName,
             // No Password — stored as a hash. Add one before re-applying to set it.
             EmailConfirmed = appUsers.TryGetValue(p.Id, out var au) && au.EmailConfirmed,
+            IsActive = appUsers.TryGetValue(p.Id, out var active) ? active.IsActive : p.IsActive,
+            GracePeriodDaysOverride = Opt(securityById.TryGetValue(p.Id, out var sec) ? sec.GracePeriodDaysOverride : null),
+            TwoFactorExempt = securityById.TryGetValue(p.Id, out var policy) && policy.TwoFactorExempt,
         }).ToList();
 
         // ── Service accounts — HULLS only (credentials are per-environment secret
@@ -253,16 +268,45 @@ public sealed class RealmManifestExporter(
         //    (the applier pins it at create). ────────────────────────────────────────
         var serviceAccounts = await session.Query<ServiceAccount>()
             .Where(s => !s.IsDeleted).ToListAsync(ct);
+        // An account's credentials are the SA-linked clients — skipped in the Clients
+        // section above (they are not ordinary clients) and carried here instead, where
+        // they belong to the account that owns them. The SECRET never travels: a
+        // credential recreated elsewhere is minted a fresh one at apply.
+        var credentialsByAccount = (await oauth.GetClientsAsync(
+                new PaginationRequest { PageSize = 1000 }, ct))
+            .Items.Where(c => c.LinkedServiceAccountId is not null)
+            .GroupBy(c => c.LinkedServiceAccountId!)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
         var manifestServiceAccounts = serviceAccounts.Select(s => new RealmManifestServiceAccount
         {
             AccountName = s.AccountName,
             Id = new ShortGuid(s.Id).ToString(),
             Purpose = Opt(s.Purpose),
             IsActive = s.IsActive,
+            Credentials = credentialsByAccount
+                .GetValueOrDefault(new ShortGuid(s.Id).ToString(), [])
+                .Select(c => new RealmManifestServiceAccountCredential
+                {
+                    ClientId = c.ClientId,
+                    Id = PinId(c.Id),
+                    DisplayName = Opt(c.DisplayName),
+                    Scopes = c.Permissions.Where(p => p.StartsWith(ScopePrefix, StringComparison.Ordinal))
+                        .Select(p => p[ScopePrefix.Length..]).ToList(),
+                    Apps = c.AppIds.Select(id => SlugOfShort(appSlugById, id))
+                        .Where(x => x is not null).Select(x => x!).ToList(),
+                    Enabled = c.Enabled,
+                    AccessTokenType = c.AccessTokenType.ToString(),
+                    AccessTokenLifetime = Opt(c.AccessTokenLifetime),
+                }).ToList(),
         }).ToList();
 
-        // ── Groups (raw — ids are Guids; resolve members→user keys, roles→role names) ─
+        // ── Groups (raw — ids are Guids; resolve members→principal keys, roles→role names) ─
         var groups = await session.Query<Group>().Where(g => !g.IsDeleted).ToListAsync(ct);
+        // Readable names for every kind of member a group can hold.
+        var memberKeyById = new Dictionary<Guid, string>(userKeyById);
+        foreach (var g in groups) memberKeyById.TryAdd(g.Id, g.Name);
+        foreach (var sa in serviceAccounts) memberKeyById.TryAdd(sa.Id, sa.AccountName);
         var manifestGroups = groups.Select(g => new RealmManifestGroup
         {
             Name = g.Name,
@@ -270,7 +314,15 @@ public sealed class RealmManifestExporter(
             Description = Opt(g.Description),
             // References carry Key + Id: the Id is what the apply follows (rename-proof), the
             // Key is what a human reads. A plain string would ALWAYS mean "key".
-            Members = g.MemberIds.Where(userKeyById.ContainsKey).Select(id => ManifestRef.Of(userKeyById[id], id)).ToList(),
+            // EVERY member, not just the users. A group may hold nested groups and
+            // service accounts, and the domain really expands them (permissions via
+            // ApplicationScopeResolver, mail via Group.GetEmailsAsync). Filtering them
+            // out here made export -> apply silently DELETE them, because Members is a
+            // replace-list. An id names the member; the Key is only the readable half,
+            // so a member with no readable name still travels.
+            Members = g.MemberIds.Select(id => memberKeyById.TryGetValue(id, out var mk)
+                ? ManifestRef.Of(mk, id)
+                : new ManifestRef { Id = new ShortGuid(id).ToString() }).ToList(),
             Roles = g.RoleIds.Where(roleKeyById.ContainsKey).Select(id => ManifestRef.Of(roleKeyById[id], id)).ToList(),
             MembershipMode = g.MembershipMode.ToString(),
             MembershipScript = g.MembershipScript,
@@ -291,6 +343,38 @@ public sealed class RealmManifestExporter(
                     .Where(g => g.Status != Modgud.Domain.PositionTerminals.PositionGrantStatus.Revoked)
                     .ToListAsync(ct))
                 .ToLookup(g => g.PositionPrincipalId);
+            // Terminal slots travel as configuration under their OWNING position (the one
+            // the slot was created on); the enrollment, DPoP key and client secret never do.
+            var positionKeyById = positions.ToDictionary(p => p.Id, p => p.AccountName);
+            var slots = (await session.Query<Modgud.Domain.PositionTerminals.TerminalEnrollment>().ToListAsync(ct))
+                .Where(t => t.Status != Modgud.Domain.PositionTerminals.TerminalEnrollmentStatus.Revoked)
+                .ToList();
+            var slotClientIds = slots.Select(t => t.OAuthApplicationId).ToList();
+            var slotClients = slotClientIds.Count == 0
+                ? new Dictionary<Guid, Modgud.Domain.OAuth.Applications.OAuthApplicationState>()
+                : (await session.LoadManyAsync<Modgud.Domain.OAuth.Applications.OAuthApplicationState>(ct, slotClientIds)).ToDictionary(c => c.Id);
+            var slotsByOwner = slots.ToLookup(t => t.PositionPrincipalId);
+            List<RealmManifestTerminal> TerminalsOf(Guid ownerId) => slotsByOwner[ownerId]
+                .OrderBy(t => t.DisplayName, StringComparer.Ordinal)
+                .Select(t =>
+                {
+                    slotClients.TryGetValue(t.OAuthApplicationId, out var client);
+                    return new RealmManifestTerminal
+                    {
+                        Id = new ShortGuid(t.Id).ToString(),
+                        DisplayName = t.DisplayName,
+                        Location = Opt(t.Location),
+                        WebAuthnRpId = t.WebAuthnRpId,
+                        Binding = t.Binding,
+                        AllowedPositions = t.EffectiveAllowedPositionIds
+                            .Where(id => id != ownerId && positionKeyById.ContainsKey(id))
+                            .Select(id => ManifestRef.Of(positionKeyById[id], id)).ToList(),
+                        Scopes = client?.Permissions
+                            .Where(x => x.StartsWith(ScopePrefix, StringComparison.Ordinal))
+                            .Select(x => x[ScopePrefix.Length..]).ToList() ?? [],
+                        Apps = client?.AppIds.Where(appSlugById.ContainsKey).Select(id => appSlugById[id]).ToList() ?? [],
+                    };
+                }).ToList();
             manifestPositions = positions.Select(p => new RealmManifestPosition
             {
                 AccountName = p.AccountName,
@@ -308,6 +392,7 @@ public sealed class RealmManifestExporter(
                 Grants = liveGrants[p.Id]
                     .Where(g => userKeyById.ContainsKey(g.UserId))
                     .Select(g => ManifestRef.Of(userKeyById[g.UserId], g.UserId)).ToList(),
+                Terminals = TerminalsOf(p.Id),
             }).ToList();
         }
 
@@ -327,6 +412,52 @@ public sealed class RealmManifestExporter(
             Groups = manifestGroups,
             LoginProviders = manifestProviders,
             Positions = manifestPositions,
+            Jobs = await ExportJobsAsync(sp, ct),
+            InboxSettings = await ExportInboxSettingsAsync(session, ct),
+        };
+    }
+
+    /// <summary>The realm's own jobs, with their current configuration. System jobs (visible
+    /// on the control plane) are deployment-wide and no realm's configuration.</summary>
+    private static async Task<List<RealmManifestJob>> ExportJobsAsync(IServiceProvider sp, CancellationToken ct)
+    {
+        var jobs = await sp.GetRequiredService<Modgud.Application.Scheduling.IJobsService>().GetAllAsync(ct);
+        return jobs
+            .Where(j => string.Equals(j.Scope, "Realm", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(j => j.Key, StringComparer.Ordinal)
+            .Select(j => new RealmManifestJob
+            {
+                Key = j.Key,
+                Enabled = j.Enabled,
+                // No override exports as absent (= unchanged on apply), never as an explicit
+                // null (= clear) — the same rule as every other optional.
+                CronOverride = j.HasOverride ? new Optional<string?>(j.EffectiveCron) : default,
+                Parameters = j.Parameters.Count == 0 ? null : new Dictionary<string, object?>(j.Parameters, StringComparer.Ordinal),
+            })
+            .ToList();
+    }
+
+    private static async Task<RealmManifestInboxSettings> ExportInboxSettingsAsync(IDocumentSession session, CancellationToken ct)
+    {
+        var s = await session.LoadAsync<Modgud.Application.Inbox.InboxRetentionSettings>(
+                    Modgud.Application.Inbox.InboxRetentionSettings.SingletonId, ct)
+                ?? new Modgud.Application.Inbox.InboxRetentionSettings();
+        return new RealmManifestInboxSettings
+        {
+            AdminChangeRequest = new RealmManifestInboxAdminChangeRequestRetention
+            {
+                HardDeleteDaysAfterDismissed = s.AdminChangeRequest.HardDeleteDaysAfterDismissed,
+            },
+            ChangeRequestFeedback = new RealmManifestInboxFeedbackRetention
+            {
+                MaxUnreadDays = s.ChangeRequestFeedback.MaxUnreadDays,
+                AutoExpireDaysAfterRead = s.ChangeRequestFeedback.AutoExpireDaysAfterRead,
+            },
+            ScheduledJobFeedback = new RealmManifestInboxFeedbackRetention
+            {
+                MaxUnreadDays = s.ScheduledJobFeedback.MaxUnreadDays,
+                AutoExpireDaysAfterRead = s.ScheduledJobFeedback.AutoExpireDaysAfterRead,
+            },
         };
     }
 
@@ -344,6 +475,7 @@ public sealed class RealmManifestExporter(
             RequireEmailVerification = s.SelfRegistration.RequireEmailVerification,
             AllowedEmailDomains = s.SelfRegistration.AllowedEmailDomains,
             RequireAdminApproval = s.SelfRegistration.RequireAdminApproval,
+            // Ids travel (ADR 0024); a group the target does not have is skipped on apply.
             DefaultGroupIds = s.SelfRegistration.DefaultGroupIds,
             TermsOfServiceUrl = Opt(s.SelfRegistration.TermsOfServiceUrl),
             PrivacyPolicyUrl = Opt(s.SelfRegistration.PrivacyPolicyUrl),
@@ -397,6 +529,8 @@ public sealed class RealmManifestExporter(
         Branding = new UpdateBrandingSettingsDto
         {
             ProductName = Opt(s.Branding.ProductName),
+            // Asset ids travel like every other id; the applier skips one the target
+            // realm's asset store does not have and keeps the stored value.
             LogoAssetId = Opt(s.Branding.LogoAssetId),
             FaviconAssetId = Opt(s.Branding.FaviconAssetId),
             PrimaryColor = Opt(s.Branding.PrimaryColor),
@@ -429,6 +563,16 @@ public sealed class RealmManifestExporter(
             VisibilityWindowDays = s.Audit.VisibilityWindowDays,
             SecurityRetentionDays = s.Audit.SecurityRetentionDays,
         },
+    };
+
+    /// <summary>
+    /// Drops the read-only URLs the settings read shape derives from the asset ids. The ids
+    /// themselves travel (ADR 0024 — the applier skips one the target realm does not have);
+    /// the URLs are computed on read and would only diff spuriously in a plan.
+    /// </summary>
+    private static ApplicationSettingsDto WithoutDerivedUrls(ApplicationSettingsDto s) => s with
+    {
+        Branding = s.Branding is null ? null : s.Branding with { LogoUrl = null, FaviconUrl = null },
     };
 
     /// <summary>Export-side of the v2 merge-patch contract: a stored null exports as an

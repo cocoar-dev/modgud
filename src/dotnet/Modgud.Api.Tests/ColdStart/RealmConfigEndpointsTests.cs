@@ -94,12 +94,14 @@ public class RealmConfigEndpointsTests(ColdStartFixture fixture) : ColdStartTest
         var client = await factory.CreateRealmAdminAndLoginAsync();
 
         // Seed one app through the real apply so the plan has an existing entity to diff.
+        // Its pinned id is what the plan below carries to mean THAT app (ADR 0024).
+        string? planAppId = new BuildingBlocks.Helper.ShortGuid(Guid.NewGuid()).ToString();
         var seed = new
         {
             Realm = new { },
             Apps = new[]
             {
-                new { Slug = "plan-app", DisplayName = "Plan App",
+                new { Slug = "plan-app", Id = planAppId, DisplayName = "Plan App",
                       Permissions = new[] { new { Resource = "plan", Action = "read" } } },
             },
         };
@@ -113,9 +115,9 @@ public class RealmConfigEndpointsTests(ColdStartFixture fixture) : ColdStartTest
             Realm = new { },
             Apps = new[]
             {
-                new { Slug = "plan-app", DisplayName = "Plan App v2",
+                new { Slug = "plan-app", Id = planAppId, DisplayName = "Plan App v2",
                       Permissions = new[] { new { Resource = "plan", Action = "read" } } },
-                new { Slug = "plan-app-2", DisplayName = "Second App",
+                new { Slug = "plan-app-2", Id = (string?)null, DisplayName = "Second App",
                       Permissions = new[] { new { Resource = "plan2", Action = "read" } } },
             },
         };

@@ -72,8 +72,9 @@ public sealed class ModgudProvisioningClient
     internal async Task<RealmImportResult> ApplyAsync(
         string slug, RealmManifest manifest, CancellationToken ct)
     {
+        // Name-based authoring in, identity-based manifest out (ADR 0024).
         using var response = await _http.PostAsJsonAsync(
-            $"api/admin/realms/{slug}/apply", manifest, JsonOptions, ct);
+            $"api/admin/realms/{slug}/apply", ManifestHandles.ForWire(manifest), JsonOptions, ct);
         return await ReadResultOrThrowAsync(response, "apply", slug, ct);
     }
 
@@ -136,6 +137,17 @@ public sealed record RealmImportResult
     public required string Slug { get; init; }
     public required string PrimaryDomain { get; init; }
     public Dictionary<string, string> ClientSecrets { get; init; } = [];
+
+    /// <summary>Manifest references the realm could not resolve and the apply therefore
+    /// SKIPPED, plus readable keys that disagree with the id beside them. The apply
+    /// succeeded; these are the parts of it that did not land. Empty on a clean apply.</summary>
+    public List<string> SkippedReferences { get; init; } = [];
+
+    /// <summary>The real ids assigned to the manifest's document-local handles. The kit
+    /// generates one handle per declared entity (see <see cref="RealmManifest"/>), so this
+    /// is how a test learns the id of a user, role or client it just provisioned:
+    /// <c>AssignedIds["#user:alice"]</c>.</summary>
+    public Dictionary<string, string> AssignedIds { get; init; } = [];
 }
 
 /// <summary>Thrown when the provisioning API rejects a create / apply / hard-delete. Carries

@@ -35,6 +35,14 @@ public sealed class ManifestReferenceSkips
     public void Skip(string context, string reference, string reason)
         => _skips.Add($"{context}: {reference} — {reason}");
 
+    /// <summary>Records something the apply DID do but that a reader should know about —
+    /// today the verified-hint mismatch: a reference whose readable <c>Key</c> disagrees
+    /// with the entity its <c>Id</c> names (ADR 0024). Nothing was skipped; the id was
+    /// followed. It rides the same channel because a manifest whose names have gone stale
+    /// is exactly as invisible as a reference that did not land.</summary>
+    public void Note(string context, string what)
+        => _skips.Add($"{context}: {what}");
+
     /// <summary>Records that a whole reference list came back empty and is therefore left
     /// unchanged rather than cleared (rule 2 above).</summary>
     public void SkipWholeList(string context, string field, int listed)
