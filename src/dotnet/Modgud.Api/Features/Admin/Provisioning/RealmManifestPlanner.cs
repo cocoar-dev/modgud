@@ -1,5 +1,7 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using ErrorOr;
 using Marten;
 using Microsoft.AspNetCore.Http.Json;
@@ -141,7 +143,9 @@ public sealed class RealmManifestPlanner(
                 KeyField = "Slug",
                 PinnedId = a => a.Id,
                 PinnedIdCheck = PinnedIdLookup<App>(session, a => a.IsDeleted, a => a.Slug, ct),
-                NestedPatch = ["Settings"],
+                // REPLACE, not merge-patch: AppAdminService rebuilds the whole override from
+                // this object, so a null section clears it (→ inherit the realm).
+                NestedReplace = ["Settings"],
                 DeleteNote = "Deleting fails at apply while the app is still referenced by a kept role, API or scope.",
             }));
 
@@ -807,9 +811,17 @@ public sealed class RealmManifestPlanner(
         /// this entry (compared case-insensitively, matching the applier).</summary>
         public HashSet<string> ImmutableFails { get; init; } = [];
 
-        /// <summary>Nested option-objects with their own patch semantics (app Settings,
-        /// position TerminalPolicy) — diffed recursively with dotted paths.</summary>
+        /// <summary>Nested option-objects with MERGE-PATCH semantics (a position's
+        /// TerminalPolicy) — diffed recursively with dotted paths; an absent property means
+        /// "unchanged", so only present ones are compared.</summary>
         public HashSet<string> NestedPatch { get; init; } = [];
+
+        /// <summary>Nested objects with REPLACE semantics (an App's <c>Settings</c>): the
+        /// object is the COMPLETE desired override state, so a null section means "clear
+        /// it" rather than "leave it alone". Diffed like <see cref="NestedPatch"/> but off a
+        /// serialization that KEEPS nulls — otherwise turning a section off is invisible in
+        /// the plan while the apply happily clears it.</summary>
+        public HashSet<string> NestedReplace { get; init; } = [];
 
         /// <summary>Extra note appended to every delete candidate of the section.</summary>
         public string? DeleteNote { get; init; }
@@ -1106,6 +1118,22 @@ public sealed class RealmManifestPlanner(
             ? null
             : JsonSerializer.SerializeToNode(baselineItem, json)!.AsObject();
 
+        // A REPLACE section is serialized a second time with nulls KEPT: in the options
+        // above an explicit null is written as nothing at all, which is exactly right where
+        // absent means "unchanged" — and exactly wrong here, where it means "clear".
+        JsonObject? desiredKeepNulls = null, currentKeepNulls = null, baselineKeepNulls = null;
+        if (policy.NestedReplace.Count > 0)
+        {
+            var keepNulls = WithNulls(json);
+            desiredKeepNulls = JsonSerializer.SerializeToNode(item, keepNulls)!.AsObject();
+            currentKeepNulls = existing is null
+                ? null
+                : JsonSerializer.SerializeToNode(existing, keepNulls)!.AsObject();
+            baselineKeepNulls = baselineItem is null
+                ? null
+                : JsonSerializer.SerializeToNode(baselineItem, keepNulls)!.AsObject();
+        }
+
         var entry = new RealmPlanEntry { Key = key, Action = existing is null ? "create" : "update" };
         var failed = false;
 
@@ -1153,6 +1181,25 @@ public sealed class RealmManifestPlanner(
             // intent (absent ones were stripped — None Optionals and plain nulls alike).
             // On create, an explicit null / empty list only restates the shipped default.
             if (currentNode is null && !Carries(value)) continue;
+
+            if (policy.NestedReplace.Contains(field))
+            {
+                // The object itself still follows the outer contract: absent (or null) means
+                // "don't touch this App's override at all". Present means "this IS the
+                // override", and every section inside then carries — nulls included.
+                if (desiredKeepNulls?[field] is not JsonObject replace) continue;
+                if (currentNode is null)
+                {
+                    entry.Changes.Add(new RealmPlanChange(field, null, replace.DeepClone()));
+                    continue;
+                }
+                NestedPatchDiff(field, replace, currentKeepNulls?[field] as JsonObject ?? new JsonObject(),
+                    conflictMode && baselineKeepNulls is not null
+                        ? baselineKeepNulls[field] as JsonObject ?? new JsonObject()
+                        : null,
+                    entry.Changes, entry.Conflicts);
+                continue;
+            }
 
             if (policy.NestedPatch.Contains(field))
             {
@@ -1237,6 +1284,19 @@ public sealed class RealmManifestPlanner(
             }
         }
     }
+
+    /// <summary>The diff options with <c>WhenWritingNull</c> lifted, for REPLACE sections
+    /// whose nulls are the payload. Cached per options instance — building a
+    /// <see cref="JsonSerializerOptions"/> is expensive and the diff runs per entity.
+    /// Optionals keep their absence: the resolver suppresses a None through
+    /// <c>ShouldSerialize</c>, independently of the ignore condition.</summary>
+    private static readonly ConditionalWeakTable<JsonSerializerOptions, JsonSerializerOptions> KeepNullOptions = new();
+
+    private static JsonSerializerOptions WithNulls(JsonSerializerOptions json)
+        => KeepNullOptions.GetValue(json, source => new JsonSerializerOptions(source)
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+        });
 
     // ── Canonical JSON comparison — null == missing, arrays are order-insensitive
     //    multisets, object properties with null values are treated as absent. ──────────
