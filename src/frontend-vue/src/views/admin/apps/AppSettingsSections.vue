@@ -47,8 +47,13 @@ const loginProviderOptions = ref<{ value: string; label: string }[]>([])
 
 // Per-section "override" toggle (on → this App overrides the realm; off → inherit).
 // Numbers are kept as strings (empty = inherit that field).
+//
+// Origin has NO toggle: the section is a single value, so a toggle would say exactly
+// what an empty field already says — and two controls for one fact can contradict each
+// other (ticked but empty). The subdomain IS the switch: a value routes the host, empty
+// drops the route.
 const f = reactive({
-  origin: { override: false, subdomain: '' },
+  origin: { subdomain: '' },
   branding: {
     override: false, productName: '', primaryColor: '',
     logoAssetId: null as string | null, logoUrl: null as string | null,
@@ -139,8 +144,6 @@ const appRateLimitModeOptions = computed(() => [
 const inh = computed(() => {
   const r = realmSettingsStore.settings
   return {
-    // No realm equivalent — inheriting means "realm primary domain / realm default".
-    origin: { subdomain: '' },
     branding: {
       productName: r?.Branding?.ProductName ?? '',
       primaryColor: r?.Branding?.PrimaryColor ?? '',
@@ -222,7 +225,7 @@ function fieldBind(section: string, field: string): any {
 }
 
 function resetForm() {
-  f.origin.override = false; f.origin.subdomain = ''
+  f.origin.subdomain = ''
   f.branding.override = false; f.branding.productName = ''; f.branding.primaryColor = ''
   f.branding.logoAssetId = null; f.branding.faviconAssetId = null
   f.branding.logoUrl = null; f.branding.faviconUrl = null
@@ -253,7 +256,7 @@ function resetForm() {
 function populate(s?: ApplicationSettingsDto | null) {
   resetForm()
   if (!s) return
-  if (s.Origin) { f.origin.override = true; f.origin.subdomain = s.Origin.Subdomain ?? '' }
+  f.origin.subdomain = s.Origin?.Subdomain ?? ''
   if (s.Branding) {
     f.branding.override = true
     f.branding.productName = s.Branding.ProductName ?? ''
@@ -426,10 +429,10 @@ const emailPreviewOverlay = computed(() => ({
 /** Build the override DTO as the COMPLETE desired state (the App PUT is a replace):
  * an overridden section sends its values, a non-overridden section sends `null` so the
  * backend clears that override (→ inherit the realm). Origin always sends a
- * section so turning the toggle off explicitly removes any existing route. */
+ * section so an emptied field explicitly removes any existing route. */
 function build(): ApplicationSettingsDto {
   return {
-    Origin: { Subdomain: f.origin.override ? (f.origin.subdomain.trim() || null) : null },
+    Origin: { Subdomain: f.origin.subdomain.trim() || null },
     Branding: f.branding.override
       ? {
           ProductName: f.branding.productName.trim() || null,
@@ -614,9 +617,10 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
     <!-- Origin & Branding -->
     <div v-show="activeTab === 'origin'" class="tab-content">
-      <CoarCheckbox v-model="f.origin.override" :label="t('admin.appSettings.origin.override', {}, 'Dedicated subdomain for this app')" />
-      <CoarFormField :label="t('admin.appSettings.origin.subdomain', {}, 'Subdomain (Child der Realm-Primary-Domain)')">
-        <CoarTextInput v-bind="fieldBind('origin', 'subdomain')" clearable placeholder="acmelist.cocoar.app" />
+      <!-- No override toggle: the value IS the switch (see the form state). -->
+      <CoarFormField :label="t('admin.appSettings.origin.subdomain', {}, 'Subdomain (Child der Realm-Primary-Domain)')"
+        :hint="t('admin.appSettings.origin.subdomainHint', {}, 'A value routes this host to the app. Empty = no own subdomain, the app is reached through the realm URL — clearing the field removes the existing route.')">
+        <CoarTextInput v-model="f.origin.subdomain" clearable placeholder="acmelist.cocoar.app" />
       </CoarFormField>
 
       <CoarCheckbox v-model="f.branding.override" :label="t('admin.appSettings.branding.override', {}, 'Custom Branding (Login/SPA)')" />
