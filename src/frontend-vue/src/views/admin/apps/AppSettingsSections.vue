@@ -98,8 +98,14 @@ const f = reactive({
     reservedNames: [] as string[], perIp: '', perRealm: '',
   },
   cimd: { override: false, enabled: false, access: '', refresh: '' },
+  // ChangeFeed has no override toggle either: "Enabled" already IS the switch — a stored
+  // section with Enabled=false and no section at all mean the same thing to the reader
+  // (AppChangeFeedSubscription falls back to ApplicationChangeFeedSettings.Disabled).
+  // `configured` is not a control, it remembers whether this App already HAS a section, so
+  // switching the feed off keeps the retention numbers instead of silently dropping them.
   changeFeed: {
     enabled: false,
+    configured: false,
     retentionAgeDays: 7 as number | null,
     minimumEventCount: 1000 as number | null,
   },
@@ -250,7 +256,8 @@ function resetForm() {
   f.dcr.override = false; f.dcr.enabled = false; f.dcr.access = ''; f.dcr.refresh = ''
   f.dcr.reservedNames = []; f.dcr.perIp = ''; f.dcr.perRealm = ''
   f.cimd.override = false; f.cimd.enabled = false; f.cimd.access = ''; f.cimd.refresh = ''
-  f.changeFeed.enabled = false; f.changeFeed.retentionAgeDays = 7; f.changeFeed.minimumEventCount = 1000
+  f.changeFeed.enabled = false; f.changeFeed.configured = false
+  f.changeFeed.retentionAgeDays = 7; f.changeFeed.minimumEventCount = 1000
 }
 
 function populate(s?: ApplicationSettingsDto | null) {
@@ -346,6 +353,7 @@ function populate(s?: ApplicationSettingsDto | null) {
   }
   if (s.ChangeFeed) {
     f.changeFeed.enabled = s.ChangeFeed.Enabled
+    f.changeFeed.configured = true
     f.changeFeed.retentionAgeDays = s.ChangeFeed.MinimumRetentionAgeDays ?? 7
     f.changeFeed.minimumEventCount = s.ChangeFeed.MinimumEventCount ?? 1000
   }
@@ -515,11 +523,17 @@ function build(): ApplicationSettingsDto {
     Cimd: f.cimd.override
       ? { Enabled: f.cimd.enabled, AccessTokenLifetimeMinutes: parseNum(f.cimd.access), RefreshTokenLifetimeDays: parseNum(f.cimd.refresh) }
       : null,
-    ChangeFeed: {
-      Enabled: f.changeFeed.enabled,
-      MinimumRetentionAgeDays: f.changeFeed.retentionAgeDays ?? 7,
-      MinimumEventCount: f.changeFeed.minimumEventCount ?? 1000,
-    },
+    // An App that never had a change feed and is not getting one now sends NO section:
+    // these settings are REPLACE, so emitting the defaults would materialize an override
+    // that says exactly what no override already says — and show up in every draft plan as
+    // a change nobody made. A section the App already has is kept (see `configured`).
+    ChangeFeed: f.changeFeed.enabled || f.changeFeed.configured
+      ? {
+          Enabled: f.changeFeed.enabled,
+          MinimumRetentionAgeDays: f.changeFeed.retentionAgeDays ?? 7,
+          MinimumEventCount: f.changeFeed.minimumEventCount ?? 1000,
+        }
+      : null,
   }
 }
 
