@@ -240,6 +240,72 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
     }
 
     [Fact]
+    public async Task Turning_off_a_per_app_settings_section_shows_in_the_plan_as_the_clear_it_is()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var planner = factory.Services.GetRequiredService<RealmManifestPlanner>();
+
+        const string slug = "appclear";
+        var appId = new ShortGuid(Guid.NewGuid()).ToString();
+        RealmManifest Manifest(ApplicationSettingsDto settings) => new()
+        {
+            Apps =
+            [
+                new RealmManifestApp
+                {
+                    Slug = "shop", Id = appId, DisplayName = "Shop",
+                    Permissions = [new RealmManifestPermission("order", "read")],
+                    Settings = settings,
+                },
+            ],
+        };
+
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), Manifest(new ApplicationSettingsDto
+        {
+            Origin = new ApplicationOriginDto { Subdomain = $"shop.{slug}.localhost" },
+            Branding = new ApplicationBrandingDto { ProductName = "Shop!" },
+        }), ct)).IsError);
+
+        // What the admin UI stages when both toggles go off: the section objects are the
+        // COMPLETE desired override state, so a cleared subdomain is an explicit null and a
+        // switched-off section is a null section. Both mean "clear" to the apply — and the
+        // plan has to say so, or the draft looks empty and the admin applies blind.
+        var cleared = Manifest(new ApplicationSettingsDto
+        {
+            Origin = new ApplicationOriginDto { Subdomain = null },
+            Branding = null,
+        });
+
+        var plan = await planner.PlanAsync(slug, cleared, prune: false, ct: ct);
+        Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
+        var entry = Assert.Single(plan.Value.Sections.Single(s => s.Name == "apps").Entries);
+        Assert.Equal("update", entry.Action);
+        Assert.Contains(entry.Changes, c => c.Field == "Settings.Origin.Subdomain");
+        Assert.Contains(entry.Changes, c => c.Field == "Settings.Branding");
+
+        // …and the apply really does clear both, including the global host route.
+        Assert.False((await applier.UpdateRealmAsync(slug, cleared, ct: ct)).IsError);
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var settings = await sp.GetRequiredService<IApplicationSettingsService>()
+                .GetAsync(new ShortGuid(appId).Guid, ct);
+            Assert.False(settings.IsError);
+            Assert.Null(settings.Value.Origin?.Subdomain);
+            Assert.Null(settings.Value.Branding);
+        });
+        var realm = (await factory.Services.GetRequiredService<IRealmProvisioningService>()
+            .GetRealmBySlugAsync(slug, ct))!;
+        Assert.DoesNotContain(realm.ApplicationDomains, kv => kv.Key == $"shop.{slug}.localhost");
+
+        // Re-planning the cleared state is now genuinely unchanged (no phantom diff).
+        var again = await planner.PlanAsync(slug, cleared, prune: false, ct: ct);
+        Assert.Equal("unchanged", Assert.Single(again.Value.Sections.Single(s => s.Name == "apps").Entries).Action);
+    }
+
+    [Fact]
     public async Task Positions_are_feature_gated_and_import_apply_export_prune()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
