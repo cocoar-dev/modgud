@@ -27,4 +27,12 @@ public interface IClientSessionService
     Task<ErrorOr<bool>> RevokeAsync(Guid userId, Guid sessionId, CancellationToken ct = default);
     Task RevokeAllAsync(Guid userId, bool revokeGrants, CancellationToken ct = default);
     Task<int> PruneExpiredAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Ends the native client session(s) built on an authorization that was
+    /// revoked elsewhere. Does not touch the grant itself — the caller already
+    /// revoked it; this only keeps the session list and the session-end feed
+    /// in step.
+    /// </summary>
+    Task EndByAuthorizationAsync(string authorizationId, CancellationToken ct = default);
 }

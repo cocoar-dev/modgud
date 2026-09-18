@@ -36,6 +36,7 @@ public static class AuditDurability
     public static AuditDurabilityClass Classify(string eventType) => eventType switch
     {
         AuditEvents.RefreshTokenReuseDetected or
+        AuditEvents.AuthorizationRevoked or
         AuditEvents.AuditLogExported or
         AuditEvents.SecurityRetentionChanged or
         AuditEvents.SigningKeyRotated or

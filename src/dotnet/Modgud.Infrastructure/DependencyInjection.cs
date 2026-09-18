@@ -263,6 +263,10 @@ public static class DependencyInjection
             // Kept separate from app:read because the snapshot contains
             // directory/profile data, not merely Application configuration.
             opt.RegisterResource(app, "app-scope", "read");
+            // The OAuth authorizations (user × client grants) that reach one
+            // App's resource servers. Lets the App's own backend list them and
+            // end a single connection, refresh token included.
+            opt.RegisterResource(app, "oauth-authorization", "read", "revoke");
 
             // Identity / directory
             opt.RegisterResource(app, "user", "read", "write");

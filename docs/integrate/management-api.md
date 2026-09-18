@@ -163,44 +163,80 @@ A group may deliberately have no roles. It then grants no permission while
 still assigning its members to the selected Application scopes. The admin UI
 marks such a group as **No permissions**.
 
-The response includes an opaque `scopeVersion`, the contributing root groups,
+The response includes an opaque `ScopeVersion`, the contributing root groups,
 and the typed Principal records:
 
 ```json
 {
-  "appId": "<short-guid>",
-  "appSlug": "alert-hub",
-  "scopeVersion": "v1-<opaque-hash>",
-  "rootGroups": [
+  "AppId": "<short-guid>",
+  "AppSlug": "alert-hub",
+  "ScopeVersion": "v1-<opaque-hash>",
+  "RootGroups": [
     {
-      "id": "<short-guid>",
-      "name": "AlertHub principals",
-      "hasPermissions": false
+      "Id": "<short-guid>",
+      "Name": "AlertHub principals",
+      "HasPermissions": false
     }
   ],
-  "principals": [
+  "Principals": [
     {
-      "id": "<short-guid>",
-      "type": "person",
-      "displayName": "AP | Alice Person",
-      "isActive": true,
-      "isScopeRoot": false,
-      "accountName": "alice",
-      "firstname": "Alice",
-      "lastname": "Person",
-      "acronym": "AP",
-      "email": "alice@example.com"
+      "Id": "<short-guid>",
+      "Type": "person",
+      "DisplayName": "AP | Alice Person",
+      "IsActive": true,
+      "IsScopeRoot": false,
+      "AccountName": "alice",
+      "Firstname": "Alice",
+      "Lastname": "Person",
+      "Acronym": "AP",
+      "Email": "alice@example.com"
     }
   ]
 }
 ```
 
-`scopeVersion` versions the **definition**, not every member. Adding or removing
+`ScopeVersion` versions the **definition**, not every member. Adding or removing
 an App binding, changing the nested-group structure, or changing an automatic
 membership predicate changes it and tells a consumer to perform a new full
 read. Ordinary direct membership/profile changes leave it stable; the resumable
 change stream can therefore represent those as individual changes. Consumers
 must treat the version as opaque and compare it for equality only.
+
+## List and revoke an Application's authorizations
+
+An application that shows its users their "connected systems" (an MCP host, a Home Assistant instance, a third-party app) usually stores its own per-connection state, keyed on the access token's `sub` and `oi_au_id`. Blocking a connection on the application's side stops the access token there, but the refresh token lives in Modgud. The connected system is the OAuth client, so the application cannot use RFC 7009 revocation on its behalf. These two operations close that gap.
+
+`GET /api/app/{appId}/authorizations` requires `oauth-authorization:read` and returns the valid authorizations that reach the Application. An authorization reaches an Application when one of its scopes is app-scoped to that Application, or lists one of the Application's [OAuth APIs](/admin/oauth-apis) as a resource. Authorizations that only concern other Applications are never returned.
+
+| Query parameter | Meaning |
+|---|---|
+| `subject` | Optional. Only this user's authorizations (the token's `sub`). |
+| `limit` | Page size, default `200`, maximum `1000`. |
+| `after` | The `NextAfter` value of the previous page. |
+
+```json
+{
+  "Items": [
+    {
+      "Id": "0b6f1c0e-5d0a-4d0e-9a57-2f2f0f6f4c11",
+      "Subject": "5f0c8a52-7f5e-4c7b-8a39-0a3b2f1d9e77",
+      "ClientId": "acme-homeassistant",
+      "Type": "permanent",
+      "Scopes": ["lists.read", "offline_access", "openid"],
+      "CreatedAt": "2026-09-18T09:12:44Z"
+    }
+  ],
+  "NextAfter": "0b6f1c0e-5d0a-4d0e-9a57-2f2f0f6f4c11"
+}
+```
+
+`Id` and `Subject` are returned exactly as they appear in the access token (`oi_au_id`, `sub`), not as ShortGuids, because the consumer joins on them. `ClientId` is absent for a [CIMD](/admin/client-id-metadata-documents) client, which Modgud never persists. `NextAfter` is absent on the last page; keep requesting while it is present. `Type` is `permanent` for a consented Authorization Code grant and `ad-hoc` for a Device Flow or native grant.
+
+`DELETE /api/app/{appId}/authorizations/{id}` requires `oauth-authorization:revoke`. It revokes the authorization and every token issued under it, the refresh token included, ends a native client session built on it, and writes a `security.authorization_revoked` audit event. It answers `204 No Content`, also when the authorization was revoked already. An unknown id and an authorization outside the Application's reach both answer `404`.
+
+An already-issued JWT access token stays cryptographically valid until it expires. The application blocks it on its side by the same `oi_au_id`; reference tokens and the next refresh fail at Modgud immediately. The next authorize flow of that client shows the consent screen and creates a new authorization with a new `oi_au_id`.
+
+As with the scope read, a bearer caller may only target Applications listed in its OAuth client's `AppIds`.
 
 ## Delegated-person setup
 
@@ -249,6 +285,8 @@ scheme does not turn every cookie-only admin route into a remote API.
 | `GET` | `/api/position` | `position:read` | `PositionTerminals` enabled |
 | `GET` | `/api/position/{id}` | `position:read` | `PositionTerminals` enabled |
 | `GET` | `/api/app/{id}/scope` | `app-scope:read` | Full `BoundTo`-derived Principal snapshot |
+| `GET` | `/api/app/{id}/authorizations` | `oauth-authorization:read` | Valid authorizations that reach the Application; paged |
+| `DELETE` | `/api/app/{id}/authorizations/{authorizationId}` | `oauth-authorization:revoke` | Revokes the authorization and all its tokens; idempotent |
 | `GET` | `/api/app/{id}/change-feed/snapshot` | `app-scope:read` | Feed enabled; full public synchronization snapshot |
 | `GET` | `/api/app/{id}/change-feed` | `app-scope:read` | Feed enabled; resumable HTTP read using an opaque cursor |
 | `GET` | `/api/app/{id}/change-feed/stream` | `app-scope:read` | Feed enabled; bearer-only resumable SSE stream using the same cursor and envelope |

@@ -100,6 +100,8 @@ A CIMD client always reaches the explicit consent screen on first authorize, wit
 - The **`client_id` hostname** (e.g. `claude.ai`) shown prominently — the domain that owns the document. Verify it matches the app you intended, not just the self-asserted display name.
 - An **`[unverified]`** marker + warning callout, the same treatment self-registered clients get.
 
+Like a DCR client, a CIMD client never skips this screen on a remembered authorization: every fresh authorize flow shows it again. The authorization itself is reused for the same user, client and scope set, so the token's `oi_au_id` stays stable across re-consents.
+
 ## What's NOT in v1
 
 - **`private_key_jwt`** — confidential CIMD clients (asymmetric client auth via a `jwks_uri` in the document). v1 is public PKCE only. Deferred to v2, which will also revoke on `jwks_uri` change.

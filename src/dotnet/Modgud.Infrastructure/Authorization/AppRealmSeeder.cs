@@ -34,6 +34,7 @@ public static class AppRealmSeeder
         // automatically and cannot be deleted.
         ("app", ["admin", "read", "write"]),
         ("app-scope", ["read"]),
+        ("oauth-authorization", ["read", "revoke"]),
 
         // Identity / directory
         ("user", ["read", "write"]),
