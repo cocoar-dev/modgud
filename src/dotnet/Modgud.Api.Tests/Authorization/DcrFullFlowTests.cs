@@ -74,6 +74,67 @@ public class DcrFullFlowTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task Second_authorize_shows_consent_again_but_keeps_the_authorization_id()
+    {
+        await SeedAsync();
+        var clientId = await RegisterDcrClientAsync(scope: $"openid {ScopeName}");
+
+        // DriveDcrAuthCodeFlowAsync asserts the redirect to /consent, so the
+        // second call is itself the proof that the remembered authorization
+        // did not skip the screen (AllowRememberConsent=false for DCR).
+        var (first, _) = await DriveDcrAuthCodeFlowAsync(clientId, $"openid {ScopeName}", AllowedAudience);
+        var (second, _) = await DriveDcrAuthCodeFlowAsync(clientId, $"openid {ScopeName}", AllowedAudience);
+
+        var handler = new JwtSecurityTokenHandler();
+        var firstId = handler.ReadJwtToken(first).Payload["oi_au_id"].ToString();
+        var secondId = handler.ReadJwtToken(second).Payload["oi_au_id"].ToString();
+        Assert.False(string.IsNullOrEmpty(firstId));
+        Assert.Equal(firstId, secondId);
+    }
+
+    [Fact]
+    public async Task Approved_consent_redirect_completes_the_flow_only_once()
+    {
+        await SeedAsync();
+        var clientId = await RegisterDcrClientAsync(scope: $"openid {ScopeName}");
+
+        var cookieClient = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
+        var authorizeUri = "/connect/authorize?" + string.Join("&", new[]
+        {
+            "response_type=code",
+            $"client_id={Uri.EscapeDataString(clientId)}",
+            $"redirect_uri={Uri.EscapeDataString(RedirectUri)}",
+            $"scope={Uri.EscapeDataString($"openid {ScopeName}")}",
+            $"state={Guid.NewGuid():N}",
+            $"code_challenge={GeneratePkceS256Challenge(GeneratePkceVerifier())}",
+            "code_challenge_method=S256",
+            $"resource={Uri.EscapeDataString(AllowedAudience)}",
+        });
+        var authorizeResp = await cookieClient.GetAsync(authorizeUri, TestContext.Current.CancellationToken);
+        AssertRedirect(authorizeResp);
+        var ticketId = authorizeResp.Headers.Location!.ToString()["/consent?ticket=".Length..];
+
+        var decisionResp = await cookieClient.PostAsJsonAsync(
+            "/connect/consent",
+            new { Ticket = ticketId, Approved = true, ApprovedScopes = new[] { "openid", ScopeName } },
+            TestContext.Current.CancellationToken);
+        Assert.True(decisionResp.IsSuccessStatusCode);
+        using var decisionDoc = JsonDocument.Parse(
+            await decisionResp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var followUpUrl = decisionDoc.RootElement.GetProperty("RedirectUrl").GetString()!;
+
+        var firstUse = await cookieClient.GetAsync(followUpUrl, TestContext.Current.CancellationToken);
+        AssertRedirect(firstUse);
+        Assert.Contains("code=", firstUse.Headers.Location!.Query);
+
+        // The same URL again (browser back button, or a link lifted from the
+        // history) must not mint a second code without a new consent.
+        var replay = await cookieClient.GetAsync(followUpUrl, TestContext.Current.CancellationToken);
+        AssertRedirect(replay);
+        Assert.StartsWith("/consent?ticket=", replay.Headers.Location!.ToString());
+    }
+
+    [Fact]
     public async Task Last_used_at_advances_after_first_token_issue()
     {
         await SeedAsync();

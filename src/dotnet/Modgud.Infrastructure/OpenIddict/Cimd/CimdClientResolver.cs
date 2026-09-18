@@ -259,6 +259,9 @@ public sealed class CimdClientResolver
                 [OAuthApplicationPropertyKeys.Enabled] = JsonSerializer.SerializeToElement(true),
                 [OAuthApplicationPropertyKeys.DcrIsDynamicallyRegistered] = JsonSerializer.SerializeToElement(true),
                 [OAuthApplicationPropertyKeys.CimdIsResolvedClient] = JsonSerializer.SerializeToElement(true),
+                // Same rule as DCR: an unverified public client never skips
+                // the consent screen on a remembered authorization.
+                [OAuthApplicationPropertyKeys.AllowRememberConsent] = JsonSerializer.SerializeToElement(false),
             },
             AccessTokenType = AccessTokenType.Jwt,
             AppIds = new List<Guid>(),

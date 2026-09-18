@@ -230,12 +230,30 @@ public static class ConsentEndpoints
         var principal = new ClaimsPrincipal(identity);
         principal.SetScopes(approvedSet);
 
-        await authorizationManager.CreateAsync(
-            principal: principal,
-            subject: await userManager.GetUserIdAsync(user),
-            client: await applicationManager.GetIdAsync(application) ?? string.Empty,
+        var subject = await userManager.GetUserIdAsync(user);
+        var clientPk = await applicationManager.GetIdAsync(application) ?? string.Empty;
+
+        // A client with AllowRememberConsent=false lands here on every fresh
+        // authorize although its authorization already exists. Re-affirming
+        // must not mint a second one: consumers key their own per-connection
+        // state on the authorization id (`oi_au_id`), so it has to survive a
+        // re-consent for the same scopes.
+        var existing = await authorizationManager.FindAsync(
+            subject: subject,
+            client: clientPk,
+            status: Statuses.Valid,
             type: AuthorizationTypes.Permanent,
-            scopes: approvedSet.ToImmutableArray());
+            scopes: approvedSet.ToImmutableArray()).AnyAsync();
+
+        if (!existing)
+        {
+            await authorizationManager.CreateAsync(
+                principal: principal,
+                subject: subject,
+                client: clientPk,
+                type: AuthorizationTypes.Permanent,
+                scopes: approvedSet.ToImmutableArray());
+        }
 
         // The ticket was already claimed (consumed) above, before this
         // authorization was created — nothing more to persist here.
@@ -243,9 +261,12 @@ public static class ConsentEndpoints
         // OAUTH-08 fix: reconstruct the redirect from the SERVER-SIDE locked
         // query string. The SPA never sees the OAuth URL — there's no chance
         // for it to get tampered with between consent display and submit.
+        // The consent_ticket marker lets the re-entry prove this approval when
+        // the client's remembered authorization doesn't skip consent by itself.
         return Results.Ok(new ConsentResult
         {
-            RedirectUrl = "/connect/authorize" + record.AuthorizeRequestQuery,
+            RedirectUrl = "/connect/authorize" + record.AuthorizeRequestQuery
+                        + "&consent_ticket=" + record.Id.ToString("N"),
         });
     }
 

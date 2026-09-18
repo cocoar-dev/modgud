@@ -86,4 +86,14 @@ public class ConsentTicket
     /// approve path's re-entry.
     /// </summary>
     public DateTimeOffset? DeniedAt { get; set; }
+
+    /// <summary>
+    /// Set when the authorize re-entry redeems an APPROVED ticket passed as
+    /// <c>?consent_ticket={Id}</c>. Only clients with
+    /// <c>AllowRememberConsent=false</c> need it: their remembered
+    /// authorization no longer skips the consent screen, so the re-entry has
+    /// to prove that the user approved this very request a moment ago. The
+    /// version-checked write makes the proof single-use.
+    /// </summary>
+    public DateTimeOffset? RedeemedAt { get; set; }
 }
