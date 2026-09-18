@@ -91,6 +91,8 @@ DCR-registered clients always go through the explicit consent screen, with two e
 
 `AllowRememberConsent` is forced off for DCR clients, so the AS never skips consent for a new authorization request — a fresh authorize flow always shows the consent screen again. Clients avoid repeated prompts by retaining and refreshing the authorization they already obtained (typical pattern: the agent caches its own consent decision and reuses the refresh token instead of re-authorizing).
 
+Re-affirming does not mint a new authorization. For the same user, client and scope set Modgud reuses the existing one, so the `oi_au_id` claim in the access token stays the same across re-consents. A resource server that keys per-connection state on `sub` + `oi_au_id` keeps that state. A new authorization (and a new `oi_au_id`) appears only when the scope set changes, when the old authorization was revoked, or when the client registers again under a new `client_id`.
+
 ## Audit log
 
 Every DCR-related event lands in the auth log with a `DCR ` prefix in its message. The [Auth Log](./auth-log) grid's category filter chips are derived from whatever event categories are present, so look for DCR events under the **operations** (and, for rejected registrations, **security-ops**) chip rather than a dedicated DCR chip.

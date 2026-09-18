@@ -284,6 +284,7 @@ internal static class AuditEventRenderer
             AuditEvents.PrivilegeEscalationBlocked => "Federated privilege escalation",
             AuditEvents.RateLimitTriggered => "Rate limit",
             AuditEvents.RefreshTokenReuseDetected => "Refresh-token reuse",
+            AuditEvents.AuthorizationRevoked => "Authorization revoked",
             AuditEvents.DcrRegistrationRejected => "Dynamic client registration",
             AuditEvents.BootstrapInviteRejected => "Bootstrap invite",
             AuditEvents.SecurityRetentionChanged => "Security-log retention",

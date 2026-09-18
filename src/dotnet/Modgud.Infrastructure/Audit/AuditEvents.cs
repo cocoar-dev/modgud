@@ -138,6 +138,14 @@ public static class AuditEvents
     /// count of sibling tokens revoked.</summary>
     public const string RefreshTokenReuseDetected = "security.refresh_token_reuse_detected";
 
+    /// <summary>A single OAuth authorization was revoked on request — by the
+    /// consuming application's service account through the Management API.
+    /// Teardown covers the authorization, every token tied to it, and a native
+    /// client session built on it. Actor = the caller; Target = the grant's
+    /// user. Carries OAuthClientId, AuthorizationId, ApplicationId (the App the
+    /// caller acted for) and Count = tokens revoked.</summary>
+    public const string AuthorizationRevoked = "security.authorization_revoked";
+
     /// <summary>A DCR client registration was rejected (policy / validation).</summary>
     public const string DcrRegistrationRejected = "security.dcr_registration_rejected";
 

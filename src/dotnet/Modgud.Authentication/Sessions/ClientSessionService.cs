@@ -211,7 +211,11 @@ public sealed class ClientSessionService(
         CancellationToken ct)
     {
         if (string.IsNullOrEmpty(authorizationId)) return;
+        await EndByAuthorizationAsync(authorizationId, ct);
+    }
 
+    public async Task EndByAuthorizationAsync(string authorizationId, CancellationToken ct = default)
+    {
         var rows = await session.Query<ClientSession>()
             .Where(x => x.AuthorizationId == authorizationId)
             .ToListAsync(ct);

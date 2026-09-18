@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -204,28 +205,39 @@ public static class AuthorizationEndpoints
         var subject = user.Id.ToString();
         var clientPk = await applicationManager.GetIdAsync(application) ?? string.Empty;
 
+        // Post-consent re-entry: the approved ticket carries the scopes the
+        // user kept. From here on the grant is about those, not about the
+        // request's full list — otherwise unticking one optional scope finds
+        // no matching authorization below and loops back to /consent forever.
+        var approvedScopes = await TryRedeemConsentTicketAsync(httpContext, request, user.Id, session);
+        var grantScopes = approvedScopes?.ToImmutableArray() ?? request.GetScopes();
+
         var authorizations = await authorizationManager.FindAsync(
             subject: subject,
             client: clientPk,
             status: Statuses.Valid,
             type: AuthorizationTypes.Permanent,
-            scopes: request.GetScopes()).ToListAsync();
+            scopes: grantScopes).ToListAsync();
 
         var consentType = await applicationManager.GetConsentTypeAsync(application);
 
-        // CIMD: the synthesized client is ConsentType=explicit, so
-        // a first authorize always lands on the consent screen — which shows
-        // the client_id hostname + "unverified" marker as the phishing
-        // mitigation. Subsequent authorizes for the same user+client+scopes
-        // auto-approve via the remembered authorization, exactly like every
-        // other client (DCR included). We deliberately do NOT force consent
-        // on every authorize: the post-consent re-entry to /authorize relies
-        // on this same shortcut to complete the round-trip, so forcing it
-        // would loop the user back to /consent indefinitely.
-        if (consentType == ConsentTypes.Implicit || authorizations.Count != 0)
+        // A remembered authorization skips the consent screen only for clients
+        // that allow it. With AllowRememberConsent=false (forced for DCR and
+        // CIMD clients — anyone can replay a public client_id against a
+        // loopback redirect, RFC 8252 §8.6) every fresh authorize shows the
+        // screen again. The authorization itself is still REUSED, so the
+        // grant's `oi_au_id` stays stable across re-consents. The post-consent
+        // re-entry gets through on its redeemed ticket instead.
+        var skipConsent = consentType == ConsentTypes.Implicit
+            || approvedScopes is not null
+            || (authorizations.Count != 0
+                && await AllowsRememberConsentAsync(applicationManager, application));
+
+        if (skipConsent)
         {
             var principal = await CreateClaimsPrincipalAsync(
                 user, request, scopeManager, userManager: userManager,
+                scopeOverrides: approvedScopes,
                 cookiePrincipal: authResult.Principal);
 
             var authorization = authorizations.LastOrDefault();
@@ -272,7 +284,7 @@ public static class AuthorizationEndpoints
             Subject = user.Id,
             ClientId = request.ClientId!,
             RequestedScopes = request.GetScopes().ToArray(),
-            AuthorizeRequestQuery = httpContext.Request.QueryString.Value ?? string.Empty,
+            AuthorizeRequestQuery = WithoutTicketMarkers(httpContext.Request.Query),
             CreatedAt = DateTimeOffset.UtcNow,
             ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
         };
@@ -280,6 +292,82 @@ public static class AuthorizationEndpoints
         await session.SaveChangesAsync();
 
         return Results.Redirect($"/consent?ticket={ticket.Id:N}");
+    }
+
+    /// <summary>
+    /// The locked authorize query a consent ticket replays. A spent
+    /// <c>consent_ticket</c> / <c>deny_ticket</c> marker from an earlier round
+    /// must not ride along: the consent endpoint appends a fresh one, and a
+    /// doubled parameter would no longer read as a single value — the re-entry
+    /// could never redeem it and the user would loop back to /consent.
+    /// </summary>
+    private static string WithoutTicketMarkers(IQueryCollection query)
+    {
+        var kept = query
+            .Where(p => p.Key is not ("consent_ticket" or "deny_ticket"))
+            .SelectMany(p => p.Value, (p, value) => KeyValuePair.Create(p.Key, value));
+        return QueryString.Create(kept).Value ?? string.Empty;
+    }
+
+    private static async Task<bool> AllowsRememberConsentAsync(
+        IOpenIddictApplicationManager applicationManager,
+        object application)
+    {
+        var properties = await applicationManager.GetPropertiesAsync(application);
+        return !properties.TryGetValue(
+                   Modgud.Domain.OAuth.Applications.OAuthApplicationPropertyKeys.AllowRememberConsent,
+                   out var element)
+               || element.ValueKind != System.Text.Json.JsonValueKind.False;
+    }
+
+    /// <summary>
+    /// Redeems the <c>?consent_ticket={id}</c> the consent endpoint appends on
+    /// approval. Genuine means: approved (consumed, not denied), bound to this
+    /// user and client, for exactly the scopes now requested, consumed within
+    /// the last two minutes, and not redeemed before. Returns the scopes the
+    /// user approved; anything else returns null and the caller re-prompts — a
+    /// forged marker buys nothing.
+    /// </summary>
+    private static async Task<IReadOnlyList<string>?> TryRedeemConsentTicketAsync(
+        HttpContext httpContext,
+        OpenIddictRequest request,
+        Guid userId,
+        IDocumentSession session)
+    {
+        // Read the raw query, not the OpenIddict request: under PAR the request
+        // is rebuilt from the pushed payload and never carries this marker.
+        if (httpContext.Request.Query["consent_ticket"] is not [{ Length: > 0 } raw]
+            || !Guid.TryParseExact(raw, "N", out var ticketId))
+        {
+            return null;
+        }
+
+        var ticket = await session.LoadAsync<ConsentTicket>(ticketId);
+        var now = DateTimeOffset.UtcNow;
+        if (ticket is not { ConsumedAt: not null, DeniedAt: null, RedeemedAt: null, ApprovedScopes: not null }
+            || ticket.Subject != userId
+            || !string.Equals(ticket.ClientId, request.ClientId, StringComparison.Ordinal)
+            || ticket.ConsumedAt < now.AddMinutes(-2)
+            || !ticket.RequestedScopes.ToHashSet(StringComparer.Ordinal).SetEquals(request.GetScopes()))
+        {
+            return null;
+        }
+
+        ticket.RedeemedAt = now;
+        session.Store(ticket);
+        try
+        {
+            await session.SaveChangesAsync();
+        }
+        catch (JasperFx.ConcurrencyException)
+        {
+            // Lost the race to a parallel re-entry. Drop the stale write so the
+            // consent ticket the caller stores next can still be saved.
+            session.EjectAllPendingChanges();
+            return null;
+        }
+
+        return ticket.ApprovedScopes;
     }
 
     private static async Task<IResult> ExchangeAsync(

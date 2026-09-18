@@ -7,6 +7,7 @@ public class AuditDurabilityTests
     public static TheoryData<string, AuditDurabilityClass> ClassifiedEvents => new()
     {
         { AuditEvents.RefreshTokenReuseDetected, AuditDurabilityClass.Required },
+        { AuditEvents.AuthorizationRevoked, AuditDurabilityClass.Required },
         { AuditEvents.AuditLogExported, AuditDurabilityClass.Required },
         { AuditEvents.SecurityRetentionChanged, AuditDurabilityClass.Required },
         { AuditEvents.SigningKeyRotated, AuditDurabilityClass.Required },
