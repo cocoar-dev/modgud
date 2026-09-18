@@ -330,8 +330,15 @@ public sealed class RealmManifestPlanner(
         foreach (var r in current.Roles) roleRefs.Add(r.NaturalKey, r.Id);
         var userRefs = new RefCanonicalizer();
         foreach (var u in current.Users) userRefs.Add(u.Key ?? u.UserName ?? u.Email, u.Id);
+        // A group's Members are users, nested groups AND service accounts — the exporter
+        // writes all three as { Key, Id }, so all three have to canonicalize, or a service
+        // account written id-only reads as a change the apply would never make.
+        var memberRefs = new RefCanonicalizer();
+        foreach (var u in current.Users) memberRefs.Add(u.Key ?? u.UserName ?? u.Email, u.Id);
+        foreach (var g in current.Groups) memberRefs.Add(g.Name, g.Id);
+        foreach (var s in current.ServiceAccounts) memberRefs.Add(s.AccountName, s.Id);
         RealmManifestGroup CanonGroup(RealmManifestGroup g)
-            => g with { Members = userRefs.Canon(g.Members), Roles = roleRefs.Canon(g.Roles) };
+            => g with { Members = memberRefs.Canon(g.Members), Roles = roleRefs.Canon(g.Roles) };
         var positionRefs = new RefCanonicalizer();
         foreach (var p in current.Positions) positionRefs.Add(p.AccountName.Trim().ToLowerInvariant(), p.Id);
         RealmManifestPosition CanonPosition(RealmManifestPosition p)
@@ -398,7 +405,12 @@ public sealed class RealmManifestPlanner(
                 },
             }));
 
-        AddSkippedReferenceNotes(manifest, current, result);
+        // The realm's apps are read LIVE, not off the export: the export leaves the system
+        // app out on purpose (it is seeded, not authored), but a role, client, API or scope
+        // may point at it all the same — and the applier resolves it, because its app
+        // resolver is seeded from the same query. The plan has to see what the apply sees.
+        var liveApps = await session.Query<App>().Where(a => !a.IsDeleted).ToListAsync(ct);
+        AddSkippedReferenceNotes(manifest, current, liveApps, result);
         return result;
     }
 
@@ -414,15 +426,23 @@ public sealed class RealmManifestPlanner(
     /// reference is resolved they exist.</para>
     /// </summary>
     private static void AddSkippedReferenceNotes(
-        RealmManifest manifest, RealmManifest current, RealmPlanResult result)
+        RealmManifest manifest, RealmManifest current, IReadOnlyList<App> liveApps, RealmPlanResult result)
     {
-        var appSlugs = manifest.Apps.Select(a => a.Slug)
-            .Concat(current.Apps.Select(a => a.Slug))
+        // Every app the realm HAS (system app included — the export omits it, the applier's
+        // resolver does not) plus every app the manifest creates.
+        var appSlugs = liveApps.Select(a => a.Slug)
+            .Concat(manifest.Apps.Select(a => a.Slug))
             .ToHashSet(StringComparer.Ordinal);
 
-        // resource:action keys per app slug, from both sides.
+        // resource:action keys per app slug, live catalog first, manifest entries on top
+        // (a manifest may add entries to an app it also updates).
         var catalog = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        foreach (var app in current.Apps.Concat(manifest.Apps))
+        foreach (var app in liveApps)
+        {
+            var set = catalog[app.Slug] = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var perm in app.Permissions) set.Add($"{perm.Resource}:{perm.Action}");
+        }
+        foreach (var app in manifest.Apps)
         {
             if (app.Permissions is null) continue;
             if (!catalog.TryGetValue(app.Slug, out var set))
@@ -439,6 +459,14 @@ public sealed class RealmManifestPlanner(
         var userIds = manifest.Users.Select(u => NormalizedId(u.Id))
             .Concat(current.Users.Select(u => NormalizedId(u.Id)))
             .OfType<string>().ToHashSet(StringComparer.Ordinal);
+        // A group member is a user, a nested group or a service account — the same three
+        // kinds the applier's member resolver accepts.
+        var memberIds = userIds
+            .Concat(manifest.Groups.Select(g => NormalizedId(g.Id)))
+            .Concat(current.Groups.Select(g => NormalizedId(g.Id)))
+            .Concat(manifest.ServiceAccounts.Select(s => NormalizedId(s.Id)))
+            .Concat(current.ServiceAccounts.Select(s => NormalizedId(s.Id)))
+            .OfType<string>().ToHashSet(StringComparer.Ordinal);
         // The readable name each live id actually carries, for the verified-hint check.
         var roleKeyById = current.Roles
             .Where(r => NormalizedId(r.Id) is not null)
@@ -446,6 +474,11 @@ public sealed class RealmManifestPlanner(
         var userKeyById = current.Users
             .Where(u => NormalizedId(u.Id) is not null)
             .ToDictionary(u => NormalizedId(u.Id)!, u => u.ResolveKey(), StringComparer.Ordinal);
+        var memberKeyById = new Dictionary<string, string>(userKeyById, StringComparer.Ordinal);
+        foreach (var g in current.Groups)
+            if (NormalizedId(g.Id) is { } gid) memberKeyById.TryAdd(gid, g.Name);
+        foreach (var s in current.ServiceAccounts)
+            if (NormalizedId(s.Id) is { } sid) memberKeyById.TryAdd(sid, s.AccountName);
 
         RealmPlanEntry? Entry(string section, string key)
         {
@@ -533,7 +566,7 @@ public sealed class RealmManifestPlanner(
                 if (ReferenceNote(reference, "Role", roleIds, roleKeyById) is { } note)
                     Note("groups", group.Name, note);
             foreach (var reference in group.Members ?? [])
-                if (ReferenceNote(reference, "Member", userIds, userKeyById) is { } note)
+                if (ReferenceNote(reference, "Member", memberIds, memberKeyById) is { } note)
                     Note("groups", group.Name, note);
         }
 

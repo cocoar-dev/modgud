@@ -644,6 +644,12 @@ public sealed partial class RealmManifestApplier(
             }
         }
 
+        // ── Service accounts (hulls, id-pinned creates) — BEFORE groups, like users: a
+        //    group's Members may name an account this same file creates by '#handle', and
+        //    "M2M identity + role + group" is the standard first run of every Management
+        //    API consumer. Credentials only reference apps and scopes, both applied above.
+        await ApplyServiceAccountsAsync(sp, manifest, identity, apps, secrets, skips, ct);
+
         // ── Groups (identity = Id; the Name is mutable) ───────────────────────────
         if (manifest.Groups.Count > 0)
         {
@@ -740,9 +746,6 @@ public sealed partial class RealmManifestApplier(
                 }
             }
         }
-
-        // ── Service accounts (hulls, id-pinned creates) ───────────────────────────
-        await ApplyServiceAccountsAsync(sp, manifest, identity, apps, secrets, skips, ct);
 
         // ── Positions (MG-FT) — after users so grants can resolve their handles ───
         await ApplyPositionsAsync(sp, manifest, identity, apps, secrets, skips, ct);

@@ -1514,6 +1514,110 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
     }
 
     /// <summary>
+    /// The first run of a Management API consumer, reported from the field: a role on
+    /// the SYSTEM app (that is where <c>oauth-authorization:*</c> lives), a service
+    /// account, and a group binding the two — one file, handles throughout. Three things
+    /// used to stand in the way, none of them in the apply itself: service accounts applied
+    /// AFTER groups, so <c>"#mgmt-sa"</c> in Members was "applied too late"; the planner
+    /// resolved members against users only, so a service-account member — written by the
+    /// export in its own <c>{ Key, Id }</c> form — read as "no such entity"; and the
+    /// planner took its app catalog off the export, which omits the system app, so a role
+    /// on it was announced as skipped while the apply created it fine.
+    /// </summary>
+    [Fact]
+    public async Task A_management_api_consumer_provisions_role_service_account_and_group_in_one_run()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var planner = factory.Services.GetRequiredService<RealmManifestPlanner>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+
+        const string slug = "consumer";
+        Assert.False((await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest(), ct)).IsError);
+
+        var manifest = new RealmManifest
+        {
+            Roles =
+            [
+                new RealmManifestRole
+                {
+                    Id = "#mgmt-role", Name = "consumer-management", App = AppSlugs.Modgud,
+                    Permissions = [new("oauth-authorization", "read"), new("oauth-authorization", "revoke")],
+                },
+            ],
+            ServiceAccounts =
+            [
+                new RealmManifestServiceAccount
+                {
+                    Id = "#mgmt-sa", AccountName = "consumer-management",
+                    Credentials = [new RealmManifestServiceAccountCredential { ClientId = "consumer-management" }],
+                },
+            ],
+            Groups = [new RealmManifestGroup { Name = "consumer-management", Members = ["#mgmt-sa"], Roles = ["#mgmt-role"] }],
+        };
+
+        // ── Plan: no contradiction, no phantom skip — the plan sees the system app and
+        //    the account exactly as the apply will. ─────────────────────────────────────
+        var plan = await planner.PlanAsync(slug, manifest, prune: false, ct: ct);
+        Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
+        Assert.DoesNotContain(plan.Value.Sections, s => s.Name == "manifest");
+        var roleEntry = Assert.Single(plan.Value.Sections.Single(s => s.Name == "roles").Entries);
+        Assert.Equal("create", roleEntry.Action);
+        Assert.DoesNotContain(roleEntry.Notes, n => n.Contains("does not exist here"));
+        var groupEntry = Assert.Single(plan.Value.Sections.Single(s => s.Name == "groups").Entries);
+        Assert.Equal("create", groupEntry.Action);
+        Assert.DoesNotContain(groupEntry.Notes, n => n.Contains("no such entity"));
+
+        // ── Apply: everything lands in one run. ────────────────────────────────────────
+        var applied = await applier.UpdateRealmAsync(slug, manifest, ct: ct);
+        Assert.False(applied.IsError, applied.IsError ? applied.FirstError.Description : string.Empty);
+        Assert.True(applied.Value.ClientSecrets.ContainsKey("consumer-management"));
+        Assert.Empty(applied.Value.SkippedReferences);
+        Guid saId = default;
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var sa = await session.Query<ServiceAccount>().SingleAsync(s => !s.IsDeleted && s.AccountName == "consumer-management", ct);
+            saId = sa.Id;
+            var group = await session.Query<Group>().SingleAsync(g => !g.IsDeleted && g.Name == "consumer-management", ct);
+            Assert.Contains(sa.Id, group.MemberIds);
+            var role = await session.Query<PermissionRole>().SingleAsync(r => !r.IsDeleted && r.Name == "consumer-management", ct);
+            Assert.Contains(role.Id, group.RoleIds);
+            var system = await session.Query<App>().SingleAsync(a => !a.IsDeleted && a.Slug == AppSlugs.Modgud, ct);
+            Assert.Equal(system.Id, role.AppId);
+            Assert.Equal(2, role.PermissionIds.Count);
+        });
+
+        // ── Export → plan: the account is a member in the export's own form and reads
+        //    as unchanged, without a note; so does the role on the system app. ─────────
+        var exported = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exported.IsError);
+        var exGroup = Assert.Single(exported.Value.Groups, g => g.Name == "consumer-management");
+        Assert.Equal(["consumer-management"], exGroup.Members!.Select(m => m.Key));
+        var again = await planner.PlanAsync(slug, exported.Value, prune: false, ct: ct);
+        Assert.False(again.IsError);
+        var againGroup = Assert.Single(again.Value.Sections.Single(s => s.Name == "groups").Entries, e => e.Key == "consumer-management");
+        Assert.Equal("unchanged", againGroup.Action);
+        Assert.Empty(againGroup.Notes);
+        var againRole = Assert.Single(again.Value.Sections.Single(s => s.Name == "roles").Entries, e => e.Key == $"{AppSlugs.Modgud}/consumer-management");
+        Assert.Equal("unchanged", againRole.Action);
+        Assert.Empty(againRole.Notes);
+
+        // The id-only spelling of the same member is the same membership, not a change.
+        var idOnly = exported.Value with
+        {
+            Groups = [exGroup with { Members = [new ManifestRef { Id = new ShortGuid(saId).ToString() }] }],
+        };
+        var idPlan = await planner.PlanAsync(slug, idOnly, prune: false, ct: ct);
+        Assert.False(idPlan.IsError);
+        var idGroup = Assert.Single(idPlan.Value.Sections.Single(s => s.Name == "groups").Entries, e => e.Key == "consumer-management");
+        Assert.Equal("unchanged", idGroup.Action);
+        Assert.Empty(idGroup.Notes);
+    }
+
+    /// <summary>
     /// A `#handle` proves nothing about what it names — unlike a real id, which proves its
     /// type by loading the document. Three ways that can go wrong, all of which used to
     /// pass validation and then quietly produce a group with the wrong contents:
