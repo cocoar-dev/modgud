@@ -135,6 +135,43 @@ public class DcrFullFlowTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task Approving_only_a_subset_of_the_requested_scopes_still_completes_the_flow()
+    {
+        await SeedAsync();
+        var clientId = await RegisterDcrClientAsync(scope: $"openid profile {ScopeName}");
+
+        var cookieClient = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
+        var authorizeUri = "/connect/authorize?" + string.Join("&", new[]
+        {
+            "response_type=code",
+            $"client_id={Uri.EscapeDataString(clientId)}",
+            $"redirect_uri={Uri.EscapeDataString(RedirectUri)}",
+            $"scope={Uri.EscapeDataString($"openid profile {ScopeName}")}",
+            $"state={Guid.NewGuid():N}",
+            $"code_challenge={GeneratePkceS256Challenge(GeneratePkceVerifier())}",
+            "code_challenge_method=S256",
+            $"resource={Uri.EscapeDataString(AllowedAudience)}",
+        });
+        var authorizeResp = await cookieClient.GetAsync(authorizeUri, TestContext.Current.CancellationToken);
+        AssertRedirect(authorizeResp);
+        var ticketId = authorizeResp.Headers.Location!.ToString()["/consent?ticket=".Length..];
+
+        // The consent screen lets the user untick every non-required scope.
+        var decisionResp = await cookieClient.PostAsJsonAsync(
+            "/connect/consent",
+            new { Ticket = ticketId, Approved = true, ApprovedScopes = new[] { "openid", ScopeName } },
+            TestContext.Current.CancellationToken);
+        Assert.True(decisionResp.IsSuccessStatusCode);
+        using var decisionDoc = JsonDocument.Parse(
+            await decisionResp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var followUpUrl = decisionDoc.RootElement.GetProperty("RedirectUrl").GetString()!;
+
+        var followUp = await cookieClient.GetAsync(followUpUrl, TestContext.Current.CancellationToken);
+        AssertRedirect(followUp);
+        Assert.Contains("code=", followUp.Headers.Location!.ToString());
+    }
+
+    [Fact]
     public async Task Last_used_at_advances_after_first_token_issue()
     {
         await SeedAsync();

@@ -155,6 +155,20 @@ public static class ConsentEndpoints
         var (record, error) = await ResolveTicketAsync(ticketId, session, userManager, currentUserPrincipal);
         if (error is not null) return error;
 
+        // OAUTH-02 fix: the user-submitted ApprovedScopes are filtered against
+        // the requested scopes that were locked in at /authorize time. Anything
+        // the user "added" beyond what the RP asked for is silently dropped;
+        // the standard "openid is implicit" semantic is preserved.
+        var requestedSet = record!.RequestedScopes.ToHashSet(StringComparer.Ordinal);
+        var approvedSet = decision.ApprovedScopes
+            .Where(s => requestedSet.Contains(s))
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (requestedSet.Contains(Scopes.OpenId))
+        {
+            approvedSet.Add(Scopes.OpenId);
+        }
+
         // Audit #26 — CLAIM the ticket atomically, BEFORE doing anything else.
         // ConsentTicket uses optimistic concurrency, so two parallel POSTs (user
         // double-click) both load ConsumedAt==null but only ONE can commit this
@@ -162,7 +176,10 @@ public static class ConsentEndpoints
         // existing 409. Claiming first — before any authorization is created —
         // means the loser doesn't even mint a duplicate Permanent authorization
         // row (the previously-documented benign residual is now gone too).
-        record!.ConsumedAt = DateTimeOffset.UtcNow;
+        record.ConsumedAt = DateTimeOffset.UtcNow;
+        // The decision travels with the claim: the authorize re-entry issues the
+        // grant for what the user kept, not for everything the client asked for.
+        if (decision.Approved) record.ApprovedScopes = approvedSet.ToArray();
         // Mark the deny atomically with the claim so the authorize re-entry
         // below can prove this was a genuine denial (not just any consumed
         // ticket) before OpenIddict emits an error to the client.
@@ -199,20 +216,6 @@ public static class ConsentEndpoints
                             + "&deny_ticket=" + record.Id.ToString("N"),
                 ReturnsToClient = true,
             });
-        }
-
-        // OAUTH-02 fix: the user-submitted ApprovedScopes are filtered against
-        // the requested scopes that were locked in at /authorize time. Anything
-        // the user "added" beyond what the RP asked for is silently dropped;
-        // the standard "openid is implicit" semantic is preserved.
-        var requestedSet = record.RequestedScopes.ToHashSet(StringComparer.Ordinal);
-        var approvedSet = decision.ApprovedScopes
-            .Where(s => requestedSet.Contains(s))
-            .ToHashSet(StringComparer.Ordinal);
-
-        if (requestedSet.Contains(Scopes.OpenId))
-        {
-            approvedSet.Add(Scopes.OpenId);
         }
 
         var application = await applicationManager.FindByClientIdAsync(record.ClientId);

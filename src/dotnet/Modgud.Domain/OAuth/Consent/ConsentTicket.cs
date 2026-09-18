@@ -88,12 +88,20 @@ public class ConsentTicket
     public DateTimeOffset? DeniedAt { get; set; }
 
     /// <summary>
+    /// The scopes the user actually approved — <see cref="RequestedScopes"/>
+    /// minus whatever they unticked. Null until an approval is recorded. The
+    /// authorize re-entry issues the grant for exactly these, not for the
+    /// request's full scope list.
+    /// </summary>
+    public string[]? ApprovedScopes { get; set; }
+
+    /// <summary>
     /// Set when the authorize re-entry redeems an APPROVED ticket passed as
-    /// <c>?consent_ticket={Id}</c>. Only clients with
-    /// <c>AllowRememberConsent=false</c> need it: their remembered
-    /// authorization no longer skips the consent screen, so the re-entry has
-    /// to prove that the user approved this very request a moment ago. The
-    /// version-checked write makes the proof single-use.
+    /// <c>?consent_ticket={Id}</c>. The ticket is what carries the decision
+    /// across the redirect: it proves the user approved this very request a
+    /// moment ago (a client with <c>AllowRememberConsent=false</c> has no
+    /// other way past the consent screen) and says which scopes they kept.
+    /// The version-checked write makes the proof single-use.
     /// </summary>
     public DateTimeOffset? RedeemedAt { get; set; }
 }

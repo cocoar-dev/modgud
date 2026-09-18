@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -204,12 +205,19 @@ public static class AuthorizationEndpoints
         var subject = user.Id.ToString();
         var clientPk = await applicationManager.GetIdAsync(application) ?? string.Empty;
 
+        // Post-consent re-entry: the approved ticket carries the scopes the
+        // user kept. From here on the grant is about those, not about the
+        // request's full list — otherwise unticking one optional scope finds
+        // no matching authorization below and loops back to /consent forever.
+        var approvedScopes = await TryRedeemConsentTicketAsync(httpContext, request, user.Id, session);
+        var grantScopes = approvedScopes?.ToImmutableArray() ?? request.GetScopes();
+
         var authorizations = await authorizationManager.FindAsync(
             subject: subject,
             client: clientPk,
             status: Statuses.Valid,
             type: AuthorizationTypes.Permanent,
-            scopes: request.GetScopes()).ToListAsync();
+            scopes: grantScopes).ToListAsync();
 
         var consentType = await applicationManager.GetConsentTypeAsync(application);
 
@@ -219,19 +227,17 @@ public static class AuthorizationEndpoints
         // loopback redirect, RFC 8252 §8.6) every fresh authorize shows the
         // screen again. The authorization itself is still REUSED, so the
         // grant's `oi_au_id` stays stable across re-consents. The post-consent
-        // re-entry completes the round-trip by redeeming its approved ticket
-        // once, instead of relying on the remembered-authorization shortcut.
-        var skipConsent = consentType == ConsentTypes.Implicit;
-        if (!skipConsent && authorizations.Count != 0)
-        {
-            skipConsent = await AllowsRememberConsentAsync(applicationManager, application)
-                || await TryRedeemConsentTicketAsync(httpContext, request, user.Id, session);
-        }
+        // re-entry gets through on its redeemed ticket instead.
+        var skipConsent = consentType == ConsentTypes.Implicit
+            || approvedScopes is not null
+            || (authorizations.Count != 0
+                && await AllowsRememberConsentAsync(applicationManager, application));
 
         if (skipConsent)
         {
             var principal = await CreateClaimsPrincipalAsync(
                 user, request, scopeManager, userManager: userManager,
+                scopeOverrides: approvedScopes,
                 cookiePrincipal: authResult.Principal);
 
             var authorization = authorizations.LastOrDefault();
@@ -318,10 +324,11 @@ public static class AuthorizationEndpoints
     /// Redeems the <c>?consent_ticket={id}</c> the consent endpoint appends on
     /// approval. Genuine means: approved (consumed, not denied), bound to this
     /// user and client, for exactly the scopes now requested, consumed within
-    /// the last two minutes, and not redeemed before. Anything else returns
-    /// false and the caller re-prompts — a forged marker buys nothing.
+    /// the last two minutes, and not redeemed before. Returns the scopes the
+    /// user approved; anything else returns null and the caller re-prompts — a
+    /// forged marker buys nothing.
     /// </summary>
-    private static async Task<bool> TryRedeemConsentTicketAsync(
+    private static async Task<IReadOnlyList<string>?> TryRedeemConsentTicketAsync(
         HttpContext httpContext,
         OpenIddictRequest request,
         Guid userId,
@@ -332,18 +339,18 @@ public static class AuthorizationEndpoints
         if (httpContext.Request.Query["consent_ticket"] is not [{ Length: > 0 } raw]
             || !Guid.TryParseExact(raw, "N", out var ticketId))
         {
-            return false;
+            return null;
         }
 
         var ticket = await session.LoadAsync<ConsentTicket>(ticketId);
         var now = DateTimeOffset.UtcNow;
-        if (ticket is not { ConsumedAt: not null, DeniedAt: null, RedeemedAt: null }
+        if (ticket is not { ConsumedAt: not null, DeniedAt: null, RedeemedAt: null, ApprovedScopes: not null }
             || ticket.Subject != userId
             || !string.Equals(ticket.ClientId, request.ClientId, StringComparison.Ordinal)
             || ticket.ConsumedAt < now.AddMinutes(-2)
             || !ticket.RequestedScopes.ToHashSet(StringComparer.Ordinal).SetEquals(request.GetScopes()))
         {
-            return false;
+            return null;
         }
 
         ticket.RedeemedAt = now;
@@ -357,10 +364,10 @@ public static class AuthorizationEndpoints
             // Lost the race to a parallel re-entry. Drop the stale write so the
             // consent ticket the caller stores next can still be saved.
             session.EjectAllPendingChanges();
-            return false;
+            return null;
         }
 
-        return true;
+        return ticket.ApprovedScopes;
     }
 
     private static async Task<IResult> ExchangeAsync(
