@@ -482,7 +482,7 @@ public sealed record RealmManifestGroup
     [Description("Optional description. Absent = unchanged; explicit null clears.")]
     public Optional<string?> Description { get; init; }
 
-    [Description("Members for MembershipMode=Manual — a user, a NESTED GROUP, or a service account. Each entry names one by IDENTITY (ADR 0024): { \"Key\": \"alice\", \"Id\": \"<id>\" } for one that exists here (missing = reported skip), or \"#alice\" for one this same manifest creates (undeclared = error). A bare name is an error. A service-account member must use a real id — service accounts apply after groups, so a handle would not exist yet. Absent = unchanged; [] clears the member list.")]
+    [Description("Members for MembershipMode=Manual — a user, a NESTED GROUP, or a service account. Each entry names one by IDENTITY (ADR 0024): { \"Key\": \"alice\", \"Id\": \"<id>\" } for one that exists here (missing = reported skip), or \"#alice\" for one this same manifest creates (undeclared = error). A bare name is an error. Users and service accounts apply before groups, so either may be a handle; a nested group's handle resolves only when that group is listed earlier. Absent = unchanged; [] clears the member list.")]
     public List<ManifestRef>? Members { get; init; }
 
     [Description("Roles this group grants to its members. Each entry names a role by IDENTITY (ADR 0024): { \"Key\": \"acme/Author\", \"Id\": \"<role id>\" } for a role that exists here (missing = reported skip), or \"#author\" for a role this same manifest creates (undeclared = error). A bare name is an error. Absent = unchanged; [] clears.")]

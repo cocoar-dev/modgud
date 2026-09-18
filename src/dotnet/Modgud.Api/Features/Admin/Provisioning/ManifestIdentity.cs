@@ -162,9 +162,10 @@ public sealed class ManifestIdentity
 
         foreach (var g in manifest.Groups)
         {
-            // A member may be a user, a nested group, or a service account. Service
-            // accounts apply AFTER groups, so one of those has to be named by its real id
-            // — the order check says so up front rather than dropping it at apply time.
+            // A member may be a user, a nested group, or a service account. Users and
+            // service accounts both apply BEFORE groups, so either may be a '#handle' this
+            // file declares; a nested group's handle resolves only when that group comes
+            // earlier in the list (same section — the order check lets it through).
             foreach (var m in g.Members ?? [])
                 CheckRef(m, "user, group or service account",
                     $"{Sections.Users}|{Sections.Groups}|{Sections.ServiceAccounts}",
@@ -246,8 +247,8 @@ public sealed class ManifestIdentity
         Sections.LoginProviders => 5,
         Sections.Roles => 6,
         Sections.Users => 7,
-        Sections.Groups => 8,
-        Sections.ServiceAccounts => 9,
+        Sections.ServiceAccounts => 8,
+        Sections.Groups => 9,
         Sections.Positions => 10,
         _ => int.MaxValue,
     };

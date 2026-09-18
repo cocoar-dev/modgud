@@ -100,12 +100,17 @@ happens to share it. Two forms of `Id`, and nothing else:
 
 **Cross-references between entities follow the same rule:**
 
-- Groups list **`Members`** (users) and **`Roles`**; positions list **`Grants`** (users).
-  Each entry is a real id (`{ "Key": "acme/Author", "Id": "…" }`, where the `Key` is a
-  *verified hint* — never followed, and reported when it disagrees), or a `"#handle"`.
-  A **bare name is an error**: the "acme/Author" in the target realm need not be the one
-  the file was written against. Exports write the object form. Group membership is the
-  *only* way users get roles.
+- Groups list **`Members`** (users, nested groups, service accounts) and **`Roles`**;
+  positions list **`Grants`** (users). Each entry is a real id (`{ "Key": "acme/Author",
+  "Id": "…" }`, where the `Key` is a *verified hint* — never followed, and reported when it
+  disagrees), or a `"#handle"`. A **bare name is an error**: the "acme/Author" in the
+  target realm need not be the one the file was written against. Exports write the object
+  form. Group membership is the *only* way users get roles.
+- Sections apply in dependency order — apps, APIs, scopes, clients, login providers,
+  roles, users, **service accounts, then groups**, positions — so a group may name a user
+  *or a service account* this same file creates by `#handle`. "A machine identity, a
+  role and a group binding the two" is one file, one run. A role may sit on the system
+  app (`"App": "modgud"`) — that is where the Management API permissions live.
 - A real id the target realm does not have is **skipped and reported**; a `#handle` the
   file never declares is an **error**. A missing target is a fact about the target; a
   dangling handle is the file contradicting itself.
