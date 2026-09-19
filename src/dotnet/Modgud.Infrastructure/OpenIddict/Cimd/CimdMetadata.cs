@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Modgud.Domain.OAuth.Common;
 
 namespace Modgud.Infrastructure.OpenIddict.Cimd;
 
@@ -15,6 +16,11 @@ public sealed record CimdMetadata
     public required IReadOnlyList<string> RedirectUris { get; init; }
     public required IReadOnlyList<string> GrantTypes { get; init; }
     public required IReadOnlyList<string> Scopes { get; init; }
+
+    /// <summary>The document's <c>application_type</c> (<c>web</c> | <c>native</c>), or
+    /// null when omitted — most MCP clients omit it and rely on their loopback redirect
+    /// URIs to say "native" (see <c>OAuthApplicationTypes.Effective</c>).</summary>
+    public string? ApplicationType { get; init; }
 }
 
 /// <summary>Outcome of validating a fetched CIMD document against the
@@ -119,6 +125,15 @@ public static class CimdMetadataParser
                 return Invalid($"response_type '{rt}' is not allowed (code only).");
         }
 
+        // ── application_type (optional): web | native, nothing else ───────
+        string? applicationType = null;
+        if (TryGetString(root, "application_type", out var declaredType) && declaredType is not null)
+        {
+            if (!OAuthApplicationTypes.IsKnown(declaredType))
+                return Invalid($"application_type '{declaredType}' is not valid (web or native).");
+            applicationType = declaredType;
+        }
+
         // ── scope (optional) + client_name (optional, display only) ───────
         var scopes = ParseScope(TryGetString(root, "scope", out var scope) ? scope : null);
         TryGetString(root, "client_name", out var clientName);
@@ -130,6 +145,7 @@ public static class CimdMetadataParser
             RedirectUris = redirectUris.Distinct(StringComparer.Ordinal).ToList(),
             GrantTypes = grantTypes.Distinct(StringComparer.Ordinal).ToList(),
             Scopes = scopes,
+            ApplicationType = applicationType,
         });
     }
 

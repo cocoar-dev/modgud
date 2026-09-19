@@ -126,6 +126,8 @@ public partial class OAuthAdminService
 
         if (dto.ConsentType is not (OAuthConsentTypes.Explicit or OAuthConsentTypes.Implicit or OAuthConsentTypes.External))
             return OAuthErrors.InvalidConsentType(dto.ConsentType);
+        if (dto.ApplicationType is not null && !OAuthApplicationTypes.IsKnown(dto.ApplicationType))
+            return OAuthErrors.InvalidApplicationType(dto.ApplicationType);
 
         if (ValidateWebAuthnRpId(dto.WebAuthnRpId) is { } createRpIdErr)
             return createRpIdErr;
@@ -248,7 +250,7 @@ public partial class OAuthAdminService
             dto.DisplayName,
             dto.ClientType,
             dto.ConsentType,
-            applicationType: null,
+            applicationType: dto.ApplicationType,
             redirectUris: dto.RedirectUris,
             postLogoutRedirectUris: dto.PostLogoutRedirectUris,
             permissions: permissions,

@@ -128,4 +128,30 @@ public static class OAuthApplicationTypes
 {
     public const string Web = "web";
     public const string Native = "native";
+
+    public static bool IsKnown(string? value) => value is Web or Native;
+
+    /// <summary>
+    /// The application type OpenIddict has to see for a client — which decides whether a
+    /// loopback redirect URI matches with ANY port (RFC 8252 §7.3: a native app takes an
+    /// ephemeral port at request time, so the server MUST accept whatever port it got).
+    ///
+    /// <para>A loopback <c>http</c> redirect URI is only legal for a native app in the first
+    /// place (OIDC DCR §2: web clients use https and never localhost), so its presence IS
+    /// the evidence: such a client is <c>native</c> whatever it declared or omitted. That
+    /// keeps every MCP client working — Claude Code, Cursor, VS Code, the MCP Inspector all
+    /// register <c>http://localhost/callback</c> port-less, without an
+    /// <c>application_type</c>, and connect on a random port. Nothing is loosened for the
+    /// other URIs: OpenIddict relaxes the port only when both sides are loopback and the
+    /// registered one carries none. Without a loopback URI the declared type stands.</para>
+    /// </summary>
+    public static string? Effective(string? declared, IEnumerable<string>? redirectUris)
+        => redirectUris?.Any(IsLoopbackHttp) == true ? Native : declared;
+
+    /// <summary>RFC 8252 §7.3 loopback redirect: <c>http</c> on <c>localhost</c>,
+    /// <c>127.0.0.1</c> or <c>[::1]</c> — the one place plain http is a valid redirect.</summary>
+    public static bool IsLoopbackHttp(string? raw)
+        => Uri.TryCreate(raw, UriKind.Absolute, out var uri)
+           && uri.Scheme == Uri.UriSchemeHttp
+           && uri.IsLoopback;
 }

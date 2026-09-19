@@ -74,7 +74,8 @@ After these four steps, an agent that POSTs to `/connect/register` with a valid 
 
 | Field | Rule |
 | --- | --- |
-| `redirect_uris` | At least one. Each must be HTTPS, OR `http://localhost`, `http://127.0.0.1`, `http://[::1]`. No custom URI schemes (`com.example.app://`). No fragments. |
+| `redirect_uris` | At least one. Each must be HTTPS, OR `http://localhost`, `http://127.0.0.1`, `http://[::1]`. No custom URI schemes (`com.example.app://`). No fragments. A loopback URI is matched **without regard to its port** at `/connect/authorize` — register `http://localhost/callback`, call back on whatever port you got ([RFC 8252 §7.3](https://www.rfc-editor.org/rfc/rfc8252#section-7.3)); scheme, host and path still have to match. |
+| `application_type` | Optional, `web` or `native` (OIDC DCR). A registration with a loopback `http` redirect URI is `native` whatever it declares, and the response says so. Anything but the two literal values is `invalid_client_metadata`. |
 | `client_name` | Required. ≤ 80 chars. ASCII / Latin-1 only after NFKC normalisation. Must not match a substring on the realm's reserved-names list (case-insensitive). |
 | `token_endpoint_auth_method` | Must be `none` (or omitted). Public PKCE only — no secret-storage. |
 | `grant_types` | Subset of `{authorization_code, refresh_token}`. |

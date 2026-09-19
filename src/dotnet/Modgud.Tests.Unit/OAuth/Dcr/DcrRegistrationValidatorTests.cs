@@ -34,6 +34,35 @@ public class DcrRegistrationValidatorTests
         Assert.False(allow.Normalized.AllowRememberConsent);
     }
 
+    [Theory]
+    [InlineData("web")]
+    [InlineData("native")]
+    public void Declared_application_type_is_recorded_as_declared(string declared)
+    {
+        var req = ValidRequest() with { ApplicationType = declared };
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
+        Assert.Equal(declared, allow.Normalized.ApplicationType);
+    }
+
+    [Fact]
+    public void Omitted_application_type_stays_null_the_effective_type_is_settled_at_read_time()
+    {
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(ValidRequest(), Settings(), "ip"));
+        Assert.Null(allow.Normalized.ApplicationType);
+    }
+
+    [Theory]
+    [InlineData("desktop")]
+    [InlineData("Web")]       // OIDC DCR: literal lowercase values
+    [InlineData("")]
+    public void Unknown_application_type_is_invalid_client_metadata(string declared)
+    {
+        var req = ValidRequest() with { ApplicationType = declared };
+        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
+        Assert.Equal(DcrErrorCodes.InvalidClientMetadata, reject.ErrorCode);
+        Assert.Equal(DcrRejectionReason.InvalidApplicationType, reject.Reason);
+    }
+
     [Fact]
     public void Missing_redirect_uris_rejected_as_missing_redirect()
     {

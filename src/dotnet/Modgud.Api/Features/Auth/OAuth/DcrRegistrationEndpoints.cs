@@ -3,6 +3,7 @@ using Marten;
 using Modgud.Application.Dcr;
 using Modgud.Application.Services;
 using Modgud.Authentication.RealmSettings;
+using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Observability;
@@ -179,6 +180,9 @@ public static class DcrRegistrationEndpoints
             // Echo the negotiated method; surface the secret (+ never-expires
             // marker) only when one was issued (confidential).
             TokenEndpointAuthMethod = allow.TokenEndpointAuthMethod,
+            // The EFFECTIVE type: a loopback redirect makes the client native whatever
+            // it said, and that is what its ephemeral-port callback will be judged by.
+            ApplicationType = OAuthApplicationTypes.Effective(normalized.ApplicationType, created.RedirectUris),
             ClientSecret = issuedSecret,
             ClientSecretExpiresAt = issuedSecret is null ? null : 0,
             GrantTypes = created.AllowedGrantTypes,
