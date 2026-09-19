@@ -237,8 +237,17 @@ public partial class OAuthAdminService
             clientSecret = dto.ClientSecret ?? (createJwks is null ? GenerateSecret() : null);
         }
 
+        // A dynamically registered client holds what the realm lets dynamic clients
+        // hold: its own `scope` is an upper bound intersected with the opted-in set,
+        // and a registration without one gets the whole set (RFC 7591 §2 — "a
+        // default set of scopes"). Registering the declared list verbatim used to
+        // leave a scope-less registration with no scope permission at all.
+        var scopes = dcrMetadata is null
+            ? dto.Scopes
+            : DynamicClientScopePolicy.Resolve(dto.Scopes, await DynamicClientScopePolicy.LoadRequestableNamesAsync(_session, ct));
+
         // Build permissions list (endpoints + grant types + scopes).
-        var permissions = BuildClientPermissions(dto.AllowedGrantTypes, dto.Scopes, dto.ClientType, dto.Capabilities);
+        var permissions = BuildClientPermissions(dto.AllowedGrantTypes, scopes, dto.ClientType, dto.Capabilities);
 
         var pinnedClientId = await PinnedEntityId.ResolveAsync<OAuthApplicationState>(
             _session, dto.Id, "OAuthClient", s => s.IsDeleted, ct);

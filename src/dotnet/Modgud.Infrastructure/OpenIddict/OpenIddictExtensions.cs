@@ -356,6 +356,7 @@ public static class OpenIddictExtensions
                 options.AddEventHandler(AccessTokenTypeHandler.Descriptor);
                 options.AddEventHandler(TokenMintMetricHandler.Descriptor);
                 options.AddEventHandler(ResourceIndicatorHandler.Descriptor);
+                options.AddEventHandler(DynamicClientScopeHandler.Descriptor);
                 options.AddEventHandler(DcrAudienceContainmentHandler.Descriptor);
                 options.AddEventHandler(DcrLastUsedTrackerHandler.Descriptor);
                 options.AddEventHandler(RealmSigningKeyHandler.Descriptor);

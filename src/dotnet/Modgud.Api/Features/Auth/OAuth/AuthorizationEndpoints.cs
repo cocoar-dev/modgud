@@ -5,6 +5,7 @@ using System.Text.Json;
 using BuildingBlocks.Helper;
 using Modgud.Api.Features.Auth.PositionTerminals;
 using Modgud.Api.Features.Auth.Staffing;
+using Modgud.Application.Dcr;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Sessions;
 using Modgud.Authentication.Domain;
@@ -2770,6 +2771,9 @@ public static class AuthorizationEndpoints
     ///         (standard OIDC scopes, cross-app utility scopes).</item>
     ///   <item>Scope registered with a non-null <c>AppId</c> → only allowed
     ///         when the calling client's <c>AppId</c> matches.</item>
+    ///   <item>Dynamic client (DCR / CIMD) → every registered scope must pass
+    ///         <see cref="DynamicClientScopePolicy"/> instead: the per-scope
+    ///         opt-in, or an open standard scope.</item>
     /// </list>
     /// </summary>
     private static async Task<IResult?> ValidateScopeRestrictionAsync(
@@ -2784,9 +2788,12 @@ public static class AuthorizationEndpoints
             .Where(s => scopeNames.Contains(s.Name) && !s.IsDeleted)
             .ToListAsync(cancellationToken);
 
-        // If no requested scope is app-scoped, there's nothing to restrict.
+        // Nothing to restrict when every requested scope is one any client may
+        // hold — an open standard scope — so the common `openid profile email`
+        // request never pays for a client lookup. App-scoped and custom global
+        // scopes need the client to decide.
         var appScoped = scopes.Where(s => s.AppId.HasValue).ToList();
-        if (appScoped.Count == 0) return null;
+        if (scopes.All(s => DynamicClientScopePolicy.IsOpenStandardScope(s.Name))) return null;
 
         // Resolve the calling client. We need it twice: once for the
         // app-link set, once for the IsDynamicallyRegistered flag.
@@ -2816,18 +2823,19 @@ public static class AuthorizationEndpoints
 
         if (isDcrClient)
         {
-            var notOptedIn = appScoped.FirstOrDefault(s =>
-                !ReadDcrFlag(s.Properties, ScopePropertyKeys.AllowDynamicRegistrationClients));
-            if (notOptedIn is not null)
+            // Same verdict as DynamicClientScopeHandler in the OpenIddict pipeline;
+            // this copy also covers the consent continuation, where that pipeline
+            // does not run. Global custom scopes need the opt-in as much as
+            // app-scoped ones — the flag is the boundary, not the App link.
+            var refused = scopes.FirstOrDefault(s => !DynamicClientScopePolicy.IsRequestable(s));
+            if (refused is not null)
             {
                 return Results.Forbid(
                     new AuthenticationProperties(new Dictionary<string, string?>
                     {
                         [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidScope,
                         [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] =
-                            $"Scope '{notOptedIn.Name}' is not opted in for Dynamic Client Registration clients. " +
-                            "Ask the realm admin to enable AllowDynamicRegistrationClients on the scope, " +
-                            "or use a global (cross-app) scope.",
+                            DynamicClientScopeHandler.DescribeRefusal(refused),
                     }),
                     new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
             }
@@ -2835,8 +2843,9 @@ public static class AuthorizationEndpoints
         }
 
         // Non-DCR client: app-scoped scope must intersect the client's
-        // own App set. (Global scopes — AppId == null — were filtered
-        // out above.)
+        // own App set. (Global scopes — AppId == null — are not restricted
+        // for registered clients.)
+        if (appScoped.Count == 0) return null;
         var clientAppIds = client?.AppIds.ToHashSet() ?? new HashSet<Guid>();
         var bad = appScoped.FirstOrDefault(s => !clientAppIds.Contains(s.AppId!.Value));
         if (bad is not null)
