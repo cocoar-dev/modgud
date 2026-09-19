@@ -73,6 +73,82 @@ public class DcrFullFlowTests : IntegrationTestBase
         Assert.InRange(lifetimeMinutes, 14, 16);
     }
 
+    /// <summary>
+    /// RFC 8252 §7.3 for DCR: a client registering a port-less loopback redirect URI is a
+    /// native app — whether or not it says so — and its ephemeral-port callback has to be
+    /// accepted. The response says <c>native</c> up front so the client knows; a bogus
+    /// <c>application_type</c> is <c>invalid_client_metadata</c>; an https-only client that
+    /// declares nothing gets nothing invented for it.
+    /// </summary>
+    [Fact]
+    public async Task Loopback_redirect_with_an_ephemeral_port_is_accepted_for_a_dcr_client()
+    {
+        await SeedAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var http = Factory.CreateClient();
+
+        // Registered like every local MCP client: port-less loopback, no application_type.
+        var reg = await http.PostAsync("/connect/register", JsonContent.Create(new
+        {
+            client_name = "Local MCP Client",
+            redirect_uris = new[] { "http://localhost/callback" },
+            grant_types = new[] { "authorization_code" },
+            scope = $"openid {ScopeName}",
+        }), ct);
+        var regBody = await reg.Content.ReadAsStringAsync(ct);
+        Assert.True(reg.StatusCode == HttpStatusCode.Created, regBody);
+        string clientId;
+        using (var doc = JsonDocument.Parse(regBody))
+        {
+            clientId = doc.RootElement.GetProperty("client_id").GetString()!;
+            Assert.Equal("native", doc.RootElement.GetProperty("application_type").GetString());
+        }
+
+        // The callback arrives on whatever port the client could grab.
+        Assert.StartsWith("/consent?ticket=", await AuthorizeLocationAsync(clientId, "http://localhost:43210/callback"));
+        Assert.StartsWith("/consent?ticket=", await AuthorizeLocationAsync(clientId, "http://localhost/callback"));
+        Assert.DoesNotContain("/consent?ticket=", await AuthorizeLocationAsync(clientId, "http://localhost:43210/elsewhere") ?? string.Empty);
+
+        // The vocabulary is checked, nothing more.
+        var bad = await http.PostAsync("/connect/register", JsonContent.Create(new
+        {
+            client_name = "Odd Type",
+            redirect_uris = new[] { "https://app.example.test/cb" },
+            application_type = "desktop",
+        }), ct);
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+        Assert.Contains("invalid_client_metadata", await bad.Content.ReadAsStringAsync(ct));
+
+        // An https-only client that declares nothing is not turned into anything.
+        var web = await http.PostAsync("/connect/register", JsonContent.Create(new
+        {
+            client_name = "Web Client",
+            redirect_uris = new[] { "https://app.example.test/cb" },
+        }), ct);
+        Assert.Equal(HttpStatusCode.Created, web.StatusCode);
+        using (var doc = JsonDocument.Parse(await web.Content.ReadAsStringAsync(ct)))
+            Assert.False(doc.RootElement.TryGetProperty("application_type", out _));
+    }
+
+    private async Task<string?> AuthorizeLocationAsync(string clientId, string redirectUri)
+    {
+        var challenge = GeneratePkceS256Challenge(GeneratePkceVerifier());
+        var cookieClient = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
+        var uri = "/connect/authorize?" + string.Join("&", new[]
+        {
+            "response_type=code",
+            $"client_id={Uri.EscapeDataString(clientId)}",
+            $"redirect_uri={Uri.EscapeDataString(redirectUri)}",
+            $"scope={Uri.EscapeDataString($"openid {ScopeName}")}",
+            $"state={Guid.NewGuid():N}",
+            $"code_challenge={challenge}",
+            "code_challenge_method=S256",
+            $"resource={Uri.EscapeDataString(AllowedAudience)}",
+        });
+        var resp = await cookieClient.GetAsync(uri, TestContext.Current.CancellationToken);
+        return resp.Headers.Location?.ToString();
+    }
+
     [Fact]
     public async Task Second_authorize_shows_consent_again_but_keeps_the_authorization_id()
     {

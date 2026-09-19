@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Common;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Marten;
 using Microsoft.IdentityModel.Tokens;
@@ -144,8 +145,14 @@ public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicati
         foreach (var application in applications) yield return application;
     }
 
+    /// <summary>The EFFECTIVE type, not the stored one: a client with a loopback http
+    /// redirect URI is native whatever it declared, so OpenIddict accepts the ephemeral
+    /// port such a client shows up with (RFC 8252 §7.3). This is the one place OpenIddict
+    /// asks, which makes it the one place to answer — for CIMD documents, DCR
+    /// registrations old and new, and admin-created clients alike. See
+    /// <see cref="OAuthApplicationTypes.Effective"/>.</summary>
     public ValueTask<string?> GetApplicationTypeAsync(OAuthApplicationState application, CancellationToken _)
-        => new(application.ApplicationType);
+        => new(OAuthApplicationTypes.Effective(application.ApplicationType, application.RedirectUris));
 
     public ValueTask<TResult?> GetAsync<TState, TResult>(
         Func<IQueryable<OAuthApplicationState>, TState, IQueryable<TResult>> query,

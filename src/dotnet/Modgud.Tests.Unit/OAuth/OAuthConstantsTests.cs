@@ -13,6 +13,50 @@ namespace Modgud.Tests.Unit.OAuth;
 /// </summary>
 public class OAuthConstantsTests
 {
+    /// <summary>The one rule behind RFC 8252 §7.3 loopback-port tolerance: a loopback http
+    /// redirect URI makes a client native whatever it declared; otherwise the declaration
+    /// stands. OpenIddict relaxes the port only for native clients, and only between
+    /// loopback URIs — so this is what decides whether a local MCP client can log in.</summary>
+    public class EffectiveApplicationType
+    {
+        [Theory]
+        [InlineData("http://localhost/callback")]
+        [InlineData("http://127.0.0.1/callback")]
+        [InlineData("http://[::1]/callback")]
+        [InlineData("http://localhost:8080/callback")]
+        public void A_loopback_http_redirect_makes_the_client_native(string uri) =>
+            Assert.Equal(OAuthApplicationTypes.Native, OAuthApplicationTypes.Effective(null, [uri]));
+
+        [Fact]
+        public void A_loopback_redirect_overrides_a_declared_web_type() =>
+            Assert.Equal(OAuthApplicationTypes.Native,
+                OAuthApplicationTypes.Effective(OAuthApplicationTypes.Web, ["https://app.example/cb", "http://localhost/cb"]));
+
+        [Theory]
+        [InlineData("https://localhost/callback")]   // loopback, but https: nothing to relax
+        [InlineData("http://example.com/callback")]  // http, but not loopback
+        [InlineData("https://app.example/callback")]
+        public void Anything_else_leaves_the_declared_type_alone(string uri)
+        {
+            Assert.Null(OAuthApplicationTypes.Effective(null, [uri]));
+            Assert.Equal(OAuthApplicationTypes.Web, OAuthApplicationTypes.Effective(OAuthApplicationTypes.Web, [uri]));
+            Assert.Equal(OAuthApplicationTypes.Native, OAuthApplicationTypes.Effective(OAuthApplicationTypes.Native, [uri]));
+        }
+
+        [Fact]
+        public void No_redirect_uris_means_no_inference() =>
+            Assert.Null(OAuthApplicationTypes.Effective(null, null));
+
+        [Theory]
+        [InlineData("web", true)]
+        [InlineData("native", true)]
+        [InlineData("Web", false)]
+        [InlineData("desktop", false)]
+        [InlineData(null, false)]
+        public void Only_the_two_literal_lowercase_values_are_known(string? value, bool known) =>
+            Assert.Equal(known, OAuthApplicationTypes.IsKnown(value));
+    }
+
     public class PermissionPrefixes
     {
         [Fact]

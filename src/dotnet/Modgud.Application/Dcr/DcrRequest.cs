@@ -24,6 +24,13 @@ public sealed record DcrRegistrationRequest
     [JsonPropertyName("token_endpoint_auth_method")]
     public string? TokenEndpointAuthMethod { get; init; }
 
+    /// <summary>OIDC DCR <c>application_type</c>: <c>web</c> | <c>native</c>. Optional;
+    /// a client with a loopback http redirect URI is native regardless of what it
+    /// declares (RFC 8252 §7.3 — see <c>OAuthApplicationTypes.Effective</c>), and the
+    /// response echoes the effective value.</summary>
+    [JsonPropertyName("application_type")]
+    public string? ApplicationType { get; init; }
+
     [JsonPropertyName("grant_types")]
     public List<string>? GrantTypes { get; init; }
 
@@ -84,6 +91,13 @@ public sealed record DcrRegistrationResponse
 
     [JsonPropertyName("token_endpoint_auth_method")]
     public required string TokenEndpointAuthMethod { get; init; }
+
+    /// <summary>The EFFECTIVE application type — <c>native</c> when a loopback http
+    /// redirect URI was registered, else what the client declared (omitted when it
+    /// declared nothing). Tells a native client up front that its ephemeral loopback
+    /// port will be accepted.</summary>
+    [JsonPropertyName("application_type")]
+    public string? ApplicationType { get; init; }
 
     [JsonPropertyName("grant_types")]
     public required IReadOnlyList<string> GrantTypes { get; init; }
@@ -185,6 +199,7 @@ public enum DcrRejectionReason
     MissingRedirectUri,
     InvalidRedirectUri,
     InvalidTokenAuthMethod,
+    InvalidApplicationType,
     InvalidGrantType,
     InvalidResponseType,
     ClientNameMissing,

@@ -168,6 +168,12 @@ public record CreateOAuthClientDto
     /// it authenticates with signed client assertions only.</summary>
     public string? JsonWebKeySet { get; init; }
     public string ConsentType { get; init; } = "implicit";
+
+    /// <summary>OIDC <c>application_type</c> as DECLARED (<c>web</c> | <c>native</c>), or
+    /// null. Rarely needed: a client with a loopback http redirect URI is treated as native
+    /// regardless (<c>OAuthApplicationTypes.Effective</c>), which is what makes ephemeral
+    /// loopback ports work. DCR passes a client's declaration through here.</summary>
+    public string? ApplicationType { get; init; }
     public List<string> RedirectUris { get; init; } = [];
     public List<string> PostLogoutRedirectUris { get; init; } = [];
     public List<string> Scopes { get; init; } = [];

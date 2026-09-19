@@ -73,6 +73,45 @@ public class CimdFullFlowTests : IntegrationTestBase
         Assert.Contains(AllowedAudience, refreshedJwt.Audiences);
     }
 
+    /// <summary>
+    /// RFC 8252 §7.3: a native client takes an ephemeral loopback port at request time, so
+    /// the server MUST accept any port for a loopback redirect URI. Every local MCP client
+    /// (Claude Code, Cursor, VS Code, the MCP Inspector) publishes exactly this document —
+    /// port-less loopback redirect URIs, no <c>application_type</c> — and then calls back
+    /// on whatever port it got. The synthesized CIMD client used to be hard-wired
+    /// <c>web</c>, which made OpenIddict demand an exact match and refuse all of them
+    /// (reported from the field as ID2043). The tolerance is the port and nothing else.
+    /// </summary>
+    [Fact]
+    public async Task Loopback_redirect_with_an_ephemeral_port_is_accepted_for_a_cimd_client()
+    {
+        await SeedAsync();
+        Factory.CimdDocuments[_clientIdUrl] = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["client_id"] = _clientIdUrl,
+            ["client_name"] = "Claude Code",
+            ["redirect_uris"] = new[] { "http://localhost/callback", "http://127.0.0.1/callback" },
+            ["grant_types"] = new[] { "authorization_code", "refresh_token" },
+            ["response_types"] = new[] { "code" },
+            ["token_endpoint_auth_method"] = "none",
+            ["scope"] = Scope,
+        });
+
+        // Any port, on either loopback host — and the port-less form itself.
+        Assert.StartsWith("/consent?ticket=", await DriveAuthorizeAsync(_clientIdUrl, Scope, "http://localhost:40489/callback"));
+        Assert.StartsWith("/consent?ticket=", await DriveAuthorizeAsync(_clientIdUrl, Scope, "http://127.0.0.1:51234/callback"));
+        Assert.StartsWith("/consent?ticket=", await DriveAuthorizeAsync(_clientIdUrl, Scope, "http://localhost/callback"));
+
+        // A different path or a non-loopback host is still refused: no consent redirect.
+        Assert.DoesNotContain("/consent?ticket=", await DriveAuthorizeAsync(_clientIdUrl, Scope, "http://localhost:40489/other") ?? string.Empty);
+        Assert.DoesNotContain("/consent?ticket=", await DriveAuthorizeAsync(_clientIdUrl, Scope, "http://evil.test:40489/callback") ?? string.Empty);
+
+        // And the code exchange completes with the ported URI it was issued for.
+        var (accessToken, _) = await DriveCimdAuthCodeFlowAsync(
+            _clientIdUrl, Scope, AllowedAudience, redirectUri: "http://localhost:40489/callback");
+        Assert.Contains(AllowedAudience, new JwtSecurityTokenHandler().ReadJwtToken(accessToken).Audiences);
+    }
+
     [Fact]
     public async Task Consent_surfaces_hostname_and_unverified_marker()
     {
@@ -232,10 +271,10 @@ public class CimdFullFlowTests : IntegrationTestBase
     // ─── Flow drivers ────────────────────────────────────────────────────
 
     private async Task<(string AccessToken, string RefreshToken)> DriveCimdAuthCodeFlowAsync(
-        string clientId, string scope, string resource)
+        string clientId, string scope, string resource, string? redirectUri = null)
     {
         var tokenResp = await DriveCimdFlowThroughToTokenAsync(
-            clientId, scope, authorizeResource: resource, tokenResources: new[] { resource });
+            clientId, scope, authorizeResource: resource, tokenResources: new[] { resource }, redirectUri: redirectUri);
         var bodyText = await tokenResp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.True(tokenResp.IsSuccessStatusCode, $"/connect/token failed ({(int)tokenResp.StatusCode}): {bodyText}");
         using var doc = JsonDocument.Parse(bodyText);
@@ -262,13 +301,15 @@ public class CimdFullFlowTests : IntegrationTestBase
     }
 
     private async Task<HttpResponseMessage> DriveCimdFlowThroughToTokenAsync(
-        string clientId, string scope, string authorizeResource, IReadOnlyList<string> tokenResources)
+        string clientId, string scope, string authorizeResource, IReadOnlyList<string> tokenResources,
+        string? redirectUri = null)
     {
+        redirectUri ??= RedirectUri;
         var verifier = GeneratePkceVerifier();
         var challenge = GeneratePkceS256Challenge(verifier);
         var cookieClient = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
 
-        var authorizeUri = BuildAuthorizeUri(clientId, scope, challenge, authorizeResource);
+        var authorizeUri = BuildAuthorizeUri(clientId, scope, challenge, authorizeResource, redirectUri);
         var authorizeResp = await cookieClient.GetAsync(authorizeUri, TestContext.Current.CancellationToken);
         AssertRedirect(authorizeResp);
         var consentLocation = authorizeResp.Headers.Location!.ToString();
@@ -300,7 +341,7 @@ public class CimdFullFlowTests : IntegrationTestBase
             new("grant_type", "authorization_code"),
             new("code", code),
             new("client_id", clientId),
-            new("redirect_uri", RedirectUri),
+            new("redirect_uri", redirectUri),
             new("code_verifier", verifier),
         };
         foreach (var r in tokenResources) tokenForm.Add(new KeyValuePair<string, string>("resource", r));
@@ -330,11 +371,13 @@ public class CimdFullFlowTests : IntegrationTestBase
 
     /// <summary>Drives just the authorize GET; returns the redirect Location
     /// (or null when the response isn't a redirect).</summary>
-    private async Task<string?> DriveAuthorizeAsync(string clientId, string scope)
+    private async Task<string?> DriveAuthorizeAsync(string clientId, string scope, string? redirectUri = null)
     {
         var challenge = GeneratePkceS256Challenge(GeneratePkceVerifier());
         var cookieClient = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
-        var resp = await cookieClient.GetAsync(BuildAuthorizeUri(clientId, scope, challenge, AllowedAudience), TestContext.Current.CancellationToken);
+        var resp = await cookieClient.GetAsync(
+            BuildAuthorizeUri(clientId, scope, challenge, AllowedAudience, redirectUri ?? RedirectUri),
+            TestContext.Current.CancellationToken);
         return resp.Headers.Location?.ToString();
     }
 
@@ -347,12 +390,12 @@ public class CimdFullFlowTests : IntegrationTestBase
             && flag.ValueKind == JsonValueKind.True;
     }
 
-    private static string BuildAuthorizeUri(string clientId, string scope, string challenge, string resource) =>
+    private static string BuildAuthorizeUri(string clientId, string scope, string challenge, string resource, string? redirectUri = null) =>
         "/connect/authorize?" + string.Join("&", new[]
         {
             "response_type=code",
             $"client_id={Uri.EscapeDataString(clientId)}",
-            $"redirect_uri={Uri.EscapeDataString(RedirectUri)}",
+            $"redirect_uri={Uri.EscapeDataString(redirectUri ?? RedirectUri)}",
             $"scope={Uri.EscapeDataString(scope)}",
             $"state={Guid.NewGuid():N}",
             $"code_challenge={challenge}",

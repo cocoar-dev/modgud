@@ -20,13 +20,15 @@ public class CimdMetadataParserTests
         string[]? responseTypes = null,
         string? scope = null,
         string? clientName = null,
-        bool includeClientSecret = false)
+        bool includeClientSecret = false,
+        string? applicationType = null)
     {
         var fields = new List<string>();
         if (clientId is not null) fields.Add($"\"client_id\":{Json(clientId)}");
         var uris = redirectUris ?? ["https://app.example.com/callback"];
         fields.Add($"\"redirect_uris\":[{string.Join(",", uris.Select(Json))}]");
         if (authMethod is not null) fields.Add($"\"token_endpoint_auth_method\":{Json(authMethod)}");
+        if (applicationType is not null) fields.Add($"\"application_type\":{Json(applicationType)}");
         if (grantTypes is not null) fields.Add($"\"grant_types\":[{string.Join(",", grantTypes.Select(Json))}]");
         if (responseTypes is not null) fields.Add($"\"response_types\":[{string.Join(",", responseTypes.Select(Json))}]");
         if (scope is not null) fields.Add($"\"scope\":{Json(scope)}");
@@ -77,6 +79,22 @@ public class CimdMetadataParserTests
     [Fact]
     public void Accepts_http_loopback_redirect() =>
         AssertValid(Doc(redirectUris: ["http://127.0.0.1:1234/cb", "http://localhost/cb"]));
+
+    [Theory]
+    [InlineData("web")]
+    [InlineData("native")]
+    public void Records_a_declared_application_type(string declared) =>
+        Assert.Equal(declared, AssertValid(Doc(applicationType: declared)).ApplicationType);
+
+    [Fact]
+    public void Omitted_application_type_is_null_not_defaulted() =>
+        Assert.Null(AssertValid(Doc()).ApplicationType);
+
+    [Theory]
+    [InlineData("desktop")]
+    [InlineData("Native")]
+    public void Rejects_unknown_application_type(string declared) =>
+        AssertInvalid(Doc(applicationType: declared));
 
     [Theory]
     [InlineData("client_secret_basic")]

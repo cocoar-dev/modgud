@@ -20,6 +20,10 @@ public static class OAuthErrors
         code: "OAuth.InvalidConsentType",
         description: $"Invalid consent type '{consentType}'. Must be 'explicit', 'implicit', or 'external'.");
 
+    public static Error InvalidApplicationType(string applicationType) => Error.Validation(
+        code: "OAuth.InvalidApplicationType",
+        description: $"Invalid application type '{applicationType}'. Must be 'web' or 'native'.");
+
     public static Error UnsupportedGrantType(string grantType) => Error.Validation(
         code: "OAuth.UnsupportedGrantType",
         description: $"Grant type '{grantType}' is not supported. Allowed: authorization_code, "

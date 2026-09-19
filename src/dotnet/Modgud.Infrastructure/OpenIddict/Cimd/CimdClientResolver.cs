@@ -237,7 +237,12 @@ public sealed class CimdClientResolver
             DisplayName = DisplayNameFor(meta),
             ClientType = OAuthClientTypes.Public,
             ConsentType = OAuthConsentTypes.Explicit,
-            ApplicationType = OAuthApplicationTypes.Web,
+            // What the document declares, else what its redirect URIs imply: a loopback
+            // http URI makes the client native, which is what lets OpenIddict accept the
+            // ephemeral port every local MCP client shows up with (RFC 8252 §7.3). This
+            // used to be hard-wired to "web", which refused all of them.
+            ApplicationType = OAuthApplicationTypes.Effective(meta.ApplicationType, meta.RedirectUris)
+                              ?? OAuthApplicationTypes.Web,
             RedirectUris = meta.RedirectUris.ToList(),
             PostLogoutRedirectUris = new List<string>(),
             Permissions = BuildPermissions(meta),

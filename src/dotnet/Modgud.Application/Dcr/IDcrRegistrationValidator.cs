@@ -123,6 +123,17 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
         // returns it once in the RFC 7591 §3.2.1 response).
         var isConfidential = authMethod != AuthMethodNone;
 
+        // ───────── application_type (OIDC DCR, optional) ────────────
+        // Recorded as declared; a client with a loopback http redirect is native
+        // regardless (RFC 8252 §7.3), which OAuthApplicationTypes.Effective settles
+        // wherever the type is read. Only the value's vocabulary is checked here.
+        if (request.ApplicationType is not null && !OAuthApplicationTypes.IsKnown(request.ApplicationType))
+        {
+            return Reject(DcrErrorCodes.InvalidClientMetadata,
+                $"application_type '{request.ApplicationType}' is not valid. Allowed: web, native.",
+                DcrRejectionReason.InvalidApplicationType);
+        }
+
         // ───────── grant_types ──────────────────────────────────────
         var grantTypes = request.GrantTypes is { Count: > 0 }
             ? request.GrantTypes
@@ -209,6 +220,7 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
             DisplayName = normalisedName,
             ClientType = isConfidential ? OAuthClientTypes.Confidential : OAuthClientTypes.Public,
             ConsentType = OAuthConsentTypes.Explicit, // DCR clients always go through consent
+            ApplicationType = request.ApplicationType,
             RedirectUris = request.RedirectUris.ToList(),
             PostLogoutRedirectUris = new List<string>(),
             AllowedGrantTypes = grantTypes.ToList(),

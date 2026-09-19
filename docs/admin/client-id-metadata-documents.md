@@ -74,7 +74,8 @@ A CIMD client must send a `resource=` parameter, and the target resource server 
 | Field | Rule |
 | --- | --- |
 | `client_id` | Required. Must string-equal the URL the server dereferenced (RFC 3986 §6.2.1 exact match). |
-| `redirect_uris` | At least one. Each must be HTTPS, OR `http://localhost`, `http://127.0.0.1`, `http://[::1]`. No fragments. Exact-match at `/connect/authorize`. |
+| `redirect_uris` | At least one. Each must be HTTPS, OR `http://localhost`, `http://127.0.0.1`, `http://[::1]`. No fragments. Exact-match at `/connect/authorize` — except the **port of a loopback URI**: a native client takes an ephemeral port at request time, so a registered `http://localhost/callback` matches `http://localhost:40489/callback` ([RFC 8252 §7.3](https://www.rfc-editor.org/rfc/rfc8252#section-7.3)). Scheme, host and path still have to match. |
+| `application_type` | Optional, `web` or `native`. A document with a loopback `http` redirect URI is treated as `native` whatever it says — only a native app can have such a URI. Claude Code, Cursor, VS Code and the MCP Inspector all omit the field and rely on this. |
 | `token_endpoint_auth_method` | `none` or omitted. **v1 is public-only** — a `client_secret*` method or any `client_secret` field is rejected. |
 | `grant_types` | Subset of `{authorization_code, refresh_token}`; must include `authorization_code`. |
 | `response_types` | Subset of `{code}`. |
