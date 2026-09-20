@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Modgud.Application.Dcr;
 using Modgud.Domain.Applications;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
@@ -98,6 +99,7 @@ public sealed class CimdClientResolver
         // session (NOT the resolver) to preserve this resolver's no-eager-tenant-
         // session design (it must not throw on a realm without a physical DB).
         CimdSettings? settings;
+        IReadOnlyList<string> requestableScopes;
         await using (var session = _sessionFactory.OpenQuerySession())
         {
             var realmCimd = (await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, cancellationToken))?.Cimd;
@@ -117,12 +119,19 @@ public sealed class CimdClientResolver
             {
                 settings = realmCimd;
             }
+            if (settings is null || !settings.Enabled) return null;
+
+            // The scope permissions are NOT part of the cached document: they are
+            // the realm's live opt-in set (DynamicClientScopePolicy) intersected with
+            // whatever the document declares, recomputed on every resolve so a scope
+            // opted in or out by an admin takes effect at once — same liveness rule
+            // as the Enabled check above. The document itself stays memoized.
+            requestableScopes = await LoadRequestableScopesAsync(session, cancellationToken);
         }
-        if (settings is null || !settings.Enabled) return null;
 
         var cacheKey = $"cimd:doc:{TenantContext.Current}:{clientId}";
         if (_cache.TryGetValue<CachedCimd>(cacheKey, out var cached) && cached is not null)
-            return Synthesize(cached);
+            return Synthesize(cached, requestableScopes);
 
         if (!CimdClientId.TryValidateUrl(clientId, out var uri, out var urlError) || uri is null)
         {
@@ -137,7 +146,26 @@ public sealed class CimdClientResolver
         if (ttl > TimeSpan.Zero)
             _cache.Set(cacheKey, entry, ttl);
 
-        return Synthesize(entry);
+        return Synthesize(entry, requestableScopes);
+    }
+
+    private const string RequestableScopesItemKey = "Modgud.Cimd.RequestableScopes";
+
+    /// <summary>
+    /// One realm-wide scope query per request, not per resolve: the store, the
+    /// audience-containment handler and the authorize endpoint each resolve the
+    /// same client once per request, so the set is memoized on HttpContext.Items
+    /// (a background resolve without a request context simply queries).
+    /// </summary>
+    private async Task<IReadOnlyList<string>> LoadRequestableScopesAsync(IQuerySession session, CancellationToken cancellationToken)
+    {
+        var items = _httpContextAccessor.HttpContext?.Items;
+        if (items is not null && items.TryGetValue(RequestableScopesItemKey, out var memo) && memo is IReadOnlyList<string> known)
+            return known;
+
+        var loaded = await DynamicClientScopePolicy.LoadRequestableNamesAsync(session, cancellationToken);
+        if (items is not null) items[RequestableScopesItemKey] = loaded;
+        return loaded;
     }
 
     private async Task<(CimdMetadata? Metadata, TimeSpan Ttl)> FetchAndValidateAsync(
@@ -223,7 +251,7 @@ public sealed class CimdClientResolver
         return ttl;
     }
 
-    private static OAuthApplicationState Synthesize(CachedCimd entry)
+    private static OAuthApplicationState Synthesize(CachedCimd entry, IReadOnlyList<string> requestableScopes)
     {
         var meta = entry.Metadata;
         return new OAuthApplicationState
@@ -245,7 +273,7 @@ public sealed class CimdClientResolver
                               ?? OAuthApplicationTypes.Web,
             RedirectUris = meta.RedirectUris.ToList(),
             PostLogoutRedirectUris = new List<string>(),
-            Permissions = BuildPermissions(meta),
+            Permissions = BuildPermissions(meta, requestableScopes),
             Requirements = new List<string>(), // global RequireProofKeyForCodeExchange enforces PKCE
             Settings = new Dictionary<string, string>
             {
@@ -273,7 +301,7 @@ public sealed class CimdClientResolver
         };
     }
 
-    private static List<string> BuildPermissions(CimdMetadata meta)
+    private static List<string> BuildPermissions(CimdMetadata meta, IReadOnlyList<string> requestableScopes)
     {
         var permissions = new List<string>
         {
@@ -298,7 +326,13 @@ public sealed class CimdClientResolver
         // authorization_code is guaranteed present (the parser requires it).
         permissions.Add(OAuthPermissions.ResponseTypes.Code);
 
-        foreach (var scope in meta.Scopes)
+        // The document's `scope` is an upper bound, not a grant; a document without
+        // one (every static MCP-client document — it cannot know one server's
+        // scopes) holds the realm's whole dynamic-client set. Granting only the
+        // declared scopes used to leave such a client with no scope permission at
+        // all, so OpenIddict refused everything but openid/offline_access (ID2051)
+        // before the per-scope opt-in was ever consulted.
+        foreach (var scope in DynamicClientScopePolicy.Resolve(meta.Scopes, requestableScopes))
             permissions.Add(OAuthPermissions.Prefixes.Scope + scope);
 
         return permissions;

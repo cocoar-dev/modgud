@@ -39,7 +39,7 @@ When a client presents an HTTPS-URL `client_id` that isn't a known stored client
 1. Validates the URL shape — `https` scheme, has a path, no fragment, no userinfo, no dot-segments.
 2. Fetches it over an **SSRF-hardened** transport (see below), capped at **5 KB**, `Accept: application/json`, ~5 s timeout, **no redirects**.
 3. Validates the document (table below).
-4. Synthesizes an in-memory public PKCE client with a deterministic id derived from the URL, JWT access tokens, and the redirect URIs / scopes the document declares.
+4. Synthesizes an in-memory public PKCE client with a deterministic id derived from the URL, JWT access tokens, the redirect URIs the document declares, and the realm's **dynamic-client scopes** (see below) — narrowed to the document's `scope` when it has one.
 5. Caches the validated document per URL, respecting `Cache-Control` (clamped to between 5 minutes and 24 hours; failures are never cached).
 
 No database row is created. A refresh after the cache expires re-fetches and re-validates the live document — if the URL becomes unreachable, refresh fails and the client must re-authenticate.
@@ -58,7 +58,9 @@ CIMD shares DCR's resource/scope opt-in surface — flipping the master toggle d
 | Per-API allow-list | [OAuth APIs](./oauth-apis) → **Allow DCR** checkbox per row | Off |
 | Per-Scope allow-list | [OAuth Scopes](./oauth-scopes) → **Allow DCR Clients** checkbox per row | Off |
 
-A CIMD client must send a `resource=` parameter, and the target resource server must have **Allow DCR** enabled — otherwise the token endpoint rejects with `invalid_target`. App-scoped scopes are reachable only when **Allow DCR Clients** is ticked, exactly as for DCR clients (a CIMD client is realm-wide and has no App link of its own). Global scopes (`openid`, `email`, `profile`, …) are always reachable.
+A CIMD client must send a `resource=` parameter, and the target resource server must have **Allow DCR** enabled — otherwise the token endpoint rejects with `invalid_target`. The scopes it can hold and request are the realm's **dynamic-client scopes**: every scope with **Allow DCR Clients** ticked (app-scoped or not — a CIMD client is realm-wide and has no App link of its own) plus the standard scopes other than `modgud.management` (`openid`, `profile`, `email`, `phone`, `address`, `offline_access`, `roles`, `permissions`). Same rule as for [DCR clients](./dynamic-client-registration#how-the-per-scope-flag-interacts-with-app-scoped-scopes).
+
+A document **without** `scope` — the normal case: Claude Code's document is one static file for every MCP server in the world and cannot know one server's scopes, the client reads them from the server's protected-resource metadata at run time — holds that whole set. A document **with** `scope` holds the intersection; it can narrow what its client may ask for, never widen it. The set is read live on every resolve, so ticking **Allow DCR Clients** on a scope takes effect at once, even for an already-cached document. Requesting a scope outside the set fails at `/connect/authorize` with `invalid_scope` and a description naming the scope and the flag.
 
 ## Enabling CIMD for a realm
 
@@ -67,7 +69,7 @@ A CIMD client must send a `resource=` parameter, and the target resource server 
     - **Access-token lifetime** (default 15 min) — shorter than admin-created clients on purpose; a leaked token from an unverified, domain-bound client has a smaller blast radius.
     - **Refresh-token lifetime** (default 7 d).
 3. **OAuth APIs → your MCP-server API** → tick **Allow DCR**.
-4. **OAuth Scopes → the scope(s) the MCP server gates** → tick **Allow DCR Clients** (for app-scoped scopes).
+4. **OAuth Scopes → the scope(s) the MCP server gates** → tick **Allow DCR Clients**.
 
 ## What's accepted in the metadata document
 
@@ -79,7 +81,7 @@ A CIMD client must send a `resource=` parameter, and the target resource server 
 | `token_endpoint_auth_method` | `none` or omitted. **v1 is public-only** — a `client_secret*` method or any `client_secret` field is rejected. |
 | `grant_types` | Subset of `{authorization_code, refresh_token}`; must include `authorization_code`. |
 | `response_types` | Subset of `{code}`. |
-| `scope` | Optional, space-delimited. The scopes the client may request (still subject to the opt-in gates above). |
+| `scope` | Optional, space-delimited. An **upper bound**: the client holds these scopes intersected with the realm's dynamic-client scopes. Omitted (as every static MCP-client document does), the client holds the whole set. |
 | `client_name` | Optional. Used as the display name; the consent screen also shows the URL hostname regardless. |
 
 A document that fails any rule is rejected and never cached; the authorize request fails as "unknown client".

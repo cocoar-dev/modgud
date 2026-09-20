@@ -48,13 +48,18 @@ The master toggle just turns the registration endpoint on. The per-API flag cont
 
 ### How the per-Scope flag interacts with app-scoped scopes
 
-Most scopes you create in Modgud are **app-scoped** — they belong to one [Application](./applications) (`Scope.AppId` is set). Non-DCR clients are restricted to scopes whose `AppId` matches one of their own linked Apps. **DCR clients have no `AppId`** by design (they're realm-wide public PKCE clients), so the per-Scope `Allow DCR Clients` flag replaces the app-link check for them:
+Most scopes you create in Modgud are **app-scoped** — they belong to one [Application](./applications) (`Scope.AppId` is set). Non-DCR clients are restricted to scopes whose `AppId` matches one of their own linked Apps. **DCR clients have no `AppId`** by design (they're realm-wide public PKCE clients), so the per-Scope `Allow DCR Clients` flag replaces the app-link check for them. The scopes a DCR client can hold and request — its **dynamic-client scopes** — are:
 
-- **Global scopes** (`AppId = null` — the OIDC standards `openid`, `email`, `profile`, … plus any cross-app scope you create): always reachable by DCR clients.
-- **App-scoped scope with `Allow DCR Clients = true`**: reachable by DCR clients. The realm-admin has explicitly opted this scope in for anonymous-registrant access.
-- **App-scoped scope with `Allow DCR Clients = false`** (default): `/connect/authorize` rejects the request with `invalid_scope` before the user ever sees the consent screen. The agent gets a clear error description.
+- **Any scope with `Allow DCR Clients = true`**, app-scoped or global. The realm-admin has explicitly opted this scope in for anonymous-registrant access.
+- **The standard scopes other than `modgud.management`**: `openid`, `profile`, `email`, `phone`, `address`, `offline_access`, `roles`, `permissions`. They cannot carry the flag (standard scopes are immutable) and name no resource privilege of their own. The management-API selector is never available to a dynamic client.
 
-The combined effect: enabling DCR safely requires you to walk through your existing scopes once and decide which ones agents are allowed to ask for. Until you tick `Allow DCR Clients` on at least one app-scoped scope (or create a fresh global scope), DCR clients can only request the OIDC standard scopes.
+A custom scope **without** the flag (default) — app-scoped or global — is not: `/connect/authorize` rejects the request with `invalid_scope` before the user ever sees the consent screen, with a description naming the scope and the flag to enable.
+
+The combined effect: enabling DCR safely requires you to walk through your existing scopes once and decide which ones agents are allowed to ask for. Until you tick `Allow DCR Clients` on at least one scope, DCR clients can only request the standard scopes.
+
+### What a registration gets when it omits `scope`
+
+RFC 7591 leaves it to the server ("a default set of scopes"). Modgud's default is the realm's dynamic-client scopes as they are at registration time; a registration **with** `scope` gets the intersection of what it asked for and that set — its own list is an upper bound, never a grant. The `201` response echoes the registered set in `scope`, so an agent can see what it holds. A client keeps the set it was registered with; a scope opted in later needs a re-registration (or a CIMD document, which is resolved live).
 
 ## Enabling DCR for a realm
 
@@ -80,6 +85,7 @@ After these four steps, an agent that POSTs to `/connect/register` with a valid 
 | `token_endpoint_auth_method` | Must be `none` (or omitted). Public PKCE only — no secret-storage. |
 | `grant_types` | Subset of `{authorization_code, refresh_token}`. |
 | `response_types` | Subset of `{code}`. No implicit / hybrid flows. |
+| `scope` | Optional, space-delimited. An upper bound intersected with the realm's dynamic-client scopes; omitted, the client gets the whole set. The response echoes what was registered. |
 
 On success the endpoint returns `201 Created` with the assigned `client_id` per RFC 7591 §3.2.1. On rejection it returns `400 Bad Request` with `{ error, error_description }` per §3.2.2. Hitting the rate-limit returns `429`.
 

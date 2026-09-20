@@ -191,13 +191,25 @@ public static class DcrRegistrationEndpoints
             ClientName = created.DisplayName,
             ClientUri = request.ClientUri,
             LogoUri = request.LogoUri,
-            Scope = normalized.Scopes.Count == 0 ? null : string.Join(' ', normalized.Scopes),
+            // The REGISTERED set (RFC 7591 §3.2.1): the request's `scope` was an upper
+            // bound intersected with the realm's dynamic-client scopes, and a request
+            // without one got that whole set — the response tells the client which.
+            Scope = RegisteredScope(created.Permissions),
             Contacts = request.Contacts,
             TosUri = request.TosUri,
             PolicyUri = request.PolicyUri,
             SoftwareId = request.SoftwareId,
             SoftwareVersion = request.SoftwareVersion,
         });
+    }
+
+    private static string? RegisteredScope(IEnumerable<string> permissions)
+    {
+        var scopes = permissions
+            .Where(p => p.StartsWith(OAuthPermissions.Prefixes.Scope, StringComparison.Ordinal))
+            .Select(p => p[OAuthPermissions.Prefixes.Scope.Length..])
+            .ToList();
+        return scopes.Count == 0 ? null : string.Join(' ', scopes);
     }
 
     private static string ResolveSourceIp(HttpContext ctx)

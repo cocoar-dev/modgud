@@ -130,7 +130,73 @@ public class DcrFullFlowTests : IntegrationTestBase
             Assert.False(doc.RootElement.TryGetProperty("application_type", out _));
     }
 
-    private async Task<string?> AuthorizeLocationAsync(string clientId, string redirectUri)
+    /// <summary>
+    /// RFC 7591 §2: a registration without <c>scope</c> gets "a default set of
+    /// scopes" — Modgud's is the realm's dynamic-client set (opted-in scopes plus
+    /// the open standard scopes), the same one a scope-less CIMD document holds.
+    /// It used to be the empty set, which left such a client unable to request
+    /// anything but <c>openid</c>/<c>offline_access</c>. A declared <c>scope</c>
+    /// is an upper bound intersected with that set, and the response echoes what
+    /// was actually registered (§3.2.1).
+    /// </summary>
+    [Fact]
+    public async Task Registration_without_scope_gets_the_realms_dynamic_client_scopes()
+    {
+        await SeedAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var http = Factory.CreateClient();
+        var notOptedIn = $"dcr-not-opted-in-{Guid.NewGuid():N}";
+        await CreateScopeAsync(notOptedIn, allowDynamicClients: false);
+
+        var reg = await http.PostAsync("/connect/register", JsonContent.Create(new
+        {
+            client_name = "Scope-less MCP Client",
+            redirect_uris = new[] { "http://localhost/callback" },
+            grant_types = new[] { "authorization_code", "refresh_token" },
+        }), ct);
+        var regBody = await reg.Content.ReadAsStringAsync(ct);
+        Assert.True(reg.StatusCode == HttpStatusCode.Created, regBody);
+        string clientId;
+        string[] registered;
+        using (var doc = JsonDocument.Parse(regBody))
+        {
+            clientId = doc.RootElement.GetProperty("client_id").GetString()!;
+            registered = doc.RootElement.GetProperty("scope").GetString()!.Split(' ');
+        }
+        Assert.Contains(ScopeName, registered);
+        Assert.Contains("openid", registered);
+        Assert.Contains("profile", registered);
+        Assert.Contains("email", registered);
+        Assert.Contains("offline_access", registered);
+        Assert.DoesNotContain(notOptedIn, registered);
+        Assert.DoesNotContain("modgud.management", registered);
+        Assert.Equal(registered, (await LoadStoredAsync(clientId)).Permissions
+            .Where(p => p.StartsWith("scp:")).Select(p => p["scp:".Length..]).ToArray());
+
+        Assert.StartsWith("/consent?ticket=", await AuthorizeLocationAsync(clientId, "http://localhost:43210/callback"));
+        var refused = await AuthorizeResponseAsync(clientId, "http://localhost:43210/callback", $"openid {notOptedIn}");
+        var refusedBody = await refused.Content.ReadAsStringAsync(ct);
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        Assert.Contains("invalid_scope", refusedBody);
+        Assert.Contains("AllowDynamicRegistrationClients", refusedBody);
+
+        // Declared scope: the intersection is registered and echoed, nothing more.
+        var declaring = await http.PostAsync("/connect/register", JsonContent.Create(new
+        {
+            client_name = "Declaring MCP Client",
+            redirect_uris = new[] { RedirectUri },
+            scope = $"openid {ScopeName} {notOptedIn} no-such-scope",
+        }), ct);
+        var declaringBody = await declaring.Content.ReadAsStringAsync(ct);
+        Assert.True(declaring.StatusCode == HttpStatusCode.Created, declaringBody);
+        using (var doc = JsonDocument.Parse(declaringBody))
+            Assert.Equal(new[] { "openid", ScopeName }, doc.RootElement.GetProperty("scope").GetString()!.Split(' '));
+    }
+
+    private async Task<string?> AuthorizeLocationAsync(string clientId, string redirectUri, string? scope = null)
+        => (await AuthorizeResponseAsync(clientId, redirectUri, scope)).Headers.Location?.ToString();
+
+    private async Task<HttpResponseMessage> AuthorizeResponseAsync(string clientId, string redirectUri, string? scope = null)
     {
         var challenge = GeneratePkceS256Challenge(GeneratePkceVerifier());
         var cookieClient = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
@@ -139,14 +205,13 @@ public class DcrFullFlowTests : IntegrationTestBase
             "response_type=code",
             $"client_id={Uri.EscapeDataString(clientId)}",
             $"redirect_uri={Uri.EscapeDataString(redirectUri)}",
-            $"scope={Uri.EscapeDataString($"openid {ScopeName}")}",
+            $"scope={Uri.EscapeDataString(scope ?? $"openid {ScopeName}")}",
             $"state={Guid.NewGuid():N}",
             $"code_challenge={challenge}",
             "code_challenge_method=S256",
             $"resource={Uri.EscapeDataString(AllowedAudience)}",
         });
-        var resp = await cookieClient.GetAsync(uri, TestContext.Current.CancellationToken);
-        return resp.Headers.Location?.ToString();
+        return await cookieClient.GetAsync(uri, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -312,7 +377,12 @@ public class DcrFullFlowTests : IntegrationTestBase
     {
         // Negative twin: the same setup but AllowDynamicRegistrationClients=false
         // on the scope. /connect/authorize must short-circuit with
-        // invalid_scope before the user ever lands on the consent screen.
+        // invalid_scope before the user ever lands on the consent screen. The
+        // scope is not even registered on the client any more (declared scopes
+        // are intersected with the opted-in set), so the refusal comes from
+        // DynamicClientScopeHandler inside OpenIddict's request validation —
+        // rendered as an error page like every validation failure, naming the
+        // scope and the flag, instead of OpenIddict's generic ID2051.
         await SeedAsync();
         var app = await CreateAppAsync($"dcr-app-{Guid.NewGuid():N}", "DCR Test App (negative)");
         var apiName = "https://dcr-appscoped-negative.example/";
@@ -339,11 +409,11 @@ public class DcrFullFlowTests : IntegrationTestBase
         });
 
         var resp = await cookieClient.GetAsync(authorizeUri, TestContext.Current.CancellationToken);
-        // The endpoint redirects back to redirect_uri with error=invalid_scope.
-        AssertRedirect(resp);
-        var loc = resp.Headers.Location!.ToString();
-        Assert.Contains("error=invalid_scope", loc);
-        Assert.Contains("error_description=", loc);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(resp.StatusCode == HttpStatusCode.BadRequest, $"expected 400, got {(int)resp.StatusCode} {resp.Headers.Location}\n{body}");
+        Assert.Contains("invalid_scope", body);
+        Assert.Contains(appScopedScope, body);
+        Assert.Contains("AllowDynamicRegistrationClients", body);
     }
 
     [Fact]
@@ -466,17 +536,19 @@ public class DcrFullFlowTests : IntegrationTestBase
     /// <summary>Creates an OAuthScope whose Resources include the allowed
     /// API name (so principals granted this scope receive that audience)
     /// AND whose Properties dict carries AllowDynamicRegistrationClients=true.</summary>
-    private async Task CreateAllowedScopeAsync()
+    private Task CreateAllowedScopeAsync() => CreateScopeAsync(ScopeName, allowDynamicClients: true);
+
+    private async Task CreateScopeAsync(string name, bool allowDynamicClients)
     {
         using var scope = NewSystemTenantScope();
         var oauthAdmin = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
 
         var createResult = await oauthAdmin.CreateScopeAsync(new CreateOAuthScopeDto
         {
-            Name = ScopeName,
-            DisplayName = ScopeName,
+            Name = name,
+            DisplayName = name,
             Resources = new List<string> { AllowedAudience },
-            AllowDynamicRegistrationClients = true,
+            AllowDynamicRegistrationClients = allowDynamicClients,
         }, TestContext.Current.CancellationToken);
 
         Assert.False(createResult.IsError,

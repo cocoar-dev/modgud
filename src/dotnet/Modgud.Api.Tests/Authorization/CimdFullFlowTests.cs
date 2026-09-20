@@ -112,6 +112,66 @@ public class CimdFullFlowTests : IntegrationTestBase
         Assert.Contains(AllowedAudience, new JwtSecurityTokenHandler().ReadJwtToken(accessToken).Audiences);
     }
 
+    /// <summary>
+    /// A static CIMD document has no <c>scope</c> — Claude Code's is one document
+    /// for every MCP server in the world and cannot know one server's scopes; the
+    /// client learns them from the server's protected-resource metadata at run
+    /// time. Such a client must hold the realm's dynamic-client scope set (the
+    /// opted-in scopes plus the open standard scopes), so the per-scope opt-in is
+    /// reachable at all. It used to hold nothing, and OpenIddict refused every
+    /// scope but <c>openid</c>/<c>offline_access</c> with ID2051 before the opt-in
+    /// was ever consulted (reported from the field). A scope the admin did not
+    /// opt in stays refused — with Modgud's own message, not the opaque one — and
+    /// a document that does declare <c>scope</c> cannot name its way past that.
+    /// </summary>
+    [Fact]
+    public async Task A_document_without_scope_holds_the_realms_dynamic_client_scopes()
+    {
+        await SeedAsync();
+        const string notOptedIn = "cimd-not-opted-in-scope";
+        await CreateScopeAsync(notOptedIn, allowDynamicClients: false);
+        Factory.CimdDocuments[_clientIdUrl] = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["client_id"] = _clientIdUrl,
+            ["client_name"] = "Claude Code",
+            ["redirect_uris"] = new[] { "http://localhost/callback", "http://127.0.0.1/callback" },
+            ["grant_types"] = new[] { "authorization_code", "refresh_token" },
+            ["response_types"] = new[] { "code" },
+            ["token_endpoint_auth_method"] = "none",
+        });
+        const string callback = "http://localhost:40489/callback";
+
+        // The opted-in scope and the OIDC identity scopes reach consent.
+        Assert.StartsWith("/consent?ticket=", await DriveAuthorizeAsync(_clientIdUrl, $"openid {ScopeName}", callback));
+        Assert.StartsWith("/consent?ticket=", await DriveAuthorizeAsync(_clientIdUrl, "openid profile email offline_access", callback));
+
+        // A scope without the opt-in is refused — by Modgud, naming the flag. Request
+        // validation errors are rendered by OpenIddict as a page, not redirected.
+        await AssertRefusedScopeAsync(_clientIdUrl, $"openid {notOptedIn}", callback, "AllowDynamicRegistrationClients");
+
+        // The management selector is never a dynamic client's to ask for.
+        await AssertRefusedScopeAsync(_clientIdUrl, "openid modgud.management", callback, "not available to dynamically registered clients");
+
+        // And the whole flow completes on the default set.
+        var (accessToken, _) = await DriveCimdAuthCodeFlowAsync(_clientIdUrl, $"openid {ScopeName}", AllowedAudience, redirectUri: callback);
+        Assert.Contains(AllowedAudience, new JwtSecurityTokenHandler().ReadJwtToken(accessToken).Audiences);
+
+        // A document that declares scope gets the intersection, never more.
+        var declaring = $"https://cimd-app.test/oauth/{Guid.NewGuid():N}/declaring.json";
+        Factory.CimdDocuments[declaring] = BuildDocument(declaring, $"openid {ScopeName} {notOptedIn}");
+        Assert.StartsWith("/consent?ticket=", await DriveAuthorizeAsync(declaring, $"openid {ScopeName}"));
+        await AssertRefusedScopeAsync(declaring, $"openid {notOptedIn}", RedirectUri, "AllowDynamicRegistrationClients");
+    }
+
+    private async Task AssertRefusedScopeAsync(string clientId, string scope, string redirectUri, string expectedDescriptionPart)
+    {
+        var resp = await DriveAuthorizeResponseAsync(clientId, scope, redirectUri);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(resp.StatusCode == HttpStatusCode.BadRequest, $"expected 400, got {(int)resp.StatusCode} {resp.Headers.Location}\n{body}");
+        Assert.Contains("invalid_scope", body);
+        Assert.Contains(expectedDescriptionPart, body);
+    }
+
     [Fact]
     public async Task Consent_surfaces_hostname_and_unverified_marker()
     {
@@ -237,16 +297,18 @@ public class CimdFullFlowTests : IntegrationTestBase
         Assert.False(result.IsError, DescribeErrors(result.Errors));
     }
 
-    private async Task CreateAllowedScopeAsync()
+    private Task CreateAllowedScopeAsync() => CreateScopeAsync(ScopeName, allowDynamicClients: true);
+
+    private async Task CreateScopeAsync(string name, bool allowDynamicClients)
     {
         using var scope = NewSystemTenantScope();
         var oauthAdmin = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
         var result = await oauthAdmin.CreateScopeAsync(new CreateOAuthScopeDto
         {
-            Name = ScopeName,
-            DisplayName = ScopeName,
+            Name = name,
+            DisplayName = name,
             Resources = new List<string> { AllowedAudience },
-            AllowDynamicRegistrationClients = true,
+            AllowDynamicRegistrationClients = allowDynamicClients,
         }, TestContext.Current.CancellationToken);
         Assert.False(result.IsError, DescribeErrors(result.Errors));
     }
@@ -372,13 +434,15 @@ public class CimdFullFlowTests : IntegrationTestBase
     /// <summary>Drives just the authorize GET; returns the redirect Location
     /// (or null when the response isn't a redirect).</summary>
     private async Task<string?> DriveAuthorizeAsync(string clientId, string scope, string? redirectUri = null)
+        => (await DriveAuthorizeResponseAsync(clientId, scope, redirectUri)).Headers.Location?.ToString();
+
+    private async Task<HttpResponseMessage> DriveAuthorizeResponseAsync(string clientId, string scope, string? redirectUri = null)
     {
         var challenge = GeneratePkceS256Challenge(GeneratePkceVerifier());
         var cookieClient = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
-        var resp = await cookieClient.GetAsync(
+        return await cookieClient.GetAsync(
             BuildAuthorizeUri(clientId, scope, challenge, AllowedAudience, redirectUri ?? RedirectUri),
             TestContext.Current.CancellationToken);
-        return resp.Headers.Location?.ToString();
     }
 
     private async Task<bool> DiscoveryHasCimdFlagAsync()
