@@ -2174,7 +2174,7 @@
         "accessTokenMinutes": "Access-Token-Lebensdauer (Minuten)",
         "enabled": "Dynamic Client Registration aktivieren",
         "gcTtlDays": "Aufräumen nach Inaktivität (Tage)",
-        "hint": "Wenn aktiviert, können KI-Agents und andere Software OAuth-Clients selbst über POST /connect/register (RFC 7591) registrieren. Nur öffentliche PKCE-Clients, es wird kein client_secret ausgestellt. Standardmäßig aus.",
+        "hint": "Wenn aktiviert, können KI-Agents und andere Software OAuth-Clients selbst über POST /connect/register (RFC 7591) registrieren. Öffentliche PKCE-Clients oder vertrauliche, denen einmalig ein client_secret ausgestellt wird. Standardmäßig aus.",
         "rateLimitIp": "Rate-Limit pro Quell-IP (pro Stunde)",
         "rateLimitRealm": "Rate-Limit pro Realm (pro Tag)",
         "refreshTokenDays": "Refresh-Token-Lebensdauer (Tage)",
@@ -2185,11 +2185,11 @@
         "tripleOptInWarning": "Dreifaches Opt-in: Hier registrierte Clients können Access-Tokens nur für OAuth-APIs mit aktiviertem AllowDynamicRegistration UND für Scopes mit aktiviertem AllowDynamicRegistrationClients anfordern. Solange du nicht mindestens eine API und einen Scope freigibst, können DCR-Clients keine nutzbaren Tokens ausstellen."
       },
       "cimd": {
-        "hint": "Wenn aktiviert, wird ein Client, dessen client_id eine https-URL ist (ein Client-ID-Metadaten-Dokument, der von MCP bevorzugte Weg), bei Bedarf aufgelöst: Der Server lädt + validiert das Dokument und behandelt es als öffentlichen PKCE-Client — keine Registrierungs-Anfrage, kein client_secret, Identität an die Domain der URL gebunden. Standardmäßig aus.",
+        "hint": "Wenn aktiviert, wird ein Client, dessen client_id eine https-URL ist (ein Client-ID-Metadaten-Dokument, der von MCP bevorzugte Weg), bei Bedarf aufgelöst: Der Server lädt + validiert das Dokument und behandelt es als Client — öffentlich mit PKCE, oder vertraulich per private_key_jwt gegen die Schlüssel, die das Dokument veröffentlicht. Keine Registrierungs-Anfrage, kein client_secret, Identität an die Domain der URL gebunden. Standardmäßig aus.",
         "enabled": "Client-ID-Metadaten-Dokumente aktivieren",
         "accessTokenMinutes": "Access-Token-Lebensdauer (Minuten)",
         "refreshTokenDays": "Refresh-Token-Lebensdauer (Tage)",
-        "optInWarning": "Wie bei DCR kann ein CIMD-Client Access-Tokens nur für OAuth-APIs mit aktiviertem AllowDynamicRegistration und für die im Metadaten-Dokument deklarierten Scopes anfordern. Solange du nicht mindestens eine API freigibst, können CIMD-Clients keine nutzbaren Tokens ausstellen. Der Server lädt die Metadaten-URL des Clients — aktiviere dies nur, wenn du dem ausgehenden Netzwerk des Realms vertraust."
+        "optInWarning": "Wie bei DCR kann ein CIMD-Client Access-Tokens nur für OAuth-APIs mit aktiviertem AllowDynamicRegistration und für Scopes mit aktiviertem AllowDynamicRegistrationClients anfordern (ein im Dokument deklarierter scope schränkt nur weiter ein). Solange du nicht mindestens eine API freigibst, können CIMD-Clients keine nutzbaren Tokens ausstellen. Der Server lädt die Metadaten-URL des Clients — aktiviere dies nur, wenn du dem ausgehenden Netzwerk des Realms vertraust."
       },
       "nativeGrants": {
         "hint": "Wenn aktiviert, können native Apps einen passwortlosen Nachweis direkt unter POST /connect/token gegen Tokens eintauschen — ohne Browser-Redirect, ohne Cookie. Drei Grants: urn:cocoar:otp (Einmalcode per E-Mail), urn:cocoar:magic (Magic-Link-Token), urn:cocoar:passkey (WebAuthn-Assertion). Standardmäßig aus.",
