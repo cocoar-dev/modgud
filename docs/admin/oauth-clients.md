@@ -69,8 +69,10 @@ revocation and PAR endpoints) in one of two ways:
   (`JsonWebKeySet` in the admin API and the realm manifest): RSA or EC keys,
   public parts only, each with a `kid`. The client then sends a JWT it signed
   with the matching private key (header `typ: client-authentication+jwt`,
-  `iss` = `sub` = its `client_id`, `aud` = the token endpoint, `jti`, short
-  `exp`) as `client_assertion` with
+  `iss` = `sub` = its `client_id`, `aud` = the realm's **issuer** as published
+  in discovery — not the token endpoint, which is refused
+  ([draft-ietf-oauth-rfc7523bis §4](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/)) —
+  `jti`, short `exp`) as `client_assertion` with
   `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer`.
   No shared secret leaves the client. Create a confidential client with a key
   set and **no** secret to get a client that authenticates with assertions only;
@@ -79,7 +81,8 @@ revocation and PAR endpoints) in one of two ways:
 
 Both may coexist. Service-account credentials (M2M clients) keep their own
 secret lifecycle and do not take a key set; dynamic client registration does
-not accept `private_key_jwt` either (see the OAuth API reference).
+not accept `private_key_jwt` either (see the OAuth API reference) — a client
+that publishes its keys can use a [Client ID Metadata Document](./client-id-metadata-documents#confidential-cimd-clients-private-key-jwt) instead.
 
 ::: tip Machine-to-machine? Link a Service Account
 There is no separate "service" client type. For server-to-server flows with no

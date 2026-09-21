@@ -79,6 +79,10 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     public System.Collections.Concurrent.ConcurrentDictionary<string, string> CimdDocuments { get; } = new();
 
+    /// <summary>How often the CIMD stub served each URL — lets a test prove a
+    /// cache or a refetch cooldown held.</summary>
+    public System.Collections.Concurrent.ConcurrentDictionary<string, int> CimdFetchCounts { get; } = new();
+
     public JsonSerializerOptions JsonOptions { get; } = new JsonSerializerOptions
     {
         PropertyNamingPolicy = null, // Match API's behavior (no camelCase)
@@ -208,7 +212,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
             // exercise the full resolve→synthesize→token flow without real
             // outbound HTTP. The last ConfigurePrimaryHttpMessageHandler wins.
             services.AddHttpClient(Modgud.Infrastructure.OpenIddict.Cimd.CimdClientResolver.HttpClientName)
-                .ConfigurePrimaryHttpMessageHandler(() => new StubCimdHandler(CimdDocuments));
+                .ConfigurePrimaryHttpMessageHandler(() => new StubCimdHandler(CimdDocuments, CimdFetchCounts));
         });
     }
 
@@ -234,12 +238,14 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     /// <summary>In-memory stand-in for the CIMD metadata endpoint. Returns the
     /// document registered for the exact request URL, or 404.</summary>
     private sealed class StubCimdHandler(
-        System.Collections.Concurrent.ConcurrentDictionary<string, string> documents) : HttpMessageHandler
+        System.Collections.Concurrent.ConcurrentDictionary<string, string> documents,
+        System.Collections.Concurrent.ConcurrentDictionary<string, int> fetchCounts) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var url = request.RequestUri?.ToString() ?? string.Empty;
+            fetchCounts.AddOrUpdate(url, 1, (_, n) => n + 1);
             if (documents.TryGetValue(url, out var json))
             {
                 return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)

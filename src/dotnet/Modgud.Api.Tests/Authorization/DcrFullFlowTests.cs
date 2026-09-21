@@ -139,6 +139,56 @@ public class DcrFullFlowTests : IntegrationTestBase
     /// is an upper bound intersected with that set, and the response echoes what
     /// was actually registered (§3.2.1).
     /// </summary>
+    /// <summary>
+    /// Zed registers the ephemeral port its callback server happened to get
+    /// (<c>http://127.0.0.1:49152/callback</c>) and keeps the client_id; the next
+    /// session binds another port. RFC 8252 §7.3 says the server MUST allow any port
+    /// for a loopback redirect, but OpenIddict relaxes the port only against a
+    /// registered URI without one — so the registration also carries the port-less
+    /// twin, and the response echoes both. Path and host still have to match.
+    /// </summary>
+    [Fact]
+    public async Task A_loopback_uri_registered_with_a_port_still_matches_the_next_port()
+    {
+        await SeedAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var http = Factory.CreateClient();
+
+        var reg = await http.PostAsync("/connect/register", new StringContent(
+            $$"""{"client_name":"Zed","redirect_uris":["http://127.0.0.1:49152/callback"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"none","scope":"openid {{ScopeName}}"}""",
+            System.Text.Encoding.UTF8, "application/json"), ct);
+        var regBody = await reg.Content.ReadAsStringAsync(ct);
+        Assert.True(reg.StatusCode == HttpStatusCode.Created, regBody);
+        string clientId;
+        using (var doc = JsonDocument.Parse(regBody))
+        {
+            clientId = doc.RootElement.GetProperty("client_id").GetString()!;
+            var uris = doc.RootElement.GetProperty("redirect_uris").EnumerateArray().Select(u => u.GetString()).ToList();
+            Assert.Equal(new[] { "http://127.0.0.1:49152/callback", "http://127.0.0.1/callback" }, uris);
+        }
+
+        Assert.StartsWith("/consent?ticket=", await AuthorizeLocationAsync(clientId, "http://127.0.0.1:49152/callback"));
+        Assert.StartsWith("/consent?ticket=", await AuthorizeLocationAsync(clientId, "http://127.0.0.1:50731/callback"));
+        Assert.DoesNotContain("/consent?ticket=", await AuthorizeLocationAsync(clientId, "http://127.0.0.1:50731/other") ?? string.Empty);
+    }
+
+    /// <summary>RFC 7591 §3.2.2: every registration error is a JSON object with
+    /// <c>error</c> — a body that is not JSON, or has a field of the wrong type,
+    /// included. Model binding used to answer those with an empty 400.</summary>
+    [Theory]
+    [InlineData("this is not json")]
+    [InlineData("""{"redirect_uris":"https://app.example.test/cb"}""")]
+    public async Task A_malformed_registration_body_gets_the_rfc_error_object(string body)
+    {
+        await SeedAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var resp = await Factory.CreateClient().PostAsync("/connect/register",
+            new StringContent(body, System.Text.Encoding.UTF8, "application/json"), ct);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+        Assert.Equal("invalid_client_metadata", doc.RootElement.GetProperty("error").GetString());
+    }
+
     [Fact]
     public async Task Registration_without_scope_gets_the_realms_dynamic_client_scopes()
     {

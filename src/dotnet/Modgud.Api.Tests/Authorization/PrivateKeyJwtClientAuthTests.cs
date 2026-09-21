@@ -35,11 +35,23 @@ public class PrivateKeyJwtClientAuthTests(SharedPostgresFixture fixture) : Integ
         Assert.NotNull(created.Client.JsonWebKeySet);
 
         using var doc = await TokenAsync(clientId, MintAssertion(clientId, keys.SigningCredentials, await IssuerAsync()));
-        Assert.Equal("invalid_grant", doc.RootElement.GetProperty("error").GetString());
+        AssertAuthenticatedButBogusGrant(doc);
 
         // No secret exists: client_secret_post is refused.
         using var withSecret = await TokenAsync(clientId, assertion: null, clientSecret: "anything");
         Assert.Equal("invalid_client", withSecret.RootElement.GetProperty("error").GetString());
+    }
+
+    /// <summary>RFC 7523 once allowed the token endpoint as the audience; since the
+    /// 2025 audience-injection findings, draft-ietf-oauth-rfc7523bis §4 allows only the
+    /// issuer, and OpenIddict 7 enforces it. Pinned so an upgrade that changes it shows.</summary>
+    [Fact]
+    public async Task An_assertion_aimed_at_the_token_endpoint_instead_of_the_issuer_is_refused()
+    {
+        using var keys = new TestJwks("pkj-aud");
+        var (clientId, _) = await CreateClientAsync(keys.PublicJwks, secret: null);
+        using var doc = await TokenAsync(clientId, MintAssertion(clientId, keys.SigningCredentials, (await DiscoveryAsync()).TokenEndpoint));
+        Assert.Contains("'aud'", doc.RootElement.GetProperty("error_description").GetString());
     }
 
     [Fact]
@@ -64,7 +76,7 @@ public class PrivateKeyJwtClientAuthTests(SharedPostgresFixture fixture) : Integ
         var issuer = await IssuerAsync();
 
         using (var doc = await TokenAsync(clientId, MintAssertion(clientId, first.SigningCredentials, issuer)))
-            Assert.Equal("invalid_grant", doc.RootElement.GetProperty("error").GetString());
+            AssertAuthenticatedButBogusGrant(doc);
 
         // Rotate to a new key: the old one stops working, the new one works.
         using var scope = Factory.Services.CreateScope();
@@ -74,7 +86,7 @@ public class PrivateKeyJwtClientAuthTests(SharedPostgresFixture fixture) : Integ
         using (var doc = await TokenAsync(clientId, MintAssertion(clientId, first.SigningCredentials, issuer)))
             Assert.Equal("invalid_client", doc.RootElement.GetProperty("error").GetString());
         using (var doc = await TokenAsync(clientId, MintAssertion(clientId, second.SigningCredentials, issuer)))
-            Assert.Equal("invalid_grant", doc.RootElement.GetProperty("error").GetString());
+            AssertAuthenticatedButBogusGrant(doc);
 
         // Remove the key set (a secret remains, so the client keeps a credential).
         var removed = await admin.UpdateClientAsync(created.Client.Id, new UpdateOAuthClientDto { JsonWebKeySet = new Optional<string?>(null) }, ct);
@@ -83,7 +95,7 @@ public class PrivateKeyJwtClientAuthTests(SharedPostgresFixture fixture) : Integ
         using (var doc = await TokenAsync(clientId, MintAssertion(clientId, second.SigningCredentials, issuer)))
             Assert.Equal("invalid_client", doc.RootElement.GetProperty("error").GetString());
         using (var doc = await TokenAsync(clientId, assertion: null, clientSecret: "pkj-shared-secret-123456"))
-            Assert.Equal("invalid_grant", doc.RootElement.GetProperty("error").GetString());
+            AssertAuthenticatedButBogusGrant(doc);
     }
 
     [Fact]
@@ -201,10 +213,24 @@ public class PrivateKeyJwtClientAuthTests(SharedPostgresFixture fixture) : Integ
         return (clientId, result.Value);
     }
 
-    private async Task<string> IssuerAsync()
+    /// <summary>The one audience a client assertion may name: the issuer identifier
+    /// (draft-ietf-oauth-rfc7523bis §4). This used to return the token endpoint, which
+    /// OpenIddict 7 refuses with ID2173 — also <c>invalid_grant</c>, so the "authenticated"
+    /// assertions below passed without the assertion ever being accepted.</summary>
+    private async Task<string> IssuerAsync() => (await DiscoveryAsync()).Issuer;
+
+    private async Task<(string Issuer, string TokenEndpoint)> DiscoveryAsync()
     {
         using var doc = JsonDocument.Parse(await Factory.CreateClient().GetStringAsync("/.well-known/openid-configuration", TestContext.Current.CancellationToken));
-        return doc.RootElement.GetProperty("token_endpoint").GetString()!;
+        return (doc.RootElement.GetProperty("issuer").GetString()!, doc.RootElement.GetProperty("token_endpoint").GetString()!);
+    }
+
+    /// <summary>An authenticated client's refresh with the bogus token fails on the
+    /// token itself — not on anything about the assertion.</summary>
+    private static void AssertAuthenticatedButBogusGrant(JsonDocument doc)
+    {
+        Assert.Equal("invalid_grant", doc.RootElement.GetProperty("error").GetString());
+        Assert.DoesNotContain("client assertion", doc.RootElement.GetProperty("error_description").GetString());
     }
 
     private static string MintAssertion(string clientId, SigningCredentials credentials, string audience)

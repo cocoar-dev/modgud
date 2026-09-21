@@ -4,7 +4,7 @@ using Modgud.Domain.OAuth.Common;
 namespace Modgud.Infrastructure.OpenIddict.Cimd;
 
 /// <summary>
-/// The validated, public-client subset of a CIMD metadata document
+/// The validated subset of a CIMD metadata document
 /// (<c>draft-ietf-oauth-client-id-metadata-document</c> + RFC 7591). Only
 /// the fields Modgud needs to synthesize an <c>OAuthApplicationState</c> are
 /// retained; everything else in the document is ignored.
@@ -21,10 +21,20 @@ public sealed record CimdMetadata
     /// null when omitted — most MCP clients omit it and rely on their loopback redirect
     /// URIs to say "native" (see <c>OAuthApplicationTypes.Effective</c>).</summary>
     public string? ApplicationType { get; init; }
+
+    /// <summary><c>none</c> (public, PKCE) or <c>private_key_jwt</c> (confidential,
+    /// authenticates with an assertion signed by a key in <see cref="JwksUri"/> or
+    /// <see cref="Jwks"/> — exactly one of the two is set).</summary>
+    public string TokenEndpointAuthMethod { get; init; } = "none";
+
+    public string? JwksUri { get; init; }
+
+    /// <summary>The inline key set, already filtered by <see cref="CimdJwks"/>.</summary>
+    public string? Jwks { get; init; }
 }
 
 /// <summary>Outcome of validating a fetched CIMD document against the
-/// <c>client_id</c> URL and the v1 (public-only) policy.</summary>
+/// <c>client_id</c> URL and Modgud's CIMD policy.</summary>
 public abstract record CimdValidationResult
 {
     public sealed record Valid(CimdMetadata Metadata) : CimdValidationResult;
@@ -44,6 +54,7 @@ public abstract record CimdValidationResult
 public static class CimdMetadataParser
 {
     private const string AuthMethodNone = "none";
+    private const string AuthMethodPrivateKeyJwt = "private_key_jwt";
 
     private static readonly HashSet<string> AllowedGrantTypes = new(StringComparer.Ordinal)
     {
@@ -64,7 +75,9 @@ public static class CimdMetadataParser
         JsonElement root;
         try
         {
-            using var doc = JsonDocument.Parse(json);
+            // A UTF-8 BOM survives the byte→string decode as U+FEFF, which
+            // JsonDocument refuses; static hosts do serve files with one.
+            using var doc = JsonDocument.Parse(json.TrimStart((char)0xFEFF));
             root = doc.RootElement.Clone();
         }
         catch (JsonException)
@@ -81,49 +94,75 @@ public static class CimdMetadataParser
         if (!string.Equals(docClientId, requestedClientId, StringComparison.Ordinal))
             return Invalid("document client_id does not match the client_id URL.");
 
-        // ── public-only (v1): no shared-secret auth, no secret at rest ────
+        // ── client authentication: none, or private_key_jwt with public keys ─
+        // The draft forbids every shared-secret method and any client_secret in
+        // the document (a published document cannot keep a secret). A client
+        // that can hold a private key authenticates with private_key_jwt, its
+        // public keys at jwks_uri or inline in jwks — never both (RFC 7591 §2).
         if (root.TryGetProperty("client_secret", out _))
-            return Invalid("document must not contain a client_secret (CIMD clients are public).");
+            return Invalid("document must not contain a client_secret (a published document cannot keep one).");
 
-        if (TryGetString(root, "token_endpoint_auth_method", out var authMethod) && authMethod is not null
-            && !string.Equals(authMethod, AuthMethodNone, StringComparison.Ordinal))
+        var authMethod = TryGetString(root, "token_endpoint_auth_method", out var declaredAuth) && declaredAuth is not null
+            ? declaredAuth
+            : AuthMethodNone;
+        string? jwksUri = null;
+        string? jwks = null;
+        if (authMethod == AuthMethodPrivateKeyJwt)
         {
-            return Invalid($"token_endpoint_auth_method '{authMethod}' is not supported; CIMD v1 is public-only (none).");
+            var hasUri = TryGetString(root, "jwks_uri", out var declaredJwksUri) && declaredJwksUri is not null;
+            var hasInline = root.TryGetProperty("jwks", out var inlineJwks) && inlineJwks.ValueKind == JsonValueKind.Object;
+            if (hasUri == hasInline)
+                return Invalid("private_key_jwt needs exactly one of jwks_uri or jwks.");
+            if (hasUri)
+            {
+                if (!IsAllowedJwksUri(declaredJwksUri!))
+                    return Invalid("jwks_uri must be an absolute https URL without userinfo or fragment.");
+                jwksUri = declaredJwksUri;
+            }
+            else if (!CimdJwks.TryFilter(inlineJwks.GetRawText(), out jwks, out var jwksError))
+            {
+                return Invalid($"jwks: {jwksError}");
+            }
+        }
+        else if (authMethod != AuthMethodNone)
+        {
+            return Invalid($"token_endpoint_auth_method '{authMethod}' is not supported (none or private_key_jwt; shared secrets are forbidden for CIMD).");
         }
 
-        // ── redirect_uris: required, each https-or-loopback, exact-match ──
-        var redirectUris = GetStringArray(root, "redirect_uris");
-        if (redirectUris.Count == 0)
+        // ── redirect_uris: https or http loopback; the rest is dropped ────
+        // Same reasoning as grant_types: the document serves every server, so a
+        // URI form Modgud does not accept (a private-use scheme, say) costs the
+        // client that one URI, not the whole registration. At least one must
+        // survive. Loopback URIs with a port also get their port-less twin.
+        var declaredRedirectUris = GetStringArray(root, "redirect_uris");
+        if (declaredRedirectUris.Count == 0)
             return Invalid("document is missing the required redirect_uris.");
-        foreach (var uri in redirectUris)
-        {
-            if (!IsAllowedRedirectUri(uri))
-                return Invalid($"redirect_uri '{uri}' is invalid (https URIs or http loopback only).");
-        }
+        var redirectUris = declaredRedirectUris.Where(IsAllowedRedirectUri).ToList();
+        if (redirectUris.Count == 0)
+            return Invalid("no usable redirect_uri (https URIs or http loopback only).");
+        redirectUris = OAuthApplicationTypes.WithPortlessLoopbackTwins(redirectUris);
 
-        // ── grant_types: subset of {authorization_code, refresh_token} ────
+        // ── grant_types: intersected with {authorization_code, refresh_token} ─
+        // A CIMD document is the client's self-description for EVERY
+        // authorization server, not an order placed with this one: it lists
+        // the grants the client can use (RFC 7591 §2). Grants Modgud does not
+        // offer (claude.ai lists jwt-bearer) are dropped, not fatal — the
+        // client simply never holds them. authorization_code must survive.
         var grantTypes = root.TryGetProperty("grant_types", out _)
             ? GetStringArray(root, "grant_types")
             : new List<string> { "authorization_code" };
         if (grantTypes.Count == 0)
             grantTypes = new List<string> { "authorization_code" };
-        foreach (var grant in grantTypes)
-        {
-            if (!AllowedGrantTypes.Contains(grant))
-                return Invalid($"grant_type '{grant}' is not allowed (authorization_code, refresh_token only).");
-        }
+        grantTypes = grantTypes.Where(AllowedGrantTypes.Contains).ToList();
         if (!grantTypes.Contains("authorization_code"))
             return Invalid("grant_types must include authorization_code.");
 
-        // ── response_types: subset of {code} ──────────────────────────────
+        // ── response_types: must include code; anything else is ignored ───
         var responseTypes = root.TryGetProperty("response_types", out _)
             ? GetStringArray(root, "response_types")
             : new List<string> { "code" };
-        foreach (var rt in responseTypes)
-        {
-            if (!AllowedResponseTypes.Contains(rt))
-                return Invalid($"response_type '{rt}' is not allowed (code only).");
-        }
+        if (responseTypes.Count > 0 && !responseTypes.Any(AllowedResponseTypes.Contains))
+            return Invalid("response_types must include code.");
 
         // ── application_type (optional): web | native, nothing else ───────
         string? applicationType = null;
@@ -146,6 +185,9 @@ public static class CimdMetadataParser
             GrantTypes = grantTypes.Distinct(StringComparer.Ordinal).ToList(),
             Scopes = scopes,
             ApplicationType = applicationType,
+            TokenEndpointAuthMethod = authMethod,
+            JwksUri = jwksUri,
+            Jwks = jwks,
         });
     }
 
@@ -171,6 +213,13 @@ public static class CimdMetadataParser
 
         return false;
     }
+
+    private static bool IsAllowedJwksUri(string raw) =>
+        Uri.TryCreate(raw, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps
+        && !string.IsNullOrEmpty(uri.Host)
+        && string.IsNullOrEmpty(uri.UserInfo)
+        && string.IsNullOrEmpty(uri.Fragment);
 
     private static List<string> ParseScope(string? raw)
     {

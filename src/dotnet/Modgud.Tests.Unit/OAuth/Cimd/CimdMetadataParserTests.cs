@@ -99,9 +99,41 @@ public class CimdMetadataParserTests
     [Theory]
     [InlineData("client_secret_basic")]
     [InlineData("client_secret_post")]
-    [InlineData("private_key_jwt")]
-    public void Rejects_non_public_auth_methods(string method) =>
+    [InlineData("client_secret_jwt")]   // a shared secret too — forbidden by the draft
+    [InlineData("tls_client_auth")]     // Modgud does not do mTLS client auth
+    public void Rejects_shared_secret_and_unsupported_auth_methods(string method) =>
         AssertInvalid(Doc(authMethod: method));
+
+    [Fact]
+    public void Accepts_the_chatgpt_private_key_jwt_document()
+    {
+        var meta = AssertValid(RealWorldClientMetadata.ChatGpt, RealWorldClientMetadata.ChatGptId);
+        Assert.Equal("private_key_jwt", meta.TokenEndpointAuthMethod);
+        Assert.Equal("https://chatgpt.com/oauth/jwks.json", meta.JwksUri);
+        Assert.Null(meta.Jwks);
+    }
+
+    private const string InlineRsaKey = """{"kty":"RSA","kid":"k1","use":"sig","n":"sXch","e":"AQAB"}""";
+
+    private static string PrivateKeyJwtDoc(string keySource) =>
+        Doc().TrimEnd('}') + ",\"token_endpoint_auth_method\":\"private_key_jwt\"" + keySource + "}";
+
+    [Fact]
+    public void Accepts_private_key_jwt_with_an_inline_key_set()
+    {
+        var meta = AssertValid(PrivateKeyJwtDoc($",\"jwks\":{{\"keys\":[{InlineRsaKey}]}}"));
+        Assert.Null(meta.JwksUri);
+        Assert.Contains("\"kid\":\"k1\"", meta.Jwks);
+    }
+
+    [Theory]
+    [InlineData("")]                                                                 // no key source
+    [InlineData(",\"jwks_uri\":\"https://app.example.com/jwks\",\"jwks\":{\"keys\":[]}")] // both
+    [InlineData(",\"jwks_uri\":\"http://app.example.com/jwks\"")]                   // not https
+    [InlineData(",\"jwks\":{\"keys\":[{\"kty\":\"RSA\",\"n\":\"x\",\"e\":\"AQAB\",\"d\":\"secret\"}]}")] // private material
+    [InlineData(",\"jwks\":{\"keys\":[{\"kty\":\"RSA\",\"use\":\"enc\",\"n\":\"x\",\"e\":\"AQAB\"}]}")]  // no signing key
+    public void Rejects_private_key_jwt_without_exactly_one_usable_key_source(string keySource) =>
+        AssertInvalid(PrivateKeyJwtDoc(keySource));
 
     [Fact]
     public void Rejects_document_carrying_a_client_secret() =>
@@ -121,17 +153,74 @@ public class CimdMetadataParserTests
     public void Rejects_non_loopback_http_redirect() =>
         AssertInvalid(Doc(redirectUris: ["http://app.example.com/cb"]));
 
+    [Theory]
+    [InlineData("client_credentials")]
+    [InlineData("urn:ietf:params:oauth:grant-type:jwt-bearer")]
+    public void Drops_grant_types_modgud_does_not_offer(string grant)
+    {
+        // The document describes the client for every AS; it is not an order.
+        var meta = AssertValid(Doc(grantTypes: ["authorization_code", "refresh_token", grant]));
+        Assert.Equal(["authorization_code", "refresh_token"], meta.GrantTypes);
+    }
+
     [Fact]
-    public void Rejects_disallowed_grant_type() =>
-        AssertInvalid(Doc(grantTypes: ["authorization_code", "client_credentials"]));
+    public void Rejects_when_only_unoffered_grants_remain() =>
+        AssertInvalid(Doc(grantTypes: ["client_credentials", "refresh_token"]));
 
     [Fact]
     public void Rejects_grant_types_without_authorization_code() =>
         AssertInvalid(Doc(grantTypes: ["refresh_token"]));
 
     [Fact]
-    public void Rejects_disallowed_response_type() =>
+    public void Rejects_response_types_without_code() =>
         AssertInvalid(Doc(responseTypes: ["token"]));
+
+    [Fact]
+    public void Ignores_extra_response_type_alongside_code() =>
+        AssertValid(Doc(responseTypes: ["code", "token"]));
+
+    // ── Real-world documents (see RealWorldClientMetadata) ──────────────
+
+    [Theory]
+    [MemberData(nameof(RealWorldClientMetadata.PublicCimdDocuments), MemberType = typeof(RealWorldClientMetadata))]
+    public void Accepts_every_real_public_client_document(string clientId, string json, string expectedName)
+    {
+        var meta = AssertValid(json, clientId);
+        Assert.Equal(expectedName, meta.ClientName);
+        Assert.Equal(["authorization_code", "refresh_token"], meta.GrantTypes);
+    }
+
+    [Fact]
+    public void Claude_ai_loses_jwt_bearer_and_keeps_its_callback()
+    {
+        var meta = AssertValid(RealWorldClientMetadata.ClaudeAi, RealWorldClientMetadata.ClaudeAiId);
+        Assert.Equal(["https://claude.ai/api/mcp/auth_callback"], meta.RedirectUris);
+        Assert.Empty(meta.Scopes); // no scope → the resolver applies the realm default
+    }
+
+    [Fact]
+    public void Vs_code_ported_loopback_uri_gets_its_portless_twin()
+    {
+        // VS Code names http://127.0.0.1:33418/ but may come back on another port.
+        var meta = AssertValid(RealWorldClientMetadata.VsCode, RealWorldClientMetadata.VsCodeId);
+        Assert.Equal(["http://127.0.0.1:33418/", "http://127.0.0.1/", "https://vscode.dev/redirect"], meta.RedirectUris);
+        Assert.Equal("native", meta.ApplicationType);
+    }
+
+    [Fact]
+    public void Drops_a_redirect_uri_form_modgud_does_not_accept()
+    {
+        var meta = AssertValid(Doc(redirectUris: ["com.example.app:/cb", "https://app.example.com/callback"]));
+        Assert.Equal(["https://app.example.com/callback"], meta.RedirectUris);
+    }
+
+    [Fact]
+    public void Rejects_when_no_redirect_uri_survives() =>
+        AssertInvalid(Doc(redirectUris: ["com.example.app:/cb", "http://app.example.com/cb"]));
+
+    [Fact]
+    public void Tolerates_a_utf8_byte_order_mark() =>
+        AssertValid((char)0xFEFF + Doc());
 
     [Fact]
     public void Rejects_non_json() => AssertInvalid("this is not json");

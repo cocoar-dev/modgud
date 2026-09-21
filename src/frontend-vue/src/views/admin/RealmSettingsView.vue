@@ -1097,7 +1097,7 @@ async function rotateSigningKey() {
               <h2 class="section-title">{{ t('admin.realmSettings.sections.dcr', {}, 'Dynamic Client Registration') }}</h2>
             </CoarDivider>
             <div class="section-intro">
-              <p>{{ t('admin.realmSettings.dcr.hint', {}, 'Allow software to register public PKCE clients through RFC 7591.') }}</p>
+              <p>{{ t('admin.realmSettings.dcr.hint', {}, 'Allow software to register OAuth clients through RFC 7591 — public PKCE clients, or confidential ones with a client secret issued once.') }}</p>
               <CoarCheckbox v-model="dcrForm.Enabled" :label="t('common.active', {}, 'Active')" />
             </div>
             <CoarNotice truncate v-if="dcrForm.Enabled" variant="info">
@@ -1140,7 +1140,7 @@ async function rotateSigningKey() {
               <h2 class="section-title">{{ t('admin.realmSettings.sections.cimd', {}, 'Client-ID Metadata Documents (CIMD)') }}</h2>
             </CoarDivider>
             <div class="section-intro">
-              <p>{{ t('admin.realmSettings.cimd.hint', {}, 'Resolve HTTPS client IDs as metadata documents and treat them as public PKCE clients.') }}</p>
+              <p>{{ t('admin.realmSettings.cimd.hint', {}, 'Resolve HTTPS client IDs as metadata documents — public PKCE clients, or confidential ones that authenticate with private_key_jwt against the keys their document publishes.') }}</p>
               <CoarCheckbox v-model="cimdForm.Enabled" :label="t('common.active', {}, 'Active')" />
             </div>
             <CoarNotice truncate v-if="cimdForm.Enabled" variant="info">

@@ -97,15 +97,18 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
                 DcrRejectionReason.MissingRedirectUri);
         }
 
-        foreach (var uri in request.RedirectUris)
+        // Forms Modgud does not accept are dropped (RFC 7591 §3.2.1 — the
+        // response echoes what was registered); at least one must survive.
+        // Loopback URIs with a port also get their port-less twin, so the next
+        // run's ephemeral port still matches (RFC 8252 §7.3).
+        var redirectUris = request.RedirectUris.Where(IsAllowedRedirectUri).ToList();
+        if (redirectUris.Count == 0)
         {
-            if (!IsAllowedRedirectUri(uri))
-            {
-                return Reject(DcrErrorCodes.InvalidRedirectUri,
-                    $"redirect_uri '{uri}' is invalid. Allowed forms: https URIs, http://localhost, http://127.0.0.1, http://[::1]. Custom URI schemes (com.example.app://) are not supported in v1.",
-                    DcrRejectionReason.InvalidRedirectUri);
-            }
+            return Reject(DcrErrorCodes.InvalidRedirectUri,
+                "no usable redirect_uri. Allowed forms: https URIs, http://localhost, http://127.0.0.1, http://[::1]. Private-use URI schemes (com.example.app:/) are not accepted for dynamically registered clients.",
+                DcrRejectionReason.InvalidRedirectUri);
         }
+        redirectUris = OAuthApplicationTypes.WithPortlessLoopbackTwins(redirectUris);
 
         // ───────── token_endpoint_auth_method ───────────────────────
         // Default to "none" if omitted (RFC 7591 leaves the default
@@ -135,63 +138,48 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
         }
 
         // ───────── grant_types ──────────────────────────────────────
-        var grantTypes = request.GrantTypes is { Count: > 0 }
+        // RFC 7591 §3.2.1 lets the server replace requested metadata with
+        // what it will actually register; the response echoes the result.
+        // Grants Modgud does not offer are dropped rather than failing the
+        // registration — same policy as CIMD. authorization_code must survive.
+        var requestedGrants = request.GrantTypes is { Count: > 0 }
             ? request.GrantTypes
             : new List<string> { "authorization_code" }; // RFC 7591 §2 default
+        var grantTypes = requestedGrants
+            .Where(AllowedGrantTypes.Contains)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
 
-        foreach (var grant in grantTypes)
+        if (!grantTypes.Contains("authorization_code"))
         {
-            if (!AllowedGrantTypes.Contains(grant))
-            {
-                return Reject(DcrErrorCodes.InvalidClientMetadata,
-                    $"grant_type '{grant}' is not allowed. Allowed: {string.Join(", ", AllowedGrantTypes)}.",
-                    DcrRejectionReason.InvalidGrantType);
-            }
+            return Reject(DcrErrorCodes.InvalidClientMetadata,
+                $"grant_types must include authorization_code. Supported: {string.Join(", ", AllowedGrantTypes)}.",
+                DcrRejectionReason.InvalidGrantType);
         }
 
         // ───────── response_types ───────────────────────────────────
-        var responseTypes = request.ResponseTypes is { Count: > 0 }
-            ? request.ResponseTypes
-            : new List<string> { "code" };
-
-        foreach (var rt in responseTypes)
+        // Only 'code' is registered (the response always echoes ["code"]);
+        // extra values are ignored as long as 'code' is among them.
+        if (request.ResponseTypes is { Count: > 0 } responseTypes
+            && !responseTypes.Any(AllowedResponseTypes.Contains))
         {
-            if (!AllowedResponseTypes.Contains(rt))
-            {
-                return Reject(DcrErrorCodes.InvalidClientMetadata,
-                    $"response_type '{rt}' is not allowed. Only 'code' is supported (implicit/hybrid flows are out of scope).",
-                    DcrRejectionReason.InvalidResponseType);
-            }
+            return Reject(DcrErrorCodes.InvalidClientMetadata,
+                "response_types must include 'code' (implicit/hybrid flows are out of scope).",
+                DcrRejectionReason.InvalidResponseType);
         }
 
         // ───────── client_name ──────────────────────────────────────
-        var clientName = request.ClientName?.Trim();
-        if (string.IsNullOrEmpty(clientName))
-        {
-            return Reject(DcrErrorCodes.InvalidClientMetadata,
-                "client_name is required.",
-                DcrRejectionReason.ClientNameMissing);
-        }
-
-        if (clientName.Length > ClientNameMaxLength)
-        {
-            return Reject(DcrErrorCodes.InvalidClientMetadata,
-                $"client_name must be {ClientNameMaxLength} characters or fewer.",
-                DcrRejectionReason.ClientNameTooLong);
-        }
-
-        // NFKC normalisation collapses compatibility-equivalent forms
-        // (e.g. zero-width-joiner + character → bare character) so
-        // visual lookalikes can't bypass the substring blocklist by
-        // inserting invisible glyphs.
-        var normalisedName = clientName.Normalize(NormalizationForm.FormKC);
-
-        if (!IsLatin1Only(normalisedName))
-        {
-            return Reject(DcrErrorCodes.InvalidClientMetadata,
-                "client_name must use ASCII or Latin-1 characters only (after NFKC normalisation).",
-                DcrRejectionReason.ClientNameNonLatin1);
-        }
+        // Optional in RFC 7591 §2, so its absence never fails a registration.
+        // A name the consent screen will not show as-is — missing, or outside
+        // Latin-1 after NFKC (the confusable defence: Cyrillic А for Latin A,
+        // fullwidth glyphs) — is replaced by the redirect host, which is where
+        // the tokens actually go. Over-long names are truncated. NFKC first so
+        // invisible glyphs can't slip past the reserved-name blocklist below.
+        var normalisedName = request.ClientName?.Trim().Normalize(NormalizationForm.FormKC);
+        if (string.IsNullOrEmpty(normalisedName) || !IsLatin1Only(normalisedName))
+            normalisedName = FallbackDisplayName(redirectUris);
+        if (normalisedName.Length > ClientNameMaxLength)
+            normalisedName = normalisedName[..ClientNameMaxLength].TrimEnd();
 
         if (settings.ReservedNames is { Length: > 0 })
         {
@@ -221,7 +209,7 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
             ClientType = isConfidential ? OAuthClientTypes.Confidential : OAuthClientTypes.Public,
             ConsentType = OAuthConsentTypes.Explicit, // DCR clients always go through consent
             ApplicationType = request.ApplicationType,
-            RedirectUris = request.RedirectUris.ToList(),
+            RedirectUris = redirectUris,
             PostLogoutRedirectUris = new List<string>(),
             AllowedGrantTypes = grantTypes.ToList(),
             Scopes = requestedScopes,
@@ -270,6 +258,20 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
         }
 
         return false;
+    }
+
+    /// <summary>Display name for a client that brought no usable
+    /// <c>client_name</c>: the host of its first https redirect URI (where
+    /// its tokens are delivered), else a neutral label — the consent screen
+    /// marks every DCR client unverified either way.</summary>
+    private static string FallbackDisplayName(IEnumerable<string> redirectUris)
+    {
+        foreach (var raw in redirectUris)
+        {
+            if (Uri.TryCreate(raw, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
+                return uri.Host;
+        }
+        return "Unnamed application";
     }
 
     /// <summary>Reject anything outside the Latin-1 supplement range
