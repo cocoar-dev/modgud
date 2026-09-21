@@ -195,28 +195,59 @@ public class DcrRegistrationValidatorTests
         Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
     }
 
-    [Fact]
-    public void Missing_client_name_rejected()
+    // ── Real-world registration bodies (see RealWorldClientMetadata) ────
+
+    private static DcrRegistrationRequest Body(string json) =>
+        System.Text.Json.JsonSerializer.Deserialize<DcrRegistrationRequest>(json)!;
+
+    [Theory]
+    [MemberData(nameof(RealWorldClientMetadata.DcrBodies), MemberType = typeof(RealWorldClientMetadata))]
+    public void Accepts_every_real_client_registration(string client, string json)
     {
-        var req = ValidRequest() with { ClientName = null };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
-        Assert.Equal(DcrRejectionReason.ClientNameMissing, reject.Reason);
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(Body(json), Settings(), "ip"));
+        Assert.Equal(client, allow.Normalized.DisplayName);
     }
 
     [Fact]
-    public void Whitespace_client_name_rejected_as_missing()
+    public void Zed_ephemeral_port_registration_also_matches_the_next_port()
     {
-        var req = ValidRequest() with { ClientName = "   " };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
-        Assert.Equal(DcrRejectionReason.ClientNameMissing, reject.Reason);
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(Body(RealWorldClientMetadata.ZedDcr), Settings(), "ip"));
+        Assert.Equal(new[] { "http://127.0.0.1:49152/callback", "http://127.0.0.1/callback" }, allow.Normalized.RedirectUris);
     }
 
     [Fact]
-    public void Client_name_over_80_chars_rejected()
+    public void Drops_a_redirect_uri_form_modgud_does_not_accept()
+    {
+        var req = ValidRequest() with { RedirectUris = new() { "com.example.app:/cb", "https://example.com/callback" } };
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
+        Assert.Equal(new[] { "https://example.com/callback" }, allow.Normalized.RedirectUris);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("   ")]
+    public void Missing_client_name_falls_back_to_the_redirect_host(string? name)
+    {
+        // RFC 7591 §2: client_name is optional — its absence never fails.
+        var req = ValidRequest() with { ClientName = name, RedirectUris = new() { "https://mcp-client.example/cb" } };
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
+        Assert.Equal("mcp-client.example", allow.Normalized.DisplayName);
+    }
+
+    [Fact]
+    public void Missing_client_name_on_a_loopback_only_client_gets_a_neutral_label()
+    {
+        var req = ValidRequest() with { ClientName = null, RedirectUris = new() { "http://127.0.0.1/cb" } };
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
+        Assert.Equal("Unnamed application", allow.Normalized.DisplayName);
+    }
+
+    [Fact]
+    public void Client_name_over_80_chars_is_truncated()
     {
         var req = ValidRequest() with { ClientName = new string('a', 81) };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
-        Assert.Equal(DcrRejectionReason.ClientNameTooLong, reject.Reason);
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
+        Assert.Equal(new string('a', 80), allow.Normalized.DisplayName);
     }
 
     [Fact]
@@ -241,11 +272,12 @@ public class DcrRegistrationValidatorTests
     [InlineData("テスト")]            // Japanese
     [InlineData("Аpple")]            // Cyrillic А confused with Latin A
     [InlineData("Foo😀")]            // Emoji
-    public void Non_latin1_client_name_rejected(string name)
+    public void Non_latin1_client_name_is_never_displayed_but_does_not_fail(string name)
     {
-        var req = ValidRequest() with { ClientName = name };
-        var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
-        Assert.Equal(DcrRejectionReason.ClientNameNonLatin1, reject.Reason);
+        // Confusable defence: the name is replaced, the registration stands.
+        var req = ValidRequest() with { ClientName = name, RedirectUris = new() { "https://mcp-client.example/cb" } };
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
+        Assert.Equal("mcp-client.example", allow.Normalized.DisplayName);
     }
 
     [Fact]

@@ -202,6 +202,8 @@ public enum DcrRejectionReason
     InvalidApplicationType,
     InvalidGrantType,
     InvalidResponseType,
+    // No longer produced — client_name is optional and an unusable one is
+    // replaced, not rejected. Kept so historical audit records still map.
     ClientNameMissing,
     ClientNameTooLong,
     ClientNameNonLatin1,

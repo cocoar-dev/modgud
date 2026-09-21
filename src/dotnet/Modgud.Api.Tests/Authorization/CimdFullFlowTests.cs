@@ -196,6 +196,37 @@ public class CimdFullFlowTests : IntegrationTestBase
         Assert.Contains(AllowedAudience, new JwtSecurityTokenHandler().ReadJwtToken(refreshed).Audiences);
     }
 
+    /// <summary>
+    /// VS Code's document names its loopback redirect WITH a port
+    /// (<c>http://127.0.0.1:33418/</c>) and falls back to another one when that
+    /// port is taken. RFC 8252 §7.3: the server MUST allow any port for a loopback
+    /// redirect — the synthesized client carries the port-less twin so OpenIddict
+    /// does. The document also lists the device_code grant, which is dropped.
+    /// </summary>
+    [Fact]
+    public async Task A_document_with_a_ported_loopback_uri_accepts_any_port_like_vs_code()
+    {
+        await SeedAsync();
+        Factory.CimdDocuments[_clientIdUrl] = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["client_id"] = _clientIdUrl,
+            ["client_name"] = "Visual Studio Code",
+            ["redirect_uris"] = new[] { "http://127.0.0.1:33418/", RedirectUri },
+            ["grant_types"] = new[] { "authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code" },
+            ["response_types"] = new[] { "code" },
+            ["token_endpoint_auth_method"] = "none",
+            ["application_type"] = "native",
+        });
+
+        Assert.StartsWith("/consent?ticket=", await DriveAuthorizeAsync(_clientIdUrl, Scope, "http://127.0.0.1:33418/"));
+        Assert.StartsWith("/consent?ticket=", await DriveAuthorizeAsync(_clientIdUrl, Scope, "http://127.0.0.1:58123/"));
+        Assert.DoesNotContain("/consent?ticket=", await DriveAuthorizeAsync(_clientIdUrl, Scope, "http://127.0.0.1:58123/other") ?? string.Empty);
+
+        var (accessToken, _) = await DriveCimdAuthCodeFlowAsync(
+            _clientIdUrl, Scope, AllowedAudience, redirectUri: "http://127.0.0.1:58123/");
+        Assert.Contains(AllowedAudience, new JwtSecurityTokenHandler().ReadJwtToken(accessToken).Audiences);
+    }
+
     private async Task AssertRefusedScopeAsync(string clientId, string scope, string redirectUri, string expectedDescriptionPart)
     {
         var resp = await DriveAuthorizeResponseAsync(clientId, scope, redirectUri);

@@ -76,15 +76,15 @@ A document **without** `scope` — the normal case: Claude Code's document is on
 | Field | Rule |
 | --- | --- |
 | `client_id` | Required. Must string-equal the URL the server dereferenced (RFC 3986 §6.2.1 exact match). |
-| `redirect_uris` | At least one. Each must be HTTPS, OR `http://localhost`, `http://127.0.0.1`, `http://[::1]`. No fragments. Exact-match at `/connect/authorize` — except the **port of a loopback URI**: a native client takes an ephemeral port at request time, so a registered `http://localhost/callback` matches `http://localhost:40489/callback` ([RFC 8252 §7.3](https://www.rfc-editor.org/rfc/rfc8252#section-7.3)). Scheme, host and path still have to match. |
-| `application_type` | Optional, `web` or `native`. A document with a loopback `http` redirect URI is treated as `native` whatever it says — only a native app can have such a URI. Claude Code, Cursor, VS Code and the MCP Inspector all omit the field and rely on this. |
+| `redirect_uris` | At least one usable. Usable means HTTPS, OR `http://localhost`, `http://127.0.0.1`, `http://[::1]`, without a fragment; other forms (private-use schemes such as `com.example.app:/cb`) are dropped from the client, not fatal. Exact-match at `/connect/authorize` — except the **port of a loopback URI**: a native client takes an ephemeral port at request time, so any port matches ([RFC 8252 §7.3](https://www.rfc-editor.org/rfc/rfc8252#section-7.3)), whether the document lists `http://localhost/callback` or `http://127.0.0.1:33418/` (as VS Code does). Scheme, host and path still have to match. |
+| `application_type` | Optional, `web` or `native`. A document with a loopback `http` redirect URI is treated as `native` whatever it says — only a native app can have such a URI. Claude Code, Zed and goose omit the field and rely on this. |
 | `token_endpoint_auth_method` | `none` or omitted. **v1 is public-only** — a `client_secret*` method or any `client_secret` field is rejected. |
 | `grant_types` | Must include `authorization_code`. The document describes the client for every server, so grants Modgud does not offer (claude.ai lists `urn:ietf:params:oauth:grant-type:jwt-bearer`) are ignored; the client holds the intersection with `{authorization_code, refresh_token}`. |
 | `response_types` | Must include `code`; other values are ignored. |
 | `scope` | Optional, space-delimited. An **upper bound**: the client holds these scopes intersected with the realm's dynamic-client scopes. Omitted (as every static MCP-client document does), the client holds the whole set. |
 | `client_name` | Optional. Used as the display name; the consent screen also shows the URL hostname regardless. |
 
-A document that fails any rule is rejected and never cached; the authorize request fails as "unknown client".
+A document that fails any rule is rejected and never cached; the authorize request fails as "unknown client". The rules reject only what Modgud cannot honour at all — values it merely does not offer are narrowed away, because the document describes the client for every authorization server. The test suite carries the live documents of claude.ai, Claude Code, VS Code, Zed and goose.
 
 ## SSRF hardening
 

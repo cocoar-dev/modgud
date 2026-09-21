@@ -148,6 +148,30 @@ public static class OAuthApplicationTypes
     public static string? Effective(string? declared, IEnumerable<string>? redirectUris)
         => redirectUris?.Any(IsLoopbackHttp) == true ? Native : declared;
 
+    /// <summary>
+    /// RFC 8252 §7.3: the server MUST allow any port for a loopback redirect URI —
+    /// including when the client registered one WITH a port. VS Code's metadata
+    /// names <c>http://127.0.0.1:33418/</c> and Zed registers the ephemeral port it
+    /// happened to get; the next run comes back on another one. OpenIddict relaxes
+    /// the port only against a registered URI that carries none, so every loopback
+    /// URI with a port is registered alongside its port-less twin. Scheme, host and
+    /// path still match exactly; non-loopback URIs pass through untouched.
+    /// </summary>
+    public static List<string> WithPortlessLoopbackTwins(IEnumerable<string> redirectUris)
+    {
+        var result = new List<string>();
+        foreach (var raw in redirectUris)
+        {
+            if (!result.Contains(raw, StringComparer.Ordinal)) result.Add(raw);
+            if (!IsLoopbackHttp(raw) || !Uri.TryCreate(raw, UriKind.Absolute, out var uri) || uri.IsDefaultPort)
+                continue;
+            var twin = new UriBuilder(uri) { Port = -1 }.Uri.GetComponents(
+                UriComponents.SchemeAndServer | UriComponents.PathAndQuery, UriFormat.UriEscaped);
+            if (!result.Contains(twin, StringComparer.Ordinal)) result.Add(twin);
+        }
+        return result;
+    }
+
     /// <summary>RFC 8252 §7.3 loopback redirect: <c>http</c> on <c>localhost</c>,
     /// <c>127.0.0.1</c> or <c>[::1]</c> — the one place plain http is a valid redirect.</summary>
     public static bool IsLoopbackHttp(string? raw)

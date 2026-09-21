@@ -64,7 +64,9 @@ public static class CimdMetadataParser
         JsonElement root;
         try
         {
-            using var doc = JsonDocument.Parse(json);
+            // A UTF-8 BOM survives the byte→string decode as U+FEFF, which
+            // JsonDocument refuses; static hosts do serve files with one.
+            using var doc = JsonDocument.Parse(json.TrimStart((char)0xFEFF));
             root = doc.RootElement.Clone();
         }
         catch (JsonException)
@@ -91,15 +93,18 @@ public static class CimdMetadataParser
             return Invalid($"token_endpoint_auth_method '{authMethod}' is not supported; CIMD v1 is public-only (none).");
         }
 
-        // ── redirect_uris: required, each https-or-loopback, exact-match ──
-        var redirectUris = GetStringArray(root, "redirect_uris");
-        if (redirectUris.Count == 0)
+        // ── redirect_uris: https or http loopback; the rest is dropped ────
+        // Same reasoning as grant_types: the document serves every server, so a
+        // URI form Modgud does not accept (a private-use scheme, say) costs the
+        // client that one URI, not the whole registration. At least one must
+        // survive. Loopback URIs with a port also get their port-less twin.
+        var declaredRedirectUris = GetStringArray(root, "redirect_uris");
+        if (declaredRedirectUris.Count == 0)
             return Invalid("document is missing the required redirect_uris.");
-        foreach (var uri in redirectUris)
-        {
-            if (!IsAllowedRedirectUri(uri))
-                return Invalid($"redirect_uri '{uri}' is invalid (https URIs or http loopback only).");
-        }
+        var redirectUris = declaredRedirectUris.Where(IsAllowedRedirectUri).ToList();
+        if (redirectUris.Count == 0)
+            return Invalid("no usable redirect_uri (https URIs or http loopback only).");
+        redirectUris = OAuthApplicationTypes.WithPortlessLoopbackTwins(redirectUris);
 
         // ── grant_types: intersected with {authorization_code, refresh_token} ─
         // A CIMD document is the client's self-description for EVERY

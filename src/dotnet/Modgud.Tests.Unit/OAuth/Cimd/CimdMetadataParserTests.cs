@@ -147,31 +147,48 @@ public class CimdMetadataParserTests
     public void Ignores_extra_response_type_alongside_code() =>
         AssertValid(Doc(responseTypes: ["code", "token"]));
 
-    // ── Real-world documents ────────────────────────────────────────────
-    // The CIMD path was built against an ideal document; these are the ones
-    // actual clients publish. Each one has broken a release before.
+    // ── Real-world documents (see RealWorldClientMetadata) ──────────────
+
+    [Theory]
+    [MemberData(nameof(RealWorldClientMetadata.PublicCimdDocuments), MemberType = typeof(RealWorldClientMetadata))]
+    public void Accepts_every_real_public_client_document(string clientId, string json, string expectedName)
+    {
+        var meta = AssertValid(json, clientId);
+        Assert.Equal(expectedName, meta.ClientName);
+        Assert.Equal(["authorization_code", "refresh_token"], meta.GrantTypes);
+    }
 
     [Fact]
-    public void Accepts_the_claude_ai_connector_document()
+    public void Claude_ai_loses_jwt_bearer_and_keeps_its_callback()
     {
-        const string id = "https://claude.ai/oauth/mcp-oauth-client-metadata";
-        const string json = """
-            {
-              "client_id": "https://claude.ai/oauth/mcp-oauth-client-metadata",
-              "client_name": "Claude",
-              "client_uri": "https://claude.ai",
-              "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
-              "grant_types": ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"],
-              "response_types": ["code"],
-              "token_endpoint_auth_method": "none"
-            }
-            """;
-        var meta = AssertValid(json, id);
-        Assert.Equal("Claude", meta.ClientName);
-        Assert.Equal(["authorization_code", "refresh_token"], meta.GrantTypes);
+        var meta = AssertValid(RealWorldClientMetadata.ClaudeAi, RealWorldClientMetadata.ClaudeAiId);
         Assert.Equal(["https://claude.ai/api/mcp/auth_callback"], meta.RedirectUris);
         Assert.Empty(meta.Scopes); // no scope → the resolver applies the realm default
     }
+
+    [Fact]
+    public void Vs_code_ported_loopback_uri_gets_its_portless_twin()
+    {
+        // VS Code names http://127.0.0.1:33418/ but may come back on another port.
+        var meta = AssertValid(RealWorldClientMetadata.VsCode, RealWorldClientMetadata.VsCodeId);
+        Assert.Equal(["http://127.0.0.1:33418/", "http://127.0.0.1/", "https://vscode.dev/redirect"], meta.RedirectUris);
+        Assert.Equal("native", meta.ApplicationType);
+    }
+
+    [Fact]
+    public void Drops_a_redirect_uri_form_modgud_does_not_accept()
+    {
+        var meta = AssertValid(Doc(redirectUris: ["com.example.app:/cb", "https://app.example.com/callback"]));
+        Assert.Equal(["https://app.example.com/callback"], meta.RedirectUris);
+    }
+
+    [Fact]
+    public void Rejects_when_no_redirect_uri_survives() =>
+        AssertInvalid(Doc(redirectUris: ["com.example.app:/cb", "http://app.example.com/cb"]));
+
+    [Fact]
+    public void Tolerates_a_utf8_byte_order_mark() =>
+        AssertValid((char)0xFEFF + Doc());
 
     [Fact]
     public void Rejects_non_json() => AssertInvalid("this is not json");

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BuildingBlocks.EventDispatcher;
 using Marten;
 using Modgud.Application.Dcr;
@@ -7,7 +8,6 @@ using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Observability;
-using Microsoft.AspNetCore.Mvc;
 
 namespace Modgud.Api.Features.Auth.OAuth;
 
@@ -47,7 +47,6 @@ public static class DcrRegistrationEndpoints
     }
 
     private static async Task<IResult> RegisterAsync(
-        [FromBody] DcrRegistrationRequest? request,
         HttpContext httpContext,
         IRealmSettingsService realmSettingsService,
         Modgud.Authentication.Applications.IApplicationSettingsResolver settingsResolver,
@@ -60,6 +59,24 @@ public static class DcrRegistrationEndpoints
         DataEventDispatcher dispatcher,
         CancellationToken ct)
     {
+        // Bound by hand rather than [FromBody]: a malformed body must still get
+        // the RFC 7591 §3.2.2 error object, not the framework's empty 400.
+        DcrRegistrationRequest? request;
+        try
+        {
+            request = await httpContext.Request.ReadFromJsonAsync<DcrRegistrationRequest>(ct);
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            // JsonException: not JSON, or a field of the wrong type.
+            // InvalidOperationException: no JSON content type.
+            return Results.BadRequest(new DcrErrorResponse
+            {
+                Error = DcrErrorCodes.InvalidClientMetadata,
+                ErrorDescription = "Request body must be a JSON object of RFC 7591 client metadata.",
+            });
+        }
+
         if (request is null)
         {
             return Results.BadRequest(new DcrErrorResponse
