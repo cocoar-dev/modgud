@@ -4,7 +4,7 @@ using Modgud.Domain.OAuth.Common;
 namespace Modgud.Infrastructure.OpenIddict.Cimd;
 
 /// <summary>
-/// The validated, public-client subset of a CIMD metadata document
+/// The validated subset of a CIMD metadata document
 /// (<c>draft-ietf-oauth-client-id-metadata-document</c> + RFC 7591). Only
 /// the fields Modgud needs to synthesize an <c>OAuthApplicationState</c> are
 /// retained; everything else in the document is ignored.
@@ -21,10 +21,20 @@ public sealed record CimdMetadata
     /// null when omitted — most MCP clients omit it and rely on their loopback redirect
     /// URIs to say "native" (see <c>OAuthApplicationTypes.Effective</c>).</summary>
     public string? ApplicationType { get; init; }
+
+    /// <summary><c>none</c> (public, PKCE) or <c>private_key_jwt</c> (confidential,
+    /// authenticates with an assertion signed by a key in <see cref="JwksUri"/> or
+    /// <see cref="Jwks"/> — exactly one of the two is set).</summary>
+    public string TokenEndpointAuthMethod { get; init; } = "none";
+
+    public string? JwksUri { get; init; }
+
+    /// <summary>The inline key set, already filtered by <see cref="CimdJwks"/>.</summary>
+    public string? Jwks { get; init; }
 }
 
 /// <summary>Outcome of validating a fetched CIMD document against the
-/// <c>client_id</c> URL and the v1 (public-only) policy.</summary>
+/// <c>client_id</c> URL and Modgud's CIMD policy.</summary>
 public abstract record CimdValidationResult
 {
     public sealed record Valid(CimdMetadata Metadata) : CimdValidationResult;
@@ -44,6 +54,7 @@ public abstract record CimdValidationResult
 public static class CimdMetadataParser
 {
     private const string AuthMethodNone = "none";
+    private const string AuthMethodPrivateKeyJwt = "private_key_jwt";
 
     private static readonly HashSet<string> AllowedGrantTypes = new(StringComparer.Ordinal)
     {
@@ -83,14 +94,39 @@ public static class CimdMetadataParser
         if (!string.Equals(docClientId, requestedClientId, StringComparison.Ordinal))
             return Invalid("document client_id does not match the client_id URL.");
 
-        // ── public-only (v1): no shared-secret auth, no secret at rest ────
+        // ── client authentication: none, or private_key_jwt with public keys ─
+        // The draft forbids every shared-secret method and any client_secret in
+        // the document (a published document cannot keep a secret). A client
+        // that can hold a private key authenticates with private_key_jwt, its
+        // public keys at jwks_uri or inline in jwks — never both (RFC 7591 §2).
         if (root.TryGetProperty("client_secret", out _))
-            return Invalid("document must not contain a client_secret (CIMD clients are public).");
+            return Invalid("document must not contain a client_secret (a published document cannot keep one).");
 
-        if (TryGetString(root, "token_endpoint_auth_method", out var authMethod) && authMethod is not null
-            && !string.Equals(authMethod, AuthMethodNone, StringComparison.Ordinal))
+        var authMethod = TryGetString(root, "token_endpoint_auth_method", out var declaredAuth) && declaredAuth is not null
+            ? declaredAuth
+            : AuthMethodNone;
+        string? jwksUri = null;
+        string? jwks = null;
+        if (authMethod == AuthMethodPrivateKeyJwt)
         {
-            return Invalid($"token_endpoint_auth_method '{authMethod}' is not supported; CIMD v1 is public-only (none).");
+            var hasUri = TryGetString(root, "jwks_uri", out var declaredJwksUri) && declaredJwksUri is not null;
+            var hasInline = root.TryGetProperty("jwks", out var inlineJwks) && inlineJwks.ValueKind == JsonValueKind.Object;
+            if (hasUri == hasInline)
+                return Invalid("private_key_jwt needs exactly one of jwks_uri or jwks.");
+            if (hasUri)
+            {
+                if (!IsAllowedJwksUri(declaredJwksUri!))
+                    return Invalid("jwks_uri must be an absolute https URL without userinfo or fragment.");
+                jwksUri = declaredJwksUri;
+            }
+            else if (!CimdJwks.TryFilter(inlineJwks.GetRawText(), out jwks, out var jwksError))
+            {
+                return Invalid($"jwks: {jwksError}");
+            }
+        }
+        else if (authMethod != AuthMethodNone)
+        {
+            return Invalid($"token_endpoint_auth_method '{authMethod}' is not supported (none or private_key_jwt; shared secrets are forbidden for CIMD).");
         }
 
         // ── redirect_uris: https or http loopback; the rest is dropped ────
@@ -149,6 +185,9 @@ public static class CimdMetadataParser
             GrantTypes = grantTypes.Distinct(StringComparer.Ordinal).ToList(),
             Scopes = scopes,
             ApplicationType = applicationType,
+            TokenEndpointAuthMethod = authMethod,
+            JwksUri = jwksUri,
+            Jwks = jwks,
         });
     }
 
@@ -174,6 +213,13 @@ public static class CimdMetadataParser
 
         return false;
     }
+
+    private static bool IsAllowedJwksUri(string raw) =>
+        Uri.TryCreate(raw, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps
+        && !string.IsNullOrEmpty(uri.Host)
+        && string.IsNullOrEmpty(uri.UserInfo)
+        && string.IsNullOrEmpty(uri.Fragment);
 
     private static List<string> ParseScope(string? raw)
     {

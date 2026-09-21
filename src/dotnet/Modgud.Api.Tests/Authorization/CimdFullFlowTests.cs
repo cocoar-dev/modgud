@@ -227,6 +227,82 @@ public class CimdFullFlowTests : IntegrationTestBase
         Assert.Contains(AllowedAudience, new JwtSecurityTokenHandler().ReadJwtToken(accessToken).Audiences);
     }
 
+    /// <summary>
+    /// ChatGPT's connector document authenticates with <c>private_key_jwt</c> and
+    /// publishes its keys at a <c>jwks_uri</c> — the one real CIMD client that is not
+    /// public, and the draft allows exactly that (only shared secrets are forbidden).
+    /// The synthesized client is confidential: the code exchange and every refresh
+    /// need an assertion signed by a key from the published set. No assertion, or
+    /// one signed by a foreign key under the same kid, is invalid_client. When the
+    /// client rotates, the first assertion with the new kid refetches the set at
+    /// once; further unknown kids within a minute do not hit the client's host.
+    /// </summary>
+    [Fact]
+    public async Task A_private_key_jwt_document_authenticates_with_keys_from_its_jwks_uri_like_chatgpt()
+    {
+        await SeedAsync();
+        var ct = TestContext.Current.CancellationToken;
+        using var keys = new TestJwks("chatgpt-1");
+        using var rogue = new TestJwks("chatgpt-1"); // same kid, different key
+        var jwksUri = $"https://cimd-app.test/oauth/{Guid.NewGuid():N}/jwks.json";
+        Factory.CimdDocuments[jwksUri] = keys.PublicJwks;
+        Factory.CimdDocuments[_clientIdUrl] = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["client_id"] = _clientIdUrl,
+            ["client_name"] = "ChatGPT",
+            ["redirect_uris"] = new[] { RedirectUri },
+            ["token_endpoint_auth_method"] = "private_key_jwt",
+            ["token_endpoint_auth_methods_supported"] = new[] { "none", "private_key_jwt" },
+            ["token_endpoint_auth_signing_alg"] = "RS256",
+            ["jwks_uri"] = jwksUri,
+            ["grant_types"] = new[] { "authorization_code", "refresh_token" },
+            ["response_types"] = new[] { "code" },
+        });
+        var issuer = await IssuerAsync();
+        var scope = $"openid offline_access {ScopeName}";
+
+        // Without an assertion the code exchange is refused: the client is confidential.
+        var anonymous = await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience]);
+        Assert.Contains("invalid_client", await anonymous.Content.ReadAsStringAsync(ct));
+
+        // A foreign key under the published kid is refused as well.
+        var forged = await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience],
+            clientAssertion: rogue.MintAssertion(_clientIdUrl, issuer));
+        Assert.Contains("invalid_client", await forged.Content.ReadAsStringAsync(ct));
+
+        // Signed with the published key, the flow completes, refresh included.
+        var ok = await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience],
+            clientAssertion: keys.MintAssertion(_clientIdUrl, issuer));
+        var okBody = await ok.Content.ReadAsStringAsync(ct);
+        Assert.True(ok.IsSuccessStatusCode, okBody);
+        string refreshToken;
+        using (var doc = JsonDocument.Parse(okBody))
+        {
+            Assert.Contains(AllowedAudience, new JwtSecurityTokenHandler().ReadJwtToken(doc.RootElement.GetProperty("access_token").GetString()).Audiences);
+            refreshToken = doc.RootElement.GetProperty("refresh_token").GetString()!;
+        }
+        var unauthenticatedRefresh = await RefreshResponseAsync(refreshToken, _clientIdUrl, AllowedAudience, clientAssertion: null);
+        Assert.Contains("invalid_client", await unauthenticatedRefresh.Content.ReadAsStringAsync(ct));
+        var refreshed = await RefreshResponseAsync(refreshToken, _clientIdUrl, AllowedAudience, keys.MintAssertion(_clientIdUrl, issuer));
+        Assert.True(refreshed.IsSuccessStatusCode, await refreshed.Content.ReadAsStringAsync(ct));
+        var fetchesBeforeRotation = Factory.CimdFetchCounts[jwksUri];
+
+        // The client rotates to a new key under a new kid: picked up on first use.
+        using var rotatedKeys = new TestJwks("chatgpt-2");
+        Factory.CimdDocuments[jwksUri] = rotatedKeys.PublicJwks;
+        var afterRotation = await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience],
+            clientAssertion: rotatedKeys.MintAssertion(_clientIdUrl, issuer));
+        Assert.True(afterRotation.IsSuccessStatusCode, await afterRotation.Content.ReadAsStringAsync(ct));
+        Assert.Equal(fetchesBeforeRotation + 1, Factory.CimdFetchCounts[jwksUri]);
+
+        // Another unknown kid right after is refused without fetching again.
+        using var madeUp = new TestJwks("chatgpt-made-up");
+        var probe = await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience],
+            clientAssertion: madeUp.MintAssertion(_clientIdUrl, issuer));
+        Assert.Contains("invalid_client", await probe.Content.ReadAsStringAsync(ct));
+        Assert.Equal(fetchesBeforeRotation + 1, Factory.CimdFetchCounts[jwksUri]);
+    }
+
     private async Task AssertRefusedScopeAsync(string clientId, string scope, string redirectUri, string expectedDescriptionPart)
     {
         var resp = await DriveAuthorizeResponseAsync(clientId, scope, redirectUri);
@@ -428,7 +504,7 @@ public class CimdFullFlowTests : IntegrationTestBase
 
     private async Task<HttpResponseMessage> DriveCimdFlowThroughToTokenAsync(
         string clientId, string scope, string authorizeResource, IReadOnlyList<string> tokenResources,
-        string? redirectUri = null)
+        string? redirectUri = null, string? clientAssertion = null)
     {
         redirectUri ??= RedirectUri;
         var verifier = GeneratePkceVerifier();
@@ -471,12 +547,43 @@ public class CimdFullFlowTests : IntegrationTestBase
             new("code_verifier", verifier),
         };
         foreach (var r in tokenResources) tokenForm.Add(new KeyValuePair<string, string>("resource", r));
+        AddClientAssertion(tokenForm, clientAssertion);
 
         return await tokenClient.PostAsync("/connect/token", new FormUrlEncodedContent(tokenForm), TestContext.Current.CancellationToken);
     }
 
     /// <summary>Drives authorize → consent GET and returns (ticket, parsed
     /// ConsentModel) so a test can inspect the consent payload.</summary>
+    private static void AddClientAssertion(List<KeyValuePair<string, string>> form, string? assertion)
+    {
+        if (assertion is null) return;
+        form.Add(new("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"));
+        form.Add(new("client_assertion", assertion));
+    }
+
+    /// <summary>A refresh request, raw — the private_key_jwt tests decide on the
+    /// response code rather than asserting success.</summary>
+    private async Task<HttpResponseMessage> RefreshResponseAsync(string refreshToken, string clientId, string resource, string? clientAssertion)
+    {
+        var form = new List<KeyValuePair<string, string>>
+        {
+            new("grant_type", "refresh_token"),
+            new("refresh_token", refreshToken),
+            new("client_id", clientId),
+            new("resource", resource),
+        };
+        AddClientAssertion(form, clientAssertion);
+        return await Factory.CreateClient().PostAsync("/connect/token", new FormUrlEncodedContent(form), TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>The audience of a client assertion: the issuer identifier, nothing
+    /// else (draft-ietf-oauth-rfc7523bis §4; OpenIddict 7 refuses the token endpoint).</summary>
+    private async Task<string> IssuerAsync()
+    {
+        using var doc = JsonDocument.Parse(await Factory.CreateClient().GetStringAsync("/.well-known/openid-configuration", TestContext.Current.CancellationToken));
+        return doc.RootElement.GetProperty("issuer").GetString()!;
+    }
+
     private async Task<(string Ticket, JsonElement Model)> DriveToConsentModelAsync(string clientId, string scope)
     {
         var challenge = GeneratePkceS256Challenge(GeneratePkceVerifier());

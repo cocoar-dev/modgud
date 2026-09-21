@@ -42,7 +42,8 @@ public static class RealWorldClientMetadata
         """;
 
     /// <summary>A private_key_jwt client with a remote <c>jwks_uri</c> — the one
-    /// real CIMD client that is not public.</summary>
+    /// real CIMD client that is not public (redirect as published; per-connector
+    /// callbacks are not part of the document).</summary>
     public const string ChatGptId = "https://chatgpt.com/oauth/client.json";
     public const string ChatGpt = """
         {"client_id":"https://chatgpt.com/oauth/client.json","client_uri":"https://chatgpt.com/","redirect_uris":["https://chatgpt.com/connector_platform_oauth_redirect"],"token_endpoint_auth_method":"private_key_jwt","token_endpoint_auth_methods_supported":["none","private_key_jwt"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"client_name":"ChatGPT","logo_uri":"https://persistent.oaistatic.com/sonic/misc/openai-logo.png","token_endpoint_auth_signing_alg":"RS256","jwks_uri":"https://chatgpt.com/oauth/jwks.json"}

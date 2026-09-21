@@ -13,7 +13,10 @@ using Marten;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
+using Microsoft.AspNetCore;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 
 namespace Modgud.Infrastructure.OpenIddict.Cimd;
@@ -31,7 +34,9 @@ namespace Modgud.Infrastructure.OpenIddict.Cimd;
 /// <see cref="IMemoryCache"/> means the store's first resolve in a request
 /// warms the cache for every later handler call in the same request.</para>
 ///
-/// <para>v1 is public-only (<c>token_endpoint_auth_method=none</c> + PKCE);
+/// <para>A client is public (<c>token_endpoint_auth_method=none</c> + PKCE) or,
+/// with <c>private_key_jwt</c>, confidential against the public keys it
+/// publishes (<see cref="GetJsonWebKeySetAsync"/>); either way PKCE applies,
 /// the synthesized client gets JWT access tokens and is marked
 /// <c>DcrIsDynamicallyRegistered</c> so the existing DCR audience-containment
 /// + "unverified" consent treatment apply unchanged.</para>
@@ -44,6 +49,8 @@ public sealed class CimdClientResolver
     public const string HttpClientName = "Modgud.Cimd.MetadataFetcher";
 
     private const int MaxBodyBytes = 5 * 1024;
+    private const int MaxJwksBytes = 64 * 1024;
+    private static readonly TimeSpan JwksRefetchCooldown = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan DefaultTtl = TimeSpan.FromHours(1);
     private static readonly TimeSpan MinTtl = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MaxTtl = TimeSpan.FromHours(24);
@@ -192,7 +199,7 @@ public sealed class CimdClientResolver
                 return (null, default);
             }
 
-            var json = await ReadBoundedAsync(response.Content, cancellationToken);
+            var json = await ReadBoundedAsync(response.Content, MaxBodyBytes, cancellationToken);
             if (json is null)
             {
                 _logger.LogWarning("CIMD document for {ClientId} exceeds {Max} bytes", requestedClientId, MaxBodyBytes);
@@ -223,10 +230,10 @@ public sealed class CimdClientResolver
         }
     }
 
-    private static async Task<string?> ReadBoundedAsync(HttpContent content, CancellationToken cancellationToken)
+    private static async Task<string?> ReadBoundedAsync(HttpContent content, int maxBytes, CancellationToken cancellationToken)
     {
         await using var stream = await content.ReadAsStreamAsync(cancellationToken);
-        var buffer = new byte[MaxBodyBytes + 1];
+        var buffer = new byte[maxBytes + 1];
         var total = 0;
         int read;
         while (total < buffer.Length &&
@@ -235,8 +242,8 @@ public sealed class CimdClientResolver
             total += read;
         }
         // We deliberately read one byte past the cap: if we filled the whole
-        // buffer the body is at least MaxBodyBytes+1 → over the limit.
-        if (total > MaxBodyBytes) return null;
+        // buffer the body is at least maxBytes+1 → over the limit.
+        if (total > maxBytes) return null;
         return Encoding.UTF8.GetString(buffer, 0, total);
     }
 
@@ -263,7 +270,12 @@ public sealed class CimdClientResolver
             Id = DeterministicId(meta.ClientId),
             ClientId = meta.ClientId,
             DisplayName = DisplayNameFor(meta),
-            ClientType = OAuthClientTypes.Public,
+            // private_key_jwt makes it confidential: OpenIddict then demands the
+            // signed assertion at the token endpoint and validates it against the
+            // key set GetJsonWebKeySetAsync hands the store.
+            ClientType = meta.TokenEndpointAuthMethod == "private_key_jwt"
+                ? OAuthClientTypes.Confidential
+                : OAuthClientTypes.Public,
             ConsentType = OAuthConsentTypes.Explicit,
             // What the document declares, else what its redirect URIs imply: a loopback
             // http URI makes the client native, which is what lets OpenIddict accept the
@@ -287,7 +299,7 @@ public sealed class CimdClientResolver
                 [OpenIddictConstants.Settings.TokenLifetimes.RefreshToken] =
                     entry.RefreshTokenLifetime.ToString("c", CultureInfo.InvariantCulture),
             },
-            Properties = new Dictionary<string, object?>
+            Properties = new Dictionary<string, object?>(KeySourceProperties(meta))
             {
                 [OAuthApplicationPropertyKeys.Enabled] = JsonSerializer.SerializeToElement(true),
                 [OAuthApplicationPropertyKeys.DcrIsDynamicallyRegistered] = JsonSerializer.SerializeToElement(true),
@@ -300,6 +312,122 @@ public sealed class CimdClientResolver
             AppIds = new List<Guid>(),
         };
     }
+
+    private static IEnumerable<KeyValuePair<string, object?>> KeySourceProperties(CimdMetadata meta)
+    {
+        if (meta.JwksUri is not null)
+            yield return new(OAuthApplicationPropertyKeys.CimdJwksUri, JsonSerializer.SerializeToElement(meta.JwksUri));
+        if (meta.Jwks is not null)
+            yield return new(OAuthApplicationPropertyKeys.CimdJwks, JsonSerializer.SerializeToElement(meta.Jwks));
+    }
+
+    // ─── private_key_jwt key set ─────────────────────────────────────────
+
+    /// <summary>
+    /// The public key set a <c>private_key_jwt</c> CIMD client authenticates
+    /// with — the store's <c>GetJsonWebKeySetAsync</c> lands here because a
+    /// synthesized client has no security record in the database. Inline sets
+    /// come straight off the client; a <c>jwks_uri</c> is fetched through the
+    /// same SSRF-guarded client as the document, cached per its Cache-Control
+    /// (5 min – 24 h), and fetched again when an assertion names a <c>kid</c> the
+    /// cached set lacks — the client has rotated — at most once a minute.
+    /// Errors are never cached; a set that cannot be had reads as no keys, and
+    /// OpenIddict refuses the assertion (<c>invalid_client</c>).
+    /// </summary>
+    public async Task<JsonWebKeySet?> GetJsonWebKeySetAsync(OAuthApplicationState application, CancellationToken cancellationToken)
+    {
+        if (ReadStringProperty(application, OAuthApplicationPropertyKeys.CimdJwks) is { } inline)
+            return JsonWebKeySet.Create(inline);
+        if (ReadStringProperty(application, OAuthApplicationPropertyKeys.CimdJwksUri) is not { } jwksUri
+            || !Uri.TryCreate(jwksUri, UriKind.Absolute, out var uri))
+            return null;
+
+        var cacheKey = $"cimd:jwks:{jwksUri}";
+        DateTimeOffset? kidRefetchAt = null;
+        if (_cache.TryGetValue<CachedJwks>(cacheKey, out var cached) && cached is not null)
+        {
+            // A kid the cached set lacks means the client rotated: fetch again at
+            // once, but at most once a minute, so a stream of made-up kids cannot
+            // turn Modgud into a load generator against the client's host.
+            var kid = AssertionKeyId();
+            var rotated = kid is not null && !cached.Set.Keys.Any(k => k.Kid == kid);
+            var coolingDown = cached.KidRefetchAt is { } last && DateTimeOffset.UtcNow - last < JwksRefetchCooldown;
+            if (!rotated || coolingDown)
+                return cached.Set;
+            kidRefetchAt = DateTimeOffset.UtcNow;
+        }
+
+        var (set, ttl) = await FetchJwksAsync(uri, cancellationToken);
+        if (set is null) return cached?.Set;
+        if (ttl > TimeSpan.Zero)
+            _cache.Set(cacheKey, new CachedJwks(set, kidRefetchAt), ttl);
+        return set;
+    }
+
+    private async Task<(JsonWebKeySet? Set, TimeSpan Ttl)> FetchJwksAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient(HttpClientName);
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("CIMD jwks_uri {JwksUri} returned {Status}", uri, (int)response.StatusCode);
+                return (null, default);
+            }
+
+            var json = response.Content.Headers.ContentLength is > MaxJwksBytes
+                ? null
+                : await ReadBoundedAsync(response.Content, MaxJwksBytes, cancellationToken);
+            if (json is null)
+            {
+                _logger.LogWarning("CIMD jwks_uri {JwksUri} exceeds {Max} bytes", uri, MaxJwksBytes);
+                return (null, default);
+            }
+
+            if (!CimdJwks.TryFilter(json, out var filtered, out var error))
+            {
+                _logger.LogWarning("CIMD jwks_uri {JwksUri} rejected: {Reason}", uri, error);
+                return (null, default);
+            }
+
+            return (JsonWebKeySet.Create(filtered!), ResolveTtl(response.Headers.CacheControl));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "CIMD jwks_uri fetch failed for {JwksUri}", uri);
+            return (null, default);
+        }
+    }
+
+    /// <summary>The <c>kid</c> in the header of the client assertion on the current
+    /// token request, if any — read without validation, only to notice rotation.</summary>
+    private string? AssertionKeyId()
+    {
+        var assertion = _httpContextAccessor.HttpContext?.GetOpenIddictServerRequest()?.ClientAssertion;
+        if (string.IsNullOrEmpty(assertion)) return null;
+        try
+        {
+            return new JsonWebToken(assertion).Kid;
+        }
+        catch (ArgumentException)
+        {
+            return null; // not a JWT — OpenIddict will refuse it on its own
+        }
+    }
+
+    private static string? ReadStringProperty(OAuthApplicationState application, string key) =>
+        application.Properties.TryGetValue(key, out var value) && value is JsonElement { ValueKind: JsonValueKind.String } element
+            ? element.GetString()
+            : null;
+
+    private sealed record CachedJwks(JsonWebKeySet Set, DateTimeOffset? KidRefetchAt);
 
     private static List<string> BuildPermissions(CimdMetadata meta, IReadOnlyList<string> requestableScopes)
     {

@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Modgud.Api.Tests.Infrastructure;
@@ -47,6 +49,26 @@ public sealed class TestJwks : IDisposable
     /// <summary>A JWK that carries the private exponent — must be refused at registration.</summary>
     public string PrivateJwk { get; }
     public SigningCredentials SigningCredentials { get; }
+
+    /// <summary>A <c>private_key_jwt</c> client assertion (RFC 7523) for
+    /// <paramref name="clientId"/>, signed with this key, aimed at
+    /// <paramref name="audience"/> (the token endpoint).</summary>
+    public string MintAssertion(string clientId, string audience)
+    {
+        var now = DateTime.UtcNow;
+        return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = clientId,
+            Audience = audience,
+            Subject = new ClaimsIdentity([new Claim("sub", clientId)]),
+            IssuedAt = now,
+            NotBefore = now,
+            Expires = now.AddMinutes(2),
+            SigningCredentials = SigningCredentials,
+            TokenType = "client-authentication+jwt",
+            Claims = new Dictionary<string, object> { ["jti"] = Guid.NewGuid().ToString("N") },
+        });
+    }
 
     public void Dispose() => _rsa.Dispose();
 }

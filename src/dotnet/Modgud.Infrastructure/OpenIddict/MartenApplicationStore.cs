@@ -191,6 +191,11 @@ public class MartenApplicationStore : IOpenIddictApplicationStore<OAuthApplicati
 
     public async ValueTask<JsonWebKeySet?> GetJsonWebKeySetAsync(OAuthApplicationState application, CancellationToken cancellationToken)
     {
+        // A CIMD client is synthesized, never stored: its keys come from the
+        // document (inline jwks or jwks_uri), not a security record.
+        if (application.Properties.ContainsKey(OAuthApplicationPropertyKeys.CimdIsResolvedClient))
+            return await _cimdResolver.GetJsonWebKeySetAsync(application, cancellationToken);
+
         await using var session = _sessionFactory.OpenQuerySession();
         var securityData = await session.LoadAsync<OAuthApplicationSecurityData>(application.Id, cancellationToken);
         if (string.IsNullOrEmpty(securityData?.JsonWebKeySet)) return null;

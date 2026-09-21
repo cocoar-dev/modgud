@@ -1,6 +1,6 @@
 # CIMD (Client ID Metadata Documents): authorization-server design
 
-**Status:** Accepted — shipped 2026-06-14 (branch `feat/cimd-client-id-metadata-documents`) · **Decided:** 2026-06-13
+**Status:** Accepted — shipped 2026-06-14 (branch `feat/cimd-client-id-metadata-documents`) · **Decided:** 2026-06-13 · **Amended:** 2026-09-21 (`private_key_jwt`, narrowing policy — see [Amendment](#amendment-2026-09-21-real-client-interop))
 
 Complements ADR-0001 (CIMD = preferred MCP client-registration path; DCR = fallback).
 
@@ -25,7 +25,7 @@ ADR-0001 chose CIMD as the preferred MCP client-registration path. With CIMD the
 
 1. **Integrate via the application store.** `MartenApplicationStore.FindByClientIdAsync` detects a CIMD URL → fetch+validate+cache → returns a **synthesized, non-persisted `OAuthApplicationState`** (Public, RequireClientSecret=false; RedirectUris/Grants/Scopes from the doc; `AccessTokenType=Jwt`). Normal client_ids take the existing stored path; DCR untouched (fallback).
 2. **No persisted client record (Option A).** The synthesized app uses a **deterministic Id = stable hash of the client_id URL** (SHA256→Guid), so all its authorizations/tokens share a consistent ApplicationId without any DB write.
-3. **v1 = public only (`none` + PKCE).** Covers claude.ai / ChatGPT CIMD. `private_key_jwt` deferred to v2; advertise only `none` for CIMD.
+3. **v1 = public only (`none` + PKCE).** Covers claude.ai / ChatGPT CIMD. `private_key_jwt` deferred to v2; advertise only `none` for CIMD. *(Superseded by the 2026-09-21 amendment: ChatGPT's document is `private_key_jwt`, and it is now supported.)*
 4. **SSRF-hardened resolver (`CimdClientResolver`):** https-only; resolve DNS and **block by resolved IP** (private/loopback/link-local/unique-local/CGNAT/multicast/documentation) at connect time to defend DNS-rebinding; no redirects; ~5 s timeout; **5 KB** body cap; `Accept: application/json`. Validation: `client_id`==URL exact; auth_method==`none`; `redirect_uris` present + each https-or-loopback.
 5. **Cache** (per fetched URL): respect `Cache-Control` with own min/max clamp (5 min–24 h); **never** cache error/invalid; re-fetch on expiry (refresh re-validates the live doc).
 6. **Discovery handler** adds `client_id_metadata_document_supported: true` (analogous to `TokenEndpointAuthMethodsSupportedHandler`), gated on the realm toggle.
@@ -55,10 +55,19 @@ Per-client lifetime uses OpenIddict-native keys, not the `modgud:` ones. The tok
 
 **Touch-points (code):** `Modgud.Infrastructure/OpenIddict/Cimd/` (`CimdClientId`, `CimdIpGuard`, `CimdMetadata`+parser, `CimdHttpMessageHandlerFactory` [SocketsHttpHandler.ConnectCallback SSRF guard], `CimdClientResolver`); `MartenApplicationStore.FindByClientIdAsync` (stored-first, then resolver); `CimdMetadataDocumentSupportedHandler` + registration in `OpenIddictExtensions`; the 5 CIMD-aware handler/endpoint edits above; `CimdSettings` on `RealmSettings` + DTOs + `RealmSettingsService` + the SPA realm-settings CIMD tab + consent-hostname display.
 
+## Amendment 2026-09-21: real-client interop
+
+The v1 rules were written against documents we composed ourselves. Three releases in a row then broke on the documents real clients publish (loopback port → beta.6, missing `scope` → beta.7, an extra grant type from claude.ai → this change). The live documents of claude.ai, Claude Code, VS Code, Zed, goose and ChatGPT — and the DCR bodies of VS Code, Zed and the MCP Inspector — are now test fixtures (`RealWorldClientMetadata`), and every rejection rule was re-checked against RFC 7591, RFC 8252 and draft-02.
+
+1. **Narrow, don't reject.** A CIMD document describes the client for *every* authorization server; it is not an order placed with this one. Values Modgud does not offer are dropped — grant types (claude.ai's `jwt-bearer`, VS Code's `device_code`), extra response types, redirect URI forms it does not accept — as long as what remains is usable (`authorization_code`, `code`, one redirect URI). A rule rejects only what Modgud cannot honour at all. DCR follows the same policy under RFC 7591 §3.2.1 (the response echoes what was registered).
+2. **Loopback ports, fully.** RFC 8252 §7.3 requires any port for a loopback redirect, also when the registered URI carries one (VS Code's `127.0.0.1:33418`, Zed's ephemeral DCR port). OpenIddict relaxes the port only against a port-less registered URI, so each ported loopback URI is registered with its port-less twin.
+3. **`private_key_jwt` is supported** (replaces decision 3 and the v2 follow-up). The draft forbids only shared-secret methods. A document with `private_key_jwt` and exactly one of `jwks_uri` / `jwks` synthesizes a **confidential** client; `MartenApplicationStore.GetJsonWebKeySetAsync` asks `CimdClientResolver`, which fetches `jwks_uri` through the same SSRF-guarded client (64 KB cap), caches it per Cache-Control (5 min–24 h) and refetches immediately when an assertion names an unknown `kid`, at most once a minute. A published key set may carry keys Modgud cannot use (encryption keys, other key types) — skipped; private key material fails the set. The assertion's `aud` must be the issuer (draft-ietf-oauth-rfc7523bis §4, enforced by OpenIddict 7).
+4. **No revocation on key change.** The v2 note planned "on jwks change → revoke". Rotation is routine for a key-publishing client, and every token request — refresh included — re-checks the assertion against the current set, so a withdrawn key stops working at the next fetch. Revoking on every rotation would log out every user of the client for no gain.
+
 ## Alternatives considered (and rejected)
 
 - **Option B — thin persisted pointer minted on first use:** rejected after the spike; kept as the documented fallback if an impl flow ever needs `FindByIdAsync`-without-client_id. (Not needed.)
-- **private_key_jwt in v1:** deferred.
+- **private_key_jwt in v1:** deferred (shipped by the 2026-09-21 amendment).
 - **Always-on (no opt-in):** rejected — new SSRF surface; gate per realm like DCR.
 
 ## Consequences
@@ -70,7 +79,7 @@ Per-client lifetime uses OpenIddict-native keys, not the `modgud:` ones. The tok
 
 ## Follow-up
 
-- **v2:** `private_key_jwt` + `jwks_uri`; on jwks change → revoke.
+- ~~**v2:** `private_key_jwt` + `jwks_uri`; on jwks change → revoke.~~ Done 2026-09-21, without revocation on rotation — see the amendment.
 - **MCP `iss` (RFC 9207)** — fixed in PR #70 (`RealmAuthorizationResponseIssuerHandler`); prerequisite for clean MCP interop. See ADR-0002.
 
 ## References

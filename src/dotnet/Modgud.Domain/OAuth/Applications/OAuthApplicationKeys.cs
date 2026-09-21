@@ -114,6 +114,16 @@ public static class OAuthApplicationPropertyKeys
     /// set <see cref="DcrIsDynamicallyRegistered"/>.</summary>
     public const string CimdIsResolvedClient = "modgud:cimd:is_resolved_client";
 
+    /// <summary>Set on a CIMD client that authenticates with <c>private_key_jwt</c>
+    /// and publishes its keys at a <c>jwks_uri</c> — the resolver fetches (and
+    /// caches) the set from there when OpenIddict asks for it.</summary>
+    public const string CimdJwksUri = "modgud:cimd:jwks_uri";
+
+    /// <summary>Set on a CIMD client that authenticates with <c>private_key_jwt</c>
+    /// and embeds its public key set in the document (<c>jwks</c>), already
+    /// filtered to usable signing keys.</summary>
+    public const string CimdJwks = "modgud:cimd:jwks";
+
     // ─────── Back-channel logout (ADR 0021) ──────
 
     /// <summary>Boolean, default <c>true</c> — logout tokens carry the <c>sid</c> claim

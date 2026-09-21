@@ -1,6 +1,6 @@
 # Client ID Metadata Documents (CIMD)
 
-**Client ID Metadata Documents** ([`draft-ietf-oauth-client-id-metadata-document`](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/), adopted by the IETF OAuth WG) let a piece of software identify itself as an OAuth client by **publishing a metadata document at an HTTPS URL** — and using that URL *as* its `client_id`. The authorization server fetches and validates the document on demand. There is no registration request, no client secret, and no stored client record: the client's **metadata and display identity** are anchored to the HTTPS origin hosting the document. The client itself remains a public PKCE client and performs no cryptographic client authentication in v1 — see [What's NOT in v1](#what-s-not-in-v1) for the `private_key_jwt` option under consideration for v2.
+**Client ID Metadata Documents** ([`draft-ietf-oauth-client-id-metadata-document`](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/), adopted by the IETF OAuth WG) let a piece of software identify itself as an OAuth client by **publishing a metadata document at an HTTPS URL** — and using that URL *as* its `client_id`. The authorization server fetches and validates the document on demand. There is no registration request, no client secret, and no stored client record: the client's **metadata and display identity** are anchored to the HTTPS origin hosting the document. Most clients are public PKCE clients (`token_endpoint_auth_method: none`); a client that can hold a private key authenticates with `private_key_jwt` against the public keys its document points to — see [Confidential CIMD clients](#confidential-cimd-clients-private-key-jwt).
 
 CIMD is the **MCP-preferred** client-onboarding path; both claude.ai and ChatGPT support it and fall back to [Dynamic Client Registration](./dynamic-client-registration) when a server doesn't advertise CIMD.
 
@@ -78,7 +78,7 @@ A document **without** `scope` — the normal case: Claude Code's document is on
 | `client_id` | Required. Must string-equal the URL the server dereferenced (RFC 3986 §6.2.1 exact match). |
 | `redirect_uris` | At least one usable. Usable means HTTPS, OR `http://localhost`, `http://127.0.0.1`, `http://[::1]`, without a fragment; other forms (private-use schemes such as `com.example.app:/cb`) are dropped from the client, not fatal. Exact-match at `/connect/authorize` — except the **port of a loopback URI**: a native client takes an ephemeral port at request time, so any port matches ([RFC 8252 §7.3](https://www.rfc-editor.org/rfc/rfc8252#section-7.3)), whether the document lists `http://localhost/callback` or `http://127.0.0.1:33418/` (as VS Code does). Scheme, host and path still have to match. |
 | `application_type` | Optional, `web` or `native`. A document with a loopback `http` redirect URI is treated as `native` whatever it says — only a native app can have such a URI. Claude Code, Zed and goose omit the field and rely on this. |
-| `token_endpoint_auth_method` | `none` or omitted. **v1 is public-only** — a `client_secret*` method or any `client_secret` field is rejected. |
+| `token_endpoint_auth_method` | `none` (or omitted) — a public PKCE client; or `private_key_jwt` with exactly one of `jwks_uri` (https) or `jwks` — a confidential client. Shared-secret methods (`client_secret_basic`, `client_secret_post`, `client_secret_jwt`) and any `client_secret` field are rejected: a published document cannot keep a secret. |
 | `grant_types` | Must include `authorization_code`. The document describes the client for every server, so grants Modgud does not offer (claude.ai lists `urn:ietf:params:oauth:grant-type:jwt-bearer`) are ignored; the client holds the intersection with `{authorization_code, refresh_token}`. |
 | `response_types` | Must include `code`; other values are ignored. |
 | `scope` | Optional, space-delimited. An **upper bound**: the client holds these scopes intersected with the realm's dynamic-client scopes. Omitted (as every static MCP-client document does), the client holds the whole set. |
@@ -105,9 +105,14 @@ A CIMD client always reaches the explicit consent screen on first authorize, wit
 
 Like a DCR client, a CIMD client never skips this screen on a remembered authorization: every fresh authorize flow shows it again. The authorization itself is reused for the same user, client and scope set, so the token's `oi_au_id` stays stable across re-consents.
 
-## What's NOT in v1
+## Confidential CIMD clients (`private_key_jwt`)
 
-- **`private_key_jwt`** — confidential CIMD clients (asymmetric client auth via a `jwks_uri` in the document). v1 is public PKCE only. Deferred to v2, which will also revoke on `jwks_uri` change.
+ChatGPT's connector document, for one, declares `token_endpoint_auth_method: private_key_jwt` and a `jwks_uri`. Such a client is **confidential**: the code exchange and every refresh must carry a client assertion ([RFC 7523](https://www.rfc-editor.org/rfc/rfc7523)) signed with a key from its published set, or the token endpoint answers `invalid_client`. PKCE still applies.
+
+- **Where the keys come from.** An inline `jwks` is read from the document. A `jwks_uri` is fetched with the same SSRF protection as the document (below), up to 64 KB, and cached per its `Cache-Control` (5 minutes to 24 hours).
+- **Rotation.** When an assertion names a `kid` the cached set lacks, Modgud fetches the set again right away — at most once a minute, so made-up key ids cannot turn it into a load generator against the client's host. Tokens already issued stay valid; the next refresh is checked against the new set.
+- **What counts as a usable key.** Public RSA or EC keys for signing (`use` absent or `sig`). Other keys in the set — encryption keys, key types Modgud does not verify with — are skipped. A set that contains **private key material** is refused outright.
+- **Audience.** The assertion's `aud` must be the realm's **issuer** (as in discovery), not the token endpoint — [draft-ietf-oauth-rfc7523bis §4](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/), enforced since OpenIddict 7.
 
 ## Accepted risks
 

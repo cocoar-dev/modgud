@@ -99,9 +99,41 @@ public class CimdMetadataParserTests
     [Theory]
     [InlineData("client_secret_basic")]
     [InlineData("client_secret_post")]
-    [InlineData("private_key_jwt")]
-    public void Rejects_non_public_auth_methods(string method) =>
+    [InlineData("client_secret_jwt")]   // a shared secret too — forbidden by the draft
+    [InlineData("tls_client_auth")]     // Modgud does not do mTLS client auth
+    public void Rejects_shared_secret_and_unsupported_auth_methods(string method) =>
         AssertInvalid(Doc(authMethod: method));
+
+    [Fact]
+    public void Accepts_the_chatgpt_private_key_jwt_document()
+    {
+        var meta = AssertValid(RealWorldClientMetadata.ChatGpt, RealWorldClientMetadata.ChatGptId);
+        Assert.Equal("private_key_jwt", meta.TokenEndpointAuthMethod);
+        Assert.Equal("https://chatgpt.com/oauth/jwks.json", meta.JwksUri);
+        Assert.Null(meta.Jwks);
+    }
+
+    private const string InlineRsaKey = """{"kty":"RSA","kid":"k1","use":"sig","n":"sXch","e":"AQAB"}""";
+
+    private static string PrivateKeyJwtDoc(string keySource) =>
+        Doc().TrimEnd('}') + ",\"token_endpoint_auth_method\":\"private_key_jwt\"" + keySource + "}";
+
+    [Fact]
+    public void Accepts_private_key_jwt_with_an_inline_key_set()
+    {
+        var meta = AssertValid(PrivateKeyJwtDoc($",\"jwks\":{{\"keys\":[{InlineRsaKey}]}}"));
+        Assert.Null(meta.JwksUri);
+        Assert.Contains("\"kid\":\"k1\"", meta.Jwks);
+    }
+
+    [Theory]
+    [InlineData("")]                                                                 // no key source
+    [InlineData(",\"jwks_uri\":\"https://app.example.com/jwks\",\"jwks\":{\"keys\":[]}")] // both
+    [InlineData(",\"jwks_uri\":\"http://app.example.com/jwks\"")]                   // not https
+    [InlineData(",\"jwks\":{\"keys\":[{\"kty\":\"RSA\",\"n\":\"x\",\"e\":\"AQAB\",\"d\":\"secret\"}]}")] // private material
+    [InlineData(",\"jwks\":{\"keys\":[{\"kty\":\"RSA\",\"use\":\"enc\",\"n\":\"x\",\"e\":\"AQAB\"}]}")]  // no signing key
+    public void Rejects_private_key_jwt_without_exactly_one_usable_key_source(string keySource) =>
+        AssertInvalid(PrivateKeyJwtDoc(keySource));
 
     [Fact]
     public void Rejects_document_carrying_a_client_secret() =>
