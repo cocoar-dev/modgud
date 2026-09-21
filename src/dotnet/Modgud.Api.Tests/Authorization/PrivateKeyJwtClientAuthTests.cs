@@ -229,7 +229,7 @@ public class PrivateKeyJwtClientAuthTests(SharedPostgresFixture fixture) : Integ
     /// token itself — not on anything about the assertion.</summary>
     private static void AssertAuthenticatedButBogusGrant(JsonDocument doc)
     {
-        AssertAuthenticatedButBogusGrant(doc);
+        Assert.Equal("invalid_grant", doc.RootElement.GetProperty("error").GetString());
         Assert.DoesNotContain("client assertion", doc.RootElement.GetProperty("error_description").GetString());
     }
 
