@@ -121,17 +121,57 @@ public class CimdMetadataParserTests
     public void Rejects_non_loopback_http_redirect() =>
         AssertInvalid(Doc(redirectUris: ["http://app.example.com/cb"]));
 
+    [Theory]
+    [InlineData("client_credentials")]
+    [InlineData("urn:ietf:params:oauth:grant-type:jwt-bearer")]
+    public void Drops_grant_types_modgud_does_not_offer(string grant)
+    {
+        // The document describes the client for every AS; it is not an order.
+        var meta = AssertValid(Doc(grantTypes: ["authorization_code", "refresh_token", grant]));
+        Assert.Equal(["authorization_code", "refresh_token"], meta.GrantTypes);
+    }
+
     [Fact]
-    public void Rejects_disallowed_grant_type() =>
-        AssertInvalid(Doc(grantTypes: ["authorization_code", "client_credentials"]));
+    public void Rejects_when_only_unoffered_grants_remain() =>
+        AssertInvalid(Doc(grantTypes: ["client_credentials", "refresh_token"]));
 
     [Fact]
     public void Rejects_grant_types_without_authorization_code() =>
         AssertInvalid(Doc(grantTypes: ["refresh_token"]));
 
     [Fact]
-    public void Rejects_disallowed_response_type() =>
+    public void Rejects_response_types_without_code() =>
         AssertInvalid(Doc(responseTypes: ["token"]));
+
+    [Fact]
+    public void Ignores_extra_response_type_alongside_code() =>
+        AssertValid(Doc(responseTypes: ["code", "token"]));
+
+    // ── Real-world documents ────────────────────────────────────────────
+    // The CIMD path was built against an ideal document; these are the ones
+    // actual clients publish. Each one has broken a release before.
+
+    [Fact]
+    public void Accepts_the_claude_ai_connector_document()
+    {
+        const string id = "https://claude.ai/oauth/mcp-oauth-client-metadata";
+        const string json = """
+            {
+              "client_id": "https://claude.ai/oauth/mcp-oauth-client-metadata",
+              "client_name": "Claude",
+              "client_uri": "https://claude.ai",
+              "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
+              "grant_types": ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"],
+              "response_types": ["code"],
+              "token_endpoint_auth_method": "none"
+            }
+            """;
+        var meta = AssertValid(json, id);
+        Assert.Equal("Claude", meta.ClientName);
+        Assert.Equal(["authorization_code", "refresh_token"], meta.GrantTypes);
+        Assert.Equal(["https://claude.ai/api/mcp/auth_callback"], meta.RedirectUris);
+        Assert.Empty(meta.Scopes); // no scope → the resolver applies the realm default
+    }
 
     [Fact]
     public void Rejects_non_json() => AssertInvalid("this is not json");

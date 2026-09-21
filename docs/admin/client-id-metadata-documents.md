@@ -79,8 +79,8 @@ A document **without** `scope` — the normal case: Claude Code's document is on
 | `redirect_uris` | At least one. Each must be HTTPS, OR `http://localhost`, `http://127.0.0.1`, `http://[::1]`. No fragments. Exact-match at `/connect/authorize` — except the **port of a loopback URI**: a native client takes an ephemeral port at request time, so a registered `http://localhost/callback` matches `http://localhost:40489/callback` ([RFC 8252 §7.3](https://www.rfc-editor.org/rfc/rfc8252#section-7.3)). Scheme, host and path still have to match. |
 | `application_type` | Optional, `web` or `native`. A document with a loopback `http` redirect URI is treated as `native` whatever it says — only a native app can have such a URI. Claude Code, Cursor, VS Code and the MCP Inspector all omit the field and rely on this. |
 | `token_endpoint_auth_method` | `none` or omitted. **v1 is public-only** — a `client_secret*` method or any `client_secret` field is rejected. |
-| `grant_types` | Subset of `{authorization_code, refresh_token}`; must include `authorization_code`. |
-| `response_types` | Subset of `{code}`. |
+| `grant_types` | Must include `authorization_code`. The document describes the client for every server, so grants Modgud does not offer (claude.ai lists `urn:ietf:params:oauth:grant-type:jwt-bearer`) are ignored; the client holds the intersection with `{authorization_code, refresh_token}`. |
+| `response_types` | Must include `code`; other values are ignored. |
 | `scope` | Optional, space-delimited. An **upper bound**: the client holds these scopes intersected with the realm's dynamic-client scopes. Omitted (as every static MCP-client document does), the client holds the whole set. |
 | `client_name` | Optional. Used as the display name; the consent screen also shows the URL hostname regardless. |
 

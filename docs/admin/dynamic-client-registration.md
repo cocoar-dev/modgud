@@ -82,9 +82,9 @@ After these four steps, an agent that POSTs to `/connect/register` with a valid 
 | `redirect_uris` | At least one. Each must be HTTPS, OR `http://localhost`, `http://127.0.0.1`, `http://[::1]`. No custom URI schemes (`com.example.app://`). No fragments. A loopback URI is matched **without regard to its port** at `/connect/authorize` — register `http://localhost/callback`, call back on whatever port you got ([RFC 8252 §7.3](https://www.rfc-editor.org/rfc/rfc8252#section-7.3)); scheme, host and path still have to match. |
 | `application_type` | Optional, `web` or `native` (OIDC DCR). A registration with a loopback `http` redirect URI is `native` whatever it declares, and the response says so. Anything but the two literal values is `invalid_client_metadata`. |
 | `client_name` | Required. ≤ 80 chars. ASCII / Latin-1 only after NFKC normalisation. Must not match a substring on the realm's reserved-names list (case-insensitive). |
-| `token_endpoint_auth_method` | Must be `none` (or omitted). Public PKCE only — no secret-storage. |
-| `grant_types` | Subset of `{authorization_code, refresh_token}`. |
-| `response_types` | Subset of `{code}`. No implicit / hybrid flows. |
+| `token_endpoint_auth_method` | `none` (default — public PKCE client), or `client_secret_basic` / `client_secret_post` (confidential client; the secret is generated and returned once in the response). `private_key_jwt` needs a registered JWKS and requires admin pre-registration. |
+| `grant_types` | Must include `authorization_code`. Modgud registers the intersection with `{authorization_code, refresh_token}`; anything else a client lists (`client_credentials`, `jwt-bearer`, …) is dropped rather than rejected, and the response echoes what was registered ([RFC 7591 §3.2.1](https://www.rfc-editor.org/rfc/rfc7591#section-3.2.1)). |
+| `response_types` | Must include `code`; only `code` is registered. No implicit / hybrid flows. |
 | `scope` | Optional, space-delimited. An upper bound intersected with the realm's dynamic-client scopes; omitted, the client gets the whole set. The response echoes what was registered. |
 
 On success the endpoint returns `201 Created` with the assigned `client_id` per RFC 7591 §3.2.1. On rejection it returns `400 Bad Request` with `{ error, error_description }` per §3.2.2. Hitting the rate-limit returns `429`.

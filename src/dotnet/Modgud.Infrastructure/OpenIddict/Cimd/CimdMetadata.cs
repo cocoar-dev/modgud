@@ -101,29 +101,27 @@ public static class CimdMetadataParser
                 return Invalid($"redirect_uri '{uri}' is invalid (https URIs or http loopback only).");
         }
 
-        // ── grant_types: subset of {authorization_code, refresh_token} ────
+        // ── grant_types: intersected with {authorization_code, refresh_token} ─
+        // A CIMD document is the client's self-description for EVERY
+        // authorization server, not an order placed with this one: it lists
+        // the grants the client can use (RFC 7591 §2). Grants Modgud does not
+        // offer (claude.ai lists jwt-bearer) are dropped, not fatal — the
+        // client simply never holds them. authorization_code must survive.
         var grantTypes = root.TryGetProperty("grant_types", out _)
             ? GetStringArray(root, "grant_types")
             : new List<string> { "authorization_code" };
         if (grantTypes.Count == 0)
             grantTypes = new List<string> { "authorization_code" };
-        foreach (var grant in grantTypes)
-        {
-            if (!AllowedGrantTypes.Contains(grant))
-                return Invalid($"grant_type '{grant}' is not allowed (authorization_code, refresh_token only).");
-        }
+        grantTypes = grantTypes.Where(AllowedGrantTypes.Contains).ToList();
         if (!grantTypes.Contains("authorization_code"))
             return Invalid("grant_types must include authorization_code.");
 
-        // ── response_types: subset of {code} ──────────────────────────────
+        // ── response_types: must include code; anything else is ignored ───
         var responseTypes = root.TryGetProperty("response_types", out _)
             ? GetStringArray(root, "response_types")
             : new List<string> { "code" };
-        foreach (var rt in responseTypes)
-        {
-            if (!AllowedResponseTypes.Contains(rt))
-                return Invalid($"response_type '{rt}' is not allowed (code only).");
-        }
+        if (responseTypes.Count > 0 && !responseTypes.Any(AllowedResponseTypes.Contains))
+            return Invalid("response_types must include code.");
 
         // ── application_type (optional): web | native, nothing else ───────
         string? applicationType = null;

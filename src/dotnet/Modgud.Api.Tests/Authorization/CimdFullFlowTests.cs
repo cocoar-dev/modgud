@@ -163,6 +163,39 @@ public class CimdFullFlowTests : IntegrationTestBase
         await AssertRefusedScopeAsync(declaring, $"openid {notOptedIn}", RedirectUri, "AllowDynamicRegistrationClients");
     }
 
+    /// <summary>
+    /// A CIMD document describes the client for every authorization server, so it
+    /// may list grants Modgud does not offer. claude.ai's connector document lists
+    /// <c>urn:ietf:params:oauth:grant-type:jwt-bearer</c> next to
+    /// <c>authorization_code</c> and <c>refresh_token</c>; the whole document used
+    /// to be rejected for it, and the authorize request failed as an unknown client
+    /// (ID2052, reported from the field). The unoffered grant is dropped; the client
+    /// holds exactly what Modgud offers and the flow completes, refresh included.
+    /// </summary>
+    [Fact]
+    public async Task A_document_listing_an_unoffered_grant_still_resolves_like_claude_ai()
+    {
+        await SeedAsync();
+        Factory.CimdDocuments[_clientIdUrl] = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["client_id"] = _clientIdUrl,
+            ["client_name"] = "Claude",
+            ["client_uri"] = "https://cimd-app.test",
+            ["redirect_uris"] = new[] { RedirectUri },
+            ["grant_types"] = new[] { "authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer" },
+            ["response_types"] = new[] { "code" },
+            ["token_endpoint_auth_method"] = "none",
+        });
+
+        var (accessToken, refreshToken) = await DriveCimdAuthCodeFlowAsync(
+            _clientIdUrl, $"openid offline_access {ScopeName}", AllowedAudience, redirectUri: RedirectUri);
+        Assert.Contains(AllowedAudience, new JwtSecurityTokenHandler().ReadJwtToken(accessToken).Audiences);
+
+        Assert.False(string.IsNullOrEmpty(refreshToken), "refresh_token is offered and listed — it must be issued.");
+        var refreshed = await RefreshAsync(refreshToken, _clientIdUrl, AllowedAudience);
+        Assert.Contains(AllowedAudience, new JwtSecurityTokenHandler().ReadJwtToken(refreshed).Audiences);
+    }
+
     private async Task AssertRefusedScopeAsync(string clientId, string scope, string redirectUri, string expectedDescriptionPart)
     {
         var resp = await DriveAuthorizeResponseAsync(clientId, scope, redirectUri);

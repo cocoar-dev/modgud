@@ -150,9 +150,21 @@ public class DcrRegistrationValidatorTests
     [InlineData("password")]
     [InlineData("implicit")]
     [InlineData("urn:ietf:params:oauth:grant-type:device_code")]
-    public void Disallowed_grant_type_rejected(string grant)
+    [InlineData("urn:ietf:params:oauth:grant-type:jwt-bearer")] // claude.ai lists it
+    public void Unoffered_grant_type_is_dropped_not_fatal(string grant)
     {
-        var req = ValidRequest() with { GrantTypes = new() { "authorization_code", grant } };
+        // RFC 7591 §3.2.1: the server registers what it offers and echoes it.
+        var req = ValidRequest() with { GrantTypes = new() { "authorization_code", grant, "refresh_token" } };
+        var allow = Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
+        Assert.Equal(new[] { "authorization_code", "refresh_token" }, allow.Normalized.AllowedGrantTypes);
+    }
+
+    [Theory]
+    [InlineData("client_credentials")]
+    [InlineData("refresh_token")]
+    public void Grant_types_without_authorization_code_rejected(string grant)
+    {
+        var req = ValidRequest() with { GrantTypes = new() { grant } };
         var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(DcrRejectionReason.InvalidGrantType, reject.Reason);
     }
@@ -174,6 +186,13 @@ public class DcrRegistrationValidatorTests
         var req = ValidRequest() with { ResponseTypes = new() { responseType } };
         var reject = Assert.IsType<DcrValidationResult.Reject>(Sut.Validate(req, Settings(), "ip"));
         Assert.Equal(DcrRejectionReason.InvalidResponseType, reject.Reason);
+    }
+
+    [Fact]
+    public void Extra_response_type_alongside_code_is_ignored()
+    {
+        var req = ValidRequest() with { ResponseTypes = new() { "code", "token" } };
+        Assert.IsType<DcrValidationResult.Allow>(Sut.Validate(req, Settings(), "ip"));
     }
 
     [Fact]
