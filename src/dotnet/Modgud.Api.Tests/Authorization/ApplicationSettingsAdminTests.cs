@@ -226,6 +226,67 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
     }
 
+    /// <summary>
+    /// Reported from the test instance: the realm listed an App's host among its own
+    /// plain domains as well (a legal state — the host routes to the realm either
+    /// way, the App match layers on top), and from then on every manifest apply died
+    /// on that App with <c>SubdomainTaken</c> ("already a realm domain"), whatever
+    /// the draft changed. Only ANOTHER realm's domain makes a host ambiguous.
+    /// </summary>
+    [Fact]
+    public async Task Subdomain_May_Be_A_Domain_Of_The_Own_Realm_But_Not_Of_Another()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await SeedAppAsync("as-own-domain");
+        var appShort = new ShortGuid(app.Id).ToString();
+        var primary = await SystemPrimaryDomainAsync();
+        var ownHost = $"as-own-domain.{primary}";
+        var foreignHost = $"as-foreign-domain.{primary}";
+        var globalStore = Factory.Services.GetRequiredService<IGlobalStore>();
+        var other = new Realm
+        {
+            Id = Guid.NewGuid(), Slug = "as-other-realm", DisplayName = "Other",
+            Domains = [foreignHost], PrimaryDomain = foreignHost, IsActive = false,
+        };
+
+        await using (var gs = globalStore.LightweightSession())
+        {
+            var system = await gs.Query<Realm>().FirstAsync(r => r.Slug == "system", ct);
+            system.Domains = [.. system.Domains, ownHost];
+            gs.Store(system);
+            gs.Store(other);
+            await gs.SaveChangesAsync(ct);
+        }
+
+        try
+        {
+            // Own realm's domain: accepted, and accepted again on the re-apply an
+            // idempotent manifest run is.
+            (await PutSettingsAsync(appShort, new ApplicationSettingsDto { Origin = new ApplicationOriginDto { Subdomain = ownHost } }, ct)).EnsureSuccessStatusCode();
+            (await PutSettingsAsync(appShort, new ApplicationSettingsDto { Origin = new ApplicationOriginDto { Subdomain = ownHost } }, ct)).EnsureSuccessStatusCode();
+            await using (var gs = globalStore.QuerySession())
+            {
+                var system = await gs.Query<Realm>().FirstAsync(r => r.Slug == "system", ct);
+                Assert.Equal(app.Id, system.ApplicationDomains[ownHost]);
+                Assert.Contains(ownHost, system.Domains);
+            }
+
+            // Another realm's domain: still refused.
+            var foreign = await PutSettingsAsync(appShort, new ApplicationSettingsDto { Origin = new ApplicationOriginDto { Subdomain = foreignHost } }, ct);
+            Assert.Equal(HttpStatusCode.Conflict, foreign.StatusCode);
+            Assert.Contains("another realm", await foreign.Content.ReadAsStringAsync(ct));
+        }
+        finally
+        {
+            await using var gs = globalStore.LightweightSession();
+            var system = await gs.Query<Realm>().FirstAsync(r => r.Slug == "system", ct);
+            system.Domains = system.Domains.Where(d => d != ownHost).ToArray();
+            gs.Store(system);
+            gs.Delete(other);
+            await gs.SaveChangesAsync(ct);
+        }
+    }
+
     [Fact]
     public async Task Clearing_Origin_Removes_The_Global_Route()
     {
