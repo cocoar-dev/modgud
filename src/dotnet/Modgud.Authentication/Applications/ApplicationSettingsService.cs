@@ -289,13 +289,17 @@ public sealed class ApplicationSettingsService(
             return Error.Validation("Application.SubdomainNotUnderPrimary",
                 $"Subdomain must be a child of the realm's primary domain ('{realm.PrimaryDomain}').");
 
-        // Cross-realm uniqueness: the host must not be claimed by any realm's
-        // plain domains or another App's route.
+        // Cross-realm uniqueness: the host must not be claimed by ANOTHER realm's
+        // plain domains or by another App's route. The own realm's plain domain
+        // list is not a conflict: such a host resolves to this tenant either way,
+        // and the App route layers on top (the App match wins in RealmCacheLookup).
+        // Refusing it made every manifest apply on a realm that lists an App's host
+        // among its own domains die on that App — whatever the draft changed.
         var allRealms = await gsession.Query<Realm>().ToListAsync(ct);
         foreach (var r in allRealms)
         {
-            if (r.Domains.Any(d => string.Equals(d, subdomain, StringComparison.OrdinalIgnoreCase)))
-                return Error.Conflict("Application.SubdomainTaken", "That host is already a realm domain.");
+            if (r.Id != realm.Id && r.Domains.Any(d => string.Equals(d, subdomain, StringComparison.OrdinalIgnoreCase)))
+                return Error.Conflict("Application.SubdomainTaken", "That host is already a domain of another realm.");
             foreach (var kv in r.ApplicationDomains)
             {
                 if (string.Equals(kv.Key, subdomain, StringComparison.OrdinalIgnoreCase)
