@@ -101,7 +101,7 @@ link are then persisted atomically by the single Create action.
 | **Explicit** | The user must click "Allow" once per scope set |
 | **External** | Consent is obtained out-of-band; Modgud doesn't intervene |
 
-With **Explicit** consent, `AllowRememberConsent` (default `true`; settable through the API and the realm manifest) decides what "once" means. `true`: a later authorize for the same user, client and scope set skips the screen. `false`: every fresh authorize flow shows the screen again. Either way the existing authorization is reused, so the `oi_au_id` claim stays the same for that user, client and scope set. DCR and CIMD clients are always `false`.
+With **Explicit** consent, `AllowRememberConsent` (default `true`; settable through the API and the realm manifest) decides what "once" means. `true`: a later authorize for the same user, client and scope set skips the screen. `false`: every fresh authorize flow shows the screen again. Either way the existing authorization is reused, so the `oi_au_id` claim stays the same for that user, client and scope set. DCR and CIMD clients ignore this flag — see [Consent screen for DCR clients](./dynamic-client-registration#consent-screen-for-dcr-clients) for the RFC 8252-based rule Modgud applies to them instead.
 
 ### Applications
 

@@ -215,7 +215,8 @@ public sealed class DcrRegistrationValidator : IDcrRegistrationValidator
             Scopes = requestedScopes,
             Enabled = true,
             RequireConsent = true,
-            AllowRememberConsent = false,                  // DCR consent is per-session — re-affirm each time
+            // Not consulted for a dynamic client — DynamicClientConsent decides (RFC 8252 §8.6).
+            AllowRememberConsent = false,
             // Confidential → CreateClientAsync generates + persists (hashed) a
             // secret because ClientSecret is left null here. Public → no secret.
             RequireClientSecret = isConfidential,

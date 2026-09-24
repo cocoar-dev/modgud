@@ -283,6 +283,32 @@ public class DcrFullFlowTests : IntegrationTestBase
         Assert.Equal(firstId, secondId);
     }
 
+    /// <summary>
+    /// RFC 8252 §8.6: a remembered authorization may skip the consent screen only when the
+    /// client's identity is assured. A public client redirecting to loopback can be
+    /// impersonated by any local process — its client_id is public (a CIMD URL, a DCR id
+    /// in a config file) and #238 lets it pick any port — so it is asked every time. An
+    /// https redirect delivers the code only to the domain that registered it, so the
+    /// consent the user gave once is remembered like any web client's.
+    /// </summary>
+    [Fact]
+    public async Task A_remembered_consent_skips_the_screen_for_an_https_client_but_never_for_a_loopback_one()
+    {
+        await SeedAsync();
+        const string httpsRedirect = "https://mcp-client.example/cb";
+
+        var webClient = await RegisterDcrClientAsync($"openid {ScopeName}", httpsRedirect);
+        await DriveToFinalAuthorizeRedirectAsync(webClient, $"openid {ScopeName}", AllowedAudience, httpsRedirect);
+        var again = await AuthorizeLocationAsync(webClient, httpsRedirect);
+        Assert.NotNull(again);
+        Assert.StartsWith(httpsRedirect + "?", again);
+        Assert.Contains("code=", again);
+
+        var loopbackClient = await RegisterDcrClientAsync($"openid {ScopeName}");
+        await DriveToFinalAuthorizeRedirectAsync(loopbackClient, $"openid {ScopeName}", AllowedAudience);
+        Assert.StartsWith("/consent?ticket=", await AuthorizeLocationAsync(loopbackClient, RedirectUri));
+    }
+
     [Fact]
     public async Task Approved_consent_redirect_completes_the_flow_only_once()
     {
@@ -607,13 +633,13 @@ public class DcrFullFlowTests : IntegrationTestBase
 
     // ─── DCR registration ───────────────────────────────────────────────
 
-    private async Task<string> RegisterDcrClientAsync(string scope)
+    private async Task<string> RegisterDcrClientAsync(string scope, string redirectUri = RedirectUri)
     {
         var http = Factory.CreateClient();
         var body = JsonContent.Create(new
         {
             client_name = "FullFlow Test Client",
-            redirect_uris = new[] { RedirectUri },
+            redirect_uris = new[] { redirectUri },
             grant_types = new[] { "authorization_code" },
             scope,
         });
@@ -736,7 +762,8 @@ public class DcrFullFlowTests : IntegrationTestBase
     /// carrying code + state + iss). Same dance as
     /// <see cref="DriveDcrFlowThroughToTokenAsync"/> steps A–D, but stops at the
     /// redirect so the caller can inspect the response parameters (e.g. iss).</summary>
-    private async Task<Uri> DriveToFinalAuthorizeRedirectAsync(string clientId, string scope, string authorizeResource)
+    private async Task<Uri> DriveToFinalAuthorizeRedirectAsync(
+        string clientId, string scope, string authorizeResource, string redirectUri = RedirectUri)
     {
         var verifier = GeneratePkceVerifier();
         var challenge = GeneratePkceS256Challenge(verifier);
@@ -747,7 +774,7 @@ public class DcrFullFlowTests : IntegrationTestBase
         {
             "response_type=code",
             $"client_id={Uri.EscapeDataString(clientId)}",
-            $"redirect_uri={Uri.EscapeDataString(RedirectUri)}",
+            $"redirect_uri={Uri.EscapeDataString(redirectUri)}",
             $"scope={Uri.EscapeDataString(scope)}",
             $"state={state}",
             $"code_challenge={challenge}",

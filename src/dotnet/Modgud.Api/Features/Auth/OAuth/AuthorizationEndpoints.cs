@@ -223,16 +223,16 @@ public static class AuthorizationEndpoints
         var consentType = await applicationManager.GetConsentTypeAsync(application);
 
         // A remembered authorization skips the consent screen only for clients
-        // that allow it. With AllowRememberConsent=false (forced for DCR and
-        // CIMD clients — anyone can replay a public client_id against a
-        // loopback redirect, RFC 8252 §8.6) every fresh authorize shows the
-        // screen again. The authorization itself is still REUSED, so the
-        // grant's `oi_au_id` stays stable across re-consents. The post-consent
-        // re-entry gets through on its redeemed ticket instead.
+        // that allow it: an admin client by its AllowRememberConsent flag, a
+        // dynamic (DCR/CIMD) client when its identity is assured — see
+        // DynamicClientConsent (RFC 8252 §8.6). Otherwise every fresh authorize
+        // shows the screen again. The authorization itself is still REUSED, so
+        // the grant's `oi_au_id` stays stable across re-consents. The
+        // post-consent re-entry gets through on its redeemed ticket instead.
         var skipConsent = consentType == ConsentTypes.Implicit
             || approvedScopes is not null
             || (authorizations.Count != 0
-                && await AllowsRememberConsentAsync(applicationManager, application));
+                && await AllowsRememberConsentAsync(applicationManager, application, request.RedirectUri));
 
         if (skipConsent)
         {
@@ -312,9 +312,22 @@ public static class AuthorizationEndpoints
 
     private static async Task<bool> AllowsRememberConsentAsync(
         IOpenIddictApplicationManager applicationManager,
-        object application)
+        object application,
+        string? requestRedirectUri)
     {
         var properties = await applicationManager.GetPropertiesAsync(application);
+        // A dynamic client's stored flag was never anyone's choice (DCR and CIMD
+        // always wrote false); what decides is whether its identity is assured.
+        if (properties.TryGetValue(
+                Modgud.Domain.OAuth.Applications.OAuthApplicationPropertyKeys.DcrIsDynamicallyRegistered,
+                out var dynamic)
+            && dynamic.ValueKind == System.Text.Json.JsonValueKind.True)
+        {
+            return Modgud.Domain.OAuth.Common.DynamicClientConsent.MayRemember(
+                await applicationManager.HasClientTypeAsync(application, ClientTypes.Confidential),
+                requestRedirectUri);
+        }
+
         return !properties.TryGetValue(
                    Modgud.Domain.OAuth.Applications.OAuthApplicationPropertyKeys.AllowRememberConsent,
                    out var element)

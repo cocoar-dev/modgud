@@ -265,14 +265,17 @@ public class CimdFullFlowTests : IntegrationTestBase
         var anonymous = await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience]);
         Assert.Contains("invalid_client", await anonymous.Content.ReadAsStringAsync(ct));
 
+        // The user consented once; the client is confidential, so that consent is
+        // remembered (RFC 8252 §8.6 — a code nobody else can redeem) and every flow
+        // below comes straight back with a code.
         // A foreign key under the published kid is refused as well.
         var forged = await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience],
-            clientAssertion: rogue.MintAssertion(_clientIdUrl, issuer));
+            expectConsent: false, clientAssertion: rogue.MintAssertion(_clientIdUrl, issuer));
         Assert.Contains("invalid_client", await forged.Content.ReadAsStringAsync(ct));
 
         // Signed with the published key, the flow completes, refresh included.
         var ok = await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience],
-            clientAssertion: keys.MintAssertion(_clientIdUrl, issuer));
+            expectConsent: false, clientAssertion: keys.MintAssertion(_clientIdUrl, issuer));
         var okBody = await ok.Content.ReadAsStringAsync(ct);
         Assert.True(ok.IsSuccessStatusCode, okBody);
         string refreshToken;
@@ -291,14 +294,14 @@ public class CimdFullFlowTests : IntegrationTestBase
         using var rotatedKeys = new TestJwks("chatgpt-2");
         Factory.CimdDocuments[jwksUri] = rotatedKeys.PublicJwks;
         var afterRotation = await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience],
-            clientAssertion: rotatedKeys.MintAssertion(_clientIdUrl, issuer));
+            expectConsent: false, clientAssertion: rotatedKeys.MintAssertion(_clientIdUrl, issuer));
         Assert.True(afterRotation.IsSuccessStatusCode, await afterRotation.Content.ReadAsStringAsync(ct));
         Assert.Equal(fetchesBeforeRotation + 1, Factory.CimdFetchCounts[jwksUri]);
 
         // Another unknown kid right after is refused without fetching again.
         using var madeUp = new TestJwks("chatgpt-made-up");
         var probe = await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience],
-            clientAssertion: madeUp.MintAssertion(_clientIdUrl, issuer));
+            expectConsent: false, clientAssertion: madeUp.MintAssertion(_clientIdUrl, issuer));
         Assert.Contains("invalid_client", await probe.Content.ReadAsStringAsync(ct));
         Assert.Equal(fetchesBeforeRotation + 1, Factory.CimdFetchCounts[jwksUri]);
     }
@@ -504,7 +507,7 @@ public class CimdFullFlowTests : IntegrationTestBase
 
     private async Task<HttpResponseMessage> DriveCimdFlowThroughToTokenAsync(
         string clientId, string scope, string authorizeResource, IReadOnlyList<string> tokenResources,
-        string? redirectUri = null, string? clientAssertion = null)
+        string? redirectUri = null, string? clientAssertion = null, bool expectConsent = true)
     {
         redirectUri ??= RedirectUri;
         var verifier = GeneratePkceVerifier();
@@ -514,7 +517,30 @@ public class CimdFullFlowTests : IntegrationTestBase
         var authorizeUri = BuildAuthorizeUri(clientId, scope, challenge, authorizeResource, redirectUri);
         var authorizeResp = await cookieClient.GetAsync(authorizeUri, TestContext.Current.CancellationToken);
         AssertRedirect(authorizeResp);
-        var consentLocation = authorizeResp.Headers.Location!.ToString();
+        var codeRedirect = expectConsent
+            ? await ConsentAndFollowAsync(cookieClient, authorizeResp.Headers.Location!.ToString(), scope)
+            : authorizeResp.Headers.Location!;
+        var code = System.Web.HttpUtility.ParseQueryString(codeRedirect.Query)["code"]
+            ?? throw new Xunit.Sdk.XunitException($"No code in final authorize redirect: {codeRedirect}");
+
+        var tokenClient = Factory.CreateClient();
+        var tokenForm = new List<KeyValuePair<string, string>>
+        {
+            new("grant_type", "authorization_code"),
+            new("code", code),
+            new("client_id", clientId),
+            new("redirect_uri", redirectUri),
+            new("code_verifier", verifier),
+        };
+        foreach (var r in tokenResources) tokenForm.Add(new KeyValuePair<string, string>("resource", r));
+        AddClientAssertion(tokenForm, clientAssertion);
+
+        return await tokenClient.PostAsync("/connect/token", new FormUrlEncodedContent(tokenForm), TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>Consent screen → approve → the final authorize redirect carrying the code.</summary>
+    private async Task<Uri> ConsentAndFollowAsync(HttpClient cookieClient, string consentLocation, string scope)
+    {
         Assert.StartsWith("/consent?ticket=", consentLocation);
         var ticketId = consentLocation["/consent?ticket=".Length..];
 
@@ -533,23 +559,7 @@ public class CimdFullFlowTests : IntegrationTestBase
 
         var followUpResp = await cookieClient.GetAsync(followUpUrl, TestContext.Current.CancellationToken);
         AssertRedirect(followUpResp);
-        var codeRedirect = followUpResp.Headers.Location!;
-        var code = System.Web.HttpUtility.ParseQueryString(codeRedirect.Query)["code"]
-            ?? throw new Xunit.Sdk.XunitException($"No code in final authorize redirect: {codeRedirect}");
-
-        var tokenClient = Factory.CreateClient();
-        var tokenForm = new List<KeyValuePair<string, string>>
-        {
-            new("grant_type", "authorization_code"),
-            new("code", code),
-            new("client_id", clientId),
-            new("redirect_uri", redirectUri),
-            new("code_verifier", verifier),
-        };
-        foreach (var r in tokenResources) tokenForm.Add(new KeyValuePair<string, string>("resource", r));
-        AddClientAssertion(tokenForm, clientAssertion);
-
-        return await tokenClient.PostAsync("/connect/token", new FormUrlEncodedContent(tokenForm), TestContext.Current.CancellationToken);
+        return followUpResp.Headers.Location!;
     }
 
     /// <summary>Drives authorize → consent GET and returns (ticket, parsed
