@@ -37,11 +37,11 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// client/provider secret, captcha secret) never appear as change values — they surface as
 /// redacted notes.</para>
 ///
-/// <para>With prune the plan also lists delete candidates (current entities absent from the
-/// manifest) and marks the ones the applier's lockout/infra protection would keep. The
+/// <para>An entity absent from the manifest is left alone — there is no full-sync mode.
+/// The only deletions are the ones a draft stages explicitly (<c>deletions</c>); the plan
+/// lists them and flags the ones the applier's lockout/infra protection refuses. The
 /// admin-conferring checks run against the CURRENT role graph, whereas the applier re-checks
-/// after its upsert — a manifest that simultaneously strips and prunes an admin path can
-/// therefore differ at the margin; the apply-time guards remain authoritative.</para>
+/// after its upsert — the apply-time guards remain authoritative.</para>
 /// </summary>
 public sealed class RealmManifestPlanner(
     RealmManifestExporter exporter,
@@ -56,14 +56,14 @@ public sealed class RealmManifestPlanner(
     /// Without a baseline the plan is the plain draft-vs-live diff.
     ///
     /// <para><paramref name="deletions"/> (staged deletes, ADR-0017) are targeted
-    /// delete candidates — prune's per-entity counterpart. A targeted delete of a
+    /// delete candidates, the only deletions a plan ever contains. A targeted delete of a
     /// PROTECTED entity is an apply error (the admin explicitly asked for something
     /// the applier will never do), an already-absent target is a no-op note, and a
     /// target that changed live since the baseline flags bothChanged (git's
     /// modify/delete conflict).</para>
     /// </summary>
     public async Task<ErrorOr<RealmPlanResult>> PlanAsync(
-        string slug, RealmManifest manifest, bool prune, RealmManifest? baseline = null,
+        string slug, RealmManifest manifest, RealmManifest? baseline = null,
         IReadOnlyCollection<RealmDraftDeletion>? deletions = null, CancellationToken ct = default)
     {
         var deleteKeys = (deletions ?? [])
@@ -77,7 +77,7 @@ public sealed class RealmManifestPlanner(
         var current = exported.Value;
         var json = jsonOptions.Value.SerializerOptions;
 
-        var result = new RealmPlanResult { Slug = slug, Prune = prune };
+        var result = new RealmPlanResult { Slug = slug };
 
         // The document's own contradictions (ADR 0024): a handle declared twice, a
         // reference to a handle nothing declares, a reference carrying only a name. The
@@ -97,7 +97,7 @@ public sealed class RealmManifestPlanner(
             result.Sections.Add(section);
         }
 
-        // The protection checks for prune candidates (does this user/group confer
+        // The protection checks for staged deletions (does this user/group confer
         // realm:admin?) need tenant-scoped queries — same scoping as the exporter.
         using var _ = TenantContext.Enter(slug);
         using var scope = scopeFactory.CreateScope();
@@ -133,7 +133,7 @@ public sealed class RealmManifestPlanner(
             };
         })];
 
-        result.Sections.Add(await PlanSectionAsync("apps", json, prune, DeletesFor("apps"),
+        result.Sections.Add(await PlanSectionAsync("apps", json, DeletesFor("apps"),
             CanonApps(manifest.Apps), current.Apps, baseline is null ? null : CanonApps(baseline.Apps),
             a => a.Slug,
             new SectionPolicy<RealmManifestApp>
@@ -149,7 +149,7 @@ public sealed class RealmManifestPlanner(
                 DeleteNote = "Deleting fails at apply while the app is still referenced by a kept role, API or scope.",
             }));
 
-        result.Sections.Add(await PlanSectionAsync("apis", json, prune, DeletesFor("apis"),
+        result.Sections.Add(await PlanSectionAsync("apis", json, DeletesFor("apis"),
             manifest.Apis, current.Apis, baseline?.Apis, a => a.Name,
             new SectionPolicy<RealmManifestApi>
             {
@@ -160,7 +160,7 @@ public sealed class RealmManifestPlanner(
                 PinnedIdCheck = PinnedIdLookup<OAuthApiState>(session, x => x.IsDeleted, x => x.Name, ct),
             }));
 
-        result.Sections.Add(await PlanSectionAsync("scopes", json, prune, DeletesFor("scopes"),
+        result.Sections.Add(await PlanSectionAsync("scopes", json, DeletesFor("scopes"),
             manifest.Scopes, current.Scopes, baseline?.Scopes, s => s.Name,
             new SectionPolicy<RealmManifestScope>
             {
@@ -171,7 +171,7 @@ public sealed class RealmManifestPlanner(
                 PinnedIdCheck = PinnedIdLookup<OAuthScopeState>(session, x => x.IsDeleted, x => x.Name, ct),
             }));
 
-        result.Sections.Add(await PlanSectionAsync("clients", json, prune, DeletesFor("clients"),
+        result.Sections.Add(await PlanSectionAsync("clients", json, DeletesFor("clients"),
             manifest.Clients, current.Clients, baseline?.Clients, c => c.ClientId,
             new SectionPolicy<RealmManifestClient>
             {
@@ -197,7 +197,7 @@ public sealed class RealmManifestPlanner(
                 },
             }));
 
-        result.Sections.Add(await PlanSectionAsync("loginProviders", json, prune, DeletesFor("loginProviders"),
+        result.Sections.Add(await PlanSectionAsync("loginProviders", json, DeletesFor("loginProviders"),
             manifest.LoginProviders, current.LoginProviders, baseline?.LoginProviders, p => p.Slug,
             new SectionPolicy<RealmManifestLoginProvider>
             {
@@ -220,7 +220,7 @@ public sealed class RealmManifestPlanner(
 
         // Roles are keyed `app/name`: names are unique per App only (two apps may each
         // have an "Author"), so the bare name can never be the dictionary key.
-        result.Sections.Add(await PlanSectionAsync("roles", json, prune, DeletesFor("roles"),
+        result.Sections.Add(await PlanSectionAsync("roles", json, DeletesFor("roles"),
             manifest.Roles, current.Roles, baseline?.Roles, r => r.NaturalKey,
             new SectionPolicy<RealmManifestRole>
             {
@@ -235,19 +235,19 @@ public sealed class RealmManifestPlanner(
                 EffectiveKey = (desired, existing) => RoleKeys.Qualified(
                     desired.App ?? (desired.IsRealmAdmin == true ? null : existing?.App), desired.Name),
                 Protect = r => Task.FromResult<string?>(r.IsRealmAdmin == true
-                    ? "Realm-admin roles are never pruned (lockout protection)."
+                    ? "Realm-admin roles are never deleted (lockout protection)."
                     : null),
             }));
 
-        result.Sections.Add(await PlanUsersAsync(manifest, current, baseline, json, prune, DeletesFor("users"), session, perms, ct));
+        result.Sections.Add(await PlanUsersAsync(manifest, current, baseline, json, DeletesFor("users"), session, perms, ct));
 
         // Service ACCOUNTS are upsert-only in the manifest (deleting one kills every
         // credential it owns — that stays a deliberate live operation), so this section
-        // never emits delete candidates: prune off, no staged-deletion keys. Their
+        // never emits delete candidates (no staged-deletion keys). Their
         // CREDENTIALS are a desired set, and a removal from that set is a deletion — it
         // is collected here and shown as one in the clients section below.
         var credentialRemovals = new List<RealmPlanEntry>();
-        result.Sections.Add(await PlanSectionAsync("serviceAccounts", json, prune: false, null,
+        result.Sections.Add(await PlanSectionAsync("serviceAccounts", json, null,
             manifest.ServiceAccounts, current.ServiceAccounts, baseline?.ServiceAccounts,
             s => s.AccountName.Trim().ToLowerInvariant(),
             new SectionPolicy<RealmManifestServiceAccount>
@@ -300,11 +300,11 @@ public sealed class RealmManifestPlanner(
             clients.Entries.AddRange(credentialRemovals);
         }
 
-        // ── Scheduled jobs — configured by compiled key, never created or pruned. A key this
+        // ── Scheduled jobs — configured by compiled key, never created or deleted. A key this
         //    deployment does not have is an error entry (the apply skips it and says so). ──
         {
             var knownKeys = current.Jobs.Select(j => j.Key).ToHashSet(StringComparer.Ordinal);
-            var jobsSection = await PlanSectionAsync("jobs", json, prune: false, null,
+            var jobsSection = await PlanSectionAsync("jobs", json, null,
                 manifest.Jobs.Where(j => knownKeys.Contains(j.Key)).ToList(), current.Jobs, baseline?.Jobs,
                 j => j.Key,
                 new SectionPolicy<RealmManifestJob> { Skip = ["Key"], KeyField = "Key", MatchByKey = true });
@@ -348,7 +348,7 @@ public sealed class RealmManifestPlanner(
                 Terminals = p.Terminals?.Select(t => t with { AllowedPositions = positionRefs.Canon(t.AllowedPositions) }).ToList(),
             };
 
-        result.Sections.Add(await PlanSectionAsync("groups", json, prune, DeletesFor("groups"),
+        result.Sections.Add(await PlanSectionAsync("groups", json, DeletesFor("groups"),
             manifest.Groups.Select(CanonGroup).ToList(), current.Groups.Select(CanonGroup).ToList(),
             baseline?.Groups.Select(CanonGroup).ToList(), g => g.Name,
             new SectionPolicy<RealmManifestGroup>
@@ -365,12 +365,12 @@ public sealed class RealmManifestPlanner(
                         .FirstOrDefaultAsync(x => !x.IsDeleted && x.Name == g.Name, ct);
                     return doc is not null &&
                            await GroupMembershipGuards.GroupConfersRealmAdminAsync(session, perms, doc, ct)
-                        ? "Groups conferring realm:admin are never pruned (lockout protection)."
+                        ? "Groups conferring realm:admin are never deleted (lockout protection)."
                         : null;
                 },
             }));
 
-        result.Sections.Add(await PlanSectionAsync("positions", json, prune, DeletesFor("positions"),
+        result.Sections.Add(await PlanSectionAsync("positions", json, DeletesFor("positions"),
             manifest.Positions.Select(CanonPosition).ToList(), current.Positions.Select(CanonPosition).ToList(),
             baseline?.Positions.Select(CanonPosition).ToList(),
             p => p.AccountName.Trim().ToLowerInvariant(),
@@ -484,7 +484,7 @@ public sealed class RealmManifestPlanner(
         {
             var entry = result.Sections.FirstOrDefault(x => x.Name == section)?
                 .Entries.FirstOrDefault(e => string.Equals(e.Key, key, StringComparison.Ordinal));
-            return entry is null || entry.Action == "delete" || entry.Action == "protected" ? null : entry;
+            return entry is null || entry.Action == "delete" ? null : entry;
         }
 
         void Note(string section, string key, string note) => Entry(section, key)?.Notes.Add(note);
@@ -647,7 +647,7 @@ public sealed class RealmManifestPlanner(
 
     private static async Task<RealmPlanSection> PlanUsersAsync(
         RealmManifest manifest, RealmManifest current, RealmManifest? baseline,
-        JsonSerializerOptions json, bool prune, HashSet<string>? deleteKeys,
+        JsonSerializerOptions json, HashSet<string>? deleteKeys,
         IDocumentSession session, IPermissionService perms, CancellationToken ct)
     {
         // A staged user deletion carries the key the list row showed (username or
@@ -775,14 +775,13 @@ public sealed class RealmManifestPlanner(
             section.Entries.Add(entry);
         }
 
-        if (!prune && deleteKeys is not { Count: > 0 }) return section;
+        if (deleteKeys is not { Count: > 0 }) return section;
 
         foreach (var u in current.Users.Where(u => !matched.Contains(u.ResolveKey())))
         {
-            var targeted = IsTargeted(u, deleteKeys);
-            if (!prune && !targeted) continue;
+            if (!IsTargeted(u, deleteKeys)) continue;
 
-            // Same lockout guard as PruneAsync: anyone currently holding realm:admin stays.
+            // Same lockout guard as the applier's delete: anyone holding realm:admin stays.
             var normalizedEmail = u.Email.ToUpperInvariant();
             var person = await session.Query<Person>()
                 .FirstOrDefaultAsync(p => !p.IsDeleted && p.NormalizedEmail == normalizedEmail, ct);
@@ -792,15 +791,14 @@ public sealed class RealmManifestPlanner(
             var entry = new RealmPlanEntry
             {
                 Key = u.ResolveKey(),
-                Action = isAdmin ? targeted ? "error" : "protected" : "delete",
+                Action = isAdmin ? "error" : "delete",
             };
             if (isAdmin)
             {
-                entry.Notes.Add(targeted
-                    ? "Users holding realm:admin are never deleted (lockout protection). Unstage this deletion to proceed."
-                    : "Users holding realm:admin are never pruned (lockout protection).");
+                entry.Notes.Add(
+                    "Users holding realm:admin are never deleted (lockout protection). Unstage this deletion to proceed.");
             }
-            else if (targeted)
+            else
             {
                 var baselineUser = baselineByEmail is null ? null : Match(u, baselineByEmail, baselineByUserName!);
                 if (baselineUser is not null && !JsonEquivalent(
@@ -808,10 +806,6 @@ public sealed class RealmManifestPlanner(
                         JsonSerializer.SerializeToNode(baselineUser, json)))
                     entry.Conflicts.Add(new RealmPlanConflict("bothChanged", null,
                         null, JsonSerializer.SerializeToNode(u, json), null));
-            }
-            else if (baselineByEmail is not null && Match(u, baselineByEmail, baselineByUserName!) is null)
-            {
-                entry.Conflicts.Add(new RealmPlanConflict("createdLive", null, null, null, null));
             }
             section.Entries.Add(entry);
         }
@@ -859,7 +853,7 @@ public sealed class RealmManifestPlanner(
         /// <summary>Extra note appended to every delete candidate of the section.</summary>
         public string? DeleteNote { get; init; }
 
-        /// <summary>Returns a protection note when the applier would NEVER prune this
+        /// <summary>Returns a protection note when the applier would NEVER delete this
         /// current entity (lockout guard), null when it is a real delete candidate.</summary>
         public Func<T, Task<string?>>? Protect { get; init; }
 
@@ -977,7 +971,7 @@ public sealed class RealmManifestPlanner(
         };
 
     private static async Task<RealmPlanSection> PlanSectionAsync<T>(
-        string name, JsonSerializerOptions json, bool prune, HashSet<string>? deleteKeys,
+        string name, JsonSerializerOptions json, HashSet<string>? deleteKeys,
         List<T> desired, List<T> current, List<T>? baseline, Func<T, string> key, SectionPolicy<T> policy)
         where T : class
     {
@@ -1073,51 +1067,37 @@ public sealed class RealmManifestPlanner(
             section.Entries.Add(entry);
         }
 
-        if (!prune && deleteKeys is not { Count: > 0 }) return section;
+        if (deleteKeys is not { Count: > 0 }) return section;
 
         foreach (var item in current.Where(c => !matchedKeys.Contains(key(c))))
         {
-            // Targeted (staged) deletes are prune's per-entity counterpart: without
-            // prune only they are candidates; everything else absent from the
+            // Only a staged deletion is a candidate; everything else absent from the
             // manifest stays untouched.
-            var targeted = deleteKeys?.Contains(key(item)) == true;
-            if (!prune && !targeted) continue;
+            if (deleteKeys?.Contains(key(item)) != true) continue;
 
             var protection = policy.Protect is null ? null : await policy.Protect(item);
             var entry = new RealmPlanEntry
             {
                 Key = key(item),
-                // A protected entity the admin EXPLICITLY staged for deletion is an
-                // apply error (gates the apply); a prune-swept one is merely skipped.
-                Action = protection is null ? "delete" : targeted ? "error" : "protected",
+                // A protected entity the admin staged for deletion is an apply error
+                // (gates the apply) — the applier would never do what was asked.
+                Action = protection is null ? "delete" : "error",
             };
             if (protection is not null)
             {
-                entry.Notes.Add(targeted
-                    ? $"{protection} Unstage this deletion to proceed."
-                    : protection);
+                entry.Notes.Add($"{protection} Unstage this deletion to proceed.");
             }
             else
             {
                 if (policy.DeleteNote is not null) entry.Notes.Add(policy.DeleteNote);
-                if (targeted)
-                {
-                    // git's modify/delete: the entity changed live since the draft's
-                    // baseline — deleting would silently discard those changes.
-                    if (baselineByKey?.TryGetValue(key(item), out var baseItem) == true &&
-                        !JsonEquivalent(
-                            JsonSerializer.SerializeToNode(item, json),
-                            JsonSerializer.SerializeToNode(baseItem, json)))
-                        entry.Conflicts.Add(new RealmPlanConflict("bothChanged", null,
-                            null, JsonSerializer.SerializeToNode(item, json), null));
-                }
-                else if (baselineByKey is not null && !baselineByKey.ContainsKey(key(item)))
-                {
-                    // A prune candidate the baseline never contained appeared live AFTER
-                    // the draft was taken — pruning it would delete something the draft
-                    // author never saw. Three-way conflict, not a silent delete.
-                    entry.Conflicts.Add(new RealmPlanConflict("createdLive", null, null, null, null));
-                }
+                // git's modify/delete: the entity changed live since the draft's
+                // baseline — deleting would silently discard those changes.
+                if (baselineByKey?.TryGetValue(key(item), out var baseItem) == true &&
+                    !JsonEquivalent(
+                        JsonSerializer.SerializeToNode(item, json),
+                        JsonSerializer.SerializeToNode(baseItem, json)))
+                    entry.Conflicts.Add(new RealmPlanConflict("bothChanged", null,
+                        null, JsonSerializer.SerializeToNode(item, json), null));
             }
             section.Entries.Add(entry);
         }

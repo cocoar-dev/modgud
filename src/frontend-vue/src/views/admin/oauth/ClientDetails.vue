@@ -828,7 +828,7 @@ const footerButton = computed(() => {
   return {
     visible: true,
     text: stagedSave.value
-      ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+      ? t('admin.realmConfig.entry.save', {}, 'Stage into draft')
       : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
     disabled: !form.value.ClientId.trim() || loading.value || createBlockers.value.length > 0,
     loading: loading.value,

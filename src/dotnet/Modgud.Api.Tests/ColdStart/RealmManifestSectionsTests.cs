@@ -23,13 +23,13 @@ namespace Modgud.Api.Tests.ColdStart;
 /// The manifest sections added for feature parity with the admin surface: login
 /// providers (OIDC/SAML federation), per-App settings overrides (ADR-0011, incl.
 /// the Origin → host-routing sync), and positions (MG-FT policy + grants). Each
-/// section must import, apply (merge), export, and prune through the SAME
+/// section must import, apply (merge), export, and delete through the SAME
 /// canonical operations the admin API uses.
 /// </summary>
 public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTestBase(fixture)
 {
     [Fact]
-    public async Task LoginProviders_import_apply_export_and_prune()
+    public async Task LoginProviders_import_apply_export_and_delete()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var factory = host.Factory;
@@ -89,12 +89,12 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         Assert.NotNull(exCorp.FlavorData);
         Assert.DoesNotContain(exported.Value.LoginProviders, p => p.Flavor == "internal");
 
-        // ── Apply: update corp-idp in place + PRUNE legacy-idp; Internal survives. ─
+        // ── Apply: update corp-idp in place + staged delete of legacy-idp; Internal survives. ─
         var v2 = manifest with
         {
             LoginProviders = [Provider("corp-idp", "Corp IdP v2") with { ClientSecret = null }],
         };
-        var applied = await applier.UpdateRealmAsync(slug, v2, prune: true, deletions: null, ct);
+        var applied = await applier.UpdateRealmAsync(slug, v2, [new RealmDraftDeletion("loginProviders", "legacy-idp")], ct);
         Assert.False(applied.IsError, applied.IsError ? applied.FirstError.Description : string.Empty);
 
         await InTenantAsync(factory, slug, async sp =>
@@ -104,9 +104,9 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
             Assert.Equal("Corp IdP v2", corp.DisplayName);
             Assert.NotNull(corp.ClientSecretEncrypted); // no secret in manifest = keep the stored one
             Assert.False(await session.Query<LoginProvider>().AnyAsync(p => !p.IsDeleted && p.Slug == "legacy-idp", ct),
-                "legacy-idp pruned");
+                "legacy-idp deleted");
             Assert.True(await session.Query<LoginProvider>().AnyAsync(p => !p.IsDeleted && p.IsBuiltIn, ct),
-                "built-in Internal provider protected from prune");
+                "built-in Internal provider kept");
         });
 
         // ── The Internal provider is reserved — declaring one is a contract error. ─
@@ -230,13 +230,13 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         Assert.Equal(shopAppId, afterMove.ApplicationDomains[$"shop2.{slug}.localhost"]);
         Assert.False(afterMove.ApplicationDomains.ContainsKey($"shop.{slug}.localhost"));
 
-        // Pruning the app removes its route — after the commit, like the write.
-        var pruned = await applier.UpdateRealmAsync(slug,
+        // Deleting the app removes its route — after the commit, like the write.
+        var deleted = await applier.UpdateRealmAsync(slug,
             new RealmManifest { Apps = [new RealmManifestApp { Slug = "plain", Id = plainId, DisplayName = "Plain" }] },
-            prune: true, deletions: null, ct);
-        Assert.False(pruned.IsError, pruned.IsError ? pruned.FirstError.Description : string.Empty);
-        var afterPrune = (await realms.GetRealmBySlugAsync(slug, ct))!;
-        Assert.DoesNotContain(afterPrune.ApplicationDomains, kv => kv.Value == shopAppId);
+            [new RealmDraftDeletion("apps", "shop")], ct);
+        Assert.False(deleted.IsError, deleted.IsError ? deleted.FirstError.Description : string.Empty);
+        var afterDelete = (await realms.GetRealmBySlugAsync(slug, ct))!;
+        Assert.DoesNotContain(afterDelete.ApplicationDomains, kv => kv.Value == shopAppId);
     }
 
     [Fact]
@@ -279,7 +279,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
             Branding = null,
         });
 
-        var plan = await planner.PlanAsync(slug, cleared, prune: false, ct: ct);
+        var plan = await planner.PlanAsync(slug, cleared, ct: ct);
         Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
         var entry = Assert.Single(plan.Value.Sections.Single(s => s.Name == "apps").Entries);
         Assert.Equal("update", entry.Action);
@@ -301,12 +301,12 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         Assert.DoesNotContain(realm.ApplicationDomains, kv => kv.Key == $"shop.{slug}.localhost");
 
         // Re-planning the cleared state is now genuinely unchanged (no phantom diff).
-        var again = await planner.PlanAsync(slug, cleared, prune: false, ct: ct);
+        var again = await planner.PlanAsync(slug, cleared, ct: ct);
         Assert.Equal("unchanged", Assert.Single(again.Value.Sections.Single(s => s.Name == "apps").Entries).Action);
     }
 
     [Fact]
-    public async Task Positions_are_feature_gated_and_import_apply_export_prune()
+    public async Task Positions_are_feature_gated_and_import_apply_export_delete()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var factory = host.Factory;
@@ -411,15 +411,16 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
             Assert.Equal(bobId, Assert.Single(live).UserId); // alice revoked, bob issued
         });
 
-        // ── Prune: a position absent from the manifest is deleted via the canonical
-        //    cascade (soft delete; grants stay history). ─────────────────────────────
+        // ── Staged delete: the position is deleted via the canonical cascade (soft
+        //    delete; grants stay history). ───────────────────────────────────────────
         var noPositions = Manifest("unused") with { Positions = [] };
-        Assert.False((await applier.UpdateRealmAsync(slug, noPositions, prune: true, deletions: null, ct)).IsError);
+        Assert.False((await applier.UpdateRealmAsync(slug, noPositions,
+            [new RealmDraftDeletion("positions", "gate.porter")], ct)).IsError);
         await InTenantAsync(factory, slug, async sp =>
         {
             var session = sp.GetRequiredService<IDocumentSession>();
             Assert.False(await session.Query<PositionPrincipal>().AnyAsync(p => !p.IsDeleted && p.AccountName == "gate.porter", ct),
-                "position pruned");
+                "position deleted");
         });
     }
 
@@ -516,7 +517,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
             new RealmManifestTerminal { Id = exSlot.Id, DisplayName = "Gate left (renamed)", Location = new Optional<string?>(null), AllowedPositions = [] },
             new RealmManifestTerminal { DisplayName = "Gate right", WebAuthnRpId = "kiosk.example.test" },
         ]);
-        var plan = await planner.PlanAsync(slug, renamed, prune: false, ct: ct);
+        var plan = await planner.PlanAsync(slug, renamed, ct: ct);
         Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
         var frontEntry = plan.Value.Sections.Single(s => s.Name == "positions").Entries.Single(e => e.Key == "gate.front");
         Assert.Contains(frontEntry.Notes, n => n.Contains("'Gate right' is created with a fresh terminal client"));
@@ -532,7 +533,7 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
             Assert.Equal([new ShortGuid(frontKey).Guid], left.EffectiveAllowedPositionIds);
         });
         Assert.False((await applier.UpdateRealmAsync(slug, Manifest([]), ct: ct)).IsError);
-        var kept = await planner.PlanAsync(slug, Manifest([]), prune: false, ct: ct);
+        var kept = await planner.PlanAsync(slug, Manifest([]), ct: ct);
         Assert.Contains(kept.Value.Sections.Single(s => s.Name == "positions").Entries.Single(e => e.Key == "gate.front").Notes,
             n => n.Contains("'Gate right' is not listed — it is KEPT"));
         await InTenantAsync(factory, slug, async sp =>

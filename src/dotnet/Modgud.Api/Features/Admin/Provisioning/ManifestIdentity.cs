@@ -15,8 +15,8 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 ///   <item>the HANDLE TABLE — every <c>#handle</c> the file declares, and the real id the
 ///   apply assigned to it, so a reference written before the entity existed still lands;</item>
 ///   <item>the APPLIED IDS per section — every entity this apply created or updated, which
-///   is exactly what prune must keep (an entity created moments ago carries no id the
-///   manifest could list, and pruning by NAME would delete a renamed entity).</item>
+///   is exactly what a staged deletion must keep (an entity created moments ago carries no
+///   id the manifest could list, and deleting by NAME would delete a renamed entity).</item>
 /// </list>
 ///
 /// <para><see cref="Validate"/> runs BEFORE anything is written: a handle declared twice, a
@@ -57,8 +57,8 @@ public sealed class ManifestIdentity
     public Guid? Resolve(string handle) => _assigned.TryGetValue(handle, out var id) ? id : null;
 
     /// <summary>Records that this apply created or updated <paramref name="id"/> in
-    /// <paramref name="section"/> — the entity is represented in the manifest and prune
-    /// must therefore keep it.</summary>
+    /// <paramref name="section"/> — the entity is represented in the manifest and a staged
+    /// deletion must therefore keep it.</summary>
     public void Applied(string section, Guid id)
     {
         if (!_applied.TryGetValue(section, out var set))
@@ -66,7 +66,7 @@ public sealed class ManifestIdentity
         set.Add(id);
     }
 
-    /// <summary>Every entity this apply created or updated in a section. Prune's keep-set:
+    /// <summary>Every entity this apply created or updated in a section. The keep-set:
     /// "represented in the manifest" is an identity question, not a name question.</summary>
     public IReadOnlySet<Guid> AppliedIn(string section)
         => _applied.TryGetValue(section, out var set) ? set : (IReadOnlySet<Guid>)new HashSet<Guid>();
@@ -253,7 +253,7 @@ public sealed class ManifestIdentity
         _ => int.MaxValue,
     };
 
-    /// <summary>The manifest sections, as the plan, the prune sweep and the staged-delete
+    /// <summary>The manifest sections, as the plan, the staged-deletion sweep and the delete
     /// targets all spell them. Named once so the applier's keep-sets and the planner's
     /// section names cannot drift apart.</summary>
     public static class Sections

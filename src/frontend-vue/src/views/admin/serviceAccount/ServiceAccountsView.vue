@@ -107,7 +107,7 @@ async function deleteRows() {
   if (!id) return
   // A row the draft created is simply taken back out of the draft. Deleting a LIVE
   // account stays a live action: it kills every credential the account owns, so the
-  // manifest never prunes or staged-deletes one.
+  // manifest never stages its deletion.
   if (staging.isDraftId(id)) return staging.unstage(staging.draftKeyOf(id))
   if (confirm(t('common.confirmDelete', {}, 'Really delete?'))) {
     await store.deleteEntities(selectedIds.value.filter((x) => !staging.isDraftId(x)))

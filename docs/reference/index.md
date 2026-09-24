@@ -64,7 +64,7 @@ In detail:
 | `"list": [..]` | full list replaced |
 | `"flag": null` | unchanged — booleans are only ever set with `true`/`false` |
 
-This applies to the OAuth client/scope/API updates, realm settings, realm metadata, login providers, users, positions, service accounts and their credentials, terminal slots, scheduled-job overrides — and identically to [declarative provisioning manifests](/admin/realm-provisioning#apply-merge-vs-prune) and [configuration drafts](/admin/configuration-drafts), which share the same wire shape.
+This applies to the OAuth client/scope/API updates, realm settings, realm metadata, login providers, users, positions, service accounts and their credentials, terminal slots, scheduled-job overrides — and identically to [declarative provisioning manifests](/admin/realm-provisioning#apply-merge-patch-always-additive) and [configuration drafts](/admin/configuration-drafts), which share the same wire shape.
 
 Two field categories never clear: identity/natural-key fields (client id, account name, email, an API's audience) and enum-like fields (consent type, membership mode, access-token type) — those always hold a value, so `null` simply means "unchanged". Immutable fields (a client's type, a provider's flavor) are called out on their endpoints.
 

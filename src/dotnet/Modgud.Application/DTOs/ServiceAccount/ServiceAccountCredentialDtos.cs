@@ -16,6 +16,12 @@ namespace Modgud.Application.DTOs.ServiceAccount;
 /// </summary>
 public class IssueServiceAccountCredentialDto
 {
+    /// <summary>Optional pinned entity id (Guid or ShortGuid) — provisioning only, as on
+    /// <see cref="Modgud.Application.DTOs.OAuth.CreateOAuthClientDto.Id"/>: a manifest apply
+    /// creates the credential under the id the file names, so re-applying the same file
+    /// finds it again. Server-generated when omitted; a taken id is a conflict.</summary>
+    public string? Id { get; set; }
+
     /// <summary>
     /// Optional client_id override. Defaults to <c>{sa.AccountName}.{8-char-suffix}</c>
     /// when omitted — keeps the link to the owning SA obvious in audit logs.

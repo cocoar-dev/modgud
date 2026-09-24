@@ -181,7 +181,7 @@ async function save() {
       <div class="flex items-center gap-3 mt-2">
         <CoarButton variant="primary" :loading="saving" @click="save">
           {{ stagedSave
-            ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+            ? t('admin.realmConfig.entry.save', {}, 'Stage into draft')
             : t('common.save', {}, 'Save') }}
         </CoarButton>
         <span v-if="saveResult" :class="saveResult.ok ? 'text-green-700' : 'text-red-700'" class="text-sm">

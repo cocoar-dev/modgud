@@ -406,9 +406,9 @@ const modalTitle = computed(() => {
 const footerButton = computed(() => ({
   visible: true,
   text: isDraftRow.value || (isCreate.value && stagingActive.value)
-    ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+    ? t('admin.realmConfig.entry.save', {}, 'Stage into draft')
     : stagingActive.value
-      ? t('admin.userDetails.stageSave', {}, 'Speichern (Draft)')
+      ? t('admin.userDetails.stageSave', {}, 'Save (draft)')
       : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   // Email is always required (the anchor). Username + first/last name follow the
   // configurable (App⊕realm) policy — required ones must be filled, defaulting to

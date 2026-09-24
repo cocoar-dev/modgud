@@ -28,7 +28,7 @@ const props = defineProps<{
   section: string
   entryKey: string
   icon: string
-  /** null for prune candidates — they exist live, not in the draft. */
+  /** null for staged-deletion candidates — they exist live, not in the draft. */
   entity: ManifestEntity | null
   planEntry: PlanEntry | null
   secretSlots: string[]
@@ -208,7 +208,7 @@ function removeFromDraft() {
         <textarea v-model="entityJson" class="entity-editor" spellcheck="false" />
       </section>
       <CoarNotice v-else variant="info">
-        {{ t('admin.realmConfig.entry.notInDraft', {}, 'This entity exists live but is not part of the draft — with prune enabled, applying deletes it.') }}
+        {{ t('admin.realmConfig.entry.notInDraft', {}, 'This entity exists live and is not part of the draft. If it is staged for deletion, applying the draft deletes it.') }}
       </CoarNotice>
 
       <div v-if="entity" class="danger-row">

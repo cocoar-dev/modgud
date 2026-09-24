@@ -479,24 +479,24 @@ public sealed partial class RealmManifestApplier
     }
 
     /// <summary>
-    /// Prune counterpart — mirror of V2_Position_Delete: shared-terminal allow-lists lose
+    /// Staged-deletion counterpart — mirror of V2_Position_Delete: shared-terminal allow-lists lose
     /// the position (only a slot whose allow-list becomes empty dies with it, taking its
     /// terminal-managed client along), then soft-delete via the stream and run the same
     /// post-commit revocations. The live-notify bus publish of the endpoint is skipped —
-    /// consumers resync via the resumable change feed after a provisioning prune.
+    /// consumers resync via the resumable change feed after a provisioning apply.
     /// </summary>
-    private static async Task PrunePositionsAsync(
+    private static async Task DeleteStagedPositionsAsync(
         IServiceProvider sp, IDocumentSession session, OAuthAdminService oauth,
-        ManifestIdentity identity, bool prune, IReadOnlyDictionary<string, HashSet<string>>? targeted,
+        ManifestIdentity identity, IReadOnlyDictionary<string, HashSet<string>> targeted,
         CancellationToken ct)
     {
-        // Feature dark → the realm cannot contain positions; nothing to prune.
+        // Feature dark → the realm cannot contain positions; nothing to delete.
         if (!sp.GetRequiredService<AppSettings>().Features.PositionTerminals) return;
 
         // Kept by identity (ADR 0024): the positions this apply just created or updated.
-        // Targeted (staged) deletions restrict the sweep to their keys (lowercased
-        // account names — normalized by the caller); full prune deletes everything.
-        var targetedPositions = targeted?.GetValueOrDefault("positions");
+        // Only the staged keys (lowercased account names — normalized by the caller).
+        var targetedPositions = targeted.GetValueOrDefault("positions");
+        if (targetedPositions is not { Count: > 0 }) return;
         var staffingRevoker = sp.GetRequiredService<IStaffingRevoker>();
         var revoker = sp.GetRequiredService<IOAuthGrantRevoker>();
         var now = DateTimeOffset.UtcNow;
@@ -504,8 +504,8 @@ public sealed partial class RealmManifestApplier
         foreach (var fn in await session.Query<PositionPrincipal>().Where(p => !p.IsDeleted).ToListAsync(ct))
         {
             if (identity.WasApplied(ManifestIdentity.Sections.Positions, fn.Id)) continue;
-            if (!prune && targetedPositions?.Contains(fn.AccountName) != true) continue;
-            var ctx = $"prune position '{fn.AccountName}'";
+            if (!targetedPositions.Contains(fn.AccountName)) continue;
+            var ctx = $"delete position '{fn.AccountName}'";
 
             var slots = (await session.Query<TerminalEnrollment>().ToListAsync(ct))
                 .Where(t => t.Status != TerminalEnrollmentStatus.Revoked &&

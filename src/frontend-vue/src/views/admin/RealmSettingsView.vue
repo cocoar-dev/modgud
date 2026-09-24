@@ -1361,7 +1361,7 @@ async function rotateSigningKey() {
           </span>
           <CoarButton :loading="saving" :disabled="!canSaveActive" @click="saveActiveTab">
             {{ stagedSave
-              ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+              ? t('admin.realmConfig.entry.save', {}, 'Stage into draft')
               : t('admin.realmSettings.saveArea', {}, 'Save area') }}
           </CoarButton>
         </div>

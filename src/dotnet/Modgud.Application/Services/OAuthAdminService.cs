@@ -684,6 +684,7 @@ public partial class OAuthAdminService
 
         var createDto = new CreateOAuthClientDto
         {
+            Id = dto.Id,
             ClientId = clientId,
             DisplayName = string.IsNullOrWhiteSpace(dto.DisplayName) ? sa.AccountName : dto.DisplayName,
             ClientType = OAuthClientTypes.Confidential,

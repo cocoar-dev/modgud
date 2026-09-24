@@ -96,7 +96,7 @@ in a changelog that ages between releases.
 - First-admin bootstrap via recovery CLI **or** a control-plane
   `POST /api/admin/realms` with `InitialAdmin` payload
 - [Applications](./admin/applications) as a soft per-tenant facet — per-app origin, branding, login posture, and self-registration settings, sharing the realm's user pool with a single `sub`
-- [Declarative realm provisioning](./admin/realm-provisioning) — import/export a realm as a manifest, apply it in place, and optionally prune anything the manifest no longer lists
+- [Declarative realm provisioning](./admin/realm-provisioning) — import/export a realm as a manifest, apply it in place as an additive merge, and delete anything unwanted through a reviewed staged deletion
 
 **Operations**
 

@@ -655,7 +655,7 @@ const footerButton = computed(() => ({
   // providers. Built-in (Internal seed) stays read-only.
   visible: isCreate.value || !isBuiltIn.value,
   text: stagedSave.value
-    ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+    ? t('admin.realmConfig.entry.save', {}, 'Stage into draft')
     : isCreate.value
       ? t('common.create', {}, 'Create')
       : t('common.save', {}, 'Save'),

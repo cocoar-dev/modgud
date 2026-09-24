@@ -293,7 +293,11 @@ scheme does not turn every cookie-only admin route into a remote API.
 | `POST` | `/api/admin/oauth/clients` | `oauth-client:write` | `position:write` for terminal provisioning; `service-account:write` for an SA link |
 | `GET` | `/api/admin/realm-config/manifest-schema` | `realm:admin` | Current request host selects the realm |
 | `GET` | `/api/admin/realm-config/export` | `realm:admin` | Exports only the host-selected realm |
-| `POST` | `/api/admin/realm-config/apply` | `realm:admin` | Applies only to the host-selected realm; a foreign manifest slug is rejected |
+| `POST` | `/api/admin/realm-config/apply` | `realm:admin` | Applies only to the host-selected realm; always a merge — never deletes what the manifest leaves out |
+| `POST` | `/api/admin/realm-config/plan` | `realm:admin` | Dry-run diff of a manifest against the host-selected realm, no baseline |
+| `PUT`/`DELETE` | `/api/admin/realm-config/drafts/active/deletions/{section}?key=<key>` | `realm:admin` | Stage/unstage the deletion of one live entity (implicitly opens the caller's active draft) |
+| `POST` | `/api/admin/realm-config/drafts/{id}/plan` | `realm:admin` | Plan a draft, including its staged deletions |
+| `POST` | `/api/admin/realm-config/drafts/{id}/apply` | `realm:admin` | Apply a draft, deletions included; refused while the plan reports errors or open conflicts |
 
 Direct Position creation, mutation, deletion, grants, terminal enrollment, and
 all other admin resources remain cookie-only until their contracts are
@@ -303,6 +307,34 @@ supported remote terminal-provisioning path. The
 exposed surface, and every write body follows the shared
 [write semantics](/reference/#write-semantics) (merge-patch: absent = unchanged,
 explicit `null` clears, `[]` clears a list — this includes `apply` manifests).
+
+### Worked example: delete an entity via the API
+
+An `apply` never deletes anything a manifest leaves out — deleting always goes through a staged deletion, whether the caller is a person in the admin UI or a bearer-authenticated Management API client:
+
+```bash
+REALM=https://acme.example.com   # the realm's own host
+TOKEN=$(curl -sS -X POST "$REALM/connect/token" \
+  -d 'grant_type=client_credentials' \
+  -d 'client_id=<linked-service-account-client>' \
+  -d 'client_secret=<secret>' \
+  -d 'scope=modgud.management' \
+  -d 'resource=urn:modgud:management-api' | jq -r '.access_token')
+
+# Stage the deletion (implicitly creates the caller's active draft)
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  "$REALM/api/admin/realm-config/drafts/active/deletions/clients?key=old-web"
+
+# Plan — the deletion shows as a red "delete" entry, or "error" if protected
+curl -H "Authorization: Bearer $TOKEN" \
+  -X POST "$REALM/api/admin/realm-config/drafts/<draftId>/plan"
+
+# Apply — deletes it and consumes the draft
+curl -H "Authorization: Bearer $TOKEN" \
+  -X POST "$REALM/api/admin/realm-config/drafts/<draftId>/apply"
+```
+
+See [declarative provisioning: deleting](/admin/realm-provisioning#deleting-staged-deletions-in-a-draft) for the full rules, including the entities that can never be deleted this way (the system app, standard scopes, anything conferring `realm:admin`, …).
 
 ## Security rules for consumers
 

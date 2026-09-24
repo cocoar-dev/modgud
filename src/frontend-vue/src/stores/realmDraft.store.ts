@@ -61,7 +61,7 @@ export interface PlanChange {
   Desired: unknown
 }
 
-export type PlanAction = 'create' | 'update' | 'unchanged' | 'delete' | 'protected' | 'error'
+export type PlanAction = 'create' | 'update' | 'unchanged' | 'delete' | 'error'
 export type ConflictKind = 'staleOverwrite' | 'bothChanged' | 'deletedLive' | 'createdLive'
 
 export interface PlanConflict {
@@ -87,7 +87,6 @@ export interface PlanSection {
 
 export interface PlanResult {
   Slug: string
-  Prune: boolean
   Sections: PlanSection[]
   Warnings: string[]
   HasConflicts: boolean
@@ -212,7 +211,6 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
   const plan = ref<PlanResult | null>(null)
   /** Draft version the current plan was computed for — stale plans block apply. */
   const plannedVersion = ref<number | null>(null)
-  const prune = ref(false)
   const listLoading = ref(false)
   const planning = ref(false)
   const saving = ref(false)
@@ -222,7 +220,7 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
 
   const planIsFresh = computed(() =>
     plan.value !== null && current.value !== null &&
-    plannedVersion.value === current.value.Version && plan.value.Prune === prune.value)
+    plannedVersion.value === current.value.Version)
 
   const planHasErrors = computed(() =>
     plan.value?.Sections.some((s) => s.Entries.some((e) => e.Action === 'error')) ?? false)
@@ -317,7 +315,6 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     try {
       const result = await draftsHttp
         .addPath(current.value.Id, 'plan')
-        .setQueryParameter('prune', String(prune.value))
         .post<PlanResult>({})
       plan.value = result
       plannedVersion.value = forVersion
@@ -353,8 +350,9 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
 
   /** The "commit": stages one entity into the ACTIVE draft via the server-side
    * seam — implicitly creating an auto-named draft when none is active. The
-   * natural key is computed server-side; edits with a renamed key stage the
-   * renamed entity alongside the old one (rename = create + prune delete). */
+   * natural key is computed server-side; the server matches the entry by its
+   * Id first, so an edit that renamed the key replaces the entry it came from
+   * (ADR 0024 — identity is the Id). */
   async function upsertEntity(section: string, _key: string, entity: ManifestEntity) {
     saving.value = true
     error.value = null
@@ -387,9 +385,9 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     }
   }
 
-  /** Stages the DELETION of one live entity (ADR-0017 staged deletes) — the
-   * targeted counterpart of prune; implicitly creates a draft when none is
-   * active. Applied through the same canonical delete ops on "Draft anwenden". */
+  /** Stages the DELETION of one live entity (ADR-0017 staged deletes) — a
+   * targeted, explicit delete; implicitly creates a draft when none is
+   * active. Applied through the same canonical delete ops on "Apply draft". */
   async function stageDelete(section: string, key: string) {
     saving.value = true
     error.value = null
@@ -480,7 +478,6 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     try {
       const result = await draftsHttp
         .addPath(current.value.Id, 'apply')
-        .setQueryParameter('prune', String(prune.value))
         .post<ApplyOutcome>({})
       applyOutcome.value = result
       current.value = null
@@ -510,7 +507,7 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
   }
 
   return {
-    drafts, current, plan, prune,
+    drafts, current, plan,
     listLoading, planning, saving, applying, error, applyOutcome,
     planIsFresh, planHasErrors, canApply, pendingCount,
     loadDrafts, loadActive, createDraft, openDraft, closeDraft, deleteDraft,

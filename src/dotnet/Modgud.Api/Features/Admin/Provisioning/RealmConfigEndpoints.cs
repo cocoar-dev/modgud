@@ -8,12 +8,13 @@ using Modgud.Authentication.ExtensionMethods;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using Modgud.Permissions;
+using OpenIddict.Abstractions;
 
 namespace Modgud.Api.Features.Admin.Provisioning;
 
 /// <summary>
 /// Per-realm (data-plane) declarative config — lets a <c>realm:admin</c> manage THEIR OWN
-/// realm from a manifest (export → edit → apply, with optional prune), reusing the same
+/// realm from a manifest (export → edit → apply), reusing the same
 /// <see cref="RealmManifestApplier"/> / <see cref="RealmManifestExporter"/> as the
 /// control-plane provisioning.
 ///
@@ -23,10 +24,13 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// (a service account or user holding realm:admin in one realm) can fully manage that realm's
 /// config + entities, but CANNOT create or delete realms (those stay control-plane-only) and
 /// cannot touch any other realm — a manifest names no realm at all, so the target is always
-/// the host-routed one and there is nothing to aim elsewhere. Prune is allowed,
-/// but only within the realm, behind the same two-step confirmation and with the same
-/// lockout/infra protections as the control-plane path (system app, standard scopes, the
-/// credentials of undeclared service accounts, and every realm:admin path are never pruned).</para>
+/// the host-routed one and there is nothing to aim elsewhere. An apply never deletes what
+/// the manifest leaves out; deleting goes through a draft's staged deletions, which the
+/// draft plan shows before the apply (same lockout/infra protections as everywhere).</para>
+///
+/// <para>Every endpoint here is callable with the admin cookie AND a Management API bearer,
+/// so the caller's id comes from <c>sub</c> first (see <see cref="CallerId"/>) — a bearer
+/// principal carries no NameIdentifier.</para>
 /// </summary>
 public static class RealmConfigEndpoints
 {
@@ -58,13 +62,12 @@ public static class RealmConfigEndpoints
         .WithName("RealmConfig_Export")
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
 
-        // Dry-run: what WOULD an apply of this manifest change? Same ?prune= semantics
-        // (adds delete candidates + protections) — writes nothing.
+        // Dry-run: what WOULD an apply of this manifest change? Writes nothing.
         group.MapPost("plan", async (
-            RealmManifest manifest, RealmManifestPlanner planner, CancellationToken ct, bool prune = false) =>
+            RealmManifest manifest, RealmManifestPlanner planner, CancellationToken ct) =>
         {
             var result = await planner.PlanAsync(
-                TenantContext.Current, manifest, prune, baseline: null, deletions: null, ct);
+                TenantContext.Current, manifest, baseline: null, deletions: null, ct);
             return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Plan")
@@ -72,45 +75,18 @@ public static class RealmConfigEndpoints
 
         MapDraftEndpoints(group);
 
-        // Apply a manifest to THIS realm: in-place merge/upsert. ?prune=true makes it a full
-        // sync (deletes entities absent from the manifest) — bounded to this realm, protections
-        // as on the control-plane path. Never drops the realm database.
+        // Apply a manifest to THIS realm: in-place merge/upsert. Entities the manifest leaves
+        // out are left alone — deleting is a staged deletion in a draft. Never drops the
+        // realm database.
         group.MapPost("apply", async (
-            RealmManifest manifest, RealmManifestApplier applier,
-            ManifestApplyConfirmation confirmation, RealmDraftService drafts,
-            HttpContext http, IRealmProvisioningService realms,
-            CancellationToken ct, bool prune = false, string? confirm = null) =>
+            RealmManifest manifest, RealmManifestApplier applier, CancellationToken ct) =>
         {
             // The target is the caller's own realm, always — a manifest carries no realm
             // identity, so there is nothing here that could aim at a different one. That
             // IS the data-plane safety boundary: cross-realm writes and realm lifecycle
             // are only reachable through the control-plane routes.
-            //
-            // Same two-step gate as the control-plane route: a pruning apply shows what it
-            // would delete before it deletes it (see ManifestApplyConfirmation).
-            var gate = await confirmation.CheckAsync(TenantContext.Current, manifest, prune, confirm, ct);
-            if (gate.IsError) return ToErrorResult(gate.Errors);
-            if (gate.Value is { } required)
-            {
-                var parked = await drafts.ParkForReviewAsync(
-                    manifest, TenantContext.Current, UserName(http), RequireUserId(http), UserName(http), ct);
-                if (parked.IsError) return ToErrorResult(parked.Errors);
-                return Results.Json(new
-                {
-                    Error = "Manifest.ConfirmationRequired",
-                    Message = $"This apply would DELETE {required.Deletions} entit(ies) from this realm. "
-                              + "Repeat the call with ?confirm=<ConfirmationToken> to go ahead, or send "
-                              + "ReviewUrl to someone who should decide — it opens this exact change as a draft.",
-                    required.ConfirmationToken,
-                    DraftId = parked.Value.Id,
-                    ReviewUrl = ManifestApplyConfirmation.ReviewUrl(
-                        await realms.GetRealmBySlugAsync(TenantContext.Current, ct), parked.Value.Id),
-                    required.Plan,
-                }, statusCode: StatusCodes.Status409Conflict);
-            }
-
             var result = await applier.UpdateRealmAsync(
-                TenantContext.Current, manifest, prune, deletions: null, ct);
+                TenantContext.Current, manifest, deletions: null, ct);
             return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Apply")
@@ -265,9 +241,9 @@ public static class RealmConfigEndpoints
 
         // Plan with the draft's baseline: the response carries three-way conflicts.
         drafts.MapPost("{id:guid}/plan", async (
-            Guid id, HttpContext http, RealmDraftService service, CancellationToken ct, bool prune = false) =>
+            Guid id, HttpContext http, RealmDraftService service, CancellationToken ct) =>
         {
-            var result = await service.PlanAsync(id, prune, RequireUserId(http), ct);
+            var result = await service.PlanAsync(id, RequireUserId(http), ct);
             return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })
         .WithName("RealmConfig_Drafts_Plan")
@@ -276,9 +252,9 @@ public static class RealmConfigEndpoints
         // Apply gate (ADR-0017): pre-validated by a fresh plan; refused with 409 while
         // it reports apply-errors or unresolved conflicts. Consumes the draft on success.
         drafts.MapPost("{id:guid}/apply", async (
-            Guid id, HttpContext http, RealmDraftService service, CancellationToken ct, bool prune = false) =>
+            Guid id, HttpContext http, RealmDraftService service, CancellationToken ct) =>
         {
-            var result = await service.ApplyAsync(id, prune, RequireUserId(http), ct);
+            var result = await service.ApplyAsync(id, RequireUserId(http), ct);
             if (result.IsError) return ToErrorResult(result.Errors);
             return result.Value.Refused
                 ? Results.Json(new
@@ -294,9 +270,24 @@ public static class RealmConfigEndpoints
     }
 
     private static Guid RequireUserId(HttpContext http)
-        => http.GetUserId() ?? throw new InvalidOperationException(
-            "Realm-config draft endpoints require an authenticated user principal.");
+        => CallerId(http) ?? throw new InvalidOperationException(
+            "Realm-config draft endpoints require an authenticated principal.");
+
+    /// <summary>
+    /// The caller's principal id — a Person or a ServiceAccount. The management filter
+    /// hands a bearer request the OpenIddict principal, which names its subject in
+    /// <c>sub</c> only; the admin cookie carries NameIdentifier. Reading NameIdentifier
+    /// alone made every draft endpoint throw for a Management API client.
+    /// </summary>
+    internal static Guid? CallerId(HttpContext http)
+        => Guid.TryParse(http.User.FindFirstValue(OpenIddictConstants.Claims.Subject), out var sub)
+            ? sub
+            : http.GetUserId();
 
     private static string UserName(HttpContext http)
-        => http.User.FindFirstValue(ClaimTypes.Name) ?? http.User.Identity?.Name ?? "unknown";
+        => http.User.FindFirstValue(ClaimTypes.Name)
+           ?? http.User.FindFirstValue(OpenIddictConstants.Claims.Name)
+           ?? http.User.Identity?.Name
+           ?? http.User.FindFirstValue(OpenIddictConstants.Claims.ClientId)
+           ?? "unknown";
 }

@@ -17,14 +17,14 @@ Endpoints in `Modgud.Api/Features/Admin/RealmsEndpoints.cs`.
 | `PATCH` | `/api/admin/realms/{slug}` | `realm:write` |
 | `DELETE` | `/api/admin/realms/{slug}` | `realm:write` (soft-delete = deactivate; `?hard=true` drops the tenant database) |
 | `POST` | `/api/admin/realms/{slug}/admin-invites` | `realm:write` |
-| `POST` | `/api/admin/realms/{slug}/apply` | `realm:write` (merge a manifest; `?prune=true` = full sync — answers `409 Manifest.ConfirmationRequired` with the plan and a token when it would delete, repeat with `&confirm=<token>`) |
+| `POST` | `/api/admin/realms/{slug}/apply` | `realm:write` (merge a manifest — always additive, never deletes what the manifest leaves out) |
 | `GET` | `/api/admin/realms/{slug}/export` | `realm:read` (structure-only manifest) |
 | `GET` | `/api/admin/realms/manifest-schema` | `realm:write` (JSON Schema of the manifest + example) |
 
 See [Declarative Realm Provisioning](../admin/realm-provisioning) for the manifest
-contract, merge-vs-prune semantics, the [two-step confirmation of a pruning
-apply](../admin/realm-provisioning#a-pruning-apply-asks-first), and how to fetch the
-schema.
+contract, the merge-patch semantics, and how deleting works — always a
+[staged deletion in a draft](../admin/realm-provisioning#deleting-staged-deletions-in-a-draft),
+never a side effect of what a manifest omits.
 
 ### Per-realm self-service (data plane — not control-plane)
 
@@ -36,7 +36,7 @@ powers. These run on the realm's **own host** and require **`realm:admin` in tha
 |---|---|---|
 | `GET` | `/api/admin/realm-config/manifest-schema` | `realm:admin` (in the realm) |
 | `GET` | `/api/admin/realm-config/export` | `realm:admin` (in the realm) |
-| `POST` | `/api/admin/realm-config/apply` | `realm:admin` (in the realm; `?prune=true` = full sync within the realm, same `409` + `&confirm=<token>` handshake as above) |
+| `POST` | `/api/admin/realm-config/apply` | `realm:admin` (in the realm; merge — never deletes what the manifest leaves out) |
 
 ::: tip Permission context
 These permissions live in the **`control-plane`** App's catalog

@@ -5,15 +5,12 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// <summary>
 /// The dry-run counterpart of <see cref="RealmImportResult"/>: what an apply of the given
 /// manifest WOULD do to the realm, computed by <see cref="RealmManifestPlanner"/> without
-/// writing anything. Entries mirror the applier's upsert-by-natural-key semantics; with
-/// prune they also list the delete candidates (and which of them are protected).
+/// writing anything. Entries mirror the applier's upsert semantics; a draft's staged
+/// deletions appear as delete entries (an error where the applier would refuse one).
 /// </summary>
 public sealed record RealmPlanResult
 {
     public required string Slug { get; init; }
-
-    /// <summary>Whether the plan was computed for a prune (full-sync) apply.</summary>
-    public required bool Prune { get; init; }
 
     /// <summary>One section per manifest collection, in apply order.</summary>
     public List<RealmPlanSection> Sections { get; init; } = [];
@@ -40,9 +37,9 @@ public sealed record RealmPlanEntry
     public required string Key { get; init; }
 
     /// <summary>
-    /// "create" | "update" | "unchanged" | "delete" (prune candidate) |
-    /// "protected" (prune candidate the applier never deletes) |
-    /// "error" (the apply would fail on this entry, e.g. an immutable-field change).
+    /// "create" | "update" | "unchanged" | "delete" (a staged deletion) |
+    /// "error" (the apply would fail on this entry, e.g. an immutable-field change or a
+    /// staged deletion of a protected entity).
     /// </summary>
     public required string Action { get; init; }
 
@@ -63,8 +60,7 @@ public sealed record RealmPlanEntry
 /// carries the baseline value); applying would silently revert the interim change.
 /// "bothChanged" — draft and live both changed the field to different values.
 /// "deletedLive" — the entity was deleted live while the draft still stages it.
-/// "createdLive" — the entity appeared live after the baseline (update collides with
-/// it, or a prune would delete something the draft author never saw).
+/// "createdLive" — the entity appeared live after the baseline (a create collides with it).
 /// Resolution happens by rewriting the draft (take live / keep mine) and re-planning.
 /// </summary>
 public sealed record RealmPlanConflict(

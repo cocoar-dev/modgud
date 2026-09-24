@@ -31,7 +31,7 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// SAME canonical operation the admin UI/API uses, so the manifest path and the manual
 /// path can never diverge.
 /// </summary>
-[Description("A declarative realm configuration. POST to /api/admin/realms/{slug}/apply (control plane) or /api/admin/realm-config/apply (realm admin) to merge it into that realm; add ?prune=true for a full sync that also deletes entities absent from the manifest. The TARGET realm comes from the route alone — a manifest carries content, never an identity, so the same file applies to any realm. IDENTITY IS THE ID (ADR 0024): an entry updates an existing entity only when its Id names one, otherwise it creates; entity names are never matched, and cross-references between entities use an id or a '#handle' declared in this same file. App slugs, scope/API names and permission 'resource:action' keys stay names — they are the permission vocabulary, not entity identity.")]
+[Description("A declarative realm configuration. POST to /api/admin/realms/{slug}/apply (control plane) or /api/admin/realm-config/apply (realm admin) to merge it into that realm. An apply never deletes what the manifest leaves out — deleting is a staged deletion in a draft (/api/admin/realm-config/drafts), which the draft plan shows before the apply. The TARGET realm comes from the route alone — a manifest carries content, never an identity, so the same file applies to any realm. IDENTITY IS THE ID (ADR 0024): an entry updates an existing entity only when its Id names one, otherwise it creates; entity names are never matched, and cross-references between entities use an id or a '#handle' declared in this same file. App slugs, scope/API names and permission 'resource:action' keys stay names — they are the permission vocabulary, not entity identity.")]
 public sealed record RealmManifest
 {
     // NOTE: a manifest deliberately carries NO realm shell. The target is named by the
@@ -63,7 +63,7 @@ public sealed record RealmManifest
     [Description("Users. Created passwordless unless a Password is given. A group references a user by Id or by a '#handle' this manifest declares — never by name.")]
     public List<RealmManifestUser> Users { get; init; } = [];
 
-    [Description("Service accounts (machine principals) and their credentials. The ACCOUNT is upsert-only — never pruned or staged-deleted, because deleting one kills every credential it owns, so that stays a deliberate live operation. Its CREDENTIALS are ordinary manifest entries: declared, updated, and with ?prune=true deleted when the file drops them. Secrets never travel — a credential created by an apply is minted a fresh one, returned once in ClientSecrets.")]
+    [Description("Service accounts (machine principals) and their credentials. The ACCOUNT is upsert-only — never pruned or staged-deleted, because deleting one kills every credential it owns, so that stays a deliberate live operation. Its CREDENTIALS are ordinary manifest entries: declared, updated, and — when the account's Credentials list is present — deleted when the list drops them. Secrets never travel — a credential created by an apply is minted a fresh one, returned once in ClientSecrets.")]
     public List<RealmManifestServiceAccount> ServiceAccounts { get; init; } = [];
 
     [Description("Groups. The ONLY way users get roles: a user is a group member, the group carries roles. Members/Roles name entities by identity (ADR 0024): { \"Key\": \"alice\", \"Id\": \"<id>\" } for one that exists here, or \"#alice\" for one this same manifest creates. A bare name is an error.")]
@@ -75,7 +75,7 @@ public sealed record RealmManifest
     [Description("Position principals (shared-terminal staffing identities). Requires the PositionTerminals feature flag. AccountName is the natural key. A position's terminal SLOTS travel as configuration under Terminals (name, location, RP ID, binding, served positions, the client's scopes/apps); the device ENROLLMENT and its secret never do — a slot created by an apply still has to enroll.")]
     public List<RealmManifestPosition> Positions { get; init; } = [];
 
-    [Description("Configuration of the realm's scheduled jobs, keyed by the job's registration Key (e.g. 'inbox-retention'). Jobs are compiled into the server, so an entry can only CONFIGURE one — a Key this deployment does not have is skipped and reported; nothing is ever created or pruned here.")]
+    [Description("Configuration of the realm's scheduled jobs, keyed by the job's registration Key (e.g. 'inbox-retention'). Jobs are compiled into the server, so an entry can only CONFIGURE one — a Key this deployment does not have is skipped and reported; nothing is ever created or deleted here.")]
     public List<RealmManifestJob> Jobs { get; init; } = [];
 
     [Description("Optional inbox retention policy — how long inbox items (admin change requests, request feedback, scheduled-job feedback) are kept. A section that is present REPLACES the stored section (null inside a section means 'never'); an absent section stays unchanged.")]
@@ -595,7 +595,7 @@ public sealed record RealmManifestServiceAccount
     [Description("Optional. Omit = no change / default true on create. Deactivating on apply revokes the account's outstanding tokens across all its credentials.")]
     public bool? IsActive { get; init; }
 
-    [Description("The account's machine credentials — each one a client_credentials OAuth client bound to this account. Absent = unchanged; [] declares none (with ?prune=true the account's existing credentials are then deleted, which cuts off whatever uses them — the plan shows it and a pruning apply asks first). Secrets are NEVER carried: a credential created here is minted a fresh secret, returned once in the apply result's ClientSecrets under its ClientId.")]
+    [Description("The account's machine credentials — each one a client_credentials OAuth client bound to this account. Absent = unchanged. A present list is the desired set: a credential the account has but the list drops is DELETED at apply, which cuts off whatever uses it — the plan shows it as a deletion; [] deletes them all. Secrets are NEVER carried: a credential created here is minted a fresh secret, returned once in the apply result's ClientSecrets under its ClientId.")]
     public List<RealmManifestServiceAccountCredential>? Credentials { get; init; }
 }
 

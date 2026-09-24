@@ -375,7 +375,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
 
         // The plan makes the rename visible before it happens.
         var planner = factory.Services.GetRequiredService<RealmManifestPlanner>();
-        var plan = await planner.PlanAsync(slug, Manifest("im-role-v3", "ImGroupV3"), prune: false, ct: ct);
+        var plan = await planner.PlanAsync(slug, Manifest("im-role-v3", "ImGroupV3"), ct: ct);
         Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
 
         var roleEntry = Assert.Single(plan.Value.Sections.Single(s => s.Name == "roles").Entries);
@@ -412,7 +412,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         Assert.Equal("Manifest.ImmutableKey", renamed.FirstError.Code);
 
         var planner = factory.Services.GetRequiredService<RealmManifestPlanner>();
-        var plan = await planner.PlanAsync(slug, Manifest("ik-app-renamed"), prune: false, ct: ct);
+        var plan = await planner.PlanAsync(slug, Manifest("ik-app-renamed"), ct: ct);
         var entry = Assert.Single(plan.Value.Sections.Single(s => s.Name == "apps").Entries);
         Assert.Equal("error", entry.Action);
         Assert.Contains(entry.Notes, n => n.Contains("Slug is immutable"));
@@ -656,17 +656,16 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
     }
 
     [Fact]
-    public async Task Prune_removes_absent_entities_but_protects_infra_and_admins()
+    public async Task An_apply_deletes_only_what_is_staged_and_never_the_admin_path_or_infra()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var factory = host.Factory;
         var ct = TestContext.Current.CancellationToken;
         var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
 
-        const string slug = "prune";
-        // Pinned ids throughout: the prune manifest has to say "the SAME keep-* entities",
-        // and under ADR 0024 only an id says that. It is also what makes the sweep's
-        // keep-set exact — the applier keeps what it just wrote, by id.
+        const string slug = "staged-del";
+        // Pinned ids throughout: the second manifest has to say "the SAME keep-* entities",
+        // and under ADR 0024 only an id says that.
         Guid keepApp = Guid.NewGuid(), dropApp = Guid.NewGuid();
         Guid keepApi = Guid.NewGuid(), dropApi = Guid.NewGuid();
         Guid keepScope = Guid.NewGuid(), dropScope = Guid.NewGuid();
@@ -676,10 +675,10 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         Guid keepGroup = Guid.NewGuid(), dropGroup = Guid.NewGuid(), adminGroup = Guid.NewGuid();
 
         // Import a realm with keep-* + drop-* entities AND a full admin path
-        // (realm-admin role + user + group). The prune manifest will OMIT every drop-*
-        // entity AND the whole admin path — drop-* must go, the admin path must survive
-        // (no lockout). drop-app is referenced by drop-role/drop-api/drop.read/drop-web,
-        // all dropped too → exercises reverse-dependency-order pruning.
+        // (realm-admin role + user + group). The second manifest OMITS every drop-* entity
+        // AND the whole admin path. Omitting deletes nothing; only the staged deletions of
+        // the drop-* entities do. drop-app is referenced by drop-role/drop-api/drop.read/
+        // drop-web, all staged too → exercises reverse-dependency-order deletion.
         var full = new RealmManifest
         {
             Apps =
@@ -724,7 +723,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         var import = await ProvisionRealmAsync(factory, Shell(slug), full, ct);
         Assert.False(import.IsError, import.IsError ? import.FirstError.Description : string.Empty);
 
-        // The prune manifest keeps only the keep-* entities; everything else is absent.
+        // The second manifest keeps only the keep-* entities; everything else is absent.
         var keepOnly = new RealmManifest
         {
             Apps = [full.Apps[0]],
@@ -736,8 +735,28 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             Groups = [full.Groups[0]],
         };
 
-        var pruned = await applier.UpdateRealmAsync(slug, keepOnly, prune: true, deletions: null, ct);
-        Assert.False(pruned.IsError, pruned.IsError ? pruned.FirstError.Description : string.Empty);
+        // ── Leaving an entity out deletes nothing — there is no full sync. ──────
+        var merged = await applier.UpdateRealmAsync(slug, keepOnly, deletions: null, ct);
+        Assert.False(merged.IsError, merged.IsError ? merged.FirstError.Description : string.Empty);
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            Assert.True(await session.Query<App>().AnyAsync(a => !a.IsDeleted && a.Slug == "drop-app", ct), "omitted drop-app kept");
+            Assert.True(await session.Query<OAuthApplicationState>().AnyAsync(x => !x.IsDeleted && x.ClientId == "drop-web", ct), "omitted drop-web kept");
+            Assert.True(await session.Query<Group>().AnyAsync(g => !g.IsDeleted && g.Name == "DropGroup", ct), "omitted DropGroup kept");
+            var omitted = await session.Query<Person>().SingleAsync(p => p.AccountName == "dropuser", ct);
+            Assert.True((await session.LoadAsync<ApplicationUser>(omitted.Id, ct))!.IsActive, "omitted dropuser still active");
+        });
+
+        // ── Staged deletions remove exactly their targets. ───────────────────────
+        RealmDraftDeletion[] staged =
+        [
+            new("apps", "drop-app"), new("apis", "drop-api"), new("scopes", "drop.read"),
+            new("clients", "drop-web"), new("roles", "drop-app/drop-role"),
+            new("users", "dropuser"), new("groups", "DropGroup"),
+        ];
+        var deleted = await applier.UpdateRealmAsync(slug, keepOnly, staged, ct);
+        Assert.False(deleted.IsError, deleted.IsError ? deleted.FirstError.Description : string.Empty);
 
         // The realm DB was never dropped.
         Assert.NotNull(await factory.Services.GetRequiredService<IRealmProvisioningService>().GetRealmBySlugAsync(slug, ct));
@@ -747,13 +766,13 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             var session = sp.GetRequiredService<IDocumentSession>();
             var perms = sp.GetRequiredService<IPermissionService>();
 
-            // ── Absent, non-protected entities are pruned ──────────────────────
-            Assert.False(await session.Query<App>().AnyAsync(a => !a.IsDeleted && a.Slug == "drop-app", ct), "drop-app pruned");
-            Assert.False(await session.Query<PermissionRole>().AnyAsync(r => !r.IsDeleted && r.Name == "drop-role", ct), "drop-role pruned");
-            Assert.False(await session.Query<OAuthApplicationState>().AnyAsync(x => !x.IsDeleted && x.ClientId == "drop-web", ct), "drop-web pruned");
-            Assert.False(await session.Query<OAuthScopeState>().AnyAsync(x => !x.IsDeleted && x.Name == "drop.read", ct), "drop.read pruned");
-            Assert.False(await session.Query<OAuthApiState>().AnyAsync(x => !x.IsDeleted && x.Name == "drop-api", ct), "drop-api pruned");
-            Assert.False(await session.Query<Group>().AnyAsync(g => !g.IsDeleted && g.Name == "DropGroup", ct), "DropGroup pruned");
+            // ── Staged entities are deleted ───────────────────────────────────
+            Assert.False(await session.Query<App>().AnyAsync(a => !a.IsDeleted && a.Slug == "drop-app", ct), "drop-app deleted");
+            Assert.False(await session.Query<PermissionRole>().AnyAsync(r => !r.IsDeleted && r.Name == "drop-role", ct), "drop-role deleted");
+            Assert.False(await session.Query<OAuthApplicationState>().AnyAsync(x => !x.IsDeleted && x.ClientId == "drop-web", ct), "drop-web deleted");
+            Assert.False(await session.Query<OAuthScopeState>().AnyAsync(x => !x.IsDeleted && x.Name == "drop.read", ct), "drop.read deleted");
+            Assert.False(await session.Query<OAuthApiState>().AnyAsync(x => !x.IsDeleted && x.Name == "drop-api", ct), "drop-api deleted");
+            Assert.False(await session.Query<Group>().AnyAsync(g => !g.IsDeleted && g.Name == "DropGroup", ct), "DropGroup deleted");
             // User delete is the canonical recycle-bin soft-delete (deactivate + pending),
             // so the Person survives but the ApplicationUser is deactivated.
             var dropPerson = await session.Query<Person>().SingleAsync(p => p.AccountName == "dropuser", ct);
@@ -770,14 +789,14 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             var keepPerson = await session.Query<Person>().SingleAsync(p => p.AccountName == "keepuser", ct);
             Assert.True((await session.LoadAsync<ApplicationUser>(keepPerson.Id, ct))!.IsActive, "keepuser still active");
 
-            // ── Lockout protection: the whole admin path survives despite being omitted ──
+            // ── The whole admin path survives despite being omitted ────────────
             Assert.True(await session.Query<PermissionRole>().AnyAsync(r => !r.IsDeleted && r.Name == "super-admin", ct), "realm-admin role protected");
             Assert.True(await session.Query<Group>().AnyAsync(g => !g.IsDeleted && g.Name == "AdminGroup", ct), "admin-conferring group protected");
             var adminPerson = await session.Query<Person>().SingleAsync(p => !p.IsDeleted && p.AccountName == "adminuser", ct);
             Assert.True((await session.LoadAsync<ApplicationUser>(adminPerson.Id, ct))!.IsActive, "admin user not binned");
             Assert.True(
                 await perms.HasPermissionAsync(adminPerson.Id, AppSlugs.Modgud, PermissionEvaluator.RealmAdminPermission, ct),
-                "admin user retains realm:admin after prune");
+                "admin user retains realm:admin");
 
             // ── Infrastructure protection ──────────────────────────────────────
             Assert.True(await session.Query<App>().AnyAsync(a => !a.IsDeleted && a.IsSystem, ct), "system app protected");
@@ -1178,7 +1197,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         });
         // ...so the plan sees no change on the group (the role entry itself flags the rename),
         // and the apply keeps the group on the SAME role, stale key notwithstanding.
-        var plan = await planner.PlanAsync(slug, exportBefore.Value, prune: false, baseline: exportBefore.Value, ct: ct);
+        var plan = await planner.PlanAsync(slug, exportBefore.Value, baseline: exportBefore.Value, ct: ct);
         Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
         var groupEntry = plan.Value.Sections.Single(s => s.Name == "groups").Entries.Single(e => e.Key == "Beta writers");
         Assert.Equal("unchanged", groupEntry.Action);
@@ -1560,7 +1579,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
 
         // ── Plan: no contradiction, no phantom skip — the plan sees the system app and
         //    the account exactly as the apply will. ─────────────────────────────────────
-        var plan = await planner.PlanAsync(slug, manifest, prune: false, ct: ct);
+        var plan = await planner.PlanAsync(slug, manifest, ct: ct);
         Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
         Assert.DoesNotContain(plan.Value.Sections, s => s.Name == "manifest");
         var roleEntry = Assert.Single(plan.Value.Sections.Single(s => s.Name == "roles").Entries);
@@ -1596,7 +1615,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         Assert.False(exported.IsError);
         var exGroup = Assert.Single(exported.Value.Groups, g => g.Name == "consumer-management");
         Assert.Equal(["consumer-management"], exGroup.Members!.Select(m => m.Key));
-        var again = await planner.PlanAsync(slug, exported.Value, prune: false, ct: ct);
+        var again = await planner.PlanAsync(slug, exported.Value, ct: ct);
         Assert.False(again.IsError);
         var againGroup = Assert.Single(again.Value.Sections.Single(s => s.Name == "groups").Entries, e => e.Key == "consumer-management");
         Assert.Equal("unchanged", againGroup.Action);
@@ -1610,7 +1629,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         {
             Groups = [exGroup with { Members = [new ManifestRef { Id = new ShortGuid(saId).ToString() }] }],
         };
-        var idPlan = await planner.PlanAsync(slug, idOnly, prune: false, ct: ct);
+        var idPlan = await planner.PlanAsync(slug, idOnly, ct: ct);
         Assert.False(idPlan.IsError);
         var idGroup = Assert.Single(idPlan.Value.Sections.Single(s => s.Name == "groups").Entries, e => e.Key == "consumer-management");
         Assert.Equal("unchanged", idGroup.Action);
@@ -1961,15 +1980,62 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
     }
 
     /// <summary>
+    /// A credential the file names by id is created UNDER that id, like every other entity
+    /// with a pinned id. The issue op used to mint a random one, so the next apply of the
+    /// same file (a stage export applied to prod twice) found nothing under the file's id,
+    /// issued the client_id again and failed the whole apply on the taken client_id.
+    /// </summary>
+    [Fact]
+    public async Task A_credential_with_a_pinned_id_is_created_under_it_and_a_reapply_finds_it()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+
+        const string slug = "sapinned";
+        Guid account = Guid.NewGuid(), credential = Guid.NewGuid();
+        var manifest = new RealmManifest
+        {
+            ServiceAccounts =
+            [
+                new RealmManifestServiceAccount
+                {
+                    AccountName = "stage-sync", Id = Pin(account),
+                    Credentials =
+                    [
+                        new RealmManifestServiceAccountCredential { ClientId = "stage-sync.main", Id = Pin(credential) },
+                    ],
+                },
+            ],
+        };
+
+        var first = await ProvisionRealmAsync(factory, Shell(slug), manifest, ct);
+        Assert.False(first.IsError, first.IsError ? first.FirstError.Description : string.Empty);
+
+        var again = await applier.UpdateRealmAsync(slug, manifest, ct: ct);
+        Assert.False(again.IsError, again.IsError ? again.FirstError.Description : string.Empty);
+        Assert.False(again.Value.ClientSecrets.ContainsKey("stage-sync.main"),
+            "the second apply updates the credential; it must not issue a fresh secret");
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var live = await sp.GetRequiredService<IDocumentSession>().Query<OAuthApplicationState>()
+                .Where(c => !c.IsDeleted && c.ClientId == "stage-sync.main").ToListAsync(ct);
+            Assert.Equal(credential, Assert.Single(live).Id);
+        });
+    }
+
+    /// <summary>
     /// A service account's machine credentials travel as ordinary manifest entries — what
     /// does NOT travel is the secret, which is minted fresh on the target and handed back
     /// once. Before this, an export carried the account hull only, so a transferred service
     /// account arrived unable to authenticate and nothing said so.
     ///
     /// <para>The Credentials list is the desired set for its account, like Members on a
-    /// group: a credential the account has but the list does not is deleted at apply — no
-    /// prune needed — and the plan shows that as a red delete entry beforehand, which also
-    /// makes a pruning apply ask first. An account the file never mentions keeps everything
+    /// group: a credential the account has but the list does not is deleted at apply, and
+    /// the plan shows that as a red delete entry beforehand. An account the file never
+    /// mentions keeps everything
     /// it has, and an entry without a Credentials list leaves them alone.</para>
     /// </summary>
     [Fact]
@@ -2034,7 +2100,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
         }
 
         // ── The spare dropped from the list, the OTHER account left out of the file
-        //    entirely, NO prune. The plan shows the spare as a deletion in the clients
+        //    entirely. The plan shows the spare as a deletion in the clients
         //    section; the apply deletes it; the unmentioned account keeps everything. ──
         var withoutSpare = exported.Value with
         {
@@ -2046,7 +2112,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
                 },
             ],
         };
-        var plan = await planner.PlanAsync(slug, withoutSpare, prune: false, ct: ct);
+        var plan = await planner.PlanAsync(slug, withoutSpare, ct: ct);
         Assert.False(plan.IsError, plan.IsError ? plan.FirstError.Description : string.Empty);
         var clientEntries = plan.Value.Sections.Single(s => s.Name == "clients").Entries;
         Assert.Contains(clientEntries, e => e.Key == "billing-sync.spare" && e.Action == "delete");
@@ -2070,7 +2136,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
     /// <summary>
     /// Scheduled-job configuration and the inbox retention policy are realm configuration
     /// with no entity identity: a job is configured by its compiled key (never created or
-    /// pruned; an unknown key is skipped and reported), the inbox policy is one singleton
+    /// deleted; an unknown key is skipped and reported), the inbox policy is one singleton
     /// whose sections replace when present (null inside a section is the value "never").
     /// Both used to be admin-UI-only live writes.
     /// </summary>

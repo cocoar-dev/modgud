@@ -137,7 +137,7 @@ See [Invite codes](../../admin/invite-codes) for the full flow.
 - [ ] Issuing a realm-admin invite revokes an older open invite; only the newest 24-hour link is usable **(automated)**
 - [ ] Reserved/invalid slugs are rejected **(automated)**
 - [ ] Exporting a realm as a manifest and re-applying it is a no-op
-- [ ] Applying a manifest with `?prune=true` removes drifted entities but never locks out the last realm admin
+- [ ] Staging deletions in a draft and applying it removes drifted entities but never locks out the last realm admin (protected targets flag as a plan error instead)
 
 See [Declarative realm provisioning](../../admin/realm-provisioning) for the manifest format and the two provisioning surfaces.
 

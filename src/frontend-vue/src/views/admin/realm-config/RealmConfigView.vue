@@ -170,7 +170,6 @@ const ACTION_VARIANTS: Record<PlanAction, 'neutral' | 'success' | 'warning' | 'e
   update: 'info',
   unchanged: 'neutral',
   delete: 'error',
-  protected: 'warning',
   error: 'error',
 }
 
@@ -180,7 +179,6 @@ function actionLabel(action: PlanAction): string {
     case 'update': return t('admin.realmConfig.action.update', {}, 'Update')
     case 'unchanged': return t('admin.realmConfig.action.unchanged', {}, 'Unchanged')
     case 'delete': return t('admin.realmConfig.action.delete', {}, 'Delete')
-    case 'protected': return t('admin.realmConfig.action.protected', {}, 'Protected')
     case 'error': return t('admin.realmConfig.action.error', {}, 'Error')
   }
 }
@@ -198,7 +196,7 @@ function sectionLabel(name: string): string {
 function cardInfo(section: string, entry: PlanEntry): string[] {
   const e = store.findEntity(section, entry.Key)
   if (!e) {
-    return entry.Action === 'delete' || entry.Action === 'protected'
+    return entry.Action === 'delete'
       ? [t('admin.realmConfig.card.liveOnly', {}, 'Live only — not in this draft')]
       : []
   }
@@ -247,7 +245,7 @@ function cardInfo(section: string, entry: PlanEntry): string[] {
 }
 
 const actionCounts = computed(() => {
-  const counts: Record<PlanAction, number> = { create: 0, update: 0, delete: 0, protected: 0, unchanged: 0, error: 0 }
+  const counts: Record<PlanAction, number> = { create: 0, update: 0, delete: 0, unchanged: 0, error: 0 }
   for (const section of store.plan?.Sections ?? [])
     for (const entry of section.Entries) counts[entry.Action]++
   return counts
@@ -327,9 +325,8 @@ async function handleModalResult(section: string, key: string, result?: DraftEnt
     return
   }
   if (result.entity) {
-    // Replace at the ORIGINAL key — if the entity's key field was edited, the
-    // staged entity carries the new key and the re-plan shows the rename as
-    // create (+ prune delete of the old one).
+    // The server replaces the entry by its Id, so an edited key field stages a
+    // rename of the same entity, not a second one.
     await store.upsertEntity(section, key, result.entity)
   }
 }
@@ -475,7 +472,6 @@ function formatDate(value: string): string {
             <CoarTag v-if="actionCounts.create" variant="success" size="s">{{ actionCounts.create }} {{ t('admin.realmConfig.summary.create', {}, 'create') }}</CoarTag>
             <CoarTag v-if="actionCounts.update" variant="info" size="s">{{ actionCounts.update }} {{ t('admin.realmConfig.summary.update', {}, 'update') }}</CoarTag>
             <CoarTag v-if="actionCounts.delete" variant="error" size="s">{{ actionCounts.delete }} {{ t('admin.realmConfig.summary.delete', {}, 'delete') }}</CoarTag>
-            <CoarTag v-if="actionCounts.protected" variant="warning" size="s">{{ actionCounts.protected }} {{ t('admin.realmConfig.summary.protected', {}, 'protected') }}</CoarTag>
             <CoarTag v-if="actionCounts.error" variant="error" size="s">{{ actionCounts.error }} {{ t('admin.realmConfig.summary.error', {}, 'error') }}</CoarTag>
             <CoarTag variant="neutral" size="s">{{ actionCounts.unchanged }} {{ t('admin.realmConfig.summary.unchanged', {}, 'unchanged') }}</CoarTag>
             <CoarTag v-if="conflictCount > 0" variant="warning" size="s">
@@ -487,19 +483,13 @@ function formatDate(value: string): string {
           <CoarCheckbox
             v-model="showUnchanged"
             :label="t('admin.realmConfig.showUnchanged', {}, 'Show unchanged')" />
-          <CoarCheckbox
-            v-model="store.prune"
-            :label="t('admin.realmConfig.prune', {}, 'Prune — also delete entities missing from the draft')"
-            @update:model-value="store.replan()" />
           <CoarPopconfirm
             :title="t('admin.realmConfig.applyConfirmTitle', {}, 'Apply this draft?')"
-            :message="store.prune
-              ? t('admin.realmConfig.applyConfirmPrune', {}, 'The staged changes are applied AND missing entities are deleted (full sync). One transaction — all or nothing.')
-              : t('admin.realmConfig.applyConfirm', {}, 'The staged changes are applied to this realm in one transaction — all or nothing.')"
-            :confirm-variant="store.prune ? 'danger' : 'primary'"
+            :message="t('admin.realmConfig.applyConfirm', {}, 'The staged changes are applied to this realm in one transaction — all or nothing.')"
+            confirm-variant="primary"
             @confirmed="applyDraft">
             <CoarButton
-              :variant="store.prune ? 'danger' : 'primary'"
+              variant="primary"
               size="s"
               :loading="store.applying"
               :disabled="!store.canApply || store.pendingCount === 0">
@@ -510,9 +500,6 @@ function formatDate(value: string): string {
           </CoarPopconfirm>
         </div>
 
-        <CoarNotice v-if="store.prune" variant="warning">
-          {{ t('admin.realmConfig.pruneHint', {}, 'Prune turns the apply into a full sync: everything in this realm that is missing from the draft gets deleted (system entities and realm admins are protected). Review the plan carefully.') }}
-        </CoarNotice>
         <CoarNotice v-if="conflictCount > 0" variant="warning">
           <div class="conflict-banner">
             <span>

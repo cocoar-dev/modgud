@@ -153,7 +153,7 @@ const modalSubtitle = computed(() => isCreate.value ? undefined : form.value.Nam
 const footerButton = computed(() => ({
   visible: true,
   text: stagedSave.value
-    ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+    ? t('admin.realmConfig.entry.save', {}, 'Stage into draft')
     : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: !form.value.Name.trim() || busy.value,
   loading: saving.value,

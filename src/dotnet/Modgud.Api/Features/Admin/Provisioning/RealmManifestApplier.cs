@@ -99,22 +99,15 @@ public sealed partial class RealmManifestApplier(
     /// rollback they are discarded. The upserts remain idempotent, so re-applying after a
     /// fixed manifest is still safe.</para>
     ///
-    /// <para>When <paramref name="prune"/> is set the merge becomes a full sync (k8s
-    /// <c>apply --prune</c>): after the upsert, every entity that exists in the realm but is
-    /// absent from the manifest is deleted via its canonical delete op, in reverse-dependency
-    /// order. Lockout- and infrastructure-protected entities are NEVER pruned — the system app,
-    /// auto-seeded standard scopes, service-account-linked clients, and anything conferring
-    /// <c>realm:admin</c> (a realm-admin role, any user who currently holds realm:admin, and any
-    /// admin-conferring group). Without the flag the additive merge above is unchanged.</para>
-    ///
-    /// <para><paramref name="deletions"/> (ADR-0017 staged deletes) are prune's per-entity
-    /// counterpart: only the listed (section, key) targets are deleted, through the SAME
-    /// canonical delete ops, guards and reverse-dependency order — inside the same apply
-    /// transaction. Protection violations throw (the draft plan gate flags them as errors
-    /// beforehand).</para>
+    /// <para>An entity absent from the manifest is never deleted — there is no full-sync
+    /// mode. The only deletions are <paramref name="deletions"/> (ADR-0017 staged deletes):
+    /// exactly the listed (section, key) targets, through the canonical delete ops in
+    /// reverse-dependency order, inside the same apply transaction. Lockout- and
+    /// infrastructure-protected entities are never deleted; a staged deletion of one throws
+    /// (the draft plan gate flags it as an error beforehand).</para>
     /// </summary>
     public async Task<ErrorOr<RealmImportResult>> UpdateRealmAsync(
-        string slug, RealmManifest manifest, bool prune = false,
+        string slug, RealmManifest manifest,
         IReadOnlyCollection<RealmDraftDeletion>? deletions = null, CancellationToken ct = default)
     {
         var realm = await realms.GetRealmBySlugAsync(slug, ct);
@@ -133,7 +126,7 @@ public sealed partial class RealmManifestApplier(
         var skips = new ManifestReferenceSkips();
         try
         {
-            var secrets = await ApplyTenantUpdateAsync(slug, manifest, prune, deletions, skips, identity, ct);
+            var secrets = await ApplyTenantUpdateAsync(slug, manifest, deletions, skips, identity, ct);
             logger.LogInformation(
                 "Updated realm {Slug}: {Apps} apps, {Apis} apis, {Scopes} scopes, {Clients} clients, {Roles} roles, {Users} users, {Groups} groups, {Providers} login providers, {Positions} positions (in-place merge).",
                 slug, manifest.Apps.Count, manifest.Apis.Count, manifest.Scopes.Count,
@@ -176,7 +169,7 @@ public sealed partial class RealmManifestApplier(
     /// <see cref="UpdateRealmAsync"/> for the field-level merge semantics.
     /// </summary>
     private async Task<Dictionary<string, string>> ApplyTenantUpdateAsync(
-        string slug, RealmManifest manifest, bool prune,
+        string slug, RealmManifest manifest,
         IReadOnlyCollection<RealmDraftDeletion>? deletions, ManifestReferenceSkips skips,
         ManifestIdentity identity, CancellationToken ct)
     {
@@ -193,7 +186,7 @@ public sealed partial class RealmManifestApplier(
         await using var applyTx = await TenantApplyTransaction.BeginAsync(store, slug, ct);
         using (applyTx.Activate())
         {
-            await ApplyTenantUpdateSectionsAsync(manifest, prune, deletions, secrets, skips, identity, ct);
+            await ApplyTenantUpdateSectionsAsync(manifest, deletions, secrets, skips, identity, ct);
             await applyTx.CommitAsync(ct);
         }
 
@@ -205,7 +198,7 @@ public sealed partial class RealmManifestApplier(
     }
 
     private async Task ApplyTenantUpdateSectionsAsync(
-        RealmManifest manifest, bool prune, IReadOnlyCollection<RealmDraftDeletion>? deletions,
+        RealmManifest manifest, IReadOnlyCollection<RealmDraftDeletion>? deletions,
         Dictionary<string, string> secrets, ManifestReferenceSkips skips, ManifestIdentity identity,
         CancellationToken ct)
     {
@@ -752,16 +745,15 @@ public sealed partial class RealmManifestApplier(
 
         // ── Scheduled jobs + inbox retention — realm configuration with no entity
         //    identity: jobs are configured by their compiled key, the inbox policy is
-        //    one singleton. Neither is ever created or pruned. ────────────────────────
+        //    one singleton. Neither is ever created or deleted. ───────────────────────
         await ApplyJobsAsync(sp, manifest, skips, ct);
         await ApplyInboxSettingsAsync(session, manifest, ct);
 
-        // ── Prune / staged deletions: removal of entities absent from the manifest. Runs
-        //    AFTER the upsert so the protection checks see the desired (post-merge) role
-        //    graph. Prune sweeps everything; staged deletions target only their keys.
-        if (prune || deletions is { Count: > 0 })
-            await PruneAsync(sp, session, identity, appAdmin, oauth, roleAdmin, prune,
-                DeletionTargets(deletions), ct);
+        // ── Staged deletions: exactly the entities a draft asked to delete. Runs AFTER
+        //    the upsert so the protection checks see the desired (post-merge) role graph.
+        if (DeletionTargets(deletions) is { } targets)
+            await ApplyStagedDeletionsAsync(sp, session, identity, appAdmin, oauth, roleAdmin,
+                targets, ct);
     }
 
     /// <summary>Per-section key sets for targeted (staged) deletions; the positions
@@ -779,26 +771,23 @@ public sealed partial class RealmManifestApplier(
                     StringComparer.Ordinal);
 
     /// <summary>
-    /// Deletes every entity that exists in the realm but is absent from the manifest, each via
-    /// its canonical delete op (the same the admin API uses), in reverse-dependency order so a
-    /// dependent is gone before the app / role it points at — clients → scopes → apis → groups
-    /// → users → roles → apps. An app still referenced by a manifest-KEPT role / resource server
-    /// correctly errors (surfaced via <see cref="ManifestApplyException"/>).
+    /// Deletes the entities a draft staged for deletion, each via its canonical delete op (the
+    /// same the admin API uses), in reverse-dependency order so a dependent is gone before the
+    /// app / role it points at — clients → scopes → apis → groups → users → roles → apps. An
+    /// app still referenced by a manifest-KEPT role / resource server correctly errors
+    /// (surfaced via <see cref="ManifestApplyException"/>).
     ///
-    /// <para>"Absent from the manifest" is read by IDENTITY (ADR 0024): the sweep runs AFTER
-    /// the upsert and keeps exactly the entity ids that upsert touched. Keeping by name would
-    /// mean a manifest entry that renamed an entity no longer matches the live one, which
-    /// would prune the very entity the apply just wrote.</para>
+    /// <para>An entity the upsert just created or updated is never deleted (ADR 0024 —
+    /// identity, not name): a staged key that the same apply wrote is kept.</para>
     ///
-    /// <para>NEVER pruned (infrastructure + lockout protection — the robust superset of "System
-    /// + last admin": protect ALL admins so no manifest can lock the realm out): the system app
-    /// (<c>IsSystem</c>), auto-seeded standard scopes (<c>StandardScopes.IsStandard</c>),
-    /// terminal-managed clients, the credentials of any service account the manifest does NOT
-    /// declare (<c>LinkedServiceAccountId</c> — a declared account's credentials are ordinary
-    /// entries and prune like any other; the account itself is never pruned), any realm-admin
-    /// role (<c>IsRealmAdmin</c>), any user who currently holds <c>realm:admin</c>, and any group
-    /// that confers <c>realm:admin</c> (else pruning an admin's group silently strips their admin
-    /// path even though the role + user survive).</para>
+    /// <para>NEVER deleted (infrastructure + lockout protection — protect ALL admins so no
+    /// draft can lock the realm out): the system app (<c>IsSystem</c>), auto-seeded standard
+    /// scopes (<c>StandardScopes.IsStandard</c>), terminal-managed clients, service-account
+    /// credentials (<c>LinkedServiceAccountId</c> — they leave through the account's
+    /// <c>Credentials</c> list, which is what the plan shows), any realm-admin role
+    /// (<c>IsRealmAdmin</c>), any user who currently holds <c>realm:admin</c>, and any group
+    /// that confers <c>realm:admin</c> (else deleting an admin's group silently strips their
+    /// admin path even though the role + user survive).</para>
     ///
     /// <para>Tenant durability (same trap as create/update): user delete runs through
     /// <see cref="DeleteUsersHandler"/> and group delete through <see cref="DeleteGroupHandler"/>
@@ -807,62 +796,46 @@ public sealed partial class RealmManifestApplier(
     /// <c>wolverine_*_envelopes</c> a tenant DB lacks. OAuth / app / role deletes go through their
     /// services on the same scoped session.</para>
     /// </summary>
-    private async Task PruneAsync(
+    private async Task ApplyStagedDeletionsAsync(
         IServiceProvider sp, IDocumentSession session,
         ManifestIdentity identity, AppAdminService appAdmin, OAuthAdminService oauth,
-        RoleAdminService roleAdmin, bool prune,
-        IReadOnlyDictionary<string, HashSet<string>>? targeted,
+        RoleAdminService roleAdmin,
+        IReadOnlyDictionary<string, HashSet<string>> targeted,
         CancellationToken ct)
     {
         var perms = sp.GetRequiredService<IPermissionService>();
 
-        // Targeted (staged) deletions restrict the sweep to their keys; a full prune
-        // deletes every candidate. Everything else — keep-sets, infra/lockout guards,
-        // canonical delete ops, ordering — is byte-identical for both modes.
-        //
         // The keys are what the admin picked off a LIVE list ("delete this row"), which is
         // a different question from "which entity does this manifest entry mean" — so they
         // stay names while identity (below) is the id.
         bool Wants(string section, string key)
-            => prune || (targeted?.TryGetValue(section, out var keys) == true && keys.Contains(key));
+            => targeted.TryGetValue(section, out var keys) && keys.Contains(key);
 
         // "Represented in the manifest" is an IDENTITY question (ADR 0024), so the keep-set
         // is what the apply just created or updated, by id — not what shares a name with a
         // manifest entry. That also closes the old hole where an entry that RENAMED an
-        // entity left the live one (still carrying its old name) looking prunable.
+        // entity left the live one (still carrying its old name) looking deletable.
         bool Keep(string section, Guid id) => identity.WasApplied(section, id);
 
-        // ── Positions — first: pruning a position cascades its terminal slots + their
+        // ── Positions — first: deleting a position cascades its terminal slots + their
         //    terminal-managed clients (see the Positions partial). ─────────────────────────
-        await PrunePositionsAsync(sp, session, oauth, identity, prune, targeted, ct);
+        await DeleteStagedPositionsAsync(sp, session, oauth, identity, targeted, ct);
 
-        // ── Clients — a terminal-managed client is never pruned here: it lives and dies
-        //    with its slot (a pruned position cascades it above; otherwise revoke is the
+        // ── Clients — a terminal-managed client is never deleted here: it lives and dies
+        //    with its slot (a deleted position cascades it above; otherwise revoke is the
         //    action). A V2 terminal client is linked to its ENROLLMENT only, the position
-        //    link being the legacy form, so both links are tested — testing the position
-        //    link alone sent V2 slot clients into the generic delete, which refuses them
-        //    and failed the whole pruning apply. ───────────────────────────────────────────
+        //    link being the legacy form, so both links are tested. A service-account
+        //    credential is never deleted here either: the export does not list it under
+        //    Clients, so the plan could not show such a deletion — it leaves through its
+        //    account's Credentials list, which the plan does show. ─────────────────────────
         foreach (var c in await session.Query<OAuthApplicationState>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
             if (Keep(ManifestIdentity.Sections.Clients, c.Id)
                 || c.LinkedPositionPrincipalId.HasValue
                 || c.ManagedTerminalEnrollmentId.HasValue
+                || c.LinkedServiceAccountId.HasValue
                 || !Wants("clients", c.ClientId)) continue;
-            // A service-account credential is only prunable when the manifest actually
-            // speaks for its account. An account the file never mentions keeps every
-            // credential it has — the alternative is that omitting an account silently
-            // cuts off whatever authenticates as it.
-            if (c.LinkedServiceAccountId is { } ownerId)
-            {
-                if (!Keep(ManifestIdentity.Sections.ServiceAccounts, ownerId)) continue;
-                // …and it goes through the SA-scoped delete: /admin/oauth/clients refuses
-                // to mutate an SA-owned client at all, which is the guard that keeps a
-                // credential's lifecycle attached to its account.
-                EnsureOk(await oauth.DeleteServiceAccountCredentialAsync(ownerId, c.Id.ToString(), ct),
-                    $"prune service-account credential '{c.ClientId}'");
-                continue;
-            }
-            EnsureOk(await oauth.DeleteClientAsync(c.Id.ToString(), ct), $"prune client '{c.ClientId}'");
+            EnsureOk(await oauth.DeleteClientAsync(c.Id.ToString(), ct), $"delete client '{c.ClientId}'");
         }
 
         // ── Login providers — keep the built-in Internal provider. ───────────────────────────
@@ -872,7 +845,7 @@ public sealed partial class RealmManifestApplier(
             if (Keep(ManifestIdentity.Sections.LoginProviders, p.Id) || p.IsBuiltIn
                 || !Wants("loginProviders", p.Slug)) continue;
             EnsureOk(await deleteProvider.Handle(new DeleteLoginProviderCommand(p.Id), ct),
-                $"prune login provider '{p.Slug}'");
+                $"delete login provider '{p.Slug}'");
         }
 
         // ── Scopes — keep auto-seeded standard scopes. ───────────────────────────────────────
@@ -880,14 +853,14 @@ public sealed partial class RealmManifestApplier(
         {
             if (Keep(ManifestIdentity.Sections.Scopes, s.Id) || StandardScopes.IsStandard(s.Name)
                 || !Wants("scopes", s.Name)) continue;
-            EnsureOk(await oauth.DeleteScopeAsync(s.Id.ToString(), ct), $"prune scope '{s.Name}'");
+            EnsureOk(await oauth.DeleteScopeAsync(s.Id.ToString(), ct), $"delete scope '{s.Name}'");
         }
 
         // ── APIs. ────────────────────────────────────────────────────────────────────────────
         foreach (var a in await session.Query<OAuthApiState>().Where(x => !x.IsDeleted).ToListAsync(ct))
         {
             if (Keep(ManifestIdentity.Sections.Apis, a.Id) || !Wants("apis", a.Name)) continue;
-            EnsureOk(await oauth.DeleteApiAsync(a.Id.ToString(), ct), $"prune api '{a.Name}'");
+            EnsureOk(await oauth.DeleteApiAsync(a.Id.ToString(), ct), $"delete api '{a.Name}'");
         }
 
         // ── Groups — keep admin-conferring groups (lockout guard). ───────────────────────────
@@ -896,17 +869,17 @@ public sealed partial class RealmManifestApplier(
         {
             if (Keep(ManifestIdentity.Sections.Groups, g.Id) || !Wants("groups", g.Name)) continue;
             if (await GroupMembershipGuards.GroupConfersRealmAdminAsync(session, perms, g, ct)) continue;
-            EnsureOk(await groupHandler.Handle(new DeleteGroupCommand(g.Id), ct), $"prune group '{g.Name}'");
+            EnsureOk(await groupHandler.Handle(new DeleteGroupCommand(g.Id), ct), $"delete group '{g.Name}'");
         }
 
         // ── Users — keep anyone who holds realm:admin. ───────────────────────────────────────
         // A staged user deletion carries whatever key the list row showed (username
         // or email) — match either, case-insensitively.
-        var targetedUsers = targeted?.GetValueOrDefault("users");
+        var targetedUsers = targeted.GetValueOrDefault("users");
         bool WantsUser(Person p)
-            => prune || (targetedUsers is not null && targetedUsers.Any(k =>
+            => targetedUsers is not null && targetedUsers.Any(k =>
                 string.Equals(k, p.AccountName, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(k.ToUpperInvariant(), p.NormalizedEmail, StringComparison.Ordinal)));
+                string.Equals(k.ToUpperInvariant(), p.NormalizedEmail, StringComparison.Ordinal));
         var userHandler = new DeleteUsersHandler(
             session,
             sp.GetRequiredService<IUserAccessRevoker>(),
@@ -918,7 +891,7 @@ public sealed partial class RealmManifestApplier(
             if (Keep(ManifestIdentity.Sections.Users, p.Id) || !WantsUser(p)) continue;
             if (await perms.HasPermissionAsync(p.Id, AppSlugs.Modgud, PermissionEvaluator.RealmAdminPermission, ct))
                 continue;
-            EnsureOk(await userHandler.Handle(new DeleteUsersCommand([p.Id]), ct), $"prune user '{p.AccountName ?? p.Id.ToString()}'");
+            EnsureOk(await userHandler.Handle(new DeleteUsersCommand([p.Id]), ct), $"delete user '{p.AccountName ?? p.Id.ToString()}'");
         }
 
         // ── Roles — keep realm-admin roles (lockout guard). ──────────────────────────────────
@@ -930,7 +903,7 @@ public sealed partial class RealmManifestApplier(
                 !r.IsRealmAdmin && r.AppId is { } aid ? roleAppSlugById.GetValueOrDefault(aid) : null, r.Name);
             if (Keep(ManifestIdentity.Sections.Roles, r.Id) || r.IsRealmAdmin
                 || !Wants("roles", roleKey)) continue;
-            EnsureOk(await roleAdmin.DeleteRoleAsync(r.Id, ct), $"prune role '{roleKey}'");
+            EnsureOk(await roleAdmin.DeleteRoleAsync(r.Id, ct), $"delete role '{roleKey}'");
         }
 
         // ── Apps — keep the system app; a still-referenced app errors. ───────────────────────
@@ -938,7 +911,7 @@ public sealed partial class RealmManifestApplier(
         {
             if (Keep(ManifestIdentity.Sections.Apps, a.Id) || a.IsSystem
                 || !Wants("apps", a.Slug)) continue;
-            EnsureOk(await appAdmin.DeleteAppAsync(a.Id, ct), $"prune app '{a.Slug}'");
+            EnsureOk(await appAdmin.DeleteAppAsync(a.Id, ct), $"delete app '{a.Slug}'");
         }
     }
 
@@ -1702,7 +1675,7 @@ public sealed partial class RealmManifestApplier(
     }
 
     /// <summary>Binds a handle to the id a create actually produced and records the entity
-    /// as touched (prune's keep-set). The id comes back from the canonical op as a string,
+    /// as touched (the staged-deletion keep-set). The id comes back from the canonical op as a string,
     /// so an unparseable one is a contract break worth failing on rather than dropping.</summary>
     private static void RegisterApplied(
         ManifestIdentity identity, string section, string? manifestId, string createdId, string ctx)

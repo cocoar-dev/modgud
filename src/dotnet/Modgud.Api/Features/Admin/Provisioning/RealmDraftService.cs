@@ -48,50 +48,6 @@ public sealed class RealmDraftService(
         return drafts.Select(d => Summary(d, userId)).ToList();
     }
 
-    /// <summary>
-    /// Parks a manifest that a destructive apply wanted to run, so a HUMAN can look at it
-    /// before it happens. The script that posted it gets the draft's id back and can mail
-    /// the link on ("please review this import"); the reviewer opens the ordinary draft
-    /// workspace, reads the plan with its deletions in red, and applies — or throws the
-    /// draft away.
-    ///
-    /// <para>SHARED by construction: the parker is often a control-plane admin or a machine
-    /// identity that does not exist in this realm, and a private draft would be invisible to
-    /// exactly the people who are supposed to review it.</para>
-    /// </summary>
-    public async Task<ErrorOr<RealmDraftDto>> ParkForReviewAsync(
-        RealmManifest manifest, string slug, string parkedBy, Guid userId, string userName,
-        CancellationToken ct)
-    {
-        var exportResult = await exporter.ExportRealmAsync(slug, ct);
-        if (exportResult.IsError) return exportResult.Errors;
-
-        var secrets = new Dictionary<string, string>(StringComparer.Ordinal);
-        var sanitized = SanitizeManifest(manifest, secrets);
-        var now = time.GetUtcNow();
-
-        var draft = new RealmDraft
-        {
-            Id = Guid.NewGuid(),
-            Name = $"Pending apply (prune) — {now:yyyy-MM-dd HH:mm} UTC, by {parkedBy}",
-            Manifest = sanitized,
-            Baseline = exportResult.Value,
-            Secrets = secrets,
-            Shared = true,
-            PruneOnApply = true,
-            CreatedBy = userId,
-            CreatedByName = parkedBy,
-            CreatedAt = now,
-            LastModifiedBy = userId,
-            LastModifiedByName = parkedBy,
-            LastModifiedAt = now,
-            Version = 1,
-        };
-        session.Store(draft);
-        await session.SaveChangesAsync(ct);
-        return ToDto(draft, userId);
-    }
-
     public async Task<ErrorOr<RealmDraftDto>> CreateAsync(
         CreateRealmDraftDto dto, string slug, Guid userId, string userName, CancellationToken ct)
     {
@@ -280,8 +236,13 @@ public sealed class RealmDraftService(
         {
             if (root[meta.Collection] is not JsonArray list)
                 root[meta.Collection] = list = [];
-            var index = list.OfType<JsonObject>().ToList()
-                .FindIndex(e => meta.Key(e) == key);
+            // Identity is the Id (ADR 0024): an edit that renamed the entity's natural key
+            // replaces the entry it came from. Matching by key alone left the old entry
+            // next to the renamed one — two entries for one entity, the apply writing both.
+            var entries = list.OfType<JsonObject>().ToList();
+            var id = EntryId(entity);
+            var index = id is null ? -1 : entries.FindIndex(e => EntryId(e) == id);
+            if (index < 0) index = entries.FindIndex(e => meta.Key(e) == key);
             if (index >= 0) list[index] = entity.DeepClone();
             else list.Add(entity.DeepClone());
         }
@@ -300,7 +261,7 @@ public sealed class RealmDraftService(
     /// <summary>
     /// Stages the DELETION of one live entity (ADR-0017 staged deletes): removes it
     /// from the active draft's manifest AND records the (section, key) so plan/apply
-    /// treat it as a targeted delete — prune's per-entity counterpart. With no active
+    /// treat it as a targeted delete. With no active
     /// draft, one is created implicitly (same as <see cref="StageEntityAsync"/>).
     /// </summary>
     public async Task<ErrorOr<RealmDraftDto>> StageDeleteAsync(
@@ -471,13 +432,13 @@ public sealed class RealmDraftService(
     // ── Plan / apply ─────────────────────────────────────────────────────────────
 
     public async Task<ErrorOr<RealmPlanResult>> PlanAsync(
-        Guid id, bool prune, Guid userId, CancellationToken ct)
+        Guid id, Guid userId, CancellationToken ct)
     {
         var draft = await LoadVisibleAsync(id, userId, ct);
         if (draft is null) return NotFound;
         var manifest = MergeSecrets(draft.Manifest, draft.Secrets);
         return await planner.PlanAsync(
-            TenantContext.Current, manifest, prune, draft.Baseline, draft.Deletions, ct);
+            TenantContext.Current, manifest, draft.Baseline, draft.Deletions, ct);
     }
 
     /// <summary>
@@ -487,18 +448,14 @@ public sealed class RealmDraftService(
     /// draft is deleted.
     /// </summary>
     public async Task<ErrorOr<RealmDraftApplyResult>> ApplyAsync(
-        Guid id, bool prune, Guid userId, CancellationToken ct)
+        Guid id, Guid userId, CancellationToken ct)
     {
         var draft = await LoadVisibleAsync(id, userId, ct);
         if (draft is null) return NotFound;
         var manifest = MergeSecrets(draft.Manifest, draft.Secrets);
-        // A parked pruning apply prunes however it is applied: the caller who parked it
-        // asked for a full sync, and applying only the additive half would be a different
-        // operation wearing the same name.
-        prune |= draft.PruneOnApply;
 
         var planResult = await planner.PlanAsync(
-            TenantContext.Current, manifest, prune, draft.Baseline, draft.Deletions, ct);
+            TenantContext.Current, manifest, draft.Baseline, draft.Deletions, ct);
         if (planResult.IsError) return planResult.Errors;
         var plan = planResult.Value;
         var hasErrors = plan.Sections.Any(s => s.Entries.Any(e => e.Action == "error"));
@@ -506,7 +463,7 @@ public sealed class RealmDraftService(
             return new RealmDraftApplyResult { Refused = true, Plan = plan };
 
         var applyResult = await applier.UpdateRealmAsync(
-            TenantContext.Current, manifest, prune, draft.Deletions, ct);
+            TenantContext.Current, manifest, draft.Deletions, ct);
         if (applyResult.IsError) return applyResult.Errors;
 
         session.Delete(draft);
@@ -619,6 +576,10 @@ public sealed class RealmDraftService(
         var draft = await session.LoadAsync<RealmDraft>(id, ct);
         return draft is null || (!draft.Shared && draft.CreatedBy != userId) ? null : draft;
     }
+
+    /// <summary>An entry's <c>Id</c> (a real id or a <c>#handle</c>), null when it has none.</summary>
+    private static string? EntryId(JsonObject entry)
+        => entry["Id"] is JsonValue v && v.TryGetValue<string>(out var s) && s.Length > 0 ? s : null;
 
     private static RealmDraftSummaryDto Summary(RealmDraft d, Guid userId) => new(
         d.Id, d.Name, d.Shared, d.CreatedBy == userId,

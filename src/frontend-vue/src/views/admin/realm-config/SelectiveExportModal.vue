@@ -237,7 +237,7 @@ function sectionLabel(name: string): string {
     <div class="selective-body">
       <CoarNotice variant="info" truncate>
         {{ t('admin.realmConfig.selective.hint', {},
-          'Secrets are never exported. The file names no realm — you pick the target when you import it. Referenced entities are pre-selected; uncheck any you do not want, the target skips references it cannot resolve and reports them in the plan. Apply WITHOUT prune; with prune it would delete everything not in the file.') }}
+          'Secrets are never exported. The file names no realm — you pick the target when you import it. Referenced entities are pre-selected; uncheck any you do not want, the target skips references it cannot resolve and reports them in the plan.') }}
       </CoarNotice>
       <CoarNotice v-if="droppedCount > 0" variant="warning" truncate>
         {{ t('admin.realmConfig.selective.dropped', { count: droppedCount },

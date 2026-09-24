@@ -94,7 +94,7 @@ the target realm already has.
   clients keep their secret across `ApplyAsync`.
 - References the target realm cannot resolve are **skipped, not fatal** — the apply
   reports them in `SkippedReferences`, and applies the rest.
-- Entity-level prune is not performed — entities absent from a manifest applied with
+- An apply never deletes — entities absent from a manifest applied with
   `ApplyAsync` are left untouched.
 
 Apache-2.0.

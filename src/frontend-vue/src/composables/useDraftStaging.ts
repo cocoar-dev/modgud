@@ -65,7 +65,7 @@ export function useDraftStaging(section: string) {
     await draftStore.removeEntity(section, key)
   }
 
-  /** Stages the deletion of a LIVE entity (targeted prune counterpart). */
+  /** Stages the deletion of a LIVE entity (a targeted, explicit delete). */
   async function stageDelete(key: string): Promise<void> {
     await draftStore.stageDelete(section, key)
   }

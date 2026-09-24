@@ -632,7 +632,7 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
     <!-- Origin & Branding -->
     <div v-show="activeTab === 'origin'" class="tab-content">
       <!-- No override toggle: the value IS the switch (see the form state). -->
-      <CoarFormField :label="t('admin.appSettings.origin.subdomain', {}, 'Subdomain (Child der Realm-Primary-Domain)')"
+      <CoarFormField :label="t('admin.appSettings.origin.subdomain', {}, `Subdomain (child of the realm's primary domain)`)"
         :hint="t('admin.appSettings.origin.subdomainHint', {}, 'A value routes this host to the app. Empty = no own subdomain, the app is reached through the realm URL — clearing the field removes the existing route.')">
         <CoarTextInput v-model="f.origin.subdomain" clearable placeholder="acmelist.cocoar.app" />
       </CoarFormField>

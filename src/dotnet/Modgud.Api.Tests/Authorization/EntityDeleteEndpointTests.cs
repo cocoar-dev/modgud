@@ -8,7 +8,7 @@ namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
 /// Pins the canonical delete endpoints after they were consolidated onto shared
-/// operations (the realm-provisioning prune reuses the same ops). The group delete
+/// operations (a draft's staged deletions reuse the same ops). The group delete
 /// in particular now routes through <c>DeleteGroupCommand</c> on the Wolverine bus —
 /// this proves the handler is actually discovered at runtime, not just compiles.
 /// </summary>

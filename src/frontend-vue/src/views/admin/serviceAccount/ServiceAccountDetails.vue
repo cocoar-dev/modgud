@@ -205,7 +205,7 @@ const footerButton = computed(() => ({
     : props.draftOnly
     ? t('admin.oauthClients.newServiceAccount.apply', {}, 'Übernehmen')
     : stagedSave.value
-      ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+      ? t('admin.realmConfig.entry.save', {}, 'Stage into draft')
     : isCreate.value
       ? t('common.create', {}, 'Create')
       : t('common.save', {}, 'Save'),

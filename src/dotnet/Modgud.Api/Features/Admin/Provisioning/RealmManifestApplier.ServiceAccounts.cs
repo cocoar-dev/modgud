@@ -30,7 +30,7 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// id is immutable and a differing manifest value is ignored (the planner
 /// surfaces it as a note).</para>
 ///
-/// <para>The ACCOUNT is never pruned or staged-deleted — deleting one kills every
+/// <para>The ACCOUNT is never deleted by an apply — deleting one kills every
 /// credential it owns, so that stays a deliberate action in the SA admin. The planner
 /// mirrors this by never emitting delete candidates for this section.</para>
 /// </summary>
@@ -75,9 +75,8 @@ public sealed partial class RealmManifestApplier
                 await UpdateServiceAccountAsync(session, revoker, existing, sa, normalised, ctx, ct);
             }
             identity.Assign(sa.Id, accountId);
-            // The ACCOUNT is never pruned (deleting it kills every credential it owns), but
-            // recording it tells prune that the manifest speaks for this account — which is
-            // what makes it safe to prune the account's credentials below.
+            // The ACCOUNT is never deleted by an apply (deleting it kills every credential
+            // it owns); recording it marks it as represented in the manifest.
             identity.Applied(ManifestIdentity.Sections.ServiceAccounts, accountId);
 
             await ApplyCredentialsAsync(session, oauth, identity, apps, secrets, skips, sa, accountId, ctx, ct);
@@ -130,6 +129,9 @@ public sealed partial class RealmManifestApplier
                 var issued = await oauth.IssueServiceAccountCredentialAsync(accountId,
                     new IssueServiceAccountCredentialDto
                     {
+                        // The id the file names, so the next apply of the same file finds
+                        // this credential instead of issuing its client_id a second time.
+                        Id = ManifestHandle.AsPinnedId(cred.Id),
                         ClientId = cred.ClientId,
                         DisplayName = OrNull(cred.DisplayName),
                         Scopes = cred.Scopes ?? [],

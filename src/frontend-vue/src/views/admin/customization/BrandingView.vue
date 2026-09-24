@@ -329,7 +329,7 @@ async function save() {
         <div class="flex">
           <CoarButton :loading="saving" @click="save">
             {{ stagedSave
-              ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+              ? t('admin.realmConfig.entry.save', {}, 'Stage into draft')
               : t('common.save', {}, 'Save') }}
           </CoarButton>
         </div>

@@ -516,6 +516,7 @@
       "empty": "Noch kein Benutzer darf diese Position besetzen.",
       "noPasskey": "Kein Passkey",
       "statusActive": "Aktiv",
+      "statusStaged": "Beim Anwenden",
       "statusSuspended": "Ausgesetzt",
       "statusRevoked": "Widerrufen",
       "suspendButton": "Aussetzen",
@@ -530,6 +531,10 @@
       "stagedNeedPolicy": "Terminal-Nutzung einschalten — die vorgemerkten Slots werden damit gespeichert.",
       "emptyStaged": "Noch keine Slots vorgemerkt.",
       "statusStaged": "Beim Speichern",
+      "statusOnApply": "Beim Anwenden",
+      "positionsStaged": "Positionen: beim Anwenden",
+      "stagePositions": "Vormerken",
+      "stagedHint": "Neue Slots und Änderungen an den Positionen, die ein Slot bedient, gehen in den Draft; der Client eines Slots wird beim Anwenden des Drafts angelegt, und das Gerät enrollt sich danach. Deaktivieren, reaktivieren und widerrufen wirken sofort.",
       "name": "Terminal-Name",
       "namePlaceholder": "Portier-Terminal links, …",
       "location": "Standort",
@@ -613,6 +618,7 @@
       "sectionTitle": "OAuth-Clients",
       "sectionHintShort": "Diesem Service Account zugeordnete OAuth-Clients.",
       "sectionHint": "Jeder OAuth-Client authentifiziert sich mit einer eigenen Client-ID und einem eigenen Secret an /connect/token, teilt aber Permissions und Group-Memberships dieses Service Accounts.",
+      "stagedHint": "Credentials werden zusammen mit dem Account vorgemerkt. Ein neues wird beim Anwenden ausgestellt, sein Secret einmalig im Anwenden-Ergebnis angezeigt; ein entferntes wird beim Anwenden gelöscht.",
       "issueButton": "OAuth-Client hinzufügen",
       "issueTitle": "OAuth-Client hinzufügen",
       "editTitle": "OAuth-Client bearbeiten",
@@ -657,6 +663,7 @@
       "enabledLabel": "OAuth-Client",
       "enabledHint": "Ein inaktiver OAuth-Client kann keine Tokens mehr anfordern — bereits ausgestellte bleiben bis zum Ablauf gültig.",
       "disabled": "Deaktiviert",
+      "statusStaged": "Beim Anwenden ausgestellt",
       "noScopes": "Keine Scopes gesetzt",
       "empty": "Noch keine OAuth-Clients.",
       "rotateButton": "Rotieren",
@@ -666,11 +673,13 @@
       "rotatedTitle": "Neues Secret für",
       "deleteTitle": "OAuth-Client löschen?",
       "deleteConfirm": "Bestehende Tokens bleiben gültig bis zum Ablauf, aber es können keine neuen mehr ausgestellt werden.",
+      "deleteStagedConfirm": "Aus dem Draft entfernt — wird beim Anwenden des Drafts gelöscht; der Plan zeigt es an.",
       "deleted": "OAuth-Client gelöscht.",
       "notFound": "OAuth-Client nicht gefunden."
     },
     "userDetails": {
       "createTitle": "Benutzer erstellen",
+      "stageSave": "Speichern (Draft)",
       "initialPassword": "Initiales Passwort",
       "initialPasswordHint": "Optional. Leer lassen für ein Konto, das sich per Magic Link, Passkey oder externem Identity Provider anmeldet.",
       "profileSection": "Profil",
@@ -817,6 +826,7 @@
     },
     "groupDetails": {
       "createTitle": "Gruppe erstellen",
+      "unresolvedRefs": "Diese gestagte Gruppe referenziert außerdem Entitäten, die in diesem Realm nicht existieren: {refs}. Sie werden in den Auswahllisten nicht angezeigt und beim Speichern unverändert übernommen.",
       "groupsLabel": "Gruppen",
       "usersLabel": "Benutzer",
       "serviceAccountsLabel": "Service Accounts",
@@ -1114,6 +1124,7 @@
     },
     "inboxSettings": {
       "title": "Inbox-Einstellungen",
+      "staged": "Im Draft vorgemerkt.",
       "saved": "Einstellungen gespeichert.",
       "saveFailed": "Speichern fehlgeschlagen.",
       "maxUnreadDays": "Max. Tage ungelesen",
@@ -1605,6 +1616,8 @@
       "title": "Login-Provider",
       "emptyHint": "Login-Provider sind die Wege, über die sich Benutzer anmelden – die eingebaute Passwort-Anmeldung plus externe Identitätsanbieter via OIDC, SAML, LDAP oder Kerberos.",
       "createTitle": "Login-Provider erstellen",
+      "disableNow": "Deaktivieren (sofort)",
+      "enableNow": "Aktivieren (sofort)",
       "addTitle": "Login-Provider hinzufügen",
       "add": "Provider hinzufügen",
       "displayName": "Display Name",
@@ -1746,6 +1759,7 @@
       "title": "Anwendungen",
       "emptyHint": "Eine Anwendung bündelt die Ressourcen, Rollen und OAuth-Clients eines Produkts, sodass Berechtigungen pro App abgegrenzt werden können.",
       "cannotDeleteSystem": "Die System-App kann nicht gelöscht werden.",
+      "renamedWarningStaged": "Die Umbenennung läuft wie jede andere Änderung über den Draft — im Plan prüfen, bevor angewendet wird.",
       "cat": {
         "action": "Action",
         "add": "Eintrag hinzufügen",
@@ -1864,7 +1878,7 @@
       "selective": {
         "title": "Selektiver Export",
         "subTitle": "Entities auswählen — Referenzen werden automatisch mitgenommen",
-        "hint": "Secrets werden nie exportiert. Die Datei benennt keinen Realm — das Ziel wählst du beim Import. Referenzierte Entities sind vorausgewählt; nimm raus, was du nicht willst — das Ziel überspringt Referenzen, die es nicht auflösen kann, und weist im Plan darauf hin. OHNE Prune anwenden; mit Prune würde alles gelöscht, was nicht in der Datei steht.",
+        "hint": "Secrets werden nie exportiert. Die Datei benennt keinen Realm — das Ziel wählst du beim Import. Referenzierte Entities sind vorausgewählt; nimm raus, was du nicht willst — das Ziel überspringt Referenzen, die es nicht auflösen kann, und weist im Plan darauf hin.",
         "includeSettings": "Realm-Einstellungen einschließen",
         "includeUsers": "User-Referenzen einschließen (Gruppen-Mitglieder, Positions-Grants)",
         "download": "Manifest herunterladen",
@@ -1912,8 +1926,6 @@
       "undelete": "Löschen zurücknehmen",
       "shareToggle": "Mit Realm-Admins teilen",
       "planning": "Änderungsplan wird berechnet…",
-      "prune": "Prune — Entitäten löschen, die im Draft fehlen",
-      "pruneHint": "Prune macht aus dem Anwenden einen vollständigen Abgleich: Alles, was in diesem Realm existiert, aber im Draft fehlt, wird gelöscht (System-Entitäten und Realm-Admins sind geschützt). Den Plan sorgfältig prüfen.",
       "conflictBanner": "Die Live-Konfiguration hat sich geändert, während dieser Draft offen war. Löse jeden Konflikt in seiner Karte („Live übernehmen“) oder bestätige die verbleibenden Abweichungen als gewollt:",
       "rebase": "Verbleibende Abweichungen bestätigen (Rebase)",
       "planErrors": "Der Plan enthält Einträge, an denen das Anwenden scheitern würde (mit „Fehler“ markiert). Vor dem Anwenden korrigieren.",
@@ -1921,7 +1933,6 @@
       "applyCount": "Draft anwenden ({count})",
       "applyConfirmTitle": "Diesen Draft anwenden?",
       "applyConfirm": "Die gestagten Änderungen werden in EINER Transaktion auf diesen Realm angewendet — alles oder nichts.",
-      "applyConfirmPrune": "Die gestagten Änderungen werden angewendet UND fehlende Entitäten gelöscht (vollständiger Abgleich). Eine Transaktion — alles oder nichts.",
       "applied": "Draft angewendet.",
       "appliedNotice": "Der Draft wurde auf diesen Realm angewendet.",
       "secretsTitle": "Neue Client-Secrets — werden nur einmal angezeigt, jetzt kopieren:",
@@ -1938,14 +1949,12 @@
         "update": "Ändern",
         "unchanged": "Unverändert",
         "delete": "Löschen",
-        "protected": "Geschützt",
         "error": "Fehler"
       },
       "summary": {
         "create": "anlegen",
         "update": "ändern",
         "delete": "löschen",
-        "protected": "geschützt",
         "unchanged": "unverändert",
         "error": "Fehler",
         "conflicts": "Konflikte"
@@ -1971,6 +1980,9 @@
         "permissions": "Permissions",
         "members": "Mitglieder",
         "grants": "Grants",
+        "terminals": "Terminal-Slots",
+        "jobDisabled": "deaktiviert",
+        "inboxSettings": "Inbox-Aufbewahrungsrichtlinie",
         "keyMissing": "Der Eintrag braucht seinen natürlichen Schlüssel (Slug / Name / Id), bevor er gestaged werden kann."
       },
       "conflict": {
@@ -1996,7 +2008,7 @@
         "secrets": "Secrets",
         "secretSet": "{slot} gestaged (Wert wird nicht angezeigt)",
         "json": "Eintrag (JSON)",
-        "notInDraft": "Diese Entity existiert live, ist aber nicht Teil des Drafts — mit Prune wird sie beim Anwenden gelöscht."
+        "notInDraft": "Diese Entity existiert live und ist nicht Teil des Drafts. Ist sie zum Löschen vorgemerkt, löscht das Anwenden des Drafts sie."
       }
     },
     "rateLimits": {
