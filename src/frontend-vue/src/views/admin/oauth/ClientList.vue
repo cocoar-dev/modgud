@@ -19,7 +19,7 @@ import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, CLIENT_CLONE } from '@/composables/useClone'
-import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { draftStagedColumn, useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
 import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import { useRouter } from 'vue-router'
 import type { OAuthClientDto } from '@/models/oauth'
@@ -158,17 +158,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthClien
     // stays countable at a glance without opening each position.
     (col) => col.field('LinkedPositionPrincipalId').header('Terminal', 'admin.oauthClients.terminal').width(180)
       .option('valueGetter', (p: any) => p.data ? (positionNameFor(p.data as OAuthClientDto) ?? '') : ''),
-    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
-      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
-        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
-        : p.data?.DraftStaged === 'update'
-          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
-          : p.data?.DraftStaged === 'delete'
-            ? t('admin.realmConfig.gridTag.delete', {}, 'Staged (delete)')
-            : '')
-      .width(120)
-      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged && p.data.DraftStaged !== 'delete')
-      .classRule('draft-staged-cell-delete', (p: any) => p.data?.DraftStaged === 'delete'),
+    (col) => draftStagedColumn(col, t),
     (col) => col.field('IsDynamicallyRegistered').header('DCR', 'admin.oauthClients.dcr').width(80)
       .option('valueGetter', (p: any) => p.data?.IsDynamicallyRegistered ? '●' : '')
       .option('cellStyle', { textAlign: 'center', color: 'var(--coar-accent-primary, #6366f1)' }),
@@ -188,6 +178,13 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<OAuthClien
 // enabled state, not a staged overlay value.
 const liveSelected = computed(() =>
   store.clients.find((c) => c.Id === selectedIds.value[0]) ?? null)
+
+// SA-linked and terminal-managed clients are not manifest-modeled — their
+// delete stays live, so the menu must not promise a staged one.
+const selectedStagesDelete = computed(() => {
+  const row = rows.value.find((r) => r.Id === selectedIds.value[0])
+  return !row || (!row.LinkedServiceAccountId && !row.LinkedPositionPrincipalId && !row.ManagedTerminalEnrollmentId)
+})
 
 const { exportMenuVisible, exportMenuLabel, exportMenuToggle } = useExportSelectionMenu('clients',
   computed(() => {
@@ -330,9 +327,7 @@ function openClient(client: OAuthClientDto) {
         :icon="liveSelected.Enabled ? 'circle-pause' : 'circle-play'"
         @clicked="toggleEnabled" />
       <CoarMenuItem
-        :label="selectedDeleteStaged
-          ? t('admin.realmConfig.undelete', {}, 'Undo delete')
-          : t('common.delete', {}, 'Delete')"
+        :label="staging.deleteMenuLabel(selectedDeleteStaged, t('common.delete', {}, 'Delete'), selectedStagesDelete)"
         :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         @clicked="deleteSelected" />
       <CoarMenuDivider v-if="exportMenuVisible" />

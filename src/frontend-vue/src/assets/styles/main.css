@@ -235,3 +235,13 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #a1a1a1;
 }
+
+/* @cocoar/vue-ui CoarPopconfirm draws its arrow (::before) without any position
+   rule, so it always lands on the top-left corner of the panel — over the first
+   letter of the title ("Entwurf verwerfen?" read "ᴇntwurf"). The panel's border
+   and shadow carry the pointing on their own; hide the misplaced arrow until the
+   library positions it. */
+.coar-popconfirm-panel::before {
+  /* the library rule is scoped (class + data-v attribute) and would win */
+  display: none !important;
+}

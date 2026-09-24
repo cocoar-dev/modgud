@@ -826,7 +826,7 @@
     },
     "groupDetails": {
       "createTitle": "Gruppe erstellen",
-      "unresolvedRefs": "Diese gestagte Gruppe referenziert außerdem Entitäten, die in diesem Realm nicht existieren: {refs}. Sie werden in den Auswahllisten nicht angezeigt und beim Speichern unverändert übernommen.",
+      "unresolvedRefs": "Diese vorgemerkte Gruppe referenziert außerdem Entitäten, die in diesem Realm nicht existieren: {refs}. Sie werden in den Auswahllisten nicht angezeigt und beim Speichern unverändert übernommen.",
       "groupsLabel": "Gruppen",
       "usersLabel": "Benutzer",
       "serviceAccountsLabel": "Service Accounts",
@@ -1886,7 +1886,8 @@
         "referencedBy": "Referenziert von: ",
         "selectRelated": "Zugehörige auswählen",
         "showAll": "Alle Entities anzeigen (weitere hinzufügen)",
-        "dropped": "{count} gesammelte Einträge existieren nicht mehr im Export und wurden entfernt."
+        "dropped": "{count} gesammelte Einträge existieren nicht mehr im Export und wurden entfernt.",
+        "droppedOne": "1 gesammelter Eintrag existiert nicht mehr im Export und wurde entfernt."
       },
       "selection": {
         "title": "Export-Auswahl",
@@ -1895,7 +1896,8 @@
         "export": "Exportieren…",
         "addTo": "Zur Export-Auswahl hinzufügen",
         "removeFrom": "Aus Export-Auswahl entfernen",
-        "show": "Gesammelte Einträge anzeigen"
+        "show": "Gesammelte Einträge anzeigen",
+        "download": "Als Manifest herunterladen…"
       },
       "invalidJson": "Das Manifest ist kein gültiges JSON: ",
       "noDrafts": "Noch keine Drafts — oben einen anlegen.",
@@ -1903,25 +1905,39 @@
       "private": "Privat",
       "modifiedBy": "von {name}",
       "deleteDraftTitle": "Draft löschen?",
-      "deleteDraftConfirm": "Die gestagten Änderungen werden verworfen. Der Realm selbst bleibt unberührt.",
+      "deleteDraftConfirm": "Die vorgemerkten Änderungen werden verworfen. Der Realm selbst bleibt unberührt.",
       "discardDraft": "Draft verwerfen",
       "backToList": "Drafts",
       "parkToList": "Parken & zur Liste",
       "showUnchanged": "Unveränderte anzeigen",
-      "noChanges": "Noch keine gestagten Änderungen — bearbeite Entities im Admin-Bereich (oder blende „Unveränderte anzeigen“ ein, um alles zu durchstöbern).",
+      "noChanges": "Noch keine vorgemerkten Änderungen — bearbeite Entities im Admin-Bereich (oder blende „Unveränderte anzeigen“ ein, um alles zu durchstöbern).",
       "bar": {
-        "pending": "{count} gestaged",
+        "pending": "{count} vorgemerkt",
         "clean": "keine Änderungen",
         "conflicts": "Konflikte",
         "errors": "Plan-Fehler",
-        "view": "Ansehen",
-        "park": "Parken"
+        "view": "Entwurf ansehen",
+        "park": "Parken",
+        "prefix": "Entwurf:",
+        "errorCount": "{count} Fehler",
+        "fixErrorsFirst": "Behebe zuerst die Fehler im Plan.",
+        "fixConflictsFirst": "Löse zuerst die Konflikte im Plan.",
+        "nothingToApply": "Noch nichts vorgemerkt.",
+        "discardTitle": "{count} vorgemerkte Änderungen verwerfen?",
+        "discardTitleOne": "1 vorgemerkte Änderung verwerfen?",
+        "discardTitleEmpty": "Entwurf verwerfen?",
+        "discardLost": "{count} vorgemerkte Änderungen gehen verloren.",
+        "discardLostOne": "1 vorgemerkte Änderung geht verloren.",
+        "discardMessage": "Der Realm bleibt unverändert.",
+        "discarded": "Entwurf verworfen.",
+        "applyCount": "Anwenden ({count})",
+        "more": "Weitere Entwurfs-Aktionen"
       },
       "gridCol": "Draft",
       "gridTag": {
-        "create": "Gestaged (neu)",
-        "update": "Gestaged",
-        "delete": "Gestaged (löschen)"
+        "create": "Neu",
+        "update": "Geändert",
+        "delete": "Wird gelöscht"
       },
       "undelete": "Löschen zurücknehmen",
       "shareToggle": "Mit Realm-Admins teilen",
@@ -1931,8 +1947,8 @@
       "planErrors": "Der Plan enthält Einträge, an denen das Anwenden scheitern würde (mit „Fehler“ markiert). Vor dem Anwenden korrigieren.",
       "apply": "Draft anwenden",
       "applyCount": "Draft anwenden ({count})",
-      "applyConfirmTitle": "Diesen Draft anwenden?",
-      "applyConfirm": "Die gestagten Änderungen werden in EINER Transaktion auf diesen Realm angewendet — alles oder nichts.",
+      "applyConfirmTitle": "Änderungen jetzt live schalten?",
+      "applyConfirm": "Die vorgemerkten Änderungen werden in EINER Transaktion auf diesen Realm angewendet — alles oder nichts.",
       "applied": "Draft angewendet.",
       "appliedNotice": "Der Draft wurde auf diesen Realm angewendet.",
       "secretsTitle": "Neue Client-Secrets — werden nur einmal angezeigt, jetzt kopieren:",
@@ -1983,7 +1999,7 @@
         "terminals": "Terminal-Slots",
         "jobDisabled": "deaktiviert",
         "inboxSettings": "Inbox-Aufbewahrungsrichtlinie",
-        "keyMissing": "Der Eintrag braucht seinen natürlichen Schlüssel (Slug / Name / Id), bevor er gestaged werden kann."
+        "keyMissing": "Der Eintrag braucht seinen natürlichen Schlüssel (Slug / Name / Id), bevor er vorgemerkt werden kann."
       },
       "conflict": {
         "staleOverwrite": "Live geändert — dein Draft würde es zurückdrehen",
@@ -2003,14 +2019,20 @@
       "entry": {
         "save": "In den Draft übernehmen",
         "remove": "Aus dem Draft entfernen",
-        "changes": "Gestagte Änderungen",
+        "changes": "Vorgemerkte Änderungen",
         "conflicts": "Konflikte",
         "secrets": "Secrets",
-        "secretSet": "{slot} gestaged (Wert wird nicht angezeigt)",
+        "secretSet": "{slot} vorgemerkt (Wert wird nicht angezeigt)",
         "json": "Eintrag (JSON)",
         "notInDraft": "Diese Entity existiert live und ist nicht Teil des Drafts. Ist sie zum Löschen vorgemerkt, löscht das Anwenden des Drafts sie.",
-        "unstageDelete": "Löschung zurücknehmen"
-      }
+        "unstageDelete": "Löschung zurücknehmen",
+        "stagedDeletion": "Zum Löschen vorgemerkt — beim Anwenden wird diese Entity gelöscht."
+      },
+      "autoName": "Entwurf von {user} · {when}",
+      "stageDelete": "Löschen vormerken",
+      "discardVerb": "Verwerfen",
+      "applyVerb": "Anwenden",
+      "otherDrafts": "{count} geparkte oder geteilte Drafts neben dem aktiven"
     },
     "rateLimits": {
       "hint": "Mehrdimensionale Obergrenzen für die öffentlichen Auth-Endpoints. Ziel und App sind der Schutz (Postfach, Mail-Budget), Client begrenzt eine Integration, Quelle ist nur eine grobe Bremse und auf geteilte Adressen (NAT) ausgelegt. Leere Zellen erben die gelieferten Defaults.",

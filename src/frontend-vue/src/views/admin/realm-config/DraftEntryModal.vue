@@ -40,6 +40,10 @@ const entityJson = ref(props.entity ? JSON.stringify(props.entity, null, 2) : ''
 const jsonError = ref<string | null>(null)
 const password = ref('')
 
+/** A live-only entry: the draft stages its deletion, it has no manifest entity. */
+const isStagedDeletion = computed(() => props.entity === null)
+const isError = computed(() => props.planEntry?.Action === 'error')
+
 const isUserEntry = computed(() => props.section === 'users' && props.entity !== null)
 const secretSlotPrefix = computed(() => `${props.section}/${props.entryKey}/`)
 const stagedSecretSlots = computed(() =>
@@ -131,11 +135,21 @@ function removeFromDraft() {
       visible: true,
       text: t('admin.realmConfig.entry.save', {}, 'Stage into draft'),
       onClick: save,
-    } : undefined">
+    } : {
+      visible: true,
+      text: t('admin.realmConfig.entry.unstageDelete', {}, 'Undo the deletion'),
+      onClick: removeFromDraft,
+    }">
     <div class="entry-modal-body">
       <CoarNotice v-if="jsonError" variant="error">{{ jsonError }}</CoarNotice>
 
-      <p v-for="(note, i) in planEntry?.Notes ?? []" :key="i" class="entry-note">{{ note }}</p>
+      <!-- A refused staged deletion's notes ARE the error — render them as one. -->
+      <template v-if="isStagedDeletion && isError">
+        <CoarNotice v-for="(note, i) in planEntry?.Notes ?? []" :key="i" variant="error">{{ note }}</CoarNotice>
+      </template>
+      <template v-else>
+        <p v-for="(note, i) in planEntry?.Notes ?? []" :key="i" class="entry-note">{{ note }}</p>
+      </template>
 
       <CoarNotice v-for="(conflict, i) in entityConflicts" :key="`ec-${i}`" variant="warning">
         {{ conflictLabel(conflict.Kind) }}
@@ -207,20 +221,18 @@ function removeFromDraft() {
         <h3 class="block-title">{{ t('admin.realmConfig.entry.json', {}, 'Entry (JSON)') }}</h3>
         <textarea v-model="entityJson" class="entity-editor" spellcheck="false" />
       </section>
-      <CoarNotice v-else variant="info">
-        {{ t('admin.realmConfig.entry.notInDraft', {}, 'This entity exists live and is not part of the draft. If it is staged for deletion, applying the draft deletes it.') }}
+      <!-- A refused deletion says so in its error notice above; "applying deletes it"
+           next to it would contradict the refusal. -->
+      <CoarNotice v-else-if="!isError" variant="info">
+        {{ t('admin.realmConfig.entry.stagedDeletion', {}, 'Staged for deletion — applying the draft deletes this entity.') }}
       </CoarNotice>
 
+      <!-- A live-only entry (staged deletion) has exactly one thing to do — take
+           it back — so that is the footer's primary action (the note of a
+           refused one says so, too). -->
       <div v-if="entity" class="danger-row">
         <CoarButton size="s" variant="ghost" @click="removeFromDraft">
           {{ t('admin.realmConfig.entry.remove', {}, 'Remove from draft') }}
-        </CoarButton>
-      </div>
-      <!-- A live-only entry is a staged deletion — the plan note for a protected one
-           says "unstage this deletion", so the way to do it has to be right here. -->
-      <div v-else class="danger-row">
-        <CoarButton size="s" variant="secondary" @click="removeFromDraft">
-          {{ t('admin.realmConfig.entry.unstageDelete', {}, 'Undo the deletion') }}
         </CoarButton>
       </div>
     </div>

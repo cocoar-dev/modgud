@@ -5,7 +5,7 @@ import { CoarButton, useContextMenu, CoarContextMenu, CoarMenuItem, CoarMenuDivi
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { usePositionStore } from '@/stores/position.store'
-import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { draftStagedColumn, useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
 import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
@@ -96,17 +96,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<PositionPr
   .columns([
     (col) => col.field('AccountName').header('Account name', 'admin.positions.accountName').width(220).pinned('left').cellClass('account-name-cell'),
     (col) => col.field('Purpose').header('Purpose', 'admin.positions.purpose').flex(1),
-    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
-      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
-        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
-        : p.data?.DraftStaged === 'update'
-          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
-          : p.data?.DraftStaged === 'delete'
-            ? t('admin.realmConfig.gridTag.delete', {}, 'Staged (delete)')
-            : '')
-      .width(120)
-      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged && p.data.DraftStaged !== 'delete')
-      .classRule('draft-staged-cell-delete', (p: any) => p.data?.DraftStaged === 'delete'),
+    (col) => draftStagedColumn(col, t),
     (col) => col.icon('TerminalPolicy', { color: '#0284c7', size: 's' })
       .option('valueGetter', (p: any) => p.data?.TerminalPolicy?.Enabled ? 'monitor-smartphone' : '')
       .option('tooltipValueGetter', () => null)
@@ -163,9 +153,7 @@ onMounted(() => {
       <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus" @clicked="navigateToModal('create')" />
       <CoarMenuDivider />
       <CoarMenuItem
-        :label="selectedDeleteStaged
-          ? t('admin.realmConfig.undelete', {}, 'Undo delete')
-          : t('common.delete', {}, 'Delete')"
+        :label="staging.deleteMenuLabel(selectedDeleteStaged, t('common.delete', {}, 'Delete'))"
         :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         @clicked="deleteRows" />
       <CoarMenuDivider v-if="exportMenuVisible" />

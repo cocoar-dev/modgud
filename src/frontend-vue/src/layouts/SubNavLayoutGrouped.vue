@@ -48,12 +48,20 @@ function visibleGroups(): SubNavGroup[] {
               v-for="item in visibleItems(group)"
               :key="item.label"
               :icon="item.icon"
-              :label="item.label"
+              :label="item.badge ? undefined : item.label"
               :to="item.to"
               :active="item.active"
               :disabled="item.disabled"
               @clicked="onClicked(item)"
-            />
+            >
+              <!-- The item renders its default slot only without a label — the
+                   badge variant brings its own (label keeps its ellipsis, the
+                   badge never truncates). -->
+              <span v-if="item.badge" class="sub-nav-item-label">
+                <span class="sub-nav-item-text">{{ item.label }}</span>
+                <span class="sub-nav-item-badge" :title="item.badgeTitle">{{ item.badge }}</span>
+              </span>
+            </CoarMenuItem>
           </CoarMenu>
         </section>
       </div>
@@ -103,6 +111,33 @@ function visibleGroups(): SubNavGroup[] {
 .sub-nav-group-menu {
   display: flex;
   width: 100%;
+}
+
+.sub-nav-item-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.sub-nav-item-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sub-nav-item-badge {
+  flex-shrink: 0;
+  min-width: 1.1rem;
+  padding: 0 0.3rem;
+  border-radius: 9999px;
+  background: var(--coar-background-accent-subtle, #dbeafe);
+  color: var(--coar-text-accent-primary, #1d4ed8);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.1rem;
+  text-align: center;
 }
 
 .sub-nav-group-title {

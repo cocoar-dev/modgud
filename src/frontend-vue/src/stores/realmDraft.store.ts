@@ -202,6 +202,32 @@ async function resyncEntityStores(): Promise<void> {
   await Promise.allSettled(loaders)
 }
 
+/** The server's implicit draft name: `<user> · yyyy-MM-dd HH:mm`, stamped in UTC. */
+const AUTO_DRAFT_NAME = /^(.+) · \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/
+
+type Translate = (key: string, params?: Record<string, unknown>, fallback?: string) => string
+
+/**
+ * The name a draft is shown under. An implicitly created draft carries its
+ * creation time in UTC in its stored name — read in any other zone that looks
+ * like the wrong hour — so auto-named drafts render with the LOCAL creation
+ * time instead. A name the admin typed is shown as is.
+ */
+/** Whether a draft carries the server's auto-generated name ("user · yyyy-MM-dd HH:mm"). */
+export function isAutoDraftName(name: string): boolean {
+  return AUTO_DRAFT_NAME.test(name)
+}
+
+export function draftDisplayName(draft: Pick<DraftSummary, 'Name' | 'CreatedAt'>, t: Translate): string {
+  const match = AUTO_DRAFT_NAME.exec(draft.Name)
+  const created = new Date(draft.CreatedAt)
+  if (!match || Number.isNaN(created.getTime())) return draft.Name
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const when = `${pad(created.getDate())}.${pad(created.getMonth() + 1)}. ${pad(created.getHours())}:${pad(created.getMinutes())}`
+  const user = match[1]!
+  return t('admin.realmConfig.autoName', { user, when }, `Draft by ${user} · ${when}`)
+}
+
 export function draftErrorMessage(err: unknown): string {
   if (err instanceof HttpClientError) {
     const body = err.body as { Error?: string; Message?: string } | null
@@ -242,6 +268,15 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     for (const section of plan.value?.Sections ?? [])
       for (const entry of section.Entries)
         if (entry.Action === 'create' || entry.Action === 'update' || entry.Action === 'delete') count++
+    return count
+  })
+
+  /** Plan entries the apply would fail on — shown next to the pending count. */
+  const errorCount = computed(() => {
+    let count = 0
+    for (const section of plan.value?.Sections ?? [])
+      for (const entry of section.Entries)
+        if (entry.Action === 'error') count++
     return count
   })
 
@@ -521,7 +556,7 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
   return {
     drafts, current, plan,
     listLoading, planning, saving, applying, error, applyOutcome,
-    planIsFresh, planHasErrors, canApply, pendingCount,
+    planIsFresh, planHasErrors, canApply, pendingCount, errorCount,
     loadDrafts, loadActive, createDraft, openDraft, closeDraft, deleteDraft,
     replan, updateDraft, upsertEntity, removeEntity, findEntity, sectionEntities,
     stageDelete, unstageDelete, isDeleteStaged,

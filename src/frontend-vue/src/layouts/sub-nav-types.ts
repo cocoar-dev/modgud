@@ -16,6 +16,10 @@ export interface SubNavItem {
   disabled?: boolean
   /** Optional: Sichtbarkeits-Check (Permission-Gate o.ä.). `false` → Item wird nicht gerendert. */
   visible?: boolean
+  /** Optional: small count badge after the label; 0/undefined renders none. */
+  badge?: number
+  /** Optional: tooltip of the badge. */
+  badgeTitle?: string
 }
 
 /**

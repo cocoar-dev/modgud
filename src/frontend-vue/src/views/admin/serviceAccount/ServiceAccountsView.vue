@@ -8,7 +8,7 @@ import { useServiceAccountStore } from '@/stores/serviceAccount.store'
 import { useUI } from '@/composables/useUI'
 import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import { useGridLocale } from '@/composables/useGridLocale'
-import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { draftStagedColumn, useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
 import type { ServiceAccountDto } from '@/models/serviceAccount'
 import GridEmptyState from '@/components/GridEmptyState.vue'
 
@@ -88,14 +88,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<ServiceAcc
   .columns([
     (col) => col.field('AccountName').header('Account name', 'admin.serviceAccounts.accountName').width(220).pinned('left').cellClass('account-name-cell'),
     (col) => col.field('Purpose').header('Purpose', 'admin.serviceAccounts.purpose').flex(1),
-    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
-      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
-        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
-        : p.data?.DraftStaged === 'update'
-          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
-          : '')
-      .width(120)
-      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged),
+    (col) => draftStagedColumn(col, t),
     (col) => col.icon('IsActive', { color: '#16a34a', size: 's' })
       .option('valueGetter', (p: any) => p.data?.IsActive ? 'check' : '')
       .option('tooltipValueGetter', () => null)

@@ -6,8 +6,8 @@ import { useExportSelectionStore } from '@/stores/exportSelection.store'
  * Context-menu wiring for the export selection: every admin grid offers
  * "Add to export selection" on its rows, so collecting entities for a
  * selective manifest export happens right where the search/filter power is —
- * a prod realm can hold thousands of objects. The footer
- * ExportSelectionBar picks the collection up.
+ * a prod realm can hold thousands of objects. The header
+ * HeaderExportChip picks the collection up.
  *
  * `exportKey` yields the selected row's manifest natural key, or null when
  * the row isn't exportable (system/standard/built-in entities, SA-linked or

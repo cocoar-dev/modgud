@@ -17,7 +17,7 @@ import { roleManifestKey } from '@/stores/realmDraft.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, ROLE_CLONE } from '@/composables/useClone'
-import { draftRowId, useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { draftStagedColumn, draftRowId, useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
 import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import type { RoleDto } from '@/models/role'
 import GridEmptyState from '@/components/GridEmptyState.vue'
@@ -115,17 +115,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<RoleDto>>(
     (col) => col.field('IsRealmAdmin').header('Realm Admin', 'admin.roles.isRealmAdmin').width(120)
       .option('valueGetter', (p: any) => p.data?.IsRealmAdmin ? '✓' : ''),
     (col) => col.field('Description').header('Description', 'admin.roles.description').flex(1),
-    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
-      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
-        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
-        : p.data?.DraftStaged === 'update'
-          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
-          : p.data?.DraftStaged === 'delete'
-            ? t('admin.realmConfig.gridTag.delete', {}, 'Staged (delete)')
-            : '')
-      .width(120)
-      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged && p.data.DraftStaged !== 'delete')
-      .classRule('draft-staged-cell-delete', (p: any) => p.data?.DraftStaged === 'delete'),
+    (col) => draftStagedColumn(col, t),
     (col) => col.field('PermissionIds').header('Grants', 'admin.roles.permissions').flex(2)
       .option('valueGetter', (p: any) => {
         const r = p.data
@@ -196,9 +186,7 @@ onMounted(() => Promise.all([roleStore.initialize(), applicationsStore.initializ
       <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy" @clicked="cloneSelected" />
       <CoarMenuDivider />
       <CoarMenuItem
-        :label="selectedDeleteStaged
-          ? t('admin.realmConfig.undelete', {}, 'Undo delete')
-          : t('common.delete', {}, 'Delete')"
+        :label="staging.deleteMenuLabel(selectedDeleteStaged, t('common.delete', {}, 'Delete'))"
         :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         @clicked="deleteSelected" />
       <CoarMenuDivider v-if="exportMenuVisible" />

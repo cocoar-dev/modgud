@@ -20,7 +20,7 @@ import { computed, ref } from 'vue'
 import { CoarButton, CoarCheckbox, CoarIcon, CoarNotice, CoarTag } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
-import { SECTION_META, type DraftManifest, type ManifestEntity } from '@/stores/realmDraft.store'
+import { SECTION_META, refId, refKey, refList, type DraftManifest, type ManifestEntity } from '@/stores/realmDraft.store'
 import {
   SELECTABLE_SECTIONS,
   buildSelectiveManifest,
@@ -35,7 +35,7 @@ const props = defineProps<{
   close: (result?: unknown) => void
   manifest: DraftManifest
   /** Pre-collected selection keys (`section/key`) from the export-selection
-   * bar. Keys that no longer resolve in the export are dropped (and counted
+   * header chip. Keys that no longer resolve in the export are dropped (and counted
    * in a notice). When given, the modal starts in review mode: only the
    * selection + its required closure is listed — browsing/filtering happened
    * in the admin grids. */
@@ -104,7 +104,8 @@ function rowInfo(section: SelectableSection, e: ManifestEntity): string | null {
     case 'scopes': return s(e.DisplayName) ?? s(e.App)
     case 'clients': return s(e.DisplayName) ?? s(e.ClientType)
     case 'roles': return s(e.App) ?? (e.IsRealmAdmin === true ? 'realm:admin' : null)
-    case 'groups': return (e.Roles as string[] | undefined)?.join(', ') || null
+    // Roles are references ({ Key, Id } or a '#handle'), not strings — show the readable half.
+    case 'groups': return refList(e.Roles).map((r) => refKey(r) ?? refId(r) ?? '').filter(Boolean).join(', ') || null
     case 'users': return s(e.Email)
     case 'serviceAccounts': return s(e.Purpose)
     case 'loginProviders': return s(e.DisplayName)
@@ -235,13 +236,15 @@ function sectionLabel(name: string): string {
       onClick: download,
     }">
     <div class="selective-body">
-      <CoarNotice variant="info" truncate>
+      <CoarNotice variant="info">
         {{ t('admin.realmConfig.selective.hint', {},
           'Secrets are never exported. The file names no realm — you pick the target when you import it. Referenced entities are pre-selected; uncheck any you do not want, the target skips references it cannot resolve and reports them in the plan.') }}
       </CoarNotice>
-      <CoarNotice v-if="droppedCount > 0" variant="warning" truncate>
-        {{ t('admin.realmConfig.selective.dropped', { count: droppedCount },
-          `${droppedCount} collected entr(y/ies) no longer exist in the export and were dropped.`) }}
+      <CoarNotice v-if="droppedCount > 0" variant="warning">
+        {{ droppedCount === 1
+          ? t('admin.realmConfig.selective.droppedOne', {}, '1 collected entry no longer exists in the export and was dropped.')
+          : t('admin.realmConfig.selective.dropped', { count: droppedCount },
+            `${droppedCount} collected entries no longer exist in the export and were dropped.`) }}
       </CoarNotice>
 
       <div class="selective-options">

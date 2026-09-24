@@ -1,15 +1,18 @@
 <script setup lang="ts">
 /**
- * The export-selection bar — footer-positioned by MainLayout (right above the
- * draft staging bar) whenever the selection is non-empty. The admin collects
- * entities from the normal admin grids via their context menus ("Add to
- * export selection"), using the grids' full search/filter power; this bar
- * carries the count and the verbs: inspect (popover listing every collected
- * entry with per-item remove), export (opens the selective-export review
- * modal pre-filled with the collection) and clear.
+ * The export selection as a header chip — rendered by MainLayout next to the
+ * inbox bell whenever the selection is non-empty (admin area only). The admin
+ * collects entities from the normal admin grids via their context menus ("Add
+ * to export selection"), using the grids' full search/filter power; the chip
+ * carries the count, its popover lists every collected entry (per-item
+ * remove) plus the verbs: clear, and download (opens the selective-export
+ * review modal pre-filled with the collection).
+ *
+ * A header chip rather than a second footer bar: the footer belongs to the
+ * draft staging bar alone, and collecting for an export is not staging.
  */
-import { computed } from 'vue'
-import { CoarButton, CoarIcon, CoarPopover, CoarTag, useToast } from '@cocoar/vue-ui'
+import { computed, ref } from 'vue'
+import { CoarButton, CoarIcon, CoarPopover, useToast } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useModalOverlay } from '@/composables/useModalOverlay'
@@ -23,6 +26,10 @@ const toast = useToast()
 const store = useExportSelectionStore()
 const modal = useModalOverlay()
 const configHttp = useHttpClient('/api/admin/realm-config')
+
+// CoarPopover exposes no close() — re-keying it remounts it closed, so the
+// popover does not linger above the export modal it just opened.
+const popoverKey = ref(0)
 
 const SECTION_ICONS: Record<string, string> = {
   apps: 'layout-grid', apis: 'server', scopes: 'tags', clients: 'app-window',
@@ -52,6 +59,7 @@ const grouped = computed(() => {
 })
 
 async function openExport() {
+  popoverKey.value++
   try {
     const exported = await configHttp.addPath('export').get<DraftManifest>()
     await modal.open(SelectiveExportModal, MODAL_LG, {
@@ -65,19 +73,20 @@ async function openExport() {
 </script>
 
 <template>
-  <div v-if="store.count > 0" class="selection-bar">
-    <CoarPopover mode="click" :offset="8">
-      <button type="button" class="bar-trigger"
-        :aria-label="t('admin.realmConfig.selection.show', {}, 'Show collected entries')">
-        <CoarIcon name="list-checks" size="s" class="bar-icon" />
-        <span class="bar-name">{{ t('admin.realmConfig.selection.title', {}, 'Export selection') }}</span>
-        <CoarTag variant="info" size="s">
+  <CoarPopover v-if="store.count > 0" :key="popoverKey" mode="click" :offset="8">
+    <button type="button" class="export-chip" data-testid="export-chip"
+      :title="t('admin.realmConfig.selection.show', {}, 'Show collected entries')"
+      :aria-label="t('admin.realmConfig.selection.show', {}, 'Show collected entries')">
+      <CoarIcon name="download" size="s" />
+      <span class="chip-label">{{ t('admin.realmConfig.selection.title', {}, 'Export selection') }}</span>
+      <span class="chip-count">{{ store.count }}</span>
+    </button>
+    <template #content>
+      <div class="selection-panel" data-testid="export-chip-panel">
+        <div class="panel-title">
           {{ t('admin.realmConfig.selection.count', { count: store.count }, `${store.count} collected`) }}
-        </CoarTag>
-        <CoarIcon name="chevron-down" size="s" class="bar-chevron" />
-      </button>
-      <template #content>
-        <div class="selection-panel">
+        </div>
+        <div class="panel-list">
           <div v-for="group in grouped" :key="group.section" class="panel-section">
             <div class="panel-section-head">
               <CoarIcon :name="SECTION_ICONS[group.section] ?? 'file-json'" size="s" />
@@ -93,65 +102,77 @@ async function openExport() {
             </div>
           </div>
         </div>
-      </template>
-    </CoarPopover>
-
-    <span class="bar-spacer" />
-
-    <CoarButton size="s" variant="ghost" @click="store.clear()">
-      {{ t('admin.realmConfig.selection.clear', {}, 'Clear') }}
-    </CoarButton>
-    <CoarButton size="s" variant="primary" @click="openExport">
-      {{ t('admin.realmConfig.selection.export', {}, 'Export…') }}
-    </CoarButton>
-  </div>
+        <div class="panel-actions">
+          <CoarButton size="s" variant="ghost" data-testid="export-chip-clear" @click="store.clear()">
+            {{ t('admin.realmConfig.selection.clear', {}, 'Clear') }}
+          </CoarButton>
+          <CoarButton size="s" variant="secondary" icon-start="download" data-testid="export-chip-download" @click="openExport">
+            {{ t('admin.realmConfig.selection.download', {}, 'Download as manifest…') }}
+          </CoarButton>
+        </div>
+      </div>
+    </template>
+  </CoarPopover>
 </template>
 
 <style scoped>
-.selection-bar {
-  display: flex;
+/* Sits on the dark header next to the inbox bell — same translucent-white
+   language as the bell and the avatar button. */
+.export-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 1rem;
-  border-top: 1px solid var(--coar-border-neutral-subtle, #e5e7eb);
-  background: var(--coar-background-neutral-secondary, #f7f8fa);
-  flex-shrink: 0;
-}
-
-.bar-trigger {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  border: none;
-  background: none;
-  padding: 2px 4px;
-  cursor: pointer;
-  border-radius: 6px;
-}
-.bar-trigger:hover {
-  background: var(--coar-background-neutral-tertiary, #eceef1);
-}
-
-.bar-icon,
-.bar-chevron {
-  color: var(--coar-text-neutral-secondary, #6b7280);
-}
-
-.bar-name {
-  font-weight: 600;
+  gap: 0.4rem;
+  height: 2rem;
+  padding: 0 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
   font-size: 0.8rem;
+  font-weight: 500;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease;
 }
 
-.bar-spacer {
-  flex: 1;
+.export-chip:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.chip-count {
+  min-width: 1.2rem;
+  padding: 0 0.35rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2rem;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .chip-label {
+    display: none;
+  }
 }
 
 .selection-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 280px;
+  max-width: 380px;
+}
+
+.panel-title {
+  padding: 8px 12px 4px;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.panel-list {
   max-height: 320px;
-  min-width: 260px;
   overflow-y: auto;
-  padding: 6px 4px;
+  padding: 0 4px 6px;
 }
 
 .panel-section-head {
@@ -192,5 +213,13 @@ async function openExport() {
 .panel-remove:hover {
   color: var(--coar-text-semantic-error, #dc2626);
   background: var(--coar-background-neutral-tertiary, #eceef1);
+}
+
+.panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 8px 10px;
+  border-top: 1px solid var(--coar-border-neutral-subtle, #e5e7eb);
 }
 </style>

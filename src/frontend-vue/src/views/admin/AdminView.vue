@@ -1,15 +1,25 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 import { useI18n } from '@cocoar/vue-localization'
 import SubNavLayoutGrouped from '@/layouts/SubNavLayoutGrouped.vue'
 import type { SubNavGroup, SubNavItem } from '@/layouts/sub-nav-types'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
+import { useRealmDraftStore } from '@/stores/realmDraft.store'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 const appConfig = useAppConfigStore()
+const draftStore = useRealmDraftStore()
+
+// Parked and shared drafts are easy to forget once the staging bar only shows
+// the active one — the sidebar entry carries their count.
+onMounted(() => {
+  if (authStore.hasPermission('realm:admin')) void draftStore.loadDrafts()
+})
+const otherDraftCount = computed(() =>
+  draftStore.drafts.filter((d) => d.Id !== draftStore.current?.Id).length)
 
 interface NavItemDef {
   label: string
@@ -34,6 +44,9 @@ interface NavItemDef {
    * feature flag is off. Independent from permissions — both must pass.
    */
   requireFeature?: 'PageBuilder' | 'PositionTerminals'
+  /** Optional count badge after the label (0 renders none). */
+  badge?: () => number
+  badgeTitle?: string
 }
 
 interface SectionDef {
@@ -56,6 +69,8 @@ function toNavItem(def: NavItemDef): SubNavItem {
     icon: def.icon,
     to: def.to,
     visible: canSee(def),
+    badge: def.badge?.(),
+    badgeTitle: def.badgeTitle,
   }
 }
 
@@ -91,7 +106,11 @@ const sections = computed<SectionDef[]>(() => [
       { label: 'admin.realmSettings.title', labelEn: 'Realm Settings', icon: 'sliders-horizontal', to: '/admin/realm-settings', requirePermissions: ['realm-settings:read'] },
       // The draft workspace (ADR-0017) is gated on realm:admin only — the
       // backend endpoints require it (RealmConfigEndpoints), no resource perm fits.
-      { label: 'admin.realmConfig.title', labelEn: 'Configuration Drafts', icon: 'file-json', to: '/admin/realm-config', requirePermissions: ['realm:admin'] },
+      {
+        label: 'admin.realmConfig.title', labelEn: 'Configuration Drafts', icon: 'file-json', to: '/admin/realm-config', requirePermissions: ['realm:admin'],
+        badge: () => otherDraftCount.value,
+        badgeTitle: t('admin.realmConfig.otherDrafts', { count: otherDraftCount.value }, `${otherDraftCount.value} parked or shared draft(s) besides the active one`),
+      },
       { label: 'admin.logs.title', labelEn: 'Logs', icon: 'scroll-text', to: '/admin/logs', requirePermissions: ['auth-log:read', 'audit-log:read', 'platform-audit:read'] },
       { label: 'admin.scheduledJobs.title', labelEn: 'Scheduled Jobs', icon: 'clock', to: '/admin/scheduled-jobs', requirePermissions: ['scheduled-job:read'] },
       { label: 'admin.changeRequests.title', labelEn: 'Change Requests', icon: 'inbox', to: '/admin/change-requests', requirePermissions: ['user:write'] },

@@ -21,7 +21,7 @@ import { useAppConfigStore } from '@/stores/appconfig.store'
 import LogoutConfirmModal from '@/views/auth/LogoutConfirmModal.vue'
 import AppContextSelector from '@/components/AppContextSelector.vue'
 import DraftStagingBar from '@/views/admin/realm-config/DraftStagingBar.vue'
-import ExportSelectionBar from '@/views/admin/realm-config/ExportSelectionBar.vue'
+import HeaderExportChip from '@/views/admin/realm-config/HeaderExportChip.vue'
 import InboxBell from '@/components/InboxBell.vue'
 import UnverifiedEmailBanner from '@/components/UnverifiedEmailBanner.vue'
 
@@ -197,6 +197,10 @@ const hasAnyPlatformPermission = computed(() =>
 
                 <AppContextSelector v-if="showAppContextSelector" class="ml-2" />
 
+                <!-- Export selection (collected from the admin grids) — a header
+                     chip, so the footer stays the draft staging bar's alone. -->
+                <HeaderExportChip v-if="showStagingBar" class="ml-3" />
+
                 <!-- Inbox bell — opens an inline panel; per-user notifications -->
                 <InboxBell class="ml-3" />
 
@@ -270,7 +274,6 @@ const hasAnyPlatformPermission = computed(() =>
                     </div>
                 </main>
 
-                <ExportSelectionBar v-if="showStagingBar" />
                 <DraftStagingBar v-if="showStagingBar" />
 
                 <!-- Footer (optional, shown when views enable it) -->

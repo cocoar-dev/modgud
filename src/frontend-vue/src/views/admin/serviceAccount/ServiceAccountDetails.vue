@@ -642,6 +642,8 @@ function extractScopes(cred: OAuthClientDto): string[] {
                 v-if="row.live"
                 :title="t('admin.serviceAccountCredentials.rotateTitle', {}, 'Rotate secret?')"
                 :message="t('admin.serviceAccountCredentials.rotateConfirm', {}, 'The old secret stops working immediately and the new one is shown only once.')"
+                :confirm-text="t('admin.serviceAccountCredentials.rotateButton', {}, 'Rotate')"
+                :cancel-text="t('common.cancel', {}, 'Cancel')"
                 @confirmed="rotateCredential(row.live!)">
                 <CoarButton size="s" variant="ghost" icon-start="rotate-ccw">
                   {{ t('admin.serviceAccountCredentials.rotateButton', {}, 'Rotate') }}
@@ -652,6 +654,8 @@ function extractScopes(cred: OAuthClientDto): string[] {
                 :message="stagedSave
                   ? t('admin.serviceAccountCredentials.deleteStagedConfirm', {}, 'Removed from the draft — deleted when the draft is applied; the plan shows it.')
                   : t('admin.serviceAccountCredentials.deleteConfirm', {}, 'Existing tokens stay valid until expiry but no new tokens can be minted.')"
+                :confirm-text="stagedSave ? t('common.remove', {}, 'Remove') : t('common.delete', {}, 'Delete')"
+                :cancel-text="t('common.cancel', {}, 'Cancel')"
                 confirm-variant="danger"
                 @confirmed="stagedSave ? removeStagedCredential(row) : deleteCredential(row.live!)">
                 <CoarButton size="s" variant="ghost" icon-start="trash-2">
