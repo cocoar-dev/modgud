@@ -298,7 +298,7 @@ watch(isAutoMode, (auto) => {
 const footerButton = computed(() => ({
   visible: true,
   text: stagedSave.value
-    ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+    ? t('admin.realmConfig.entry.save', {}, 'Stage into draft')
     : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: generalIssues.value.length > 0 || scriptIssues.value.length > 0 || saving.value,
   loading: saving.value,

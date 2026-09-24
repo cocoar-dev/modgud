@@ -156,7 +156,9 @@ public sealed class RealmManifestExporter(
             Scopes = c.Permissions.Where(p => p.StartsWith(ScopePrefix, StringComparison.Ordinal))
                 .Select(p => p[ScopePrefix.Length..]).ToList(),
             AllowedGrantTypes = c.AllowedGrantTypes,
-            Capabilities = c.Capabilities.Count == 0 ? null : c.Capabilities,
+            // Empty lists and maps export as empty, not absent: the admin UI stages them
+            // explicitly, and an absent one diffed as a change nobody made.
+            Capabilities = c.Capabilities,
             AllowedCorsOrigins = c.AllowedCorsOrigins,
             Apps = c.AppIds.Select(id => SlugOfShort(appSlugById, id)).Where(s => s is not null).Select(s => s!).ToList(),
             Roles = c.Roles,
@@ -328,7 +330,10 @@ public sealed class RealmManifestExporter(
             MembershipScript = g.MembershipScript,
             Email = Opt(g.Email),
             EmailMode = g.EmailMode.ToString(),
-            BoundTo = g.BoundTo.Count == 0 ? null : g.BoundTo,
+            // An empty BoundTo is a dormant group. Exported as absent it came back from an
+            // apply into another realm as the create default ['modgud'] — a group bound
+            // to the system app, conferring its roles, where the source had none.
+            BoundTo = g.BoundTo,
             ExternallyDrivable = g.ExternallyDrivable,
         }).ToList();
 
@@ -432,7 +437,7 @@ public sealed class RealmManifestExporter(
                 // No override exports as absent (= unchanged on apply), never as an explicit
                 // null (= clear) — the same rule as every other optional.
                 CronOverride = j.HasOverride ? new Optional<string?>(j.EffectiveCron) : default,
-                Parameters = j.Parameters.Count == 0 ? null : new Dictionary<string, object?>(j.Parameters, StringComparer.Ordinal),
+                Parameters = new Dictionary<string, object?>(j.Parameters, StringComparer.Ordinal),
             })
             .ToList();
     }

@@ -103,7 +103,7 @@ A CIMD client always reaches the explicit consent screen on first authorize, wit
 - The **`client_id` hostname** (e.g. `claude.ai`) shown prominently — the domain that owns the document. Verify it matches the app you intended, not just the self-asserted display name.
 - An **`[unverified]`** marker + warning callout, the same treatment self-registered clients get.
 
-Like a DCR client, a CIMD client never skips this screen on a remembered authorization: every fresh authorize flow shows it again. The authorization itself is reused for the same user, client and scope set, so the token's `oi_au_id` stays stable across re-consents.
+Like a DCR client, whether a CIMD client skips this screen on a remembered authorization follows [RFC 8252 §8.6](https://www.rfc-editor.org/rfc/rfc8252#section-8.6): assured identity (an `https` redirect on a non-loopback host, or a confidential client such as the `private_key_jwt` one below) may skip it, a public client redirecting to loopback or a private-use scheme sees it on every authorize. The authorization itself is reused for the same user, client and scope set either way, so the token's `oi_au_id` stays stable across re-consents.
 
 ## Confidential CIMD clients (`private_key_jwt`)
 

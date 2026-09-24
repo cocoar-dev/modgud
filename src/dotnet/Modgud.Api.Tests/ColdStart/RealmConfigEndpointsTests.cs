@@ -13,7 +13,7 @@ namespace Modgud.Api.Tests.ColdStart;
 /// The per-realm (data-plane) declarative-config surface: a <c>realm:admin</c> manages THEIR
 /// OWN realm from a manifest via <c>/api/admin/realm-config/*</c> — reusing the applier/exporter
 /// but scoped to the host-routed realm and gated by realm:admin (not the control plane). It can
-/// fully edit the realm's config + entities (incl. prune within the realm), but cannot target
+/// fully edit the realm's config + entities (deletions through drafts), but cannot target
 /// another realm, and create/delete-realm stay control-plane-only.
 /// </summary>
 public class RealmConfigEndpointsTests(ColdStartFixture fixture) : ColdStartTestBase(fixture)
@@ -160,7 +160,7 @@ public class RealmConfigEndpointsTests(ColdStartFixture fixture) : ColdStartTest
     }
 
     [Fact]
-    public async Task Plan_with_prune_lists_delete_candidates_and_lockout_protections()
+    public async Task Plan_and_apply_never_delete_what_the_manifest_leaves_out()
     {
         await using var host = await Fixture.CreateIsolatedHostAsync();
         var factory = host.Factory;
@@ -172,39 +172,32 @@ public class RealmConfigEndpointsTests(ColdStartFixture fixture) : ColdStartTest
             Realm = new { },
             Apps = new[]
             {
-                new { Slug = "prune-app", DisplayName = "Prune Me",
-                      Permissions = new[] { new { Resource = "pr", Action = "read" } } },
+                new { Slug = "kept-app", DisplayName = "Kept",
+                      Permissions = new[] { new { Resource = "kp", Action = "read" } } },
             },
         };
         var seedResp = await client.PostAsJsonAsync(
             "/api/admin/realm-config/apply", seed, factory.JsonOptions, ct);
         Assert.Equal(HttpStatusCode.OK, seedResp.StatusCode);
 
-        // An empty manifest + prune: the seeded app is a delete candidate, while the
-        // realm-admin user and role are marked protected — and nothing is written.
+        // An empty manifest — even with the retired ?prune=true — plans no deletion…
         var empty = new { Realm = new { } };
         var planResp = await client.PostAsJsonAsync(
             "/api/admin/realm-config/plan?prune=true", empty, factory.JsonOptions, ct);
         Assert.Equal(HttpStatusCode.OK, planResp.StatusCode);
-
         var plan = JsonNode.Parse(await planResp.Content.ReadAsStringAsync(ct))!;
-        Assert.True(plan["Prune"]!.GetValue<bool>());
-        var sections = plan["Sections"]!.AsArray();
+        Assert.DoesNotContain(plan["Sections"]!.AsArray().SelectMany(s => s!["Entries"]!.AsArray()),
+            e => e!["Action"]!.GetValue<string>() is "delete" or "protected");
 
-        var appEntries = sections.Single(s => s!["Name"]!.GetValue<string>() == "apps")!["Entries"]!.AsArray();
-        Assert.Equal("delete", appEntries.Single(e => e!["Key"]!.GetValue<string>() == "prune-app")!["Action"]!.GetValue<string>());
-
-        var roleEntries = sections.Single(s => s!["Name"]!.GetValue<string>() == "roles")!["Entries"]!.AsArray();
-        Assert.Contains(roleEntries, e => e!["Action"]!.GetValue<string>() == "protected");
-
-        var userEntries = sections.Single(s => s!["Name"]!.GetValue<string>() == "users")!["Entries"]!.AsArray();
-        Assert.Contains(userEntries, e => e!["Action"]!.GetValue<string>() == "protected");
-
+        // …and applies none.
+        var applyResp = await client.PostAsJsonAsync(
+            "/api/admin/realm-config/apply?prune=true", empty, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, applyResp.StatusCode);
         await InTenantAsync(factory, TenantConstants.SystemTenantId, async sp =>
         {
             var session = sp.GetRequiredService<IDocumentSession>();
-            Assert.True(await session.Query<App>().AnyAsync(a => !a.IsDeleted && a.Slug == "prune-app", ct),
-                "a prune PLAN must not delete anything");
+            Assert.True(await session.Query<App>().AnyAsync(a => !a.IsDeleted && a.Slug == "kept-app", ct),
+                "an app the manifest leaves out must survive the apply");
         });
     }
 

@@ -12,6 +12,7 @@ using Modgud.Authorization.Principals;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
 using Modgud.Infrastructure.OpenIddict;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Api.Features.Admin.Provisioning;
 
@@ -30,7 +31,7 @@ namespace Modgud.Api.Features.Admin.Provisioning;
 /// id is immutable and a differing manifest value is ignored (the planner
 /// surfaces it as a note).</para>
 ///
-/// <para>The ACCOUNT is never pruned or staged-deleted — deleting one kills every
+/// <para>The ACCOUNT is never deleted by an apply — deleting one kills every
 /// credential it owns, so that stays a deliberate action in the SA admin. The planner
 /// mirrors this by never emitting delete candidates for this section.</para>
 /// </summary>
@@ -75,13 +76,36 @@ public sealed partial class RealmManifestApplier
                 await UpdateServiceAccountAsync(session, revoker, existing, sa, normalised, ctx, ct);
             }
             identity.Assign(sa.Id, accountId);
-            // The ACCOUNT is never pruned (deleting it kills every credential it owns), but
-            // recording it tells prune that the manifest speaks for this account — which is
-            // what makes it safe to prune the account's credentials below.
+            // The ACCOUNT is never deleted by an apply (deleting it kills every credential
+            // it owns); recording it marks it as represented in the manifest.
             identity.Applied(ManifestIdentity.Sections.ServiceAccounts, accountId);
+            NotifyAdminGridsAfterCommit(accountId, created: existing is null);
 
             await ApplyCredentialsAsync(session, oauth, identity, apps, secrets, skips, sa, accountId, ctx, ct);
         }
+    }
+
+    /// <summary>
+    /// The service-account admin grid follows the "ServiceAccount" data events the REST
+    /// endpoints dispatch; an apply wrote the account without one, so a staged account
+    /// was missing from the list after the apply until a reload. Dispatched after the
+    /// commit, from the committed state — a rolled-back apply announces nothing.
+    /// </summary>
+    private static void NotifyAdminGridsAfterCommit(Guid accountId, bool created)
+    {
+        if (TenantApplyTransaction.Current is not { } apply) return;
+        var tenant = TenantContext.Current;
+        apply.Defer($"notify admin grids of service account '{accountId}'", async (sp, c) =>
+        {
+            using var _ = TenantContext.Enter(tenant);
+            using var scope = sp.GetRequiredService<IServiceScopeFactory>().CreateScope();
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            if (await session.LoadAsync<ServiceAccount>(accountId, c) is not { } account) return;
+            var dto = ServiceAccountsEndpoints.ToDto(account);
+            var dispatcher = scope.ServiceProvider.GetRequiredService<BuildingBlocks.EventDispatcher.DataEventDispatcher>();
+            if (created) dispatcher.DispatchCreatedEvent("ServiceAccount", dto, session.TenantId);
+            else dispatcher.DispatchUpdatedEvent("ServiceAccount", dto, session.TenantId);
+        });
     }
 
     /// <summary>
@@ -130,6 +154,9 @@ public sealed partial class RealmManifestApplier
                 var issued = await oauth.IssueServiceAccountCredentialAsync(accountId,
                     new IssueServiceAccountCredentialDto
                     {
+                        // The id the file names, so the next apply of the same file finds
+                        // this credential instead of issuing its client_id a second time.
+                        Id = ManifestHandle.AsPinnedId(cred.Id),
                         ClientId = cred.ClientId,
                         DisplayName = OrNull(cred.DisplayName),
                         Scopes = cred.Scopes ?? [],

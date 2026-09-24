@@ -1,4 +1,6 @@
 import { computed, type ComputedRef, type Ref } from 'vue'
+import { useI18n } from '@cocoar/vue-localization'
+import type { CoarGridColumnFactory } from '@cocoar/vue-data-grid'
 import { useAuthStore } from '@/stores/auth.store'
 import {
   SECTION_META,
@@ -42,6 +44,7 @@ function decodeDraftKey(raw: string): string {
 export function useDraftStaging(section: string) {
   const draftStore = useRealmDraftStore()
   const authStore = useAuthStore()
+  const { t } = useI18n()
 
   const stagingActive = computed(() => authStore.hasPermission('realm:admin'))
 
@@ -65,7 +68,7 @@ export function useDraftStaging(section: string) {
     await draftStore.removeEntity(section, key)
   }
 
-  /** Stages the deletion of a LIVE entity (targeted prune counterpart). */
+  /** Stages the deletion of a LIVE entity (a targeted, explicit delete). */
   async function stageDelete(key: string): Promise<void> {
     await draftStore.stageDelete(section, key)
   }
@@ -79,10 +82,61 @@ export function useDraftStaging(section: string) {
     return draftStore.isDeleteStaged(section, key)
   }
 
+  /**
+   * The grid context menu's delete label. While staging, "Delete" does not
+   * delete — it stages the deletion (or undoes a staged one), and the label
+   * has to say so. `liveLabel` is the list's own wording for a live delete.
+   */
+  function deleteMenuLabel(deleteStaged: boolean, liveLabel: string, stages = true): string {
+    if (deleteStaged) return t('admin.realmConfig.undelete', {}, 'Undo delete')
+    if (stagingActive.value && stages) return t('admin.realmConfig.stageDelete', {}, 'Stage deletion')
+    return liveLabel
+  }
+
   return {
     draftStore, stagingActive, isDraftId, draftKeyOf, findStaged,
-    stage, unstage, stageDelete, unstageDelete, isDeleteStaged,
+    stage, unstage, stageDelete, unstageDelete, isDeleteStaged, deleteMenuLabel,
   }
+}
+
+type Translate = (key: string, params?: Record<string, unknown>, fallback?: string) => string
+
+const DRAFT_MARK_ICONS: Record<DraftStagedMark, string> = {
+  create: 'plus',
+  update: 'pencil',
+  delete: 'trash-2',
+}
+
+/**
+ * The lists' "Draft" column: icon + one short word per staged kind (new /
+ * changed / to be deleted), a staged deletion in the error color. Shared so
+ * every admin grid reads the same.
+ */
+export function draftStagedColumn<TRow>(col: CoarGridColumnFactory<TRow>, t: Translate) {
+  const markOf = (row: unknown): DraftStagedMark | undefined =>
+    (row as { DraftStaged?: DraftStagedMark } | undefined)?.DraftStaged
+  return col
+    .wrap(col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
+      .valueGetter((p: any) => {
+        switch (markOf(p.data)) {
+          case 'create': return t('admin.realmConfig.gridTag.create', {}, 'New')
+          case 'update': return t('admin.realmConfig.gridTag.update', {}, 'Changed')
+          case 'delete': return t('admin.realmConfig.gridTag.delete', {}, 'To be deleted')
+          default: return ''
+        }
+      })
+      .width(140)
+      .classRule('draft-staged-cell', (p: any) => !!markOf(p.data) && markOf(p.data) !== 'delete')
+      .classRule('draft-staged-cell-delete', (p: any) => markOf(p.data) === 'delete'))
+    .left({
+      icon: (row) => {
+        const mark = markOf(row)
+        return mark ? DRAFT_MARK_ICONS[mark] : null
+      },
+      color: (row) => markOf(row) === 'delete'
+        ? 'var(--coar-text-semantic-error, #dc2626)'
+        : 'var(--coar-text-semantic-info, #2563eb)',
+    })
 }
 
 export interface DraftOverlayOptions<TRow extends { Id: string }> {

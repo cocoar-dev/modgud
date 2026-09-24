@@ -14,7 +14,7 @@ import { useApplicationsStore } from '@/stores/applications.store'
 import { useUI } from '@/composables/useUI'
 import { useGridLocale } from '@/composables/useGridLocale'
 import { useClone, buildClonePrefill, APP_CLONE } from '@/composables/useClone'
-import { useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
+import { draftStagedColumn, useDraftListOverlay, useDraftStaging, type DraftRow } from '@/composables/useDraftStaging'
 import { useExportSelectionMenu } from '@/composables/useExportSelectionMenu'
 import type { ApplicationDto } from '@/models/application'
 import GridEmptyState from '@/components/GridEmptyState.vue'
@@ -116,17 +116,7 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<DraftRow<Applicatio
       }),
     (col) => col.field('DisplayName').header('Display Name', 'admin.apps.displayName').flex(1).minWidth(180),
     (col) => col.field('Description').header('Description', 'common.description').flex(2),
-    (col) => col.field('DraftStaged').header('Draft', 'admin.realmConfig.gridCol')
-      .valueGetter((p: any) => p.data?.DraftStaged === 'create'
-        ? t('admin.realmConfig.gridTag.create', {}, 'Staged (new)')
-        : p.data?.DraftStaged === 'update'
-          ? t('admin.realmConfig.gridTag.update', {}, 'Staged')
-          : p.data?.DraftStaged === 'delete'
-            ? t('admin.realmConfig.gridTag.delete', {}, 'Staged (delete)')
-            : '')
-      .width(120)
-      .classRule('draft-staged-cell', (p: any) => !!p.data?.DraftStaged && p.data.DraftStaged !== 'delete')
-      .classRule('draft-staged-cell-delete', (p: any) => p.data?.DraftStaged === 'delete'),
+    (col) => draftStagedColumn(col, t),
     (col) => col.field('Permissions').header('Permissions', 'admin.apps.permissions').flex(2)
       .option('valueGetter', (p: any) => (p.data?.Permissions ?? [])
         .map((perm: any) => `${perm.Resource}:${perm.Action}`)
@@ -205,9 +195,7 @@ onMounted(() => store.initialize())
         @clicked="cloneSelected" />
       <CoarMenuDivider />
       <CoarMenuItem
-        :label="selectedDeleteStaged
-          ? t('admin.realmConfig.undelete', {}, 'Undo delete')
-          : t('common.delete', {}, 'Delete')"
+        :label="staging.deleteMenuLabel(selectedDeleteStaged, t('common.delete', {}, 'Delete'))"
         :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         :disabled="selectedIsSystem" @clicked="deleteSelected" />
       <CoarMenuDivider v-if="exportMenuVisible" />

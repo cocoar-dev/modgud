@@ -304,4 +304,27 @@ public class OAuthConstantsTests
         public void Values_are_distinct() =>
             Assert.NotEqual(OAuthApplicationTypes.Web, OAuthApplicationTypes.Native);
     }
+
+    public class DynamicClientConsentRule
+    {
+        [Theory]
+        // Public client, https callback on a real host — the code only reaches that host.
+        [InlineData(false, "https://claude.ai/api/mcp/auth_callback", true)]
+        // Public client, loopback — any local process can listen there (RFC 8252 §8.6).
+        [InlineData(false, "http://localhost/callback", false)]
+        [InlineData(false, "http://127.0.0.1:33418/", false)]
+        [InlineData(false, "http://[::1]:5000/cb", false)]
+        // https on loopback is still loopback.
+        [InlineData(false, "https://localhost/cb", false)]
+        // A private-use scheme can be claimed by any installed app.
+        [InlineData(false, "cursor://anysphere.cursor-mcp/oauth/callback", false)]
+        [InlineData(false, null, false)]
+        [InlineData(false, "not a uri", false)]
+        // A confidential client must authenticate to redeem the code, whoever caught it.
+        [InlineData(true, "http://localhost/callback", true)]
+        [InlineData(true, "https://chatgpt.com/connector_platform_oauth_redirect", true)]
+        public void May_remember_only_when_the_client_identity_is_assured(
+            bool isConfidential, string? redirectUri, bool expected)
+            => Assert.Equal(expected, DynamicClientConsent.MayRemember(isConfidential, redirectUri));
+    }
 }

@@ -179,3 +179,34 @@ public static class OAuthApplicationTypes
            && uri.Scheme == Uri.UriSchemeHttp
            && uri.IsLoopback;
 }
+
+/// <summary>
+/// When a dynamically registered client (DCR or CIMD) may reuse a remembered consent.
+///
+/// <para>RFC 8252 §8.6: an authorization server should not process a request without the
+/// user's interaction unless the client's identity can be assured. A dynamic client's
+/// <c>client_id</c> is public — a CIMD document URL, a DCR id in a config file — so any
+/// process can send the user's browser to <c>/connect/authorize</c> with it. What still
+/// assures the identity is where the code goes and who can redeem it:</para>
+/// <list type="bullet">
+///   <item>an <c>https</c> redirect delivers the code only to the host that published the
+///   metadata (claude.ai's callback, not a local process), and</item>
+///   <item>a confidential client cannot redeem a code without its own credential
+///   (<c>private_key_jwt</c>, a DCR secret), whoever caught it.</item>
+/// </list>
+/// <para>A PUBLIC client redirecting to loopback (Claude Code, VS Code, Zed) has neither:
+/// any local process can listen on a loopback port — on any port since the RFC 8252 §7.3
+/// port tolerance — and redeem the code with its own PKCE verifier. Such a client is asked
+/// every time; the authorization itself is still reused, so <c>oi_au_id</c> stays stable.</para>
+///
+/// <para>Admin-created clients keep their own <c>AllowRememberConsent</c> flag; this rule
+/// replaces it for dynamic clients, whose flag nobody chose.</para>
+/// </summary>
+public static class DynamicClientConsent
+{
+    public static bool MayRemember(bool isConfidential, string? requestRedirectUri)
+        => isConfidential
+           || (Uri.TryCreate(requestRedirectUri, UriKind.Absolute, out var uri)
+               && uri.Scheme == Uri.UriSchemeHttps
+               && !uri.IsLoopback);
+}

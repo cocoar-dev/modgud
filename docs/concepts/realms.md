@@ -213,11 +213,12 @@ Creating the realm shell (`POST /api/admin/realms`) is its own call.
 
 - `POST /api/admin/realms/{slug}/apply` — applies a manifest to an
   **existing** realm as an in-place merge/upsert; it never drops the
-  database. Add `?prune=true` to make it a full sync that also removes
-  entities absent from the manifest — infrastructure essentials
+  database and never deletes entities the manifest leaves out. Deleting
+  an entity is always an explicit, reviewed step — a staged deletion in
+  a [draft](/admin/configuration-drafts) — and infrastructure essentials
   (the system App, standard scopes, service-account clients) and every
   `realm:admin`-carrying group/user are protected from ever being
-  pruned, so an admin can't accidentally lock themselves out.
+  deleted that way, so an admin can't accidentally lock themselves out.
 - `GET /api/admin/realms/{slug}/export` — exports the realm's current
   configuration as a manifest (structure only, never secrets or
   password hashes). Round-trips with `apply`: export, edit, re-apply.
@@ -226,7 +227,7 @@ Creating the realm shell (`POST /api/admin/realms`) is its own call.
   manifest without reading source.
 
 A realm admin (someone holding `realm:admin` inside their own realm,
-without any Control-Plane access) gets the same export/apply/prune
+without any Control-Plane access) gets the same export/apply/staged-deletion
 workflow scoped to just their own realm, under
 `/api/admin/realm-config/*` — they can fully manage their realm's own
 configuration and entities, but can't create, delete, or touch any

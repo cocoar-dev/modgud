@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
+import { useAppConfigStore } from './appconfig.store'
 
 /**
  * ADR-0017 Phase 1: named server-side configuration drafts. The store owns the
@@ -61,7 +62,7 @@ export interface PlanChange {
   Desired: unknown
 }
 
-export type PlanAction = 'create' | 'update' | 'unchanged' | 'delete' | 'protected' | 'error'
+export type PlanAction = 'create' | 'update' | 'unchanged' | 'delete' | 'error'
 export type ConflictKind = 'staleOverwrite' | 'bothChanged' | 'deletedLive' | 'createdLive'
 
 export interface PlanConflict {
@@ -87,7 +88,6 @@ export interface PlanSection {
 
 export interface PlanResult {
   Slug: string
-  Prune: boolean
   Sections: PlanSection[]
   Warnings: string[]
   HasConflicts: boolean
@@ -190,9 +190,42 @@ async function resyncEntityStores(): Promise<void> {
     import('./group.store').then((m) => m.useGroupStore().loadAll()),
     import('./user.store').then((m) => m.useUserStore().loadAll()),
     import('./loginProvider.store').then((m) => m.useLoginProviderStore().loadAll()),
-    import('./position.store').then((m) => m.usePositionStore().loadAll()),
+    // Service accounts, jobs and the inbox policy are staged since 0.14 too; the
+    // service-account grid went empty after an apply until a reload.
+    import('./serviceAccount.store').then((m) => m.useServiceAccountStore().loadAll()),
+    import('./scheduledJob.store').then((m) => m.useScheduledJobStore().loadAll()),
+    import('./inboxSettings.store').then((m) => m.useInboxSettingsStore().load()),
   ]
+  // Positions only exist behind their feature flag — the endpoint 404s otherwise.
+  if (useAppConfigStore().config.Features.PositionTerminals)
+    loaders.push(import('./position.store').then((m) => m.usePositionStore().loadAll()))
   await Promise.allSettled(loaders)
+}
+
+/** The server's implicit draft name: `<user> · yyyy-MM-dd HH:mm`, stamped in UTC. */
+const AUTO_DRAFT_NAME = /^(.+) · \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/
+
+type Translate = (key: string, params?: Record<string, unknown>, fallback?: string) => string
+
+/**
+ * The name a draft is shown under. An implicitly created draft carries its
+ * creation time in UTC in its stored name — read in any other zone that looks
+ * like the wrong hour — so auto-named drafts render with the LOCAL creation
+ * time instead. A name the admin typed is shown as is.
+ */
+/** Whether a draft carries the server's auto-generated name ("user · yyyy-MM-dd HH:mm"). */
+export function isAutoDraftName(name: string): boolean {
+  return AUTO_DRAFT_NAME.test(name)
+}
+
+export function draftDisplayName(draft: Pick<DraftSummary, 'Name' | 'CreatedAt'>, t: Translate): string {
+  const match = AUTO_DRAFT_NAME.exec(draft.Name)
+  const created = new Date(draft.CreatedAt)
+  if (!match || Number.isNaN(created.getTime())) return draft.Name
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const when = `${pad(created.getDate())}.${pad(created.getMonth() + 1)}. ${pad(created.getHours())}:${pad(created.getMinutes())}`
+  const user = match[1]!
+  return t('admin.realmConfig.autoName', { user, when }, `Draft by ${user} · ${when}`)
 }
 
 export function draftErrorMessage(err: unknown): string {
@@ -212,7 +245,6 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
   const plan = ref<PlanResult | null>(null)
   /** Draft version the current plan was computed for — stale plans block apply. */
   const plannedVersion = ref<number | null>(null)
-  const prune = ref(false)
   const listLoading = ref(false)
   const planning = ref(false)
   const saving = ref(false)
@@ -222,7 +254,7 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
 
   const planIsFresh = computed(() =>
     plan.value !== null && current.value !== null &&
-    plannedVersion.value === current.value.Version && plan.value.Prune === prune.value)
+    plannedVersion.value === current.value.Version)
 
   const planHasErrors = computed(() =>
     plan.value?.Sections.some((s) => s.Entries.some((e) => e.Action === 'error')) ?? false)
@@ -236,6 +268,15 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     for (const section of plan.value?.Sections ?? [])
       for (const entry of section.Entries)
         if (entry.Action === 'create' || entry.Action === 'update' || entry.Action === 'delete') count++
+    return count
+  })
+
+  /** Plan entries the apply would fail on — shown next to the pending count. */
+  const errorCount = computed(() => {
+    let count = 0
+    for (const section of plan.value?.Sections ?? [])
+      for (const entry of section.Entries)
+        if (entry.Action === 'error') count++
     return count
   })
 
@@ -317,7 +358,6 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     try {
       const result = await draftsHttp
         .addPath(current.value.Id, 'plan')
-        .setQueryParameter('prune', String(prune.value))
         .post<PlanResult>({})
       plan.value = result
       plannedVersion.value = forVersion
@@ -353,11 +393,15 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
 
   /** The "commit": stages one entity into the ACTIVE draft via the server-side
    * seam — implicitly creating an auto-named draft when none is active. The
-   * natural key is computed server-side; edits with a renamed key stage the
-   * renamed entity alongside the old one (rename = create + prune delete). */
+   * natural key is computed server-side; the server matches the entry by its
+   * Id first, so an edit that renamed the key replaces the entry it came from
+   * (ADR 0024 — identity is the Id). */
   async function upsertEntity(section: string, _key: string, entity: ManifestEntity) {
     saving.value = true
     error.value = null
+    // The next change starts the next draft: the last apply's outcome (and its
+    // one-time secrets) must not keep standing above it.
+    applyOutcome.value = null
     try {
       current.value = await draftsHttp
         .addPath('active', 'entities', section)
@@ -387,12 +431,13 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     }
   }
 
-  /** Stages the DELETION of one live entity (ADR-0017 staged deletes) — the
-   * targeted counterpart of prune; implicitly creates a draft when none is
-   * active. Applied through the same canonical delete ops on "Draft anwenden". */
+  /** Stages the DELETION of one live entity (ADR-0017 staged deletes) — a
+   * targeted, explicit delete; implicitly creates a draft when none is
+   * active. Applied through the same canonical delete ops on "Apply draft". */
   async function stageDelete(section: string, key: string) {
     saving.value = true
     error.value = null
+    applyOutcome.value = null
     try {
       current.value = await draftsHttp
         .addPath('active', 'deletions', section)
@@ -480,7 +525,6 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     try {
       const result = await draftsHttp
         .addPath(current.value.Id, 'apply')
-        .setQueryParameter('prune', String(prune.value))
         .post<ApplyOutcome>({})
       applyOutcome.value = result
       current.value = null
@@ -510,9 +554,9 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
   }
 
   return {
-    drafts, current, plan, prune,
+    drafts, current, plan,
     listLoading, planning, saving, applying, error, applyOutcome,
-    planIsFresh, planHasErrors, canApply, pendingCount,
+    planIsFresh, planHasErrors, canApply, pendingCount, errorCount,
     loadDrafts, loadActive, createDraft, openDraft, closeDraft, deleteDraft,
     replan, updateDraft, upsertEntity, removeEntity, findEntity, sectionEntities,
     stageDelete, unstageDelete, isDeleteStaged,

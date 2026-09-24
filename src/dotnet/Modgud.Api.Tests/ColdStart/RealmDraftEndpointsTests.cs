@@ -158,6 +158,46 @@ public class RealmDraftEndpointsTests(ColdStartFixture fixture) : ColdStartTestB
         Assert.Equal(HttpStatusCode.OK, applied.StatusCode);
     }
 
+    /// <summary>
+    /// Staging matches the draft entry by its Id first (ADR 0024). An edit that renamed
+    /// the natural key used to be appended NEXT to the entry it came from — two entries
+    /// for one entity in the draft, both applied, the last one winning by list order.
+    /// </summary>
+    [Fact]
+    public async Task Staging_a_renamed_entity_replaces_its_draft_entry_by_id()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var client = await factory.CreateRealmAdminAndLoginAsync();
+
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/admin/realm-config/apply",
+            new { Groups = new[] { new { Name = "Before Rename" } } }, factory.JsonOptions, ct)).StatusCode);
+        var export = JsonNode.Parse(await client.GetStringAsync("/api/admin/realm-config/export", ct))!;
+        var groupId = export["Groups"]!.AsArray()
+            .Single(g => g!["Name"]!.GetValue<string>() == "Before Rename")!["Id"]!.GetValue<string>();
+
+        // The implicit draft starts as the full export, so it already holds the group.
+        var stage = await client.PutAsJsonAsync("/api/admin/realm-config/drafts/active/entities/groups",
+            new { Id = groupId, Name = "After Rename" }, factory.JsonOptions, ct);
+        Assert.Equal(HttpStatusCode.OK, stage.StatusCode);
+        var draft = JsonNode.Parse(await stage.Content.ReadAsStringAsync(ct))!;
+        var withId = draft["Manifest"]!["Groups"]!.AsArray()
+            .Where(g => g!["Id"]?.GetValue<string>() == groupId).ToList();
+        Assert.Equal("After Rename", Assert.Single(withId)!["Name"]!.GetValue<string>());
+
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(
+            $"/api/admin/realm-config/drafts/{draft["Id"]!.GetValue<Guid>()}/apply", new { }, factory.JsonOptions, ct)).StatusCode);
+        await InTenantAsync(factory, TenantConstants.SystemTenantId, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            Assert.True(await session.Query<Group>()
+                .AnyAsync(g => !g.IsDeleted && g.Name == "After Rename", ct));
+            Assert.False(await session.Query<Group>()
+                .AnyAsync(g => !g.IsDeleted && g.Name == "Before Rename", ct));
+        });
+    }
+
     [Fact]
     public async Task Implicit_active_draft_lifecycle_commit_park_switch_apply()
     {
@@ -250,7 +290,7 @@ public class RealmDraftEndpointsTests(ColdStartFixture fixture) : ColdStartTestB
         Assert.DoesNotContain(draft["Manifest"]!["Scopes"]!.AsArray(),
             s => s!["Name"]!.GetValue<string>() == "sd-doomed");
 
-        // The plan shows the targeted delete without prune, conflict-free.
+        // The plan shows the targeted delete, conflict-free.
         var plan = await PlanAsync(client, factory, draftId, ct);
         var doomed = SectionEntry(plan, "scopes", "sd-doomed");
         Assert.Equal("delete", doomed["Action"]!.GetValue<string>());

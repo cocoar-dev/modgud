@@ -27,9 +27,10 @@ import { useI18n } from '@cocoar/vue-localization'
 import { useUI } from '@/composables/useUI'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useModalOverlay } from '@/composables/useModalOverlay'
-import { MODAL_LG } from '@/router/modal-sizes'
+import { MODAL_LG, MODAL_MD } from '@/router/modal-sizes'
 import {
   SECTION_META,
+  draftDisplayName,
   draftErrorMessage,
   useRealmDraftStore,
   type DraftManifest,
@@ -170,7 +171,6 @@ const ACTION_VARIANTS: Record<PlanAction, 'neutral' | 'success' | 'warning' | 'e
   update: 'info',
   unchanged: 'neutral',
   delete: 'error',
-  protected: 'warning',
   error: 'error',
 }
 
@@ -180,7 +180,6 @@ function actionLabel(action: PlanAction): string {
     case 'update': return t('admin.realmConfig.action.update', {}, 'Update')
     case 'unchanged': return t('admin.realmConfig.action.unchanged', {}, 'Unchanged')
     case 'delete': return t('admin.realmConfig.action.delete', {}, 'Delete')
-    case 'protected': return t('admin.realmConfig.action.protected', {}, 'Protected')
     case 'error': return t('admin.realmConfig.action.error', {}, 'Error')
   }
 }
@@ -198,7 +197,7 @@ function sectionLabel(name: string): string {
 function cardInfo(section: string, entry: PlanEntry): string[] {
   const e = store.findEntity(section, entry.Key)
   if (!e) {
-    return entry.Action === 'delete' || entry.Action === 'protected'
+    return entry.Action === 'delete'
       ? [t('admin.realmConfig.card.liveOnly', {}, 'Live only — not in this draft')]
       : []
   }
@@ -247,7 +246,7 @@ function cardInfo(section: string, entry: PlanEntry): string[] {
 }
 
 const actionCounts = computed(() => {
-  const counts: Record<PlanAction, number> = { create: 0, update: 0, delete: 0, protected: 0, unchanged: 0, error: 0 }
+  const counts: Record<PlanAction, number> = { create: 0, update: 0, delete: 0, unchanged: 0, error: 0 }
   for (const section of store.plan?.Sections ?? [])
     for (const entry of section.Entries) counts[entry.Action]++
   return counts
@@ -283,9 +282,17 @@ const NEW_ENTITY_TEMPLATES: Record<string, ManifestEntity> = {
   positions: { AccountName: '' },
 }
 
+/** A live-only entry the draft deletes — with an 'error' action it is a staged
+ * deletion the apply refuses (e.g. lockout protection). */
+function isStagedDeletion(section: string, entry: PlanEntry): boolean {
+  return store.isDeleteStaged(section, entry.Key)
+}
+
 async function openEntry(section: string, entry: PlanEntry) {
   const entity = store.findEntity(section, entry.Key)
-  const result = await modal.open<DraftEntryModalResult>(DraftEntryModal, MODAL_LG, {
+  // A live-only entry (staged deletion) has no JSON editor — only notes and the
+  // undo — so it gets the cap-to-content size instead of the tall editor frame.
+  const result = await modal.open<DraftEntryModalResult>(DraftEntryModal, entity ? MODAL_LG : MODAL_MD, {
     section,
     entryKey: entry.Key,
     icon: SECTION_ICONS[section] ?? 'file-json',
@@ -327,18 +334,10 @@ async function handleModalResult(section: string, key: string, result?: DraftEnt
     return
   }
   if (result.entity) {
-    // Replace at the ORIGINAL key — if the entity's key field was edited, the
-    // staged entity carries the new key and the re-plan shows the rename as
-    // create (+ prune delete of the old one).
+    // The server replaces the entry by its Id, so an edited key field stages a
+    // rename of the same entity, not a second one.
     await store.upsertEntity(section, key, result.entity)
   }
-}
-
-// ── Workspace: header actions ─────────────────────────────────────────────────
-
-async function applyDraft() {
-  const ok = await store.apply()
-  if (ok) toast.success(t('admin.realmConfig.applied', {}, 'Draft applied.'))
 }
 
 const secretEntries = computed(() => Object.entries(store.applyOutcome?.ClientSecrets ?? {}))
@@ -423,7 +422,7 @@ function formatDate(value: string): string {
             class="draft-row"
             @click="store.openDraft(draft.Id)">
             <CoarIcon name="file-json" size="s" />
-            <span class="draft-name">{{ draft.Name }}</span>
+            <span class="draft-name">{{ draftDisplayName(draft, t) }}</span>
             <CoarTag v-if="draft.Shared" size="s" variant="info">
               {{ t('admin.realmConfig.shared', {}, 'Shared') }}
             </CoarTag>
@@ -437,6 +436,8 @@ function formatDate(value: string): string {
             <CoarPopconfirm
               :title="t('admin.realmConfig.deleteDraftTitle', {}, 'Delete draft?')"
               :message="t('admin.realmConfig.deleteDraftConfirm', {}, 'The staged changes are discarded. The realm itself is untouched.')"
+              :confirm-text="t('common.delete', {}, 'Delete')"
+              :cancel-text="t('common.cancel', {}, 'Cancel')"
               confirm-variant="danger"
               @confirmed="store.deleteDraft(draft.Id)">
               <CoarButton size="s" variant="ghost" @click.stop>
@@ -454,7 +455,7 @@ function formatDate(value: string): string {
             {{ t('admin.realmConfig.parkToList', {}, 'Park & back to list') }}
           </CoarButton>
           <CoarIcon name="file-json" size="s" />
-          <span class="draft-name">{{ store.current.Name }}</span>
+          <span class="draft-name">{{ draftDisplayName(store.current, t) }}</span>
           <span class="draft-meta">
             v{{ store.current.Version }} ·
             {{ t('admin.realmConfig.modifiedBy', { name: store.current.LastModifiedByName }, `by ${store.current.LastModifiedByName}`) }}
@@ -475,7 +476,6 @@ function formatDate(value: string): string {
             <CoarTag v-if="actionCounts.create" variant="success" size="s">{{ actionCounts.create }} {{ t('admin.realmConfig.summary.create', {}, 'create') }}</CoarTag>
             <CoarTag v-if="actionCounts.update" variant="info" size="s">{{ actionCounts.update }} {{ t('admin.realmConfig.summary.update', {}, 'update') }}</CoarTag>
             <CoarTag v-if="actionCounts.delete" variant="error" size="s">{{ actionCounts.delete }} {{ t('admin.realmConfig.summary.delete', {}, 'delete') }}</CoarTag>
-            <CoarTag v-if="actionCounts.protected" variant="warning" size="s">{{ actionCounts.protected }} {{ t('admin.realmConfig.summary.protected', {}, 'protected') }}</CoarTag>
             <CoarTag v-if="actionCounts.error" variant="error" size="s">{{ actionCounts.error }} {{ t('admin.realmConfig.summary.error', {}, 'error') }}</CoarTag>
             <CoarTag variant="neutral" size="s">{{ actionCounts.unchanged }} {{ t('admin.realmConfig.summary.unchanged', {}, 'unchanged') }}</CoarTag>
             <CoarTag v-if="conflictCount > 0" variant="warning" size="s">
@@ -487,32 +487,10 @@ function formatDate(value: string): string {
           <CoarCheckbox
             v-model="showUnchanged"
             :label="t('admin.realmConfig.showUnchanged', {}, 'Show unchanged')" />
-          <CoarCheckbox
-            v-model="store.prune"
-            :label="t('admin.realmConfig.prune', {}, 'Prune — also delete entities missing from the draft')"
-            @update:model-value="store.replan()" />
-          <CoarPopconfirm
-            :title="t('admin.realmConfig.applyConfirmTitle', {}, 'Apply this draft?')"
-            :message="store.prune
-              ? t('admin.realmConfig.applyConfirmPrune', {}, 'The staged changes are applied AND missing entities are deleted (full sync). One transaction — all or nothing.')
-              : t('admin.realmConfig.applyConfirm', {}, 'The staged changes are applied to this realm in one transaction — all or nothing.')"
-            :confirm-variant="store.prune ? 'danger' : 'primary'"
-            @confirmed="applyDraft">
-            <CoarButton
-              :variant="store.prune ? 'danger' : 'primary'"
-              size="s"
-              :loading="store.applying"
-              :disabled="!store.canApply || store.pendingCount === 0">
-              {{ store.pendingCount > 0
-                ? t('admin.realmConfig.applyCount', { count: store.pendingCount }, `Apply draft (${store.pendingCount})`)
-                : t('admin.realmConfig.apply', {}, 'Apply draft') }}
-            </CoarButton>
-          </CoarPopconfirm>
+          <!-- Apply and discard live in the staging bar, which is always shown for the
+               checked-out draft — one place for the branch verbs, not two. -->
         </div>
 
-        <CoarNotice v-if="store.prune" variant="warning">
-          {{ t('admin.realmConfig.pruneHint', {}, 'Prune turns the apply into a full sync: everything in this realm that is missing from the draft gets deleted (system entities and realm admins are protected). Review the plan carefully.') }}
-        </CoarNotice>
         <CoarNotice v-if="conflictCount > 0" variant="warning">
           <div class="conflict-banner">
             <span>
@@ -559,8 +537,16 @@ function formatDate(value: string): string {
                 </div>
                 <div class="card-info">
                   <span v-for="(line, i) in cardInfo(section.Name, entry)" :key="i" class="card-info-line">{{ line }}</span>
+                  <!-- A refused staged deletion says WHY right on the card. -->
+                  <span v-if="entry.Action === 'error' && entry.Notes.length > 0" class="card-note" :title="entry.Notes[0]">
+                    {{ entry.Notes[0] }}
+                  </span>
                 </div>
                 <div class="card-tags">
+                  <!-- A refused staged deletion is still a deletion: "Delete" + "Error". -->
+                  <CoarTag v-if="entry.Action === 'error' && isStagedDeletion(section.Name, entry)" :variant="ACTION_VARIANTS.delete" size="s">
+                    {{ actionLabel('delete') }}
+                  </CoarTag>
                   <CoarTag :variant="ACTION_VARIANTS[entry.Action]" size="s">{{ actionLabel(entry.Action) }}</CoarTag>
                   <CoarTag v-if="entry.Conflicts.length > 0" variant="warning" size="s">
                     <CoarIcon name="shield-alert" size="s" />
@@ -574,17 +560,6 @@ function formatDate(value: string): string {
             </div>
           </section>
 
-          <div class="workspace-footer">
-            <CoarPopconfirm
-              :title="t('admin.realmConfig.deleteDraftTitle', {}, 'Delete draft?')"
-              :message="t('admin.realmConfig.deleteDraftConfirm', {}, 'The staged changes are discarded. The realm itself is untouched.')"
-              confirm-variant="danger"
-              @confirmed="store.deleteDraft(store.current!.Id)">
-              <CoarButton size="s" variant="ghost">
-                {{ t('admin.realmConfig.discardDraft', {}, 'Discard draft') }}
-              </CoarButton>
-            </CoarPopconfirm>
-          </div>
         </div>
       </template>
     </div>
@@ -807,6 +782,16 @@ function formatDate(value: string): string {
   white-space: nowrap;
 }
 
+.card-note {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  color: var(--coar-text-semantic-error, #dc2626);
+  font-size: 0.72rem;
+}
+
 .card-tags {
   display: flex;
   align-items: center;
@@ -817,12 +802,6 @@ function formatDate(value: string): string {
   margin-left: auto;
   color: var(--coar-text-neutral-secondary, #6b7280);
   font-size: 0.7rem;
-}
-
-.workspace-footer {
-  display: flex;
-  justify-content: flex-end;
-  padding-bottom: 0.5rem;
 }
 
 /* ── Apply secrets notice ── */

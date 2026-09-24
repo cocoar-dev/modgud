@@ -99,7 +99,7 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 - Realm-management UI on the Control-Plane realm (the realm holding the persisted `Realm.IsControlPlane` flag — `system` by default, but the flag is **transferable** to any active realm via `recover control-plane transfer <slug>` or `POST /api/admin/realms/{slug}/transfer-control-plane`)
 - Per-realm bootstrap via Control-Plane-issued magic-link invite or recovery CLI
 - Exactly one Control Plane per deployment, enforced on create / transfer
-- **Declarative realm provisioning** — export a realm as a manifest, import/apply it to create or update a realm in place, and optionally prune anything the manifest no longer lists
+- **Declarative realm provisioning** — export a realm as a manifest, import/apply it to create or update a realm in place; apply is always additive, deleting goes through a reviewed staged deletion
 
 ### Per-realm configuration
 - Domains, display name, description

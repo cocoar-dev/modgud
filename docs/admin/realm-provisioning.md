@@ -31,7 +31,7 @@ who's allowed:
 | **Path** | `/api/admin/realms/*` | `/api/admin/realm-config/*` |
 | **Runs on** | Control-Plane realm only (404 elsewhere) | The realm's own host (any realm) |
 | **Permission** | `realm:write` on the `control-plane` app | `realm:admin` **in that realm** |
-| **Can** | Create / update / export / **delete any** realm | Update + export **its own** realm (incl. prune) |
+| **Can** | Create / update / export / **delete any** realm | Update + export **its own** realm (incl. staged deletions) |
 | **Cannot** | — | Create or delete realms; touch another realm |
 
 If you run a **shared** Modgud and want to hand one realm to an app team (or an
@@ -48,8 +48,7 @@ Control-Plane host ([404 elsewhere](../concepts/control-plane)):
 | Method | Path | What it does |
 |---|---|---|
 | `POST` | `/` | Create the **realm shell** — slug, domains, first admin. A manifest carries no realm identity, so this is its own call. |
-| `POST` | `/{slug}/apply` | **Merge** a manifest into an existing realm (upsert per entity). Never drops the database. |
-| `POST` | `/{slug}/apply?prune=true` | **Full sync** — like apply, then delete entities present in the realm but absent from the manifest. The first call answers with the plan and a token instead of deleting — see [a pruning apply asks first](#a-pruning-apply-asks-first). |
+| `POST` | `/{slug}/apply` | **Merge** a manifest into an existing realm (upsert per entity). Never deletes anything the manifest leaves out, and never drops the database — deleting is a [staged deletion in a draft](#deleting-staged-deletions-in-a-draft). |
 | `GET` | `/{slug}/export` | Export the realm as a manifest (structure-only — never secrets or password hashes). |
 | `GET` | `/manifest-schema` | The JSON Schema for the manifest (see [below](#discover-the-schema)). |
 | `DELETE` | `/{slug}?hard=true` | **Hard-delete** — drop the tenant database. Without `?hard=true` it's the reversible soft-delete. |
@@ -212,7 +211,7 @@ there's no way to read it back later. Existing clients keep their secret across 
 later `apply`.
 :::
 
-## Apply: merge vs. prune
+## Apply: merge-patch, always additive
 
 `apply` is a **merge-patch** (in the spirit of [RFC 7386](https://www.rfc-editor.org/rfc/rfc7386)) —
 the same [write semantics](/reference/#write-semantics) as the admin API:
@@ -229,52 +228,44 @@ the stored value, and `[]` clears a list. Concretely:
 - App-catalog permission ids are preserved across updates, so unchanged permissions
   keep their grants.
 
-Add **`?prune=true`** to make it a full sync: after the merge, entities in the realm
-that are *absent* from the manifest are deleted (in dependency order). To prevent a
-manifest from locking a realm out, prune **never deletes** the system app, auto-seeded
-standard scopes, terminal-managed clients, the built-in Internal login provider, a
-service account itself or the credentials of a service account the manifest does not
-declare, or anything conferring `realm:admin` (a realm-admin role, any current admin
-user, or an admin-conferring group).
+`apply` never deletes anything on its own: entities in the realm that are *absent* from the manifest are left exactly as they are. There is no full-sync flag — deleting is always an explicit, reviewed step, described next.
 
-### A pruning apply asks first
+## Deleting: staged deletions in a draft
 
-The admin UI has always shown a plan with deletions in red before an apply. The API
-does the same, in two steps. A `POST …/apply?prune=true` that **would delete
-something** does not delete it — it answers **`409`** with the plan, a confirmation
-token, and a review link:
+Deleting a manifest-managed entity — through the admin UI or through the API — goes through a [draft](configuration-drafts) (ADR 0017), never through what an apply's manifest happens to omit:
 
-```jsonc
-{
-  "Error": "Manifest.ConfirmationRequired",
-  "Message": "This apply would DELETE 3 entit(ies) from realm 'acme'. Repeat the call with ?confirm=<ConfirmationToken> to go ahead, or send ReviewUrl to someone who should decide — it opens this exact change as a draft.",
-  "ConfirmationToken": "CfDJ8…",
-  "DraftId": "3ce3d9a3-…",
-  "ReviewUrl": "https://acme.example.com/admin/realm-config?draft=3ce3d9a3-…",
-  "Plan": { "Sections": [ { "Name": "clients", "Entries": [ { "Key": "old-web", "Action": "delete", … } ] }, … ] }
-}
+1. **Stage the deletion** — `PUT /api/admin/realm-config/drafts/active/deletions/{section}?key=<natural key>` marks one entity for deletion, implicitly creating the caller's active draft if none is open yet. `DELETE` the same URL un-stages it. `{section}` is the manifest section (`clients`, `roles`, `groups`, `users`, …) and `key` is that section's natural key — URL-encode it (a role key like `acme/Author` needs `%2F` for the slash, for instance).
+2. **Plan** — `POST /api/admin/realm-config/drafts/{id}/plan` (or the control-plane equivalent) returns the diff with the staged deletion as a red `delete` entry, or as an `error` entry if the target is protected (see below) — same as every other staged change.
+3. **Apply** — `POST /api/admin/realm-config/drafts/{id}/apply` applies the draft, deletions included, and is refused with `409 Draft.ApplyRefused` while the plan still reports errors or unresolved conflicts.
+
+All three calls work with either the admin cookie or a Management API bearer token (a service account holding `realm:admin` in the target realm) — the draft endpoints are not UI-only.
+
+**Protected targets never delete** — staging one flags a plan `error` instead of a `delete`, so an apply can't lock a realm out: the system app, auto-seeded standard scopes, terminal-managed clients, the built-in Internal login provider, a service account itself (its credentials delete through the account's own `Credentials` list — see [below](#service-accounts-and-their-credentials)), and anything conferring `realm:admin` (a realm-admin role, any user or service account currently holding one, or an admin-conferring group).
+
+### Worked example: stage → plan → apply with a bearer token
+
+```bash
+REALM=https://acme.example.com
+TOKEN=$(curl -sS -X POST "$REALM/connect/token" \
+  -d 'grant_type=client_credentials' \
+  -d 'client_id=<linked-service-account-client>' \
+  -d 'client_secret=<secret>' \
+  -d 'scope=modgud.management' \
+  -d 'resource=urn:modgud:management-api' | jq -r '.access_token')
+
+# 1) Stage the deletion of a client (implicitly opens/reuses the active draft)
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  "$REALM/api/admin/realm-config/drafts/active/deletions/clients?key=old-web"
+# → { "Id": "3ce3d9a3-…", … }   (the active draft, with the deletion staged)
+
+# 2) Plan — the deletion shows up as a red "delete" entry (or "error" if protected)
+curl -H "Authorization: Bearer $TOKEN" \
+  -X POST "$REALM/api/admin/realm-config/drafts/3ce3d9a3-…/plan"
+
+# 3) Apply — deletes it, and consumes the draft
+curl -H "Authorization: Bearer $TOKEN" \
+  -X POST "$REALM/api/admin/realm-config/drafts/3ce3d9a3-…/apply"
 ```
-
-Two ways forward, and a script can pick either:
-
-- **Confirm** — repeat the *same* call with `&confirm=<ConfirmationToken>`. The token is
-  valid for **15 minutes** and bound to the realm, to the manifest as sent, and to the
-  exact set of deletions shown. If the manifest or the realm changed in between so that
-  a *different* set would now be deleted, the token is refused
-  (`Manifest.ConfirmationStale` / `Manifest.ConfirmationPayloadMismatch`) and the caller
-  has to look again; an expired or foreign token answers `Manifest.ConfirmationExpired` /
-  `Manifest.ConfirmationRealmMismatch`.
-- **Hand it to a human** — the pending apply is also **parked as a shared draft** in the
-  target realm, named *Pending apply (prune) — {time}, by {caller}*. Mail the `ReviewUrl`
-  to whoever should decide: it opens the ordinary [draft workspace](configuration-drafts)
-  with the deletions in red, and they apply or discard it there. A parked pruning draft
-  prunes however it is applied — that is what the caller asked for.
-
-A pruning apply that would delete **nothing** is not destructive and runs on the first
-call; an apply without `?prune=true` never deletes and is never gated. None of this stops
-a script from confirming blindly — nothing can, any more than the UI can stop someone
-clicking through without reading. It makes the information unavoidable, which is the
-part that can be controlled.
 
 ## Export
 
@@ -369,12 +360,12 @@ confidential client's is. A credential whose `Id` names a live one is updated in
 one without an `Id` creates, and a taken client id fails loudly rather than adopting
 another client.
 
-The account itself is **never pruned** — deleting one kills every credential it owns,
-so that stays a deliberate action in the service-account admin. Its `Credentials` list is
-the **desired set** for that account, like `Members` on a group: when the list is present,
-a credential the account has but the list does not is **deleted at apply**, no prune
-needed — the plan shows it as a red delete entry under *Clients* beforehand, and a
-[pruning apply asks first](#a-pruning-apply-asks-first). An entry **without** a
+The account itself is **never staged-deleted** — deleting one kills every credential it
+owns, so that stays a deliberate action in the service-account admin. Its `Credentials`
+list is the **desired set** for that account, like `Members` on a group: when the list
+is present, a credential the account has but the list does not is **deleted at apply**
+(no staged deletion needed) — the plan shows it as a red delete entry under *Clients*
+beforehand. An entry **without** a
 `Credentials` list leaves the credentials alone (absent = unchanged), and an account the
 file never mentions keeps everything it has — otherwise forgetting to list an account
 would quietly cut off whatever authenticates as it.
@@ -395,17 +386,17 @@ team or an agent — so they can fully manage *that* realm's config and entities
 |---|---|---|
 | `GET`  | `/api/admin/realm-config/manifest-schema` | The manifest JSON Schema (identical to the control-plane one). |
 | `GET`  | `/api/admin/realm-config/export` | Export **this** realm as a manifest. |
-| `POST` | `/api/admin/realm-config/apply` | Apply a manifest to **this** realm (merge; `?prune=true` = full sync within the realm, [asks first](#a-pruning-apply-asks-first) when it would delete). |
+| `POST` | `/api/admin/realm-config/apply` | Apply a manifest to **this** realm (merge; never deletes what the manifest leaves out — deleting is a [staged deletion in a draft](#deleting-staged-deletions-in-a-draft)). |
 
 - **Scope is the calling realm** — resolved from the request host, never from a slug in
   the body. A manifest whose `Realm.Slug` names a *different* realm is rejected
   There is no realm-create and no realm-delete here — realm
   lifecycle stays control-plane-only.
 - **Permission**: `realm:admin` in the realm being called. Nothing control-plane.
-- **Same engine, same protections** as the control-plane path: prune is bounded to the
-  realm, asks first when it would delete, and never removes the system app, standard
-  scopes, the credentials of an undeclared service account, or any `realm:admin` path — so
-  a manifest can't lock the realm out.
+- **Same engine, same protections** as the control-plane path: staged deletions are
+  bounded to the realm, and can never remove the system app, standard scopes, the
+  credentials of an undeclared service account, or any `realm:admin` path — so a draft
+  can't lock the realm out.
 
 ### Delegating a realm
 
@@ -432,7 +423,7 @@ curl -c cookies.txt -X POST "$REALM/api/account/login" \
 
 curl -b cookies.txt "$REALM/api/admin/realm-config/export"             # current config
 curl -b cookies.txt -X POST "$REALM/api/admin/realm-config/apply" \
-  -H 'Content-Type: application/json' -d @manifest.json                # apply edits (+ ?prune=true)
+  -H 'Content-Type: application/json' -d @manifest.json                # apply edits (merge — see below for deletes)
 ```
 
 For unattended provisioning, use the fixed [Management API contract](../integrate/management-api)

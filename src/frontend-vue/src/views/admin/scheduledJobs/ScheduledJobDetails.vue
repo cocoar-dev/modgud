@@ -196,7 +196,7 @@ const hasParams = computed(() => (job.value?.ParameterSchema.length ?? 0) > 0)
 const footerButton = computed(() => ({
   visible: !!job.value,
   text: stagedSave.value
-    ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+    ? t('admin.realmConfig.entry.save', {}, 'Stage into draft')
     : t('common.save', {}, 'Save'),
   loading: saving.value,
   onClick: save,

@@ -311,57 +311,25 @@ public static class RealmsEndpoints
         // instead of tearing down the tenant database over a typo.
 
         // Apply a manifest to an EXISTING realm: in-place merge/upsert per entity (never
-        // drops the DB). The route slug must match the manifest's realm slug. Default is an
-        // additive merge (entities absent from the manifest are left untouched);
-        // ?prune=true makes it a full sync that also deletes the absent entities (k8s
-        // apply --prune — infrastructure + every realm:admin path are protected, never pruned).
+        // drops the DB). Always an additive merge: entities absent from the manifest are left
+        // untouched. Deleting is a staged deletion in a draft of the target realm, where the
+        // plan shows it before the apply — never a side effect of what a file leaves out.
         group.MapPost("{slug}/apply", async (
             string slug,
             RealmManifest manifest,
             RealmManifestApplier applier,
-            ManifestApplyConfirmation confirmation,
-            IServiceScopeFactory scopeFactory,
-            IRealmProvisioningService realms,
             HttpContext http,
             ISecurityAuditLog securityAudit,
-            CancellationToken ct,
-            bool prune = false,
-            string? confirm = null) =>
+            CancellationToken ct) =>
         {
-            // A pruning apply deletes whatever the file does not mention. The first call
-            // answers with the plan and a token instead of doing it, and PARKS the manifest
-            // as a shared draft in the target realm — so the caller can either repeat with
-            // ?confirm=<token> or hand the review link to a human who decides in the UI.
-            // See ManifestApplyConfirmation.
-            var gate = await confirmation.CheckAsync(slug, manifest, prune, confirm, ct);
-            if (gate.IsError) return ToErrorResult(gate.Errors);
-            if (gate.Value is { } required)
-            {
-                var actor = http.User.FindFirstValue(ClaimTypes.Name)
-                            ?? http.User.Identity?.Name ?? "control-plane";
-                var parked = await ManifestApplyConfirmation.ParkAsync(
-                    scopeFactory, realms, slug, manifest, actor, http.GetUserId() ?? Guid.Empty, ct);
-                return Results.Json(new
-                {
-                    Error = "Manifest.ConfirmationRequired",
-                    Message = $"This apply would DELETE {required.Deletions} entit(ies) from realm '{slug}'. "
-                              + "Repeat the call with ?confirm=<ConfirmationToken> to go ahead, or send "
-                              + "ReviewUrl to someone who should decide — it opens this exact change as a draft.",
-                    required.ConfirmationToken,
-                    parked.DraftId,
-                    parked.ReviewUrl,
-                    required.Plan,
-                }, statusCode: StatusCodes.Status409Conflict);
-            }
-
-            var result = await applier.UpdateRealmAsync(slug, manifest, prune, deletions: null, ct);
+            var result = await applier.UpdateRealmAsync(slug, manifest, deletions: null, ct);
             if (!result.IsError)
             {
                 await RecordControlPlaneRealmOperationAsync(
                     securityAudit,
                     http,
                     slug,
-                    prune ? "apply-manifest-prune" : "apply-manifest");
+                    "apply-manifest");
             }
             return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
         })

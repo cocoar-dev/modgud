@@ -196,7 +196,7 @@ const footerButton = computed(() => ({
   text: props.draftOnly
     ? t('common.apply', {}, 'Übernehmen')
     : stagedSave.value
-      ? t('admin.realmConfig.entry.save', {}, 'In den Draft übernehmen')
+      ? t('admin.realmConfig.entry.save', {}, 'Stage into draft')
       : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
   disabled: !form.value.AccountName.trim() || generalIssues.value.length > 0
     || terminalIssues.value.length > 0 || loading.value,

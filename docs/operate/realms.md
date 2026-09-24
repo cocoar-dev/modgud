@@ -314,10 +314,11 @@ Beyond the one-field-at-a-time Create/Update above, the same
 document describing a realm's apps, OAuth clients/scopes/APIs, roles,
 users and groups:
 
-- `POST /import` — create a brand-new realm from a manifest.
-- `POST /{slug}/apply` (optionally `?prune=true` for a full sync that
-  also removes anything absent from the manifest) — apply a manifest
-  to an existing realm in place.
+- `POST /{slug}/apply` — apply a manifest to an existing realm in
+  place, as an in-place merge/upsert (create the realm shell first with
+  `POST /api/admin/realms`). Always additive — it never deletes
+  anything the manifest leaves out; deleting is a reviewed staged
+  deletion in a draft.
 - `GET /{slug}/export` — export a realm's current shape as a manifest.
 - `GET /manifest-schema` — the manifest's JSON Schema.
 

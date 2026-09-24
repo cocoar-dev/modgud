@@ -294,6 +294,76 @@ public class ManagementApiAuthorizationTests : IntegrationTestBase
         }
     }
 
+    /// <summary>
+    /// The draft workflow is how a Management API consumer deletes: stage the deletion,
+    /// read the plan, apply. The draft endpoints took the caller's id from NameIdentifier,
+    /// which a bearer principal does not carry (it names its subject in <c>sub</c>) — so
+    /// every one of them threw for a service account.
+    /// </summary>
+    [Fact]
+    public async Task Realm_config_drafts_stage_plan_and_apply_a_deletion_with_a_management_bearer()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var serviceAccount = await CreateServiceAccountAsync("realm-config-draft-admin");
+        Assert.True(ShortGuid.TryParse(serviceAccount.Id, out Guid serviceAccountId));
+        await GrantRealmAdminAsync(serviceAccountId);
+
+        var clientId = $"realm-config-draft-{Guid.NewGuid():N}";
+        await CreateClientCredentialsClientAsync(
+            clientId,
+            serviceAccount.Id,
+            [ModgudManagementApi.Scope],
+            AccessTokenType.Reference);
+        var token = await IssueClientCredentialsTokenAsync(
+            clientId, ModgudManagementApi.Scope, ModgudManagementApi.Audience);
+
+        using var bearerClient = Factory.CreateClient();
+        bearerClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
+
+        var appSlug = $"draft-doomed-{Guid.NewGuid():N}";
+        using (var apply = await bearerClient.PostAsJsonAsync(
+                   "/api/admin/realm-config/apply",
+                   new { Apps = new[] { new { Slug = appSlug, DisplayName = "Doomed", Permissions = Array.Empty<object>() } } },
+                   JsonOptions, ct))
+        {
+            Assert.True(apply.IsSuccessStatusCode,
+                $"seed apply failed ({(int)apply.StatusCode}): {await apply.Content.ReadAsStringAsync(ct)}");
+        }
+
+        string draftId;
+        using (var stage = await bearerClient.PutAsync(
+                   $"/api/admin/realm-config/drafts/active/deletions/apps?key={appSlug}", null, ct))
+        {
+            var body = await stage.Content.ReadAsStringAsync(ct);
+            Assert.True(stage.IsSuccessStatusCode, $"stage delete failed ({(int)stage.StatusCode}): {body}");
+            draftId = JsonDocument.Parse(body).RootElement.GetProperty("Id").GetString()!;
+        }
+
+        using (var plan = await bearerClient.PostAsJsonAsync(
+                   $"/api/admin/realm-config/drafts/{draftId}/plan", new { }, JsonOptions, ct))
+        {
+            var body = await plan.Content.ReadAsStringAsync(ct);
+            Assert.True(plan.IsSuccessStatusCode, $"draft plan failed ({(int)plan.StatusCode}): {body}");
+            var apps = JsonDocument.Parse(body).RootElement.GetProperty("Sections").EnumerateArray()
+                .Single(s => s.GetProperty("Name").GetString() == "apps");
+            Assert.Contains(apps.GetProperty("Entries").EnumerateArray(), e =>
+                e.GetProperty("Key").GetString() == appSlug && e.GetProperty("Action").GetString() == "delete");
+        }
+
+        using (var applyDraft = await bearerClient.PostAsJsonAsync(
+                   $"/api/admin/realm-config/drafts/{draftId}/apply", new { }, JsonOptions, ct))
+        {
+            Assert.True(applyDraft.IsSuccessStatusCode,
+                $"draft apply failed ({(int)applyDraft.StatusCode}): {await applyDraft.Content.ReadAsStringAsync(ct)}");
+        }
+
+        using (var export = await bearerClient.GetAsync("/api/admin/realm-config/export", ct))
+        {
+            Assert.DoesNotContain(appSlug, await export.Content.ReadAsStringAsync(ct));
+        }
+    }
+
     [Fact]
     public async Task Realm_config_rejects_management_bearer_without_live_realm_admin()
     {
