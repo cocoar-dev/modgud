@@ -216,6 +216,13 @@ function removeFromDraft() {
           {{ t('admin.realmConfig.entry.remove', {}, 'Remove from draft') }}
         </CoarButton>
       </div>
+      <!-- A live-only entry is a staged deletion — the plan note for a protected one
+           says "unstage this deletion", so the way to do it has to be right here. -->
+      <div v-else class="danger-row">
+        <CoarButton size="s" variant="secondary" @click="removeFromDraft">
+          {{ t('admin.realmConfig.entry.unstageDelete', {}, 'Undo the deletion') }}
+        </CoarButton>
+      </div>
     </div>
   </ModalLayout>
 </template>

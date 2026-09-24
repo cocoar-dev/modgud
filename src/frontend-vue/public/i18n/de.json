@@ -2008,7 +2008,8 @@
         "secrets": "Secrets",
         "secretSet": "{slot} gestaged (Wert wird nicht angezeigt)",
         "json": "Eintrag (JSON)",
-        "notInDraft": "Diese Entity existiert live und ist nicht Teil des Drafts. Ist sie zum Löschen vorgemerkt, löscht das Anwenden des Drafts sie."
+        "notInDraft": "Diese Entity existiert live und ist nicht Teil des Drafts. Ist sie zum Löschen vorgemerkt, löscht das Anwenden des Drafts sie.",
+        "unstageDelete": "Löschung zurücknehmen"
       }
     },
     "rateLimits": {

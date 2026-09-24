@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
+import { useAppConfigStore } from './appconfig.store'
 
 /**
  * ADR-0017 Phase 1: named server-side configuration drafts. The store owns the
@@ -189,8 +190,15 @@ async function resyncEntityStores(): Promise<void> {
     import('./group.store').then((m) => m.useGroupStore().loadAll()),
     import('./user.store').then((m) => m.useUserStore().loadAll()),
     import('./loginProvider.store').then((m) => m.useLoginProviderStore().loadAll()),
-    import('./position.store').then((m) => m.usePositionStore().loadAll()),
+    // Service accounts, jobs and the inbox policy are staged since 0.14 too; the
+    // service-account grid went empty after an apply until a reload.
+    import('./serviceAccount.store').then((m) => m.useServiceAccountStore().loadAll()),
+    import('./scheduledJob.store').then((m) => m.useScheduledJobStore().loadAll()),
+    import('./inboxSettings.store').then((m) => m.useInboxSettingsStore().load()),
   ]
+  // Positions only exist behind their feature flag — the endpoint 404s otherwise.
+  if (useAppConfigStore().config.Features.PositionTerminals)
+    loaders.push(import('./position.store').then((m) => m.usePositionStore().loadAll()))
   await Promise.allSettled(loaders)
 }
 
@@ -356,6 +364,9 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
   async function upsertEntity(section: string, _key: string, entity: ManifestEntity) {
     saving.value = true
     error.value = null
+    // The next change starts the next draft: the last apply's outcome (and its
+    // one-time secrets) must not keep standing above it.
+    applyOutcome.value = null
     try {
       current.value = await draftsHttp
         .addPath('active', 'entities', section)
@@ -391,6 +402,7 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
   async function stageDelete(section: string, key: string) {
     saving.value = true
     error.value = null
+    applyOutcome.value = null
     try {
       current.value = await draftsHttp
         .addPath('active', 'deletions', section)

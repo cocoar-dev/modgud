@@ -12,6 +12,7 @@ using Modgud.Authorization.Principals;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
 using Modgud.Infrastructure.OpenIddict;
+using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Api.Features.Admin.Provisioning;
 
@@ -78,9 +79,33 @@ public sealed partial class RealmManifestApplier
             // The ACCOUNT is never deleted by an apply (deleting it kills every credential
             // it owns); recording it marks it as represented in the manifest.
             identity.Applied(ManifestIdentity.Sections.ServiceAccounts, accountId);
+            NotifyAdminGridsAfterCommit(accountId, created: existing is null);
 
             await ApplyCredentialsAsync(session, oauth, identity, apps, secrets, skips, sa, accountId, ctx, ct);
         }
+    }
+
+    /// <summary>
+    /// The service-account admin grid follows the "ServiceAccount" data events the REST
+    /// endpoints dispatch; an apply wrote the account without one, so a staged account
+    /// was missing from the list after the apply until a reload. Dispatched after the
+    /// commit, from the committed state — a rolled-back apply announces nothing.
+    /// </summary>
+    private static void NotifyAdminGridsAfterCommit(Guid accountId, bool created)
+    {
+        if (TenantApplyTransaction.Current is not { } apply) return;
+        var tenant = TenantContext.Current;
+        apply.Defer($"notify admin grids of service account '{accountId}'", async (sp, c) =>
+        {
+            using var _ = TenantContext.Enter(tenant);
+            using var scope = sp.GetRequiredService<IServiceScopeFactory>().CreateScope();
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            if (await session.LoadAsync<ServiceAccount>(accountId, c) is not { } account) return;
+            var dto = ServiceAccountsEndpoints.ToDto(account);
+            var dispatcher = scope.ServiceProvider.GetRequiredService<BuildingBlocks.EventDispatcher.DataEventDispatcher>();
+            if (created) dispatcher.DispatchCreatedEvent("ServiceAccount", dto, session.TenantId);
+            else dispatcher.DispatchUpdatedEvent("ServiceAccount", dto, session.TenantId);
+        });
     }
 
     /// <summary>

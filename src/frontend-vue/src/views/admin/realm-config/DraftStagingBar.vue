@@ -35,7 +35,13 @@ watch(() => store.error, (message) => {
 
 async function applyDraft() {
   const ok = await store.apply()
-  if (ok) toast.success(t('admin.realmConfig.applied', {}, 'Draft applied.'))
+  if (!ok) return
+  toast.success(t('admin.realmConfig.applied', {}, 'Draft applied.'))
+  // A credential or client created by the apply comes back with its secret ONCE,
+  // and only the drafts workspace renders it. Applied from any other admin page,
+  // the secret would vanish behind the toast — so take the admin there.
+  if (Object.keys(store.applyOutcome?.ClientSecrets ?? {}).length > 0)
+    await router.push('/admin/realm-config')
 }
 </script>
 

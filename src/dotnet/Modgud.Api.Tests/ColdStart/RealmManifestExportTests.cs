@@ -121,6 +121,41 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
     }
 
     /// <summary>
+    /// A dormant group (empty BoundTo) stays dormant through export → apply into another
+    /// realm. The export wrote an empty list as absent, and a create reads an absent
+    /// BoundTo as the default ['modgud'] — so the copy came out bound to the system app,
+    /// conferring its roles, where the source conferred nothing.
+    /// </summary>
+    [Fact]
+    public async Task A_dormant_group_stays_dormant_through_export_and_apply_into_another_realm()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+
+        var seeded = await ProvisionRealmAsync(factory, Shell("dormantsrc"), new RealmManifest
+        {
+            Groups = [new RealmManifestGroup { Name = "Parked", BoundTo = [] }],
+        }, ct);
+        Assert.False(seeded.IsError, seeded.IsError ? seeded.FirstError.Description : string.Empty);
+
+        var exported = await exporter.ExportRealmAsync("dormantsrc", ct);
+        Assert.False(exported.IsError, exported.IsError ? exported.FirstError.Description : string.Empty);
+        Assert.Empty(exported.Value.Groups.Single(g => g.Name == "Parked").BoundTo!);
+
+        var copied = await ProvisionRealmAsync(factory, Shell("dormantdst"), exported.Value, ct);
+        Assert.False(copied.IsError, copied.IsError ? copied.FirstError.Description : string.Empty);
+        await InTenantAsync(factory, "dormantdst", async sp =>
+        {
+            var group = await sp.GetRequiredService<IDocumentSession>()
+                .Query<Modgud.Authorization.Principals.Group>()
+                .SingleAsync(g => !g.IsDeleted && g.Name == "Parked", ct);
+            Assert.Empty(group.BoundTo);
+        });
+    }
+
+    /// <summary>
     /// Settings that name entities by raw id — a realm's default self-registration groups,
     /// branding asset ids — travel like every other id (ADR 0024). What the target realm has
     /// is applied; what it does not have is SKIPPED and reported, never fatal, and never

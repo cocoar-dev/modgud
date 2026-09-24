@@ -386,7 +386,7 @@ public static class ServiceAccountsEndpoints
         return null;
     }
 
-    private static ServiceAccountDto ToDto(ServiceAccount sa) => new()
+    internal static ServiceAccountDto ToDto(ServiceAccount sa) => new()
     {
         Id = new ShortGuid(sa.Id).ToString(),
         AccountName = sa.AccountName,
