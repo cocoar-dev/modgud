@@ -510,6 +510,20 @@ public sealed class RealmManifestExporter(
             AccessTokenLifetimeMinutes = s.NativeGrants.AccessTokenLifetimeMinutes,
             RefreshTokenLifetimeDays = s.NativeGrants.RefreshTokenLifetimeDays,
         },
+        // ADR 0025 — a realm that never configured the section exports none, so applying the
+        // manifest does not pin the legacy-derived policy as if an admin had chosen it.
+        SignIn = s.SignIn is null ? null : new UpdateSignInPolicyDto
+        {
+            MinimumLevel = s.SignIn.MinimumLevel,
+            AdministrationMinimumLevel = s.SignIn.AdministrationMinimumLevel,
+            SetupGraceDays = s.SignIn.SetupGraceDays,
+            Password = s.SignIn.Password,
+            EmailCode = s.SignIn.EmailCode,
+            Passkey = s.SignIn.Passkey,
+            Totp = s.SignIn.Totp,
+            EmailAfterPassword = s.SignIn.EmailAfterPassword,
+            OwnFactorNotOffered = s.SignIn.OwnFactorNotOffered,
+        },
         BrowserSessions = new UpdateBrowserSessionPolicyDto
         {
             IdleLifetimeMinutes = s.BrowserSessions.IdleLifetimeMinutes,

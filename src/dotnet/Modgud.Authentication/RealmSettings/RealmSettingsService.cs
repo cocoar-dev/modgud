@@ -92,6 +92,13 @@ public sealed class RealmSettingsService(
             doc.NativeGrants = native.Value;
         }
 
+        if (dto.SignIn is not null)
+        {
+            var signIn = await ApplySignInPatchAsync(doc.SignIn, dto.SignIn, ct);
+            if (signIn.IsError) return signIn.FirstError;
+            doc.SignIn = signIn.Value;
+        }
+
         if (dto.BrowserSessions is not null)
         {
             var browserSessions = ApplyBrowserSessionPatch(doc.BrowserSessions, dto.BrowserSessions);
@@ -302,6 +309,7 @@ public sealed class RealmSettingsService(
         Dcr = MapDcrToDto(doc.Dcr),
         Cimd = MapCimdToDto(doc.Cimd),
         NativeGrants = MapNativeGrantsToDto(doc.NativeGrants),
+        SignIn = MapSignInToDto(doc.SignIn),
         BrowserSessions = MapBrowserSessionsToDto(doc.BrowserSessions),
         ClientSessions = MapClientSessionsToDto(doc.ClientSessions),
         PositionSecurity = new PositionSecuritySettingsDto
@@ -499,6 +507,54 @@ public sealed class RealmSettingsService(
                 "RefreshTokenLifetimeDays must be between 1 and 30.");
         return null;
     }
+
+    // A realm that never configured the section is patched over SignInPolicy.Defaults, so the
+    // first save writes a complete policy. The legacy-derived values are NOT computed here:
+    // the runtime owns that fallback.
+    private async Task<ErrorOr<SignInPolicy>> ApplySignInPatchAsync(
+        SignInPolicy? current, UpdateSignInPolicyDto patch, CancellationToken ct)
+    {
+        var s = current ?? SignInPolicy.Defaults;
+
+        var level = SignInPolicyRules.ParseLevel("MinimumLevel", patch.MinimumLevel);
+        if (level.IsError) return level.FirstError;
+        var adminLevel = SignInPolicyRules.ParseLevel("AdministrationMinimumLevel", patch.AdministrationMinimumLevel);
+        if (adminLevel.IsError) return adminLevel.FirstError;
+        var ownFactor = SignInPolicyRules.ParseOwnFactor(patch.OwnFactorNotOffered);
+        if (ownFactor.IsError) return ownFactor.FirstError;
+        if (SignInPolicyRules.ValidateGraceDays(patch.SetupGraceDays) is { } graceError) return graceError;
+
+        var merged = s with
+        {
+            MinimumLevel = level.Value ?? s.MinimumLevel,
+            AdministrationMinimumLevel = adminLevel.Value ?? s.AdministrationMinimumLevel,
+            SetupGraceDays = patch.SetupGraceDays ?? s.SetupGraceDays,
+            Password = patch.Password ?? s.Password,
+            EmailCode = patch.EmailCode ?? s.EmailCode,
+            Passkey = patch.Passkey ?? s.Passkey,
+            Totp = patch.Totp ?? s.Totp,
+            EmailAfterPassword = patch.EmailAfterPassword ?? s.EmailAfterPassword,
+            OwnFactorNotOffered = ownFactor.Value ?? s.OwnFactorNotOffered,
+        };
+
+        if (await SignInPolicyRules.CheckSatisfiableAsync(
+                session, merged, includeAdministration: true, providerIds: null, "Realm sign-in policy", ct) is { } error)
+            return error;
+        return merged;
+    }
+
+    internal static SignInPolicyDto? MapSignInToDto(SignInPolicy? s) => s is null ? null : new SignInPolicyDto
+    {
+        MinimumLevel = s.MinimumLevel.ToString(),
+        AdministrationMinimumLevel = s.AdministrationMinimumLevel.ToString(),
+        SetupGraceDays = s.SetupGraceDays,
+        Password = s.Password,
+        EmailCode = s.EmailCode,
+        Passkey = s.Passkey,
+        Totp = s.Totp,
+        EmailAfterPassword = s.EmailAfterPassword,
+        OwnFactorNotOffered = s.OwnFactorNotOffered.ToString(),
+    };
 
     private static ErrorOr<RegistrationFieldsSettings> ApplyRegistrationFieldsPatch(
         RegistrationFieldsSettings? current,

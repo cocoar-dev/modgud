@@ -17,6 +17,8 @@ public record ApplicationSettingsDto
     public ApplicationLoginExperienceDto? LoginExperience { get; init; }
     public ApplicationSelfRegistrationDto? SelfRegistration { get; init; }
     public ApplicationNativeGrantsDto? NativeGrants { get; init; }
+    /// <summary>ADR 0025 — sparse sign-in policy overrides for this App (null = inherit the realm).</summary>
+    public ApplicationSignInDto? SignIn { get; init; }
     /// <summary>ADR 0019 — sparse rate-limit overrides for this App (null = inherit).</summary>
     public Modgud.Application.DTOs.RealmSettings.UpdateAuthRateLimitsDto? AuthRateLimits { get; init; }
     public ApplicationClientSessionsDto? ClientSessions { get; init; }
@@ -99,6 +101,24 @@ public record ApplicationNativeGrantsDto
     public bool? Enabled { get; init; }
     public int? AccessTokenLifetimeMinutes { get; init; }
     public int? RefreshTokenLifetimeDays { get; init; }
+}
+
+/// <summary>Sparse override of the realm sign-in policy (ADR 0025). Levels are
+/// <c>Single</c> / <c>Multi</c>, <c>OwnFactorNotOffered</c> is <c>Ignore</c> /
+/// <c>RequireViaBrowser</c>; a null field inherits the realm. The administration level
+/// is realm-only and not overridable here.</summary>
+public record ApplicationSignInDto
+{
+    public string? MinimumLevel { get; init; }
+    public int? SetupGraceDays { get; init; }
+    public bool? Password { get; init; }
+    public bool? EmailCode { get; init; }
+    public bool? Passkey { get; init; }
+    public bool? Totp { get; init; }
+    public bool? EmailAfterPassword { get; init; }
+    public string? OwnFactorNotOffered { get; init; }
+    /// <summary>Bare host name the App's passkeys are bound to. Null/empty = the realm's domain.</summary>
+    public string? PasskeyRpId { get; init; }
 }
 
 public record ApplicationClientSessionsDto
