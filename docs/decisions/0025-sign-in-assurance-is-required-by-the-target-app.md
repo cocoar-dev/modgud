@@ -37,6 +37,24 @@ A sign-in reaches one of a small ordered set of levels, recorded on the session:
 
 Two codes over the same channel are one factor. The e-mail-2FA flag never upgrades an e-mail-code sign-in.
 
+**What counts as a factor.** A factor is a *kind* of proof, not a step:
+
+- **Knowledge** — a password.
+- **Possession** — access to a mailbox (e-mail code, magic link), a phone with an authenticator app (TOTP), a device holding a passkey.
+- **Inherence / local unlock** — Face ID, a fingerprint or a device PIN, which is what unlocks a passkey.
+
+`multi` means two *different* kinds. A second e-mail code proves the same mailbox again, so it adds nothing.
+
+**Worked example: an app whose users sign in with an e-mail code.** Its users have no password and never set up 2FA. While the App's minimum is `single`, the e-mail code is all they ever see — in the native app and in a browser sign-in (e.g. connecting the app's MCP server from an AI client). Only an App that requires `multi` asks for more, and the ways to get there are:
+
+| Path | How | Notes |
+|---|---|---|
+| E-mail code + TOTP | After the code, the six digits from an authenticator app | Exists today |
+| Passkey instead of the code | Device possession + Face ID / PIN in one step — `multi` on its own, no e-mail code needed | Must be usable at the login page's origin (see "Passkeys across domains") |
+| Password + e-mail code | Knowledge + mailbox | Only for accounts that have a password |
+
+A passkey is therefore not a "second step after the code"; it replaces the sign-in. Future factors (push approval in an app, a hardware key) fit the same model: what matters is only that the second proof is of a different kind than the first.
+
 ### 2. The App sets the minimum
 
 Each App has a **minimum sign-in level** (`single` or `multi`), with the realm as the default. The global `AuthenticationMinimumLevel` becomes the deployment floor: an App can require more than the floor, never less. Level 2 (no passwords) stays a separate switch — it restricts the *methods*, not the strength.
