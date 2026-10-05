@@ -68,6 +68,10 @@ public class ApplicationSettings
     /// inherit the realm native-grant settings.</summary>
     public ApplicationNativeGrantOverrides? NativeGrants { get; set; }
 
+    /// <summary>ADR 0025 — per-Application overrides of the realm
+    /// <see cref="SignInPolicy"/>, merged field-by-field. Null = inherit.</summary>
+    public ApplicationSignInOverrides? SignIn { get; set; }
+
     /// <summary>ADR 0019 — sparse per-App overrides of the realm's auth rate limits:
     /// only the dimensions set here win, the allowlist/mode replace the realm's when
     /// set. Null = inherit everything.</summary>
@@ -201,6 +205,25 @@ public record ApplicationNativeGrantOverrides
     public bool? Enabled { get; init; }
     public TimeSpan? AccessTokenLifetime { get; init; }
     public TimeSpan? RefreshTokenLifetime { get; init; }
+}
+
+/// <summary>Nullable-field mirror of <see cref="SignInPolicy"/> (ADR 0025), plus the
+/// App's WebAuthn RP ID. A null field inherits the realm value.</summary>
+public record ApplicationSignInOverrides
+{
+    public SignInLevel? MinimumLevel { get; init; }
+    public int? SetupGraceDays { get; init; }
+    public bool? Password { get; init; }
+    public bool? EmailCode { get; init; }
+    public bool? Passkey { get; init; }
+    public bool? Totp { get; init; }
+    public bool? EmailAfterPassword { get; init; }
+    public OwnFactorNotOffered? OwnFactorNotOffered { get; init; }
+
+    /// <summary>The WebAuthn RP ID passkeys of this App are bound to. Null = the realm's
+    /// primary domain. A client may still override it with its own RP ID. The login page
+    /// uses it when the sign-in's target is this App.</summary>
+    public string? PasskeyRpId { get; init; }
 }
 
 /// <summary>Nullable-field mirror of <see cref="ClientSessionPolicy"/>. Null

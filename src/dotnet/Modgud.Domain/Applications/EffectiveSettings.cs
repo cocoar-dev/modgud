@@ -25,6 +25,18 @@ public sealed record EffectiveSettings
     public DcrSettings? Dcr { get; init; }
     public CimdSettings? Cimd { get; init; }
     public NativeGrantSettings? NativeGrants { get; init; }
+
+    /// <summary>ADR 0025 — the sign-in policy with App overrides merged. Callers read it
+    /// through <c>IApplicationSettingsResolver</c>, which always fills it (a realm that never
+    /// configured it gets the legacy-derived policy).</summary>
+    public SignInPolicy? SignIn { get; init; }
+
+    /// <summary>ADR 0025 — the App's WebAuthn RP ID override (null = realm primary domain).</summary>
+    public string? PasskeyRpId { get; init; }
+
+    /// <summary>ADR 0025 — the App these settings were resolved for (null = realm only).</summary>
+    public Guid? ApplicationId { get; init; }
+
     public AuthRateLimitSettings? AuthRateLimits { get; init; }
     public ClientSessionPolicy? ClientSessions { get; init; }
     public BrandingSettings? Branding { get; init; }
@@ -54,6 +66,7 @@ public sealed record EffectiveSettings
         Dcr = realm.Dcr,
         Cimd = realm.Cimd,
         NativeGrants = realm.NativeGrants,
+        SignIn = realm.SignIn,
         AuthRateLimits = realm.AuthRateLimits,
         ClientSessions = realm.ClientSessions,
         Branding = realm.Branding,
@@ -76,6 +89,9 @@ public sealed record EffectiveSettings
     {
         // Sections the App can override (field-by-field):
         NativeGrants = MergeNativeGrants(realm.NativeGrants, app.NativeGrants),
+        SignIn = MergeSignIn(realm.SignIn, app.SignIn),
+        PasskeyRpId = string.IsNullOrWhiteSpace(app.SignIn?.PasskeyRpId) ? null : app.SignIn.PasskeyRpId.Trim(),
+        ApplicationId = app.Id,
         AuthRateLimits = AuthRateLimitSettings.Merge(realm.AuthRateLimits, app.AuthRateLimits),
         ClientSessions = MergeClientSessions(realm.ClientSessions, app.ClientSessions),
         Branding = MergeBranding(realm.Branding, app.Branding),
@@ -130,6 +146,32 @@ public sealed record EffectiveSettings
             FromName = app?.FromName ?? realm?.FromName,
             FromAddress = app?.FromAddress ?? realm?.FromAddress,
             ReplyTo = app?.ReplyTo ?? realm?.ReplyTo,
+        };
+    }
+
+    /// <summary>App override absent → realm passthrough (incl. null, which the resolver
+    /// turns into the legacy-derived policy). Present over a configured realm policy →
+    /// field-by-field. Present over an unconfigured realm → null here; the resolver layers
+    /// the App's fields over the legacy-derived policy.</summary>
+    public static SignInPolicy? MergeSignIn(SignInPolicy? realm, ApplicationSignInOverrides? app)
+    {
+        if (app is null || realm is null) return realm;
+        return ApplySignInOverrides(realm, app);
+    }
+
+    public static SignInPolicy ApplySignInOverrides(SignInPolicy b, ApplicationSignInOverrides? app)
+    {
+        if (app is null) return b;
+        return b with
+        {
+            MinimumLevel = app.MinimumLevel ?? b.MinimumLevel,
+            SetupGraceDays = app.SetupGraceDays ?? b.SetupGraceDays,
+            Password = app.Password ?? b.Password,
+            EmailCode = app.EmailCode ?? b.EmailCode,
+            Passkey = app.Passkey ?? b.Passkey,
+            Totp = app.Totp ?? b.Totp,
+            EmailAfterPassword = app.EmailAfterPassword ?? b.EmailAfterPassword,
+            OwnFactorNotOffered = app.OwnFactorNotOffered ?? b.OwnFactorNotOffered,
         };
     }
 

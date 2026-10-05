@@ -59,6 +59,12 @@ public class RealmSettings
     /// additional, separate gate.</summary>
     public NativeGrantSettings? NativeGrants { get; set; }
 
+    /// <summary>ADR 0025 — the realm's sign-in policy (methods, minimum level, setup
+    /// grace), the default every App inherits. Null = never configured; the realm then
+    /// runs under <see cref="SignInPolicy.FromLegacy"/>, derived from the retired
+    /// deployment settings, so an upgrade changes nothing until an admin saves it.</summary>
+    public SignInPolicy? SignIn { get; set; }
+
     /// <summary>Realm-wide policy for the shared Modgud browser/SSO session.
     /// Null = <see cref="BrowserSessionPolicy.Defaults"/>.</summary>
     public BrowserSessionPolicy? BrowserSessions { get; set; }
