@@ -142,20 +142,33 @@ export const useAuthStore = defineStore('auth', () => {
     })
   }
 
-  /** Redeem a primary-factor login code into the normal Modgud auth cookie. */
+  /**
+   * Redeem a primary-factor login code. ADR 0025 — when the sign-in's target app
+   * (or the user's own TOTP) needs more, returns MfaMethods instead of signing in.
+   */
   async function passwordlessOtpLogin(
     email: string,
     code: string,
     rememberMe: boolean = false,
     returnUrl?: string,
-  ): Promise<void> {
-    await passwordlessOtpHttp.addPath('login').post({
+  ): Promise<LoginResponse | void> {
+    const result = await passwordlessOtpHttp.addPath('login').post<LoginResponse>({
       Email: email,
       Code: code,
       RememberMe: rememberMe,
       ReturnUrl: returnUrl ?? null,
     })
+    if (result?.RequiresMfa) return result
     await fetchMe()
+    return result
+  }
+
+  /**
+   * ADR 0025 — raise the current session for a pending authorization whose app needs
+   * a second factor: returns the factors that can be used, or nothing left to do.
+   */
+  async function beginStepUp(returnUrl?: string): Promise<LoginResponse> {
+    return await http.addPath('step-up').post<LoginResponse>({ ReturnUrl: returnUrl ?? null })
   }
 
   /**
@@ -195,8 +208,8 @@ export const useAuthStore = defineStore('auth', () => {
    * partial-2FA cookie, so the caller (MagicLoginView) must collect the TOTP
    * code and finish via mfaLogin. Magic-link is no longer a 2FA bypass.
    */
-  async function magicLinkLogin(userId: string, token: string, rememberMe: boolean = false): Promise<LoginResponse | void> {
-    const result = await magicLinkHttp.addPath('login').post<LoginResponse>({ UserId: userId, Token: token, RememberMe: rememberMe })
+  async function magicLinkLogin(userId: string, token: string, rememberMe: boolean = false, returnUrl?: string): Promise<LoginResponse | void> {
+    const result = await magicLinkHttp.addPath('login').post<LoginResponse>({ UserId: userId, Token: token, RememberMe: rememberMe, ReturnUrl: returnUrl ?? null })
     if (result?.RequiresMfa) {
       // Partial sign-in only — /api/account/me would 401 until TOTP completes.
       return result
@@ -253,6 +266,7 @@ export const useAuthStore = defineStore('auth', () => {
     disableEmailOtp,
     requestMagicLink,
     magicLinkLogin,
+    beginStepUp,
     logout,
     fetchMe,
   }

@@ -538,6 +538,10 @@ public static class PasskeyEndpoints
             }
 
             // Passkey login is always persistent — user can re-authenticate anytime via biometrics
+            // ADR 0025 — a user-verified passkey is multi-factor on its own; it also completes
+            // a pending second step, so the partial sign-in is cleared.
+            Modgud.Authentication.SignIn.SignInAssurance.Declare(context, Modgud.Authentication.SignIn.SignInMethods.Passkey);
+            await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.SignOutAsync(context, IdentityConstants.TwoFactorUserIdScheme);
             await signInManager.SignInAsync(user, isPersistent: true);
 
 

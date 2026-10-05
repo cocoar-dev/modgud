@@ -192,6 +192,15 @@ public static class EmailOtpEndpoints
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
             }
 
+            // ADR 0025 — an e-mail code is a second factor only after a password. After an
+            // e-mail-code or magic-link sign-in it would prove the same mailbox twice.
+            var partial = await Modgud.Authentication.SignIn.SignInAssurance.ReadPartialAsync(context);
+            if (partial is null || partial.Value.Factors.ContainsKey(Modgud.Authentication.SignIn.SignInMethods.Email))
+            {
+                ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.EmailOtp, ModgudMeters.LoginOutcome.Failure);
+                return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+            }
+
             var result = await emailOtpService.VerifyOtpAsync(user.Id, request.Code, ct);
             if (result.IsError)
             {
@@ -204,6 +213,9 @@ public static class EmailOtpEndpoints
             }
 
             // Complete sign-in: set full auth cookie, clear partial cookie
+            Modgud.Authentication.SignIn.SignInAssurance.Declare(context,
+                Modgud.Authentication.SignIn.SignInAssurance.Union(partial.Value.Factors,
+                    new Dictionary<string, DateTimeOffset> { [Modgud.Authentication.SignIn.SignInMethods.Email] = DateTimeOffset.UtcNow }));
             await context.SignOutAsync(IdentityConstants.TwoFactorUserIdScheme);
             await signInManager.SignInAsync(user, isPersistent: request.RememberMe);
 

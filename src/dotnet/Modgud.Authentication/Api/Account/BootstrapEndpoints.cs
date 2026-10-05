@@ -74,6 +74,8 @@ public static class BootstrapEndpoints
             var user = await userManager.FindByIdAsync(result.Value.UserId.ToString());
             if (user is not null)
             {
+                // The invite link proves the mailbox (ADR 0025).
+                Modgud.Authentication.SignIn.SignInAssurance.Declare(http, Modgud.Authentication.SignIn.SignInMethods.Email);
                 await signInManager.SignInAsync(user, isPersistent: false);
             }
 

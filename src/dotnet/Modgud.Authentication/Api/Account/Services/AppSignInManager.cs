@@ -8,10 +8,11 @@ using Modgud.Authentication.Domain;
 namespace Modgud.Authentication.Api.Account.Services;
 
 /// <summary>
-/// Custom SignInManager that extends 2FA check to include Email OTP.
-/// When a user has EmailOtpEnabled and an email address,
-/// IsTwoFactorEnabledAsync returns true — even if TOTP is not set up.
-/// This ensures PasswordSignInAsync returns RequiresTwoFactor for those users.
+/// Custom SignInManager. Whether Identity's password sign-in branches into its
+/// two-factor step is decided by the sign-in's target (ADR 0025): the password
+/// endpoint evaluates the target's policy and records the answer with
+/// <see cref="RequireSecondFactor"/>. Without a recorded answer the legacy rule applies:
+/// TOTP, or e-mail OTP for a user with an address.
 /// </summary>
 public class AppSignInManager(
     UserManager<ApplicationUser> userManager,
@@ -25,8 +26,18 @@ public class AppSignInManager(
     Modgud.Authentication.Devices.IDeviceTrust deviceTrust)
     : SignInManager<ApplicationUser>(userManager, contextAccessor, claimsFactory, optionsAccessor, logger, schemes, confirmation)
 {
+    private const string SecondFactorDecisionItem = "modgud.signin.requireSecondFactor";
+
+    /// <summary>ADR 0025 — record, for this request, whether the sign-in must continue
+    /// with a second factor.</summary>
+    public static void RequireSecondFactor(HttpContext http, bool required) =>
+        http.Items[SecondFactorDecisionItem] = required;
+
     public override async Task<bool> IsTwoFactorEnabledAsync(ApplicationUser user)
     {
+        if (Context.Items.TryGetValue(SecondFactorDecisionItem, out var decided) && decided is bool required)
+            return required;
+
         if (await base.IsTwoFactorEnabledAsync(user))
             return true;
 

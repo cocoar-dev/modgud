@@ -467,6 +467,12 @@ try
                 if (!newIdentity.HasClaim(claim.Type, claim.Value))
                     newIdentity.AddClaim(new Claim(claim.Type, claim.Value));
 
+            // ADR 0025 — what the sign-in proved belongs to the session, not to durable
+            // user state; without this the session would drop to `single` after 5 minutes.
+            foreach (var claim in current.FindAll(Modgud.Authentication.SignIn.SignInAssurance.FactorClaimType))
+                if (!newIdentity.HasClaim(claim.Type, claim.Value))
+                    newIdentity.AddClaim(new Claim(claim.Type, claim.Value));
+
             return Task.CompletedTask;
         };
     });
@@ -720,6 +726,10 @@ try
     // Scoped so the injected IDocumentSession tracks the current tenant.
     builder.Services.AddScoped<Modgud.Authentication.Applications.IApplicationSettingsResolver,
         Modgud.Authentication.Applications.ApplicationSettingsResolver>();
+
+    // ADR 0025 — which App a sign-in is for, and whether it reached that App's level.
+    builder.Services.AddScoped<Modgud.Authentication.SignIn.ISignInRequirementService,
+        Modgud.Authentication.SignIn.SignInRequirementService>();
 
     // ADR-0011 — native passwordless registration: creates a passwordless user
     // from an email (JIT sign-up). Scoped (uses the tenant-scoped UserManager).

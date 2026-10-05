@@ -242,7 +242,30 @@ onMounted(async () => {
     if (rawError) error.value = resolveIdpError(rawError)
     loginPageReady.value = true
   }
+  await resumeSecondFactor()
 })
+
+/**
+ * ADR 0025 — arriving mid-sign-in: `?mfa=` hands over a pending second step (e.g.
+ * from the magic-link page); `?stepup=1` means a signed-in session is below what the
+ * pending authorization's app requires, and only the missing factor is asked for.
+ */
+async function resumeSecondFactor() {
+  const pending = typeof route.query.mfa === 'string' ? route.query.mfa : ''
+  if (pending) {
+    await enterSecondFactor(pending.split(',').filter(Boolean))
+    return
+  }
+  if (route.query.stepup !== '1') return
+  try {
+    const result = await authStore.beginStepUp(redirectTarget.value)
+    if (result.RequiresMfa) await enterSecondFactor(result.MfaMethods ?? [])
+    else if (result.RequiresSecureSetup) applySecureSetup(result)
+    else finishLogin()
+  } catch {
+    // No session to raise (expired, signed out elsewhere): a normal sign-in follows.
+  }
+}
 
 function loginErrorMessage(e: unknown): string {
   if (e instanceof HttpClientError) {
@@ -263,24 +286,36 @@ async function performCredentialLogin(name: string, secret: string, remember: bo
       secureSetupDueAt.value = result.SecureSetupDueAt ?? null
       step.value = 'secure-setup'
     } else if (result?.RequiresMfa) {
-      mfaMethods.value = result.MfaMethods ?? []
-
-      if (mfaMethods.value.length === 1 && mfaMethods.value[0] === 'totp') {
-        step.value = 'totp'
-      } else if (mfaMethods.value.length === 1 && mfaMethods.value[0] === 'email') {
-        step.value = 'email-otp'
-        await sendEmailOtp()
-      } else if (mfaMethods.value.length > 1) {
-        step.value = 'mfa-choice'
-      } else {
-        step.value = 'totp'
-      }
+      await enterSecondFactor(result.MfaMethods ?? [])
     } else {
       finishLogin()
     }
   } catch (e) {
     throw new Error(loginErrorMessage(e))
   }
+}
+
+/**
+ * ADR 0025 — continue with the second factor the sign-in's target requires. One entry
+ * for every first factor (password, e-mail code, magic link) and for a step-up of an
+ * existing session. A passkey is offered as a choice: it signs in on its own.
+ */
+async function enterSecondFactor(methods: string[]) {
+  mfaMethods.value = methods
+  if (methods.length === 1 && methods[0] === 'totp') {
+    step.value = 'totp'
+  } else if (methods.length === 1 && methods[0] === 'email') {
+    step.value = 'email-otp'
+    await sendEmailOtp()
+  } else {
+    step.value = 'mfa-choice'
+  }
+}
+
+function applySecureSetup(result: { GracePeriod?: boolean; SecureSetupDueAt?: string | null }) {
+  secureSetupInGrace.value = result.GracePeriod === true
+  secureSetupDueAt.value = result.SecureSetupDueAt ?? null
+  step.value = 'secure-setup'
 }
 
 async function handleLogin() {
@@ -337,7 +372,16 @@ const customLoginActions: Record<string, ActionHandler> = {
     error.value = ''
     const code = requiredString(values, 'otpCode').replace(/[\s-]/g, '')
     try {
-      await authStore.passwordlessOtpLogin(primaryOtpEmail.value, code, false, redirectTarget.value)
+      const result = await authStore.passwordlessOtpLogin(primaryOtpEmail.value, code, false, redirectTarget.value)
+      if (result?.RequiresMfa) {
+        // The second step renders in the fixed view (not the PageBuilder page).
+        await enterSecondFactor(result.MfaMethods ?? [])
+        return
+      }
+      if (result?.RequiresSecureSetup) {
+        applySecureSetup(result)
+        return
+      }
       finishLogin()
     } catch (e) {
       if (e instanceof HttpClientError) {
@@ -739,6 +783,12 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
           <CoarButton v-if="mfaMethods.includes('email')" full-width variant="secondary" @click="chooseMfaMethod('email')">
             {{ t('auth.mfa.emailCode', {}, 'Code via Email') }}
           </CoarButton>
+
+          <CoarButton v-if="mfaMethods.includes('passkey')" full-width variant="secondary" :loading="passkeyLoading" @click="handlePasskeyLogin()">
+            {{ t('auth.mfa.passkey', {}, 'Confirm with passkey') }}
+          </CoarButton>
+
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
 
           <div class="text-center">
             <button type="button" class="text-sm text-surface-500 hover:text-surface-700 hover:underline" @click="backToCredentials">
