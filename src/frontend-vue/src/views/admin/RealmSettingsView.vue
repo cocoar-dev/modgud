@@ -353,10 +353,12 @@ function nativeGrantsFromDto(d: NativeGrantSettingsDto): NativeGrantFormState {
 
 // ── Sign-in policy form state (ADR 0025) ─────────────────────────────
 // `originalSignIn` is null while the realm has never saved the section: the realm then
-// follows the deployment's former authentication settings, the form shows the new defaults,
-// and nothing is written until the admin edits a value or adopts the defaults explicitly.
+// follows the deployment's former authentication settings. The form shows the policy IN
+// FORCE (derived from those settings), so adopting it changes nothing; nothing is written
+// until the admin edits a value or adopts it explicitly.
 const signInForm = ref<SignInPolicyDto>({ ...SIGN_IN_POLICY_DEFAULTS })
 const originalSignIn = ref<SignInPolicyDto | null>(null)
+const signInInForce = ref<SignInPolicyDto>({ ...SIGN_IN_POLICY_DEFAULTS })
 const signInAdopt = ref(false)
 const signInUnconfigured = computed(() => originalSignIn.value === null)
 
@@ -369,8 +371,9 @@ const ownFactorOptions = computed<Array<{ value: OwnFactorNotOffered; label: str
   { value: 'RequireViaBrowser', label: t('admin.signIn.ownFactor.requireViaBrowser', {}, 'Require it via the browser') },
 ])
 
-function signInFromDto(d: SignInPolicyDto | null): SignInPolicyDto {
-  return { ...(d ?? SIGN_IN_POLICY_DEFAULTS) }
+function signInFromDto(d: SignInPolicyDto | null, inForce?: SignInPolicyDto | null): SignInPolicyDto {
+  if (inForce) signInInForce.value = { ...inForce }
+  return { ...(d ?? inForce ?? SIGN_IN_POLICY_DEFAULTS) }
 }
 
 // ── Authoritative browser + native-client session policies ───────────
@@ -519,7 +522,7 @@ onMounted(async () => {
     originalNativeGrants.value = dto.NativeGrants
     nativeGrantsForm.value = nativeGrantsFromDto(dto.NativeGrants)
     originalSignIn.value = dto.SignIn ?? null
-    signInForm.value = signInFromDto(dto.SignIn ?? null)
+    signInForm.value = signInFromDto(dto.SignIn ?? null, dto.SignInInForce ?? null)
     signInAdopt.value = false
     originalBrowserSessions.value = dto.BrowserSessions
     browserSessionsForm.value = { ...dto.BrowserSessions }
@@ -645,9 +648,10 @@ function buildSignInPatch(): UpdateSignInPolicyDto | undefined {
   const cur = signInForm.value
   const orig = originalSignIn.value
   if (!orig) {
-    // Never saved: write the whole policy once the admin changed a value or adopted the defaults.
+    // Never saved: write the whole policy once the admin changed a value or adopted it.
+    const baseline = signInInForce.value
     const changed = (Object.keys(SIGN_IN_POLICY_DEFAULTS) as Array<keyof SignInPolicyDto>)
-      .some((k) => cur[k] !== SIGN_IN_POLICY_DEFAULTS[k])
+      .some((k) => cur[k] !== baseline[k])
     return changed || signInAdopt.value ? { ...cur } : undefined
   }
   const patch: Record<string, unknown> = {}
@@ -804,7 +808,7 @@ function syncSavedTab(tab: SavableTabId, updated: RealmSettingsDto) {
     nativeGrantsForm.value = nativeGrantsFromDto(updated.NativeGrants)
   } else if (tab === 'security') {
     originalSignIn.value = updated.SignIn ?? null
-    signInForm.value = signInFromDto(updated.SignIn ?? null)
+    signInForm.value = signInFromDto(updated.SignIn ?? null, updated.SignInInForce ?? null)
     signInAdopt.value = false
     originalAuthRateLimits.value = updated.AuthRateLimits
     authRateLimitsForm.value = authRateLimitsFromDto(updated.AuthRateLimits)

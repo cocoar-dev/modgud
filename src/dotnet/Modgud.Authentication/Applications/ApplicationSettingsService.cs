@@ -55,7 +55,8 @@ public interface IApplicationSettingsService
 public sealed class ApplicationSettingsService(
     IDocumentSession session,
     IGlobalStore globalStore,
-    IRealmCache realmCache) : IApplicationSettingsService
+    IRealmCache realmCache,
+    IAuthSettings? authSettings = null) : IApplicationSettingsService
 {
     private static readonly Regex CssColorRegex = new(
         @"^(#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})" +
@@ -402,8 +403,8 @@ public sealed class ApplicationSettingsService(
     }
 
     // The impossible-policy check runs on the EFFECTIVE policy: the App's overrides over the
-    // realm policy, or over SignInPolicy.Defaults while the realm never configured it (the
-    // legacy-derived fallback is the runtime's business). The App's own provider allow-list
+    // realm policy in force (saved, or derived from the deployment while unsaved — what the
+    // runtime applies). The App's own provider allow-list
     // decides whether an external login provider is available.
     private async Task<ErrorOr<ApplicationSignInOverrides>> MapSignInAsync(
         ApplicationSignInDto d, ApplicationLoginExperience? loginExperience, CancellationToken ct)
@@ -430,7 +431,7 @@ public sealed class ApplicationSettingsService(
 
         var realm = await session.LoadAsync<Modgud.Domain.RealmSettings.RealmSettings>(
             Modgud.Domain.RealmSettings.RealmSettings.SingletonId, ct);
-        var effective = EffectiveSettings.ApplySignInOverrides(realm?.SignIn ?? SignInPolicy.Defaults, overrides);
+        var effective = EffectiveSettings.ApplySignInOverrides(SignInPolicyRules.InForce(realm, authSettings), overrides);
         if (await SignInPolicyRules.CheckSatisfiableAsync(
                 session, effective, includeAdministration: false,
                 loginExperience?.LoginProviderIds, "Effective sign-in policy of this App", ct) is { } error)

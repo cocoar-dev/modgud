@@ -17,14 +17,20 @@ public class RealmSignInPolicySettingsTests : IntegrationTestBase
     public RealmSignInPolicySettingsTests(SharedPostgresFixture fixture) : base(fixture) { }
 
     [Fact]
-    public async Task Impossible_Or_Malformed_Policies_Are_Rejected_Then_Unconfigured_Patches_Over_Defaults()
+    public async Task Impossible_Or_Malformed_Policies_Are_Rejected_Then_Unconfigured_Patches_Over_The_Policy_In_Force()
     {
         var ct = TestContext.Current.CancellationToken;
         using var scope = NewSystemTenantScope();
         var settings = scope.ServiceProvider.GetRequiredService<IRealmSettingsService>();
 
-        // Never configured: null on the wire, not defaults dressed up as saved values.
-        Assert.Null((await settings.GetDtoAsync(ct)).SignIn);
+        // Never configured: null on the wire, not defaults dressed up as saved values — but
+        // the policy in force is reported, derived from the deployment's former level (the
+        // test fixture runs at level 0: nothing requires a second factor).
+        var unconfigured = await settings.GetDtoAsync(ct);
+        Assert.Null(unconfigured.SignIn);
+        Assert.NotNull(unconfigured.SignInInForce);
+        Assert.Equal("Single", unconfigured.SignInInForce!.MinimumLevel);
+        Assert.Equal("Single", unconfigured.SignInInForce.AdministrationMinimumLevel);
 
         // Multi with only an e-mail code and no second factor, no passkey, no password.
         var impossible = await settings.PatchAsync(new UpdateRealmSettingsDto
@@ -83,8 +89,9 @@ public class RealmSignInPolicySettingsTests : IntegrationTestBase
         Assert.Equal("Multi", read.MinimumLevel);
         Assert.Equal(5, read.SetupGraceDays);
         Assert.True(read.EmailCode);
-        // Everything the patch did not name comes from SignInPolicy.Defaults.
-        Assert.Equal("Multi", read.AdministrationMinimumLevel);
+        // Everything the patch did not name comes from the policy that was in force, so
+        // saving an unconfigured realm never tightens what it did not touch.
+        Assert.Equal("Single", read.AdministrationMinimumLevel);
         Assert.True(read.Password);
         Assert.True(read.Passkey);
         Assert.True(read.Totp);

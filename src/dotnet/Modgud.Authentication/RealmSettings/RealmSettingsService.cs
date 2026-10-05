@@ -36,8 +36,16 @@ public sealed class RealmSettingsService(
     IDocumentSession session,
     CaptchaSecretStore captchaStore,
     ISecurityAuditLog? securityAudit = null,
-    IStaffingRevoker? staffingRevoker = null) : IRealmSettingsService
+    IStaffingRevoker? staffingRevoker = null,
+    IAuthSettings? authSettings = null) : IRealmSettingsService
 {
+    /// <summary>ADR 0025 — the sign-in policy in force: the saved one, or the one derived
+    /// from the retired deployment settings while the realm has never saved it.</summary>
+    private SignInPolicy SignInInForce(RealmSettingsDoc doc) => SignInPolicyRules.InForce(doc, authSettings);
+
+    private RealmSettingsDto ToDtoWithSignInInForce(RealmSettingsDoc doc) =>
+        ToDto(doc) with { SignInInForce = MapSignInToDto(SignInInForce(doc)) };
+
     public async Task<RealmSettingsDoc> LoadAsync(CancellationToken ct = default)
     {
         var doc = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
@@ -50,7 +58,7 @@ public sealed class RealmSettingsService(
     public async Task<RealmSettingsDto> GetDtoAsync(CancellationToken ct = default)
     {
         var doc = await LoadAsync(ct);
-        return ToDto(doc);
+        return ToDtoWithSignInInForce(doc);
     }
 
     public async Task<ErrorOr<RealmSettingsDto>> PatchAsync(UpdateRealmSettingsDto dto, CancellationToken ct = default)
@@ -94,7 +102,7 @@ public sealed class RealmSettingsService(
 
         if (dto.SignIn is not null)
         {
-            var signIn = await ApplySignInPatchAsync(doc.SignIn, dto.SignIn, ct);
+            var signIn = await ApplySignInPatchAsync(SignInInForce(doc), dto.SignIn, ct);
             if (signIn.IsError) return signIn.FirstError;
             doc.SignIn = signIn.Value;
         }
@@ -209,7 +217,7 @@ public sealed class RealmSettingsService(
             }
         }
 
-        return ToDto(doc);
+        return ToDtoWithSignInInForce(doc);
     }
 
     public async Task<PositionSecurityConsequencesDto> PreviewPositionSecurityAsync(

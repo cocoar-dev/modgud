@@ -2351,7 +2351,7 @@
       },
       "signIn": {
         "override": "Eigene Anmelderichtlinie für diese App",
-        "realmUnconfigured": "Der Realm hat seine Anmelderichtlinie noch nicht gespeichert. Die als geerbt angezeigten Werte sind die neuen Standardwerte; bis der Realm sie speichert, folgt er dem früheren Authentifizierungs-Level des Deployments."
+        "realmUnconfigured": "Der Realm hat seine Anmelderichtlinie noch nicht gespeichert. Die als geerbt angezeigten Werte sind die derzeit geltenden – abgeleitet aus dem früheren Authentifizierungs-Level des Deployments."
       },
       "hostBound": {
         "host": "Nur über die eigene Domain der App",

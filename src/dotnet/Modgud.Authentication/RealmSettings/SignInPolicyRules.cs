@@ -81,4 +81,17 @@ internal static partial class SignInPolicyRules
             "Multi needs a passkey, an authenticator-app code after a password or e-mail code, " +
             "or an e-mail code after a password - or an external login provider.");
     }
+
+    /// <summary>ADR 0025 — the realm policy in force: the saved one, or the one derived from
+    /// the retired deployment settings while the realm has never saved it. The same derivation
+    /// <c>ApplicationSettingsResolver</c> applies at runtime.</summary>
+    public static SignInPolicy InForce(Modgud.Domain.RealmSettings.RealmSettings? realm, IAuthSettings? authSettings)
+    {
+        if (realm?.SignIn is not null) return realm.SignIn;
+        if (authSettings is null) return SignInPolicy.Defaults;
+#pragma warning disable CS0618 // the retired deployment settings seed the derived policy
+        return SignInPolicy.FromLegacy(authSettings.AuthenticationMinimumLevel, authSettings.TwoFactorGracePeriodDays,
+            emailCodeEnabled: realm?.NativeGrants?.Enabled ?? false);
+#pragma warning restore CS0618
+    }
 }

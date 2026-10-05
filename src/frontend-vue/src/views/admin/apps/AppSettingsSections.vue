@@ -165,8 +165,8 @@ const appRateLimitModeOptions = computed(() => [
   { value: 'Enforce', label: t('admin.rateLimits.mode.enforce', {}, 'Enforce') },
   { value: 'LogOnly', label: t('admin.rateLimits.mode.logOnly', {}, 'Log only (evaluate and count, never reject)') },
 ])
-// The realm's sign-in policy; null while the realm never saved it (the defaults are shown then).
-const realmSignIn = computed<SignInPolicyDto>(() => realmSettingsStore.settings?.SignIn ?? SIGN_IN_POLICY_DEFAULTS)
+// The realm's sign-in policy in force: saved, or derived from the deployment while unsaved.
+const realmSignIn = computed<SignInPolicyDto>(() => realmSettingsStore.settings?.SignIn ?? realmSettingsStore.settings?.SignInInForce ?? SIGN_IN_POLICY_DEFAULTS)
 const realmSignInConfigured = computed(() => !!realmSettingsStore.settings?.SignIn)
 const signInEffective = computed<SignInPolicyDto>(() => ({
   ...realmSignIn.value,
@@ -956,7 +956,7 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
     <div v-show="activeTab === 'signIn'" class="tab-content">
       <CoarCheckbox v-model="f.signIn.override" :label="t('admin.appSettings.signIn.override', {}, 'Custom sign-in policy for this app')" />
       <CoarNotice v-if="!realmSignInConfigured" variant="info">
-        {{ t('admin.appSettings.signIn.realmUnconfigured', {}, 'The realm has not saved its sign-in policy yet. The values shown as inherited are the new defaults; until the realm saves them it follows the deployment\'s former authentication level.') }}
+        {{ t('admin.appSettings.signIn.realmUnconfigured', {}, 'The realm has not saved its sign-in policy yet. The values shown as inherited are the ones in force, derived from the deployment\'s former authentication level.') }}
       </CoarNotice>
       <div class="grid grid-cols-2 gap-3">
         <CoarFormField :label="t('admin.signIn.minimumLevel', {}, 'Minimum level')"

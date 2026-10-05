@@ -241,8 +241,9 @@ onMounted(async () => {
   } finally {
     if (rawError) error.value = resolveIdpError(rawError)
     loginPageReady.value = true
+    // In `finally`: the try block returns early when no custom page is configured.
+    await resumeSecondFactor()
   }
-  await resumeSecondFactor()
 })
 
 /**

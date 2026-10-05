@@ -11,6 +11,8 @@ export interface RealmSettingsDto {
   /** ADR 0025 — null = never configured; the realm follows the deployment's former
    * authentication settings until the section is saved. */
   SignIn: SignInPolicyDto | null
+  /** ADR 0025 — the policy in force (saved, or derived from the deployment while unsaved). */
+  SignInInForce?: SignInPolicyDto | null
   BrowserSessions: BrowserSessionPolicyDto
   ClientSessions: ClientSessionPolicyDto
   PositionSecurity: PositionSecuritySettingsDto
