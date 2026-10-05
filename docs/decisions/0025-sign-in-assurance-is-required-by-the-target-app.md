@@ -55,11 +55,22 @@ Two codes over the same channel are one factor. The e-mail-2FA flag never upgrad
 
 A passkey is therefore not a "second step after the code"; it replaces the sign-in. Future factors (push approval in an app, a hardware key) fit the same model: what matters is only that the second proof is of a different kind than the first.
 
-### 2. The App sets the minimum
+### 2. The App sets the sign-in policy
 
-Each App has a **minimum sign-in level** (`single` or `multi`), with the realm as the default. The global `AuthenticationMinimumLevel` becomes the deployment floor: an App can require more than the floor, never less. Level 2 (no passwords) stays a separate switch — it restricts the *methods*, not the strength.
+Each App has a sign-in policy. The realm holds the default, and an App overrides any part of it, like every other App setting. It has four parts:
 
-The setup duty (grace period, blocking setup, `TwoFactorExempt`) follows the same scope: it applies when the user signs in to an App whose minimum is `multi`, not globally.
+| Setting | Values | Replaces |
+|---|---|---|
+| **Sign-in methods** | First factors the App offers (e-mail code, password, passkey, external providers) and second factors it offers (TOTP; e-mail code after a password) | `AuthenticationMinimumLevel` 2 (password off), parts of `LoginExperience` |
+| **Minimum level** | `single` / `multi` | `AuthenticationMinimumLevel` 0 and 1 |
+| **Setup grace** | Days a user without a second factor may keep signing in at `single` to an App that requires `multi` | `TwoFactorGracePeriodDays` |
+| **User's own second factor, not offered by the App** | `ignore` / `require-via-browser` (section 7) | — |
+
+The methods describe what the App's own sign-in can do — for a native app, what it has implemented. They are a statement by the App's admin, and the login page and the native grants only offer and accept what is listed.
+
+`TwoFactorExempt` stays a per-user flag and exempts that user from the setup duty in every App.
+
+The global `AuthenticationMinimumLevel` and `TwoFactorGracePeriodDays` are removed. Sign-in policy is a realm and App concern, not a deployment one. On upgrade the deployment's values are written once into each realm's defaults: level 1 becomes minimum `multi`, level 2 removes the password from the realm's sign-in methods, and the grace days carry over. After that only the realm and App settings apply.
 
 ### 3. The target decides, never the Host
 
@@ -84,17 +95,48 @@ Signing in to a `single` app gives a `single` session; opening a `multi` app aft
 
 ### 5. The same rule on every path
 
-`/connect/authorize`, the web sign-in endpoints, the native grants and refresh all check the target's minimum the same way. A native grant for an App that requires `multi` asks for the second factor in the token request (as `totp_code` already does) instead of skipping it. A refresh does not raise a token family above the level its sign-in reached.
+`/connect/authorize`, the web sign-in endpoints, the native grants and refresh all compute the required level the same way (section 7) and compare it with what the sign-in reached. A refresh does not raise a token family above the level its sign-in reached, and fails when the App now requires more.
 
 ### 6. Tokens say how the user signed in
 
 ID and access tokens carry `amr` (methods) and `acr` (reached level), so resource servers can enforce their own rules for sensitive actions.
 
-### 7. Configured methods are not a demand by themselves
+### 7. What a sign-in must reach
 
-Whether a second step is asked for depends on the target's minimum, not on which methods the account happens to have stored. Concretely, the web e-mail-code sign-in no longer refuses an account because it has a passkey or the e-mail-2FA flag: for a `single` App it succeeds, for a `multi` App it continues to the second-factor step with the methods that are usable *at this origin*. A passkey whose RP ID the current origin cannot use is not offered.
+The required level for a user signing in to an App is the higher of two things:
 
-### 8. Host-bound settings are visible
+1. **The App's minimum level.**
+2. **The second factor the user turned on themselves.** A user who enabled TOTP has asked for their account to be protected by it; that choice is not taken away silently.
+
+How the user's own factor is honoured depends on the App:
+
+| The App… | Then |
+|---|---|
+| offers the factor as a second factor | It is asked for, in the App's own sign-in — natively in a native app, on the login page in a browser. |
+| does not offer it, setting `ignore` | Only the App's minimum applies. The admin UI states it plainly: "users who set up their own second factor are not asked for it in this App". |
+| does not offer it, setting `require-via-browser` | The native grant answers "second factor required" with a continuation URL (section 8). The App opens it, the login page asks only for the missing factor, and returns to the App. |
+
+`ignore` is for low-risk Apps that only implement an e-mail code; `require-via-browser` gives a critical App the full protection until it implements the factor natively. Once it does, the method is added to the App's sign-in methods and the factor is asked for natively.
+
+What does **not** create a demand:
+
+- **A stored passkey.** A passkey is a way to sign in, not a switched-on second step. It satisfies `multi` when it is used; its existence never requires anything. This is what fixes the reported case: the web e-mail-code sign-in no longer refuses an account because a native app enrolled a passkey for it.
+- **The e-mail-2FA flag after an e-mail-code sign-in.** It means "after a password, send a code"; after an e-mail code it would prove the same mailbox twice.
+
+A second factor is only offered where it can be used: a passkey whose RP ID the current origin cannot serve is not shown.
+
+### 8. Native sign-in continues instead of failing
+
+Today a native grant for a TOTP user without `totp_code` fails with `invalid_grant`, and the e-mail code it carried is spent. Instead:
+
+- After the first factor is proven, a native grant that still needs a second factor answers `error=mfa_required` with an `mfa_token`: short-lived (minutes), single-use, bound to the user, the client and the first factor that was proven.
+- If the App offers the factor natively, it redeems the token at `/connect/token` with the second factor (e.g. `grant_type=urn:cocoar:mfa` with `mfa_token` and `totp_code`).
+- If the App's setting is `require-via-browser`, the response also carries a continuation URL. It opens the login page directly at the missing factor; afterwards the authorization-code flow returns to the App's redirect URI as usual.
+- How the App opens that URL is the App's decision. The documentation recommends the system browser (`ASWebAuthenticationSession`, Custom Tabs): passkeys and password managers work there, and RFC 8252 advises against embedded web views. An embedded web view works for e-mail codes and TOTP; passkeys are not reliable in one. Modgud cannot detect or prevent a web view and does not try.
+
+The contract for a native App is therefore: implement the methods you list, and if you choose `require-via-browser`, be able to open one URL.
+
+### 9. Host-bound settings are visible
 
 Some App settings can only work through the App's own domain (issuer and discovery, the login page and branding, passkeys under the App's RP ID). That is acceptable; silence about it is not.
 
@@ -117,8 +159,10 @@ Either way, the web ceremony has to use the RP ID of the *target* App (section 3
 ## Consequences
 
 - A consumer app can run on e-mail codes while an admin app on the same realm requires 2FA, and the URL used to reach the login page changes nothing.
-- Native grants become stricter for Apps that require `multi`. Existing native clients of such Apps must handle the second-factor step.
-- The level-1 setup duty stops being global. Operators who rely on "everyone has 2FA" set the realm default to `multi`.
+- A user's own TOTP is honoured in every App that offers it, natively where the App implements it. An App that does not offer it either ignores it visibly or sends the user through the browser for it.
+- A native App no longer loses a user who turns on TOTP elsewhere: with `ignore` nothing changes for it, with `require-via-browser` it opens one URL, and once it implements TOTP it asks natively.
+- The global `AuthenticationMinimumLevel` and `TwoFactorGracePeriodDays` are gone; deployments are migrated once into realm defaults. Operators who relied on "everyone has 2FA" keep it through the migrated `multi` default.
+- A realm migrated from level 1 becomes stricter for users who have a method but signed in without it (e.g. a passkey user signing in with a password): they are asked to use it. That is what level 1 promised and did not enforce.
 - The session cookie gains a level and factor timestamps; existing sessions are treated as `single` until they step up.
 - Resource servers can rely on `acr`/`amr`.
 - Admins see which App settings depend on the App's own domain.
@@ -128,4 +172,4 @@ Either way, the web ceremony has to use the RP ID of the *target* App (section 3
 - **The e-mail-2FA flag stays**, as a second factor after a *password* only. After an e-mail-code or magic-link sign-in it is never offered, because it is the same channel.
 - **`acr` values** are `urn:modgud:acr:single` and `urn:modgud:acr:multi`. `amr` uses RFC 8176 values where one exists (`pwd`, `otp`, `hwk`/`user` for passkeys, `mfa`) and is the authority for *how*; `acr` is the authority for *how strong*.
 - **Per-App maximum factor age** is not part of this decision. `max_age` on the authorize request covers the need until an App asks for more.
-- **Delivery** is one change: sections 1–8 together, including the target App's RP ID for web passkey ceremonies. Serving an App's login page under the App's own domain, and publishing `/.well-known/webauthn`, are deployment steps on the App's side; Modgud only has to accept the configured origin for the App's RP ID.
+- **Delivery** is one change: sections 1–9 together, including the target App's RP ID for web passkey ceremonies. Serving an App's login page under the App's own domain, and publishing `/.well-known/webauthn`, are deployment steps on the App's side; Modgud only has to accept the configured origin for the App's RP ID.
