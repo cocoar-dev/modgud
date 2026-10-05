@@ -425,6 +425,92 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
             await response.Content.ReadAsStringAsync(ct));
     }
 
+    [Fact]
+    public async Task Sign_In_Overrides_Roundtrip_As_Strings()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await SeedAppAsync("as-sign-in");
+        var appShort = ShortGuid.Encode(app.Id);
+
+        (await PutSettingsAsync(appShort, new ApplicationSettingsDto
+        {
+            SignIn = new ApplicationSignInDto
+            {
+                MinimumLevel = "Multi",
+                SetupGraceDays = 3,
+                EmailCode = true,
+                OwnFactorNotOffered = "Ignore",
+                PasskeyRpId = "  shop.example.com  ",
+            },
+        }, ct)).EnsureSuccessStatusCode();
+
+        var got = (await GetAppAsync(appShort, ct)).Settings!.SignIn!;
+        Assert.Equal("Multi", got.MinimumLevel);
+        Assert.Equal(3, got.SetupGraceDays);
+        Assert.True(got.EmailCode);
+        Assert.Equal("Ignore", got.OwnFactorNotOffered);
+        Assert.Equal("shop.example.com", got.PasskeyRpId);   // trimmed
+        Assert.Null(got.Password);                           // not overridden -> inherits the realm
+
+        // REPLACE semantics: a PUT without the section drops the override again.
+        (await PutSettingsAsync(appShort, new ApplicationSettingsDto(), ct)).EnsureSuccessStatusCode();
+        Assert.Null((await GetAppAsync(appShort, ct)).Settings?.SignIn);
+    }
+
+    [Fact]
+    public async Task Sign_In_Rejects_An_Impossible_Policy_And_Bad_Values()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await SeedAppAsync("as-sign-in-invalid");
+        var appShort = ShortGuid.Encode(app.Id);
+
+        // Multi required, but only an e-mail code is offered and no second factor or
+        // external provider exists: nobody could ever satisfy it.
+        var impossible = await PutSettingsAsync(appShort, new ApplicationSettingsDto
+        {
+            LoginExperience = new ApplicationLoginExperienceDto { LoginProviderIds = [] },
+            SignIn = new ApplicationSignInDto
+            {
+                MinimumLevel = "Multi", Password = false, EmailCode = true, Passkey = false, Totp = false,
+            },
+        }, ct);
+        Assert.Equal(HttpStatusCode.BadRequest, impossible.StatusCode);
+        Assert.Contains("Multi", await impossible.Content.ReadAsStringAsync(ct));
+
+        // The same policy becomes valid once the second factor is offered.
+        (await PutSettingsAsync(appShort, new ApplicationSettingsDto
+        {
+            LoginExperience = new ApplicationLoginExperienceDto { LoginProviderIds = [] },
+            SignIn = new ApplicationSignInDto
+            {
+                MinimumLevel = "Multi", Password = false, EmailCode = true, Passkey = false, Totp = true,
+            },
+        }, ct)).EnsureSuccessStatusCode();
+
+        foreach (var bad in new[]
+        {
+            new ApplicationSignInDto { MinimumLevel = "Strong" },
+            new ApplicationSignInDto { OwnFactorNotOffered = "Maybe" },
+            new ApplicationSignInDto { SetupGraceDays = 366 },
+            new ApplicationSignInDto { SetupGraceDays = -1 },
+            new ApplicationSignInDto { PasskeyRpId = "https://shop.example.com" },
+            new ApplicationSignInDto { PasskeyRpId = "shop.example.com:8443" },
+            new ApplicationSignInDto { PasskeyRpId = "shop.example.com/login" },
+            new ApplicationSignInDto { PasskeyRpId = "Shop.Example.com" },
+            new ApplicationSignInDto { PasskeyRpId = "intranet" },
+        })
+        {
+            var resp = await PutSettingsAsync(appShort, new ApplicationSettingsDto { SignIn = bad }, ct);
+            Assert.True(HttpStatusCode.BadRequest == resp.StatusCode, $"expected 400 for {bad}");
+        }
+
+        // "localhost" is a valid bare host.
+        (await PutSettingsAsync(appShort, new ApplicationSettingsDto
+        {
+            SignIn = new ApplicationSignInDto { PasskeyRpId = "localhost" },
+        }, ct)).EnsureSuccessStatusCode();
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private Task<HttpResponseMessage> PutSettingsAsync(string appShort, ApplicationSettingsDto settings, CancellationToken ct) =>

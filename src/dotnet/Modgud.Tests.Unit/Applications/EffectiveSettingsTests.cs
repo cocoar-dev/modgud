@@ -158,6 +158,56 @@ public class EffectiveSettingsTests
         }
 
         [Fact]
+        public void Sign_in_policy_is_merged_field_by_field()
+        {
+            var realm = Realm();
+            realm.SignIn = new SignInPolicy
+            {
+                MinimumLevel = SignInLevel.Multi,
+                SetupGraceDays = 30,
+                Password = true,
+                EmailCode = false,
+                AdministrationMinimumLevel = SignInLevel.Multi,
+            };
+            var app = new ApplicationSettings
+            {
+                // Lower the minimum and turn the e-mail code on; everything else inherits.
+                SignIn = new ApplicationSignInOverrides
+                {
+                    MinimumLevel = SignInLevel.Single,
+                    EmailCode = true,
+                    PasskeyRpId = "  app.example.com  ",
+                },
+            };
+
+            var eff = EffectiveSettings.Merge(realm, app);
+
+            Assert.Equal(SignInLevel.Single, eff.SignIn!.MinimumLevel);
+            Assert.True(eff.SignIn.EmailCode);
+            Assert.True(eff.SignIn.Password);
+            Assert.Equal(30, eff.SignIn.SetupGraceDays);
+            // The administration level is realm-only: an App cannot touch it.
+            Assert.Equal(SignInLevel.Multi, eff.SignIn.AdministrationMinimumLevel);
+            Assert.Equal("app.example.com", eff.PasskeyRpId);
+        }
+
+        [Fact]
+        public void Sign_in_override_over_an_unconfigured_realm_is_left_to_the_resolver()
+        {
+            var app = new ApplicationSettings
+            {
+                SignIn = new ApplicationSignInOverrides { MinimumLevel = SignInLevel.Multi },
+            };
+
+            var eff = EffectiveSettings.Merge(new RealmSettingsDoc(), app);
+
+            // Null realm policy = legacy-derived at runtime; the merge must not invent one.
+            Assert.Null(eff.SignIn);
+            Assert.Null(EffectiveSettings.MergeSignIn(null, app.SignIn));
+            Assert.Null(eff.PasskeyRpId);
+        }
+
+        [Fact]
         public void Native_grants_override_against_unset_realm_section_uses_record_defaults()
         {
             var realm = new RealmSettingsDoc(); // NativeGrants null = realm defaults
