@@ -100,8 +100,10 @@ grant_type=urn:cocoar:otp
 &otp_code=123456
 &scope=openid offline_access
 &resource=<api-audience>        # optional, narrows the token's aud (RFC 8707)
-&totp_code=000000              # only if the user has TOTP 2FA enabled
+&totp_code=000000              # optional: send it along if you already have it (see Second factor)
 ```
+
+If a second factor is owed, the answer is `400 mfa_required` instead of tokens — see [Second factor](#second-factor).
 
 #### Native passwordless registration (JIT-on-OTP)
 
@@ -156,7 +158,9 @@ Content-Type: application/json
 ```
 
 The client should **read the resolved policy from `GET /api/app-info`** and
-render exactly what it reports:
+render exactly what it reports (the same response carries the target's
+`SignIn: { Password, EmailCode, Passkey, MinimumLevel }`, so the app can show
+only the sign-in methods it is allowed to use):
 
 ```json
 {
@@ -222,7 +226,7 @@ grant_type=urn:cocoar:magic
 &user_id=<guid>
 &magic_token=<token>
 &scope=openid offline_access
-&totp_code=000000             # only if the user has TOTP 2FA enabled
+&totp_code=000000             # optional: send it along if you already have it (see Second factor)
 ```
 
 ### Flow 3 — Passkey (steady-state login)
@@ -244,7 +248,7 @@ client_id=<client_id>
 }
 ```
 
-**Step 2 — sign `options` on-device** with the platform authenticator (iOS: `ASAuthorizationPlatformPublicKeyCredentialProvider` assertion request). User verification is required, which is why the passkey grant is treated as MFA and needs no `totp_code`. The credential is discoverable/usernameless, so the user is identified from the signed assertion — the app doesn't send a username.
+**Step 2 — sign `options` on-device** with the platform authenticator (iOS: `ASAuthorizationPlatformPublicKeyCredentialProvider` assertion request). User verification is required, which is why the passkey grant is treated as multi-factor on its own and needs no second factor. The credential is discoverable/usernameless, so the user is identified from the signed assertion — the app doesn't send a username.
 
 **Step 3 — redeem the assertion:**
 
@@ -316,6 +320,48 @@ Authorization: Bearer <access_token>
 
 Returns `204 No Content`. A deleted passkey can no longer satisfy a `urn:cocoar:passkey` assertion. An id that doesn't exist **or** belongs to another user is a `404` (never a `403`) — the endpoint is not a cross-user credential-existence oracle.
 
+### Second factor
+
+Whether a sign-in needs a second factor is decided by the **target App's** sign-in policy and the user's own second factor — see [Sign-in levels](../concepts/sign-in-levels). The App lists the methods it implements under *App → Sign-in*; the grants only accept what is listed (`urn:cocoar:otp` is refused with `unsupported_grant_type` when the target's e-mail code is off).
+
+When the first factor is proven but a second factor is still owed, the OTP and magic-link grants no longer fail with `invalid_grant` (which would also burn the code). They answer:
+
+```http
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+
+{
+  "error": "mfa_required",
+  "mfa_token": "…",
+  "mfa_methods": "totp",
+  "mfa_browser_methods": "…"
+}
+```
+
+The `mfa_token` is short-lived (10 minutes), single-use, and bound to the user, the client and the first factor that was proven. `mfa_methods` lists the second factors the App can ask for natively; `mfa_browser_methods` lists those only the browser can ask for. If the user has to set up a second factor first, the answer is `interaction_required`.
+
+You can send `totp_code` together with the very first request to save a round trip; `mfa_required` is only the answer when it is missing.
+
+**Continue natively** — repeat the same `grant_type` with the token and the factor, and without `username` / `otp_code`:
+
+```http
+POST /connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn:cocoar:otp
+&client_id=<client_id>
+&mfa_token=<mfa_token>
+&totp_code=000000
+```
+
+**Continue in the browser** — when the App does not implement the factor (the App's *user's own factor not offered* setting is `RequireViaBrowser`), start the normal authorization-code request with an extra `mfa_token=<mfa_token>` parameter. The login page opens directly at the missing factor, asks only for it, and returns to the App's redirect URI as usual.
+
+::: tip Use the system browser
+Open the URL with `ASWebAuthenticationSession` (iOS) or Custom Tabs (Android). Passkeys and password managers work there, and [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252) advises against embedded web views. An embedded web view works for e-mail codes and TOTP, but not reliably for passkeys. Modgud cannot detect or prevent a web view and does not try.
+:::
+
+A refresh fails with `invalid_grant` ("The application now requires a stronger sign-in") when the target App now requires more than the refresh token's sign-in proved; sign in again.
+
 ### Tokens: storage, refresh, revocation
 
 - **Store** the refresh token in the Keychain. Access tokens are short-lived by design (per-realm native lifetime, default 15 min).
@@ -357,7 +403,10 @@ The forwarded address is used for the **source** dimensions only; per-mailbox, p
 | Realm hasn't enabled native grants (OTP-request / native-register endpoint) | `400` `NativeGrants.Disabled` — an explicit error, **not** a silent "code sent". Enable the grants in Realm Settings. |
 | Client lacks the `gt:urn:cocoar:*` permission | `unauthorized_client` |
 | Wrong/expired code, link, or passkey assertion | `invalid_grant` — **uniform** message + jitter (anti-enumeration); don't parse it for "which part was wrong" |
-| TOTP required but missing/invalid (OTP & magic flows) | `invalid_grant` ("Two-factor authentication is required; supply totp_code.") |
+| Second factor owed after the first factor (OTP & magic flows) | `400` `mfa_required` with an `mfa_token` — see [Second factor](#second-factor) |
+| Second factor must first be set up | `interaction_required` |
+| `urn:cocoar:otp` while the target App's e-mail code is off | `unsupported_grant_type` |
+| Refresh after the App now requires a stronger sign-in than the refresh token proved | `invalid_grant` ("The application now requires a stronger sign-in") |
 | Rate limit hit (any auth endpoint) | `429 Too Many Requests` with `Retry-After` and `{ "error": "rate_limited", "policy", "dimension", "retryAfterSeconds" }` — honour `Retry-After`, never retry automatically. Limits are per mailbox, per App, per client and per source, realm-configurable under [Realm Settings → Rate Limits](../admin/realm-settings#rate-limits); see [Rate limits](../platform/rate-limits). |
 | Passkey begin while realm has no primary domain | `503` (admin must set the realm/client RP-ID) |
 | Passkey list / delete without a valid Bearer token | `401 Unauthorized` |
@@ -372,6 +421,6 @@ The forwarded address is used for the **source** dimensions only; per-mailbox, p
 
 ## Hand-off checklist
 
-**For the admin:** realm native-grants flag on → public client created with the needed `urn:cocoar:*` grants (+ `refresh_token`) and scopes (`openid`, `offline_access`, API scopes) → per-client WebAuthn RP-ID set → app serves AASA on that apex.
+**For the admin:** the App's sign-in methods and minimum level set (*App → Sign-in*), realm native-grants flag on → public client created with the needed `urn:cocoar:*` grants (+ `refresh_token`) and scopes (`openid`, `offline_access`, API scopes) → per-client WebAuthn RP-ID set → app serves AASA on that apex.
 
 **For the app team:** `client_id` + realm host → implement OTP and/or magic-link for first sign-in → passkey enrollment bootstrap → passkey steady-state login → Keychain token storage + refresh + re-auth-on-`invalid_grant`.

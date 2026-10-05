@@ -159,6 +159,23 @@ public static class DeviceVerificationEndpoints
             // requested (from the user code's authorization) and set them on the
             // principal — otherwise the issued token has no scopes and
             // offline_access is dropped (no refresh token).
+            // ADR 0025 — the device's client App sets the level this approval must
+            // reach, exactly like /connect/authorize. Below it, the device page sends the
+            // user to the login page for the missing factor and back.
+            var deviceClientId = await ResolveDeviceClientIdAsync(userCodeToken, tokenManager, httpContext);
+            var requirements = httpContext.RequestServices.GetRequiredService<Modgud.Authentication.SignIn.ISignInRequirementService>();
+            var signInTarget = await requirements.ResolveTargetAsync(deviceClientId, [], httpContext.RequestAborted);
+            var signInDecision = await requirements.EvaluateAsync(
+                user, signInTarget, Modgud.Authentication.SignIn.SignInAssurance.ReadFactors(authResult.Principal),
+                Modgud.Authentication.SignIn.SignInSurface.Web, startSetupGrace: true, httpContext.RequestAborted);
+            if (!signInDecision.IsSatisfied)
+                return Results.Json(new
+                {
+                    Message = "The application requires a second factor for this session.",
+                    RequiresStepUp = true,
+                    ClientId = deviceClientId,
+                }, statusCode: StatusCodes.Status403Forbidden);
+
             var scopeNames = await ResolveScopeNamesAsync(
                 request.UserCode, tokenManager, authorizationManager, httpContext.RequestAborted);
 
@@ -499,6 +516,19 @@ public static class DeviceVerificationEndpoints
             TerminalEnrollmentPrincipal.CreateV2(target.Terminal),
             properties: null,
             OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+    }
+
+    /// <summary>The <c>client_id</c> of the device that asked for <paramref name="userCodeToken"/>;
+    /// null when the code does not resolve.</summary>
+    private static async Task<string?> ResolveDeviceClientIdAsync(
+        object? userCodeToken, IOpenIddictTokenManager tokenManager, HttpContext httpContext)
+    {
+        if (userCodeToken is null) return null;
+        var applicationId = await tokenManager.GetApplicationIdAsync(userCodeToken, httpContext.RequestAborted);
+        if (string.IsNullOrEmpty(applicationId)) return null;
+        var applications = httpContext.RequestServices.GetRequiredService<IOpenIddictApplicationManager>();
+        var application = await applications.FindByIdAsync(applicationId, httpContext.RequestAborted);
+        return application is null ? null : await applications.GetClientIdAsync(application, httpContext.RequestAborted);
     }
 
     /// <summary>Resolves the scope names the device originally requested, via the

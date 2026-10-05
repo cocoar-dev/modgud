@@ -81,7 +81,7 @@ Browser → ASP.NET Core
   ↓ UseSession
   ↓ UseAuthentication                        ← cookie auth
   ↓ UseAuthorization
-  ↓ UseMiddleware<TwoFactorEnforcementMW>    ← blocks users without 2FA at level ≥ 1
+  ↓ UseMiddleware<TwoFactorEnforcementMW>    ← blocks users without 2FA where the target requires multi-factor (after the setup grace)
   ↓ Endpoint routing
   ↓ Endpoint with RequiresPermission(...)    ← per-resource gating
   ↓ Handler

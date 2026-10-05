@@ -137,6 +137,7 @@
       "magicLinkSubtitle": "Erhalten Sie einen Anmelde-Link per E-Mail.",
       "authenticatorApp": "Authenticator-App",
       "emailCode": "Code per E-Mail",
+      "passkey": "Mit Passkey bestätigen",
       "authenticatorCode": "Authenticator-Code",
       "invalidCode": "Ungültiger Code. Bitte erneut versuchen.",
       "otherMethod": "Andere Methode wählen",

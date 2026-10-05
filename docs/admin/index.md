@@ -53,7 +53,7 @@ Per-realm look and feel. SPA-shell branding plus a beta page-builder editor.
 - [Observability](../operate/observability) — OpenTelemetry metrics + tracing + in-app live activity feed
 - [Logs](./auth-log) — realm-owned **Audit** and **Security** tabs; the Control Plane additionally gets a separate PII-free **Platform** tab
 - [Change Requests](./change-requests) — approve profile changes (when the approval flow is enabled)
-- [Settings](../platform/settings) — 2FA enforcement, grace period, SMTP, …
+- [Settings](../platform/settings) — sign-in policy pointer, SMTP, …
 - [Feature Flags](../operate/feature-flags) — operator-level toggles for beta / WIP surfaces
 - [Recovery CLI](../operate/recovery-cli) — when the UI no longer responds
 

@@ -138,7 +138,7 @@ The contract for a native App is therefore: implement the methods you list, and 
 
 ### 9. Host-bound settings are visible
 
-Some App settings can only work through the App's own domain (issuer and discovery, the login page and branding, passkeys under the App's RP ID). That is acceptable; silence about it is not.
+Some App settings can only work through the App's own domain (the login page and branding, passkeys under the App's RP ID). The issuer and discovery are not among them: `CanonicalIssuer` anchors the issuer to the realm's primary domain whichever App domain the request arrives on. That is acceptable; silence about it is not.
 
 - Every App setting is classified as **always effective** or **only through the App's own domain**, and the admin UI marks the second kind.
 - An App without its own domain shows which of its settings currently have no effect.
@@ -152,7 +152,7 @@ Settings that are host-bound only because the request carries no client (native 
 A passkey enrolled in a native app under the App's RP ID is usable on the web only if the login page's origin is allowed for that RP ID. Two ways, both opt-in per App:
 
 - **Login under the App's domain.** Serve the App's login page on an origin whose host is the RP ID or a subdomain of it, and use the App's RP ID for web ceremonies there.
-- **Related origins.** The RP publishes `/.well-known/webauthn` on its RP ID domain listing the Modgud login origin (WebAuthn Level 3 "related origin requests"). Supported by current Chromium-based browsers and Safari, not by all browsers, so it cannot be the only way in.
+- **Related origins.** The RP publishes `/.well-known/webauthn` on its RP ID domain listing the Modgud login origin (WebAuthn Level 3 "related origin requests"). Supported by current Chromium-based browsers and Safari, not by all browsers, so it cannot be the only way in. Related origins are a follow-up and not part of this change.
 
 Either way, the web ceremony has to use the RP ID of the *target* App (section 3), not the realm's primary domain, which is what a DCR/CIMD client gets today.
 
@@ -180,4 +180,5 @@ Either way, the web ceremony has to use the RP ID of the *target* App (section 3
 - **Existing sessions count as `single`** after the upgrade; signing in to a `multi` App asks for the second factor once.
 - **Native error contract.** Native grants answer `mfa_required` instead of `invalid_grant` "supply totp_code". Pre-1.0 contract change, announced in the release notes.
 - **Rollback.** The migration only adds realm settings; the previous release ignores them and reads its deployment setting again.
+- **Related origins are a follow-up.** `/.well-known/webauthn` related-origin requests are not implemented by this change; only the login-under-the-App's-domain way of using an App's RP ID on the web is.
 - **Delivery** is one change: sections 1–9 together, including the target App's RP ID for web passkey ceremonies. Serving an App's login page under the App's own domain, and publishing `/.well-known/webauthn`, are deployment steps on the App's side; Modgud only has to accept the configured origin for the App's RP ID.

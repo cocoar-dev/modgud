@@ -281,7 +281,10 @@ resource (see [Application settings](#application-settings) below).
 |---|---|---|
 | `GET` | `/api/app-info` | Anonymous |
 
-`/api/app-info` also publishes the resolved (App ⊕ realm)
+`/api/app-info` publishes the target's resolved (App ⊕ realm) sign-in policy as
+`SignIn: { Password, EmailCode, Passkey, MinimumLevel }` so clients render only
+the methods the target offers (it no longer returns `AuthenticationMinimumLevel`;
+see [Sign-in levels](/concepts/sign-in-levels)). It also publishes the resolved
 `RegistrationFields` policy (`Email` always `Required`; `Username` / `Firstname`
 / `Lastname` one of `Off` / `Optional` / `Required`) so clients render exactly
 the identity inputs the realm or App requires. See

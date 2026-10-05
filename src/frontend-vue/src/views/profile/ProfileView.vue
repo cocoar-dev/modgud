@@ -9,13 +9,11 @@ import { useI18n } from '@cocoar/vue-localization'
 import { CoarNotice, CoarCard, CoarButton, CoarIcon, CoarMenu, CoarMenuItem, CoarSelect, CoarTextInput, CoarPasswordInput, CoarFormField } from '@cocoar/vue-ui'
 import type { CoarSelectOption } from '@cocoar/vue-ui'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
-import { useAppConfigStore } from '@/stores/appconfig.store'
 
 const { t, language } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const appConfig = useAppConfigStore()
 const { darkMode, setDarkMode, setLocale } = usePreferences()
 const mfaHttp = useHttpClient('/api/account/mfa')
 const passkeyHttp = useHttpClient('/api/account/passkey')

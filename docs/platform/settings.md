@@ -40,31 +40,15 @@ OpenIddict signing-key material, listener URLs) also stays in
 configuration files, same as the settings below.
 :::
 
-## 2FA enforcement
+## Sign-in policy (2FA enforcement)
 
-Three enforcement levels, configured as `AuthenticationMinimumLevel`
-in deployment config (not currently editable from the admin UI):
+How strong a sign-in must be — and how long a user without a second factor may keep signing in — is no longer a deployment setting. It is a **realm** setting with a per-App override, editable under Administration → **Realm Settings → Security** (and **App → Sign-in**). See [Sign-in levels](../concepts/sign-in-levels) and [Realm settings](../admin/realm-settings#security-sign-in).
 
-| Level | Behaviour |
-| --- | --- |
-| `0` — Off | 2FA is purely opt-in. Users may enable it on their own. |
-| `1` — Optional | Users without 2FA see a non-blocking nudge to enrol. They can postpone within the grace window. |
-| `2` — Required | Sign-in with only a password is rejected entirely. 2FA must already be set up. |
+::: warning Deprecated deployment settings
+`AppSettings__AuthenticationMinimumLevel` and `AppSettings__TwoFactorGracePeriodDays` are deprecated. They are still read, but only to derive the policy of a realm that never saved a sign-in policy (level `0` → single, level `1` → multi-factor, level `2` → password off). Once an admin saves the section, only the realm and App settings apply.
+:::
 
-Per-user **2FA exempt** flag in the [user editor](../admin/users) is
-admin-editable and lets you exempt specific users from the
-instance-wide policy — used sparingly (e.g. for service-account
-principals).
-
-## Grace period
-
-When `AuthenticationMinimumLevel >= 1`, the grace period is the
-window during which a user can sign in without 2FA in order to enrol.
-After it elapses, sign-in fails until 2FA is set up.
-
-Configured as `TwoFactorGracePeriodDays` in deployment config — not
-currently editable from the admin UI. The shipping default is 14
-days.
+The per-user **2FA exempt** flag in the [user editor](../admin/users) stays admin-editable and exempts specific users from the setup duty in every App — used sparingly (e.g. for service-account principals).
 
 ## Sign-in session lifetime
 

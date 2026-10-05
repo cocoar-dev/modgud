@@ -146,7 +146,7 @@ re-inherits the realm.
 | **Registration fields** | Per-app override of which identity fields (username / first / last name) are required when an account is created — each one inheriting the realm by default. See [Registration fields](#registration-fields) below. |
 | **Sign-in** | The App's sign-in policy (ADR 0025): minimum level (single or multi-factor), setup grace days, the sign-in methods and second factors the App offers, what happens when a user's own second factor is not offered, and the App's passkey RP ID. Every field inherits the realm's policy unless overridden; a policy nobody could satisfy (multi-factor required, no way to reach it) is rejected on save. The realm-only *administration minimum level* is not overridable. |
 | **Client sessions** | Idle and absolute lifetime defaults for refresh-token-backed native/OAuth sessions belonging to this App. Each field inherits the realm unless overridden; an individual OAuth client can override the App again. |
-| **Native grants** | Per-app toggle + token lifetimes for the cookieless [native passwordless grants](../integrate/native-apps). |
+| **Native grants** | Per-app toggle (which methods the grants accept comes from the App's sign-in methods) + token lifetimes for the cookieless [native passwordless grants](../integrate/native-apps). |
 | **DCR** | Per-app override of [Dynamic Client Registration](./dynamic-client-registration) (enable, token lifetimes, rate limits, reserved-name blocklist). |
 | **CIMD** | Per-app override of [Client-ID Metadata Documents](./client-id-metadata-documents) (enable, token lifetimes). |
 | **Rate limits** | Sparse override of the realm's [auth rate limits](../platform/rate-limits): only the overridden policy/dimension cells win, plus an optional own source allowlist and enforcement mode. |
@@ -227,7 +227,7 @@ A setting is **always effective** when every reader resolves the App from the OA
 | --- | --- | --- |
 | Branding, page theme, active pages | Always | The app-info endpoint resolves by the request's client id (`AppSettingsEndpoints.cs`). |
 | Login methods | Always | Login, external-provider, SAML, magic-link and native-passkey endpoints resolve by the client of the authorize request (`AccountEndpoints.cs`, `ExternalAuthEndpoints.cs`, `SamlEndpoints.cs`, `MagicLinkEndpoints.cs`, `NativePasskeyEndpoints.cs`). |
-| Sign-in policy | Always (resolved from the sign-in target) | ADR 0025: the target App decides, never the host. The passkey RP ID additionally needs the login page to be served under that domain, or the RP to publish `/.well-known/webauthn`. |
+| Sign-in policy | Always (resolved from the sign-in target) | ADR 0025: the target App decides, never the host. The passkey RP ID additionally needs the login page to be served on that domain or below it (related-origin requests via `/.well-known/webauthn` are not supported yet). |
 | Client sessions | Always | `ClientSessionService.cs` reads the App bindings of the OAuth client. |
 | Consumer change feed | Always | The feed is addressed by App id (`AppChangeFeedEndpoints.cs`, `AppChangeFeedSubscription.cs`). |
 | Self-registration | Partly | Web sign-up resolves by client (`RegisterEndpoints.cs`, `SelfRegistrationService.cs`); the native OTP request that signs up on the fly and native registration use the host only (`NativeOtpEndpoints.cs`, `NativeRegisterEndpoints.cs`). |

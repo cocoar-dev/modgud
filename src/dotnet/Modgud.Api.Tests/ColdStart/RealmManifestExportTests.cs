@@ -88,9 +88,11 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
         Assert.NotNull(m.Settings.BrowserSessions);                         // session policies export too
         Assert.NotNull(m.Settings.ClientSessions);
         Assert.NotNull(m.Settings.PositionSecurity);
-        // ADR 0025: a realm that never configured its sign-in policy exports none, so a
-        // re-apply does not pin the legacy-derived policy as an admin choice.
-        Assert.Null(m.Settings.SignIn);
+        // ADR 0025: a newly created realm is seeded with the explicit default policy
+        // (administration requires a second factor), and that policy travels.
+        Assert.NotNull(m.Settings.SignIn);
+        Assert.Equal("Single", m.Settings.SignIn!.MinimumLevel);
+        Assert.Equal("Multi", m.Settings.SignIn.AdministrationMinimumLevel);
 
         // ── Re-apply the UNEDITED export = idempotent ──────────────────────────
         Assert.False((await applier.UpdateRealmAsync(slug, m, ct: ct)).IsError);

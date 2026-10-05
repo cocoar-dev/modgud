@@ -44,7 +44,7 @@ sub-nav (see `PlatformView.vue`):
 | --- | --- | --- |
 | [Observability](../operate/observability) | `/operate/observability` | Live IdP metrics + traces, with the OpenTelemetry pipeline behind it |
 | Inbox settings | `/platform/inbox-settings` | Per-tenant notification retention windows |
-| [Settings](./settings) | `/platform/settings` | Projection rebuild, 2FA enforcement, grace period, SMTP, …; the catch-all operator surface |
+| [Settings](./settings) | `/platform/settings` | Projection rebuild, sign-in policy pointer, SMTP, …; the catch-all operator surface |
 
 ## Permission gating
 
@@ -96,7 +96,7 @@ across the area regardless of which sub-page they landed on.
 - [Observability](../operate/observability) — metrics, traces, live activity feed
 - [Inbox](./inbox) — operator notification stream
 - [Inbox settings](./inbox-settings) — per-tenant notification retention
-- [Settings](./settings) — projections, SMTP, 2FA, grace period
+- [Settings](./settings) — projections, SMTP, sign-in policy pointer
 
 ::: tip Looking for tenant-admin work?
 Users, groups, OAuth clients, realms — those live under

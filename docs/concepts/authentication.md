@@ -18,7 +18,7 @@ Implemented in the **Authentication slice**
 
 | Method | When | Cookie lifetime |
 |---|---|---|
-| **Password** | Default, allowed at AuthLevel 0/1 | Session or realm browser-session policy (RememberMe) |
+| **Password** | Default; can be switched off per realm or App | Session or realm browser-session policy (RememberMe) |
 | **TOTP** | Second factor after password | Inherits from the password step |
 | **Email OTP** | Second factor — or as an alternative login | Inherits from the password step |
 | **Passkey (FIDO2)** | Second factor — or as a sole login (passwordless) | Realm browser-session policy |
@@ -27,18 +27,16 @@ Implemented in the **Authentication slice**
 
 See [Login flows](/integrate/login-flows) for details.
 
-### Authentication level
+### Sign-in level
 
-Configured globally via `IAuthSettings.AuthenticationMinimumLevel`:
+How strong a sign-in must be is a **realm and App** setting, decided by the app being accessed — see [Sign-in levels](./sign-in-levels). In short:
 
-| Level | Effect |
+| Level | Reached by |
 |---|---|
-| 0 = None | Password-only allowed — no enforcement |
-| 1 = SecureLogin (default) | User must have 2FA or a passwordless method |
-| 2 = Passwordless | Password login disabled — only Magic Link + Passkey |
+| `single` | One factor: password, e-mail code, magic link |
+| `multi` | Two different factors, or a passkey / federated MFA on its own |
 
-At level >= 1 the `TwoFactorEnforcementMiddleware` runs and blocks
-authenticated requests from users without 2FA (with a grace period).
+Each App has a minimum level, the sign-in methods it offers and a setup grace period for users without a second factor; the realm holds the defaults. A session that is below the target App's level is stepped up with only the missing factor. The deployment settings `AuthenticationMinimumLevel` and `TwoFactorGracePeriodDays` are deprecated and only used to derive the policy of a realm that never saved one.
 
 ### Cookies
 

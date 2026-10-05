@@ -99,7 +99,8 @@ public interface ISignInRequirementService
 public sealed class SignInRequirementService(
     IDocumentSession session,
     IApplicationSettingsResolver settingsResolver,
-    RpIdResolver rpIdResolver) : ISignInRequirementService
+    RpIdResolver rpIdResolver,
+    IHttpContextAccessor httpContextAccessor) : ISignInRequirementService
 {
     public async Task<SignInTarget> ResolveTargetAsync(
         string? clientId, IEnumerable<string> resources, CancellationToken ct = default)
@@ -138,6 +139,10 @@ public sealed class SignInRequirementService(
     {
         if (TryParseAuthorize(returnUrl, out var clientId, out var resources))
             return await ResolveTargetAsync(clientId, resources, ct);
+
+        // A device approval (/device?…&client_id=…): the device's client App decides.
+        if (TryParseDevice(returnUrl, out var deviceClientId))
+            return await ResolveTargetAsync(deviceClientId, [], ct);
 
         // The admin console's routes: the session is raised for the administration.
         if (returnUrl is not null
@@ -220,7 +225,11 @@ public sealed class SignInRequirementService(
         // client's or App's own, else the realm's). A legacy credential without an RP ID
         // belongs to the realm's primary domain.
         var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
-        var targetRpId = target.PasskeyRpId ?? primaryDomain;
+        // On the web the page's host decides which RP ID a ceremony can use; natively the
+        // App's (or client's) RP ID is what its passkeys are bound to.
+        var targetRpId = surface == SignInSurface.Web && httpContextAccessor.HttpContext is { } http
+            ? WebRpIdFor(target.PasskeyRpId, primaryDomain, http.Request.Host.Host)
+            : target.PasskeyRpId ?? primaryDomain;
         var hasUsablePasskey = passkeyRpIds.Any(rp => string.Equals(rp ?? primaryDomain, targetRpId, StringComparison.OrdinalIgnoreCase));
 
         var security = await session.LoadAsync<UserSecurityData>(user.Id, ct);
@@ -314,6 +323,34 @@ public sealed class SignInRequirementService(
         if (user.SetupDueAt is null || user.SetupDueAt > now)
             return new SignInDecision(SignInOutcome.Satisfied, required, achieved, [], [], SetupPending: true, user.SetupDueAt);
         return new SignInDecision(SignInOutcome.SetupRequired, required, achieved, [], [], SetupPending: true, user.SetupDueAt);
+    }
+
+    /// <summary>
+    /// The RP ID a browser ceremony on <paramref name="requestHost"/> can use for a target
+    /// whose App binds passkeys to <paramref name="appRpId"/>: the App's RP ID when the page
+    /// is served on it or below it (WebAuthn's rule), the realm's primary domain otherwise.
+    /// </summary>
+    public static string WebRpIdFor(string? appRpId, string primaryDomain, string requestHost)
+    {
+        if (string.IsNullOrWhiteSpace(appRpId)) return primaryDomain;
+        return string.Equals(requestHost, appRpId, StringComparison.OrdinalIgnoreCase)
+               || requestHost.EndsWith("." + appRpId, StringComparison.OrdinalIgnoreCase)
+            ? appRpId
+            : primaryDomain;
+    }
+
+    /// <summary>Parse the device-approval page's continuation, which the page extends with
+    /// the device's <c>client_id</c> when its approval needs a step-up.</summary>
+    public static bool TryParseDevice(string? returnUrl, out string? clientId)
+    {
+        clientId = null;
+        if (string.IsNullOrWhiteSpace(returnUrl) || !returnUrl.StartsWith("/device?", StringComparison.OrdinalIgnoreCase))
+            return false;
+        var query = QueryHelpers.ParseQuery(returnUrl[returnUrl.IndexOf('?')..]);
+        if (!query.TryGetValue("client_id", out var ids) || ids.Count != 1 || string.IsNullOrEmpty(ids[0]))
+            return false;
+        clientId = ids[0];
+        return true;
     }
 
     /// <summary>Parse a local <c>/connect/authorize</c> continuation: its <c>client_id</c> and
