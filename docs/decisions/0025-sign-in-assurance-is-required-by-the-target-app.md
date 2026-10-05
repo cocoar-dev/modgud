@@ -172,4 +172,12 @@ Either way, the web ceremony has to use the RP ID of the *target* App (section 3
 - **The e-mail-2FA flag stays**, as a second factor after a *password* only. After an e-mail-code or magic-link sign-in it is never offered, because it is the same channel.
 - **`acr` values** are `urn:modgud:acr:single` and `urn:modgud:acr:multi`. `amr` uses RFC 8176 values where one exists (`pwd`, `otp`, `hwk`/`user` for passkeys, `mfa`) and is the authority for *how*; `acr` is the authority for *how strong*.
 - **Per-App maximum factor age** is not part of this decision. `max_age` on the authorize request covers the need until an App asks for more.
+- **Defaults for new realms.** The realm default is minimum `single`. The Modgud admin App of a new realm gets minimum `multi` with a 14-day setup grace — whoever administers the identity provider has a second factor. Existing deployments keep their migrated values.
+- **Default for new Apps** when the user's own second factor is not offered: `require-via-browser`. `ignore` is a deliberate per-App choice.
+- **Impossible policies are rejected.** An App whose minimum is `multi` must offer a way to reach it (a second factor, a passkey, or an external provider); saving a policy that cannot be satisfied fails with a clear message.
+- **The passkey RP ID becomes an App setting.** Clients inherit their App's RP ID and may still override it. This is how the login page knows which RP ID to use for a sign-in whose target is an App (section 3).
+- **`NativeGrants` keeps its switch**, meaning only "native token grants are allowed". Which methods those grants accept comes from the App's sign-in methods.
+- **Existing sessions count as `single`** after the upgrade; signing in to a `multi` App asks for the second factor once.
+- **Native error contract.** Native grants answer `mfa_required` instead of `invalid_grant` "supply totp_code". Pre-1.0 contract change, announced in the release notes.
+- **Rollback.** The migration only adds realm settings; the previous release ignores them and reads its deployment setting again.
 - **Delivery** is one change: sections 1–9 together, including the target App's RP ID for web passkey ceremonies. Serving an App's login page under the App's own domain, and publishing `/.well-known/webauthn`, are deployment steps on the App's side; Modgud only has to accept the configured origin for the App's RP ID.
