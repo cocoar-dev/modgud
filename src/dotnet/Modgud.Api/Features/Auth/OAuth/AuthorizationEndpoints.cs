@@ -43,6 +43,7 @@ using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 using Modgud.Authentication.RateLimiting;
+using Modgud.Authentication.SignIn;
 
 namespace Modgud.Api.Features.Auth.OAuth;
 
@@ -130,6 +131,39 @@ public static class AuthorizationEndpoints
             needsLogin = true;
         }
 
+        // ADR 0025 §8 — a native sign-in continues in the browser: the App starts its
+        // authorization request with the mfa_token its native grant answered with. The
+        // factors it proved become a partial sign-in, and the login page asks only for
+        // what is missing before this request resumes (without the token).
+        if (!authResult.Succeeded && request.GetParameter("mfa_token") is { } mfaTokenParameter)
+        {
+            var continuation = await httpContext.RequestServices.GetRequiredService<IMfaContinuationService>()
+                .RedeemAsync((string?)mfaTokenParameter, request.ClientId, httpContext.RequestAborted);
+            var continuedUser = continuation is null ? null : await userManager.FindByIdAsync(continuation.UserId.ToString());
+            if (continuation is null || continuedUser is null || !continuedUser.IsActive || continuedUser.IsDeleted)
+                return Results.Forbid(
+                    new AuthenticationProperties(new Dictionary<string, string?>
+                    {
+                        [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidRequest,
+                        [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The mfa_token is invalid or expired.",
+                    }),
+                    new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+
+            var resumeUrl = httpContext.Request.PathBase + httpContext.Request.Path + QueryString.Create(
+                httpContext.Request.Query
+                    .Where(q => !string.Equals(q.Key, "mfa_token", StringComparison.Ordinal))
+                    .SelectMany(q => q.Value.Select(v => new KeyValuePair<string, string?>(q.Key, v))));
+            var continuationRequirements = httpContext.RequestServices.GetRequiredService<ISignInRequirementService>();
+            var continuationTarget = await continuationRequirements.ResolveTargetAsync(
+                request.ClientId, request.GetResources(), httpContext.RequestAborted);
+            var continuationDecision = await continuationRequirements.EvaluateAsync(
+                continuedUser, continuationTarget, continuation.Factors, SignInSurface.Web,
+                startSetupGrace: false, httpContext.RequestAborted);
+            await SignInAssurance.SignInPartialAsync(httpContext, continuedUser.Id, continuation.Factors);
+            var methods = string.Join(',', continuationDecision.SecondFactors);
+            return Results.Redirect($"/login?redirect={Uri.EscapeDataString(resumeUrl)}&mfa={Uri.EscapeDataString(methods)}");
+        }
+
         if (needsLogin)
         {
             return Results.Challenge(
@@ -178,6 +212,32 @@ public static class AuthorizationEndpoints
                     [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The user account has been deactivated.",
                 }),
                 new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+        }
+
+        // ADR 0025 — the session must reach what the target App requires: the
+        // client's App, or for a realm-wide client (DCR/CIMD, e.g. an MCP client) the
+        // App of the requested resource. Never the Host. Below it, the login page asks
+        // only for the missing factor (or the setup of one) and comes back here.
+        var signInRequirements = httpContext.RequestServices.GetRequiredService<ISignInRequirementService>();
+        var signInTarget = await signInRequirements.ResolveTargetAsync(
+            request.ClientId, request.GetResources(), httpContext.RequestAborted);
+        var signInDecision = await signInRequirements.EvaluateAsync(
+            user, signInTarget, SignInAssurance.ReadFactors(authResult.Principal), SignInSurface.Web,
+            startSetupGrace: true, httpContext.RequestAborted);
+        if (!signInDecision.IsSatisfied)
+        {
+            if (!string.IsNullOrEmpty(request.Prompt) && request.Prompt.Contains("none", StringComparison.OrdinalIgnoreCase))
+                return Results.Forbid(
+                    new AuthenticationProperties(new Dictionary<string, string?>
+                    {
+                        [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InteractionRequired,
+                        [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] =
+                            "The application requires a second factor for this session.",
+                    }),
+                    new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme });
+
+            var authorizeUrl = httpContext.Request.PathBase + httpContext.Request.Path + httpContext.Request.QueryString;
+            return Results.Redirect($"/login?stepup=1&redirect={Uri.EscapeDataString(authorizeUrl)}");
         }
 
         // Consent-deny re-entry: /connect/consent redirects a DENIED decision
@@ -500,6 +560,26 @@ public static class AuthorizationEndpoints
                 !string.Equals(tokenStamp, currentStamp, StringComparison.Ordinal))
             {
                 return ForbidInvalidGrant("The user's security profile has changed; please sign in again.");
+            }
+
+            // ADR 0025 — a token family never outlives a raised requirement: when the
+            // target App (or the user's own second factor) now asks for more than the
+            // sign-in behind this refresh token proved, the client signs in again.
+            // Refresh tokens minted before sign-in factors were recorded carry none and
+            // are left to run out.
+            var tokenFactors = SignInAssurance.ReadFactors(result.Principal);
+            if (request.IsRefreshTokenGrantType() && tokenFactors.Count > 0)
+            {
+                var requirements = httpContext.RequestServices.GetRequiredService<ISignInRequirementService>();
+                // A refresh rarely repeats resource=; the token's own audiences name the APIs.
+                var target = await requirements.ResolveTargetAsync(
+                    request.ClientId,
+                    request.GetResources().Concat(result.Principal?.GetResources() ?? []),
+                    httpContext.RequestAborted);
+                var decision = await requirements.EvaluateAsync(
+                    user, target, tokenFactors, SignInSurface.Native, startSetupGrace: false, httpContext.RequestAborted);
+                if (!decision.IsSatisfied)
+                    return ForbidInvalidGrant("The application now requires a stronger sign-in; please sign in again.");
             }
 
             var originalScopes = result.Principal?.GetScopes();
@@ -1607,23 +1687,91 @@ public static class AuthorizationEndpoints
         return settings.NativeGrants is { Enabled: true } ng ? ng : null;
     }
 
-    /// <summary>Second-factor gate for the native grants. Returns null when the
-    /// user has no TOTP factor (nothing owed) or the supplied <c>totp_code</c> is
-    /// valid; a Forbid result when a required code is missing or invalid. Called
-    /// AFTER the primary factor verifies, so a clear "2FA required/invalid" error
-    /// is not a user-existence oracle (the caller already proved factor possession).</summary>
-    private static async Task<IResult?> CheckTwoFactorAsync(
-        ApplicationUser user, OpenIddictRequest request, UserManager<ApplicationUser> userManager)
+    /// <summary>
+    /// ADR 0025 §7/§8 — what a native sign-in still owes after its first factor. The
+    /// target App (the client's, or the requested resource's) and the user's own second
+    /// factor decide; a <c>totp_code</c> sent along is verified and counted. Returns the
+    /// proven factors when the sign-in is complete, otherwise the error response:
+    /// <c>mfa_required</c> with an <c>mfa_token</c> to continue (natively with the second
+    /// factor, or in the browser), or <c>interaction_required</c> when a second factor
+    /// must first be set up. Called AFTER the first factor verified, so the answer is not
+    /// a user-existence oracle.
+    /// </summary>
+    private static async Task<(IResult? Error, IReadOnlyDictionary<string, DateTimeOffset> Factors)> CompleteNativeSignInAsync(
+        ApplicationUser user,
+        OpenIddictRequest request,
+        UserManager<ApplicationUser> userManager,
+        HttpContext httpContext,
+        IReadOnlyDictionary<string, DateTimeOffset> proven,
+        CancellationToken ct)
     {
-        if (!user.TwoFactorEnabled) return null;
+        var factors = new Dictionary<string, DateTimeOffset>(proven, StringComparer.Ordinal);
 
         var totp = ((string?)request.GetParameter("totp_code"))?.Replace(" ", "").Replace("-", "");
-        if (string.IsNullOrEmpty(totp))
-            return ForbidNativeGrant(Errors.InvalidGrant, "Two-factor authentication is required; supply totp_code.");
+        if (!string.IsNullOrEmpty(totp))
+        {
+            var valid = user.TwoFactorEnabled && await userManager.VerifyTwoFactorTokenAsync(
+                user, userManager.Options.Tokens.AuthenticatorTokenProvider, totp);
+            if (!valid)
+                return (ForbidNativeGrant(Errors.InvalidGrant, "The two-factor code is invalid."), factors);
+            factors[SignInMethods.Totp] = DateTimeOffset.UtcNow;
+        }
 
-        var valid = await userManager.VerifyTwoFactorTokenAsync(
-            user, userManager.Options.Tokens.AuthenticatorTokenProvider, totp);
-        return valid ? null : ForbidNativeGrant(Errors.InvalidGrant, "The two-factor code is invalid.");
+        var requirements = httpContext.RequestServices.GetRequiredService<ISignInRequirementService>();
+        var target = await requirements.ResolveTargetAsync(request.ClientId, request.GetResources(), ct);
+        var decision = await requirements.EvaluateAsync(
+            user, target, factors, SignInSurface.Native, startSetupGrace: true, ct);
+
+        switch (decision.Outcome)
+        {
+            case SignInOutcome.Satisfied:
+                return (null, factors);
+            case SignInOutcome.NeedSecondFactor:
+                var token = await httpContext.RequestServices.GetRequiredService<IMfaContinuationService>()
+                    .IssueAsync(user.Id, request.ClientId!, factors, ct);
+                var parameters = new Dictionary<string, object?>
+                {
+                    ["mfa_token"] = token,
+                    ["mfa_methods"] = string.Join(' ', decision.SecondFactors),
+                };
+                if (decision.BrowserOnlyFactors.Count > 0)
+                    parameters["mfa_browser_methods"] = string.Join(' ', decision.BrowserOnlyFactors);
+                return (Results.Forbid(
+                    new AuthenticationProperties(
+                        new Dictionary<string, string?>
+                        {
+                            [OpenIddictServerAspNetCoreConstants.Properties.Error] = "mfa_required",
+                            [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] =
+                                "A second factor is required. Redeem mfa_token with it, or start the authorization request with mfa_token to continue in the browser.",
+                        },
+                        parameters),
+                    new[] { OpenIddictServerAspNetCoreDefaults.AuthenticationScheme }), factors);
+            default:
+                return (ForbidNativeGrant(Errors.InteractionRequired,
+                    "This application requires a second factor that is not set up yet; sign in through the browser to set one up."), factors);
+        }
+    }
+
+    /// <summary>ADR 0025 §8 — continue a native sign-in from an <c>mfa_token</c>: the
+    /// factors it carries replace the grant's own first factor. Null when the request
+    /// carries no token; an error result when the token is not valid for this client.</summary>
+    private static async Task<(IResult? Error, ApplicationUser? User, IReadOnlyDictionary<string, DateTimeOffset>? Factors)>
+        TryContinueNativeSignInAsync(
+            OpenIddictRequest request,
+            HttpContext httpContext,
+            UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
+            CancellationToken ct)
+    {
+        var mfaToken = (string?)request.GetParameter("mfa_token");
+        if (string.IsNullOrWhiteSpace(mfaToken)) return (null, null, null);
+
+        var continuation = await httpContext.RequestServices.GetRequiredService<IMfaContinuationService>()
+            .RedeemAsync(mfaToken, request.ClientId, ct);
+        var user = continuation is null ? null : await userManager.FindByIdAsync(continuation.UserId.ToString());
+        if (continuation is null || user is null || !user.IsActive || user.IsDeleted || !await signInManager.CanSignInAsync(user))
+            return (ForbidNativeGrant(Errors.InvalidGrant, "The mfa_token is invalid or expired."), null, null);
+        return (null, user, continuation.Factors);
     }
 
     /// <summary>Shared token-mint pipeline for the native grants: builds the same
@@ -1643,13 +1791,15 @@ public static class AuthorizationEndpoints
         IPermissionService permissionService,
         IClientSessionService clientSessionService,
         HttpContext httpContext,
-        NativeGrantSettings nativeSettings)
+        NativeGrantSettings nativeSettings,
+        IReadOnlyDictionary<string, DateTimeOffset> factors)
     {
         // userManager (NOT a plain session load) so the security stamp is
         // populated on the principal — without it the OAUTH-07 parity check
         // silently no-ops and the minted refresh chain escapes revocation.
         var principal = await CreateClaimsPrincipalAsync(
             user, request, scopeManager, scopeOverrides: null, userManager, cookiePrincipal: null);
+        ApplySignInClaims(principal, factors);
 
         await BakeFederatedResourceAccessAsync(principal, user.Id, request, session, permissionService);
 
@@ -1747,6 +1897,20 @@ public static class AuthorizationEndpoints
         if (string.IsNullOrEmpty(request.ClientId))
             return ForbidNativeGrant(Errors.InvalidClient, "client_id is required.");
 
+        // ADR 0025 §8 — a second factor completing an earlier native sign-in.
+        var continued = await TryContinueNativeSignInAsync(request, httpContext, userManager, signInManager, ct);
+        if (continued.Error is not null) return continued.Error;
+        if (continued.User is not null)
+            return await FinishNativeSignInAsync(
+                continued.User, continued.Factors!, request, httpContext, scopeManager, userManager, applicationManager,
+                authorizationManager, session, permissionService, clientSessionService, nativeSettings, ct);
+
+        // ADR 0025 — whether an e-mail code is a sign-in method is the target App's call.
+        var otpTarget = await httpContext.RequestServices.GetRequiredService<ISignInRequirementService>()
+            .ResolveTargetAsync(request.ClientId, request.GetResources(), ct);
+        if (!otpTarget.Policy.EmailCode)
+            return ForbidNativeGrant(Errors.UnsupportedGrantType, "E-mail code sign-in is not enabled for this application.");
+
         var email = request.Username;
         var code = (string?)request.GetParameter("otp_code");
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(code))
@@ -1795,17 +1959,40 @@ public static class AuthorizationEndpoints
             }
         }
 
-        // Second factor only after the primary factor proved possession.
-        var twoFactor = await CheckTwoFactorAsync(user, request, userManager);
-        if (twoFactor is not null) return twoFactor;
-
         if (!await signInManager.CanSignInAsync(user) || !user.IsActive || user.IsDeleted)
             return ForbidNativeGrant(Errors.InvalidGrant, "The account cannot sign in.");
 
+        // Second factor only after the primary factor proved possession.
+        return await FinishNativeSignInAsync(
+            user, new Dictionary<string, DateTimeOffset> { [SignInMethods.Email] = DateTimeOffset.UtcNow },
+            request, httpContext, scopeManager, userManager, applicationManager,
+            authorizationManager, session, permissionService, clientSessionService, nativeSettings, ct);
+    }
+
+    /// <summary>ADR 0025 — complete a native sign-in whose first factor is proven: settle
+    /// the second factor (<see cref="CompleteNativeSignInAsync"/>), then mint tokens that
+    /// record what was proven.</summary>
+    private static async Task<IResult> FinishNativeSignInAsync(
+        ApplicationUser user,
+        IReadOnlyDictionary<string, DateTimeOffset> proven,
+        OpenIddictRequest request,
+        HttpContext httpContext,
+        IOpenIddictScopeManager scopeManager,
+        UserManager<ApplicationUser> userManager,
+        IOpenIddictApplicationManager applicationManager,
+        IOpenIddictAuthorizationManager authorizationManager,
+        IDocumentSession session,
+        IPermissionService permissionService,
+        IClientSessionService clientSessionService,
+        NativeGrantSettings nativeSettings,
+        CancellationToken ct)
+    {
+        var (error, factors) = await CompleteNativeSignInAsync(user, request, userManager, httpContext, proven, ct);
+        if (error is not null) return error;
         return await IssueNativeGrantAsync(
             user, request, scopeManager, userManager, applicationManager,
             authorizationManager, session, permissionService, clientSessionService,
-            httpContext, nativeSettings);
+            httpContext, nativeSettings, factors);
     }
 
     /// <summary><c>urn:cocoar:magic</c> — verify a magic-link (user_id + token)
@@ -1832,6 +2019,13 @@ public static class AuthorizationEndpoints
             return ForbidNativeGrant(Errors.UnsupportedGrantType, "This grant type is not enabled for this realm.");
         if (string.IsNullOrEmpty(request.ClientId))
             return ForbidNativeGrant(Errors.InvalidClient, "client_id is required.");
+
+        var continued = await TryContinueNativeSignInAsync(request, httpContext, userManager, signInManager, ct);
+        if (continued.Error is not null) return continued.Error;
+        if (continued.User is not null)
+            return await FinishNativeSignInAsync(
+                continued.User, continued.Factors!, request, httpContext, scopeManager, userManager, applicationManager,
+                authorizationManager, session, permissionService, clientSessionService, nativeSettings, ct);
 
         var uidRaw = (string?)request.GetParameter("user_id");
         var token = (string?)request.GetParameter("magic_token");
@@ -1870,24 +2064,16 @@ public static class AuthorizationEndpoints
                 Id: user.Id, Firstname: default, Lastname: default, Acronym: default, Email: default));
         }
 
-        // Second factor only after the link proved mailbox possession. The link
-        // is single-use: consume it even when the second factor is still owed, so
-        // a known-good link cannot be reused to brute-force the TOTP.
-        var twoFactor = await CheckTwoFactorAsync(user, request, userManager);
-        if (twoFactor is not null)
-        {
-            session.Delete(challenge);
-            await session.SaveChangesAsync(ct);
-            return twoFactor;
-        }
-
+        // The link is single-use: consume it before the second factor is settled, so
+        // a known-good link cannot be reused to brute-force the TOTP. A still-owed
+        // second factor continues through the mfa_token (ADR 0025 §8).
         session.Delete(challenge);
         await session.SaveChangesAsync(ct);
 
-        return await IssueNativeGrantAsync(
-            user, request, scopeManager, userManager, applicationManager,
-            authorizationManager, session, permissionService, clientSessionService,
-            httpContext, nativeSettings);
+        return await FinishNativeSignInAsync(
+            user, new Dictionary<string, DateTimeOffset> { [SignInMethods.Email] = DateTimeOffset.UtcNow },
+            request, httpContext, scopeManager, userManager, applicationManager,
+            authorizationManager, session, permissionService, clientSessionService, nativeSettings, ct);
     }
 
     /// <summary><c>urn:cocoar:passkey</c> — verify a WebAuthn assertion against a
@@ -2023,12 +2209,13 @@ public static class AuthorizationEndpoints
         if (user is null || !await signInManager.CanSignInAsync(user) || !user.IsActive || user.IsDeleted)
             return await ForbidFactorFailureAsync("Passkey verification failed.");
 
-        // No CheckTwoFactorAsync: a UserVerification passkey already satisfies MFA
-        // (the begin endpoint requires UV), so we do not additionally demand totp_code.
+        // A UserVerification passkey is multi-factor on its own (the begin endpoint
+        // requires UV): nothing further is owed, and the tokens record it (ADR 0025).
         return await IssueNativeGrantAsync(
             user, request, scopeManager, userManager, applicationManager,
             authorizationManager, session, permissionService, clientSessionService,
-            httpContext, nativeSettings);
+            httpContext, nativeSettings,
+            new Dictionary<string, DateTimeOffset> { [SignInMethods.Passkey] = DateTimeOffset.UtcNow });
     }
 
     private static async Task<IResult> UserinfoAsync(
@@ -2624,10 +2811,33 @@ public static class AuthorizationEndpoints
                 identity.AddClaim(new Claim(
                     Modgud.Infrastructure.OpenIddict.Dpop.DpopConstants.RefreshBindingClaimType, boundJkt));
             }
+
+            // ADR 0025 — what the sign-in proved. From the cookie (authorize, device
+            // verification) or from the code/refresh principal it was minted into, so a
+            // token family never claims more than its sign-in reached.
+            principal.SetDestinations(GetDestinations);
+            ApplySignInClaims(principal, SignInAssurance.ReadFactors(cookiePrincipal));
+            return principal;
         }
 
         principal.SetDestinations(GetDestinations);
         return principal;
+    }
+
+    /// <summary>
+    /// ADR 0025 — record a sign-in's proven factors on a token principal: the internal
+    /// factor carrier (kept in codes and refresh tokens, never on the wire) and the
+    /// standard <c>acr</c> / <c>amr</c> for ID and access tokens.
+    /// </summary>
+    internal static void ApplySignInClaims(ClaimsPrincipal principal, IReadOnlyDictionary<string, DateTimeOffset> factors)
+    {
+        if (factors.Count == 0 || principal.Identity is not ClaimsIdentity identity) return;
+        SignInAssurance.Stamp(identity, factors);
+        identity.SetClaim(Claims.AuthenticationContextReference,
+            SignInAssurance.ToAcr(SignInAssurance.LevelOf(factors.Keys)));
+        identity.SetClaims(Claims.AuthenticationMethodReference,
+            SignInAssurance.ToAmr(factors.Keys).ToImmutableArray());
+        principal.SetDestinations(GetDestinations);
     }
 
     private static string GetDisplayName(ApplicationUser user)
@@ -3034,6 +3244,15 @@ internal static class AuthorizationEndpointHelpers
             // rotation, but must never reach an access/id token (a resource server
             // reads the binding from cnf.jkt). Yield nothing (like SecurityStamp).
             case Modgud.Infrastructure.OpenIddict.Dpop.DpopConstants.RefreshBindingClaimType:
+                yield break;
+
+            // ADR 0025 — the factor carrier is internal (it rides codes and refresh
+            // tokens so the level survives redemption); acr/amr are the public form.
+            case SignInAssurance.FactorClaimType:
+                yield break;
+            case Claims.AuthenticationContextReference or Claims.AuthenticationMethodReference:
+                yield return Destinations.AccessToken;
+                yield return Destinations.IdentityToken;
                 yield break;
 
             default:

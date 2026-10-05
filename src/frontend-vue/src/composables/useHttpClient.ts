@@ -24,6 +24,20 @@ function isSecureSetupBlock(body: unknown): boolean {
   return typeof body === 'object' && body !== null && (body as Record<string, unknown>).RequiresSecureSetup === true
 }
 
+/** ADR 0025 — the session is below the area's sign-in level and the user can raise it. */
+function isStepUpBlock(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && (body as Record<string, unknown>).RequiresStepUp === true
+}
+
+/**
+ * Both blocks continue on the login page, which asks for the missing factor (or the
+ * setup) for the page the user was on, then returns there.
+ */
+function redirectToStepUp() {
+  const here = window.location.pathname + window.location.search
+  window.location.href = `/login?stepup=1&redirect=${encodeURIComponent(here)}`
+}
+
 class HttpClient {
   private readonly basePath: string;
   private readonly pathSegments: readonly string[];
@@ -153,8 +167,8 @@ class HttpClient {
       // On 403 with RequiresSecureSetup, the user's 2FA grace period has expired and
       // the server is blocking non-setup endpoints. Send them to /login where the
       // SecureSetupModal will appear (in its blocking form, since grace is over).
-      if (response.status === 403 && isSecureSetupBlock(errorBody)) {
-        window.location.href = '/login'
+      if (response.status === 403 && (isSecureSetupBlock(errorBody) || isStepUpBlock(errorBody))) {
+        redirectToStepUp()
       }
 
       throw new HttpClientError(response.status, response.statusText, errorBody);

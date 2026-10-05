@@ -4,27 +4,30 @@ using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.Api.Account.Services;
 using Modgud.Authentication;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.SignIn;
+using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Observability;
 
 namespace Modgud.Authentication.Api.Account;
 
 /// <summary>
-/// Server-side 2FA enforcement. Without this, a user who logs in with just a password at
-/// AuthenticationMinimumLevel >= 1 would get a valid auth cookie and full API access, even
-/// though the SPA shows the blocking setup modal. The frontend is never the enforcement
-/// boundary — a curl, an old tab, or a modified client must also be blocked.
+/// Server-side enforcement of the sign-in level for Modgud's own UI (ADR 0025). The frontend
+/// is never the enforcement boundary — a curl, an old tab, or a modified client must also be
+/// blocked.
 ///
-/// The middleware returns 403 to any non-whitelisted request when:
-///   AuthenticationMinimumLevel &gt;= 1 AND the user has no 2FA method AND the grace
-///   period is null (with days == 0) or in the past.
+/// The target of a request is the realm's administration for <c>/api/admin/*</c> (its
+/// administration minimum level) and the self-service portal — the <c>modgud</c> App —
+/// for everything else. A session below the target's level gets 403 with
+/// <c>RequiresStepUp</c> when the user has a second factor to raise it with, or with
+/// <c>RequiresSecureSetup</c> once the setup grace for a missing second factor is over.
 ///
-/// Setup endpoints are whitelisted so users stuck on the blocking modal can still enroll
-/// a 2FA method, check their identity, or log out.
+/// Setup and sign-in endpoints are whitelisted so a user can enroll a factor, step up,
+/// check their identity, or log out.
 /// </summary>
 public class TwoFactorEnforcementMiddleware(RequestDelegate next)
 {
     /// <summary>
-    /// Paths callable while grace-locked. All start with "/api/account/" — the account
+    /// Paths callable below the target's level. All start with "/api/account/" — the account
     /// feature area is what lets a user recover without leaving the login screen. Matched
     /// case-insensitively via StartsWith so "/api/account/mfa/setup" passes "/api/account/mfa/".
     /// </summary>
@@ -32,6 +35,7 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
     [
         "/api/account/me",
         "/api/account/logout",
+        "/api/account/step-up",
         "/api/account/mfa/",
         "/api/account/email-otp/",
         "/api/account/passkey/",
@@ -45,16 +49,9 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
 
     public async Task InvokeAsync(
         HttpContext context,
-        IAuthSettings settings,
-        IDocumentSession session,
-        UserManager<ApplicationUser> userManager)
+        UserManager<ApplicationUser> userManager,
+        ISignInRequirementService signInRequirements)
     {
-        if (settings.AuthenticationMinimumLevel < 1)
-        {
-            await next(context);
-            return;
-        }
-
         if (context.User?.Identity?.IsAuthenticated != true)
         {
             await next(context);
@@ -62,7 +59,7 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
         }
 
         // Anonymous endpoints (app-info, login, magic-link request, forgot-password, health, …)
-        // must stay reachable even if the caller's cookie points at a user past grace. Otherwise
+        // must stay reachable even if the caller's cookie is below the level. Otherwise
         // the SPA can't even load the login page after we've redirected it here — infinite loop.
         var endpoint = context.GetEndpoint();
         if (endpoint?.Metadata.GetMetadata<IAllowAnonymous>() is not null)
@@ -78,19 +75,10 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
             return;
         }
 
-        // Federated MFA: the ExternalLoginProcessor preserves Entra/Okta's amr
-        // claim onto the session cookie as modgud.external.amr. If the IdP
-        // already asserted a multi-factor sign-in for THIS session, treat it
-        // as equivalent to having local 2FA for the duration of the session —
-        // no SecureSetupModal, no grace check. The user still must configure
-        // local 2FA for non-federated login paths (magic-link, password fallback).
-        //
-        // Accepted amr values per RFC 8176: "mfa" (generic multi-factor), "otp"
-        // (one-time password), "fido" (WebAuthn / FIDO2), "hwk" (proof-of-
-        // possession of a hardware-secured key), "swk" (software-secured key),
-        // "mca" (multi-channel authentication), "pop" (proof-of-possession).
-        // Full list lives in FederatedMfaAmrValues. Case-insensitive match.
-        if (HasFederatedMfa(context.User))
+        // A multi-factor session meets every requirement — no lookups on the hot path.
+        // A federated sign-in whose provider asserted MFA records external_mfa (ADR 0025).
+        var factors = SignInAssurance.ReadFactors(context.User);
+        if (SignInAssurance.LevelOf(factors.Keys) >= SignInLevel.Multi)
         {
             await next(context);
             return;
@@ -103,57 +91,32 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
             return;
         }
 
-        var methods = await TwoFactorHelper.GetMethodsAsync(user, session);
-        if (methods.Count > 0)
+        var target = path.StartsWith("/api/admin", StringComparison.OrdinalIgnoreCase)
+            ? await signInRequirements.AdministrationTargetAsync(context.RequestAborted)
+            : await signInRequirements.ResolveTargetFromReturnUrlAsync(returnUrl: null, context.RequestAborted);
+        var decision = await signInRequirements.EvaluateAsync(
+            user, target, factors, SignInSurface.Web, startSetupGrace: true, context.RequestAborted);
+
+        if (decision.IsSatisfied)
         {
             await next(context);
             return;
         }
 
-        var securityData = await session.LoadAsync<UserSecurityData>(user.Id);
-        var now = DateTime.UtcNow;
-
-        // Hard opt-out: exempt users bypass the grace check entirely. The grant of the
-        // exemption itself is audited in AdminGraceEndpoints; per-request logging here
-        // would just spam the audit log.
-        if (securityData?.TwoFactorExempt == true)
-        {
-            await next(context);
-            return;
-        }
-
-        // Effective grace days for this user: per-user override wins over AppSettings default.
-        var effectiveGraceDays = securityData?.GracePeriodDaysOverride ?? settings.TwoFactorGracePeriodDays;
-
-        // Lazy-stamp: a cookie issued before Level 1 was enabled will have no DueAt.
-        // Fair behavior is to grant the full grace from NOW rather than block immediately.
-        // Saved once; subsequent requests see DueAt populated and skip this branch.
-        if (securityData?.SecureSetupDueAt is null && effectiveGraceDays > 0)
-        {
-            securityData ??= UserSecurityData.Create(user.Id);
-            securityData.SecureSetupDueAt = now.AddDays(effectiveGraceDays);
-            session.Store(securityData);
-            await session.SaveChangesAsync();
-            Serilog.Log.Information(
-                "Grace period lazy-stamped from middleware. UserId={UserId} DueAt={DueAt}",
-                user.Id, securityData.SecureSetupDueAt);
-            await next(context);
-            return;
-        }
-
-        if (securityData?.SecureSetupDueAt is { } due && due > now)
-        {
-            // Still in grace
-            await next(context);
-            return;
-        }
-
-        // No grace left — block.
         Serilog.Log.Warning(
-            "2FA enforcement blocked request. UserId={UserId} Path={Path}",
-            user.Id, path);
+            "Sign-in level enforcement blocked request. UserId={UserId} Path={Path} Outcome={Outcome}",
+            user.Id, path, decision.Outcome);
         ModgudMeters.RecordTwoFactorBlocked();
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        if (decision.Outcome == SignInOutcome.NeedSecondFactor)
+        {
+            await context.Response.WriteAsJsonAsync(new
+            {
+                Message = "This area requires a second factor for the current session.",
+                RequiresStepUp = true,
+            });
+            return;
+        }
         await context.Response.WriteAsJsonAsync(new
         {
             Message = "2FA setup required. Grace period expired.",

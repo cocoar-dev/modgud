@@ -130,6 +130,13 @@ public sealed class SignInRequirementService(
         if (TryParseAuthorize(returnUrl, out var clientId, out var resources))
             return await ResolveTargetAsync(clientId, resources, ct);
 
+        // The admin console's routes: the session is raised for the administration.
+        if (returnUrl is not null
+            && (returnUrl.Equals("/admin", StringComparison.OrdinalIgnoreCase)
+                || returnUrl.StartsWith("/admin/", StringComparison.OrdinalIgnoreCase)
+                || returnUrl.StartsWith("/admin?", StringComparison.OrdinalIgnoreCase)))
+            return await AdministrationTargetAsync(ct);
+
         var portal = await session.Query<App>()
             .FirstOrDefaultAsync(a => a.Slug == AppSlugs.Modgud && !a.IsDeleted, ct);
         return await BuildTargetAsync(portal is null ? [] : [portal.Id], clientRpId: null, ct);

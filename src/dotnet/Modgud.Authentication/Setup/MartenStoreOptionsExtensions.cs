@@ -103,6 +103,12 @@ public static class MartenStoreOptionsExtensions
             .UseOptimisticConcurrency(true)
             .Index(x => x.UserId);
 
+        // ADR 0025 — native second-factor continuation; single-use like the magic link.
+        options.Schema.For<Modgud.Authentication.SignIn.MfaContinuation>()
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Index(x => x.TokenHash);
+
         // C15 — bootstrap-invite for first-admin creation in a realm.
         // Stored per-tenant (one realm = one tenant DB) and indexed by
         // TokenHash for the hot lookup the bootstrap endpoint runs.

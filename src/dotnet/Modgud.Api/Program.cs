@@ -730,6 +730,8 @@ try
     // ADR 0025 — which App a sign-in is for, and whether it reached that App's level.
     builder.Services.AddScoped<Modgud.Authentication.SignIn.ISignInRequirementService,
         Modgud.Authentication.SignIn.SignInRequirementService>();
+    builder.Services.AddScoped<Modgud.Authentication.SignIn.IMfaContinuationService,
+        Modgud.Authentication.SignIn.MfaContinuationService>();
 
     // ADR-0011 — native passwordless registration: creates a passwordless user
     // from an email (JIT sign-up). Scoped (uses the tenant-scoped UserManager).
