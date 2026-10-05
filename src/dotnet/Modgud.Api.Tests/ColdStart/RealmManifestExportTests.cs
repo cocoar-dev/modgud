@@ -88,6 +88,9 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
         Assert.NotNull(m.Settings.BrowserSessions);                         // session policies export too
         Assert.NotNull(m.Settings.ClientSessions);
         Assert.NotNull(m.Settings.PositionSecurity);
+        // ADR 0025: a realm that never configured its sign-in policy exports none, so a
+        // re-apply does not pin the legacy-derived policy as an admin choice.
+        Assert.Null(m.Settings.SignIn);
 
         // ── Re-apply the UNEDITED export = idempotent ──────────────────────────
         Assert.False((await applier.UpdateRealmAsync(slug, m, ct: ct)).IsError);
@@ -103,6 +106,31 @@ public class RealmManifestExportTests(ColdStartFixture fixture) : ColdStartTestB
         Assert.False((await applier.UpdateRealmAsync(slug, withSetting, ct: ct)).IsError);
         var reexport = await exporter.ExportRealmAsync(slug, ct);
         Assert.Equal("Required", reexport.Value.Settings!.RegistrationFields!.Username);
+
+        // ── Sign-in policy: export → apply round trip (enums travel as strings) ─────
+        var withSignIn = m with
+        {
+            Settings = new UpdateRealmSettingsDto
+            {
+                SignIn = new UpdateSignInPolicyDto
+                {
+                    MinimumLevel = "Multi",
+                    SetupGraceDays = 7,
+                    EmailCode = true,
+                    OwnFactorNotOffered = "Ignore",
+                },
+            },
+        };
+        Assert.False((await applier.UpdateRealmAsync(slug, withSignIn, ct: ct)).IsError);
+        var signInExport = (await exporter.ExportRealmAsync(slug, ct)).Value;
+        Assert.Equal("Multi", signInExport.Settings!.SignIn!.MinimumLevel);
+        Assert.Equal(7, signInExport.Settings.SignIn.SetupGraceDays);
+        Assert.Equal(true, signInExport.Settings.SignIn.EmailCode);
+        Assert.Equal("Ignore", signInExport.Settings.SignIn.OwnFactorNotOffered);
+        Assert.Equal("Multi", signInExport.Settings.SignIn.AdministrationMinimumLevel);   // default filled in
+        // Re-applying the exported policy is idempotent.
+        Assert.False((await applier.UpdateRealmAsync(slug, signInExport, ct: ct)).IsError);
+        Assert.Equal("Multi", (await exporter.ExportRealmAsync(slug, ct)).Value.Settings!.SignIn!.MinimumLevel);
 
         // ── Edit: set bob's password, re-apply ─────────────────────────────────
         var withPassword = m with

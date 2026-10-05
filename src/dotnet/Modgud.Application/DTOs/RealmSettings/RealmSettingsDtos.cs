@@ -16,6 +16,9 @@ public record RealmSettingsDto
     public DcrSettingsDto Dcr { get; init; } = new();
     public CimdSettingsDto Cimd { get; init; } = new();
     public NativeGrantSettingsDto NativeGrants { get; init; } = new();
+    /// <summary>ADR 0025 — null = never configured (the realm follows the deployment's
+    /// former authentication settings until the section is saved).</summary>
+    public SignInPolicyDto? SignIn { get; init; }
     public BrowserSessionPolicyDto BrowserSessions { get; init; } = new();
     public ClientSessionPolicyDto ClientSessions { get; init; } = new();
     public PositionSecuritySettingsDto PositionSecurity { get; init; } = new();
@@ -41,6 +44,7 @@ public record UpdateRealmSettingsDto
     public UpdateDcrSettingsDto? Dcr { get; init; }
     public UpdateCimdSettingsDto? Cimd { get; init; }
     public UpdateNativeGrantSettingsDto? NativeGrants { get; init; }
+    public UpdateSignInPolicyDto? SignIn { get; init; }
     public UpdateBrowserSessionPolicyDto? BrowserSessions { get; init; }
     public UpdateClientSessionPolicyDto? ClientSessions { get; init; }
     public UpdatePositionSecuritySettingsDto? PositionSecurity { get; init; }
