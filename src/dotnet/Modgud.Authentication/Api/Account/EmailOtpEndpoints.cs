@@ -90,14 +90,14 @@ public static class EmailOtpEndpoints
             SignInManager<ApplicationUser> signInManager,
             IOAuthGrantRevoker grantRevoker,
             Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker,
-            IAuthSettings appSettings,
+            Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements,
             IDocumentSession session,
             CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
 
-            var willHaveZeroMethods = appSettings.AuthenticationMinimumLevel >= 1
+            var willHaveZeroMethods = await signInRequirements.OwnUiRequiresSecondFactorAsync(ct)
                 && (await TwoFactorHelper.GetMethodsAsync(user, session))
                     .All(m => m == "email");
 

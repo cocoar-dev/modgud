@@ -90,7 +90,12 @@ public static class AccountEndpoints
         /// unverified-email banner and gates self-service forgot-password /
         /// magic-link on the backend.
         /// </summary>
-        bool EmailConfirmed);
+        bool EmailConfirmed,
+        /// <summary>
+        /// ADR 0025 — whether Modgud's own UI (portal or administration) requires a
+        /// second factor anywhere. Drives the "last second factor" warning on the profile.
+        /// </summary>
+        bool SecondFactorRequired = false);
 
     public static WebApplication MapAccountEndpoints(this WebApplication application, string path)
     {
@@ -600,7 +605,9 @@ public static class AccountEndpoints
                 isFederatedMfa,
                 isFederated,
                 idpDisplayName,
-                user.EmailConfirmed));
+                user.EmailConfirmed,
+                await context.RequestServices.GetRequiredService<ISignInRequirementService>()
+                    .OwnUiRequiresSecondFactorAsync(context.RequestAborted)));
         })
         .WithName("Account_Me");
 
@@ -611,9 +618,10 @@ public static class AccountEndpoints
             SignInManager<ApplicationUser> signInManager,
             IUserAccessRevoker accessRevoker,
             Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker,
-            IAuthSettings appSettings) =>
+            Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements) =>
         {
-            if (appSettings.AuthenticationMinimumLevel >= 2)
+            // ADR 0025 — passwords are off when the realm's portal does not offer them.
+            if (!await signInRequirements.PortalAllowsPasswordAsync(context.RequestAborted))
                 return Results.Json(new { Message = "Password operations are disabled" }, statusCode: 403);
 
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";

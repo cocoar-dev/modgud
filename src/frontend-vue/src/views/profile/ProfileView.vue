@@ -454,7 +454,8 @@ async function loadMfaStatus() {
 // to "now" — so the next login lands on the blocking SecureSetupModal without
 // a fresh window. We warn the user explicitly before sending the disable.
 function isLastMethodDisable(method: 'totp' | 'email' | 'passkey'): boolean {
-  if ((appConfig.config.AuthenticationMinimumLevel ?? 0) < 1) return false
+  // ADR 0025 - only where some part of Modgud requires a second factor.
+  if (!authStore.user?.SecondFactorRequired) return false
   // Admin-set per-user opt-out: exempt users skip enforcement entirely, no warning needed.
   if (authStore.user?.TwoFactorExempt) return false
   const methods = authStore.user?.TwoFactorMethods ?? []

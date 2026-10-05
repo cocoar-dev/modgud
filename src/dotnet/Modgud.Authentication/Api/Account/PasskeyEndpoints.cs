@@ -267,7 +267,7 @@ public static class PasskeyEndpoints
             Guid id,
             HttpContext context,
             UserManager<ApplicationUser> userManager,
-            IAuthSettings appSettings,
+            Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements,
             IDocumentSession session,
             Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker) =>
         {
@@ -283,7 +283,7 @@ public static class PasskeyEndpoints
             // the blocking setup modal next login. The user is warned in the UI before
             // they get here.
             var secureSetupRequired = false;
-            if (appSettings.AuthenticationMinimumLevel >= 1)
+            if (await signInRequirements.OwnUiRequiresSecondFactorAsync(context.RequestAborted))
             {
                 var user = await userManager.GetUserAsync(context.User);
                 if (user is not null)

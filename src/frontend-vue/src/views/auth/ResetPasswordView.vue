@@ -79,7 +79,7 @@ async function handleSubmit() {
 
       <CoarCard elevated>
         <!-- Passwordless mode -->
-        <div v-if="useAppConfigStore().config.AuthenticationMinimumLevel >= 2" class="space-y-4">
+        <div v-if="!useAppConfigStore().config.SignIn.Password" class="space-y-4">
           <CoarNotice variant="info">
             {{ t('auth.resetPassword.passwordlessMode', {}, 'Password reset is not available. This application uses passwordless login.') }}
           </CoarNotice>

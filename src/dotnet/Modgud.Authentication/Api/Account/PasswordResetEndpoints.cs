@@ -34,12 +34,12 @@ public static class PasswordResetEndpoints
             IEmailService emailService,
             Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
             IRealmProvisioningService realmSvc,
-            IAuthSettings appSettings,
+            Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements,
             IWebHostEnvironment env,
             HttpContext context,
             CancellationToken ct) =>
         {
-            if (appSettings.AuthenticationMinimumLevel >= 2)
+            if (!await signInRequirements.PortalAllowsPasswordAsync(ct))
                 return Results.Json(new { Message = "Password operations are disabled" }, statusCode: 403);
 
             // Always return success to prevent user enumeration
@@ -98,9 +98,9 @@ public static class PasswordResetEndpoints
             UserManager<ApplicationUser> userManager,
             Modgud.Authentication.Sessions.IUserAccessRevoker accessRevoker,
             Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker,
-            IAuthSettings appSettings) =>
+            Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements) =>
         {
-            if (appSettings.AuthenticationMinimumLevel >= 2)
+            if (!await signInRequirements.PortalAllowsPasswordAsync())
                 return Results.Json(new { Message = "Password operations are disabled" }, statusCode: 403);
 
             if (!Guid.TryParse(request.UserId, out var userId))

@@ -75,6 +75,15 @@ public interface ISignInRequirementService
     /// <summary>The realm's administration surface (<c>/api/admin/*</c>).</summary>
     Task<SignInTarget> AdministrationTargetAsync(CancellationToken ct = default);
 
+    /// <summary>Whether Modgud's own UI requires a second factor anywhere — the portal or
+    /// the administration. Drives the "last second factor" warnings and the grace reset
+    /// when a user removes their last one.</summary>
+    Task<bool> OwnUiRequiresSecondFactorAsync(CancellationToken ct = default);
+
+    /// <summary>Whether a password is a sign-in method for Modgud's own portal — the gate
+    /// for password reset and change.</summary>
+    Task<bool> PortalAllowsPasswordAsync(CancellationToken ct = default);
+
     /// <summary>Evaluate <paramref name="factors"/> for <paramref name="user"/> against
     /// <paramref name="target"/>. With <paramref name="startSetupGrace"/> a user who owes a
     /// second factor and has none gets their grace started (persisted).</summary>
@@ -148,6 +157,17 @@ public sealed class SignInRequirementService(
         return new SignInTarget([], realm with { MinimumLevel = realm.AdministrationMinimumLevel }, PasskeyRpId: null,
             IsAdministration: true);
     }
+
+    public async Task<bool> OwnUiRequiresSecondFactorAsync(CancellationToken ct = default)
+    {
+        var portal = await ResolveTargetFromReturnUrlAsync(returnUrl: null, ct);
+        var administration = await AdministrationTargetAsync(ct);
+        return portal.Policy.MinimumLevel >= SignInLevel.Multi
+            || administration.Policy.MinimumLevel >= SignInLevel.Multi;
+    }
+
+    public async Task<bool> PortalAllowsPasswordAsync(CancellationToken ct = default) =>
+        (await ResolveTargetFromReturnUrlAsync(returnUrl: null, ct)).Policy.Password;
 
     private async Task<SignInTarget> BuildTargetAsync(IReadOnlyList<Guid> appIds, string? clientRpId, CancellationToken ct)
     {

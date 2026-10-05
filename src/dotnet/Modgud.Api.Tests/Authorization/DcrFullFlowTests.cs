@@ -265,6 +265,85 @@ public class DcrFullFlowTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task An_mcp_sign_in_follows_the_policy_of_the_app_that_owns_the_requested_api()
+    {
+        // ADR 0025 §3 — a DCR client belongs to no App; the requested resource does. The
+        // App behind the API requires `multi`, so a password-only session is sent to the
+        // login page for the missing factor — on the realm host, no App subdomain involved.
+        await SeedAsync();
+        var appId = await BindAllowedApiToNewAppAsync(new Modgud.Domain.Applications.ApplicationSignInOverrides
+        {
+            MinimumLevel = Modgud.Domain.Realms.SignInLevel.Multi,
+        });
+        await SeedRealmPasskeyAsync(DefaultUser!.Id);
+        var clientId = await RegisterDcrClientAsync(scope: $"openid {ScopeName}");
+
+        var location = await AuthorizeLocationAsync(clientId, RedirectUri);
+
+        Assert.NotNull(location);
+        Assert.StartsWith("/login?stepup=1&redirect=", location);
+        Assert.Contains(Uri.EscapeDataString("/connect/authorize"), location);
+        Assert.NotEqual(Guid.Empty, appId);
+    }
+
+    [Fact]
+    public async Task An_mcp_sign_in_to_a_single_level_app_records_how_the_user_signed_in()
+    {
+        await SeedAsync();
+        await BindAllowedApiToNewAppAsync(new Modgud.Domain.Applications.ApplicationSignInOverrides
+        {
+            MinimumLevel = Modgud.Domain.Realms.SignInLevel.Single,
+        });
+        // A stored passkey never raises the requirement by itself.
+        await SeedRealmPasskeyAsync(DefaultUser!.Id);
+        var clientId = await RegisterDcrClientAsync(scope: $"openid {ScopeName}");
+
+        var (accessToken, _) = await DriveDcrAuthCodeFlowAsync(clientId, $"openid {ScopeName}", AllowedAudience);
+
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
+        Assert.Equal("urn:modgud:acr:single", jwt.Claims.Single(c => c.Type == "acr").Value);
+        Assert.Equal(["pwd"], jwt.Claims.Where(c => c.Type == "amr").Select(c => c.Value));
+    }
+
+    private async Task<Guid> BindAllowedApiToNewAppAsync(Modgud.Domain.Applications.ApplicationSignInOverrides signIn)
+    {
+        using var scope = NewSystemTenantScope();
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+        var appId = Guid.NewGuid();
+        session.Events.StartStream<App>(appId, new AppCreatedEvent(
+            Id: appId, Slug: $"mcp-app-{appId:N}"[..20], DisplayName: "MCP app", Description: null,
+            Permissions: [], IsSystem: false));
+        var api = await session.Query<OAuthApiState>().SingleAsync(a => a.Name == AllowedAudience, TestContext.Current.CancellationToken);
+        api.AppId = appId;
+        session.Store(api);
+        session.Store(new Modgud.Domain.Applications.ApplicationSettings
+        {
+            Id = appId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            SignIn = signIn,
+        });
+        await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return appId;
+    }
+
+    private async Task SeedRealmPasskeyAsync(Guid userId)
+    {
+        using var scope = NewSystemTenantScope();
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+        session.Store(new Modgud.Authentication.Domain.StoredPasskeyCredential
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            CredentialId = RandomNumberGenerator.GetBytes(32),
+            PublicKey = RandomNumberGenerator.GetBytes(64),
+            UserHandle = userId.ToByteArray(),
+            DisplayName = "Passkey",
+            RpId = null,
+        });
+        await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task Second_authorize_shows_consent_again_but_keeps_the_authorization_id()
     {
         await SeedAsync();

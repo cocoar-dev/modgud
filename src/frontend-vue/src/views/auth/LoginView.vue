@@ -153,7 +153,7 @@ const secureSetupInGrace = ref(false)
 const secureSetupDueAt = ref<string | null>(null)
 const passkeyLoading = ref(false)
 
-const isPasswordless = () => appConfig.config.AuthenticationMinimumLevel >= 2
+const isPasswordless = () => !appConfig.config.SignIn.Password
 
 const loginPageConfig = computed(() => createAuthPageConfig(
   'login',

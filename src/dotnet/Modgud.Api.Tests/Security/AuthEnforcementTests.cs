@@ -129,8 +129,10 @@ public class AuthEnforcementTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
-        Assert.True(body.TryGetProperty("AuthenticationMinimumLevel", out var level));
-        Assert.Equal(0, level.GetInt32()); // Test fixture sets Level 0
+        // ADR 0025 — the sign-in methods of the target replace the retired level. The test
+        // fixture's former level 0 derives a policy that keeps passwords on.
+        Assert.True(body.GetProperty("SignIn").GetProperty("Password").GetBoolean());
+        Assert.Equal("Single", body.GetProperty("SignIn").GetProperty("MinimumLevel").GetString());
         Assert.True(body.TryGetProperty("MagicLinkSelfService", out var mls));
         Assert.True(mls.GetBoolean());
     }

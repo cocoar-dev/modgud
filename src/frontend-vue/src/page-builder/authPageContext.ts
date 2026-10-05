@@ -19,7 +19,7 @@ export function createAuthRuntimeContext(options: {
     },
     auth: {
       internalLoginEnabled: config.InternalLoginEnabled,
-      passwordless: config.AuthenticationMinimumLevel >= 2,
+      passwordless: !config.SignIn.Password,
       magicLinkEnabled: config.MagicLinkSelfService,
       registrationEnabled: options.registrationEnabled === true,
       loginEmail: options.loginEmail ?? '',

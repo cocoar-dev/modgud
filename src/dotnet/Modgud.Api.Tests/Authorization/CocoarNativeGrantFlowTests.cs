@@ -17,7 +17,9 @@ using Modgud.Authentication.RealmSettings;
 using Modgud.Authentication.Sessions;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
+using Modgud.Domain.Applications;
 using Modgud.Domain.OAuth.Apis;
+using Modgud.Domain.Realms;
 using Modgud.Domain.OAuth.Common;
 using Modgud.Infrastructure.Email;
 
@@ -389,12 +391,95 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Otp_Grant_TwoFactorUser_WithoutTotp_Rejected()
+    public async Task Otp_Grant_TwoFactorUser_WithoutTotp_AnswersMfaRequired_AndTheTokenCompletesIt()
     {
+        // ADR 0025 §8 — the e-mail code is not lost: the grant answers mfa_required with
+        // a continuation the App redeems with the second factor.
         await EnableNativeGrantsAsync();
         await SeedNativeClientAsync("native-otp-app");
         await EnableTwoFactorAsync();
 
+        var code = await IssueNativeOtpViaServiceAsync(DefaultUser!.Id);
+
+        var first = await PostTokenAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = CocoarGrantTypes.Otp,
+            ["client_id"] = "native-otp-app",
+            ["client_secret"] = "native-otp-app-secret",
+            ["username"] = TestEmail,
+            ["otp_code"] = code,
+            ["scope"] = "openid",
+        });
+
+        Assert.False(first.IsSuccessStatusCode);
+        var firstBody = await first.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal("mfa_required", firstBody.GetProperty("error").GetString());
+        Assert.Equal("totp", firstBody.GetProperty("mfa_methods").GetString());
+        var mfaToken = firstBody.GetProperty("mfa_token").GetString();
+        Assert.False(string.IsNullOrEmpty(mfaToken));
+
+        var continuation = new Dictionary<string, string>
+        {
+            ["grant_type"] = CocoarGrantTypes.Otp,
+            ["client_id"] = "native-otp-app",
+            ["client_secret"] = "native-otp-app-secret",
+            ["mfa_token"] = mfaToken!,
+            ["totp_code"] = await GenerateValidTotpCodeAsync(),
+            ["scope"] = "openid",
+        };
+        var second = await PostTokenAsync(continuation);
+        var secondBody = await second.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.True(second.IsSuccessStatusCode, secondBody.ToString());
+
+        var idToken = new JwtSecurityTokenHandler().ReadJwtToken(secondBody.GetProperty("id_token").GetString());
+        Assert.Equal("urn:modgud:acr:multi", idToken.Claims.Single(c => c.Type == "acr").Value);
+        Assert.Contains("mfa", idToken.Claims.Where(c => c.Type == "amr").Select(c => c.Value));
+
+        // Single use.
+        var replay = await PostTokenAsync(continuation);
+        Assert.False(replay.IsSuccessStatusCode);
+        Assert.Contains("invalid_grant", await replay.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Otp_Grant_Records_A_Single_Factor_Sign_In_In_The_Id_Token()
+    {
+        await EnableNativeGrantsAsync();
+        await SeedNativeClientAsync("native-otp-app");
+        var code = await IssueNativeOtpViaServiceAsync(DefaultUser!.Id);
+
+        var response = await PostTokenAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = CocoarGrantTypes.Otp,
+            ["client_id"] = "native-otp-app",
+            ["client_secret"] = "native-otp-app-secret",
+            ["username"] = TestEmail,
+            ["otp_code"] = code,
+            ["scope"] = "openid",
+        });
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.True(response.IsSuccessStatusCode, body.ToString());
+
+        var idToken = new JwtSecurityTokenHandler().ReadJwtToken(body.GetProperty("id_token").GetString());
+        Assert.Equal("urn:modgud:acr:single", idToken.Claims.Single(c => c.Type == "acr").Value);
+        Assert.Equal(["otp"], idToken.Claims.Where(c => c.Type == "amr").Select(c => c.Value));
+        // The internal factor carrier never reaches the wire.
+        Assert.DoesNotContain(idToken.Claims, c => c.Type == "modgud.signin.factor");
+    }
+
+    [Fact]
+    public async Task Otp_Grant_App_That_Ignores_The_Users_Own_Factor_Does_Not_Ask_For_Totp()
+    {
+        // ADR 0025 §7 — a code-only App with "ignore": the user's own TOTP is not asked
+        // for in this App (a visible admin decision), and nothing reaches the browser.
+        await EnableNativeGrantsAsync();
+        var appId = await SeedNativeClientAsync("native-otp-app");
+        await SetAppSignInAsync(appId, new ApplicationSignInOverrides
+        {
+            Totp = false,
+            OwnFactorNotOffered = OwnFactorNotOffered.Ignore,
+        });
+        await EnableTwoFactorAsync();
         var code = await IssueNativeOtpViaServiceAsync(DefaultUser!.Id);
 
         var response = await PostTokenAsync(new Dictionary<string, string>
@@ -407,9 +492,19 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
             ["scope"] = "openid",
         });
 
-        Assert.False(response.IsSuccessStatusCode);
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
-        Assert.Contains("invalid_grant", body);
+        Assert.True(response.IsSuccessStatusCode, body);
+    }
+
+    private async Task SetAppSignInAsync(Guid appId, ApplicationSignInOverrides signIn)
+    {
+        using var scope = NewSystemTenantScope();
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+        var settings = await session.LoadAsync<ApplicationSettings>(appId, TestContext.Current.CancellationToken)
+                       ?? new ApplicationSettings { Id = appId, CreatedAt = DateTimeOffset.UtcNow };
+        settings.SignIn = signIn;
+        session.Store(settings);
+        await session.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 
     // ─────────────────────────────── Helpers ──────────────────────────────────
@@ -571,7 +666,7 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
 
     // ── Seeding ────────────────────────────────────────────────────────────
 
-    private Task SeedNativeClientAsync(
+    private Task<Guid> SeedNativeClientAsync(
         string clientId,
         int? clientSessionAbsoluteLifetime = null) =>
         SeedClientAsync(
@@ -579,7 +674,7 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
             [CocoarGrantTypes.Otp, CocoarGrantTypes.Magic, "refresh_token"],
             clientSessionAbsoluteLifetime);
 
-    private async Task SeedClientAsync(
+    private async Task<Guid> SeedClientAsync(
         string clientId,
         List<string> grantTypes,
         int? clientSessionAbsoluteLifetime = null)
@@ -608,6 +703,7 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
         if (result.IsError)
             throw new InvalidOperationException(
                 $"CreateClientAsync failed: {string.Join(", ", result.Errors.Select(e => $"{e.Code}: {e.Description}"))}");
+        return app.Id;
     }
 
     private async Task<App> CreateAppAsync(string slug, string displayName)

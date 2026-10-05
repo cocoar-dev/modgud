@@ -100,7 +100,7 @@ public static class AdminGraceEndpoints
         group.MapPost("{id}/grace/reset", async (
             string id,
             IDocumentSession session,
-            IAuthSettings settings) =>
+            Modgud.Authentication.Applications.IApplicationSettingsResolver settingsResolver) =>
         {
             var userId = BuildingBlocks.Helper.ShortGuid.Decode(id);
             var user = await session.LoadAsync<ApplicationUser>(userId);
@@ -115,7 +115,9 @@ public static class AdminGraceEndpoints
             // Use the per-user override if set, otherwise fall back to the global default.
             // A tenant-specific grace (e.g. 90 days for one user) is reset to its own length
             // rather than snapped back to the global 14.
-            var graceDays = Math.Max(0, securityData.GracePeriodDaysOverride ?? settings.TwoFactorGracePeriodDays);
+            var realmGraceDays = (await settingsResolver.ResolveAsync(null)).SignIn?.SetupGraceDays
+                                 ?? Modgud.Domain.Realms.SignInPolicy.Defaults.SetupGraceDays;
+            var graceDays = Math.Max(0, securityData.GracePeriodDaysOverride ?? realmGraceDays);
             securityData.SecureSetupDueAt = DateTime.UtcNow.AddDays(graceDays);
             session.Store(securityData);
             await session.SaveChangesAsync();

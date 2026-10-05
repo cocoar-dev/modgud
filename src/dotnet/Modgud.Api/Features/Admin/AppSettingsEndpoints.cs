@@ -25,7 +25,8 @@ public static class AppSettingsEndpoints
         // is metadata, no secrets — same disclosure surface as the existing
         // public realm settings.
         application.MapGet($"{path}/app-info",
-            async (HttpContext http, AppSettings settings, IApplicationSettingsResolver settingsResolver, string? returnUrl) =>
+            async (HttpContext http, AppSettings settings, IApplicationSettingsResolver settingsResolver,
+                Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements, string? returnUrl) =>
             {
                 var tenant = http.Items[TenantConstants.HttpContextTenantInfoKey] as TenantInfo;
                 // ADR-0011 — Host-time: on an Application subdomain the branding is
@@ -48,13 +49,23 @@ public static class AppSettingsEndpoints
                 // three Optional (today's lenient behaviour).
                 var registrationFields = effective.RegistrationFields ?? RegistrationFieldsSettings.Defaults;
                 var loginExperience = effective.LoginExperience;
+                // ADR 0025 - the sign-in methods of the target App (the pending authorization's
+                // client or resource, else Modgud's own portal), so the login page offers
+                // exactly what this sign-in may use.
+                var signInPolicy = (await signInRequirements.ResolveTargetFromReturnUrlAsync(returnUrl, http.RequestAborted)).Policy;
                 return Results.Ok(new
                 {
-                    settings.AuthenticationMinimumLevel,
+                    SignIn = new
+                    {
+                        signInPolicy.Password,
+                        signInPolicy.EmailCode,
+                        signInPolicy.Passkey,
+                        MinimumLevel = signInPolicy.MinimumLevel.ToString(),
+                    },
                     InternalLoginEnabled = loginExperience?.InternalLoginEnabled ?? true,
                     MagicLinkSelfService = settings.MagicLinkSelfService
                         && (loginExperience?.MagicLinkEnabled ?? true),
-                    settings.TwoFactorGracePeriodDays,
+                    TwoFactorGracePeriodDays = signInPolicy.SetupGraceDays,
                     IsControlPlane = tenant?.IsControlPlane ?? false,
                     Branding = new
                     {

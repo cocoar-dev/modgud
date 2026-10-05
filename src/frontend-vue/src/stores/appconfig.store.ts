@@ -56,8 +56,16 @@ export interface LegalConfig {
   PrivacyPolicyUrl: string | null
 }
 
+/** ADR 0025 — sign-in methods of the sign-in's target app (or Modgud's own portal). */
+export interface SignInConfig {
+  Password: boolean
+  EmailCode: boolean
+  Passkey: boolean
+  MinimumLevel: 'Single' | 'Multi'
+}
+
 export interface AppConfig {
-  AuthenticationMinimumLevel: number  // 0=None, 1=SecureLogin, 2=Passwordless
+  SignIn: SignInConfig
   InternalLoginEnabled: boolean
   MagicLinkSelfService: boolean
   TwoFactorGracePeriodDays: number
@@ -72,7 +80,7 @@ export interface AppConfig {
 }
 
 const defaults: AppConfig = {
-  AuthenticationMinimumLevel: 1,
+  SignIn: { Password: true, EmailCode: false, Passkey: true, MinimumLevel: 'Single' },
   InternalLoginEnabled: true,
   MagicLinkSelfService: true,
   TwoFactorGracePeriodDays: 14,
