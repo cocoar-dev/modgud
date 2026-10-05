@@ -9,8 +9,9 @@ import { useI18n } from '@cocoar/vue-localization'
 import EditableStringList from '@/components/EditableStringList.vue'
 import AuthRateLimitsEditor from '@/components/AuthRateLimitsEditor.vue'
 import {
-  emptyRateLimitOverrides, overridesFromUpdate, sparseRateLimitPolicies,
-  type RateLimitEnforcementMode, type RateLimitOverrides,
+  emptyRateLimitOverrides, overridesFromUpdate, sparseRateLimitPolicies, SIGN_IN_POLICY_DEFAULTS,
+  type OwnFactorNotOffered, type RateLimitEnforcementMode, type RateLimitOverrides,
+  type SignInLevel, type SignInPolicyDto,
 } from '@/models/realmSettings'
 import { useGroupStore } from '@/stores/group.store'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
@@ -23,6 +24,7 @@ import ColorField from '@/components/ColorField.vue'
 import type { AssetDto } from '@/models/assets'
 import BrandingPreview from '@/components/BrandingPreview.vue'
 import EmailPreview from '@/components/EmailPreview.vue'
+import DomainBoundBadge from '@/components/DomainBoundBadge.vue'
 
 // ADR-0011 per-App settings override sections, extracted from the old standalone
 // ApplicationSettingsModal so the single App modal (AppDetails) can carry them as a
@@ -40,7 +42,7 @@ const props = defineProps<{
 const groupStore = useGroupStore()
 const loginProviderStore = useLoginProviderStore()
 const appConfig = useAppConfigStore()
-const activeTab = ref<'origin' | 'registration' | 'sessions' | 'grants' | 'rateLimits' | 'oauth' | 'sync' | 'pages'>('origin')
+const activeTab = ref<'origin' | 'registration' | 'signIn' | 'sessions' | 'grants' | 'rateLimits' | 'oauth' | 'sync' | 'pages'>('origin')
 
 const groupOptions = ref<{ value: string; label: string }[]>([])
 const loginProviderOptions = ref<{ value: string; label: string }[]>([])
@@ -84,6 +86,13 @@ const f = reactive({
     firstname: '' as '' | 'Off' | 'Optional' | 'Required',
     lastname: '' as '' | 'Off' | 'Optional' | 'Required',
   },
+  // Sparse per field: `values` holds only what this App pins; everything else shows (and
+  // sends) the realm's value. The same override toggle as every other section.
+  signIn: {
+    override: false,
+    values: {} as Partial<SignInPolicyDto>,
+    passkeyRpId: '',
+  },
   clientSessions: { override: false, idle: '', absolute: '' },
   nativeGrants: { override: false, enabled: false, access: '', refresh: '' },
   rateLimits: {
@@ -126,6 +135,15 @@ const requirementOptions = [
   { value: 'Required', label: t('admin.regFields.required', {}, 'Required') },
 ]
 
+const signInLevelOptions = computed<Array<{ value: SignInLevel; label: string }>>(() => [
+  { value: 'Single', label: t('admin.signIn.level.single', {}, 'Single factor — one proof is enough') },
+  { value: 'Multi', label: t('admin.signIn.level.multi', {}, 'Multi-factor — two different proofs, or a passkey') },
+])
+const ownFactorOptions = computed<Array<{ value: OwnFactorNotOffered; label: string }>>(() => [
+  { value: 'Ignore', label: t('admin.signIn.ownFactor.ignore', {}, 'Ignore — do not ask for it') },
+  { value: 'RequireViaBrowser', label: t('admin.signIn.ownFactor.requireViaBrowser', {}, 'Require it via the browser') },
+])
+
 function numStr(n?: number | null): string {
   return n === null || n === undefined ? '' : String(n)
 }
@@ -147,6 +165,23 @@ const appRateLimitModeOptions = computed(() => [
   { value: 'Enforce', label: t('admin.rateLimits.mode.enforce', {}, 'Enforce') },
   { value: 'LogOnly', label: t('admin.rateLimits.mode.logOnly', {}, 'Log only (evaluate and count, never reject)') },
 ])
+// The realm's sign-in policy; null while the realm never saved it (the defaults are shown then).
+const realmSignIn = computed<SignInPolicyDto>(() => realmSettingsStore.settings?.SignIn ?? SIGN_IN_POLICY_DEFAULTS)
+const realmSignInConfigured = computed(() => !!realmSettingsStore.settings?.SignIn)
+const signInEffective = computed<SignInPolicyDto>(() => ({
+  ...realmSignIn.value,
+  ...(f.signIn.override ? f.signIn.values : {}),
+}))
+
+/** Binds one sign-in field: the App's pinned value, else the greyed realm value. Editing pins it. */
+function signInBind(field: keyof SignInPolicyDto): any {
+  return {
+    modelValue: signInEffective.value[field],
+    'onUpdate:modelValue': (v: unknown) => { (f.signIn.values as Record<string, unknown>)[field] = v },
+    disabled: !f.signIn.override,
+  }
+}
+
 const inh = computed(() => {
   const r = realmSettingsStore.settings
   return {
@@ -249,6 +284,7 @@ function resetForm() {
   f.selfReg.termsOfServiceUrl = ''; f.selfReg.privacyPolicyUrl = ''
   f.registrationFields.override = false; f.registrationFields.username = ''
   f.registrationFields.firstname = ''; f.registrationFields.lastname = ''
+  f.signIn.override = false; f.signIn.values = {}; f.signIn.passkeyRpId = ''
   f.clientSessions.override = false; f.clientSessions.idle = ''; f.clientSessions.absolute = ''
   f.nativeGrants.override = false; f.nativeGrants.enabled = false; f.nativeGrants.access = ''; f.nativeGrants.refresh = ''
   f.rateLimits.override = false; f.rateLimits.overrides = emptyRateLimitOverrides()
@@ -317,6 +353,21 @@ function populate(s?: ApplicationSettingsDto | null) {
     f.registrationFields.username = (rf.Username as typeof f.registrationFields.username) ?? ''
     f.registrationFields.firstname = (rf.Firstname as typeof f.registrationFields.firstname) ?? ''
     f.registrationFields.lastname = (rf.Lastname as typeof f.registrationFields.lastname) ?? ''
+  }
+  if (s.SignIn) {
+    const si = s.SignIn
+    f.signIn.override = true
+    const pinned: Record<string, unknown> = {}
+    if (si.MinimumLevel != null) pinned.MinimumLevel = si.MinimumLevel
+    if (si.SetupGraceDays != null) pinned.SetupGraceDays = si.SetupGraceDays
+    if (si.Password != null) pinned.Password = si.Password
+    if (si.EmailCode != null) pinned.EmailCode = si.EmailCode
+    if (si.Passkey != null) pinned.Passkey = si.Passkey
+    if (si.Totp != null) pinned.Totp = si.Totp
+    if (si.EmailAfterPassword != null) pinned.EmailAfterPassword = si.EmailAfterPassword
+    if (si.OwnFactorNotOffered != null) pinned.OwnFactorNotOffered = si.OwnFactorNotOffered
+    f.signIn.values = pinned as Partial<SignInPolicyDto>
+    f.signIn.passkeyRpId = si.PasskeyRpId ?? ''
   }
   if (s.NativeGrants) {
     f.nativeGrants.override = true
@@ -497,6 +548,19 @@ function build(): ApplicationSettingsDto {
           Lastname: f.registrationFields.lastname || null,
         }
       : null,
+    SignIn: f.signIn.override
+      ? {
+          MinimumLevel: f.signIn.values.MinimumLevel ?? null,
+          SetupGraceDays: f.signIn.values.SetupGraceDays ?? null,
+          Password: f.signIn.values.Password ?? null,
+          EmailCode: f.signIn.values.EmailCode ?? null,
+          Passkey: f.signIn.values.Passkey ?? null,
+          Totp: f.signIn.values.Totp ?? null,
+          EmailAfterPassword: f.signIn.values.EmailAfterPassword ?? null,
+          OwnFactorNotOffered: f.signIn.values.OwnFactorNotOffered ?? null,
+          PasskeyRpId: f.signIn.passkeyRpId.trim() || null,
+        }
+      : null,
     NativeGrants: f.nativeGrants.override
       ? { Enabled: f.nativeGrants.enabled, AccessTokenLifetimeMinutes: parseNum(f.nativeGrants.access), RefreshTokenLifetimeDays: parseNum(f.nativeGrants.refresh) }
       : null,
@@ -548,6 +612,44 @@ onMounted(async () => {
 })
 
 defineExpose({ build })
+
+// ── ADR 0025 §9: settings that only take effect through the App's own domain ──
+// Classified by reading every reader of the setting: one that resolves the App from the
+// client (a client bound to this App) or from the sign-in target works from any host;
+// one that resolves it from the Host alone (a request without a client_id, or
+// GetApplicationId()) only works on the App's own domain. 'partial' = both kinds exist.
+// Keep docs/admin/applications.md ("Which settings need the app's own domain") in step.
+type DomainBinding = 'always' | 'partial' | 'host'
+const DOMAIN_BINDING = {
+  emailBranding: 'partial',   // native OTP / registration mails brand from the Host
+  selfReg: 'partial',         // web sign-up resolves by client; native OTP posture by Host
+  registrationFields: 'partial',
+  nativeGrants: 'partial',    // token grants resolve by client; OTP request / register begin by Host
+  rateLimits: 'partial',      // native OTP request / registration carry no client
+  dcr: 'host',
+  cimd: 'host',
+} as const satisfies Record<string, DomainBinding>
+
+const hasOwnDomain = computed(() => f.origin.subdomain.trim().length > 0)
+const domainBoundLabels: Record<keyof typeof DOMAIN_BINDING, () => string> = {
+  emailBranding: () => t('admin.appSettings.hostBound.section.emailBranding', {}, 'E-mail branding'),
+  selfReg: () => t('admin.appSettings.hostBound.section.selfReg', {}, 'Registration policy'),
+  registrationFields: () => t('admin.appSettings.hostBound.section.registrationFields', {}, 'Required fields at registration'),
+  nativeGrants: () => t('admin.appSettings.hostBound.section.nativeGrants', {}, 'Native grants'),
+  rateLimits: () => t('admin.appSettings.hostBound.section.rateLimits', {}, 'Rate limits'),
+  dcr: () => t('admin.appSettings.hostBound.section.dcr', {}, 'Dynamic Client Registration'),
+  cimd: () => t('admin.appSettings.hostBound.section.cimd', {}, 'Client ID Metadata Documents'),
+}
+/** Configured (overridden) sections that currently lack the domain they depend on. */
+const configuredWithoutDomain = computed(() => {
+  if (hasOwnDomain.value) return { host: [] as string[], partial: [] as string[] }
+  const out = { host: [] as string[], partial: [] as string[] }
+  for (const key of Object.keys(DOMAIN_BINDING) as Array<keyof typeof DOMAIN_BINDING>) {
+    if (!(f[key as keyof typeof f] as { override?: boolean }).override) continue
+    out[DOMAIN_BINDING[key] === 'host' ? 'host' : 'partial'].push(domainBoundLabels[key]())
+  }
+  return out
+})
 
 // ── Application page selection (ADR-0013): pick a realm variant per slot ──
 const PAGE_SLOT_META = [
@@ -616,9 +718,25 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
 <template>
   <div class="flex flex-col min-w-0 min-h-0 flex-1 gap-3">
+    <CoarNotice
+      v-if="configuredWithoutDomain.host.length || configuredWithoutDomain.partial.length"
+      variant="warning">
+      {{ t('admin.appSettings.hostBound.noDomain', {}, `This app has no own domain. Some of its settings only take effect for requests that arrive through the app's own domain (set one under Origin & Branding).`) }}
+      <template #details>
+        <div v-if="configuredWithoutDomain.host.length">
+          {{ t('admin.appSettings.hostBound.noEffect', {}, 'Currently without effect:') }}
+          {{ configuredWithoutDomain.host.join(', ') }}
+        </div>
+        <div v-if="configuredWithoutDomain.partial.length">
+          {{ t('admin.appSettings.hostBound.partlyNoEffect', {}, 'Only partly effective:') }}
+          {{ configuredWithoutDomain.partial.join(', ') }}
+        </div>
+      </template>
+    </CoarNotice>
     <CoarTabGroup v-model="activeTab" class="tab-bar">
       <CoarTab id="origin">{{ t('admin.appSettings.tabs.origin', {}, 'Origin & Branding') }}</CoarTab>
       <CoarTab id="registration">{{ t('admin.appSettings.tabs.registration', {}, 'Registrierung') }}</CoarTab>
+      <CoarTab id="signIn">{{ t('admin.appSettings.tabs.signIn', {}, 'Sign-in') }}</CoarTab>
       <CoarTab id="sessions">{{ t('admin.appSettings.tabs.sessions', {}, 'Sessions') }}</CoarTab>
       <CoarTab id="grants">{{ t('admin.appSettings.tabs.grants', {}, 'Native Grants') }}</CoarTab>
       <CoarTab id="rateLimits">{{ t('admin.appSettings.tabs.rateLimits', {}, 'Rate limits') }}</CoarTab>
@@ -712,7 +830,10 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         </div>
       </template>
 
-      <CoarCheckbox v-model="f.emailBranding.override" :label="t('admin.appSettings.email.override', {}, 'Custom Email Branding')" />
+      <div class="override-row">
+        <CoarCheckbox v-model="f.emailBranding.override" :label="t('admin.appSettings.email.override', {}, 'Custom Email Branding')" />
+        <DomainBoundBadge kind="partial" :ineffective="!hasOwnDomain && f.emailBranding.override" />
+      </div>
       <CoarFormField :label="t('admin.appSettings.email.fromName', {}, 'Sender display name')">
         <CoarTextInput v-bind="fieldBind('emailBranding', 'fromName')" clearable />
       </CoarFormField>
@@ -779,7 +900,10 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
     <!-- Registration -->
     <div v-show="activeTab === 'registration'" class="tab-content">
-      <CoarCheckbox v-model="f.selfReg.override" :label="t('admin.appSettings.selfReg.override', {}, 'Custom Registration Policy')" />
+      <div class="override-row">
+        <CoarCheckbox v-model="f.selfReg.override" :label="t('admin.appSettings.selfReg.override', {}, 'Custom Registration Policy')" />
+        <DomainBoundBadge kind="partial" :ineffective="!hasOwnDomain && f.selfReg.override" />
+      </div>
       <CoarFormField :label="t('admin.appSettings.selfReg.posture', {}, 'Posture (passwortlose Registrierung)')">
         <CoarSelect v-bind="fieldBind('selfReg', 'posture')" :options="postureOptions" />
       </CoarFormField>
@@ -812,7 +936,10 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
           <CoarTextInput v-bind="fieldBind('selfReg', 'privacyPolicyUrl')" clearable />
         </CoarFormField>
 
-      <CoarCheckbox v-model="f.registrationFields.override" :label="t('admin.appSettings.regFields.override', {}, 'Custom Required Fields at Registration')" />
+      <div class="override-row">
+        <CoarCheckbox v-model="f.registrationFields.override" :label="t('admin.appSettings.regFields.override', {}, 'Custom Required Fields at Registration')" />
+        <DomainBoundBadge kind="partial" :ineffective="!hasOwnDomain && f.registrationFields.override" />
+      </div>
       <CoarFormField :label="t('admin.regFields.username', {}, 'Benutzername')"
         :hint="t('admin.appSettings.regFields.hint', {}, 'Which identity fields are required at account creation. Email is always required. Native clients must collect required fields.')">
         <CoarSelect v-bind="fieldBind('registrationFields', 'username')" :options="requirementOptions" />
@@ -822,6 +949,55 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
       </CoarFormField>
       <CoarFormField :label="t('admin.regFields.lastname', {}, 'Nachname')">
         <CoarSelect v-bind="fieldBind('registrationFields', 'lastname')" :options="requirementOptions" />
+      </CoarFormField>
+    </div>
+
+    <!-- Sign-in policy (ADR 0025) -->
+    <div v-show="activeTab === 'signIn'" class="tab-content">
+      <CoarCheckbox v-model="f.signIn.override" :label="t('admin.appSettings.signIn.override', {}, 'Custom sign-in policy for this app')" />
+      <CoarNotice v-if="!realmSignInConfigured" variant="info">
+        {{ t('admin.appSettings.signIn.realmUnconfigured', {}, 'The realm has not saved its sign-in policy yet. The values shown as inherited are the new defaults; until the realm saves them it follows the deployment\'s former authentication level.') }}
+      </CoarNotice>
+      <div class="grid grid-cols-2 gap-3">
+        <CoarFormField :label="t('admin.signIn.minimumLevel', {}, 'Minimum level')"
+          :hint="t('admin.signIn.minimumLevelHint', {}, 'The level a sign-in to an app must reach. Users without a second factor yet may sign in at single-factor during the setup grace period.')">
+          <CoarSelect v-bind="signInBind('MinimumLevel')" :options="signInLevelOptions" />
+        </CoarFormField>
+        <CoarFormField :label="t('admin.signIn.setupGraceDays', {}, 'Setup grace (days, 0–365)')"
+          :hint="t('admin.signIn.setupGraceDaysHint', {}, 'How long a user without a second factor may keep signing in to an app that requires multi-factor. 0 = set up immediately.')">
+          <CoarTextInput
+            :model-value="String(signInEffective.SetupGraceDays)"
+            :disabled="!f.signIn.override"
+            @update:model-value="(v: string) => (f.signIn.values.SetupGraceDays = Math.min(365, Math.max(0, parseInt(v) || 0)))" />
+        </CoarFormField>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="rounded border border-surface-200 p-3">
+          <h3 class="mb-3 text-sm font-semibold">{{ t('admin.signIn.methods', {}, 'Sign-in methods') }}</h3>
+          <div class="flex flex-col gap-2">
+            <CoarCheckbox v-bind="signInBind('Password')" :label="t('admin.signIn.password', {}, 'Password')" />
+            <CoarCheckbox v-bind="signInBind('EmailCode')" :label="t('admin.signIn.emailCode', {}, 'E-mail code')" />
+            <CoarCheckbox v-bind="signInBind('Passkey')" :label="t('admin.signIn.passkey', {}, 'Passkey')" />
+          </div>
+        </div>
+        <div class="rounded border border-surface-200 p-3">
+          <h3 class="mb-3 text-sm font-semibold">{{ t('admin.signIn.secondFactors', {}, 'Second factors') }}</h3>
+          <div class="flex flex-col gap-2">
+            <CoarCheckbox v-bind="signInBind('Totp')" :label="t('admin.signIn.totp', {}, 'Authenticator app (TOTP)')" />
+            <CoarCheckbox v-bind="signInBind('EmailAfterPassword')" :label="t('admin.signIn.emailAfterPassword', {}, 'E-mail code after a password')" />
+          </div>
+        </div>
+      </div>
+      <CoarFormField :label="t('admin.signIn.ownFactorNotOffered', {}, `User's own second factor, not offered by an app`)"
+        :hint="t('admin.signIn.ownFactorNotOfferedHint', {}, 'What happens when a user turned on a second factor (e.g. an authenticator app) that an app does not offer.')">
+        <CoarSelect v-bind="signInBind('OwnFactorNotOffered')" :options="ownFactorOptions" />
+      </CoarFormField>
+      <CoarNotice v-if="signInEffective.OwnFactorNotOffered === 'Ignore'" variant="info">
+        {{ t('admin.signIn.ownFactorIgnoreNotice', {}, 'Users who set up their own second factor (e.g. an authenticator app) are not asked for it when signing in to this app, unless the app offers it.') }}
+      </CoarNotice>
+      <CoarFormField :label="t('admin.signIn.passkeyRpId', {}, 'Passkey RP ID')"
+        :hint="t('admin.signIn.passkeyRpIdHint', {}, `Domain passkeys of this app are bound to. Empty = the realm's domain. Native clients may override it per client.`)">
+        <CoarTextInput v-model="f.signIn.passkeyRpId" :disabled="!f.signIn.override" clearable placeholder="app.example.com" />
       </CoarFormField>
     </div>
 
@@ -848,7 +1024,10 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
     <!-- Native Grants -->
     <div v-show="activeTab === 'grants'" class="tab-content">
-      <CoarCheckbox v-model="f.nativeGrants.override" :label="t('admin.appSettings.grants.override', {}, 'Custom Native Grant Settings')" />
+      <div class="override-row">
+        <CoarCheckbox v-model="f.nativeGrants.override" :label="t('admin.appSettings.grants.override', {}, 'Custom Native Grant Settings')" />
+        <DomainBoundBadge kind="partial" :ineffective="!hasOwnDomain && f.nativeGrants.override" />
+      </div>
       <CoarCheckbox v-bind="fieldBind('nativeGrants', 'enabled')" :label="t('admin.appSettings.grants.enabled', {}, 'Native Grants active')" />
       <div class="grid grid-cols-2 gap-3">
         <CoarFormField :label="t('admin.appSettings.access', {}, 'Access-Token (Min, 1–60)')">
@@ -862,7 +1041,10 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
     <!-- Rate limits (ADR 0019) -->
     <div v-show="activeTab === 'rateLimits'" class="tab-content">
-      <CoarCheckbox v-model="f.rateLimits.override" :label="t('admin.appSettings.rateLimits.override', {}, 'Custom rate limits for this App')" />
+      <div class="override-row">
+        <CoarCheckbox v-model="f.rateLimits.override" :label="t('admin.appSettings.rateLimits.override', {}, 'Custom rate limits for this App')" />
+        <DomainBoundBadge kind="partial" :ineffective="!hasOwnDomain && f.rateLimits.override" />
+      </div>
       <p class="text-sm">{{ t('admin.appSettings.rateLimits.hint', {}, 'Only the cells you override win over the realm; everything else inherits. The allowlist and the enforcement mode replace the realm values when set.') }}</p>
       <div class="grid grid-cols-2 gap-3">
         <CoarFormField :label="t('admin.rateLimits.mode.label', {}, 'Enforcement')">
@@ -882,7 +1064,10 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
     <!-- OAuth (DCR / CIMD) -->
     <div v-show="activeTab === 'oauth'" class="tab-content">
-      <CoarCheckbox v-model="f.dcr.override" :label="t('admin.appSettings.dcr.override', {}, 'Custom DCR Settings')" />
+      <div class="override-row">
+        <CoarCheckbox v-model="f.dcr.override" :label="t('admin.appSettings.dcr.override', {}, 'Custom DCR Settings')" />
+        <DomainBoundBadge kind="host" :ineffective="!hasOwnDomain && f.dcr.override" />
+      </div>
       <CoarCheckbox v-bind="fieldBind('dcr', 'enabled')" :label="t('admin.appSettings.dcr.enabled', {}, 'Dynamic Client Registration active')" />
       <div class="grid grid-cols-2 gap-3">
         <CoarFormField :label="t('admin.appSettings.access', {}, 'Access-Token (Min, 1–60)')">
@@ -904,7 +1089,10 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         <EditableStringList v-bind="fieldBind('dcr', 'reservedNames')" />
       </CoarFormField>
 
-      <CoarCheckbox v-model="f.cimd.override" :label="t('admin.appSettings.cimd.override', {}, 'Custom CIMD Settings')" />
+      <div class="override-row">
+        <CoarCheckbox v-model="f.cimd.override" :label="t('admin.appSettings.cimd.override', {}, 'Custom CIMD Settings')" />
+        <DomainBoundBadge kind="host" :ineffective="!hasOwnDomain && f.cimd.override" />
+      </div>
       <CoarCheckbox v-bind="fieldBind('cimd', 'enabled')" :label="t('admin.appSettings.cimd.enabled', {}, 'CIMD active')" />
       <div class="grid grid-cols-2 gap-3">
         <CoarFormField :label="t('admin.appSettings.access', {}, 'Access-Token (Min, 1–60)')">
@@ -980,6 +1168,7 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
 <style scoped>
 .tab-bar { margin-bottom: 8px; }
+.override-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .tab-content { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .page-links { display: flex; flex-direction: column; gap: 8px; }
 .page-link {

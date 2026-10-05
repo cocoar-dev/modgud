@@ -20,7 +20,7 @@ import { useUI } from '@/composables/useUI'
 import EditableStringList from '@/components/EditableStringList.vue'
 import AuthRateLimitsEditor from '@/components/AuthRateLimitsEditor.vue'
 import {
-  diffRateLimitOverrides, overridesFromUpdate,
+  diffRateLimitOverrides, overridesFromUpdate, SIGN_IN_POLICY_DEFAULTS,
   type PolicyLimitsDto, type RateLimitEnforcementMode, type RateLimitOverrides,
 } from '@/models/realmSettings'
 import { useRealmSettingsStore } from '@/stores/realmSettings.store'
@@ -39,6 +39,10 @@ import type {
   UpdateCimdSettingsDto,
   NativeGrantSettingsDto,
   UpdateNativeGrantSettingsDto,
+  SignInPolicyDto,
+  UpdateSignInPolicyDto,
+  SignInLevel,
+  OwnFactorNotOffered,
   BrowserSessionPolicyDto,
   UpdateBrowserSessionPolicyDto,
   ClientSessionPolicyDto,
@@ -119,6 +123,12 @@ function applyStagedSettings(e: ManifestEntity) {
   if (foldInto(originalDcr, s.Dcr)) dcrForm.value = dcrFromDto(originalDcr.value!)
   if (foldInto(originalCimd, s.Cimd)) cimdForm.value = cimdFromDto(originalCimd.value!)
   if (foldInto(originalNativeGrants, s.NativeGrants)) nativeGrantsForm.value = nativeGrantsFromDto(originalNativeGrants.value!)
+  if (s.SignIn) {
+    // An unconfigured realm has no original to fold into: the staged patch lays over the defaults.
+    originalSignIn.value = { ...(originalSignIn.value ?? SIGN_IN_POLICY_DEFAULTS), ...s.SignIn } as SignInPolicyDto
+    signInForm.value = { ...originalSignIn.value }
+    signInAdopt.value = false
+  }
   if (foldInto(originalAuthRateLimits, s.AuthRateLimits)) authRateLimitsForm.value = authRateLimitsFromDto(originalAuthRateLimits.value!)
   if (foldInto(originalPositionSecurity, s.PositionSecurity)) {
     positionSecurityForm.value = {
@@ -341,6 +351,28 @@ function nativeGrantsFromDto(d: NativeGrantSettingsDto): NativeGrantFormState {
   }
 }
 
+// ── Sign-in policy form state (ADR 0025) ─────────────────────────────
+// `originalSignIn` is null while the realm has never saved the section: the realm then
+// follows the deployment's former authentication settings, the form shows the new defaults,
+// and nothing is written until the admin edits a value or adopts the defaults explicitly.
+const signInForm = ref<SignInPolicyDto>({ ...SIGN_IN_POLICY_DEFAULTS })
+const originalSignIn = ref<SignInPolicyDto | null>(null)
+const signInAdopt = ref(false)
+const signInUnconfigured = computed(() => originalSignIn.value === null)
+
+const signInLevelOptions = computed<Array<{ value: SignInLevel; label: string }>>(() => [
+  { value: 'Single', label: t('admin.signIn.level.single', {}, 'Single factor — one proof is enough') },
+  { value: 'Multi', label: t('admin.signIn.level.multi', {}, 'Multi-factor — two different proofs, or a passkey') },
+])
+const ownFactorOptions = computed<Array<{ value: OwnFactorNotOffered; label: string }>>(() => [
+  { value: 'Ignore', label: t('admin.signIn.ownFactor.ignore', {}, 'Ignore — do not ask for it') },
+  { value: 'RequireViaBrowser', label: t('admin.signIn.ownFactor.requireViaBrowser', {}, 'Require it via the browser') },
+])
+
+function signInFromDto(d: SignInPolicyDto | null): SignInPolicyDto {
+  return { ...(d ?? SIGN_IN_POLICY_DEFAULTS) }
+}
+
 // ── Authoritative browser + native-client session policies ───────────
 const browserSessionsForm = ref<BrowserSessionPolicyDto>({
   IdleLifetimeMinutes: 30 * 24 * 60,
@@ -486,6 +518,9 @@ onMounted(async () => {
     cimdForm.value = cimdFromDto(dto.Cimd)
     originalNativeGrants.value = dto.NativeGrants
     nativeGrantsForm.value = nativeGrantsFromDto(dto.NativeGrants)
+    originalSignIn.value = dto.SignIn ?? null
+    signInForm.value = signInFromDto(dto.SignIn ?? null)
+    signInAdopt.value = false
     originalBrowserSessions.value = dto.BrowserSessions
     browserSessionsForm.value = { ...dto.BrowserSessions }
     originalClientSessions.value = dto.ClientSessions
@@ -606,6 +641,22 @@ function buildNativeGrantsPatch(): UpdateNativeGrantSettingsDto | undefined {
   return Object.keys(patch).length === 0 ? undefined : patch
 }
 
+function buildSignInPatch(): UpdateSignInPolicyDto | undefined {
+  const cur = signInForm.value
+  const orig = originalSignIn.value
+  if (!orig) {
+    // Never saved: write the whole policy once the admin changed a value or adopted the defaults.
+    const changed = (Object.keys(SIGN_IN_POLICY_DEFAULTS) as Array<keyof SignInPolicyDto>)
+      .some((k) => cur[k] !== SIGN_IN_POLICY_DEFAULTS[k])
+    return changed || signInAdopt.value ? { ...cur } : undefined
+  }
+  const patch: Record<string, unknown> = {}
+  for (const k of Object.keys(orig) as Array<keyof SignInPolicyDto>) {
+    if (cur[k] !== orig[k]) patch[k] = cur[k]
+  }
+  return Object.keys(patch).length === 0 ? undefined : (patch as UpdateSignInPolicyDto)
+}
+
 function buildBrowserSessionsPatch(): UpdateBrowserSessionPolicyDto | undefined {
   const orig = originalBrowserSessions.value
   if (!orig) return undefined
@@ -716,6 +767,7 @@ function buildTabPayload(tab: SavableTabId): UpdateRealmSettingsDto {
     payload.Cimd = buildCimdPatch()
     payload.NativeGrants = buildNativeGrantsPatch()
   } else if (tab === 'security') {
+    payload.SignIn = buildSignInPatch()
     payload.AuthRateLimits = buildAuthRateLimitsPatch()
     payload.PositionSecurity = buildPositionSecurityPatch()
   } else if (tab === 'data-retention') {
@@ -751,6 +803,9 @@ function syncSavedTab(tab: SavableTabId, updated: RealmSettingsDto) {
     originalNativeGrants.value = updated.NativeGrants
     nativeGrantsForm.value = nativeGrantsFromDto(updated.NativeGrants)
   } else if (tab === 'security') {
+    originalSignIn.value = updated.SignIn ?? null
+    signInForm.value = signInFromDto(updated.SignIn ?? null)
+    signInAdopt.value = false
     originalAuthRateLimits.value = updated.AuthRateLimits
     authRateLimitsForm.value = authRateLimitsFromDto(updated.AuthRateLimits)
     originalPositionSecurity.value = updated.PositionSecurity
@@ -1182,6 +1237,63 @@ async function rotateSigningKey() {
 
         <!-- Security posture and key material. -->
         <template v-else-if="activeTab === 'security'">
+          <!-- ADR 0025: the realm default every App inherits. -->
+          <section class="settings-section">
+            <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
+              <h2 class="section-title">{{ t('admin.realmSettings.sections.signIn', {}, 'Sign-in policy') }}</h2>
+            </CoarDivider>
+            <p class="section-description">
+              {{ t('admin.realmSettings.signIn.hint', {}, 'The default sign-in strength and methods for every app of this realm. An app can override any part of it in its own settings.') }}
+            </p>
+            <CoarNotice v-if="signInUnconfigured" variant="info">
+              {{ t('admin.realmSettings.signIn.unconfigured', {}, `Not configured yet — this realm currently follows the deployment's former authentication level.`) }}
+              <template #cta>
+                <CoarButton size="s" variant="ghost" :disabled="signInAdopt" @click="signInAdopt = true">
+                  {{ t('admin.realmSettings.signIn.adopt', {}, 'Use these values') }}
+                </CoarButton>
+              </template>
+            </CoarNotice>
+            <div class="form-grid-2">
+              <CoarFormField :label="t('admin.signIn.minimumLevel', {}, 'Minimum level')"
+                :hint="t('admin.signIn.minimumLevelHint', {}, 'The level a sign-in to an app must reach. Users without a second factor yet may sign in at single-factor during the setup grace period.')">
+                <CoarSelect v-model="signInForm.MinimumLevel" :options="signInLevelOptions" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.signIn.administrationMinimumLevel', {}, 'Administration minimum level')"
+                :hint="t('admin.signIn.administrationMinimumLevelHint', {}, `The level a session needs to use this realm's administration. Separate from the minimum level, so end users of a code-only app are not pushed into 2FA by opening their profile.`)">
+                <CoarSelect v-model="signInForm.AdministrationMinimumLevel" :options="signInLevelOptions" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.signIn.setupGraceDays', {}, 'Setup grace (days, 0–365)')"
+                :hint="t('admin.signIn.setupGraceDaysHint', {}, 'How long a user without a second factor may keep signing in to an app that requires multi-factor. 0 = set up immediately.')">
+                <CoarTextInput :model-value="String(signInForm.SetupGraceDays)"
+                  @update:model-value="(v) => (signInForm.SetupGraceDays = Math.min(365, Math.max(0, parseInt(v) || 0)))" />
+              </CoarFormField>
+              <CoarFormField :label="t('admin.signIn.ownFactorNotOffered', {}, `User's own second factor, not offered by an app`)"
+                :hint="t('admin.signIn.ownFactorNotOfferedHint', {}, 'What happens when a user turned on a second factor (e.g. an authenticator app) that an app does not offer.')">
+                <CoarSelect v-model="signInForm.OwnFactorNotOffered" :options="ownFactorOptions" />
+              </CoarFormField>
+            </div>
+            <CoarNotice v-if="signInForm.OwnFactorNotOffered === 'Ignore'" variant="info">
+              {{ t('admin.signIn.ownFactorIgnoreNotice', {}, 'Users who set up their own second factor (e.g. an authenticator app) are not asked for it when signing in to this app, unless the app offers it.') }}
+            </CoarNotice>
+            <div class="form-grid-2">
+              <div class="rounded border border-surface-200 p-3">
+                <h3 class="mb-3 text-sm font-semibold">{{ t('admin.signIn.methods', {}, 'Sign-in methods') }}</h3>
+                <div class="flex flex-col gap-2">
+                  <CoarCheckbox v-model="signInForm.Password" :label="t('admin.signIn.password', {}, 'Password')" />
+                  <CoarCheckbox v-model="signInForm.EmailCode" :label="t('admin.signIn.emailCode', {}, 'E-mail code')" />
+                  <CoarCheckbox v-model="signInForm.Passkey" :label="t('admin.signIn.passkey', {}, 'Passkey')" />
+                </div>
+              </div>
+              <div class="rounded border border-surface-200 p-3">
+                <h3 class="mb-3 text-sm font-semibold">{{ t('admin.signIn.secondFactors', {}, 'Second factors') }}</h3>
+                <div class="flex flex-col gap-2">
+                  <CoarCheckbox v-model="signInForm.Totp" :label="t('admin.signIn.totp', {}, 'Authenticator app (TOTP)')" />
+                  <CoarCheckbox v-model="signInForm.EmailAfterPassword" :label="t('admin.signIn.emailAfterPassword', {}, 'E-mail code after a password')" />
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section class="settings-section">
             <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
               <h2 class="section-title">

@@ -8,6 +8,9 @@ export interface RealmSettingsDto {
   Dcr: DcrSettingsDto
   Cimd: CimdSettingsDto
   NativeGrants: NativeGrantSettingsDto
+  /** ADR 0025 — null = never configured; the realm follows the deployment's former
+   * authentication settings until the section is saved. */
+  SignIn: SignInPolicyDto | null
   BrowserSessions: BrowserSessionPolicyDto
   ClientSessions: ClientSessionPolicyDto
   PositionSecurity: PositionSecuritySettingsDto
@@ -27,6 +30,7 @@ export interface UpdateRealmSettingsDto {
   Dcr?: UpdateDcrSettingsDto | null
   Cimd?: UpdateCimdSettingsDto | null
   NativeGrants?: UpdateNativeGrantSettingsDto | null
+  SignIn?: UpdateSignInPolicyDto | null
   BrowserSessions?: UpdateBrowserSessionPolicyDto | null
   ClientSessions?: UpdateClientSessionPolicyDto | null
   PositionSecurity?: UpdatePositionSecuritySettingsDto | null
@@ -258,6 +262,39 @@ export interface UpdateNativeGrantSettingsDto {
   Enabled?: boolean
   AccessTokenLifetimeMinutes?: number
   RefreshTokenLifetimeDays?: number
+}
+
+// ADR 0025 — the realm's sign-in policy, the default every App inherits (an App
+// overrides any field, see ApplicationSignInDto). Levels travel as strings.
+export type SignInLevel = 'Single' | 'Multi'
+export type OwnFactorNotOffered = 'Ignore' | 'RequireViaBrowser'
+
+export interface SignInPolicyDto {
+  MinimumLevel: SignInLevel
+  /** Realm-only: the level a session needs to use /api/admin/*. */
+  AdministrationMinimumLevel: SignInLevel
+  SetupGraceDays: number
+  Password: boolean
+  EmailCode: boolean
+  Passkey: boolean
+  Totp: boolean
+  EmailAfterPassword: boolean
+  OwnFactorNotOffered: OwnFactorNotOffered
+}
+
+export type UpdateSignInPolicyDto = Partial<SignInPolicyDto>
+
+/** Mirrors SignInPolicy.Defaults in the backend; prefilled while a realm has not configured the section. */
+export const SIGN_IN_POLICY_DEFAULTS: SignInPolicyDto = {
+  MinimumLevel: 'Single',
+  AdministrationMinimumLevel: 'Multi',
+  SetupGraceDays: 14,
+  Password: true,
+  EmailCode: false,
+  Passkey: true,
+  Totp: true,
+  EmailAfterPassword: true,
+  OwnFactorNotOffered: 'RequireViaBrowser',
 }
 
 // ADR 0019 — multi-dimensional auth rate limits. Every policy (one per public auth

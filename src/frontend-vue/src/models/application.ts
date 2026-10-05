@@ -1,4 +1,4 @@
-import type { UpdateAuthRateLimitsDto } from './realmSettings'
+import type { OwnFactorNotOffered, SignInLevel, UpdateAuthRateLimitsDto } from './realmSettings'
 // Application admin models — mirror the DTOs in
 // src/dotnet/Modgud.Api/Features/Admin/Apps/AppsEndpoints.cs.
 //
@@ -144,6 +144,21 @@ export interface ApplicationRegistrationFieldsOverrideDto {
   Lastname?: string | null
 }
 
+/** ADR 0025 — sparse override of the realm sign-in policy (null field = inherit). The
+ * administration level is realm-only. */
+export interface ApplicationSignInDto {
+  MinimumLevel?: SignInLevel | null
+  SetupGraceDays?: number | null
+  Password?: boolean | null
+  EmailCode?: boolean | null
+  Passkey?: boolean | null
+  Totp?: boolean | null
+  EmailAfterPassword?: boolean | null
+  OwnFactorNotOffered?: OwnFactorNotOffered | null
+  /** Bare host name the App's passkeys are bound to. Empty = the realm's domain. */
+  PasskeyRpId?: string | null
+}
+
 export interface ApplicationChangeFeedDto {
   Enabled: boolean
   MinimumRetentionAgeDays: number
@@ -158,6 +173,7 @@ export interface ApplicationSettingsDto {
   LoginExperience?: ApplicationLoginExperienceDto | null
   SelfRegistration?: ApplicationSelfRegistrationOverrideDto | null
   NativeGrants?: ApplicationGrantOverrideDto | null
+  SignIn?: ApplicationSignInDto | null
   /** ADR 0019 — sparse rate-limit overrides for this App (null = inherit the realm). */
   AuthRateLimits?: UpdateAuthRateLimitsDto | null
   ClientSessions?: ApplicationClientSessionsDto | null
