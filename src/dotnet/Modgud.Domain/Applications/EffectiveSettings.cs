@@ -34,6 +34,10 @@ public sealed record EffectiveSettings
     /// <summary>ADR 0025 — the App's WebAuthn RP ID override (null = realm primary domain).</summary>
     public string? PasskeyRpId { get; init; }
 
+    /// <summary>The App publishes a related-origins file for <see cref="PasskeyRpId"/>
+    /// listing Modgud's login origin.</summary>
+    public bool PasskeyRelatedOrigins { get; init; }
+
     /// <summary>ADR 0025 — the App these settings were resolved for (null = realm only).</summary>
     public Guid? ApplicationId { get; init; }
 
@@ -91,6 +95,7 @@ public sealed record EffectiveSettings
         NativeGrants = MergeNativeGrants(realm.NativeGrants, app.NativeGrants),
         SignIn = MergeSignIn(realm.SignIn, app.SignIn),
         PasskeyRpId = string.IsNullOrWhiteSpace(app.SignIn?.PasskeyRpId) ? null : app.SignIn.PasskeyRpId.Trim(),
+        PasskeyRelatedOrigins = !string.IsNullOrWhiteSpace(app.SignIn?.PasskeyRpId) && app.SignIn?.PasskeyRelatedOrigins == true,
         ApplicationId = app.Id,
         AuthRateLimits = AuthRateLimitSettings.Merge(realm.AuthRateLimits, app.AuthRateLimits),
         ClientSessions = MergeClientSessions(realm.ClientSessions, app.ClientSessions),

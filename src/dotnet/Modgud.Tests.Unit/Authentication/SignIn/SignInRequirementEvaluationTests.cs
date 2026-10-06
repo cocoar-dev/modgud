@@ -193,6 +193,25 @@ public class SignInRequirementEvaluationTests
         Assert.Equal(resourceCount, resources.Count);
     }
 
+    [Theory]
+    // page on the app's own domain (or below it): the app's RP ID
+    [InlineData("app.example-app.test", "app.example-app.test", false, "app.example-app.test")]
+    [InlineData("login.app.example-app.test", "app.example-app.test", false, "app.example-app.test")]
+    // Modgud's page elsewhere: only via related origins
+    [InlineData("auth.example.org", "app.example-app.test", false, "auth.example.org")]
+    [InlineData("auth.example.org", "app.example-app.test", true, "app.example-app.test")]
+    // no app RP ID: always the realm's
+    [InlineData("auth.example.org", null, true, "auth.example.org")]
+    // look-alike host is not "below" the RP ID
+    [InlineData("evilapp.example-app.test", "app.example-app.test", false, "auth.example.org")]
+    public void The_web_rp_id_is_the_apps_only_where_the_browser_can_use_it(
+        string host, string? appRpId, bool relatedOrigins, string expected)
+    {
+        var rpId = SignInRequirementService.WebRpIdFor(appRpId, "auth.example.org", host, relatedOrigins);
+
+        Assert.Equal(expected, rpId);
+    }
+
     [Fact]
     public void A_policy_derived_from_the_retired_level_keeps_the_deployment_behaviour()
     {

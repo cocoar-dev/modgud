@@ -224,6 +224,14 @@ public record ApplicationSignInOverrides
     /// primary domain. A client may still override it with its own RP ID. The login page
     /// uses it when the sign-in's target is this App.</summary>
     public string? PasskeyRpId { get; init; }
+
+    /// <summary>WebAuthn related origin requests: the App publishes
+    /// <c>https://{PasskeyRpId}/.well-known/webauthn</c> listing Modgud's login origin(s), so
+    /// browsers that support related origins offer the App's passkeys on the Modgud login
+    /// page even though it is not served under the App's RP ID. Only meaningful with
+    /// <see cref="PasskeyRpId"/>. Null/false = only a login page served on the App's own
+    /// domain uses the App's RP ID.</summary>
+    public bool? PasskeyRelatedOrigins { get; init; }
 }
 
 /// <summary>Nullable-field mirror of <see cref="ClientSessionPolicy"/>. Null

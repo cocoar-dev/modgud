@@ -28,7 +28,8 @@ public sealed record SignInTarget(
     IReadOnlyList<Guid> AppIds,
     SignInPolicy Policy,
     string? PasskeyRpId,
-    bool IsAdministration = false);
+    bool IsAdministration = false,
+    bool PasskeyRelatedOrigins = false);
 
 public enum SignInOutcome
 {
@@ -184,14 +185,24 @@ public sealed class SignInRequirementService(
 
         SignInPolicy? combined = null;
         string? appRpId = null;
+        var appRelatedOrigins = false;
         foreach (var appId in appIds)
         {
             var effective = await settingsResolver.ResolveAsync(appId, ct);
             var policy = effective.SignIn ?? SignInPolicy.Defaults;
             combined = combined is null ? policy : Strictest(combined, policy);
-            if (appIds.Count == 1) appRpId = effective.PasskeyRpId;
+            if (appIds.Count == 1)
+            {
+                appRpId = effective.PasskeyRpId;
+                appRelatedOrigins = effective.PasskeyRelatedOrigins;
+            }
         }
-        return new SignInTarget(appIds, combined!, clientRpId ?? appRpId);
+        // The related-origins file belongs to the App's RP ID; a client with its own,
+        // different RP ID does not inherit it.
+        var rpId = clientRpId ?? appRpId;
+        var relatedOrigins = appRelatedOrigins
+                             && string.Equals(rpId, appRpId, StringComparison.OrdinalIgnoreCase);
+        return new SignInTarget(appIds, combined!, rpId, PasskeyRelatedOrigins: relatedOrigins);
     }
 
     /// <summary>Several Apps in one sign-in (a token for APIs of two Apps): the higher
@@ -228,7 +239,7 @@ public sealed class SignInRequirementService(
         // On the web the page's host decides which RP ID a ceremony can use; natively the
         // App's (or client's) RP ID is what its passkeys are bound to.
         var targetRpId = surface == SignInSurface.Web && httpContextAccessor.HttpContext is { } http
-            ? WebRpIdFor(target.PasskeyRpId, primaryDomain, http.Request.Host.Host)
+            ? WebRpIdFor(target.PasskeyRpId, primaryDomain, http.Request.Host.Host, target.PasskeyRelatedOrigins)
             : target.PasskeyRpId ?? primaryDomain;
         var hasUsablePasskey = passkeyRpIds.Any(rp => string.Equals(rp ?? primaryDomain, targetRpId, StringComparison.OrdinalIgnoreCase));
 
@@ -330,14 +341,21 @@ public sealed class SignInRequirementService(
     /// whose App binds passkeys to <paramref name="appRpId"/>: the App's RP ID when the page
     /// is served on it or below it (WebAuthn's rule), the realm's primary domain otherwise.
     /// </summary>
-    public static string WebRpIdFor(string? appRpId, string primaryDomain, string requestHost)
+    public static string WebRpIdFor(
+        string? appRpId, string primaryDomain, string requestHost, bool relatedOrigins = false)
     {
         if (string.IsNullOrWhiteSpace(appRpId)) return primaryDomain;
-        return string.Equals(requestHost, appRpId, StringComparison.OrdinalIgnoreCase)
-               || requestHost.EndsWith("." + appRpId, StringComparison.OrdinalIgnoreCase)
-            ? appRpId
-            : primaryDomain;
+        if (IsHostUnderRpId(requestHost, appRpId)) return appRpId;
+        // Not under the App's RP ID: only via the App's related-origins file, and only for
+        // a browser that supports related origin requests (the caller decides that).
+        return relatedOrigins ? appRpId : primaryDomain;
     }
+
+    /// <summary>Whether a ceremony on <paramref name="requestHost"/> for <paramref name="rpId"/>
+    /// relies on related origins, i.e. the page is not on the RP ID or below it.</summary>
+    public static bool IsHostUnderRpId(string requestHost, string rpId) =>
+        string.Equals(requestHost, rpId, StringComparison.OrdinalIgnoreCase)
+        || requestHost.EndsWith("." + rpId, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Parse the device-approval page's continuation, which the page extends with
     /// the device's <c>client_id</c> when its approval needs a step-up.</summary>

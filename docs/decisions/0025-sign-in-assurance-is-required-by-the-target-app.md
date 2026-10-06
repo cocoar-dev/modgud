@@ -180,5 +180,5 @@ Either way, the web ceremony has to use the RP ID of the *target* App (section 3
 - **Existing sessions count as `single`** after the upgrade; signing in to a `multi` App asks for the second factor once.
 - **Native error contract.** Native grants answer `mfa_required` instead of `invalid_grant` "supply totp_code". Pre-1.0 contract change, announced in the release notes.
 - **Rollback.** The migration only adds realm settings; the previous release ignores them and reads its deployment setting again.
-- **Related origins are a follow-up.** `/.well-known/webauthn` related-origin requests are not implemented by this change; only the login-under-the-App's-domain way of using an App's RP ID on the web is.
+- **Related origins** shipped as a follow-up: a per-App opt-in (`PasskeyRelatedOrigins`), used only when the browser reports `getClientCapabilities().relatedOrigins`; the verifier accepts the page's own origin for the App's RP ID only for a ceremony begun as a related-origin one.
 - **Delivery** is one change: sections 1–9 together, including the target App's RP ID for web passkey ceremonies. Serving an App's login page under the App's own domain, and publishing `/.well-known/webauthn`, are deployment steps on the App's side; Modgud only has to accept the configured origin for the App's RP ID.
