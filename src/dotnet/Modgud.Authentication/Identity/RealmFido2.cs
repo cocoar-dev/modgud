@@ -54,7 +54,8 @@ public static class RealmFido2
         Realm realm,
         IWebHostEnvironment env,
         string? rpIdOverride = null,
-        IEnumerable<string>? additionalOrigins = null)
+        IEnumerable<string>? additionalOrigins = null,
+        IEnumerable<string>? relatedOrigins = null)
     {
         ArgumentNullException.ThrowIfNull(realm);
         ArgumentNullException.ThrowIfNull(env);
@@ -97,6 +98,20 @@ public static class RealmFido2
             foreach (var origin in additionalOrigins)
             {
                 if (IsOriginUnderRpId(origin, host, env.IsDevelopment()))
+                    origins.Add(origin);
+            }
+        }
+
+        // WebAuthn related origin requests: an origin outside the RP ID that the RP itself
+        // lists in https://{rpId}/.well-known/webauthn. The browser fetched and checked that
+        // file before it produced the assertion; the caller only passes the exact origin of
+        // its own request, and only for a ceremony that was begun as a related-origin one.
+        if (relatedOrigins is not null)
+        {
+            foreach (var origin in relatedOrigins)
+            {
+                if (Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+                    && (uri.Scheme == Uri.UriSchemeHttps || (env.IsDevelopment() && uri.Scheme == Uri.UriSchemeHttp)))
                     origins.Add(origin);
             }
         }
@@ -190,7 +205,8 @@ public sealed class RealmScopedFido2Factory(
     public async Task<IFido2> CreateAsync(
         CancellationToken ct = default,
         string? rpIdOverride = null,
-        IEnumerable<string>? additionalOrigins = null)
+        IEnumerable<string>? additionalOrigins = null,
+        IEnumerable<string>? relatedOrigins = null)
     {
         var http = httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException(
@@ -205,7 +221,7 @@ public sealed class RealmScopedFido2Factory(
         // only has to supply the value here — no new RP-ID code path.
         // additionalOrigins carries the actual signed origin at verify time so a
         // per-client RP-ID that is a suffix of the app origin is accepted.
-        var config = RealmFido2.BuildConfiguration(realm, env, rpIdOverride, additionalOrigins);
+        var config = RealmFido2.BuildConfiguration(realm, env, rpIdOverride, additionalOrigins, relatedOrigins);
         // metadataService is optional — the previous global setup used the
         // library's NullMetadataService (no attestation-metadata validation),
         // and passing null here gives the identical behaviour.

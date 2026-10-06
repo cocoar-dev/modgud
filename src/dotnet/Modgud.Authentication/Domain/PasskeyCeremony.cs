@@ -43,6 +43,11 @@ public class PasskeyCeremony
     /// </summary>
     public string? RpId { get; set; }
 
+    /// <summary>The ceremony runs on a page that is NOT under <see cref="RpId"/>, relying on
+    /// the RP's related-origins file (WebAuthn Level 3). The verify step then accepts the
+    /// page's own origin for that RP ID; the browser has already checked the file.</summary>
+    public bool RelatedOrigin { get; set; }
+
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 

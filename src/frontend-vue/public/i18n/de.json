@@ -2413,7 +2413,9 @@
       "totp": "Authenticator-App (TOTP)",
       "emailAfterPassword": "E-Mail-Code nach dem Passwort",
       "passkeyRpId": "Passkey-RP-ID",
-      "passkeyRpIdHint": "Domain, an die die Passkeys dieser App gebunden sind. Leer = die Domain des Realms. Native Clients können sie pro Client überschreiben."
+      "passkeyRpIdHint": "Domain, an die die Passkeys dieser App gebunden sind. Leer = die Domain des Realms. Native Clients können sie pro Client überschreiben.",
+      "relatedOrigins": "Passkeys der App auch auf der Modgud-Login-Seite anbieten (Related Origins)",
+      "relatedOriginsHint": "Die App muss diese Datei unter {url} ausliefern. Browser mit Related-Origins-Unterstützung (Chrome, Edge, Safari) bieten dann die Passkeys der App auf der Modgud-Login-Seite an; andere nutzen weiter die Passkeys des Realms."
     }
   },
   "permissions": {

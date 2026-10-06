@@ -157,6 +157,8 @@ export interface ApplicationSignInDto {
   OwnFactorNotOffered?: OwnFactorNotOffered | null
   /** Bare host name the App's passkeys are bound to. Empty = the realm's domain. */
   PasskeyRpId?: string | null
+  /** The app publishes https://<PasskeyRpId>/.well-known/webauthn listing the Modgud login origin(s). */
+  PasskeyRelatedOrigins?: boolean | null
 }
 
 export interface ApplicationChangeFeedDto {

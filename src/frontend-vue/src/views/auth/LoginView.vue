@@ -550,11 +550,31 @@ async function onSecureSetupLogout() {
 // ── Passkey Login ──
 const passkeyHttp = useHttpClient('/api/account/passkey')
 
+/**
+ * WebAuthn Level 3 related origin requests: whether this browser honours an RP's
+ * /.well-known/webauthn file. Only then may the server pick an app's RP ID this page
+ * is not served under; otherwise it keeps the realm's own passkeys working.
+ */
+async function supportsRelatedOrigins(): Promise<boolean> {
+  try {
+    const pkc = window.PublicKeyCredential as unknown as {
+      getClientCapabilities?: () => Promise<Record<string, boolean>>
+    } | undefined
+    const caps = await pkc?.getClientCapabilities?.()
+    return caps?.relatedOrigins === true
+  } catch {
+    return false
+  }
+}
+
 async function handlePasskeyLogin(reportToRenderer = false) {
   passkeyLoading.value = true
   error.value = ''
   try {
-    const serverOptions = await passkeyHttp.addPath('login-options').post<any>({ ReturnUrl: redirectTarget.value })
+    const serverOptions = await passkeyHttp.addPath('login-options').post<any>({
+      ReturnUrl: redirectTarget.value,
+      RelatedOrigins: await supportsRelatedOrigins(),
+    })
 
     const publicKey: PublicKeyCredentialRequestOptions = {
       challenge: base64UrlToBuffer(serverOptions.challenge),

@@ -227,7 +227,7 @@ A setting is **always effective** when every reader resolves the App from the OA
 | --- | --- | --- |
 | Branding, page theme, active pages | Always | The app-info endpoint resolves by the request's client id (`AppSettingsEndpoints.cs`). |
 | Login methods | Always | Login, external-provider, SAML, magic-link and native-passkey endpoints resolve by the client of the authorize request (`AccountEndpoints.cs`, `ExternalAuthEndpoints.cs`, `SamlEndpoints.cs`, `MagicLinkEndpoints.cs`, `NativePasskeyEndpoints.cs`). |
-| Sign-in policy | Always (resolved from the sign-in target) | ADR 0025: the target App decides, never the host. The passkey RP ID additionally needs the login page to be served on that domain or below it (related-origin requests via `/.well-known/webauthn` are not supported yet). |
+| Sign-in policy | Always (resolved from the sign-in target) | ADR 0025: the target App decides, never the host. The passkey RP ID additionally needs the login page to be served on that domain or below it, or the App's related-origins opt-in plus a `/.well-known/webauthn` file on the RP ID domain (see [Sign-in levels](../concepts/sign-in-levels#related-origins)). |
 | Client sessions | Always | `ClientSessionService.cs` reads the App bindings of the OAuth client. |
 | Consumer change feed | Always | The feed is addressed by App id (`AppChangeFeedEndpoints.cs`, `AppChangeFeedSubscription.cs`). |
 | Self-registration | Partly | Web sign-up resolves by client (`RegisterEndpoints.cs`, `SelfRegistrationService.cs`); the native OTP request that signs up on the fly and native registration use the host only (`NativeOtpEndpoints.cs`, `NativeRegisterEndpoints.cs`). |

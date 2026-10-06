@@ -92,6 +92,7 @@ const f = reactive({
     override: false,
     values: {} as Partial<SignInPolicyDto>,
     passkeyRpId: '',
+    relatedOrigins: false,
   },
   clientSessions: { override: false, idle: '', absolute: '' },
   nativeGrants: { override: false, enabled: false, access: '', refresh: '' },
@@ -284,7 +285,7 @@ function resetForm() {
   f.selfReg.termsOfServiceUrl = ''; f.selfReg.privacyPolicyUrl = ''
   f.registrationFields.override = false; f.registrationFields.username = ''
   f.registrationFields.firstname = ''; f.registrationFields.lastname = ''
-  f.signIn.override = false; f.signIn.values = {}; f.signIn.passkeyRpId = ''
+  f.signIn.override = false; f.signIn.values = {}; f.signIn.passkeyRpId = ''; f.signIn.relatedOrigins = false
   f.clientSessions.override = false; f.clientSessions.idle = ''; f.clientSessions.absolute = ''
   f.nativeGrants.override = false; f.nativeGrants.enabled = false; f.nativeGrants.access = ''; f.nativeGrants.refresh = ''
   f.rateLimits.override = false; f.rateLimits.overrides = emptyRateLimitOverrides()
@@ -368,6 +369,7 @@ function populate(s?: ApplicationSettingsDto | null) {
     if (si.OwnFactorNotOffered != null) pinned.OwnFactorNotOffered = si.OwnFactorNotOffered
     f.signIn.values = pinned as Partial<SignInPolicyDto>
     f.signIn.passkeyRpId = si.PasskeyRpId ?? ''
+    f.signIn.relatedOrigins = si.PasskeyRelatedOrigins === true
   }
   if (s.NativeGrants) {
     f.nativeGrants.override = true
@@ -559,6 +561,7 @@ function build(): ApplicationSettingsDto {
           EmailAfterPassword: f.signIn.values.EmailAfterPassword ?? null,
           OwnFactorNotOffered: f.signIn.values.OwnFactorNotOffered ?? null,
           PasskeyRpId: f.signIn.passkeyRpId.trim() || null,
+          PasskeyRelatedOrigins: f.signIn.passkeyRpId.trim() && f.signIn.relatedOrigins ? true : null,
         }
       : null,
     NativeGrants: f.nativeGrants.override
@@ -631,6 +634,17 @@ const DOMAIN_BINDING = {
 } as const satisfies Record<string, DomainBinding>
 
 const hasOwnDomain = computed(() => f.origin.subdomain.trim().length > 0)
+
+// WebAuthn related origins: the file the app publishes on its RP ID, listing every
+// origin the Modgud login page runs on for this app (the realm host this admin UI is
+// served from, and the app's own subdomain when it has one).
+const relatedOriginsUrl = computed(() => `https://${f.signIn.passkeyRpId.trim()}/.well-known/webauthn`)
+const relatedOriginsJson = computed(() => {
+  const origins = [window.location.origin]
+  const sub = f.origin.subdomain.trim()
+  if (sub) origins.push(`https://${sub}`)
+  return JSON.stringify({ origins: [...new Set(origins)] }, null, 2)
+})
 const domainBoundLabels: Record<keyof typeof DOMAIN_BINDING, () => string> = {
   emailBranding: () => t('admin.appSettings.hostBound.section.emailBranding', {}, 'E-mail branding'),
   selfReg: () => t('admin.appSettings.hostBound.section.selfReg', {}, 'Registration policy'),
@@ -999,6 +1013,15 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         :hint="t('admin.signIn.passkeyRpIdHint', {}, `Domain passkeys of this app are bound to. Empty = the realm's domain. Native clients may override it per client.`)">
         <CoarTextInput v-model="f.signIn.passkeyRpId" :disabled="!f.signIn.override" clearable placeholder="app.example.com" />
       </CoarFormField>
+      <CoarCheckbox v-model="f.signIn.relatedOrigins"
+        :disabled="!f.signIn.override || !f.signIn.passkeyRpId.trim()"
+        :label="t('admin.signIn.relatedOrigins', {}, 'Offer the app\'s passkeys on the Modgud login page (related origins)')" />
+      <template v-if="f.signIn.relatedOrigins && f.signIn.passkeyRpId.trim()">
+        <CoarNotice variant="info">
+          {{ t('admin.signIn.relatedOriginsHint', { url: relatedOriginsUrl }, 'The app must serve this file at {url}. Browsers that support related origins (Chrome, Edge, Safari) then offer the app\'s passkeys on the Modgud login page; others fall back to the realm\'s passkeys.') }}
+        </CoarNotice>
+        <pre class="related-origins-json">{{ relatedOriginsJson }}</pre>
+      </template>
     </div>
 
     <!-- Native app / OAuth client sessions -->
@@ -1168,6 +1191,14 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
 <style scoped>
 .tab-bar { margin-bottom: 8px; }
+.related-origins-json {
+  margin: 0;
+  padding: 8px 12px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--coar-background-neutral-secondary);
+  font-size: 12px;
+}
 .override-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .tab-content { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .page-links { display: flex; flex-direction: column; gap: 8px; }

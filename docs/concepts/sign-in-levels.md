@@ -105,7 +105,24 @@ A refresh does not raise a token family above the level its sign-in reached, and
 
 WebAuthn binds a passkey to an RP ID, and a browser offers it only on an origin whose host is that RP ID or a subdomain of it. A passkey enrolled in a native app under the App's RP ID is therefore usable on the web only if the login page is served on that domain or below it. On the web, the login page uses the **target App's** passkey RP ID when it is served on that domain or below; otherwise the realm's primary domain. A passkey the current origin cannot serve is not shown.
 
-Related-origin requests (`/.well-known/webauthn`, WebAuthn Level 3) are **not supported yet**.
+### Related origins
+
+When the login page cannot run on the App's domain — the typical case for an MCP client such as claude.ai, which signs in on the Modgud host — the App can opt in to WebAuthn Level 3 **related origin requests**:
+
+1. In the App's **Sign-in** settings, set the passkey RP ID and tick *Offer the app's passkeys on the Modgud login page (related origins)*.
+2. The App serves `https://<passkey RP ID>/.well-known/webauthn` with the Modgud login origin(s). The settings page shows the exact file, for example:
+
+   ```json
+   {
+     "origins": ["https://auth.example.com", "https://myapp.auth.example.com"]
+   }
+   ```
+
+   Serve it with `Content-Type: application/json` over HTTPS.
+
+The login page asks the browser whether it supports related origins (`PublicKeyCredential.getClientCapabilities()`). Only then does it use the App's RP ID; the browser fetches the file and checks that the page's origin is listed before it offers the passkey. Browsers without support (currently Firefox) keep using the realm's passkeys, so nothing breaks for them — they just cannot use the App's passkey on the Modgud page.
+
+Modgud accepts the page's own origin for the App's RP ID only for a ceremony it began as a related-origin one; every other ceremony keeps the strict "origin under the RP ID" rule.
 
 ## Migrating from the deployment setting
 

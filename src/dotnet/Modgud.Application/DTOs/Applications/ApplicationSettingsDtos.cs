@@ -119,6 +119,9 @@ public record ApplicationSignInDto
     public string? OwnFactorNotOffered { get; init; }
     /// <summary>Bare host name the App's passkeys are bound to. Null/empty = the realm's domain.</summary>
     public string? PasskeyRpId { get; init; }
+    /// <summary>The App publishes <c>https://{PasskeyRpId}/.well-known/webauthn</c> listing the
+    /// Modgud login origin(s) (WebAuthn related origin requests). Requires <see cref="PasskeyRpId"/>.</summary>
+    public bool? PasskeyRelatedOrigins { get; init; }
 }
 
 public record ApplicationClientSessionsDto

@@ -99,6 +99,38 @@ public class RealmFido2Tests
         Assert.Contains("https://acmelist.example", config.Origins);
     }
 
+    [Fact]
+    public void BuildConfiguration_RelatedOrigin_IsAcceptedOutsideTheRpId_OnlyWhenPassedAsRelated()
+    {
+        // WebAuthn related origin requests: the Modgud login page is not under the app's
+        // RP ID; the app's /.well-known/webauthn lists it and the browser has checked that.
+        var realm = new Realm { Slug = "system", DisplayName = "Acme", PrimaryDomain = "auth.cocoar.dev" };
+
+        var related = RealmFido2.BuildConfiguration(
+            realm, ProdEnv, rpIdOverride: "app.example-app.test",
+            relatedOrigins: ["https://auth.cocoar.dev"]);
+        var plain = RealmFido2.BuildConfiguration(
+            realm, ProdEnv, rpIdOverride: "app.example-app.test",
+            additionalOrigins: ["https://auth.cocoar.dev"]);
+
+        Assert.Equal("app.example-app.test", related.ServerDomain);
+        Assert.Contains("https://auth.cocoar.dev", related.Origins);
+        Assert.DoesNotContain("https://auth.cocoar.dev", plain.Origins);
+    }
+
+    [Fact]
+    public void BuildConfiguration_RelatedOrigin_MustBeHttpsOutsideDevelopment()
+    {
+        var realm = new Realm { Slug = "system", DisplayName = "Acme", PrimaryDomain = "auth.cocoar.dev" };
+
+        var config = RealmFido2.BuildConfiguration(
+            realm, ProdEnv, rpIdOverride: "app.example-app.test",
+            relatedOrigins: ["http://auth.cocoar.dev", "not a url"]);
+
+        Assert.DoesNotContain("http://auth.cocoar.dev", config.Origins);
+        Assert.DoesNotContain("not a url", config.Origins);
+    }
+
     private static readonly IWebHostEnvironment ProdEnv = new FakeWebHostEnvironment("Production");
 
     private sealed class FakeWebHostEnvironment(string environmentName) : IWebHostEnvironment

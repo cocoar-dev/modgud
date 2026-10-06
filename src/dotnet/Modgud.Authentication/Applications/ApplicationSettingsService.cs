@@ -415,6 +415,9 @@ public sealed class ApplicationSettingsService(
         if (ownFactor.IsError) return ownFactor.FirstError;
         if (SignInPolicyRules.ValidateGraceDays(d.SetupGraceDays) is { } graceError) return graceError;
         if (SignInPolicyRules.ValidatePasskeyRpId(d.PasskeyRpId, out var rpId) is { } rpError) return rpError;
+        if (d.PasskeyRelatedOrigins == true && rpId is null)
+            return Error.Validation("SignIn.RelatedOriginsWithoutRpId",
+                "Related origins need the app's passkey RP ID: the file lives at https://<RP ID>/.well-known/webauthn.");
 
         var overrides = new ApplicationSignInOverrides
         {
@@ -427,6 +430,7 @@ public sealed class ApplicationSettingsService(
             EmailAfterPassword = d.EmailAfterPassword,
             OwnFactorNotOffered = ownFactor.Value,
             PasskeyRpId = rpId,
+            PasskeyRelatedOrigins = d.PasskeyRelatedOrigins,
         };
 
         var realm = await session.LoadAsync<Modgud.Domain.RealmSettings.RealmSettings>(
@@ -786,6 +790,7 @@ public sealed class ApplicationSettingsService(
                 EmailAfterPassword = doc.SignIn.EmailAfterPassword,
                 OwnFactorNotOffered = doc.SignIn.OwnFactorNotOffered?.ToString(),
                 PasskeyRpId = doc.SignIn.PasskeyRpId,
+                PasskeyRelatedOrigins = doc.SignIn.PasskeyRelatedOrigins,
             },
             ClientSessions = doc.ClientSessions is null ? null : new ApplicationClientSessionsDto
             {

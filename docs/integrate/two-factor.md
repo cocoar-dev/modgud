@@ -210,7 +210,7 @@ same credential can't be replayed against a different realm.
 An individual OAuth client used for the cookieless native flows (see
 below) can additionally override the relying party ID with its own
 branded domain; when unset it falls back to the realm's primary
-domain; a client inherits its App's passkey RP ID and may still override it. Related-origin requests (`/.well-known/webauthn`) are not supported yet. See [per-client WebAuthn RP-ID](../integrate/native-apps#3-passkeys-set-the-per-client-rp-id-and-serve-an-aasa).
+domain; a client inherits its App's passkey RP ID and may still override it. To use an App's passkeys on the Modgud login page itself (for example during an MCP sign-in), enable related origins for the App and publish `/.well-known/webauthn` on its RP ID domain — see [related origins](../concepts/sign-in-levels#related-origins). See [per-client WebAuthn RP-ID](../integrate/native-apps#3-passkeys-set-the-per-client-rp-id-and-serve-an-aasa).
 
 In dev, `localhost:4300` and `https://localhost` are additionally
 allowed as origins.

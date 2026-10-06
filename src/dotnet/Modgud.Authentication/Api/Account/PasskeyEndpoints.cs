@@ -21,7 +21,11 @@ namespace Modgud.Authentication.Api.Account;
 
 public static class PasskeyEndpoints
 {
-    public record PasskeyLoginOptionsRequest(string? UserName = null, string? ReturnUrl = null);
+    /// <summary><paramref name="RelatedOrigins"/> is the browser's
+    /// <c>getClientCapabilities().relatedOrigins</c>: whether it honours an RP's
+    /// <c>/.well-known/webauthn</c> file. Without it the App's related-origin RP ID is never
+    /// offered, so the realm's own passkeys keep working.</summary>
+    public record PasskeyLoginOptionsRequest(string? UserName = null, string? ReturnUrl = null, bool RelatedOrigins = false);
     public record PasskeyDisplayDto(string Id, string DisplayName, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt);
 
     /// <summary>Carries only the server-side ceremony id — never the ceremony
@@ -332,14 +336,19 @@ public static class PasskeyEndpoints
                     detail: "Internal login is disabled for this application.");
 
             // ADR 0025 — the RP ID of the sign-in's target App when this page is served
-            // under it (the App's own login domain), so a passkey the App's native client
-            // enrolled works here; the realm's primary domain otherwise.
+            // under it (the App's own login domain), or — when the App publishes a
+            // related-origins file and this browser honours it — even though it is not;
+            // the realm's primary domain otherwise. Either way a passkey the App's native
+            // client enrolled works here.
             var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
             var signInTarget = await context.RequestServices
                 .GetRequiredService<Modgud.Authentication.SignIn.ISignInRequirementService>()
                 .ResolveTargetFromReturnUrlAsync(request?.ReturnUrl, ct);
             var webRpId = Modgud.Authentication.SignIn.SignInRequirementService.WebRpIdFor(
-                signInTarget.PasskeyRpId, primaryDomain, context.Request.Host.Host);
+                signInTarget.PasskeyRpId, primaryDomain, context.Request.Host.Host,
+                relatedOrigins: signInTarget.PasskeyRelatedOrigins && request?.RelatedOrigins == true);
+            var relatedOriginCeremony = !Modgud.Authentication.SignIn.SignInRequirementService
+                .IsHostUnderRpId(context.Request.Host.Host, webRpId);
 
             var fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: webRpId);
 
@@ -402,6 +411,7 @@ public static class PasskeyEndpoints
                 // begin/redeem drift (same rationale as the native flow).
                 ClientId = clientId,
                 RpId = webRpId,
+                RelatedOrigin = relatedOriginCeremony,
                 ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(PasskeyCeremony.ExpirationMinutes),
                 CreatedAt = DateTimeOffset.UtcNow,
             };
@@ -519,10 +529,14 @@ public static class PasskeyEndpoints
             }
             catch (JsonException) { /* leave null — the shared verifier fails closed below */ }
 
+            // A related-origin ceremony (begun for an App RP ID this page is not under):
+            // the page's own, request-matched origin is accepted for that RP ID — the
+            // browser already checked the RP's /.well-known/webauthn before it signed.
             var fido2 = await fido2Factory.CreateAsync(
                 ct,
                 rpIdOverride: ceremonyRpId,
-                additionalOrigins: presentedOrigins);
+                additionalOrigins: presentedOrigins,
+                relatedOrigins: ceremony.RelatedOrigin ? presentedOrigins : null);
             var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(
                 fido2, options, body.GetRawText(), session, ceremonyRpId, ceremonyRpId, ct);
             if (storedCredential is null)
