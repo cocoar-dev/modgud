@@ -8,6 +8,7 @@ using Modgud.Authorization.Apps;
 using Modgud.Domain.Applications;
 using Modgud.Domain.Assets;
 using Modgud.Authentication.Domain.LoginProviders;
+using Modgud.Authentication.RealmSettings;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
@@ -54,7 +55,8 @@ public interface IApplicationSettingsService
 public sealed class ApplicationSettingsService(
     IDocumentSession session,
     IGlobalStore globalStore,
-    IRealmCache realmCache) : IApplicationSettingsService
+    IRealmCache realmCache,
+    IAuthSettings? authSettings = null) : IApplicationSettingsService
 {
     private static readonly Regex CssColorRegex = new(
         @"^(#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})" +
@@ -173,6 +175,13 @@ public sealed class ApplicationSettingsService(
             doc.RegistrationFields = r.Value;
         }
 
+        if (dto.SignIn is not null)
+        {
+            var r = await MapSignInAsync(dto.SignIn, doc.LoginExperience, ct);
+            if (r.IsError) return r.FirstError;
+            doc.SignIn = r.Value;
+        }
+
         if (dto.ChangeFeed is not null)
         {
             var r = MapChangeFeed(dto.ChangeFeed);
@@ -254,6 +263,9 @@ public sealed class ApplicationSettingsService(
 
         if (dto.RegistrationFields is null) doc.RegistrationFields = null;
         else { var r = MapRegistrationFields(dto.RegistrationFields); if (r.IsError) return r.FirstError; doc.RegistrationFields = r.Value; }
+
+        if (dto.SignIn is null) doc.SignIn = null;
+        else { var r = await MapSignInAsync(dto.SignIn, doc.LoginExperience, ct); if (r.IsError) return r.FirstError; doc.SignIn = r.Value; }
 
         var oldChangeFeed = doc.ChangeFeed;
         if (dto.ChangeFeed is null) doc.ChangeFeed = null;
@@ -388,6 +400,43 @@ public sealed class ApplicationSettingsService(
             AccessTokenLifetime = Minutes(d.AccessTokenLifetimeMinutes),
             RefreshTokenLifetime = Days(d.RefreshTokenLifetimeDays),
         };
+    }
+
+    // The impossible-policy check runs on the EFFECTIVE policy: the App's overrides over the
+    // realm policy in force (saved, or derived from the deployment while unsaved — what the
+    // runtime applies). The App's own provider allow-list
+    // decides whether an external login provider is available.
+    private async Task<ErrorOr<ApplicationSignInOverrides>> MapSignInAsync(
+        ApplicationSignInDto d, ApplicationLoginExperience? loginExperience, CancellationToken ct)
+    {
+        var level = SignInPolicyRules.ParseLevel("MinimumLevel", d.MinimumLevel);
+        if (level.IsError) return level.FirstError;
+        var ownFactor = SignInPolicyRules.ParseOwnFactor(d.OwnFactorNotOffered);
+        if (ownFactor.IsError) return ownFactor.FirstError;
+        if (SignInPolicyRules.ValidateGraceDays(d.SetupGraceDays) is { } graceError) return graceError;
+        if (SignInPolicyRules.ValidatePasskeyRpId(d.PasskeyRpId, out var rpId) is { } rpError) return rpError;
+
+        var overrides = new ApplicationSignInOverrides
+        {
+            MinimumLevel = level.Value,
+            SetupGraceDays = d.SetupGraceDays,
+            Password = d.Password,
+            EmailCode = d.EmailCode,
+            Passkey = d.Passkey,
+            Totp = d.Totp,
+            EmailAfterPassword = d.EmailAfterPassword,
+            OwnFactorNotOffered = ownFactor.Value,
+            PasskeyRpId = rpId,
+        };
+
+        var realm = await session.LoadAsync<Modgud.Domain.RealmSettings.RealmSettings>(
+            Modgud.Domain.RealmSettings.RealmSettings.SingletonId, ct);
+        var effective = EffectiveSettings.ApplySignInOverrides(SignInPolicyRules.InForce(realm, authSettings), overrides);
+        if (await SignInPolicyRules.CheckSatisfiableAsync(
+                session, effective, includeAdministration: false,
+                loginExperience?.LoginProviderIds, "Effective sign-in policy of this App", ct) is { } error)
+            return error;
+        return overrides;
     }
 
     private static ErrorOr<ApplicationClientSessionOverrides> MapClientSessions(ApplicationClientSessionsDto dto)
@@ -725,6 +774,18 @@ public sealed class ApplicationSettingsService(
                 Enabled = doc.NativeGrants.Enabled,
                 AccessTokenLifetimeMinutes = doc.NativeGrants.AccessTokenLifetime is { } na ? (int)na.TotalMinutes : null,
                 RefreshTokenLifetimeDays = doc.NativeGrants.RefreshTokenLifetime is { } nr ? (int)nr.TotalDays : null,
+            },
+            SignIn = doc.SignIn is null ? null : new ApplicationSignInDto
+            {
+                MinimumLevel = doc.SignIn.MinimumLevel?.ToString(),
+                SetupGraceDays = doc.SignIn.SetupGraceDays,
+                Password = doc.SignIn.Password,
+                EmailCode = doc.SignIn.EmailCode,
+                Passkey = doc.SignIn.Passkey,
+                Totp = doc.SignIn.Totp,
+                EmailAfterPassword = doc.SignIn.EmailAfterPassword,
+                OwnFactorNotOffered = doc.SignIn.OwnFactorNotOffered?.ToString(),
+                PasskeyRpId = doc.SignIn.PasskeyRpId,
             },
             ClientSessions = doc.ClientSessions is null ? null : new ApplicationClientSessionsDto
             {

@@ -42,7 +42,7 @@ public sealed record RealmManifest
     // still carry a "Realm" object stay loadable: the property is simply ignored.
 
     /// <summary>Optional realm settings patch (self-registration, native grants, ...).</summary>
-    [Description("Optional. Realm-settings patch (self-registration, registration fields, native grants, branding, auth rate limits, deletion, audit, DCR, CIMD). Omit to keep defaults; only the sections/fields you include are changed. Mirrors the realm-settings PATCH shape.")]
+    [Description("Optional. Realm-settings patch (self-registration, registration fields, native grants, sign-in policy, branding, auth rate limits, deletion, audit, DCR, CIMD). Omit to keep defaults; only the sections/fields you include are changed. Mirrors the realm-settings PATCH shape.")]
     public UpdateRealmSettingsDto? Settings { get; init; }
 
     [Description("Apps. Each app is a permission namespace: a catalog of 'resource:action' permissions plus a display name. APIs, scopes, clients and roles reference an app by its Slug.")]
@@ -161,7 +161,7 @@ public sealed record RealmManifestApp
     [Description("The app's permission catalog — the set of 'resource:action' permissions roles/APIs can grant from this app. Absent = keep the current catalog; [] clears it (entries still referenced by roles/APIs make the apply fail).")]
     public List<RealmManifestPermission>? Permissions { get; init; }
 
-    [Description("Optional per-App settings override (ADR-0011): Origin (host→app routing subdomain), Branding, PageTheme, EmailBranding, LoginExperience, SelfRegistration, NativeGrants, ClientSessions, DCR, CIMD, RegistrationFields, ChangeFeed. Patch semantics — only the sections you include change; omit to keep the App inheriting the realm settings.")]
+    [Description("Optional per-App settings override (ADR-0011): Origin (host→app routing subdomain), Branding, PageTheme, EmailBranding, LoginExperience, SelfRegistration, NativeGrants, SignIn (ADR 0025), ClientSessions, DCR, CIMD, RegistrationFields, ChangeFeed. Patch semantics — only the sections you include change; omit to keep the App inheriting the realm settings.")]
     public ApplicationSettingsDto? Settings { get; init; }
 }
 

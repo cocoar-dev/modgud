@@ -10,6 +10,8 @@ Authentication slice. Any number of methods can be active per user.
 | Passkey/FIDO2 | `Fido2NetLib` | `StoredPasskeyCredential` |
 | Magic Link | `MagicLinkService` | `MagicLinkChallenge` (ephemeral) |
 
+Whether a second factor is *required* is decided per App by the sign-in policy — see [Sign-in levels](../concepts/sign-in-levels). A session below the target App's level is stepped up with only the missing factor (`POST /api/account/step-up`).
+
 ## Login flow with 2FA
 
 ```mermaid
@@ -94,10 +96,8 @@ POST /api/account/mfa/disable
 
 → Verifies a TOTP code once more. Resets the authenticator key.
 
-::: warning Last 2FA at level ≥ 1
-When a user removes their last 2FA method while
-`AuthenticationMinimumLevel >= 1`, `SecureSetupDueAt = now` is set →
-the user is blocked immediately (no new grace window).
+::: warning Last 2FA in an App that requires multi-factor
+When a user removes their last 2FA method while the sign-in policy requires `multi` for an App they use, `SecureSetupDueAt = now` is set → the user is blocked immediately (no new grace window).
 :::
 
 ## Email OTP
@@ -199,7 +199,10 @@ picks a discoverable credential. The UserId is read from the
 
 There is no single, global WebAuthn relying party. Each ceremony
 builds its own configuration for the **current realm**: the relying
-party ID (`ServerDomain`) is the realm's primary domain, and the
+party ID (`ServerDomain`) is the realm's primary domain — or, for a
+web sign-in whose target is an App with its own **Passkey RP ID**
+(App → Sign-in), that RP ID when the login page is served on that
+domain or below it — and the
 relying party name (`ServerName`) is the realm's display name. This
 is what scopes a passkey to the realm it was registered on — the
 same credential can't be replayed against a different realm.
@@ -207,7 +210,7 @@ same credential can't be replayed against a different realm.
 An individual OAuth client used for the cookieless native flows (see
 below) can additionally override the relying party ID with its own
 branded domain; when unset it falls back to the realm's primary
-domain. See [per-client WebAuthn RP-ID](../integrate/native-apps#3-passkeys-set-the-per-client-rp-id-and-serve-an-aasa).
+domain; a client inherits its App's passkey RP ID and may still override it. Related-origin requests (`/.well-known/webauthn`) are not supported yet. See [per-client WebAuthn RP-ID](../integrate/native-apps#3-passkeys-set-the-per-client-rp-id-and-serve-an-aasa).
 
 In dev, `localhost:4300` and `https://localhost` are additionally
 allowed as origins.

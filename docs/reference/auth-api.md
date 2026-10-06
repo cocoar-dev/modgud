@@ -216,8 +216,9 @@ email-OTP family.
 | `200 { requiresTwoFactor: true, mfaMethods: [...] }` | Step-2 MFA needed |
 | `200 { requiresSecureSetup: true, gracePeriod: true, secureSetupDueAt }` | User still has to set up 2FA, time remaining |
 | `200 { requiresSecureSetup: true, gracePeriod: false }` | Grace period over, blocking |
+| `403 { RequiresStepUp: true }` | The session is below the target App's sign-in level — complete the missing factor via `POST /api/account/step-up` |
 | `401` | Not authenticated or wrong credentials |
-| `403` | Authenticated but no permission, or passwordless-only realm |
+| `403` | Authenticated but no permission, or the target's sign-in policy has the password switched off |
 | `429` | Rate limit (Email OTP, Magic Link, bootstrap-admin, native OTP/passkey, …) |
 
 The ceilings shown throughout this page (e.g. bootstrap's 10-per-15-minutes) are the defaults — a realm admin can override each one under [Realm Settings → Rate Limits](/admin/realm-settings#rate-limits).

@@ -151,6 +151,15 @@ jobs:
               sleep $((attempt * 30))
               continue
             fi
+            # In --json mode pnpm exits non-zero for ANY finding and ignores
+            # --audit-level; only the text mode honours it. Decide from the counts,
+            # so a low-severity finding below the gate does not fail the build.
+            gated=$(printf '%s' "$out" | jq -r '(.metadata.vulnerabilities // {}) | ((.moderate // 0) + (.high // 0) + (.critical // 0))' 2>/dev/null)
+            if [ "$gated" = "0" ]; then
+              echo "npm audit: only findings below moderate (attempt $attempt):"
+              printf '%s' "$out" | jq -c '.metadata.vulnerabilities'
+              exit 0
+            fi
             echo "$out" | jq '.metadata.vulnerabilities' 2>/dev/null || echo "$out"
             pnpm audit --prod --audit-level=moderate || true
             echo "::error ::Vulnerable npm packages detected (moderate or higher). See report above."

@@ -341,6 +341,9 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             _logger,
             ct);
 
+        // ADR 0025 — a new realm gets an explicit sign-in policy (admins need 2FA).
+        await SignInPolicyRealmSeeder.SeedNewRealmAsync(_serviceProvider, dto.Slug, _logger, ct);
+
         _realmCache.Invalidate();
         if (realm.IsActive)
             await ReconcileJobSchedulesAsync(ct);

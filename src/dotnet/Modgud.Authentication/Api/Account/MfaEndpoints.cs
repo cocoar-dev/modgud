@@ -123,14 +123,14 @@ public static class MfaEndpoints
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             IOAuthGrantRevoker grantRevoker,
-            IAuthSettings appSettings,
+            Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements,
             IDocumentSession session,
             CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
 
-            var willHaveZeroMethods = appSettings.AuthenticationMinimumLevel >= 1
+            var willHaveZeroMethods = await signInRequirements.OwnUiRequiresSecondFactorAsync(ct)
                 && (await TwoFactorHelper.GetMethodsAsync(user, session))
                     .All(m => m == "totp");
 
@@ -194,6 +194,13 @@ public static class MfaEndpoints
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Mfa, ModgudMeters.LoginOutcome.Failure);
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
             }
+
+            // ADR 0025 — the session records both steps: the first factor carried by the
+            // partial sign-in, and the authenticator code proven now.
+            if (await Modgud.Authentication.SignIn.SignInAssurance.ReadPartialAsync(context) is { } partial)
+                Modgud.Authentication.SignIn.SignInAssurance.Declare(context,
+                    Modgud.Authentication.SignIn.SignInAssurance.Union(partial.Factors,
+                        new Dictionary<string, DateTimeOffset> { [Modgud.Authentication.SignIn.SignInMethods.Totp] = DateTimeOffset.UtcNow }));
 
             var result = await signInManager.TwoFactorAuthenticatorSignInAsync(
                 code, isPersistent: request.RememberMe, rememberClient: request.RememberMachine);

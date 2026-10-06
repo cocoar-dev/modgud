@@ -8,15 +8,15 @@ Every login path in detail. Endpoints are mounted under
 
 ```mermaid
 flowchart TD
-    A[POST /api/account/login] --> B{Level = 2?}
-    B -->|Yes| C[403 Password disabled]
-    B -->|No| D{Credentials OK?}
+    A[POST /api/account/login] --> B{Password offered by the target?}
+    B -->|No| C[403 Password disabled]
+    B -->|Yes| D{Credentials OK?}
     D -->|No| E[401 Invalid credentials]
     D -->|Yes| N{Email verified, or realm doesn't require it?}
     N -->|No| O[403 Account.EmailNotVerified]
     N -->|Yes| F{RequiresTwoFactor?}
     F -->|Yes| G[200 RequiresMfa + MfaMethods]
-    F -->|No| H{Level >= 1 & no 2FA?}
+    F -->|No| H{Target requires multi & no 2FA?}
     H -->|Yes| I{TwoFactorExempt?}
     I -->|Yes| J[200 Login successful]
     I -->|No| K{Grace period active?}
@@ -53,11 +53,11 @@ Possible responses. The backend serializes with `PropertyNamingPolicy = null`, s
 | Response | Meaning |
 |---|---|
 | `200 { "Message": "Login successful" }` | Login complete — cookie set |
-| `200 { "RequiresMfa": true, "MfaMethods": ["totp", "email"] }` | Level ≥ 1, user has 2FA — second step needed |
+| `200 { "RequiresMfa": true, "MfaMethods": ["totp", "email"] }` | The target requires multi-factor (or the user turned on their own second factor that the target offers) — second step needed |
 | `200 { "RequiresSecureSetup": true, "GracePeriod": true, "SecureSetupDueAt": "..." }` | User still has to set up 2FA, time runs until `SecureSetupDueAt` |
 | `200 { "RequiresSecureSetup": true, "GracePeriod": false }` | Grace period over, blocking |
 | `401 { "Message": "Invalid credentials" }` | Username/password wrong, user inactive, or account locked |
-| `403 { "Message": "Password login is disabled" }` | Level = 2 (passwordless), password login disabled |
+| `403 { "Message": "Password login is disabled" }` | The target App's (or realm's) sign-in policy has the password switched off |
 | `403 { "Message": "Please verify your email address before signing in.", "Code": "Account.EmailNotVerified" }` | Realm requires email verification (a self-registration setting) and this account's email isn't confirmed yet |
 
 ## TOTP login
@@ -98,6 +98,14 @@ Content-Type: application/json
 
 A maximum of 3 verify attempts per challenge; otherwise a new code
 must be requested.
+
+### E-mail code as the first factor
+
+`POST /api/account/passwordless-otp/request` and `/api/account/passwordless-otp/login` sign a user in with an e-mail code alone. The path is gated by the **target's** `EmailCode` sign-in method (App → Sign-in, falling back to the realm) — not by the native-grants switch. When the target requires `multi`, or the user turned on a second factor of their own that the target offers, the login answers `200 { "RequiresMfa": true, "MfaMethods": [...] }` and the second step continues as above; a second e-mail code is never offered, because it would prove the same mailbox twice. A stored passkey no longer makes the login refuse. See [Sign-in levels](../concepts/sign-in-levels).
+
+### Step-up
+
+When a session is below the target App's level, `/connect/authorize` redirects to `/login?stepup=1&redirect=…`. The login page calls `POST /api/account/step-up` and asks only for the missing factor. Admin and portal API calls from a session that is too weak answer `403 { "RequiresStepUp": true }` or `{ "RequiresSecureSetup": true }`.
 
 ## Passkey login (FIDO2 / WebAuthn)
 

@@ -12,6 +12,8 @@ export interface AuthUser {
   TwoFactorExempt?: boolean
   /** Current session came from an IdP that asserted MFA — treated as 2FA-satisfied. */
   IsFederatedMfa?: boolean
+  /** ADR 0025 - some part of Modgud (portal or administration) requires a second factor. */
+  SecondFactorRequired?: boolean
   /** Current session came from an external IdP (regardless of MFA). */
   IsFederated?: boolean
   /** DisplayName of the IdP the session came from (e.g. "Entra ID"). */

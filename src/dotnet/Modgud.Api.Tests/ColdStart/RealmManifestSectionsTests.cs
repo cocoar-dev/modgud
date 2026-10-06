@@ -148,6 +148,12 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
                     {
                         Branding = new ApplicationBrandingDto { ProductName = productName },
                         Origin = new ApplicationOriginDto { Subdomain = $"shop.{slug}.localhost" },
+                        SignIn = new ApplicationSignInDto
+                        {
+                            MinimumLevel = "Multi",
+                            EmailCode = true,
+                            PasskeyRpId = "shop.example.com",
+                        },
                     },
                 },
                 // A second app WITHOUT settings must not grow an override on export.
@@ -181,6 +187,9 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         var exShop = Assert.Single(exported.Value.Apps, a => a.Slug == "shop");
         Assert.Equal("Shop!", exShop.Settings?.Branding?.ProductName);
         Assert.Equal($"shop.{slug}.localhost", exShop.Settings?.Origin?.Subdomain);
+        Assert.Equal("Multi", exShop.Settings?.SignIn?.MinimumLevel);
+        Assert.Equal("shop.example.com", exShop.Settings?.SignIn?.PasskeyRpId);
+        Assert.Null(exShop.Settings?.SignIn?.Password);   // untouched fields stay inherited
         Assert.Null(Assert.Single(exported.Value.Apps, a => a.Slug == "plain").Settings);
 
         // ── Apply: the settings patch updates in place. ────────────────────────────

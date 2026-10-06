@@ -137,6 +137,7 @@
       "magicLinkSubtitle": "Erhalten Sie einen Anmelde-Link per E-Mail.",
       "authenticatorApp": "Authenticator-App",
       "emailCode": "Code per E-Mail",
+      "passkey": "Mit Passkey bestätigen",
       "authenticatorCode": "Authenticator-Code",
       "invalidCode": "Ungültiger Code. Bitte erneut versuchen.",
       "otherMethod": "Andere Methode wählen",
@@ -2123,7 +2124,8 @@
         "signingKeys": "Signing-Schlüssel",
         "auditRetention": "Protokoll-Aufbewahrung",
         "accountDeletion": "Konto-Löschung",
-        "pages": "Aktive Anmeldeseiten"
+        "pages": "Aktive Anmeldeseiten",
+        "signIn": "Anmelderichtlinie"
       },
       "signingKeys": {
         "hint": "Dieser Realm signiert seine OpenIddict Access- und ID-Tokens mit einem realm-eigenen RSA-Schlüssel. Beim Rotieren wird ein frischer Schlüssel für neue Tokens erzeugt; der bisherige wird stillgelegt, bleibt aber 30 Tage lang im JWKS, damit bereits ausgestellte Tokens gültig bleiben. Abgelaufene stillgelegte Schlüssel werden automatisch entfernt.",
@@ -2263,6 +2265,11 @@
       },
       "regFields": {
         "hint": "Welche Identitätsfelder bei der Kontoerstellung gefordert sind (Admin-Anlage, Selbstregistrierung, native passwortlose Registrierung). E-Mail ist immer Pflicht. Pro Application überschreibbar."
+      },
+      "signIn": {
+        "hint": "Die Standard-Anmeldestärke und -methoden für alle Apps dieses Realms. Eine App kann jeden Teil in ihren eigenen Einstellungen überschreiben.",
+        "unconfigured": "Noch nicht konfiguriert – dieser Realm folgt derzeit dem früheren Authentifizierungs-Level des Deployments.",
+        "adopt": "Diese Werte übernehmen"
       }
     },
     "dualListbox": {
@@ -2323,7 +2330,8 @@
       "posture.inviteCode.m2m": "Für automatisches Minting durch die Backend-App (M2M): Lege einen OAuth-Scope „invite:write“ an, der an diese App gebunden ist (App-ID gesetzt), und gib einem ServiceAccount ein Credential mit diesem Scope. Die App ruft dann POST /api/app/{appId}/invite-codes mit ihrem client_credentials-Token auf.",
       "posture.inviteCode.redeem": "Einlösung: Der Code reist auf dem nativen Sign-up-Request mit (Feld InviteCode); unbekannte E-Mails werden nur mit gültigem, unbenutztem Code zu Nutzern. Bestehende bestätigte Nutzer melden sich normal an (der Code wird ignoriert).",
       "tabs": {
-        "pages": "Seiten"
+        "pages": "Seiten",
+        "signIn": "Anmeldung"
       },
       "pages": {
         "inheritRealm": "Realm erben",
@@ -2340,6 +2348,26 @@
         "cardRadius": "Karten-Radius (px)",
         "bodyFontFamily": "Schriftart Fließtext",
         "titleFontFamily": "Schriftart Überschriften"
+      },
+      "signIn": {
+        "override": "Eigene Anmelderichtlinie für diese App",
+        "realmUnconfigured": "Der Realm hat seine Anmelderichtlinie noch nicht gespeichert. Die als geerbt angezeigten Werte sind die derzeit geltenden – abgeleitet aus dem früheren Authentifizierungs-Level des Deployments."
+      },
+      "hostBound": {
+        "host": "Nur über die eigene Domain der App",
+        "partial": "Teilweise über die eigene Domain der App",
+        "noDomain": "Diese App hat keine eigene Domain. Einige ihrer Einstellungen wirken nur bei Anfragen, die über die eigene Domain der App eingehen (unter „Origin & Branding“ festlegen).",
+        "noEffect": "Derzeit ohne Wirkung:",
+        "partlyNoEffect": "Nur teilweise wirksam:",
+        "section": {
+          "emailBranding": "E-Mail-Branding",
+          "selfReg": "Registrierungsrichtlinie",
+          "registrationFields": "Pflichtfelder bei der Registrierung",
+          "nativeGrants": "Native Grants",
+          "rateLimits": "Rate-Limits",
+          "dcr": "Dynamic Client Registration",
+          "cimd": "Client-ID-Metadaten (CIMD)"
+        }
       }
     },
     "emailPreview": {
@@ -2358,6 +2386,34 @@
         "ChangeRequestApproved": "Antrag genehmigt",
         "ChangeRequestRejected": "Antrag abgelehnt"
       }
+    },
+    "signIn": {
+      "level": {
+        "single": "Ein Faktor – ein Nachweis genügt",
+        "multi": "Mehrere Faktoren – zwei verschiedene Nachweise oder ein Passkey"
+      },
+      "ownFactor": {
+        "ignore": "Ignorieren – nicht danach fragen",
+        "requireViaBrowser": "Über den Browser verlangen"
+      },
+      "minimumLevel": "Mindest-Level",
+      "minimumLevelHint": "Das Level, das eine Anmeldung bei einer App erreichen muss. Nutzer ohne zweiten Faktor dürfen sich während der Einrichtungsfrist mit einem Faktor anmelden.",
+      "administrationMinimumLevel": "Mindest-Level der Administration",
+      "administrationMinimumLevelHint": "Das Level, das eine Sitzung für die Administration dieses Realms braucht. Getrennt vom Mindest-Level, damit Endnutzer einer reinen Code-App nicht ins 2FA gedrängt werden, nur weil sie ihr Profil öffnen.",
+      "setupGraceDays": "Einrichtungsfrist (Tage, 0–365)",
+      "setupGraceDaysHint": "Wie lange sich ein Nutzer ohne zweiten Faktor weiter bei einer App anmelden darf, die mehrere Faktoren verlangt. 0 = sofort einrichten.",
+      "ownFactorNotOffered": "Eigener zweiter Faktor des Nutzers, von der App nicht angeboten",
+      "ownFactorNotOfferedHint": "Was passiert, wenn ein Nutzer einen zweiten Faktor (z. B. eine Authenticator-App) eingeschaltet hat, den eine App nicht anbietet.",
+      "ownFactorIgnoreNotice": "Nutzer, die einen eigenen zweiten Faktor eingerichtet haben (z. B. eine Authenticator-App), werden bei der Anmeldung an dieser App nicht danach gefragt, solange die App ihn nicht anbietet.",
+      "methods": "Anmeldemethoden",
+      "password": "Passwort",
+      "emailCode": "E-Mail-Code",
+      "passkey": "Passkey",
+      "secondFactors": "Zweite Faktoren",
+      "totp": "Authenticator-App (TOTP)",
+      "emailAfterPassword": "E-Mail-Code nach dem Passwort",
+      "passkeyRpId": "Passkey-RP-ID",
+      "passkeyRpIdHint": "Domain, an die die Passkeys dieser App gebunden sind. Leer = die Domain des Realms. Native Clients können sie pro Client überschreiben."
     }
   },
   "permissions": {

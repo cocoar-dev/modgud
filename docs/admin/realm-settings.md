@@ -23,6 +23,7 @@ The page currently has these tabs:
 - [Self-Registration](#self-registration) — public sign-up policy
 - [Registration Fields](#registration-fields) — which identity fields are
   required when an account is created
+- [Security (sign-in)](#security-sign-in) — the realm's sign-in policy: levels, methods, setup grace
 - [Sessions](#sessions) — browser/SSO policy and the native/OAuth client-session default
 - [Dynamic Client Registration](#dynamic-client-registration) —
   anonymous OAuth-client registration policy (linked detail page:
@@ -174,6 +175,21 @@ Anonymous OAuth-client registration policy: master toggle, token lifetimes, GC T
 Off by default. See the full feature page for when to enable it, what gets accepted, and the consent-screen `[unverified]` marker:
 
 → **[Dynamic Client Registration](./dynamic-client-registration)** (full feature page)
+
+## Security (sign-in)
+
+The realm's default sign-in policy (ADR 0025; concept: [Sign-in levels](../concepts/sign-in-levels)). Every App inherits it and can override any part under [App → Sign-in](./applications#application-settings).
+
+| Field | Meaning |
+|---|---|
+| **Minimum level** (`MinimumLevel`) | `Single` or `Multi` — the level a sign-in must reach. Applies to every App without an override and to Modgud's own portal (the `modgud` App) |
+| **Administration minimum level** (`AdministrationMinimumLevel`) | The level a session needs for `/api/admin/*`. Realm only; kept separate so end users of a code-only App are not pushed into 2FA by opening their profile |
+| **Setup grace days** (`SetupGraceDays`) | How long a user without a second factor may keep signing in at `Single` to something that requires `Multi`. `0` = set up immediately |
+| **First factors** | `Password`, `EmailCode`, `Passkey` |
+| **Second factors** | `Totp`, `EmailAfterPassword` |
+| **User's own factor not offered** (`OwnFactorNotOffered`) | `Ignore` or `RequireViaBrowser` — what happens when a user switched on a second factor that the App does not offer |
+
+New realms are seeded with: minimum `Single`, administration minimum `Multi`, grace 14 days, password on, e-mail code off, passkey on, TOTP on, e-mail after password on, `RequireViaBrowser`. A realm that never saved the section runs under a policy derived from the deprecated deployment settings `AuthenticationMinimumLevel` / `TwoFactorGracePeriodDays`. A policy that cannot be satisfied (`Multi` required, no way to reach it) is rejected on save. In a realm manifest the section lives under `Settings.SignIn`.
 
 ## Sessions
 

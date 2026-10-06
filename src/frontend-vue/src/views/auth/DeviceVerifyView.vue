@@ -188,6 +188,17 @@ async function decide(approve: boolean) {
       body: new URLSearchParams({ user_code: userCode, decision: approve ? 'approve' : 'deny' }),
     })
     const done = resp.ok || resp.type === 'opaqueredirect' || resp.status === 0 || (resp.status >= 300 && resp.status < 400)
+    // ADR 0025 — the device's app requires more than this session proved: confirm the
+    // missing factor on the login page, then come back here and approve again.
+    if (resp.status === 403) {
+      const body = await resp.json().catch(() => null) as { RequiresStepUp?: boolean; ClientId?: string | null } | null
+      if (body?.RequiresStepUp) {
+        const back = new URL(window.location.href)
+        if (body.ClientId) back.searchParams.set('client_id', body.ClientId)
+        window.location.href = `/login?stepup=1&redirect=${encodeURIComponent(back.pathname + back.search)}`
+        return
+      }
+    }
     if (!done && resp.status >= 400) {
       error.value = t('device.decisionError', {}, 'Could not submit your decision. Please try again.')
       return

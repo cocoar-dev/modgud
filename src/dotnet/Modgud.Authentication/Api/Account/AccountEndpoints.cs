@@ -23,6 +23,7 @@ using Modgud.Infrastructure.Observability;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 using Modgud.Authentication.RateLimiting;
+using Modgud.Authentication.SignIn;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -46,6 +47,10 @@ public static class AccountEndpoints
         string Code,
         bool RememberMe = false,
         string? ReturnUrl = null);
+
+    /// <summary>ADR 0025 — <paramref name="ReturnUrl"/> is the pending continuation whose
+    /// target App the session is raised for.</summary>
+    public record StepUpRequest(string? ReturnUrl = null);
 
     public record LogoutRequest(bool EndIdpSession = true);
 
@@ -85,7 +90,12 @@ public static class AccountEndpoints
         /// unverified-email banner and gates self-service forgot-password /
         /// magic-link on the backend.
         /// </summary>
-        bool EmailConfirmed);
+        bool EmailConfirmed,
+        /// <summary>
+        /// ADR 0025 — whether Modgud's own UI (portal or administration) requires a
+        /// second factor anywhere. Drives the "last second factor" warning on the profile.
+        /// </summary>
+        bool SecondFactorRequired = false);
 
     public static WebApplication MapAccountEndpoints(this WebApplication application, string path)
     {
@@ -103,6 +113,7 @@ public static class AccountEndpoints
             ISecurityAuditLog securityAudit,
             Modgud.Authentication.RateLimiting.ILoginThrottle loginThrottle,
             IUserStore<ApplicationUser> userStore,
+            ISignInRequirementService signInRequirements,
             HttpContext context) =>
         {
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -113,8 +124,10 @@ public static class AccountEndpoints
             if (string.IsNullOrWhiteSpace(request?.UserName) || string.IsNullOrWhiteSpace(request?.Password))
                 return Results.Json(new { Message = "UserName and Password are required" }, statusCode: 400);
 
-            // Level 2 (Passwordless): password login disabled entirely
-            if (appSettings.AuthenticationMinimumLevel >= 2)
+            // ADR 0025 — the sign-in's target App decides whether a password is a sign-in
+            // method at all, and what has to follow it.
+            var signInTarget = await signInRequirements.ResolveTargetFromReturnUrlAsync(request.ReturnUrl, context.RequestAborted);
+            if (!signInTarget.Policy.Password)
                 return Results.Json(new { Message = "Password login is disabled" }, statusCode: 403);
             var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl);
             if ((await applicationSettings.ResolveForRequestAsync(context, clientId, context.RequestAborted))
@@ -169,6 +182,17 @@ public static class AccountEndpoints
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Locked);
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
             }
+
+            // ADR 0025 — decide up front (as if the password were right) whether this
+            // sign-in needs a second step; Identity's two-factor branch follows the decision
+            // instead of "the account has a factor" (AppSignInManager). Evaluated before the
+            // password check so a wrong password costs the same time either way.
+            var passwordDecision = await signInRequirements.EvaluateAsync(
+                user, signInTarget,
+                new Dictionary<string, DateTimeOffset> { [SignInMethods.Password] = DateTimeOffset.UtcNow },
+                SignInSurface.Web, startSetupGrace: false, context.RequestAborted);
+            AppSignInManager.RequireSecondFactor(context, passwordDecision.Outcome == SignInOutcome.NeedSecondFactor);
+            SignInAssurance.Declare(context, SignInMethods.Password);
 
             var result = await signInManager.PasswordSignInAsync(user, request.Password,
                 isPersistent: request.RememberMe, lockoutOnFailure: false);
@@ -226,54 +250,11 @@ public static class AccountEndpoints
                     Log.Warning(ex, "failed to persist login audit marker for user {UserId}", user.Id);
                 }
 
-                // Level >= 1: check if user needs to set up a secure login method
-                if (appSettings.AuthenticationMinimumLevel >= 1)
-                {
-                    var methods = await TwoFactorHelper.GetMethodsAsync(user, session);
-                    if (methods.Count == 0)
-                    {
-                        var securityData = await docSession.LoadAsync<UserSecurityData>(user.Id);
-                        if (securityData is null)
-                        {
-                            // EventSourcedUserStore creates UserSecurityData on first password change.
-                            // Fall back to blocking setup if the document is missing — caller can
-                            // set up 2FA which will create the document.
-                            Log.Information("User requires secure setup (no security data). UserId={UserId} IP={IP}", user.Id, ip);
-                            return Results.Ok(new { RequiresSecureSetup = true, GracePeriod = false });
-                        }
-
-                        // Hard opt-out: treat as if 2FA is set up. Audit-log every occurrence.
-                        if (securityData.TwoFactorExempt)
-                        {
-                            Log.Warning("2FA-exempt login. UserId={UserId} IP={IP}", user.Id, ip);
-                            return Results.Ok(new { Message = "Login successful" });
-                        }
-
-                        // Grace period: users without 2FA get TwoFactorGracePeriodDays (or their
-                        // per-user override) after their first post-enforcement login to set one
-                        // up. The due date is stamped on first trigger and persists across logins.
-                        var graceDays = Math.Max(0, securityData.GracePeriodDaysOverride ?? appSettings.TwoFactorGracePeriodDays);
-
-                        if (graceDays > 0 && securityData.SecureSetupDueAt is null)
-                        {
-                            securityData.SecureSetupDueAt = DateTime.UtcNow.AddDays(graceDays);
-                            docSession.Store(securityData);
-                            await docSession.SaveChangesAsync();
-                            Log.Information("Grace period started. UserId={UserId} DueAt={DueAt} IP={IP}",
-                                user.Id, securityData.SecureSetupDueAt, ip);
-                        }
-
-                        var inGrace = securityData.SecureSetupDueAt is { } due && due > DateTime.UtcNow;
-                        Log.Information("User requires secure setup. UserId={UserId} InGrace={InGrace} DueAt={DueAt} IP={IP}",
-                            user.Id, inGrace, securityData.SecureSetupDueAt, ip);
-                        return Results.Ok(new
-                        {
-                            RequiresSecureSetup = true,
-                            GracePeriod = inGrace,
-                            SecureSetupDueAt = securityData.SecureSetupDueAt,
-                        });
-                    }
-                }
+                // ADR 0025 — the target requires a second factor the user does not have
+                // yet: the setup duty (grace period, then a blocking setup).
+                if (passwordDecision.SetupPending)
+                    return await SignInResponses.SecureSetupAsync(
+                        signInRequirements, user, signInTarget, SignInMethods.Password, context.RequestAborted);
 
                 return Results.Ok(new { Message = "Login successful" });
             }
@@ -282,10 +263,7 @@ public static class AccountEndpoints
             {
                 Log.Information("Login requires MFA. UserId={UserId} IP={IP}", user.Id, ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.TwoFactorRequired);
-                var mfaMethods = new List<string>();
-                if (user.TwoFactorEnabled) mfaMethods.Add("totp");
-                if (user.EmailOtpEnabled && !string.IsNullOrEmpty(user.Email)) mfaMethods.Add("email");
-                return Results.Ok(new { RequiresMfa = true, MfaMethods = mfaMethods });
+                return Results.Ok(new { RequiresMfa = true, MfaMethods = passwordDecision.SecondFactors });
             }
 
             if (result.IsLockedOut)
@@ -326,6 +304,7 @@ public static class AccountEndpoints
             IRegistrationPipeline registrationPipeline,
             IRegistrationInviteService inviteService,
             UserManager<ApplicationUser> userManager,
+            ISignInRequirementService signInRequirements,
             CancellationToken ct) =>
         {
             const string genericMessage = "If your email is registered, you will receive a verification code.";
@@ -334,7 +313,9 @@ public static class AccountEndpoints
 
             var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl);
             var effective = await settingsResolver.ResolveForRequestAsync(context, clientId, ct);
-            if (effective.NativeGrants is null || !effective.NativeGrants.Enabled)
+            // ADR 0025 — whether an e-mail code is a sign-in method is the target App's call.
+            var signInTarget = await signInRequirements.ResolveTargetFromReturnUrlAsync(request.ReturnUrl, ct);
+            if (!signInTarget.Policy.EmailCode)
                 return Results.Problem(
                     statusCode: StatusCodes.Status400BadRequest,
                     title: "NativeGrants.Disabled",
@@ -368,10 +349,10 @@ public static class AccountEndpoints
         .AllowAnonymous()
         .RequireAuthRateLimit(AuthRateLimitPolicy.NativeOtp, target: ctx => ctx.Argument<PasswordlessOtpRequest>()?.Email);
 
-        // Redeem the primary OTP into the normal Modgud browser cookie. Users
-        // with another configured second factor are rejected here instead of
-        // silently downgrading their account; the existing MFA continuation can
-        // be wired as a separate PageBuilder state when that use case is needed.
+        // Redeem the primary OTP. ADR 0025 — what follows is the target App's call:
+        // nothing (the code is enough), a second factor the user can use here, or the
+        // setup of one. A stored passkey the user cannot use on this page, or the
+        // e-mail second factor (the same mailbox again), never blocks the sign-in.
         group.MapPost("passwordless-otp/login", async (
             PasswordlessOtpLoginRequest request,
             HttpContext context,
@@ -381,6 +362,7 @@ public static class AccountEndpoints
             IRegistrationPipeline registrationPipeline,
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
+            ISignInRequirementService signInRequirements,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(request?.Email) || string.IsNullOrWhiteSpace(request.Code))
@@ -388,7 +370,8 @@ public static class AccountEndpoints
 
             var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl);
             var effective = await settingsResolver.ResolveForRequestAsync(context, clientId, ct);
-            if (effective.NativeGrants is null || !effective.NativeGrants.Enabled)
+            var signInTarget = await signInRequirements.ResolveTargetFromReturnUrlAsync(request.ReturnUrl, ct);
+            if (!signInTarget.Policy.EmailCode)
                 return Results.Problem(
                     statusCode: StatusCodes.Status400BadRequest,
                     title: "NativeGrants.Disabled",
@@ -438,16 +421,6 @@ public static class AccountEndpoints
                     return await InvalidCode();
             }
 
-            var secondFactors = await TwoFactorHelper.GetMethodsAsync(user, session);
-            if (secondFactors.Count > 0)
-            {
-                ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.EmailOtp, ModgudMeters.LoginOutcome.TwoFactorRequired);
-                return Results.Problem(
-                    statusCode: StatusCodes.Status403Forbidden,
-                    title: "PasswordlessOtp.AdditionalFactorRequired",
-                    detail: "This account requires an additional authentication factor.");
-            }
-
             if (!user.EmailConfirmed)
             {
                 // A valid registration OTP proves ownership of this address.
@@ -463,14 +436,67 @@ public static class AccountEndpoints
             if (!await signInManager.CanSignInAsync(user))
                 return await InvalidCode();
 
+            var proven = new Dictionary<string, DateTimeOffset> { [SignInMethods.Email] = DateTimeOffset.UtcNow };
+            var decision = await signInRequirements.EvaluateAsync(
+                user, signInTarget, proven, SignInSurface.Web, startSetupGrace: false, ct);
+            if (decision.Outcome == SignInOutcome.NeedSecondFactor)
+            {
+                // The code is spent and proven; the partial sign-in carries it to the
+                // second step, which records both.
+                await SignInAssurance.SignInPartialAsync(context, user.Id, proven);
+                ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.EmailOtp, ModgudMeters.LoginOutcome.TwoFactorRequired);
+                return Results.Ok(new { RequiresMfa = true, MfaMethods = decision.SecondFactors });
+            }
+
+            SignInAssurance.Declare(context, proven);
             await signInManager.SignInAsync(
                 user, isPersistent: request.RememberMe, authenticationMethod: ModgudMeters.LoginMethod.EmailOtp);
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.EmailOtp, ModgudMeters.LoginOutcome.Success);
+
+            if (decision.SetupPending)
+                return await SignInResponses.SecureSetupAsync(
+                    signInRequirements, user, signInTarget, SignInMethods.Email, ct);
             return Results.Ok(new { Message = "Login successful" });
         })
         .WithName("Account_PasswordlessOtpLogin")
         .AllowAnonymous()
         .RequireAuthRateLimit(AuthRateLimitPolicy.EmailOtp, target: ctx => ctx.Argument<PasswordlessOtpLoginRequest>()?.Email);
+
+        // ADR 0025 — raise a signed-in session to what a pending authorization's app
+        // requires. /connect/authorize sends the browser to /login?stepup=1 when the
+        // session is below the target's level; the login page calls this to learn which
+        // factor is missing. A partial sign-in carries the session's proven factors to
+        // the second step, whose sign-in unions them back into the same session.
+        group.MapPost("step-up", [Authorize] async (
+            StepUpRequest? request,
+            HttpContext context,
+            UserManager<ApplicationUser> userManager,
+            ISignInRequirementService signInRequirements,
+            CancellationToken ct) =>
+        {
+            var user = await userManager.GetUserAsync(context.User);
+            if (user is null || !user.IsActive || user.IsDeleted)
+                return Results.Unauthorized();
+
+            var factors = SignInAssurance.ReadFactors(context.User);
+            var target = await signInRequirements.ResolveTargetFromReturnUrlAsync(request?.ReturnUrl, ct);
+            var decision = await signInRequirements.EvaluateAsync(
+                user, target, factors, SignInSurface.Web, startSetupGrace: true, ct);
+
+            switch (decision.Outcome)
+            {
+                case SignInOutcome.NeedSecondFactor:
+                    await SignInAssurance.SignInPartialAsync(context, user.Id, factors);
+                    return Results.Ok(new { RequiresMfa = true, MfaMethods = decision.SecondFactors });
+                case SignInOutcome.SetupRequired:
+                    return Results.Ok(new { RequiresSecureSetup = true, GracePeriod = false, SecureSetupDueAt = decision.SetupDueAt });
+                default:
+                    return decision.SetupPending
+                        ? Results.Ok(new { RequiresSecureSetup = true, GracePeriod = true, SecureSetupDueAt = decision.SetupDueAt })
+                        : Results.Ok(new { Message = "Session already meets the requirement" });
+            }
+        })
+        .WithName("Account_StepUp");
 
         group.MapPost("logout", [Authorize] async (
             HttpContext context,
@@ -579,7 +605,9 @@ public static class AccountEndpoints
                 isFederatedMfa,
                 isFederated,
                 idpDisplayName,
-                user.EmailConfirmed));
+                user.EmailConfirmed,
+                await context.RequestServices.GetRequiredService<ISignInRequirementService>()
+                    .OwnUiRequiresSecondFactorAsync(context.RequestAborted)));
         })
         .WithName("Account_Me");
 
@@ -590,9 +618,10 @@ public static class AccountEndpoints
             SignInManager<ApplicationUser> signInManager,
             IUserAccessRevoker accessRevoker,
             Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker,
-            IAuthSettings appSettings) =>
+            Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements) =>
         {
-            if (appSettings.AuthenticationMinimumLevel >= 2)
+            // ADR 0025 — passwords are off when the realm's portal does not offer them.
+            if (!await signInRequirements.PortalAllowsPasswordAsync(context.RequestAborted))
                 return Results.Json(new { Message = "Password operations are disabled" }, statusCode: 403);
 
             var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";

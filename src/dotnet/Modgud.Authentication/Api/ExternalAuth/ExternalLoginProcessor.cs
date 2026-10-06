@@ -501,6 +501,13 @@ public class ExternalLoginProcessor(
         foreach (var amr in external.FindAll("amr"))
             identity.AddClaim(new Claim("modgud.external.amr", amr.Value));
 
+        // ADR 0025 — what this sign-in proved: a federated sign-in, multi-factor when the
+        // provider asserted it. The cookie events union it with the user's current session.
+        var signedInAt = DateTimeOffset.UtcNow;
+        Modgud.Authentication.SignIn.SignInAssurance.Stamp(identity,
+            Modgud.Authentication.SignIn.SignInAssurance.ExternalMethods(external.FindAll("amr").Select(c => c.Value))
+                .ToDictionary(m => m, _ => signedInAt, StringComparer.Ordinal));
+
         // Federation v1: derive ExternallyDrivable group membership in-memory from
         // (local ∪ this provider's claims), gated on the per-provider
         // TrustForAuthorization opt-in. A password / untrusted-provider login

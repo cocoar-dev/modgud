@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Modgud.Authentication;
 using Modgud.Authentication.Api.Account;
+using Modgud.Authentication.SignIn;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -152,13 +153,6 @@ public class TwoFactorEnforcementMiddlewareTests
 
     public class InvokeAsync_EarlyExits
     {
-        private sealed class FakeAuthSettings(int level) : IAuthSettings
-        {
-            public int AuthenticationMinimumLevel { get; } = level;
-            public bool MagicLinkSelfService => false;
-            public int TwoFactorGracePeriodDays => 14;
-        }
-
         private static (TwoFactorEnforcementMiddleware mw, Func<bool> wasNextCalled) MakeMiddleware()
         {
             var called = false;
@@ -166,19 +160,8 @@ public class TwoFactorEnforcementMiddlewareTests
             return (mw, () => called);
         }
 
-        [Fact]
-        public async Task When_authentication_min_level_is_zero_passes_through_without_touching_dependencies()
-        {
-            // Because we return early, IDocumentSession and UserManager are never
-            // dereferenced — passing `null!` proves the early exit.
-            var (mw, wasCalled) = MakeMiddleware();
-            var ctx = new DefaultHttpContext();
-
-            await mw.InvokeAsync(ctx, new FakeAuthSettings(level: 0), session: null!, userManager: null!);
-
-            Assert.True(wasCalled());
-            Assert.Equal(StatusCodes.Status200OK, ctx.Response.StatusCode);
-        }
+        // Every early exit is proven by passing `null!` for the dependencies: a path that
+        // reached the user lookup or the requirement evaluation would throw.
 
         [Fact]
         public async Task When_user_is_anonymous_passes_through_without_touching_dependencies()
@@ -186,9 +169,10 @@ public class TwoFactorEnforcementMiddlewareTests
             var (mw, wasCalled) = MakeMiddleware();
             var ctx = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) };
 
-            await mw.InvokeAsync(ctx, new FakeAuthSettings(level: 1), session: null!, userManager: null!);
+            await mw.InvokeAsync(ctx, userManager: null!, signInRequirements: null!);
 
             Assert.True(wasCalled());
+            Assert.Equal(StatusCodes.Status200OK, ctx.Response.StatusCode);
         }
 
         [Fact]
@@ -201,7 +185,7 @@ public class TwoFactorEnforcementMiddlewareTests
                 new Microsoft.AspNetCore.Http.EndpointMetadataCollection(new AllowAnonymousAttribute()),
                 "anon-endpoint"));
 
-            await mw.InvokeAsync(ctx, new FakeAuthSettings(level: 1), session: null!, userManager: null!);
+            await mw.InvokeAsync(ctx, userManager: null!, signInRequirements: null!);
 
             Assert.True(wasCalled());
         }
@@ -212,18 +196,46 @@ public class TwoFactorEnforcementMiddlewareTests
             var (mw, wasCalled) = MakeMiddleware();
             var ctx = AuthenticatedContext("/api/account/mfa/setup");
 
-            await mw.InvokeAsync(ctx, new FakeAuthSettings(level: 1), session: null!, userManager: null!);
+            await mw.InvokeAsync(ctx, userManager: null!, signInRequirements: null!);
 
             Assert.True(wasCalled());
         }
 
         [Fact]
-        public async Task When_principal_has_federated_mfa_passes_through_without_touching_dependencies()
+        public async Task When_step_up_path_is_called_passes_through_without_touching_dependencies()
         {
             var (mw, wasCalled) = MakeMiddleware();
-            var ctx = AuthenticatedContext("/api/admin/users", new Claim("modgud.external.amr", "mfa"));
+            var ctx = AuthenticatedContext("/api/account/step-up");
 
-            await mw.InvokeAsync(ctx, new FakeAuthSettings(level: 1), session: null!, userManager: null!);
+            await mw.InvokeAsync(ctx, userManager: null!, signInRequirements: null!);
+
+            Assert.True(wasCalled());
+        }
+
+        [Theory]
+        [InlineData("passkey")]
+        [InlineData("external_mfa")]
+        public async Task When_session_proved_a_multi_factor_sign_in_passes_through_without_touching_dependencies(string method)
+        {
+            var (mw, wasCalled) = MakeMiddleware();
+            var ctx = AuthenticatedContext("/api/admin/users",
+                new Claim(SignInAssurance.FactorClaimType, $"{method}:{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}"));
+
+            await mw.InvokeAsync(ctx, userManager: null!, signInRequirements: null!);
+
+            Assert.True(wasCalled());
+        }
+
+        [Fact]
+        public async Task When_session_proved_two_different_factors_passes_through_without_touching_dependencies()
+        {
+            var (mw, wasCalled) = MakeMiddleware();
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var ctx = AuthenticatedContext("/api/admin/users",
+                new Claim(SignInAssurance.FactorClaimType, $"pwd:{now}"),
+                new Claim(SignInAssurance.FactorClaimType, $"totp:{now}"));
+
+            await mw.InvokeAsync(ctx, userManager: null!, signInRequirements: null!);
 
             Assert.True(wasCalled());
         }

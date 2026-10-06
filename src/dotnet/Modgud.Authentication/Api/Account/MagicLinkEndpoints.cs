@@ -24,7 +24,9 @@ public static class MagicLinkEndpoints
     /// e-mail round trip; it is validated as a same-origin path before being
     /// appended to the emailed URL as <c>?redirect=</c>.</summary>
     public record MagicLinkRequestDto(string Email, string? ReturnUrl = null);
-    public record MagicLinkLoginDto(Guid UserId, string Token);
+    /// <summary><paramref name="ReturnUrl"/> is the link's <c>?redirect=</c> continuation;
+    /// it names the sign-in's target App (ADR 0025).</summary>
+    public record MagicLinkLoginDto(Guid UserId, string Token, string? ReturnUrl = null);
 
     public static WebApplication MapMagicLinkEndpoints(this WebApplication application, string path)
     {
@@ -178,6 +180,7 @@ public static class MagicLinkEndpoints
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             ISecurityAuditLog securityAudit,
+            Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements,
             HttpContext context) =>
         {
             if (string.IsNullOrWhiteSpace(request.Token))
@@ -269,13 +272,20 @@ public static class MagicLinkEndpoints
             challenge.ConsumedAt = DateTimeOffset.UtcNow;
             session.Store(challenge);
 
-            // Audit M1: a magic-link must NOT bypass a user's TOTP second factor.
-            // Mailbox possession alone is exactly the channel TOTP is meant to
-            // survive. If TOTP is enabled, establish the same partial-2FA state a
-            // password login sets on RequiresTwoFactor and let /api/account/mfa/login
-            // complete the second factor. Only TOTP steps up — offering email-OTP
-            // here would defeat the purpose (the mailbox is already in play).
-            if (user.TwoFactorEnabled)
+            // Audit M1 / ADR 0025: a magic-link must not bypass a second factor the
+            // target requires — the user's own TOTP included. Mailbox possession alone
+            // is exactly the channel TOTP is meant to survive. The partial sign-in
+            // carries the mailbox factor to the second step; the e-mail second factor is
+            // never offered here (the mailbox is already in play).
+            var signInTarget = await signInRequirements.ResolveTargetFromReturnUrlAsync(request.ReturnUrl, context.RequestAborted);
+            var proven = new Dictionary<string, DateTimeOffset>
+            {
+                [Modgud.Authentication.SignIn.SignInMethods.Email] = DateTimeOffset.UtcNow,
+            };
+            var decision = await signInRequirements.EvaluateAsync(
+                user, signInTarget, proven, Modgud.Authentication.SignIn.SignInSurface.Web,
+                startSetupGrace: false, context.RequestAborted);
+            if (decision.Outcome == Modgud.Authentication.SignIn.SignInOutcome.NeedSecondFactor)
             {
                 try
                 {
@@ -290,15 +300,12 @@ public static class MagicLinkEndpoints
                     return Results.Json(new { Message = "Invalid or expired link" }, statusCode: 401);
                 }
 
-                var twoFactorIdentity = new ClaimsIdentity(IdentityConstants.TwoFactorUserIdScheme);
-                twoFactorIdentity.AddClaim(new Claim(ClaimTypes.Name, user.Id.ToString()));
-                await context.SignInAsync(
-                    IdentityConstants.TwoFactorUserIdScheme, new ClaimsPrincipal(twoFactorIdentity));
+                await Modgud.Authentication.SignIn.SignInAssurance.SignInPartialAsync(context, user.Id, proven);
 
                 Serilog.Log.Information(
-                    "Magic-link consumed; TOTP step-up required. UserId={UserId} IP={IP}", user.Id, ip);
+                    "Magic-link consumed; second factor required. UserId={UserId} IP={IP}", user.Id, ip);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.MagicLink, ModgudMeters.LoginOutcome.TwoFactorRequired);
-                return Results.Ok(new { RequiresMfa = true, MfaMethods = new List<string> { "totp" } });
+                return Results.Ok(new { RequiresMfa = true, MfaMethods = decision.SecondFactors });
             }
 
             // Audit marker — magic-link login success (Phase 1). No IP on the event
@@ -320,11 +327,16 @@ public static class MagicLinkEndpoints
             }
 
             // Sign in — Magic Link is always persistent; user can request a new link anytime.
+            Modgud.Authentication.SignIn.SignInAssurance.Declare(context, proven);
             await signInManager.SignInAsync(user, isPersistent: true);
 
 
             Serilog.Log.Information("Magic link login successful. UserId={UserId} IP={IP}", user.Id, ip);
             ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.MagicLink, ModgudMeters.LoginOutcome.Success);
+            if (decision.SetupPending)
+                return await Modgud.Authentication.SignIn.SignInResponses.SecureSetupAsync(
+                    signInRequirements, user, signInTarget, Modgud.Authentication.SignIn.SignInMethods.Email,
+                    context.RequestAborted);
             return Results.Ok(new { Message = "Login successful" });
         })
         .WithName("MagicLink_Login");

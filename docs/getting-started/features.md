@@ -17,7 +17,7 @@ A point-by-point list of what Modgud delivers out of the box.
 - **Email OTP** (six-digit code sent to verified address)
 - **WebAuthn / FIDO2 Passkeys** (Touch ID, Windows Hello, YubiKey, etc.)
 - **Recovery codes** (one-time backup codes for self-service recovery)
-- **Configurable enforcement** — Off / Optional / Required, with per-user override and a grace period
+- **Per-App sign-in policy** — single or multi-factor minimum per App, step-up with only the missing factor, setup grace period and per-user exemption ([Sign-in levels](../concepts/sign-in-levels))
 
 ### External Identity Providers (SSO)
 - **Microsoft Entra ID** (Azure AD)
@@ -103,7 +103,7 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 
 ### Per-realm configuration
 - Domains, display name, description
-- 2FA enforcement, grace period
+- Sign-in policy per App (minimum level, setup grace)
 - Sign-in cookie lifetime
 - SMTP settings
 - Profile-change approval flow

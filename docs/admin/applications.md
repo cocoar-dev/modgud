@@ -144,8 +144,9 @@ re-inherits the realm.
 | **Login methods** | Enable/disable internal password/passkey and magic-link entry points, and select/order the external OIDC/SAML providers exposed to this App. The allow-list is enforced by the public list and protocol start endpoints, not only hidden in the SPA. An explicit empty provider list disables all external providers. |
 | **Self-registration** | Per-app override of the realm self-registration policy (allowed email domains, admin approval, default groups, ToS/privacy URLs) plus the **posture** (see below). Captcha stays realm-level. |
 | **Registration fields** | Per-app override of which identity fields (username / first / last name) are required when an account is created — each one inheriting the realm by default. See [Registration fields](#registration-fields) below. |
+| **Sign-in** | The App's sign-in policy (ADR 0025): minimum level (single or multi-factor), setup grace days, the sign-in methods and second factors the App offers, what happens when a user's own second factor is not offered, and the App's passkey RP ID. Every field inherits the realm's policy unless overridden; a policy nobody could satisfy (multi-factor required, no way to reach it) is rejected on save. The realm-only *administration minimum level* is not overridable. |
 | **Client sessions** | Idle and absolute lifetime defaults for refresh-token-backed native/OAuth sessions belonging to this App. Each field inherits the realm unless overridden; an individual OAuth client can override the App again. |
-| **Native grants** | Per-app toggle + token lifetimes for the cookieless [native passwordless grants](../integrate/native-apps). |
+| **Native grants** | Per-app toggle (which methods the grants accept comes from the App's sign-in methods) + token lifetimes for the cookieless [native passwordless grants](../integrate/native-apps). |
 | **DCR** | Per-app override of [Dynamic Client Registration](./dynamic-client-registration) (enable, token lifetimes, rate limits, reserved-name blocklist). |
 | **CIMD** | Per-app override of [Client-ID Metadata Documents](./client-id-metadata-documents) (enable, token lifetimes). |
 | **Rate limits** | Sparse override of the realm's [auth rate limits](../platform/rate-limits): only the overridden policy/dimension cells win, plus an optional own source allowlist and enforcement mode. |
@@ -215,6 +216,28 @@ App's clients render exactly the inputs it requires. When an App requires a
 field, **its native clients must collect and send it** (`FirstName` / `LastName`
 on the native OTP / register calls) — otherwise registration fails. Email is
 always required and is never configurable.
+
+### Which settings need the app's own domain
+
+An App without an own domain (Origin subdomain) is reached through the realm's URL. Some settings are read by code that only knows the App from the request's host, so they take effect only when the request arrives through the App's own domain. The settings listing in the admin UI marks these sections and, for an App without an own domain, warns about every configured section that currently has no (or only partial) effect.
+
+A setting is **always effective** when every reader resolves the App from the OAuth client (a client bound to exactly one App) or from the sign-in target. It is **only via the own domain** when every reader resolves it from the host alone, and **partly** when both kinds of reader exist. Clients that are realm-wide by design (dynamic and metadata-document clients) have no App binding, so for them the host is the only signal.
+
+| Setting | Effective without an own domain? | Why (reader) |
+| --- | --- | --- |
+| Branding, page theme, active pages | Always | The app-info endpoint resolves by the request's client id (`AppSettingsEndpoints.cs`). |
+| Login methods | Always | Login, external-provider, SAML, magic-link and native-passkey endpoints resolve by the client of the authorize request (`AccountEndpoints.cs`, `ExternalAuthEndpoints.cs`, `SamlEndpoints.cs`, `MagicLinkEndpoints.cs`, `NativePasskeyEndpoints.cs`). |
+| Sign-in policy | Always (resolved from the sign-in target) | ADR 0025: the target App decides, never the host. The passkey RP ID additionally needs the login page to be served on that domain or below it (related-origin requests via `/.well-known/webauthn` are not supported yet). |
+| Client sessions | Always | `ClientSessionService.cs` reads the App bindings of the OAuth client. |
+| Consumer change feed | Always | The feed is addressed by App id (`AppChangeFeedEndpoints.cs`, `AppChangeFeedSubscription.cs`). |
+| Self-registration | Partly | Web sign-up resolves by client (`RegisterEndpoints.cs`, `SelfRegistrationService.cs`); the native OTP request that signs up on the fly and native registration use the host only (`NativeOtpEndpoints.cs`, `NativeRegisterEndpoints.cs`). |
+| Registration fields | Partly | Web registration and `/api/app-info` resolve by client; the native OTP and registration requests, and the admin user create and update commands, use the host only (`NativeOtpEndpoints.cs`, `NativeRegisterEndpoints.cs`, `CreateUserCommand.cs`, `UpdateUserCommand.cs`). |
+| Native grants | Partly | The token grants and bearer endpoints resolve by the token's client (`NativeBearerEndpointSupport.cs`, `AuthorizationEndpoints.cs`); the native OTP request and native registration begin step carry no client id and use the host only (`NativeOtpEndpoints.cs`, `NativeRegisterEndpoints.cs`). |
+| Email branding | Partly | Mails sent from flows that know the client or the App brand correctly; mails triggered by the native OTP request and registration use the host (`EmailBrandingResolver.cs`). |
+| Rate limits | Partly | Policies whose endpoints name a client (login, OAuth token, passkey) resolve by client; the native OTP policy has no client and uses the host (`AuthCallerContextFactory.cs`, `AuthRateLimitEndpointFilter.cs`). |
+| DCR | Only via the own domain | `/connect/register` is anonymous and carries no client id (`DcrRegistrationEndpoints.cs`). |
+| CIMD | Only via the own domain | The metadata-document resolver reads the host-pinned App (`CimdClientResolver.cs`). |
+| Origin | Defines the own domain | The OIDC issuer itself stays anchored to the realm's primary domain (`CanonicalIssuer.cs`). |
 
 ### Cleanup and reset semantics
 

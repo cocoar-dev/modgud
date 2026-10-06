@@ -68,7 +68,7 @@ Read-only view of every group the user effectively belongs to — direct, inheri
 Overview of the user's 2FA status:
 
 - **2FA status** — a badge showing which methods are active, whether the user is exempt, or that 2FA isn't configured yet.
-- **Grace period** (when 2FA is required but not yet set up) — days remaining before enforcement kicks in, with **Reset grace** and **Force immediate enforcement** actions.
+- **Grace period** (when an App requires multi-factor but the user has no second factor yet) — days remaining before enforcement kicks in (the realm's or App's [setup grace](../concepts/sign-in-levels#setup-grace-and-exemption)), with **Reset grace** and **Force immediate enforcement** actions.
 - **Individual policy override** — a per-user grace-period-days override, and a checkbox to exempt this user from the 2FA requirement entirely (for service-style accounts or migrated legacy users). Use sparingly; changes here are audited. The policy is configuration: for a realm admin it saves onto the [draft](./configuration-drafts) with the rest of the form (and travels in a manifest as `GracePeriodDaysOverride` / `TwoFactorExempt`), while the two grace-clock buttons above act at once.
 
 Actions that live elsewhere but affect the same user: **Set password** and **Send Magic Link** are right-click actions on the user list (see [User list](#user-list) above), not fields inside this tab.

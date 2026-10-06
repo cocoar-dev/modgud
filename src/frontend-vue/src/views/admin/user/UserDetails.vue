@@ -816,7 +816,7 @@ watch(() => form.value.UserName, () => {
           </div>
 
           <!-- Grace period — hidden when user has 2FA or is exempt -->
-          <div v-if="!securityInfo.Has2FA && !exemptLocal && appConfig.config.AuthenticationMinimumLevel >= 1">
+          <div v-if="!securityInfo.Has2FA && !exemptLocal">
             <CoarDivider align="left" variant="subtle" :width="100" :spacing-bottom="12">
               <h3 class="section-divider__title">{{ t('admin.userDetails.graceHeading', {}, 'Grace Period') }}</h3>
             </CoarDivider>

@@ -32,7 +32,7 @@ const { t, language } = useI18n()
 const localization = useLocalization()!
 const appConfig = useAppConfigStore()
 const branding = computed(() => appConfig.config.Branding)
-const isPasswordless = computed(() => appConfig.config.AuthenticationMinimumLevel >= 2)
+const isPasswordless = computed(() => !appConfig.config.SignIn.Password)
 
 // Forwarded on every "Back to login" link so a pending continuation
 // (e.g. a client app's /connect/authorize flow) survives the detour.

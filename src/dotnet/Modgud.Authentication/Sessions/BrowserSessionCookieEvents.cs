@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.SignIn;
 
 namespace Modgud.Authentication.Sessions;
 
@@ -47,6 +48,8 @@ public sealed class BrowserSessionCookieEvents(ISessionService sessions) : Cooki
         foreach (var old in principal.FindAll(SessionClaimTypes.BrowserSessionId).ToList())
             old.Subject?.RemoveClaim(old);
         identity.AddClaim(new Claim(SessionClaimTypes.BrowserSessionId, browserSession.Id.ToString()));
+
+        StampSignInFactors(context, identity, principal, userId.Value);
 
         var policy = await sessions.GetPolicyAsync(context.HttpContext.RequestAborted);
         if (!policy.AllowRememberMe)
@@ -98,6 +101,33 @@ public sealed class BrowserSessionCookieEvents(ISessionService sessions) : Cooki
 
     public override Task RedirectToAccessDenied(RedirectContext<CookieAuthenticationOptions> context) =>
         RedirectOrStatusAsync(context, StatusCodes.Status403Forbidden);
+
+    /// <summary>
+    /// ADR 0025 — stamp what this sign-in proved. Sources, unioned:
+    /// <list type="bullet">
+    ///   <item>the factors the endpoint declared for this request;</item>
+    ///   <item>factors already on the principal being signed in;</item>
+    ///   <item>the factors of the same user's current session — a second sign-in by the
+    ///   same user (step-up, <c>RefreshSignInAsync</c> after a profile change) raises the
+    ///   session, it never resets it. A different user signing in starts from scratch.</item>
+    /// </list>
+    /// A federated principal arrives with its factors already on it (ExternalLoginProcessor).
+    /// </summary>
+    private static void StampSignInFactors(
+        CookieSigningInContext context, ClaimsIdentity identity, ClaimsPrincipal principal, Guid userId)
+    {
+        var factors = SignInAssurance.ReadFactors(principal);
+
+        var declared = SignInAssurance.TakeDeclared(context.HttpContext);
+        if (declared is not null)
+            factors = SignInAssurance.Union(factors, declared);
+
+        var current = context.HttpContext.User;
+        if (current.Identity?.IsAuthenticated == true && ParseUserId(current) == userId)
+            factors = SignInAssurance.Union(factors, SignInAssurance.ReadFactors(current));
+
+        SignInAssurance.Stamp(identity, factors);
+    }
 
     private static Guid? ParseUserId(ClaimsPrincipal? principal)
     {

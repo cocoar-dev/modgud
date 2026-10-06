@@ -26,6 +26,7 @@ the order below — each one builds on the ones above it.
 ## Identity
 
 - [Authentication](./authentication) — login flows, 2FA, federated
+- [Sign-in levels](./sign-in-levels) — which sign-in strength an app requires, step-up, `acr`/`amr`
   OIDC, sessions.
 
 ## Authorization

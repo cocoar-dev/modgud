@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useLoginRedirect } from '@/composables/useLoginRedirect'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
@@ -8,6 +8,7 @@ import { CoarNotice, CoarCard, CoarFormField, CoarOtpInput, CoarButton } from '@
 import AuthBrand from '@/components/auth/AuthBrand.vue'
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 
 // The emailed magic-link URL carries the pending continuation as ?redirect=
@@ -40,11 +41,18 @@ onMounted(async () => {
   }
 
   try {
-    const result = await authStore.magicLinkLogin(userId, token)
-    // TOTP-protected accounts: the magic-link proves mailbox control but is not
-    // a 2FA bypass — finish with the authenticator code before signing in.
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : undefined
+    const result = await authStore.magicLinkLogin(userId, token, false, redirect)
+    // The magic-link proves mailbox control but is not a second factor — when the
+    // target app needs one (or the user's own TOTP), finish it before signing in.
     if (result?.RequiresMfa) {
-      status.value = 'mfa'
+      const methods = result.MfaMethods ?? []
+      if (methods.length === 1 && methods[0] === 'totp') {
+        status.value = 'mfa'
+        return
+      }
+      // Other second factors (a passkey, a choice) live on the login page.
+      await router.replace({ path: '/login', query: { redirect, mfa: methods.join(',') } })
       return
     }
     status.value = 'success'

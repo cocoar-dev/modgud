@@ -185,7 +185,8 @@ For authorization-code exchange:
 - The cookieless native grants `urn:cocoar:otp`, `urn:cocoar:magic`, and
   `urn:cocoar:passkey` let a mobile or desktop app redeem an email code,
   magic-link token, or passkey assertion directly for tokens with no
-  browser round-trip — see [native app integration](./native-apps).
+  browser round-trip — see [native app integration](./native-apps). When a
+  second factor is owed they answer `mfa_required` instead of tokens.
 - `urn:ietf:params:oauth:grant-type:device_code` (RFC 8628) covers
   input-constrained devices such as CLIs and TVs — see the
   [device flow reference](../reference/oauth-api#device-flow).

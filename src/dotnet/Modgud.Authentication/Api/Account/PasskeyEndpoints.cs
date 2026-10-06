@@ -267,7 +267,7 @@ public static class PasskeyEndpoints
             Guid id,
             HttpContext context,
             UserManager<ApplicationUser> userManager,
-            IAuthSettings appSettings,
+            Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements,
             IDocumentSession session,
             Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker) =>
         {
@@ -283,7 +283,7 @@ public static class PasskeyEndpoints
             // the blocking setup modal next login. The user is warned in the UI before
             // they get here.
             var secureSetupRequired = false;
-            if (appSettings.AuthenticationMinimumLevel >= 1)
+            if (await signInRequirements.OwnUiRequiresSecondFactorAsync(context.RequestAborted))
             {
                 var user = await userManager.GetUserAsync(context.User);
                 if (user is not null)
@@ -331,7 +331,17 @@ public static class PasskeyEndpoints
                     title: "LoginExperience.InternalDisabled",
                     detail: "Internal login is disabled for this application.");
 
-            var fido2 = await fido2Factory.CreateAsync(ct);
+            // ADR 0025 — the RP ID of the sign-in's target App when this page is served
+            // under it (the App's own login domain), so a passkey the App's native client
+            // enrolled works here; the realm's primary domain otherwise.
+            var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
+            var signInTarget = await context.RequestServices
+                .GetRequiredService<Modgud.Authentication.SignIn.ISignInRequirementService>()
+                .ResolveTargetFromReturnUrlAsync(request?.ReturnUrl, ct);
+            var webRpId = Modgud.Authentication.SignIn.SignInRequirementService.WebRpIdFor(
+                signInTarget.PasskeyRpId, primaryDomain, context.Request.Host.Host);
+
+            var fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: webRpId);
 
             List<PublicKeyCredentialDescriptor>? allowedCredentials = null;
 
@@ -342,14 +352,12 @@ public static class PasskeyEndpoints
 
                 if (user is not null)
                 {
-                    // ADR-0009: realm-scoped web login only surfaces the user's
-                    // realm-RP credentials (a native per-client credential is bound
-                    // to a different RP and is unusable here).
-                    var primaryDomain = await rpIdResolver.GetPrimaryDomainAsync(ct);
+                    // ADR-0009: web login only surfaces the user's credentials for the RP
+                    // this page serves (a credential bound to another RP is unusable here).
                     var credentials = (await session.Query<StoredPasskeyCredential>()
                         .Where(c => c.UserId == user.Id)
                         .ToListAsync())
-                        .Where(c => string.Equals(c.RpId ?? primaryDomain, primaryDomain, StringComparison.OrdinalIgnoreCase))
+                        .Where(c => string.Equals(c.RpId ?? primaryDomain, webRpId, StringComparison.OrdinalIgnoreCase))
                         .ToList();
 
                     allowedCredentials = credentials
@@ -393,7 +401,7 @@ public static class PasskeyEndpoints
                 // pinned so an admin editing the setting mid-ceremony can't cause a
                 // begin/redeem drift (same rationale as the native flow).
                 ClientId = clientId,
-                RpId = await rpIdResolver.GetPrimaryDomainAsync(ct),
+                RpId = webRpId,
                 ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(PasskeyCeremony.ExpirationMinutes),
                 CreatedAt = DateTimeOffset.UtcNow,
             };
@@ -538,6 +546,10 @@ public static class PasskeyEndpoints
             }
 
             // Passkey login is always persistent — user can re-authenticate anytime via biometrics
+            // ADR 0025 — a user-verified passkey is multi-factor on its own; it also completes
+            // a pending second step, so the partial sign-in is cleared.
+            Modgud.Authentication.SignIn.SignInAssurance.Declare(context, Modgud.Authentication.SignIn.SignInMethods.Passkey);
+            await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.SignOutAsync(context, IdentityConstants.TwoFactorUserIdScheme);
             await signInManager.SignInAsync(user, isPersistent: true);
 
 
