@@ -472,6 +472,8 @@ try
             foreach (var claim in current.FindAll(Modgud.Authentication.SignIn.SignInAssurance.FactorClaimType))
                 if (!newIdentity.HasClaim(claim.Type, claim.Value))
                     newIdentity.AddClaim(new Claim(claim.Type, claim.Value));
+            if (Modgud.Authentication.SignIn.SignInAssurance.IsRecorded(current))
+                Modgud.Authentication.SignIn.SignInAssurance.MarkRecorded(newIdentity);
 
             return Task.CompletedTask;
         };

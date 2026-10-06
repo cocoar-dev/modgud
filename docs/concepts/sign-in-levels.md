@@ -138,4 +138,8 @@ The deployment settings `AppSettings__AuthenticationMinimumLevel` and `AppSettin
 
 As soon as an admin saves the section, only the realm and App settings apply. New realms are seeded with explicit defaults: minimum `single`, administration minimum `multi`, grace 14 days, password on, e-mail code off, passkey on, TOTP on, e-mail after password on, user's own factor not offered → `RequireViaBrowser`. Realm manifests carry the policy under `Settings.SignIn` and, per App, under `Apps[].Settings.SignIn`.
 
-Existing sessions count as `single` after an upgrade; signing in to a `multi` App asks for the second factor once.
+The former level applies **wherever the derived policy applies**, native grants included: with level `1` (the built-in default when nothing sets it), an App without its own minimum requires `multi` for native sign-ins too, where earlier releases checked native grants only for a TOTP the user had enabled. Give an App that signs in with e-mail codes alone its own minimum `single`, or save the realm policy, right after the upgrade.
+
+Browser sessions signed in before 0.15 recorded no sign-in factors. They keep the standing the earlier release gave them until they end: a session of a user who has any second factor configured counts as `multi`, one of a user without one is held to the setup grace. A new sign-in records its factors and is evaluated normally. Refresh tokens issued before 0.15 carry no factors either and keep refreshing until they expire.
+
+Check before the upgrade what your users have set up. A user whose only second factor is the e-mail code reaches `multi` only after a password (two codes to the same mailbox are one factor), and a passkey bound to another RP ID — e.g. one a native app enrolled — is not usable on the Modgud login page unless the App uses [related origins](#related-origins).

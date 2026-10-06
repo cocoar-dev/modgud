@@ -29,6 +29,12 @@ public static class SignInMethods
 
     /// <summary>A federated sign-in whose provider asserted MFA (RFC 8176 <c>amr</c>).</summary>
     public const string ExternalMfa = "external_mfa";
+
+    /// <summary>A browser session signed in before sign-in factors were recorded (Modgud
+    /// 0.14 and earlier) by a user who had a second factor configured. That release let
+    /// such a session through everywhere, so it keeps that standing until it ends — never
+    /// declared by a sign-in, only attached when such a cookie is first seen.</summary>
+    public const string Legacy = "legacy";
 }
 
 /// <summary>
@@ -45,6 +51,11 @@ public static class SignInMethods
 public static class SignInAssurance
 {
     public const string FactorClaimType = "modgud.signin.factor";
+
+    /// <summary>Marks an application cookie whose factors were recorded at sign-in, even
+    /// when the sign-in proved none. Its absence identifies a cookie from before factors were
+    /// recorded (see <see cref="SignInMethods.Legacy"/>).</summary>
+    public const string RecordedClaimType = "modgud.signin.recorded";
 
     /// <summary><c>acr</c> values (ADR 0025 "Settled details").</summary>
     public const string AcrSingle = "urn:modgud:acr:single";
@@ -108,6 +119,17 @@ public static class SignInAssurance
                 $"{method}:{at.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)}"));
     }
 
+    /// <summary>Whether a session cookie's factors were recorded at sign-in.</summary>
+    public static bool IsRecorded(ClaimsPrincipal? principal) =>
+        principal?.HasClaim(c => c.Type == RecordedClaimType) == true;
+
+    /// <summary>Mark <paramref name="identity"/> as carrying recorded factors.</summary>
+    public static void MarkRecorded(ClaimsIdentity identity)
+    {
+        if (!identity.HasClaim(c => c.Type == RecordedClaimType))
+            identity.AddClaim(new Claim(RecordedClaimType, "1"));
+    }
+
     /// <summary>Union of two factor sets; a factor proven in both keeps the later time.</summary>
     public static Dictionary<string, DateTimeOffset> Union(
         IReadOnlyDictionary<string, DateTimeOffset> a, IReadOnlyDictionary<string, DateTimeOffset> b)
@@ -125,7 +147,8 @@ public static class SignInAssurance
     public static SignInLevel LevelOf(IEnumerable<string> methods)
     {
         var set = methods as IReadOnlyCollection<string> ?? methods.ToList();
-        if (set.Contains(SignInMethods.Passkey) || set.Contains(SignInMethods.ExternalMfa))
+        if (set.Contains(SignInMethods.Passkey) || set.Contains(SignInMethods.ExternalMfa)
+            || set.Contains(SignInMethods.Legacy))
             return SignInLevel.Multi;
         return set.Count(SingleFactorKinds.Contains) >= 2 ? SignInLevel.Multi : SignInLevel.Single;
     }
