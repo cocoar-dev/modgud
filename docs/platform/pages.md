@@ -41,6 +41,21 @@ The page-builder is **headless** — you choose elements from a palette and arra
 
 Each slot defines its own list of **available actions**. Login supports credentials, passkey, magic-link, forgot-password, and register; forgot-password supports submit/back; logout supports back-to-login. The runtime only provides handlers for that fixed list. MFA choice, TOTP/email OTP, and secure-setup screens intentionally remain fixed UI: a schema cannot weaken or skip those transitions.
 
+### What a login page can read about the sign-in
+
+A page conditions elements on context values (`visibleWhen`, or `page.context` in element code). For the sign-in methods, these follow the [sign-in policy](../concepts/sign-in-levels) of the sign-in's target app and what the current browser can do:
+
+| Value | Meaning |
+|---|---|
+| `auth.passwordEnabled` | The target app accepts a password (`auth.passwordless` is its inverse) |
+| `auth.emailCodeEnabled` | The target app accepts an e-mail code |
+| `auth.passkeyEnabled` | The target app accepts passkeys |
+| `auth.passkeySupported` | This browser supports WebAuthn at all |
+| `auth.passkeyRelatedOriginsSupported` | This browser supports WebAuthn related origins (`/.well-known/webauthn`) |
+| `auth.passkeyAvailable` | A passkey button can work here: the app accepts passkeys, the browser supports WebAuthn, and — when the app's passkeys reach this page only through [related origins](../concepts/sign-in-levels#related-origins) — the browser supports those too |
+
+Bind a passkey button (`auth:passkey`) to `auth.passkeyAvailable`; the built-in templates do. The browser values are detected after the page loads and read as `false` until then, so the button never flashes up on a browser that cannot use it.
+
 ## Variants and activation
 
 The variant library is **realm-global** (ADR-0013): each slot owns a set of named variants, authored in **Platform → Pages**. Three concepts stay separate — *a variant exists*, *a variant is live*, and *the built-in fixed view* — so you can:

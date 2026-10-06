@@ -21,6 +21,7 @@ import {
   type AuthPageSlot,
 } from '@/page-builder/authPageConfig'
 import { createAuthRuntimeContext } from '@/page-builder/authPageContext'
+import { usePasskeySupport } from '@/composables/usePasskeySupport'
 import { authRuntimeHost } from '@/page-builder/authPageCodeRuntime'
 import { createAuthPageTheme } from '@/page-builder/authPageTheme'
 import {
@@ -65,8 +66,11 @@ const previewState = computed(() => ({
 // contract. Keep it representative of the current realm. It also carries
 // runtime.viewState, which is how the preview knows which screen to show now
 // that the separate previewState prop is gone.
+// The preview reads this browser's real passkey support, like the live page.
+const passkeySupport = usePasskeySupport()
 const previewContext = computed(() => createAuthRuntimeContext({
   config: appConfig.config,
+  passkeySupport: passkeySupport.value,
   viewState: previewState.value,
 }))
 

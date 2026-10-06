@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import AuthBrand from '@/components/auth/AuthBrand.vue'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
+import { usePasskeySupport } from '@/composables/usePasskeySupport'
 import { useLoginRedirect } from '@/composables/useLoginRedirect'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
 import {
@@ -29,7 +30,7 @@ import {
   createAuthPageConfig,
   createDefaultAuthPageSchema,
 } from '@/page-builder/authPageConfig'
-import { createAuthRuntimeContext } from '@/page-builder/authPageContext'
+import { createAuthRuntimeContext, isPasskeyAvailable } from '@/page-builder/authPageContext'
 import AuthRuntimePageRenderer from '@/page-builder/AuthRuntimePageRenderer.vue'
 import {
   LOGIN_PAGE_RUNTIME_KEY,
@@ -218,6 +219,11 @@ const loginViewState = computed(() => step.value === 'primary-otp'
     : step.value === 'credentials'
       ? 'credentials'
       : 'mfa-continuation')
+// What this browser can do with passkeys — drives the passkey button here and the
+// `auth.passkey*` values a PageBuilder page reads.
+const passkeySupport = usePasskeySupport()
+const passkeyAvailable = computed(() => isPasskeyAvailable(appConfig.config, passkeySupport.value))
+
 const loginRuntimeContext = computed(() => createAuthRuntimeContext({
   config: appConfig.config,
   externalProviders: externalLogins.value,
@@ -225,6 +231,7 @@ const loginRuntimeContext = computed(() => createAuthRuntimeContext({
   loginEmail: primaryOtpEmail.value,
   viewState: loginViewState.value,
   feedbackMessage: error.value,
+  passkeySupport: passkeySupport.value,
 }))
 onMounted(async () => {
   try {
@@ -550,30 +557,13 @@ async function onSecureSetupLogout() {
 // ── Passkey Login ──
 const passkeyHttp = useHttpClient('/api/account/passkey')
 
-/**
- * WebAuthn Level 3 related origin requests: whether this browser honours an RP's
- * /.well-known/webauthn file. Only then may the server pick an app's RP ID this page
- * is not served under; otherwise it keeps the realm's own passkeys working.
- */
-async function supportsRelatedOrigins(): Promise<boolean> {
-  try {
-    const pkc = window.PublicKeyCredential as unknown as {
-      getClientCapabilities?: () => Promise<Record<string, boolean>>
-    } | undefined
-    const caps = await pkc?.getClientCapabilities?.()
-    return caps?.relatedOrigins === true
-  } catch {
-    return false
-  }
-}
-
 async function handlePasskeyLogin(reportToRenderer = false) {
   passkeyLoading.value = true
   error.value = ''
   try {
     const serverOptions = await passkeyHttp.addPath('login-options').post<any>({
       ReturnUrl: redirectTarget.value,
-      RelatedOrigins: await supportsRelatedOrigins(),
+      RelatedOrigins: passkeySupport.value.relatedOrigins,
     })
 
     const publicKey: PublicKeyCredentialRequestOptions = {
@@ -747,9 +737,9 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
             <div class="flex-1 border-t border-surface-200"></div>
           </div>
 
-          <!-- Passkey login (always available) -->
+          <!-- Passkey login: only where it can work (app allows it, browser can do it) -->
           <CoarButton
-            v-if="appConfig.config.InternalLoginEnabled"
+            v-if="passkeyAvailable"
             type="button"
             variant="secondary"
             :loading="passkeyLoading"
@@ -805,7 +795,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
             {{ t('auth.mfa.emailCode', {}, 'Code via Email') }}
           </CoarButton>
 
-          <CoarButton v-if="mfaMethods.includes('passkey')" full-width variant="secondary" :loading="passkeyLoading" @click="handlePasskeyLogin()">
+          <CoarButton v-if="mfaMethods.includes('passkey') && passkeySupport.webAuthn" full-width variant="secondary" :loading="passkeyLoading" @click="handlePasskeyLogin()">
             {{ t('auth.mfa.passkey', {}, 'Confirm with passkey') }}
           </CoarButton>
 

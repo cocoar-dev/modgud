@@ -64,6 +64,26 @@ public class PasskeyRelatedOriginsTests : IntegrationTestBase
         Assert.Equal(expectRelatedCeremony, ceremony.RelatedOrigin);
     }
 
+    [Theory]
+    [InlineData(true, true)]    // opted in, page not under the RP ID → only via related origins
+    [InlineData(false, false)]  // not opted in → the app's passkeys never reach this page
+    public async Task App_info_says_when_the_apps_passkeys_need_related_origins_on_this_page(
+        bool appOptedIn, bool expected)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var clientId = await SeedAppClientAsync(new ApplicationSignInOverrides
+        {
+            PasskeyRpId = AppRpId,
+            PasskeyRelatedOrigins = appOptedIn,
+        });
+
+        var returnUrl = Uri.EscapeDataString($"/connect/authorize?client_id={clientId}&response_type=code");
+        var body = await Factory.CreateClient().GetFromJsonAsync<JsonElement>($"/api/app-info?returnUrl={returnUrl}", ct);
+
+        Assert.Equal(expected, body.GetProperty("SignIn").GetProperty("PasskeyNeedsRelatedOrigins").GetBoolean());
+        Assert.True(body.GetProperty("SignIn").GetProperty("Passkey").GetBoolean());
+    }
+
     [Fact]
     public async Task Related_origins_without_a_passkey_rp_id_are_rejected()
     {

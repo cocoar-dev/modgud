@@ -61,6 +61,8 @@ export interface SignInConfig {
   Password: boolean
   EmailCode: boolean
   Passkey: boolean
+  /** The target app's passkeys reach this page only through WebAuthn related origins. */
+  PasskeyNeedsRelatedOrigins?: boolean
   MinimumLevel: 'Single' | 'Multi'
 }
 

@@ -22,6 +22,7 @@ import {
   type AuthPageSlot,
 } from '@/page-builder/authPageConfig'
 import { createAuthRuntimeContext } from '@/page-builder/authPageContext'
+import { usePasskeySupport } from '@/composables/usePasskeySupport'
 import { authRuntimeHost } from '@/page-builder/authPageCodeRuntime'
 import { createAuthPageTheme } from '@/page-builder/authPageTheme'
 
@@ -79,8 +80,11 @@ const previewState = computed(() => ({
   logout: 'complete',
   consent: 'prompt',
 })[previewSlot.value])
+// The preview reads this browser's real passkey support, like the live page.
+const passkeySupport = usePasskeySupport()
 const previewContext = computed(() => createAuthRuntimeContext({
   config: appConfig.config,
+  passkeySupport: passkeySupport.value,
   viewState: previewState.value,
 }))
 const previewTheme = computed(() => createAuthPageTheme(appConfig.config.PageTheme))
