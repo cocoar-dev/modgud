@@ -132,6 +132,8 @@ function emailStep(): ElementNode {
         name: 'passkey',
         props: { label: translated('page.passkey', EN.passkey), action: 'auth:passkey', variant: 'secondary' },
         style: { size: 'fill' },
+        // Only where a passkey can work: the app allows it and this browser can use it.
+        visibleWhen: { source: 'context', path: 'auth.passkeyAvailable', operator: 'equals', value: true },
       },
     ],
   }

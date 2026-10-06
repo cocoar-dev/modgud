@@ -52,7 +52,15 @@ public static class AppSettingsEndpoints
                 // ADR 0025 - the sign-in methods of the target App (the pending authorization's
                 // client or resource, else Modgud's own portal), so the login page offers
                 // exactly what this sign-in may use.
-                var signInPolicy = (await signInRequirements.ResolveTargetFromReturnUrlAsync(returnUrl, http.RequestAborted)).Policy;
+                var signInTarget = await signInRequirements.ResolveTargetFromReturnUrlAsync(returnUrl, http.RequestAborted);
+                var signInPolicy = signInTarget.Policy;
+                // The App's passkeys are reachable on THIS page only through related origins:
+                // the App binds them to its own RP ID, this page is not served under it, and
+                // the App opted in. The login page then also needs a browser that supports
+                // related origins before it may offer them (it checks that itself).
+                var passkeyNeedsRelatedOrigins = signInTarget.PasskeyRelatedOrigins
+                    && signInTarget.PasskeyRpId is { } appRpId
+                    && !Modgud.Authentication.SignIn.SignInRequirementService.IsHostUnderRpId(http.Request.Host.Host, appRpId);
                 return Results.Ok(new
                 {
                     SignIn = new
@@ -60,6 +68,7 @@ public static class AppSettingsEndpoints
                         signInPolicy.Password,
                         signInPolicy.EmailCode,
                         signInPolicy.Passkey,
+                        PasskeyNeedsRelatedOrigins = passkeyNeedsRelatedOrigins,
                         MinimumLevel = signInPolicy.MinimumLevel.ToString(),
                     },
                     InternalLoginEnabled = loginExperience?.InternalLoginEnabled ?? true,

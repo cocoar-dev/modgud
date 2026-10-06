@@ -523,12 +523,12 @@
               },
               "visibleWhen": {
                 "source": "context",
-                "path": "auth.internalLoginEnabled",
+                "path": "auth.passkeyAvailable",
                 "operator": "equals",
                 "value": true
               },
               "name": "passkey",
-              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = i18n.text(\"page.passkey.label\", undefined, \"Sign in with Passkey\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.passkey.label%22%2C%22fallback%22%3A%22Sign%20in%20with%20Passkey%22%7D\n    element.props.variant = \"secondary\"; // @locked @quick:props.variant @value:%22secondary%22\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = !page.context.auth?.internalLoginEnabled;\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
+              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.label = i18n.text(\"page.passkey.label\", undefined, \"Sign in with Passkey\"); // @locked @quick:props.label @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.passkey.label%22%2C%22fallback%22%3A%22Sign%20in%20with%20Passkey%22%7D\n    element.props.variant = \"secondary\"; // @locked @quick:props.variant @value:%22secondary%22\n    element.style.size = \"fill\"; // @locked @quick:style.size @value:%22fill%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = !page.context.auth?.passkeyAvailable;\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
             },
             {
               "id": "magic-link",
