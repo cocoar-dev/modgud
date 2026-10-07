@@ -272,7 +272,10 @@ async function resumeSecondFactor() {
   }
   if (route.query.stepup !== '1') return
   try {
-    const result = await authStore.beginStepUp(redirectTarget.value, route.query.reauth === '1')
+    // `for=admin`: the block came from the realm's administration, whatever page the user
+    // is on — evaluate against it (the server reads "/admin" as the administration target).
+    const stepUpTarget = route.query.for === 'admin' ? '/admin' : redirectTarget.value
+    const result = await authStore.beginStepUp(stepUpTarget, route.query.reauth === '1')
     if (result.RequiresMfa) await enterSecondFactor(result.MfaMethods ?? [])
     else if (result.RequiresSecureSetup) applySecureSetup(result)
     else if (result.RequiresFirstFactor) {
