@@ -307,6 +307,18 @@ public class SignInScenarioTests : IntegrationTestBase
         Assert.True(delete.IsSuccessStatusCode, await delete.Content.ReadAsStringAsync(Ct));
     }
 
+    [Fact]
+    public async Task S29_the_setup_screens_learn_whether_the_user_has_a_password()
+    {
+        // The SPA offers the e-mail code as a second factor only to users with a password;
+        // it reads that from /me.
+        Assert.True((await Client.GetFromJsonAsync<JsonElement>("/api/account/me", Ct)).GetProperty("HasPassword").GetBoolean());
+
+        await RemovePasswordAsync();
+        var browser = await SessionAsync((SignInMethods.Email, MinuteAgo));
+        Assert.False((await browser.GetFromJsonAsync<JsonElement>("/api/account/me", Ct)).GetProperty("HasPassword").GetBoolean());
+    }
+
     // ── Somebody else has one of the user's factors ──
 
     [Fact]

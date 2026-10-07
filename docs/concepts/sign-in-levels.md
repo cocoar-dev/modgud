@@ -186,6 +186,7 @@ Each scenario has a fixed number; the integration tests carry the same number. U
 | S26 | A user with TOTP adds a passkey | The TOTP code is needed (recent) |
 | S27 | Any account change | A notice goes to the account's e-mail address |
 | S28 | A user whose setup grace is over requests account deletion | The deletion is reachable |
+| S29 | A user without a password (signs in by code or magic link) is asked to set up a second factor | Authenticator app and passkey are offered; the e-mail code is not — it would prove the same mailbox twice |
 
 ### Somebody else has one of the user's factors
 
