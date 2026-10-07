@@ -50,10 +50,14 @@ public static class MfaEndpoints
         group.MapPost("setup", [Authorize] async (
             HttpContext context,
             UserManager<ApplicationUser> userManager,
-            SignInManager<ApplicationUser> signInManager) =>
+            SignInManager<ApplicationUser> signInManager,
+            IAccountChangeGuard accountChanges,
+            CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
+            // Generating a key replaces any existing one: an account change (amendment C).
+            if (await accountChanges.RequireRecentProofAsync(context, user, ct) is { } reauth) return reauth;
 
             // Reset the authenticator key (generates a new one if needed)
             await userManager.ResetAuthenticatorKeyAsync(user);
@@ -81,11 +85,13 @@ public static class MfaEndpoints
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             IOAuthGrantRevoker grantRevoker,
+            IAccountChangeGuard accountChanges,
             MfaVerifyRequest request,
             CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
+            if (await accountChanges.RequireRecentProofAsync(context, user, ct) is { } reauth) return reauth;
 
             // Verify the code against the stored authenticator key
             var isValid = await userManager.VerifyTwoFactorTokenAsync(
@@ -101,8 +107,11 @@ public static class MfaEndpoints
 
             // SetTwoFactorEnabledAsync rotates the security stamp → re-issue the
             // acting session so the user who just enabled 2FA isn't self-logged-out
-            // at the next validation pass (other sessions remain invalidated).
+            // at the next validation pass (other sessions remain invalidated). The code
+            // just verified is a TOTP proof: the session records it (ADR 0025).
+            Modgud.Authentication.SignIn.SignInAssurance.Declare(context, Modgud.Authentication.SignIn.SignInMethods.Totp);
             await signInManager.RefreshSignInAsync(user);
+            await accountChanges.NotifyAsync(user, AccountChange.TotpAdded, ct);
 
             // Audit #10 — the stamp rotation kills cookies, but stock OpenIddict
             // introspection trusts store status, so OAuth reference tokens issued
@@ -125,10 +134,12 @@ public static class MfaEndpoints
             IOAuthGrantRevoker grantRevoker,
             Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements,
             IDocumentSession session,
+            IAccountChangeGuard accountChanges,
             CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
+            if (await accountChanges.RequireRecentProofAsync(context, user, ct) is { } reauth) return reauth;
 
             var willHaveZeroMethods = await signInRequirements.OwnUiRequiresSecondFactorAsync(ct)
                 && (await TwoFactorHelper.GetMethodsAsync(user, session))
@@ -150,6 +161,7 @@ public static class MfaEndpoints
             // Audit #10 — revoke OAuth reference tokens too (see verify above);
             // removing a 2FA factor must cut off live access across channels.
             await grantRevoker.RevokeTokensBySubjectAsync(user.Id.ToString(), ct);
+            await accountChanges.NotifyAsync(user, AccountChange.TotpRemoved, ct);
 
             return Results.Ok(new
             {

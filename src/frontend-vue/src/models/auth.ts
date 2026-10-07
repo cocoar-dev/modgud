@@ -41,6 +41,11 @@ export interface LoginResponse {
   GracePeriod?: boolean
   /** UTC ISO timestamp when the grace period ends. Undefined/null if not yet started. */
   SecureSetupDueAt?: string | null
+  /** ADR 0025 amendment C — re-authentication of a user without an account factor: sign
+   *  in again with one of `Methods` (`email`, `pwd`); it joins the current session. */
+  RequiresFirstFactor?: boolean
+  Methods?: string[]
+  Email?: string | null
 }
 
 export interface EmailOtpStatus {

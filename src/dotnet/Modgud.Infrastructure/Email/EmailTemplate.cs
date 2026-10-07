@@ -21,4 +21,10 @@ public enum EmailTemplate
     /// The link is a magic-link sign-in that trusts the device on success.
     /// </summary>
     LoginBlocked,
+    /// <summary>
+    /// ADR 0025 amendment C — something that protects the account was changed (a factor
+    /// added or removed, the password or e-mail address changed, deletion requested),
+    /// so a change the user did not make does not go unnoticed. <c>{{Change}}</c> names it.
+    /// </summary>
+    AccountChanged,
 }

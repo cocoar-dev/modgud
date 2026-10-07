@@ -167,8 +167,11 @@ export const useAuthStore = defineStore('auth', () => {
    * ADR 0025 — raise the current session for a pending authorization whose app needs
    * a second factor: returns the factors that can be used, or nothing left to do.
    */
-  async function beginStepUp(returnUrl?: string): Promise<LoginResponse> {
-    return await http.addPath('step-up').post<LoginResponse>({ ReturnUrl: returnUrl ?? null })
+  async function beginStepUp(returnUrl?: string, reauthenticate = false): Promise<LoginResponse> {
+    return await http.addPath('step-up').post<LoginResponse>({
+      ReturnUrl: returnUrl ?? null,
+      Reauthenticate: reauthenticate,
+    })
   }
 
   /**

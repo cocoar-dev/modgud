@@ -6,7 +6,7 @@ import { useHttpClient } from '@/composables/useHttpClient'
 import { useUI } from '@/composables/useUI'
 import { usePreferences, localeOptions } from '@/composables/usePreferences'
 import { useI18n } from '@cocoar/vue-localization'
-import { CoarNotice, CoarCard, CoarButton, CoarIcon, CoarMenu, CoarMenuItem, CoarSelect, CoarTextInput, CoarPasswordInput, CoarFormField } from '@cocoar/vue-ui'
+import { CoarNotice, CoarCard, CoarButton, CoarIcon, CoarMenu, CoarMenuItem, CoarSelect, CoarTextInput, CoarFormField } from '@cocoar/vue-ui'
 import type { CoarSelectOption } from '@cocoar/vue-ui'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 
@@ -107,7 +107,6 @@ const deletionStatus = ref<DeletionStatusDto | null>(null)
 const exportRunning = ref(false)
 const deleteRequestRunning = ref(false)
 const deleteCancelRunning = ref(false)
-const deletePassword = ref('')
 const deleteReason = ref('')
 const showDeleteForm = ref(false)
 const privacyError = ref('')
@@ -148,21 +147,15 @@ async function exportMyData() {
 
 async function requestDeletion() {
   if (deleteRequestRunning.value) return
-  if (!deletePassword.value) {
-    privacyError.value = t('profile.privacy.passwordRequired', {}, 'Password is required.')
-    return
-  }
   deleteRequestRunning.value = true
   privacyError.value = ''
   privacyMessage.value = ''
   try {
     await gdprHttp.addPath('delete-account').post({
-      Password: deletePassword.value,
       Reason: deleteReason.value.trim() || null,
     })
     privacyMessage.value = t('profile.privacy.deleteRequested', {},
       'Your account is scheduled for deletion. Log in any time before the deadline to cancel.')
-    deletePassword.value = ''
     deleteReason.value = ''
     showDeleteForm.value = false
     await loadDeletionStatus()
@@ -797,7 +790,9 @@ watch(() => route.hash, (now, before) => {
                 <p class="text-sm text-surface-600">{{ t('profile.emailOtp.noEmail', {}, 'An email address is required.') }}</p>
               </template>
               <template v-else-if="emailOtpStatus && !emailOtpStatus.Enabled">
-                <p class="text-sm text-surface-600 mb-4">{{ t('profile.emailOtp.description', {}, 'A one-time code will be sent to your email.') }}</p>
+                <p class="text-sm text-surface-600 mb-2">{{ t('profile.emailOtp.description', {}, 'A one-time code will be sent to your email.') }}</p>
+                <!-- ADR 0025 amendment B: honest about what this second factor protects. -->
+                <p class="text-sm text-surface-500 mb-4">{{ t('profile.emailOtp.protectionHint', {}, 'This protects against a stolen password. It does not protect against someone with access to your mailbox — only an authenticator app or a passkey does.') }}</p>
                 <!-- Enabling Email-OTP makes the inbox load-bearing; gate it
                      on a verified email. Disable is left ungated so users
                      who accidentally turned it on can recover. -->
@@ -1087,9 +1082,9 @@ watch(() => route.hash, (now, before) => {
                     </CoarButton>
                   </div>
                   <div v-else class="space-y-2">
-                    <CoarFormField :label="t('profile.privacy.password', {}, 'Current Password')">
-                      <CoarPasswordInput v-model="deletePassword" />
-                    </CoarFormField>
+                    <!-- No password field: the deletion needs a recent sign-in proof instead
+                         (ADR 0025 amendment C), which users without a password can give too.
+                         An older session is sent to confirm and comes back here. -->
                     <CoarFormField :label="t('profile.privacy.reason', {}, 'Reason (optional)')">
                       <CoarTextInput v-model="deleteReason" />
                     </CoarFormField>
@@ -1097,7 +1092,7 @@ watch(() => route.hash, (now, before) => {
                       <CoarButton variant="danger" :loading="deleteRequestRunning" @click="requestDeletion">
                         {{ t('profile.privacy.confirmDelete', {}, 'Schedule deletion') }}
                       </CoarButton>
-                      <CoarButton variant="ghost" @click="showDeleteForm = false; deletePassword = ''; deleteReason = ''">
+                      <CoarButton variant="ghost" @click="showDeleteForm = false; deleteReason = ''">
                         {{ t('common.cancel', {}, 'Cancel') }}
                       </CoarButton>
                     </div>

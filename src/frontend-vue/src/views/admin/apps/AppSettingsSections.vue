@@ -169,6 +169,26 @@ const appRateLimitModeOptions = computed(() => [
 // The realm's sign-in policy in force: saved, or derived from the deployment while unsaved.
 const realmSignIn = computed<SignInPolicyDto>(() => realmSettingsStore.settings?.SignIn ?? realmSettingsStore.settings?.SignInInForce ?? SIGN_IN_POLICY_DEFAULTS)
 const realmSignInConfigured = computed(() => !!realmSettingsStore.settings?.SignIn)
+// ADR 0025 amendment A — an App can only raise the realm's floor. What this override sets
+// below it: the backend refuses to save it, and a stored one runs under the floor.
+const signInBelowFloor = computed<string[]>(() => {
+  if (!f.signIn.override) return []
+  const v = f.signIn.values
+  const r = realmSignIn.value
+  const below: string[] = []
+  if (v.MinimumLevel === 'Single' && r.MinimumLevel === 'Multi')
+    below.push(t('admin.signIn.minimumLevel', {}, 'Minimum level'))
+  const methods: Array<[keyof SignInPolicyDto, string]> = [
+    ['Password', t('admin.signIn.password', {}, 'Password')],
+    ['EmailCode', t('admin.signIn.emailCode', {}, 'E-mail code')],
+    ['Passkey', t('admin.signIn.passkey', {}, 'Passkey')],
+    ['Totp', t('admin.signIn.totp', {}, 'Authenticator app (TOTP)')],
+    ['EmailAfterPassword', t('admin.signIn.emailAfterPassword', {}, 'E-mail code after a password')],
+  ]
+  for (const [key, label] of methods)
+    if (v[key] === true && r[key] === false) below.push(label)
+  return below
+})
 const signInEffective = computed<SignInPolicyDto>(() => ({
   ...realmSignIn.value,
   ...(f.signIn.override ? f.signIn.values : {}),
@@ -969,6 +989,12 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
     <!-- Sign-in policy (ADR 0025) -->
     <div v-show="activeTab === 'signIn'" class="tab-content">
       <CoarCheckbox v-model="f.signIn.override" :label="t('admin.appSettings.signIn.override', {}, 'Custom sign-in policy for this app')" />
+      <p class="text-sm text-surface-500">
+        {{ t('admin.appSettings.signIn.floorHint', {}, 'The realm\'s sign-in policy is the floor: everyone shares the profile, so an app can require more or offer fewer methods, never less.') }}
+      </p>
+      <CoarNotice v-if="signInBelowFloor.length" variant="warning">
+        {{ t('admin.appSettings.signIn.belowFloor', { fields: signInBelowFloor.join(', ') }, 'Below the realm\'s policy: {fields}. This app runs under the realm\'s policy for these, and saving is refused. To allow it, change the realm\'s sign-in policy (Realm settings → Security).') }}
+      </CoarNotice>
       <CoarNotice v-if="!realmSignInConfigured" variant="info">
         {{ t('admin.appSettings.signIn.realmUnconfigured', {}, 'The realm has not saved its sign-in policy yet. The values shown as inherited are the ones in force, derived from the deployment\'s former authentication level.') }}
       </CoarNotice>

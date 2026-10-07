@@ -80,15 +80,17 @@ public record SignInPolicy
 
     /// <summary>
     /// The policy a realm that has never configured <see cref="RealmSettings.RealmSettings.SignIn"/>
-    /// runs under: derived from the deployment's former settings, so an upgrade changes
-    /// nothing until an admin saves the section. <paramref name="legacyAuthenticationLevel"/>
-    /// is the retired <c>AuthenticationMinimumLevel</c> (0 none, 1 secure login,
-    /// 2 passwordless); <paramref name="emailCodeEnabled"/> is whether the realm had
-    /// native grants switched on — until now the gate for e-mail-code sign-in.
+    /// runs under, derived from the deployment's former settings.
+    /// <paramref name="legacyAuthenticationLevel"/> is the retired <c>AuthenticationMinimumLevel</c>
+    /// (0 none, 1 secure login, 2 passwordless). It only decides the administration: the floor —
+    /// the portal and every App — is always <c>single</c> (ADR 0025 amendment A), because a floor
+    /// of <c>multi</c> would lock every user of an e-mail-code App out of their own profile.
+    /// <paramref name="emailCodeEnabled"/> is whether native grants are switched on for the
+    /// realm or any of its Apps — until now the gate for e-mail-code sign-in.
     /// </summary>
     public static SignInPolicy FromLegacy(int legacyAuthenticationLevel, int legacyGraceDays, bool emailCodeEnabled) => new()
     {
-        MinimumLevel = legacyAuthenticationLevel >= 1 ? SignInLevel.Multi : SignInLevel.Single,
+        MinimumLevel = SignInLevel.Single,
         AdministrationMinimumLevel = legacyAuthenticationLevel >= 1 ? SignInLevel.Multi : SignInLevel.Single,
         SetupGraceDays = Math.Max(0, legacyGraceDays),
         Password = legacyAuthenticationLevel < 2,

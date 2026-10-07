@@ -1,10 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Marten;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.DependencyInjection;
-using Modgud.Authentication.Api.Account.Services;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.SignIn;
 
@@ -81,7 +78,16 @@ public sealed class BrowserSessionCookieEvents(ISessionService sessions) : Cooki
             return;
         }
 
-        await UpgradeLegacyCookieAsync(context);
+        // ADR 0025 amendment F — a cookie from before sign-in factors were recorded cannot say
+        // how it was signed in. It ends once; the user signs in again and that sign-in records
+        // its factors. Only the browser cookie is dropped: the session row and the Apps that
+        // signed in through it are left to their own lifetimes (no back-channel logout).
+        if (!SignInAssurance.IsRecorded(context.Principal) && SignInAssurance.ReadFactors(context.Principal).Count == 0)
+        {
+            await RejectAsync(context);
+            return;
+        }
+
         await SecurityStampValidator.ValidatePrincipalAsync(context);
     }
 
@@ -132,40 +138,6 @@ public sealed class BrowserSessionCookieEvents(ISessionService sessions) : Cooki
 
         SignInAssurance.Stamp(identity, factors);
         SignInAssurance.MarkRecorded(identity);
-    }
-
-    /// <summary>
-    /// ADR 0025 upgrade path — a cookie issued before sign-in factors were recorded carries
-    /// none, and would read as a session that proved nothing: every signed-in user would be
-    /// stopped at the first request after the upgrade. Such a session keeps the standing the
-    /// release that issued it gave it, until it ends: that release let a user with any
-    /// second factor configured through everywhere (<see cref="SignInMethods.Legacy"/>, which
-    /// counts as <c>multi</c>), and held a user without one to the setup grace — the
-    /// evaluation the session now gets with no factors. Applied once; the renewed cookie is
-    /// marked as recorded.
-    /// </summary>
-    private static async Task UpgradeLegacyCookieAsync(CookieValidatePrincipalContext context)
-    {
-        var principal = context.Principal;
-        if (principal is null || SignInAssurance.IsRecorded(principal)
-            || SignInAssurance.ReadFactors(principal).Count > 0)
-            return;
-        var identity = principal.Identities.FirstOrDefault(i => i.IsAuthenticated);
-        if (identity is null) return;
-
-        var services = context.HttpContext.RequestServices;
-        var user = await services.GetRequiredService<UserManager<ApplicationUser>>().GetUserAsync(principal);
-        if (user is null) return;
-
-        var methods = await TwoFactorHelper.GetMethodsAsync(user, services.GetRequiredService<IDocumentSession>());
-        if (methods.Count > 0)
-            SignInAssurance.Stamp(identity, new Dictionary<string, DateTimeOffset>
-            {
-                [SignInMethods.Legacy] = context.Properties.IssuedUtc ?? DateTimeOffset.UtcNow,
-            });
-        SignInAssurance.MarkRecorded(identity);
-        context.ReplacePrincipal(principal);
-        context.ShouldRenew = true;
     }
 
     private static Guid? ParseUserId(ClaimsPrincipal? principal)

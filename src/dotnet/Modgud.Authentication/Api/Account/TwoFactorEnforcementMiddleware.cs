@@ -16,20 +16,21 @@ namespace Modgud.Authentication.Api.Account;
 /// blocked.
 ///
 /// The target of a request is the realm's administration for <c>/api/admin/*</c> (its
-/// administration minimum level) and the self-service portal — the <c>modgud</c> App —
-/// for everything else. A session below the target's level gets 403 with
+/// administration minimum level) and the self-service portal — the realm's policy — for
+/// everything else. A session below the target's level gets 403 with
 /// <c>RequiresStepUp</c> when the user has a second factor to raise it with, or with
 /// <c>RequiresSecureSetup</c> once the setup grace for a missing second factor is over.
 ///
 /// Setup and sign-in endpoints are whitelisted so a user can enroll a factor, step up,
-/// check their identity, or log out.
+/// check their identity, log out or delete their account. Whitelisted is not unguarded:
+/// every account change on them needs a recent proof of the user's account factor
+/// (<see cref="AccountChangeGuard"/>, amendment C).
 /// </summary>
 public class TwoFactorEnforcementMiddleware(RequestDelegate next)
 {
     /// <summary>
-    /// Paths callable below the target's level. All start with "/api/account/" — the account
-    /// feature area is what lets a user recover without leaving the login screen. Matched
-    /// case-insensitively via StartsWith so "/api/account/mfa/setup" passes "/api/account/mfa/".
+    /// Paths callable below the target's level. Matched case-insensitively via StartsWith so
+    /// "/api/account/mfa/setup" passes "/api/account/mfa/".
     /// </summary>
     private static readonly string[] AllowedPathPrefixes =
     [
@@ -40,6 +41,10 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
         "/api/account/email-otp/",
         "/api/account/passkey/",
         "/api/account/change-password",
+        // Account deletion is never blocked by a sign-in policy (amendment C).
+        "/api/auth/delete-account",
+        "/api/auth/cancel-deletion",
+        "/api/auth/deletion-status",
         // Docs stay readable even under grace-lock — a user locked out of the app still
         // needs to look up how to set up 2FA. The /docs branch has its own auth-gate,
         // so anonymous requests don't slip through here.
@@ -69,7 +74,7 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
         }
 
         var path = context.Request.Path.Value ?? string.Empty;
-        if (IsWhitelisted(path))
+        if (IsWhitelisted(path) || !IsModgudUi(path))
         {
             await next(context);
             return;
@@ -124,6 +129,17 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
             GracePeriod = false,
         });
     }
+
+    /// <summary>
+    /// What this middleware guards: Modgud's own UI — its API and its SignalR hub. The OAuth
+    /// endpoints (<c>/connect/*</c>) evaluate the sign-in against their own target (the
+    /// client's App, the requested resource) and send the browser to the step-up; enforcing
+    /// the portal's level there answered an App sign-in with a raw 403 and stopped a user
+    /// whose own TOTP an App ignores at that App. The page shell is anonymous anyway.
+    /// </summary>
+    internal static bool IsModgudUi(string path) =>
+        path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/signalr/", StringComparison.OrdinalIgnoreCase);
 
     internal static bool IsWhitelisted(string path)
     {

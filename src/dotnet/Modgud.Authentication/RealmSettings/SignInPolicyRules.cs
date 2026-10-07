@@ -85,13 +85,24 @@ internal static partial class SignInPolicyRules
     /// <summary>ADR 0025 — the realm policy in force: the saved one, or the one derived from
     /// the retired deployment settings while the realm has never saved it. The same derivation
     /// <c>ApplicationSettingsResolver</c> applies at runtime.</summary>
-    public static SignInPolicy InForce(Modgud.Domain.RealmSettings.RealmSettings? realm, IAuthSettings? authSettings)
+    public static async Task<SignInPolicy> InForceAsync(
+        IQuerySession session, Modgud.Domain.RealmSettings.RealmSettings? realm, IAuthSettings? authSettings,
+        CancellationToken ct = default)
     {
         if (realm?.SignIn is not null) return realm.SignIn;
         if (authSettings is null) return SignInPolicy.Defaults;
 #pragma warning disable CS0618 // the retired deployment settings seed the derived policy
         return SignInPolicy.FromLegacy(authSettings.AuthenticationMinimumLevel, authSettings.TwoFactorGracePeriodDays,
-            emailCodeEnabled: realm?.NativeGrants?.Enabled ?? false);
+            emailCodeEnabled: await AnyNativeGrantsAsync(session, realm, ct));
 #pragma warning restore CS0618
     }
+
+    /// <summary>Whether native grants are switched on for the realm or any of its Apps. The
+    /// derived floor offers the e-mail code then: the realm must offer every method an App
+    /// offers (amendment A), and native grants were the gate for e-mail-code sign-in.</summary>
+    public static async Task<bool> AnyNativeGrantsAsync(
+        IQuerySession session, Modgud.Domain.RealmSettings.RealmSettings? realm, CancellationToken ct = default) =>
+        realm?.NativeGrants?.Enabled == true
+        || await session.Query<Modgud.Domain.Applications.ApplicationSettings>()
+            .AnyAsync(a => a.NativeGrants != null && a.NativeGrants.Enabled == true, ct);
 }

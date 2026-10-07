@@ -29,12 +29,6 @@ public static class SignInMethods
 
     /// <summary>A federated sign-in whose provider asserted MFA (RFC 8176 <c>amr</c>).</summary>
     public const string ExternalMfa = "external_mfa";
-
-    /// <summary>A browser session signed in before sign-in factors were recorded (Modgud
-    /// 0.14 and earlier) by a user who had a second factor configured. That release let
-    /// such a session through everywhere, so it keeps that standing until it ends — never
-    /// declared by a sign-in, only attached when such a cookie is first seen.</summary>
-    public const string Legacy = "legacy";
 }
 
 /// <summary>
@@ -53,8 +47,8 @@ public static class SignInAssurance
     public const string FactorClaimType = "modgud.signin.factor";
 
     /// <summary>Marks an application cookie whose factors were recorded at sign-in, even
-    /// when the sign-in proved none. Its absence identifies a cookie from before factors were
-    /// recorded (see <see cref="SignInMethods.Legacy"/>).</summary>
+    /// when the sign-in proved none. A cookie without it and without factors is from before
+    /// factors were recorded; it ends once (ADR 0025 amendment F).</summary>
     public const string RecordedClaimType = "modgud.signin.recorded";
 
     /// <summary><c>acr</c> values (ADR 0025 "Settled details").</summary>
@@ -147,8 +141,7 @@ public static class SignInAssurance
     public static SignInLevel LevelOf(IEnumerable<string> methods)
     {
         var set = methods as IReadOnlyCollection<string> ?? methods.ToList();
-        if (set.Contains(SignInMethods.Passkey) || set.Contains(SignInMethods.ExternalMfa)
-            || set.Contains(SignInMethods.Legacy))
+        if (set.Contains(SignInMethods.Passkey) || set.Contains(SignInMethods.ExternalMfa))
             return SignInLevel.Multi;
         return set.Count(SingleFactorKinds.Contains) >= 2 ? SignInLevel.Multi : SignInLevel.Single;
     }

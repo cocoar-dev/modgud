@@ -50,7 +50,10 @@ public static class AccountEndpoints
 
     /// <summary>ADR 0025 — <paramref name="ReturnUrl"/> is the pending continuation whose
     /// target App the session is raised for.</summary>
-    public record StepUpRequest(string? ReturnUrl = null);
+    /// <param name="Reauthenticate">ADR 0025 amendment C — an account change answered
+    /// <c>RequiresReauthentication</c>: ask for a fresh proof of the account factor (or of
+    /// what the user has) even when the session already meets the level.</param>
+    public record StepUpRequest(string? ReturnUrl = null, bool Reauthenticate = false);
 
     public record LogoutRequest(bool EndIdpSession = true);
 
@@ -479,6 +482,25 @@ public static class AccountEndpoints
                 return Results.Unauthorized();
 
             var factors = SignInAssurance.ReadFactors(context.User);
+
+            if (request?.Reauthenticate == true)
+            {
+                var check = await context.RequestServices.GetRequiredService<IAccountChangeGuard>()
+                    .CheckAsync(context, user, ct);
+                if (check.Allowed)
+                    return Results.Ok(new { Message = "Session already meets the requirement" });
+                if (check.HasAccountFactor)
+                {
+                    // The second step proves the account factor again; its sign-in unions the
+                    // fresh time back into this session.
+                    await SignInAssurance.SignInPartialAsync(context, user.Id, factors);
+                    return Results.Ok(new { RequiresMfa = true, MfaMethods = check.Methods });
+                }
+                // No account factor: sign in again with what the user has (e-mail code,
+                // password); that sign-in unions into this session.
+                return Results.Ok(new { RequiresFirstFactor = true, Methods = check.Methods, user.Email });
+            }
+
             var target = await signInRequirements.ResolveTargetFromReturnUrlAsync(request?.ReturnUrl, ct);
             var decision = await signInRequirements.EvaluateAsync(
                 user, target, factors, SignInSurface.Web, startSetupGrace: true, ct);
@@ -628,6 +650,9 @@ public static class AccountEndpoints
             var user = await userManager.GetUserAsync(context.User);
             if (user is null)
                 return Results.Unauthorized();
+            var accountChanges = context.RequestServices.GetRequiredService<IAccountChangeGuard>();
+            if (await accountChanges.RequireRecentProofAsync(context, user, context.RequestAborted) is { } reauth)
+                return reauth;
 
             var result = await userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
             if (!result.Succeeded)
@@ -656,6 +681,7 @@ public static class AccountEndpoints
                 await signInManager.RefreshSignInAsync(refreshed);
             }
 
+            await accountChanges.NotifyAsync(user, AccountChange.PasswordChanged, context.RequestAborted);
             Log.Information("Password changed; other sessions revoked. UserId={UserId} IP={IP}", user.Id, ip);
             return Results.Ok(new { Message = "Password changed successfully" });
         })

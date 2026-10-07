@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Modgud.Api.Features.Admin.Apps;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Application.DTOs.Applications;
+using Modgud.Application.DTOs.RealmSettings;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Domain.Applications;
@@ -431,6 +432,7 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
         var ct = TestContext.Current.CancellationToken;
         var app = await SeedAppAsync("as-sign-in");
         var appShort = ShortGuid.Encode(app.Id);
+        await OfferEmailCodeInRealmAsync(ct);
 
         (await PutSettingsAsync(appShort, new ApplicationSettingsDto
         {
@@ -463,6 +465,7 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
         var ct = TestContext.Current.CancellationToken;
         var app = await SeedAppAsync("as-sign-in-invalid");
         var appShort = ShortGuid.Encode(app.Id);
+        await OfferEmailCodeInRealmAsync(ct);
 
         // Multi required, but only an e-mail code is offered and no second factor or
         // external provider exists: nobody could ever satisfy it.
@@ -512,6 +515,14 @@ public class ApplicationSettingsAdminTests : IntegrationTestBase
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /// <summary>ADR 0025 amendment A — an App can only offer what the realm offers; new realms
+    /// start with the e-mail code off.</summary>
+    private async Task OfferEmailCodeInRealmAsync(CancellationToken ct) =>
+        (await Client.PatchAsJsonAsync("/api/admin/realm-settings", new UpdateRealmSettingsDto
+        {
+            SignIn = new UpdateSignInPolicyDto { EmailCode = true },
+        }, ct)).EnsureSuccessStatusCode();
 
     private Task<HttpResponseMessage> PutSettingsAsync(string appShort, ApplicationSettingsDto settings, CancellationToken ct) =>
         Client.PutAsJsonAsync($"/api/app/{appShort}", new UpdateAppDto(appShort, null, [], settings), JsonOptions, ct);

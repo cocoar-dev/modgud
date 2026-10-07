@@ -91,6 +91,23 @@ public partial class EmailTemplateStore
                 """
         ),
 
+        [EmailTemplate.AccountChanged] = (
+            Subject: "{{AppName}} — Änderung an Ihrem Konto",
+            HtmlBody: """
+                <!DOCTYPE html>
+                <html><body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <h2 style="color: #333;">Änderung an Ihrem Konto</h2>
+                    <p>Hallo {{DisplayName}},</p>
+                    <p>an Ihrem Konto wurde gerade etwas geändert:</p>
+                    <p style="margin: 24px 0; padding: 12px 16px; background-color: #f5f5f5; border-radius: 8px;"><strong>{{Change}}</strong></p>
+                    <p>Falls Sie das selbst waren, müssen Sie nichts tun.</p>
+                    <p style="color: #888; font-size: 0.85em;">
+                        Falls nicht, melden Sie sich an, prüfen Sie Ihre Anmeldemethoden und beenden Sie unbekannte Sitzungen — oder wenden Sie sich an Ihren Administrator.
+                    </p>
+                </body></html>
+                """
+        ),
+
         [EmailTemplate.PasswordReset] = (
             Subject: "{{AppName}} — Passwort zurücksetzen",
             HtmlBody: """
@@ -266,6 +283,9 @@ public partial class EmailTemplateStore
             "{{AppName}} — Sign-in attempts blocked", "Sign-in attempts blocked",
             "<p>Hello {{DisplayName}},</p><p>There were several failed sign-in attempts on your account from a device we do not know. Sign-ins from unknown devices are therefore blocked for {{WindowMinutes}} minutes. Devices you have used before are not affected.</p><p>If that was you, sign in through this link; the device will be remembered as trusted:</p>{{ActionButton}}<p>This link is valid for {{ExpirationMinutes}} minutes and can only be used once.</p><p>If that was not you, there is nothing you need to do. Your password was not guessed; change it anyway if you are unsure.</p>",
             "Sign in on this device"),
+        [EmailTemplate.AccountChanged] = English(
+            "{{AppName}} — A change to your account", "A change to your account",
+            "<p>Hello {{DisplayName}},</p><p>Something that protects your account was just changed:</p><p style=\"margin:24px 0;padding:12px 16px;background:#f5f5f5;border-radius:8px\"><strong>{{Change}}</strong></p><p>If that was you, there is nothing you need to do.</p><p style=\"color:#888;font-size:14px\">If not, sign in, check your sign-in methods and end sessions you do not recognise — or contact your administrator.</p>"),
         [EmailTemplate.RealmAdminBootstrap] = English(
             "{{AppName}} — Set up admin access ({{RealmDisplayName}})", "Set up admin access",
             "<p>Hello {{DisplayName}},</p><p>Your admin access for <strong>{{RealmDisplayName}}</strong> is ready.</p>{{ActionButton}}<p><strong>Username:</strong> {{UserName}}<br><strong>Email:</strong> {{Email}}</p><p>This link is valid for {{ExpirationHours}} hours and can only be used once.</p>",

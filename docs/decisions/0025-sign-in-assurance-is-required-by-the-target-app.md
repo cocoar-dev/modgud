@@ -177,8 +177,108 @@ Either way, the web ceremony has to use the RP ID of the *target* App (section 3
 - **Impossible policies are rejected.** An App whose minimum is `multi` must offer a way to reach it (a second factor, a passkey, or an external provider); saving a policy that cannot be satisfied fails with a clear message.
 - **The passkey RP ID becomes an App setting.** Clients inherit their App's RP ID and may still override it. This is how the login page knows which RP ID to use for a sign-in whose target is an App (section 3).
 - **`NativeGrants` keeps its switch**, meaning only "native token grants are allowed". Which methods those grants accept comes from the App's sign-in methods.
-- **Existing sessions count as `single`** after the upgrade; signing in to a `multi` App asks for the second factor once.
+- **Existing sessions count as `single`** after the upgrade; signing in to a `multi` App asks for the second factor once. *Superseded by Amendment 1, F: they end once.*
 - **Native error contract.** Native grants answer `mfa_required` instead of `invalid_grant` "supply totp_code". Pre-1.0 contract change, announced in the release notes.
 - **Rollback.** The migration only adds realm settings; the previous release ignores them and reads its deployment setting again.
 - **Related origins** shipped as a follow-up: a per-App opt-in (`PasskeyRelatedOrigins`), used only when the browser reports `getClientCapabilities().relatedOrigins`; the verifier accepts the page's own origin for the App's RP ID only for a ceremony begun as a related-origin one.
 - **Delivery** is one change: sections 1–9 together, including the target App's RP ID for web passkey ceremonies. Serving an App's login page under the App's own domain, and publishing `/.well-known/webauthn`, are deployment steps on the App's side; Modgud only has to accept the configured origin for the App's RP ID.
+
+## Amendment 1 — the realm is the floor, account changes need the account's own factor
+
+**Drafted:** 2026-10-06 · **Status:** Proposed
+
+### Why
+
+The first production upgrade to 0.15 was rolled back within minutes. The realm had never saved a sign-in policy and the deployment ran on the built-in `AuthenticationMinimumLevel` 1, so the derived policy required `multi` everywhere — for the administration, for every App without its own minimum, and for Modgud's own self-service portal. Three things followed:
+
+- Every existing browser session read as one that proved nothing ("existing sessions count as `single`", above). An admin whose second factor is the e-mail code after a password — and whose only passkey belongs to a native App's RP ID — was stopped at "2FA setup required" on the first request, including on the profile page, and saw the API's raw JSON because the enforcement also answered the SPA's page shell.
+- Once their setup grace ran out, users of an e-mail-code App could no longer open their own profile — not even to request the deletion of their account — without first setting up an authenticator app. An App with minimum `single` under a realm with `multi` only works until the user needs the portal.
+- Factor management is reachable below the required level so that a user can set one up, and removing a factor asks for nothing. A session that proved a single factor — a stolen password, a magic link — can switch off TOTP or delete a passkey.
+
+The model in sections 1–9 stays. This amendment fixes where the floor sits, what protects the account itself, and states plainly what one shared account can and cannot give Apps with different protection needs.
+
+### A. The realm is the floor
+
+Modgud's own UI — profile, devices, sessions, factor setup, account deletion — is shared by every user of the realm, whatever App they came through. It therefore cannot ask for more than the weakest App does.
+
+- **The realm's policy is the floor.** It applies to the self-service portal, and every App starts from it.
+- **An App can only raise it:** a higher minimum level, fewer sign-in methods. An App cannot go below the realm's minimum and cannot offer a method the realm does not offer. Saving such an App policy fails with a message that names the realm setting to change instead. A policy saved before this rule that violates it is shown as a conflict in the admin UI; until it is resolved, the App runs under the realm's floor.
+- **The administration keeps its own minimum** (realm-only, default `multi`).
+
+**Derived policy (a realm that never saved its section).** The former `AuthenticationMinimumLevel` now only decides the administration: level ≥ 1 → administration `multi`. The floor is `single`, whatever the former level. E-mail code is on when the realm or any of its Apps has native grants switched on. An upgrade therefore no longer raises the portal or any App.
+
+### B. Account factors
+
+A factor protects the *account* only if Modgud can check it on its own pages — where the profile, the account settings and account deletion run. Such a factor is an **account factor**:
+
+- **TOTP** — bound to no domain.
+- **A passkey Modgud can use on the page the profile runs on:** one for the realm's RP ID; or one for an App's RP ID when the page is served under that RP ID (an App domain such as `auth.<app-domain>`). A passkey Modgud reaches only through [related origins](#related-origins) does not count: related origins depend on the browser, and a user whose only account factor it was could not change their account in a browser without support.
+
+A passkey bound to an App's own RP ID that Modgud's pages cannot use — a native App's passkey without either of the above — is a way to sign in to that App. It does not protect the account, and the account settings never ask for it. That is a legitimate choice: an App whose users must never see the identity provider keeps its own RP ID and accepts it.
+
+The e-mail code after a password is a second factor for sign-in, and it protects against a leaked password. It does not protect against a lost mailbox — a password reset goes through the same mailbox — so it is not an account factor. The profile says so where the user switches it on.
+
+### C. Account changes need an account factor, freshly
+
+Getting into the profile and changing the account's protection are different things. Reading the profile and changing a display name need the floor. Changing what protects the account:
+
+- adding or removing a second factor or a passkey,
+- changing the password or the e-mail address,
+- deleting the account,
+
+needs a **recent proof (within 15 minutes) of an account factor the user has**, or — for a user without one — of what they have. Ending sessions is deliberately not an account change: it only takes access away, and a user who suspects an intruder must be able to do it without a hurdle.
+
+| The user has… | An account change needs |
+|---|---|
+| An account factor | That factor, proven within the window — the login page asks for it (step-up) |
+| No account factor | A recent proof of what they have — the e-mail code or magic link, or the password |
+
+"Recent" is read from the session, which records when each factor was proven: a sign-in a minute ago *is* the proof, and nothing is asked again. Only a session whose relevant factor is older than the window asks once more.
+
+Example: the floor is `single`, the user signed in with a magic link a minute ago, and their only passkey belongs to a native App's RP ID. They have no account factor, the mailbox was just proven, so removing that passkey happens without a prompt. Whoever controls the mailbox could sign in to that App with it anyway.
+
+Adding the *first* account factor needs only the proof of what the user has — otherwise nobody could start; adding a further one needs the existing one. The allowance that lets a user below the required level reach factor setup covers adding a factor, never removing one.
+
+**Account deletion is always reachable** — the floor, an App's minimum and the setup grace never block it — and it needs the same proof as every other account change.
+
+**Every account change sends a notice** to the account's e-mail address, so a change the user did not make does not go unnoticed.
+
+**What the mailbox alone can do.** Password reset only sets a new password: it signs nobody in and switches no factor off.
+
+| The user has… | With the mailbox alone, an attacker… |
+|---|---|
+| E-mail only (code, magic link) | owns the account — that is what passwordless means |
+| A password and the e-mail code as second factor | owns the account: reset the password, then the code |
+| An account factor | can sign in to Apps that `ignore` the user's own factor (section 7), and to nothing else; the account cannot be changed or deleted |
+
+### D. Passwordless sign-in is a full sign-in
+
+An e-mail code or a magic link proves possession of the mailbox. It is one full factor and the whole sign-in for every target whose minimum is `single`. More is asked only where the user switched on a second factor of their own (section 7), the target requires `multi`, or an account change needs an account factor (C). Where `multi` is required, the login page offers a usable passkey first: one step that is `multi` on its own.
+
+### E. One account, Apps with different protection needs
+
+Modgud offers the options; which one fits is the decision of whoever is responsible for the Apps. Each has a cost:
+
+| Option | What it gives | What it costs |
+|---|---|---|
+| **One realm, low floor** — the demanding App requires `multi` and an account factor for its own access, and grants access through its own roles | One account and one sign-in for everything; users of the low-risk Apps never see more than an e-mail code; a user of the demanding App is protected by their account factor everywhere | The account of a user without an account factor is as strong as their mailbox; Apps that `ignore` the user's own factor open to the mailbox; the demanding App must assign access itself (a new user's first account factor is enrolled by whoever controls the mailbox) |
+| **One realm, high floor** | Every account is protected beyond the mailbox | Every user of every App, the low-risk ones included, must set up a second factor |
+| **Native App passkeys usable as account factors** — the App's sign-in and the profile served under the App's RP ID | The App keeps its own domain and the passkey protects the account, in every browser | A deployment step: the realm or App needs that domain |
+| **Separate realms** | Separate accounts, separate policies, nothing shared | One account per realm: separate registration, separate credentials, separate deletion, no single sign-on between the realms |
+
+### F. Upgrading
+
+This replaces "existing sessions count as `single`" (Settled details) and the write-once migration in section 2 (the policy is derived at read time until a realm saves its section).
+
+- **The page shell is never enforced.** Only the API is; the SPA loads and shows the step-up or the setup.
+- **Browser sessions from before sign-in factors were recorded end once.** They carry no factors and cannot say how they were signed in. The user signs in again, and that sign-in records its factors. Native Apps are not affected: their refresh tokens carry no factors and refresh until they expire.
+
+### Consequences
+
+- An upgrade never raises the floor; only the administration keeps the former level.
+- A realm App policy below its floor is refused, and an existing one is shown as a conflict.
+- A user who set up an account factor is protected by it for every change to the account, however low the floor.
+- Account deletion is never blocked by a sign-in policy.
+- New contract: account changes answer `403 { RequiresReauthentication: true, Methods: [...] }` when the proof is missing or older than 15 minutes; the SPA asks for it and retries.
+- A possible follow-up, not decided here: Modgud serving the app-association files (`apple-app-site-association`, `assetlinks.json`) for its own domains, so a native App can enroll passkeys under the realm's RP ID when it wants them to be account factors.
+

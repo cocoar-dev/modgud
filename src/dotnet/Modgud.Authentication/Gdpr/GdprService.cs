@@ -115,12 +115,16 @@ public class GdprService(
         };
     }
 
-    public async Task<ErrorOr<DeletionRequestResponseDto>> RequestDeletionAsync(Guid userId, string password, string? reason, CancellationToken ct = default)
+    public async Task<ErrorOr<DeletionRequestResponseDto>> RequestDeletionAsync(Guid userId, string? password, string? reason, CancellationToken ct = default)
     {
         var user = await userManager.FindByIdAsync(userId.ToString());
         if (user is null) return Error.NotFound("User.NotFound", $"User {userId} not found.");
 
-        if (!await userManager.CheckPasswordAsync(user, password))
+        // ADR 0025 amendment C — the proof is the recent account factor (or, without one, a
+        // recent sign-in), checked by the endpoint. A password was required here before,
+        // which locked every user without one — e-mail-code users — out of deleting their
+        // account. A password that is sent along is still checked.
+        if (!string.IsNullOrEmpty(password) && !await userManager.CheckPasswordAsync(user, password))
             return Error.Validation("Gdpr.InvalidPassword", "Password is incorrect.");
 
         var state = await session.LoadAsync<UserDeletionState>(userId, ct);

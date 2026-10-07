@@ -56,7 +56,7 @@ public sealed class ApplicationSettingsResolver(
         var realm = await realmSettings.LoadAsync(ct);
 
         if (applicationId is not { } appId)
-            return WithSignInPolicy(EffectiveSettings.From(realm), realm, app: null);
+            return await WithSignInPolicyAsync(EffectiveSettings.From(realm), realm, app: null, ct);
 
         // An Application is in context. Its overrides doc is lazy-created on
         // first admin write, so absence is normal: a never-configured App
@@ -65,24 +65,23 @@ public sealed class ApplicationSettingsResolver(
         var app = await session.LoadAsync<ApplicationSettings>(appId, ct)
                   ?? new ApplicationSettings { Id = appId };
 
-        return WithSignInPolicy(EffectiveSettings.Merge(realm, app), realm, app);
+        return await WithSignInPolicyAsync(EffectiveSettings.Merge(realm, app), realm, app, ct);
     }
 
     /// <summary>ADR 0025 — a realm that never saved its sign-in policy runs under the one
-    /// derived from the retired deployment settings (<see cref="SignInPolicy.FromLegacy"/>),
-    /// with the App's overrides layered on top. Until now e-mail-code sign-in was gated by
-    /// the native-grant switch, so that switch (as merged for this App) seeds it.</summary>
-    private EffectiveSettings WithSignInPolicy(
-        EffectiveSettings effective, Modgud.Domain.RealmSettings.RealmSettings realm, ApplicationSettings? app)
+    /// derived from the retired deployment settings (<see cref="SignInPolicy.FromLegacy"/>):
+    /// the realm's floor, with the App's overrides layered on top and clamped to it
+    /// (amendment A). Until now e-mail-code sign-in was gated by the native-grant switch, so
+    /// for an App that switch (as merged for it) still decides whether it offers the code.</summary>
+    private async Task<EffectiveSettings> WithSignInPolicyAsync(
+        EffectiveSettings effective, Modgud.Domain.RealmSettings.RealmSettings realm, ApplicationSettings? app,
+        CancellationToken ct)
     {
         if (realm.SignIn is not null) return effective;
-#pragma warning disable CS0618 // the retired deployment settings seed the derived policy
-        var legacy = SignInPolicy.FromLegacy(
-            authSettings.AuthenticationMinimumLevel,
-            authSettings.TwoFactorGracePeriodDays,
-            emailCodeEnabled: effective.NativeGrants?.Enabled ?? false);
-#pragma warning restore CS0618
-        return effective with { SignIn = EffectiveSettings.ApplySignInOverrides(legacy, app?.SignIn) };
+        var floor = await SignInPolicyRules.InForceAsync(session, realm, authSettings, ct);
+        if (app is null) return effective with { SignIn = floor };
+        var appDefaults = floor with { EmailCode = floor.EmailCode && (effective.NativeGrants?.Enabled ?? false) };
+        return effective with { SignIn = EffectiveSettings.ApplySignInOverrides(floor, app.SignIn, appDefaults) };
     }
 
     public async Task<EffectiveSettings> ResolveForRequestAsync(

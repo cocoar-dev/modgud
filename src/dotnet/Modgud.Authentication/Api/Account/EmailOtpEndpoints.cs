@@ -48,10 +48,12 @@ public static class EmailOtpEndpoints
             UserManager<ApplicationUser> userManager,
             IOAuthGrantRevoker grantRevoker,
             IDocumentSession session,
+            IAccountChangeGuard accountChanges,
             CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
+            if (await accountChanges.RequireRecentProofAsync(context, user, ct) is { } reauth) return reauth;
 
             if (string.IsNullOrEmpty(user.Email))
                 return Results.Problem(
@@ -75,6 +77,7 @@ public static class EmailOtpEndpoints
             // (stock introspection trusts store status). Enabling is additive, so we
             // don't force-logout other cookie sessions here (unlike disable below).
             await grantRevoker.RevokeTokensBySubjectAsync(user.Id.ToString(), ct);
+            await accountChanges.NotifyAsync(user, AccountChange.EmailSecondFactorAdded, ct);
 
             return Results.Ok(new { Message = "Email OTP enabled", Enabled = true });
         })
@@ -92,10 +95,12 @@ public static class EmailOtpEndpoints
             Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker,
             Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements,
             IDocumentSession session,
+            IAccountChangeGuard accountChanges,
             CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
+            if (await accountChanges.RequireRecentProofAsync(context, user, ct) is { } reauth) return reauth;
 
             var willHaveZeroMethods = await signInRequirements.OwnUiRequiresSecondFactorAsync(ct)
                 && (await TwoFactorHelper.GetMethodsAsync(user, session))
@@ -123,6 +128,7 @@ public static class EmailOtpEndpoints
                 user.Id,
                 Modgud.Domain.PositionTerminals.StaffingSessionEndReason.ActivationCredentialInvalidated,
                 ct);
+            await accountChanges.NotifyAsync(user, AccountChange.EmailSecondFactorRemoved, ct);
 
             return Results.Ok(new
             {

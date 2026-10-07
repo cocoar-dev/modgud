@@ -79,6 +79,7 @@
       "passkeyFailed": "Passkey-Anmeldung fehlgeschlagen.",
       "rememberMe": "Angemeldet bleiben",
       "passwordDisabled": "Passwort-Anmeldung ist deaktiviert.",
+      "reauthenticate": "Bitte melden Sie sich zur Bestätigung dieser Kontoänderung noch einmal an. Danach geht es direkt zurück.",
       "passwordlessMode": "Diese Anwendung verwendet passwortlose Anmeldung.",
       "registerLink": "Noch kein Konto? Registrieren →",
       "externalPrefix": "Anmelden mit"
@@ -317,7 +318,8 @@
       "enableButton": "E-Mail-Code aktivieren",
       "enabledDescription": "Bei jeder Anmeldung wird ein einmaliger Code an",
       "disableButton": "E-Mail-Code deaktivieren",
-      "lockedUnverified": "Email-OTP-Aktivierung ist blockiert, bis du deine E-Mail-Adresse bestätigt hast."
+      "lockedUnverified": "Email-OTP-Aktivierung ist blockiert, bis du deine E-Mail-Adresse bestätigt hast.",
+      "protectionHint": "Das schützt gegen ein gestohlenes Passwort. Gegen jemanden mit Zugriff auf Ihr Postfach schützt es nicht — das tun nur eine Authenticator-App oder ein Passkey."
     },
     "passkeys": {
       "title": "Passkeys",
@@ -2351,7 +2353,9 @@
       },
       "signIn": {
         "override": "Eigene Anmelderichtlinie für diese App",
-        "realmUnconfigured": "Der Realm hat seine Anmelderichtlinie noch nicht gespeichert. Die als geerbt angezeigten Werte sind die derzeit geltenden – abgeleitet aus dem früheren Authentifizierungs-Level des Deployments."
+        "realmUnconfigured": "Der Realm hat seine Anmelderichtlinie noch nicht gespeichert. Die als geerbt angezeigten Werte sind die derzeit geltenden – abgeleitet aus dem früheren Authentifizierungs-Level des Deployments.",
+        "floorHint": "Die Anmelderichtlinie des Realms ist die Untergrenze: Das Profil teilen sich alle, deshalb kann eine App mehr verlangen oder weniger Methoden anbieten, aber nie weniger verlangen.",
+        "belowFloor": "Unter der Richtlinie des Realms: {fields}. Dafür gilt in dieser App die Richtlinie des Realms, und das Speichern wird abgelehnt. Um es zu erlauben, ändern Sie die Anmelderichtlinie des Realms (Realm-Einstellungen → Sicherheit)."
       },
       "hostBound": {
         "host": "Nur über die eigene Domain der App",

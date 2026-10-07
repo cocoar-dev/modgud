@@ -30,12 +30,20 @@ function isStepUpBlock(body: unknown): boolean {
 }
 
 /**
- * Both blocks continue on the login page, which asks for the missing factor (or the
- * setup) for the page the user was on, then returns there.
+ * ADR 0025 amendment C — an account change (a factor, the password, the e-mail address,
+ * the deletion) needs a recent proof of the user's account factor, or of what they have.
  */
-function redirectToStepUp() {
+function isReauthenticationBlock(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && (body as Record<string, unknown>).RequiresReauthentication === true
+}
+
+/**
+ * All three blocks continue on the login page, which asks for the missing factor (or the
+ * setup, or the fresh proof) for the page the user was on, then returns there.
+ */
+function redirectToStepUp(reauthenticate = false) {
   const here = window.location.pathname + window.location.search
-  window.location.href = `/login?stepup=1&redirect=${encodeURIComponent(here)}`
+  window.location.href = `/login?stepup=1${reauthenticate ? '&reauth=1' : ''}&redirect=${encodeURIComponent(here)}`
 }
 
 class HttpClient {
@@ -169,6 +177,8 @@ class HttpClient {
       // SecureSetupModal will appear (in its blocking form, since grace is over).
       if (response.status === 403 && (isSecureSetupBlock(errorBody) || isStepUpBlock(errorBody))) {
         redirectToStepUp()
+      } else if (response.status === 403 && isReauthenticationBlock(errorBody)) {
+        redirectToStepUp(true)
       }
 
       throw new HttpClientError(response.status, response.statusText, errorBody);
