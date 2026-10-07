@@ -39,7 +39,7 @@ The realm holds the sign-in policy (**Realm settings → Security**). It applies
 
 An App cannot go below the realm's minimum or offer a method the realm does not offer: an App with a lower requirement than the portal strands its users the moment they need their profile. Saving such an App policy fails with a message that names the realm setting to change instead. A policy saved before this rule existed that violates it is shown as a conflict in the admin UI, and until it is resolved the App runs under the realm's floor. A policy nobody could satisfy (`multi` required, but no passkey and no first-plus-second factor combination) is rejected as well.
 
-The methods are a statement by the App's admin about what its sign-in can do — for a native app, what it has implemented. The login page and the native grants only offer and accept what is listed.
+The methods are a statement by the App's admin about what its sign-in can do — for a native app, what it has implemented. The login page and the native grants only offer and accept what is listed. Where the target offers the e-mail code, Modgud's built-in login page offers it as a sign-in of its own — an e-mail field, then the code; without a password it is the page's main form. A custom page reaches the same flow through its `auth:request-login-code` / `auth:verify-login-code` actions.
 
 `TwoFactorExempt` stays a per-user flag and exempts that user from the setup duty everywhere.
 
