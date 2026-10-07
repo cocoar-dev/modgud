@@ -37,9 +37,10 @@ public static class AppSettingsEndpoints
                 // canonical Realm host, the login challenge keeps the original
                 // /connect/authorize URL in ?redirect=. Accept that local continuation
                 // as a second signal so App branding/pages also work without a custom
-                // subdomain. ResolveForRequestAsync still gives the Host pin precedence.
-                var clientId = ExtractAuthorizeClientId(returnUrl);
-                var effective = await settingsResolver.ResolveForRequestAsync(http, clientId, http.RequestAborted);
+                // subdomain. The Host pin still takes precedence; a client bound to no App
+                // (DCR/CIMD, e.g. an MCP connector) presents the App of its resource=, the
+                // same App whose sign-in policy applies (ADR 0025).
+                var effective = await settingsResolver.ResolveForReturnUrlAsync(http, returnUrl, http.RequestAborted);
                 var branding = effective.Branding;
                 // ADR-0011 — publish the resolved (App⊕realm) registration-field
                 // policy so native apps + the web register form render exactly the

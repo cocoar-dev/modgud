@@ -2,6 +2,7 @@ using Marten;
 using Microsoft.AspNetCore.Http;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Domain.Applications;
+using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Persistence.Tenancy;
@@ -35,6 +36,22 @@ public interface IApplicationSettingsResolver
     /// </summary>
     Task<EffectiveSettings> ResolveForRequestAsync(
         HttpContext httpContext, string? clientId = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// The Application a sign-in page presents, read from its return URL by the same rule
+    /// that picks the sign-in's target (ADR 0025): the Host-pinned App leads; else the
+    /// pending authorization's client when it is bound to exactly one App; else the App of
+    /// the requested <c>resource</c>s when they all belong to one. A dynamically registered
+    /// client (DCR/CIMD) is bound to no App, so for an MCP sign-in the resource decides —
+    /// the page, its branding and its login options are the resource's App's, as its
+    /// sign-in policy already is. <c>null</c> when nothing names a single App.
+    /// </summary>
+    Task<Guid?> ResolveApplicationIdForReturnUrlAsync(
+        HttpContext httpContext, string? returnUrl, CancellationToken ct = default);
+
+    /// <summary>The effective settings of <see cref="ResolveApplicationIdForReturnUrlAsync"/>'s App.</summary>
+    Task<EffectiveSettings> ResolveForReturnUrlAsync(
+        HttpContext httpContext, string? returnUrl, CancellationToken ct = default);
 
     /// <summary>
     /// Host-time convenience for service-layer callers that have no
@@ -104,6 +121,43 @@ public sealed class ApplicationSettingsResolver(
 
         return await ResolveAsync(applicationId, ct);
     }
+
+    public async Task<Guid?> ResolveApplicationIdForReturnUrlAsync(
+        HttpContext httpContext, string? returnUrl, CancellationToken ct = default)
+    {
+        if (httpContext.GetApplicationId() is { } pinned) return pinned;
+
+        // Bounded like every other anonymous read of a return URL.
+        if (returnUrl is null || returnUrl.Length > 8192 || returnUrl.IndexOfAny(['\r', '\n', '\0', '\\']) >= 0)
+            return null;
+        if (!Modgud.Authentication.SignIn.SignInRequirementService.TryParseAuthorize(
+                returnUrl, out var clientId, out var resources))
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(clientId))
+        {
+            var client = await session.Query<OAuthApplicationState>()
+                .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted, ct);
+            if (client is { AppIds.Count: 1 }) return client.AppIds[0];
+        }
+
+        var names = resources.Distinct(StringComparer.Ordinal).ToList();
+        if (names.Count == 0) return null;
+        var appIds = (await session.Query<OAuthApiState>()
+                .Where(a => names.Contains(a.Name) && !a.IsDeleted)
+                .ToListAsync(ct))
+            .Where(a => a.AppId.HasValue)
+            .Select(a => a.AppId!.Value)
+            .Distinct()
+            .ToList();
+        // Resources of several Apps: the sign-in's policy combines them, but a page can
+        // only wear one App's face — the realm's, as before.
+        return appIds.Count == 1 ? appIds[0] : null;
+    }
+
+    public async Task<EffectiveSettings> ResolveForReturnUrlAsync(
+        HttpContext httpContext, string? returnUrl, CancellationToken ct = default) =>
+        await ResolveAsync(await ResolveApplicationIdForReturnUrlAsync(httpContext, returnUrl, ct), ct);
 
     public Task<EffectiveSettings> ResolveForCurrentRequestAsync(CancellationToken ct = default)
     {

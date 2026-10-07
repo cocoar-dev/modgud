@@ -52,7 +52,9 @@ The minimum that applies to a request comes from what is being accessed:
 3. Modgud's own UI → the realm's policy for the portal, the administration minimum for `/api/admin/*`.
 4. Nothing identifies an App → the realm's policy.
 
-The Host keeps choosing how the login page looks and which issuer is advertised. It never lowers or raises the required level: opening the profile on an App's subdomain is still the portal.
+The Host never lowers or raises the required level: opening the profile on an App's subdomain is still the portal. It does choose which issuer is advertised, and on an App's own domain it chooses how the login page looks.
+
+Elsewhere the login page wears the face of the same App whose policy applies — its custom page, branding, page theme and login options, and the branding of the magic-link and code mails it sends: the client's App, else the App of `resource=`. An MCP connector signing in on the realm's host for one App's API therefore sees that App's page. Only when the requested resources belong to several Apps does the page stay the realm's, while the policy is the strictest of them.
 
 ## One session: SSO and step-up
 

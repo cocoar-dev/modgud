@@ -91,8 +91,8 @@ public static class SamlEndpoints
         if (!manager.TryGetBySlug(TenantContext.Current, slug, out var provider) || provider is null)
             return Results.NotFound();
 
-        var allowed = (await settingsResolver.ResolveForRequestAsync(
-                http, Modgud.Authentication.Api.ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(returnUrl), ct))
+        var allowed = (await settingsResolver.ResolveForReturnUrlAsync(
+                http, returnUrl, ct))
             .LoginExperience?.LoginProviderIds;
         if (allowed is not null && !allowed.Contains(provider.LoginProviderId))
             return Results.NotFound();

@@ -51,8 +51,10 @@ public static class MagicLinkEndpoints
             const string genericMessage = "If your email is registered, you will receive a login link.";
 
             // Check both platform config AND in-app settings
-            var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl);
-            var experience = await applicationSettings.ResolveForRequestAsync(context, clientId, ct);
+            // The App this sign-in is for (Host, client, or the resource of an MCP sign-in):
+            // its login options and its branding on the mail.
+            var applicationId = await applicationSettings.ResolveApplicationIdForReturnUrlAsync(context, request.ReturnUrl, ct);
+            var experience = await applicationSettings.ResolveAsync(applicationId, ct);
             if (!config.Enabled || !appSettings.MagicLinkSelfService
                 || experience.LoginExperience?.MagicLinkEnabled == false)
             {
@@ -156,7 +158,7 @@ public static class MagicLinkEndpoints
                     ["DisplayName"] = user.Firstname ?? user.UserName ?? "",
                     ["ActionUrl"] = magicUrl,
                     ["ExpirationMinutes"] = config.ExpirationMinutes.ToString(),
-                }, clientId: clientId, ct: ct), ct);
+                }, applicationId: applicationId, ct: ct), ct);
 
             // Anti-timing: the success path does real work (DB writes + email send)
             // but used to skip the jitter every failure branch applies — so a

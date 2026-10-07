@@ -27,8 +27,8 @@ public static class ExternalAuthEndpoints
                         && (c.Type == LoginProviderType.Oidc || c.Type == LoginProviderType.Saml))
                     .ToListAsync(ct);
 
-                var experience = (await settingsResolver.ResolveForRequestAsync(
-                    http, ExtractAuthorizeClientId(returnUrl), ct)).LoginExperience;
+                var experience = (await settingsResolver.ResolveForReturnUrlAsync(
+                    http, returnUrl, ct)).LoginExperience;
                 if (experience?.LoginProviderIds is { } allowed)
                 {
                     var byId = providers.ToDictionary(p => p.Id);
@@ -63,8 +63,8 @@ public static class ExternalAuthEndpoints
                 if (config is null || config.IsDeleted || !config.Enabled)
                     return Results.NotFound();
 
-                var allowed = (await settingsResolver.ResolveForRequestAsync(
-                        http, ExtractAuthorizeClientId(returnUrl), ct))
+                var allowed = (await settingsResolver.ResolveForReturnUrlAsync(
+                        http, returnUrl, ct))
                     .LoginExperience?.LoginProviderIds;
                 if (allowed is not null && !allowed.Contains(loginProviderId))
                     return Results.NotFound();

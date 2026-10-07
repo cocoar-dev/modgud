@@ -138,7 +138,7 @@ public static class AccountEndpoints
             if (!signInTarget.Policy.Password)
                 return Results.Json(new { Message = "Password login is disabled" }, statusCode: 403);
             var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl);
-            if ((await applicationSettings.ResolveForRequestAsync(context, clientId, context.RequestAborted))
+            if ((await applicationSettings.ResolveForReturnUrlAsync(context, request.ReturnUrl, context.RequestAborted))
                 .LoginExperience?.InternalLoginEnabled == false)
                 return Results.Json(new { Message = "Internal login is disabled for this application" }, statusCode: 403);
 
@@ -319,8 +319,8 @@ public static class AccountEndpoints
             if (string.IsNullOrWhiteSpace(request?.Email))
                 return Results.Json(new { Message = "Email is required" }, statusCode: 400);
 
-            var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl);
-            var effective = await settingsResolver.ResolveForRequestAsync(context, clientId, ct);
+            var applicationId = await settingsResolver.ResolveApplicationIdForReturnUrlAsync(context, request.ReturnUrl, ct);
+            var effective = await settingsResolver.ResolveAsync(applicationId, ct);
             // ADR 0025 — whether an e-mail code is a sign-in method is the target App's call.
             var signInTarget = await signInRequirements.ResolveTargetFromReturnUrlAsync(request.ReturnUrl, ct);
             if (!signInTarget.Policy.EmailCode)
@@ -337,14 +337,6 @@ public static class AccountEndpoints
             if (RegistrationFieldsPolicy.FirstMissingRequiredName(
                     effective.RegistrationFields, request.FirstName, request.LastName) is { } missing)
                 return Results.BadRequest(new { Message = $"{missing} is required." });
-
-            var applicationId = context.GetApplicationId();
-            if (applicationId is null && !string.IsNullOrEmpty(clientId))
-            {
-                var client = await session.Query<OAuthApplicationState>()
-                    .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted, ct);
-                if (client is { AppIds.Count: 1 }) applicationId = client.AppIds[0];
-            }
 
             await NativeOtpEndpoints.IssueOtpForRequestAsync(
                 request.Email, request.FirstName, request.LastName, request.InviteCode,
@@ -376,8 +368,7 @@ public static class AccountEndpoints
             if (string.IsNullOrWhiteSpace(request?.Email) || string.IsNullOrWhiteSpace(request.Code))
                 return Results.Json(new { Message = "Email and code are required" }, statusCode: 400);
 
-            var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl);
-            var effective = await settingsResolver.ResolveForRequestAsync(context, clientId, ct);
+            var effective = await settingsResolver.ResolveForReturnUrlAsync(context, request.ReturnUrl, ct);
             var signInTarget = await signInRequirements.ResolveTargetFromReturnUrlAsync(request.ReturnUrl, ct);
             if (!signInTarget.Policy.EmailCode)
                 return Results.Problem(
