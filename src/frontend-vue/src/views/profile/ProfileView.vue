@@ -789,6 +789,11 @@ watch(() => route.hash, (now, before) => {
               <template v-if="emailOtpStatus && !emailOtpStatus.HasEmail">
                 <p class="text-sm text-surface-600">{{ t('profile.emailOtp.noEmail', {}, 'An email address is required.') }}</p>
               </template>
+              <!-- ADR 0025: the e-mail code is a second factor only after a password; a user
+                   who signs in without one would prove the same mailbox twice. -->
+              <template v-else-if="emailOtpStatus && !emailOtpStatus.Enabled && !authStore.user?.HasPassword">
+                <p class="text-sm text-surface-600">{{ t('profile.emailOtp.noPassword', {}, 'You sign in without a password, with a code or link to your email. A second e-mail code would prove the same mailbox again, so it adds no protection. Use an authenticator app or a passkey instead.') }}</p>
+              </template>
               <template v-else-if="emailOtpStatus && !emailOtpStatus.Enabled">
                 <p class="text-sm text-surface-600 mb-2">{{ t('profile.emailOtp.description', {}, 'A one-time code will be sent to your email.') }}</p>
                 <!-- ADR 0025 amendment B: honest about what this second factor protects. -->

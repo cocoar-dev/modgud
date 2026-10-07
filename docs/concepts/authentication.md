@@ -36,7 +36,7 @@ How strong a sign-in must be is a **realm and App** setting, decided by the app 
 | `single` | One factor: password, e-mail code, magic link |
 | `multi` | Two different factors, or a passkey / federated MFA on its own |
 
-Each App has a minimum level, the sign-in methods it offers and a setup grace period for users without a second factor; the realm holds the defaults. A session that is below the target App's level is stepped up with only the missing factor. The deployment settings `AuthenticationMinimumLevel` and `TwoFactorGracePeriodDays` are deprecated and only used to derive the policy of a realm that never saved one.
+Each App has a minimum level, the sign-in methods it offers and a setup grace period for users without a second factor; the realm holds the defaults. A session that is below the target App's level is stepped up with only the missing factor. There is no deployment-wide sign-in level; a realm that never saved its policy runs with floor `single` and administration `multi`.
 
 ### Cookies
 

@@ -55,8 +55,7 @@ public interface IApplicationSettingsService
 public sealed class ApplicationSettingsService(
     IDocumentSession session,
     IGlobalStore globalStore,
-    IRealmCache realmCache,
-    IAuthSettings? authSettings = null) : IApplicationSettingsService
+    IRealmCache realmCache) : IApplicationSettingsService
 {
     private static readonly Regex CssColorRegex = new(
         @"^(#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})" +
@@ -435,7 +434,7 @@ public sealed class ApplicationSettingsService(
 
         var realm = await session.LoadAsync<Modgud.Domain.RealmSettings.RealmSettings>(
             Modgud.Domain.RealmSettings.RealmSettings.SingletonId, ct);
-        var floor = await SignInPolicyRules.InForceAsync(session, realm, authSettings, ct);
+        var floor = await SignInPolicyRules.InForceAsync(session, realm, ct);
 
         // ADR 0025 amendment A — an App can only raise the realm's floor. The portal is shared
         // by every user of the realm; an App below it strands its users when they need their

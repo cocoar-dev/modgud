@@ -9,35 +9,32 @@ using Modgud.Api.Tests.Infrastructure;
 namespace Modgud.Api.Tests.Security;
 
 /// <summary>
-/// Tests for AuthenticationMinimumLevel enforcement, RememberMe, disable protection,
-/// and Level 2 (Passwordless) blocking.
-///
-/// Note: SharedPostgresFixture sets AuthenticationMinimumLevel = 0 by default so existing
-/// tests work. These tests override that with specific levels per test.
+/// Tests for sign-in enforcement on Modgud's own UI, RememberMe and disable protection.
+/// The test realm never saves a sign-in policy, so it runs under the unsaved-realm policy
+/// (ADR 0025 amendment 1): floor single, administration multi.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
 public class AuthEnforcementTests : IntegrationTestBase
 {
     public AuthEnforcementTests(SharedPostgresFixture fixture) : base(fixture) { }
 
-    // ── Level 1: RequiresSecureSetup ──
+    // ── The portal's floor is single ──
 
     [Fact]
-    public async Task Login_AtLevel1_WithNo2FA_ReturnsRequiresSecureSetup()
+    public async Task Login_To_The_Portal_WithNo2FA_Owes_No_Setup()
     {
         // Create user without any 2FA
         var user = await Factory.CreateTestUserWithIdentityAsync(
             firstname: "No2FA", lastname: "User", acronym: "N2",
             email: "no2fa@test.com", password: "TestPass1234");
 
-        // Override config to Level 1 for this request
         var response = await CreateUnauthenticatedClient()
             .PostAsJsonAsync("/api/account/login", new { UserName = "n2", Password = "TestPass1234" }, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
 
-        // At Level 0 (test default), no secure setup required
+        // The portal runs under the floor (single): no second factor owed, no setup
         Assert.False(body.TryGetProperty("RequiresSecureSetup", out _));
     }
 
@@ -74,12 +71,12 @@ public class AuthEnforcementTests : IntegrationTestBase
     // ── Disable Protection ──
 
     [Fact]
-    public async Task MfaDisable_WhenLastMethod_AtLevel0_Succeeds()
+    public async Task MfaDisable_WhenLastMethod_Succeeds_Under_A_Single_Floor()
     {
         // Setup TOTP
         await SetupTotpForDefaultUser();
 
-        // At Level 0, disabling last 2FA is allowed
+        // The portal does not require multi, so removing the last factor is allowed
         var response = await Client.PostAsync("/api/account/mfa/disable", null, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -130,7 +127,7 @@ public class AuthEnforcementTests : IntegrationTestBase
 
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         // ADR 0025 — the sign-in methods of the target replace the retired level. The test
-        // fixture's former level 0 derives a policy that keeps passwords on.
+        // realm never saved a policy; the unsaved-realm policy keeps passwords on.
         Assert.True(body.GetProperty("SignIn").GetProperty("Password").GetBoolean());
         Assert.Equal("Single", body.GetProperty("SignIn").GetProperty("MinimumLevel").GetString());
         Assert.True(body.TryGetProperty("MagicLinkSelfService", out var mls));

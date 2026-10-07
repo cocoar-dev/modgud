@@ -118,7 +118,7 @@ public class ColdStartFixture : IAsyncLifetime
                     ConnectionString = TestPostgres.WithGenerousConnectTimeout(connectionString)
                 }
             }),
-            rule.For<AppSettings>().FromStatic(_ => new AppSettings { AuthenticationMinimumLevel = 0 }),
+            rule.For<AppSettings>().FromStatic(_ => new AppSettings()),
             rule.For<EmailConfiguration>().FromStatic(_ => new EmailConfiguration()),
             rule.For<MagicLinkConfiguration>().FromStatic(_ => new MagicLinkConfiguration { Enabled = true }),
             rule.For<EmailOtpConfiguration>().FromStatic(_ => new EmailOtpConfiguration()),

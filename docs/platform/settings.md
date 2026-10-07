@@ -45,7 +45,7 @@ configuration files, same as the settings below.
 How strong a sign-in must be — and how long a user without a second factor may keep signing in — is no longer a deployment setting. It is a **realm** setting with a per-App override, editable under Administration → **Realm Settings → Security** (and **App → Sign-in**). See [Sign-in levels](../concepts/sign-in-levels) and [Realm settings](../admin/realm-settings#security-sign-in).
 
 ::: warning Deprecated deployment settings
-`AppSettings__AuthenticationMinimumLevel` and `AppSettings__TwoFactorGracePeriodDays` are deprecated. They are still read, but only to derive the policy of a realm that never saved a sign-in policy (level `0` → single, level `1` → multi-factor, level `2` → password off). Once an admin saves the section, only the realm and App settings apply.
+The former deployment settings `AppSettings__AuthenticationMinimumLevel` and `AppSettings__TwoFactorGracePeriodDays` were removed in 0.15.1 and are ignored if still set. A realm that never saved a sign-in policy runs with floor `single` and administration `multi` (see [Sign-in levels](../concepts/sign-in-levels#upgrading-from-0-14-and-earlier)).
 :::
 
 The per-user **2FA exempt** flag in the [user editor](../admin/users) stays admin-editable and exempts specific users from the setup duty in every App — used sparingly (e.g. for service-account principals).

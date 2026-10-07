@@ -183,13 +183,13 @@ The realm's sign-in policy (ADR 0025; concept: [Sign-in levels](../concepts/sign
 | Field | Meaning |
 |---|---|
 | **Minimum level** (`MinimumLevel`) | `Single` or `Multi` — the level a sign-in must reach. Applies to Modgud's own portal and is the lowest level any App can require |
-| **Administration minimum level** (`AdministrationMinimumLevel`) | The level a session needs for `/api/admin/*`. Realm only; kept separate so end users of a code-only App are not pushed into 2FA by opening their profile |
+| **Administration minimum level** (`AdministrationMinimumLevel`) | The level a session needs for `/api/admin/*` (default `Multi`). Realm only; kept separate so end users of a code-only App are not pushed into 2FA by opening their profile. `Single` is meant for test and development realms; the UI warns about it |
 | **Setup grace days** (`SetupGraceDays`) | How long a user without a second factor may keep signing in at `Single` to something that requires `Multi`. `0` = set up immediately |
 | **First factors** | `Password`, `EmailCode`, `Passkey` — what the realm offers at all; an App can only offer a subset |
 | **Second factors** | `Totp`, `EmailAfterPassword` |
 | **User's own factor not offered** (`OwnFactorNotOffered`) | `Ignore` or `RequireViaBrowser` — what happens when a user switched on a second factor that the App does not offer |
 
-New realms are seeded with: minimum `Single`, administration minimum `Multi`, grace 14 days, password on, e-mail code off, passkey on, TOTP on, e-mail after password on, `RequireViaBrowser`. A realm that never saved the section runs under a policy derived from the deprecated deployment settings `AuthenticationMinimumLevel` / `TwoFactorGracePeriodDays`: the floor is always `Single`, the former level only decides the administration (see [Upgrading](../concepts/sign-in-levels#upgrading-from-0-14-and-earlier)). A policy that cannot be satisfied (`Multi` required, no way to reach it) is rejected on save. In a realm manifest the section lives under `Settings.SignIn`.
+New realms are seeded with: minimum `Single`, administration minimum `Multi`, grace 14 days, password on, e-mail code off, passkey on, TOTP on, e-mail after password on, `RequireViaBrowser`. A realm that never saved the section runs with the same values, except that the e-mail code is on when native grants are switched on for the realm or any App (see [Upgrading](../concepts/sign-in-levels#upgrading-from-0-14-and-earlier)). A policy that cannot be satisfied (`Multi` required, no way to reach it) is rejected on save. In a realm manifest the section lives under `Settings.SignIn`.
 
 ## Sessions
 

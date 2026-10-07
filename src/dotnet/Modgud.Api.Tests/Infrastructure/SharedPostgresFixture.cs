@@ -59,7 +59,7 @@ public class SharedPostgresFixture : IAsyncLifetime
                     LogPath = Environment.GetEnvironmentVariable("MODGUD_TEST_LOGPATH") ?? "",
                 },
             }),
-            rule.For<AppSettings>().FromStatic(_ => new AppSettings { AuthenticationMinimumLevel = 0 }),
+            rule.For<AppSettings>().FromStatic(_ => new AppSettings()),
             // EmailConfiguration / MagicLinkConfiguration / EmailOtpConfiguration are
             // overridden at the DI level inside ModgudWebApplicationFactory, but
             // Cocoar.Configuration still requires a rule per type so GetRequiredConfig

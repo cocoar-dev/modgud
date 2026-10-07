@@ -214,20 +214,18 @@ public class SignInRequirementEvaluationTests
     }
 
     [Fact]
-    public void S50_the_retired_level_only_decides_the_administration_the_floor_stays_single()
+    public void S50_an_unsaved_realm_runs_with_a_single_floor_and_a_multi_administration()
     {
-        var level0 = SignInPolicy.FromLegacy(0, 14, emailCodeEnabled: true);
-        var level1 = SignInPolicy.FromLegacy(1, 7, emailCodeEnabled: false);
-        var level2 = SignInPolicy.FromLegacy(2, 14, emailCodeEnabled: false);
+        var withNativeGrants = SignInPolicy.ForUnsavedRealm(emailCodeEnabled: true);
+        var withoutNativeGrants = SignInPolicy.ForUnsavedRealm(emailCodeEnabled: false);
 
-        Assert.Equal(SignInLevel.Single, level0.MinimumLevel);
-        Assert.Equal(SignInLevel.Single, level0.AdministrationMinimumLevel);
-        Assert.True(level0.EmailCode);
-        Assert.Equal(SignInLevel.Single, level1.MinimumLevel);
-        Assert.Equal(SignInLevel.Multi, level1.AdministrationMinimumLevel);
-        Assert.Equal(7, level1.SetupGraceDays);
-        Assert.Equal(SignInLevel.Single, level2.MinimumLevel);
-        Assert.False(level2.Password);
+        Assert.Equal(SignInLevel.Single, withNativeGrants.MinimumLevel);
+        Assert.Equal(SignInLevel.Multi, withNativeGrants.AdministrationMinimumLevel);
+        Assert.Equal(14, withNativeGrants.SetupGraceDays);
+        Assert.True(withNativeGrants.Password);
+        Assert.True(withNativeGrants.Passkey);
+        Assert.True(withNativeGrants.EmailCode);
+        Assert.False(withoutNativeGrants.EmailCode);
     }
 
     [Fact]

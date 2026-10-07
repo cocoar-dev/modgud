@@ -30,9 +30,7 @@
         }
     },
     "AppSettings": {
-        "AuthenticationMinimumLevel": 0,
         "MagicLinkSelfService": true,
-        "TwoFactorGracePeriodDays": 14,
         "Features": {
             "PageBuilder": false
         }

@@ -49,7 +49,11 @@ public sealed class ApplicationSettingsResolver(
     IDocumentSession session,
     IRealmSettingsService realmSettings,
     IHttpContextAccessor httpContextAccessor,
+    // Unused since ADR 0025 amendment 1 removed the deployment-wide sign-in level; kept so the
+    // statically generated Wolverine handlers that construct this type keep compiling.
+#pragma warning disable CS9113
     IAuthSettings authSettings) : IApplicationSettingsResolver
+#pragma warning restore CS9113
 {
     public async Task<EffectiveSettings> ResolveAsync(Guid? applicationId, CancellationToken ct = default)
     {
@@ -78,7 +82,7 @@ public sealed class ApplicationSettingsResolver(
         CancellationToken ct)
     {
         if (realm.SignIn is not null) return effective;
-        var floor = await SignInPolicyRules.InForceAsync(session, realm, authSettings, ct);
+        var floor = await SignInPolicyRules.InForceAsync(session, realm, ct);
         if (app is null) return effective with { SignIn = floor };
         var appDefaults = floor with { EmailCode = floor.EmailCode && (effective.NativeGrants?.Enabled ?? false) };
         return effective with { SignIn = EffectiveSettings.ApplySignInOverrides(floor, app.SignIn, appDefaults) };

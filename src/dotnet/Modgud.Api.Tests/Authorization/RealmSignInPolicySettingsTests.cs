@@ -24,13 +24,13 @@ public class RealmSignInPolicySettingsTests : IntegrationTestBase
         var settings = scope.ServiceProvider.GetRequiredService<IRealmSettingsService>();
 
         // Never configured: null on the wire, not defaults dressed up as saved values — but
-        // the policy in force is reported, derived from the deployment's former level (the
-        // test fixture runs at level 0: nothing requires a second factor).
+        // the policy in force is reported: the unsaved-realm defaults, floor single and
+        // administration multi (ADR 0025 amendment 1, G).
         var unconfigured = await settings.GetDtoAsync(ct);
         Assert.Null(unconfigured.SignIn);
         Assert.NotNull(unconfigured.SignInInForce);
         Assert.Equal("Single", unconfigured.SignInInForce!.MinimumLevel);
-        Assert.Equal("Single", unconfigured.SignInInForce.AdministrationMinimumLevel);
+        Assert.Equal("Multi", unconfigured.SignInInForce.AdministrationMinimumLevel);
 
         // Multi with only an e-mail code and no second factor, no passkey, no password.
         var impossible = await settings.PatchAsync(new UpdateRealmSettingsDto
@@ -90,8 +90,8 @@ public class RealmSignInPolicySettingsTests : IntegrationTestBase
         Assert.Equal(5, read.SetupGraceDays);
         Assert.True(read.EmailCode);
         // Everything the patch did not name comes from the policy that was in force, so
-        // saving an unconfigured realm never tightens what it did not touch.
-        Assert.Equal("Single", read.AdministrationMinimumLevel);
+        // saving an unconfigured realm never changes what it did not touch.
+        Assert.Equal("Multi", read.AdministrationMinimumLevel);
         Assert.True(read.Password);
         Assert.True(read.Passkey);
         Assert.True(read.Totp);

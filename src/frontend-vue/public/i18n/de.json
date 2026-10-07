@@ -124,6 +124,7 @@
       "enableEmailOtp": "E-Mail-Code aktivieren",
       "emailOtpCard": "E-Mail-Code",
       "emailOtpCardDescription": "Einmalcode per E-Mail.",
+      "emailOtpAfterPassword": "Einmalcode per E-Mail, nach Ihrem Passwort. Schützt gegen ein gestohlenes Passwort, nicht gegen Zugriff auf Ihr Postfach.",
       "passkeyTitle": "Passkey",
       "passkeyDescription": "Verwenden Sie Fingerabdruck, Gesichtserkennung oder einen Sicherheitsschlüssel.",
       "registerPasskey": "Passkey registrieren",
@@ -319,6 +320,7 @@
       "enabledDescription": "Bei jeder Anmeldung wird ein einmaliger Code an",
       "disableButton": "E-Mail-Code deaktivieren",
       "lockedUnverified": "Email-OTP-Aktivierung ist blockiert, bis du deine E-Mail-Adresse bestätigt hast.",
+      "noPassword": "Sie melden sich ohne Passwort an, mit einem Code oder Link an Ihre E-Mail-Adresse. Ein zweiter E-Mail-Code würde dasselbe Postfach noch einmal nachweisen und schützt deshalb nicht zusätzlich. Nutzen Sie stattdessen eine Authenticator-App oder einen Passkey.",
       "protectionHint": "Das schützt gegen ein gestohlenes Passwort. Gegen jemanden mit Zugriff auf Ihr Postfach schützt es nicht — das tun nur eine Authenticator-App oder ein Passkey."
     },
     "passkeys": {
@@ -2269,8 +2271,8 @@
         "hint": "Welche Identitätsfelder bei der Kontoerstellung gefordert sind (Admin-Anlage, Selbstregistrierung, native passwortlose Registrierung). E-Mail ist immer Pflicht. Pro Application überschreibbar."
       },
       "signIn": {
-        "hint": "Die Standard-Anmeldestärke und -methoden für alle Apps dieses Realms. Eine App kann jeden Teil in ihren eigenen Einstellungen überschreiben.",
-        "unconfigured": "Noch nicht konfiguriert – dieser Realm folgt derzeit dem früheren Authentifizierungs-Level des Deployments.",
+        "hint": "Die Untergrenze dieses Realms: Sie gilt für das Self-Service-Portal, das alle teilen, und jede App startet von hier. Eine App kann in ihren eigenen Einstellungen mehr verlangen oder weniger Methoden anbieten, aber nie weniger verlangen.",
+        "unconfigured": "Noch nicht gespeichert – dieser Realm läuft mit den hier angezeigten Standardwerten: Ein Faktor für Portal und Apps, zwei Faktoren für die Administration.",
         "adopt": "Diese Werte übernehmen"
       }
     },
@@ -2353,7 +2355,7 @@
       },
       "signIn": {
         "override": "Eigene Anmelderichtlinie für diese App",
-        "realmUnconfigured": "Der Realm hat seine Anmelderichtlinie noch nicht gespeichert. Die als geerbt angezeigten Werte sind die derzeit geltenden – abgeleitet aus dem früheren Authentifizierungs-Level des Deployments.",
+        "realmUnconfigured": "Der Realm hat seine Anmelderichtlinie noch nicht gespeichert. Die als geerbt angezeigten Werte sind die geltenden Standardwerte.",
         "floorHint": "Die Anmelderichtlinie des Realms ist die Untergrenze: Das Profil teilen sich alle, deshalb kann eine App mehr verlangen oder weniger Methoden anbieten, aber nie weniger verlangen.",
         "belowFloor": "Unter der Richtlinie des Realms: {fields}. Dafür gilt in dieser App die Richtlinie des Realms, und das Speichern wird abgelehnt. Um es zu erlauben, ändern Sie die Anmelderichtlinie des Realms (Realm-Einstellungen → Sicherheit)."
       },
@@ -2404,6 +2406,7 @@
       "minimumLevelHint": "Das Level, das eine Anmeldung bei einer App erreichen muss. Nutzer ohne zweiten Faktor dürfen sich während der Einrichtungsfrist mit einem Faktor anmelden.",
       "administrationMinimumLevel": "Mindest-Level der Administration",
       "administrationMinimumLevelHint": "Das Level, das eine Sitzung für die Administration dieses Realms braucht. Getrennt vom Mindest-Level, damit Endnutzer einer reinen Code-App nicht ins 2FA gedrängt werden, nur weil sie ihr Profil öffnen.",
+      "administrationSingleWarning": "Wer diesen Realm verwaltet, braucht dann keinen zweiten Faktor. Nur für Test- und Entwicklungs-Realms gedacht.",
       "setupGraceDays": "Einrichtungsfrist (Tage, 0–365)",
       "setupGraceDaysHint": "Wie lange sich ein Nutzer ohne zweiten Faktor weiter bei einer App anmelden darf, die mehrere Faktoren verlangt. 0 = sofort einrichten.",
       "ownFactorNotOffered": "Eigener zweiter Faktor des Nutzers, von der App nicht angeboten",

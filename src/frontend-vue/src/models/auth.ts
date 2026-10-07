@@ -8,6 +8,8 @@ export interface AuthUser {
   Permissions: string[]
   Has2FA: boolean
   TwoFactorMethods: string[]
+  /** The e-mail code is a second factor only after a password (ADR 0025). */
+  HasPassword?: boolean
   SecureSetupDueAt?: string | null
   TwoFactorExempt?: boolean
   /** Current session came from an IdP that asserted MFA — treated as 2FA-satisfied. */

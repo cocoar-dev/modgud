@@ -98,7 +98,12 @@ public static class AccountEndpoints
         /// ADR 0025 — whether Modgud's own UI (portal or administration) requires a
         /// second factor anywhere. Drives the "last second factor" warning on the profile.
         /// </summary>
-        bool SecondFactorRequired = false);
+        bool SecondFactorRequired = false,
+        /// <summary>
+        /// Whether the user has a password. The e-mail code is a second factor only after a
+        /// password, so the setup screens offer it only to users who have one (ADR 0025).
+        /// </summary>
+        bool HasPassword = false);
 
     public static WebApplication MapAccountEndpoints(this WebApplication application, string path)
     {
@@ -629,7 +634,8 @@ public static class AccountEndpoints
                 idpDisplayName,
                 user.EmailConfirmed,
                 await context.RequestServices.GetRequiredService<ISignInRequirementService>()
-                    .OwnUiRequiresSecondFactorAsync(context.RequestAborted)));
+                    .OwnUiRequiresSecondFactorAsync(context.RequestAborted),
+                !string.IsNullOrEmpty(user.PasswordHash)));
         })
         .WithName("Account_Me");
 

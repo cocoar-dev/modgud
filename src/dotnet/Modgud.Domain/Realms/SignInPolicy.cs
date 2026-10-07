@@ -30,9 +30,8 @@ public enum OwnFactorNotOffered
 
 /// <summary>
 /// ADR 0025 — the realm's sign-in policy, overridable per App
-/// (<see cref="Applications.ApplicationSignInOverrides"/>). Replaces the deployment-wide
-/// <c>AuthenticationMinimumLevel</c> / <c>TwoFactorGracePeriodDays</c>: sign-in strength
-/// is a realm and App concern.
+/// (<see cref="Applications.ApplicationSignInOverrides"/>). Sign-in strength is a realm and
+/// App concern; there is no deployment-wide setting for it.
 /// </summary>
 public record SignInPolicy
 {
@@ -79,27 +78,13 @@ public record SignInPolicy
     public static SignInPolicy Defaults { get; } = new();
 
     /// <summary>
-    /// The policy a realm that has never configured <see cref="RealmSettings.RealmSettings.SignIn"/>
-    /// runs under, derived from the deployment's former settings.
-    /// <paramref name="legacyAuthenticationLevel"/> is the retired <c>AuthenticationMinimumLevel</c>
-    /// (0 none, 1 secure login, 2 passwordless). It only decides the administration: the floor —
-    /// the portal and every App — is always <c>single</c> (ADR 0025 amendment A), because a floor
-    /// of <c>multi</c> would lock every user of an e-mail-code App out of their own profile.
-    /// <paramref name="emailCodeEnabled"/> is whether native grants are switched on for the
-    /// realm or any of its Apps — until now the gate for e-mail-code sign-in.
+    /// The policy of a realm that has never saved <see cref="RealmSettings.RealmSettings.SignIn"/>:
+    /// the defaults — floor <c>single</c>, administration <c>multi</c> — with the e-mail code on
+    /// when <paramref name="emailCodeEnabled"/>: native grants are switched on for the realm or
+    /// any of its Apps, which before ADR 0025 was the gate for e-mail-code sign-in, and the
+    /// realm must offer every method an App offers (amendment A).
     /// </summary>
-    public static SignInPolicy FromLegacy(int legacyAuthenticationLevel, int legacyGraceDays, bool emailCodeEnabled) => new()
-    {
-        MinimumLevel = SignInLevel.Single,
-        AdministrationMinimumLevel = legacyAuthenticationLevel >= 1 ? SignInLevel.Multi : SignInLevel.Single,
-        SetupGraceDays = Math.Max(0, legacyGraceDays),
-        Password = legacyAuthenticationLevel < 2,
-        EmailCode = emailCodeEnabled,
-        // Existing deployments keep their behaviour for users with their own TOTP in
-        // apps that do not offer it: today the native grant demands it, the web login
-        // asks for it — the browser continuation is the closest successor.
-        OwnFactorNotOffered = OwnFactorNotOffered.RequireViaBrowser,
-    };
+    public static SignInPolicy ForUnsavedRealm(bool emailCodeEnabled) => Defaults with { EmailCode = emailCodeEnabled };
 
     /// <summary>Whether at least one way to reach <see cref="SignInLevel.Multi"/> is offered:
     /// a passkey, or a first factor followed by a second factor that differs from it.</summary>

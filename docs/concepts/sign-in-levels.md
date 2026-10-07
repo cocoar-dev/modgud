@@ -209,7 +209,7 @@ Each scenario has a fixed number; the integration tests carry the same number. U
 
 | # | Situation | What happens |
 |---|---|---|
-| S50 | A realm never saved its policy; the deployment ran on `AuthenticationMinimumLevel` 1 | Floor `single`; administration `multi` |
+| S50 | A realm never saved its policy | Floor `single`; administration `multi`; e-mail code on when native grants are |
 | S51 | A browser session from before sign-in factors were recorded | It ends once; the user signs in again |
 | S52 | A native App's refresh token from before | Keeps refreshing until it expires |
 
@@ -238,17 +238,17 @@ Which one fits is the decision of whoever is responsible for the Apps.
 
 ## Upgrading from 0.14 and earlier
 
-The deployment settings `AppSettings__AuthenticationMinimumLevel` and `AppSettings__TwoFactorGracePeriodDays` are deprecated. They are still read, but only to derive the policy of a realm that never saved its sign-in section:
+There is no deployment-wide sign-in level any more: `AppSettings__AuthenticationMinimumLevel` and `AppSettings__TwoFactorGracePeriodDays` were removed in 0.15.1 and are ignored if still set. A realm that never saved its sign-in section runs with the defaults:
 
-| Former setting | Derived policy |
+| | Unsaved realm |
 |---|---|
-| level `0` | Floor `single`, administration `single` |
-| level `1` (the built-in default) | Floor `single`, administration `multi` |
-| level `2` | As level 1, and password sign-in off |
-| `TwoFactorGracePeriodDays` | Setup grace days |
-| native grants enabled on the realm or any App | E-mail code on |
+| Floor (portal and Apps) | `single` |
+| Administration | `multi` |
+| Setup grace | 14 days |
+| Methods | password, passkey, TOTP, e-mail after password; e-mail code when native grants are on for the realm or any App |
+| User's own factor not offered | `RequireViaBrowser` |
 
-As soon as an admin saves the section, only the realm and App settings apply. New realms are seeded with: floor `single`, administration `multi`, grace 14 days, password on, e-mail code off, passkey on, TOTP on, e-mail after password on, user's own factor not offered → `RequireViaBrowser`. Realm manifests carry the policy under `Settings.SignIn` and, per App, under `Apps[].Settings.SignIn`.
+New realms are seeded with the same values (e-mail code off) and saved. Saving the section changes nothing until a value is changed. For a test or development realm whose admins should not need a second factor, set the administration level to `single` — the admin UI warns about it. An admin without a second factor can do that during their setup grace. Realm manifests carry the policy under `Settings.SignIn` and, per App, under `Apps[].Settings.SignIn`.
 
 Browser sessions signed in before sign-in factors were recorded end once after the upgrade, and users sign in again (S51); that sign-in records its factors. Native Apps are not affected: their refresh tokens keep refreshing until they expire (S52).
 

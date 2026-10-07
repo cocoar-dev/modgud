@@ -205,7 +205,7 @@ Modgud's own UI — profile, devices, sessions, factor setup, account deletion �
 - **An App can only raise it:** a higher minimum level, fewer sign-in methods. An App cannot go below the realm's minimum and cannot offer a method the realm does not offer. Saving such an App policy fails with a message that names the realm setting to change instead. A policy saved before this rule that violates it is shown as a conflict in the admin UI; until it is resolved, the App runs under the realm's floor.
 - **The administration keeps its own minimum** (realm-only, default `multi`).
 
-**Derived policy (a realm that never saved its section).** The former `AuthenticationMinimumLevel` now only decides the administration: level ≥ 1 → administration `multi`. The floor is `single`, whatever the former level. E-mail code is on when the realm or any of its Apps has native grants switched on. An upgrade therefore no longer raises the portal or any App.
+**A realm that never saved its section** runs with the defaults: floor `single`, administration `multi`, setup grace 14 days; the e-mail code is on when the realm or any of its Apps has native grants switched on. The deployment-wide `AuthenticationMinimumLevel` / `TwoFactorGracePeriodDays` are removed (G). An upgrade therefore no longer raises the portal or any App.
 
 ### B. Account factors
 
@@ -273,9 +273,14 @@ This replaces "existing sessions count as `single`" (Settled details) and the wr
 - **The page shell is never enforced.** Only the API is; the SPA loads and shows the step-up or the setup.
 - **Browser sessions from before sign-in factors were recorded end once.** They carry no factors and cannot say how they were signed in. The user signs in again, and that sign-in records its factors. Native Apps are not affected: their refresh tokens carry no factors and refresh until they expire.
 
+### G. No deployment-wide sign-in setting
+
+`AuthenticationMinimumLevel` and `TwoFactorGracePeriodDays` are removed, not just deprecated. A switch for every realm at once, set in environment variables nobody looks at, is what surprised the first production upgrade; and the realm's administration level already says the same thing visibly, per realm. Administration requires `multi` by default; a test or development realm can set it to `single` in the realm's sign-in policy, which the admin UI marks with a warning. An admin without a second factor can make that change during their setup grace. Settings still present in a deployment are ignored.
+
+This replaces the write-once migration of section 2: no value is carried over, because the defaults are what every existing deployment ran with at the built-in level 1.
 ### Consequences
 
-- An upgrade never raises the floor; only the administration keeps the former level.
+- An upgrade never raises the floor; the administration requires `multi` unless a realm says otherwise.
 - A realm App policy below its floor is refused, and an existing one is shown as a conflict.
 - A user who set up an account factor is protected by it for every change to the account, however low the floor.
 - Account deletion is never blocked by a sign-in policy.

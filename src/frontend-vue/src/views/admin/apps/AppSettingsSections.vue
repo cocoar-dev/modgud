@@ -996,7 +996,7 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         {{ t('admin.appSettings.signIn.belowFloor', { fields: signInBelowFloor.join(', ') }, 'Below the realm\'s policy: {fields}. This app runs under the realm\'s policy for these, and saving is refused. To allow it, change the realm\'s sign-in policy (Realm settings → Security).') }}
       </CoarNotice>
       <CoarNotice v-if="!realmSignInConfigured" variant="info">
-        {{ t('admin.appSettings.signIn.realmUnconfigured', {}, 'The realm has not saved its sign-in policy yet. The values shown as inherited are the ones in force, derived from the deployment\'s former authentication level.') }}
+        {{ t('admin.appSettings.signIn.realmUnconfigured', {}, 'The realm has not saved its sign-in policy yet. The values shown as inherited are the defaults in force.') }}
       </CoarNotice>
       <div class="grid grid-cols-2 gap-3">
         <CoarFormField :label="t('admin.signIn.minimumLevel', {}, 'Minimum level')"
