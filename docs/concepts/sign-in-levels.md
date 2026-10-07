@@ -39,7 +39,7 @@ The realm holds the sign-in policy (**Realm settings → Security**). It applies
 
 An App cannot go below the realm's minimum or offer a method the realm does not offer: an App with a lower requirement than the portal strands its users the moment they need their profile. Saving such an App policy fails with a message that names the realm setting to change instead. A policy saved before this rule existed that violates it is shown as a conflict in the admin UI, and until it is resolved the App runs under the realm's floor. A policy nobody could satisfy (`multi` required, but no passkey and no first-plus-second factor combination) is rejected as well.
 
-The methods are a statement by the App's admin about what its sign-in can do — for a native app, what it has implemented. The login page and the native grants only offer and accept what is listed.
+The methods are a statement by the App's admin about what its sign-in can do — for a native app, what it has implemented. The login page and the native grants only offer and accept what is listed. Where the target offers the e-mail code, Modgud's built-in login page offers it as a sign-in of its own — an e-mail field, then the code; without a password it is the page's main form. A custom page reaches the same flow through its `auth:request-login-code` / `auth:verify-login-code` actions.
 
 `TwoFactorExempt` stays a per-user flag and exempts that user from the setup duty everywhere.
 
@@ -52,7 +52,9 @@ The minimum that applies to a request comes from what is being accessed:
 3. Modgud's own UI → the realm's policy for the portal, the administration minimum for `/api/admin/*`.
 4. Nothing identifies an App → the realm's policy.
 
-The Host keeps choosing how the login page looks and which issuer is advertised. It never lowers or raises the required level: opening the profile on an App's subdomain is still the portal.
+The Host never lowers or raises the required level: opening the profile on an App's subdomain is still the portal. It does choose which issuer is advertised, and on an App's own domain it chooses how the login page looks.
+
+Elsewhere the login page wears the face of the same App whose policy applies — its custom page, branding, page theme and login options, and the branding of the magic-link and code mails it sends: the client's App, else the App of `resource=`. An MCP connector signing in on the realm's host for one App's API therefore sees that App's page. Only when the requested resources belong to several Apps does the page stay the realm's, while the policy is the strictest of them.
 
 ## One session: SSO and step-up
 

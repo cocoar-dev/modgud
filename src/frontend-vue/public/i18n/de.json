@@ -159,6 +159,17 @@
       "sendLink": "Link senden",
       "sent": "Falls ein Konto mit dieser E-Mail existiert, wurde ein Anmelde-Link gesendet. Bitte prüfen Sie Ihr Postfach."
     },
+    "loginCode": {
+      "button": "Anmeldecode per E-Mail",
+      "emailLabel": "E-Mail",
+      "send": "Code senden",
+      "requestSubtitle": "Wir senden Ihnen einen Anmeldecode an Ihre E-Mail-Adresse.",
+      "enterSubtitle": "Geben Sie den Code aus Ihrer E-Mail ein.",
+      "sent": "Falls ein Konto für {email} existiert, ist ein Code unterwegs.",
+      "codeLabel": "Code",
+      "otherEmail": "Andere E-Mail-Adresse",
+      "requestFailed": "Der Code konnte nicht gesendet werden. Bitte versuchen Sie es erneut."
+    },
     "magicLogin": {
       "invalidLink": "Ungültiger Anmelde-Link.",
       "expiredLink": "Dieser Anmelde-Link ist ungültig oder abgelaufen.",

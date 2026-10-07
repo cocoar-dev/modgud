@@ -41,8 +41,7 @@ public static class RegisterEndpoints
             string? returnUrl,
             CancellationToken ct) =>
         {
-            var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(returnUrl);
-            var settings = (await settingsResolver.ResolveForRequestAsync(http, clientId, ct)).SelfRegistration;
+            var settings = (await settingsResolver.ResolveForReturnUrlAsync(http, returnUrl, ct)).SelfRegistration;
 
             // Anti-enumeration: always return SOMETHING. A drive-by can't
             // tell whether a realm has self-reg disabled or just isn't

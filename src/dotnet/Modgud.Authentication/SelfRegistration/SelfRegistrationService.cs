@@ -86,9 +86,10 @@ public sealed class SelfRegistrationService(
         var clientId = Modgud.Authentication.Api.ExternalAuth.ExternalAuthEndpoints
             .ExtractAuthorizeClientId(dto.ReturnUrl);
         var http = httpContextAccessor.HttpContext;
-        var effective = http is null
-            ? await settingsResolver.ResolveAsync(applicationId: null, ct)
-            : await settingsResolver.ResolveForRequestAsync(http, clientId, ct);
+        var applicationId = http is null
+            ? null
+            : await settingsResolver.ResolveApplicationIdForReturnUrlAsync(http, dto.ReturnUrl, ct);
+        var effective = await settingsResolver.ResolveAsync(applicationId, ct);
         var settings = effective.SelfRegistration;
         var registrationFields = effective.RegistrationFields ?? RegistrationFieldsSettings.Defaults;
         if (settings is null || !settings.Enabled)
@@ -212,9 +213,7 @@ public sealed class SelfRegistrationService(
             PasswordHash: passwordHash,
             ProofKind: Modgud.Authentication.Registration.RegistrationProofKind.Link,
             Source: Modgud.Authentication.Registration.RegistrationSources.Web,
-            ApplicationId: http is null
-                ? null
-                : Modgud.Infrastructure.Persistence.Tenancy.HttpContextApplicationExtensions.GetApplicationId(http),
+            ApplicationId: applicationId,
             ClientId: clientId,
             ReturnUrl: returnUrl,
             LinkBaseUrl: RealmPublicUrl.RealmPublicBaseUrl(realm),

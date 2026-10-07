@@ -343,7 +343,7 @@ public static class PasskeyEndpoints
             CancellationToken ct) =>
         {
             var clientId = Api.ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request?.ReturnUrl);
-            if ((await settingsResolver.ResolveForRequestAsync(context, clientId, ct))
+            if ((await settingsResolver.ResolveForReturnUrlAsync(context, request?.ReturnUrl, ct))
                 .LoginExperience?.InternalLoginEnabled == false)
                 return Results.Problem(
                     statusCode: StatusCodes.Status403Forbidden,

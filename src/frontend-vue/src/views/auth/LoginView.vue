@@ -148,6 +148,10 @@ const emailOtpSent = ref(false)
 const primaryOtpEmail = ref('')
 const magicLinkEmail = ref('')
 const magicLinkSent = ref(false)
+// The built-in page's own e-mail-code sign-in (a PageBuilder page drives the same
+// `primary-otp` step through its actions instead).
+const loginCodeRequested = ref(false)
+const loginCode = ref('')
 
 // ADR 0025 amendment C — the user is confirming an account change by signing in again.
 const reauthenticating = ref(false)
@@ -160,6 +164,8 @@ const secureSetupDueAt = ref<string | null>(null)
 const passkeyLoading = ref(false)
 
 const isPasswordless = () => !appConfig.config.SignIn.Password
+// ADR 0025 — the e-mail code is a first factor of its own where the target App offers it.
+const emailCodeAvailable = computed(() => appConfig.config.InternalLoginEnabled && appConfig.config.SignIn.EmailCode)
 
 const loginPageConfig = computed(() => createAuthPageConfig(
   'login',
@@ -521,6 +527,60 @@ async function handleEmailOtpLogin() {
   }
 }
 
+/** Submitting the first step: the password where one is asked, else the e-mail code. */
+async function handleCredentialsSubmit() {
+  if (isPasswordless() && emailCodeAvailable.value) await handleLoginCodeRequest()
+  else await handleLogin()
+}
+
+function startLoginCode() {
+  error.value = ''
+  loginCodeRequested.value = false
+  loginCode.value = ''
+  if (!primaryOtpEmail.value && userName.value.includes('@')) primaryOtpEmail.value = userName.value.trim()
+  step.value = 'primary-otp'
+}
+
+async function handleLoginCodeRequest() {
+  if (!primaryOtpEmail.value.trim() || submitting.value) return
+  submitting.value = true
+  error.value = ''
+  try {
+    await authStore.requestPasswordlessOtp(primaryOtpEmail.value.trim(), redirectTarget.value)
+    loginCode.value = ''
+    loginCodeRequested.value = true
+    step.value = 'primary-otp'
+  } catch (e) {
+    error.value = e instanceof HttpClientError
+      ? errorDetail(e) ?? t('auth.loginCode.requestFailed', {}, 'The code could not be sent. Please try again.')
+      : t('common.connectionError', {}, 'Connection to server failed.')
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function handleLoginCodeLogin() {
+  if (!loginCode.value.trim() || submitting.value) return
+  submitting.value = true
+  error.value = ''
+  try {
+    const result = await authStore.passwordlessOtpLogin(
+      primaryOtpEmail.value.trim(), loginCode.value.replace(/[\s-]/g, ''), rememberMe.value, redirectTarget.value)
+    if (result?.RequiresMfa) await enterSecondFactor(result.MfaMethods ?? [])
+    else if (result?.RequiresSecureSetup) applySecureSetup(result)
+    else finishLogin()
+  } catch (e) {
+    // A wrong or expired code is the common case: say it in the page's language.
+    error.value = e instanceof HttpClientError
+      ? e.status === 400
+        ? t('auth.mfa.invalidCode', {}, 'Invalid code. Please try again.')
+        : errorDetail(e) ?? t('common.connectionError', {}, 'Connection to server failed.')
+      : t('common.connectionError', {}, 'Connection to server failed.')
+  } finally {
+    submitting.value = false
+  }
+}
+
 async function handleMagicLinkRequest() {
   if (!magicLinkEmail.value.trim() || submitting.value) return
   submitting.value = true
@@ -545,6 +605,8 @@ function backToCredentials() {
   emailOtpSent.value = false
   magicLinkSent.value = false
   magicLinkEmail.value = ''
+  loginCodeRequested.value = false
+  loginCode.value = ''
   error.value = ''
 }
 
@@ -693,6 +755,8 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
           <template v-else-if="step === 'totp'">{{ t('auth.mfa.totpSubtitle', {}, 'Enter the code from your authenticator app.') }}</template>
           <template v-else-if="step === 'email-otp'">{{ t('auth.mfa.emailOtpSubtitle', {}, 'Enter the code from your email.') }}</template>
           <template v-else-if="step === 'magic-link'">{{ t('auth.mfa.magicLinkSubtitle', {}, 'Receive a login link via email.') }}</template>
+          <template v-else-if="step === 'primary-otp' && loginCodeRequested">{{ t('auth.loginCode.enterSubtitle', {}, 'Enter the code from your email.') }}</template>
+          <template v-else-if="step === 'primary-otp'">{{ t('auth.loginCode.requestSubtitle', {}, 'We send a sign-in code to your email address.') }}</template>
           <template v-else-if="step === 'secure-setup'">{{ t('auth.secureSetup.subtitle', {}, 'Secure your account before continuing.') }}</template>
         </p>
       </div>
@@ -709,7 +773,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
 
       <CoarCard v-else elevated>
         <!-- Step 1: Username + Password (or passwordless alternatives) -->
-        <form v-if="step === 'credentials'" class="space-y-4" @submit.prevent="handleLogin">
+        <form v-if="step === 'credentials'" class="space-y-4" @submit.prevent="handleCredentialsSubmit">
           <!-- Password login (hidden at Level 2) -->
           <template v-if="appConfig.config.InternalLoginEnabled && !isPasswordless()">
             <CoarFormField required :label="t('auth.login.username', {}, 'Username')">
@@ -744,8 +808,24 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
             </CoarButton>
           </template>
 
+          <!-- No password: the e-mail code is the sign-in, where the App offers it -->
+          <template v-if="isPasswordless() && emailCodeAvailable">
+            <CoarFormField required :label="t('auth.loginCode.emailLabel', {}, 'Email')">
+              <CoarTextInput
+                v-model="primaryOtpEmail"
+                type="email"
+                :placeholder="t('auth.magicLink.emailPlaceholder', {}, 'email@example.com')"
+                autocomplete="email"
+                required
+              />
+            </CoarFormField>
+            <CoarButton type="submit" :disabled="!primaryOtpEmail.trim()" :loading="submitting" full-width>
+              {{ t('auth.loginCode.send', {}, 'Send code') }}
+            </CoarButton>
+          </template>
+
           <!-- Passwordless notice (Level 2) -->
-          <CoarNotice v-if="appConfig.config.InternalLoginEnabled && isPasswordless()" variant="info">
+          <CoarNotice v-else-if="appConfig.config.InternalLoginEnabled && isPasswordless()" variant="info">
             {{ t('auth.login.passwordlessMode', {}, 'This application uses passwordless login.') }}
           </CoarNotice>
 
@@ -768,6 +848,17 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
             @click="handlePasskeyLogin()"
           >
             {{ t('auth.login.passkeyLogin', {}, 'Sign in with Passkey') }}
+          </CoarButton>
+
+          <!-- With a password on the page, the e-mail code is one more way in -->
+          <CoarButton
+            v-if="emailCodeAvailable && !isPasswordless()"
+            type="button"
+            variant="secondary"
+            full-width
+            @click="startLoginCode"
+          >
+            {{ t('auth.loginCode.button', {}, 'Sign-in code via email') }}
           </CoarButton>
 
           <!-- Magic Link Self-Service -->
@@ -804,6 +895,50 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
             class="block text-center text-sm text-surface-500 hover:text-surface-700 hover:underline">
             {{ t('auth.login.registerLink', {}, 'No account yet? Register →') }}
           </RouterLink>
+        </form>
+
+        <!-- Step: e-mail code as the sign-in (the first factor) -->
+        <form v-else-if="step === 'primary-otp' && !loginCodeRequested" class="space-y-4" @submit.prevent="handleLoginCodeRequest">
+          <CoarFormField required :label="t('auth.loginCode.emailLabel', {}, 'Email')">
+            <CoarTextInput
+              v-model="primaryOtpEmail"
+              type="email"
+              :placeholder="t('auth.magicLink.emailPlaceholder', {}, 'email@example.com')"
+              autocomplete="email"
+              required
+            />
+          </CoarFormField>
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
+          <CoarButton type="submit" :disabled="!primaryOtpEmail.trim()" :loading="submitting" full-width>
+            {{ t('auth.loginCode.send', {}, 'Send code') }}
+          </CoarButton>
+          <div class="text-center">
+            <button type="button" class="text-sm text-surface-500 hover:text-surface-700 hover:underline" @click="backToCredentials">
+              {{ t('auth.mfa.backToLogin', {}, 'Back to login') }}
+            </button>
+          </div>
+        </form>
+
+        <form v-else-if="step === 'primary-otp'" class="space-y-4" @submit.prevent="handleLoginCodeLogin">
+          <CoarNotice variant="success">
+            {{ t('auth.loginCode.sent', { email: primaryOtpEmail }, 'If an account exists for {email}, a code is on its way.') }}
+          </CoarNotice>
+          <CoarFormField :label="t('auth.loginCode.codeLabel', {}, 'Code')">
+            <CoarOtpInput v-model="loginCode" type="numeric" :length="6" auto-focus required />
+          </CoarFormField>
+          <CoarCheckbox v-model="rememberMe" :label="t('auth.login.rememberMe', {}, 'Stay signed in')" />
+          <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
+          <CoarButton type="submit" :disabled="!loginCode.trim()" :loading="submitting" full-width>
+            {{ t('auth.login.submit', {}, 'Sign in') }}
+          </CoarButton>
+          <div class="flex justify-between text-sm">
+            <button type="button" class="text-surface-500 hover:text-surface-700 hover:underline" @click="handleLoginCodeRequest">
+              {{ t('auth.emailOtp.resendCode', {}, 'Resend code') }}
+            </button>
+            <button type="button" class="text-surface-500 hover:text-surface-700 hover:underline" @click="startLoginCode">
+              {{ t('auth.loginCode.otherEmail', {}, 'Other email address') }}
+            </button>
+          </div>
         </form>
 
         <!-- Step: MFA Choice -->
