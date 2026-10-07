@@ -162,9 +162,10 @@ surface) because they're identity-lifecycle operations:
 |---|---|---|
 | `GET` | `/api/auth/export-data` | Data export (Article 20) — ZIP |
 | `GET` | `/api/auth/deletion-status` | Status of the delete workflow |
-| `POST` | `/api/auth/delete-account` | Request account deletion (token email goes out) |
-| `POST` | `/api/auth/confirm-deletion` | Confirm with token → archive stream + mask PII |
+| `POST` | `/api/auth/delete-account` | Schedule the account's deletion; it is erased at the grace deadline unless cancelled. Body `{ Reason? }` (a `Password` sent along is checked) |
 | `POST` | `/api/auth/cancel-deletion` | Cancel a pending delete request |
+
+The deletion endpoints are reachable at any required sign-in level. Requesting a deletion is an account change: like adding or removing a factor, changing the password or requesting a new e-mail address, it needs a recent proof of the user's account factor — or, for a user without one, a recent sign-in — and answers `403 { "RequiresReauthentication": true, "Methods": [...] }` otherwise. See [Sign-in levels → Account factors and account changes](../concepts/sign-in-levels#account-factors-and-account-changes).
 
 ## Bootstrap (first admin in a realm)
 
@@ -217,6 +218,7 @@ email-OTP family.
 | `200 { requiresSecureSetup: true, gracePeriod: true, secureSetupDueAt }` | User still has to set up 2FA, time remaining |
 | `200 { requiresSecureSetup: true, gracePeriod: false }` | Grace period over, blocking |
 | `403 { RequiresStepUp: true }` | The session is below the target App's sign-in level — complete the missing factor via `POST /api/account/step-up` |
+| `403 { RequiresReauthentication: true, Methods }` | An account change needs a recent proof — `POST /api/account/step-up` with `{ Reauthenticate: true }` answers `RequiresMfa` (prove the account factor) or `RequiresFirstFactor` (sign in again with one of `Methods`); the proof joins the current session |
 | `401` | Not authenticated or wrong credentials |
 | `403` | Authenticated but no permission, or the target's sign-in policy has the password switched off |
 | `429` | Rate limit (Email OTP, Magic Link, bootstrap-admin, native OTP/passkey, …) |

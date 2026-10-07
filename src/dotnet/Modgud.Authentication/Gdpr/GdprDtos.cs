@@ -1,13 +1,16 @@
 namespace Modgud.Authentication.Gdpr;
 
 /// <summary>
-/// Request body for the user-initiated deletion endpoint. The current
-/// password is required to prevent CSRF-style account takeover from a
-/// stolen session cookie.
+/// Request body for the user-initiated deletion endpoint. A session alone is not
+/// enough: the endpoint needs a recent proof of the user's account factor, or of
+/// what they have (ADR 0025 amendment C) — so a stolen, older session cookie
+/// cannot request a deletion.
 /// </summary>
 public record RequestDeletionDto
 {
-    public required string Password { get; init; }
+    /// <summary>Optional: checked when sent. The proof for a deletion is a recent sign-in
+    /// (ADR 0025 amendment C), which a user without a password can give too.</summary>
+    public string? Password { get; init; }
     public string? Reason { get; init; }
 }
 

@@ -9,13 +9,13 @@ namespace Modgud.Authentication.Api.Admin;
 /// <summary>
 /// Request body for PUT /api/admin/users/{id}/grace/policy. All fields are optional;
 /// null means "don't change". Use <c>GracePeriodDaysOverride = -1</c> to clear the
-/// per-user override and fall back to the global <see cref="AppSettings.TwoFactorGracePeriodDays"/>.
+/// per-user override and fall back to the sign-in policy's <c>SetupGraceDays</c>.
 /// </summary>
 public record GracePolicyRequest(int? GracePeriodDaysOverride, bool? TwoFactorExempt);
 
 /// <summary>
 /// Admin-only operations for the 2FA grace period: reset a user's grace clock so they
-/// get another full <see cref="AppSettings.TwoFactorGracePeriodDays"/> window, or clear
+/// get another full setup-grace window, or clear
 /// it entirely to force immediate enforcement on next login.
 /// </summary>
 public static class AdminGraceEndpoints

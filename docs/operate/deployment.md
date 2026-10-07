@@ -43,14 +43,14 @@ settings, the OpenIddict issuer, the magic-link rate limit) needs an explicit en
 | `EmailConfiguration` | `Email:` — `Provider` (Postmark/Smtp), `Postmark.*`, `Smtp.*` |
 | `MagicLinkConfiguration` | `MagicLink:` — `Enabled`, `ExpirationMinutes`, `RateLimitMinutes` |
 | `EmailOtpConfiguration` | `EmailOtp:` — `ExpirationMinutes`, `RateLimitMinutes` |
-| `AppSettings` | `AppSettings:` — `MagicLinkSelfService`; `AuthenticationMinimumLevel` and `TwoFactorGracePeriodDays` are **deprecated** (see below) |
+| `AppSettings` | `AppSettings:` — `MagicLinkSelfService`, `Features` |
 | `OpenIddictSettings` | `OpenIddict:` — `*LifetimeMinutes`, `DevelopmentMode`, `SigningCertificatePath` |
 | `ObservabilitySettings` | `Observability:` — `Prometheus.Enabled`, `Prometheus.BearerToken`, `Otlp.*`, `ErrorFeed.*` |
 | `ClusterSettings` | `Cluster:` — `DrainDelaySeconds`, `NodeName` (see [Running two instances](#running-two-instances)) |
 | `OutboundHttpSettings` | `OutboundHttp:` — `AllowedPrivateHosts` (see [Identity providers on private networks](#identity-providers-on-private-networks)) |
 
-::: warning Deprecated: AuthenticationMinimumLevel and TwoFactorGracePeriodDays
-Sign-in strength is a realm and App setting now — see [Sign-in levels](../concepts/sign-in-levels) and Administration → Realm Settings → Security. `AppSettings__AuthenticationMinimumLevel` and `AppSettings__TwoFactorGracePeriodDays` are still read, but only to derive the policy of a realm that has never saved a sign-in policy (level 0 → single, level 1 → multi-factor, level 2 → password off). Remove them from your deployment once the realms have a saved policy.
+::: info Sign-in strength is not a deployment setting
+How strong a sign-in must be is a realm and App setting — see [Sign-in levels](../concepts/sign-in-levels) and Administration → Realm Settings → Security. The former `AppSettings__AuthenticationMinimumLevel` and `AppSettings__TwoFactorGracePeriodDays` were removed in 0.15.1 and are ignored if still set; a realm that never saved its policy runs with floor single and administration multi.
 :::
 
 The token issuer is **not** a global setting — there is no `Issuer` or `PublicUrl` key. Modgud is multi-tenant: each realm carries its own `PrimaryDomain` (managed in the admin UI or the Recovery CLI), and the issuer is derived per request from that domain / the request host on every path — the discovery document, the token `iss` claim, and token validation. What you must get right for a correct issuer is therefore (1) each realm's domain and (2) the reverse proxy forwarding the real public host (see `ProxyAllowedNetworks` below), **not** any issuer config value.

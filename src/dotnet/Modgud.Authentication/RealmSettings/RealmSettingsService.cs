@@ -37,14 +37,19 @@ public sealed class RealmSettingsService(
     CaptchaSecretStore captchaStore,
     ISecurityAuditLog? securityAudit = null,
     IStaffingRevoker? staffingRevoker = null,
+    // Unused since ADR 0025 amendment 1 removed the deployment-wide sign-in level; kept so the
+    // statically generated Wolverine handlers that construct this type keep compiling.
+#pragma warning disable CS9113
     IAuthSettings? authSettings = null) : IRealmSettingsService
+#pragma warning restore CS9113
 {
     /// <summary>ADR 0025 — the sign-in policy in force: the saved one, or the one derived
     /// from the retired deployment settings while the realm has never saved it.</summary>
-    private SignInPolicy SignInInForce(RealmSettingsDoc doc) => SignInPolicyRules.InForce(doc, authSettings);
+    private Task<SignInPolicy> SignInInForceAsync(RealmSettingsDoc doc, CancellationToken ct) =>
+        SignInPolicyRules.InForceAsync(session, doc, ct);
 
-    private RealmSettingsDto ToDtoWithSignInInForce(RealmSettingsDoc doc) =>
-        ToDto(doc) with { SignInInForce = MapSignInToDto(SignInInForce(doc)) };
+    private async Task<RealmSettingsDto> ToDtoWithSignInInForceAsync(RealmSettingsDoc doc, CancellationToken ct) =>
+        ToDto(doc) with { SignInInForce = MapSignInToDto(await SignInInForceAsync(doc, ct)) };
 
     public async Task<RealmSettingsDoc> LoadAsync(CancellationToken ct = default)
     {
@@ -58,7 +63,7 @@ public sealed class RealmSettingsService(
     public async Task<RealmSettingsDto> GetDtoAsync(CancellationToken ct = default)
     {
         var doc = await LoadAsync(ct);
-        return ToDtoWithSignInInForce(doc);
+        return await ToDtoWithSignInInForceAsync(doc, ct);
     }
 
     public async Task<ErrorOr<RealmSettingsDto>> PatchAsync(UpdateRealmSettingsDto dto, CancellationToken ct = default)
@@ -102,7 +107,7 @@ public sealed class RealmSettingsService(
 
         if (dto.SignIn is not null)
         {
-            var signIn = await ApplySignInPatchAsync(SignInInForce(doc), dto.SignIn, ct);
+            var signIn = await ApplySignInPatchAsync(await SignInInForceAsync(doc, ct), dto.SignIn, ct);
             if (signIn.IsError) return signIn.FirstError;
             doc.SignIn = signIn.Value;
         }
@@ -217,7 +222,7 @@ public sealed class RealmSettingsService(
             }
         }
 
-        return ToDtoWithSignInInForce(doc);
+        return await ToDtoWithSignInInForceAsync(doc, ct);
     }
 
     public async Task<PositionSecurityConsequencesDto> PreviewPositionSecurityAsync(

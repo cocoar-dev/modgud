@@ -46,6 +46,11 @@ public static class SignInAssurance
 {
     public const string FactorClaimType = "modgud.signin.factor";
 
+    /// <summary>Marks an application cookie whose factors were recorded at sign-in, even
+    /// when the sign-in proved none. A cookie without it and without factors is from before
+    /// factors were recorded; it ends once (ADR 0025 amendment F).</summary>
+    public const string RecordedClaimType = "modgud.signin.recorded";
+
     /// <summary><c>acr</c> values (ADR 0025 "Settled details").</summary>
     public const string AcrSingle = "urn:modgud:acr:single";
     public const string AcrMulti = "urn:modgud:acr:multi";
@@ -106,6 +111,17 @@ public static class SignInAssurance
         foreach (var (method, at) in factors)
             identity.AddClaim(new Claim(FactorClaimType,
                 $"{method}:{at.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)}"));
+    }
+
+    /// <summary>Whether a session cookie's factors were recorded at sign-in.</summary>
+    public static bool IsRecorded(ClaimsPrincipal? principal) =>
+        principal?.HasClaim(c => c.Type == RecordedClaimType) == true;
+
+    /// <summary>Mark <paramref name="identity"/> as carrying recorded factors.</summary>
+    public static void MarkRecorded(ClaimsIdentity identity)
+    {
+        if (!identity.HasClaim(c => c.Type == RecordedClaimType))
+            identity.AddClaim(new Claim(RecordedClaimType, "1"));
     }
 
     /// <summary>Union of two factor sets; a factor proven in both keeps the later time.</summary>

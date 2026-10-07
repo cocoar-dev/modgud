@@ -1,4 +1,5 @@
 using Modgud.Authentication.SignIn;
+using Modgud.Domain.Applications;
 using Modgud.Domain.Realms;
 using Facts = Modgud.Authentication.SignIn.SignInRequirementService.SignInFacts;
 
@@ -213,18 +214,31 @@ public class SignInRequirementEvaluationTests
     }
 
     [Fact]
-    public void A_policy_derived_from_the_retired_level_keeps_the_deployment_behaviour()
+    public void S50_an_unsaved_realm_runs_with_a_single_floor_and_a_multi_administration()
     {
-        var level0 = SignInPolicy.FromLegacy(0, 14, emailCodeEnabled: true);
-        var level1 = SignInPolicy.FromLegacy(1, 7, emailCodeEnabled: false);
-        var level2 = SignInPolicy.FromLegacy(2, 14, emailCodeEnabled: false);
+        var withNativeGrants = SignInPolicy.ForUnsavedRealm(emailCodeEnabled: true);
+        var withoutNativeGrants = SignInPolicy.ForUnsavedRealm(emailCodeEnabled: false);
 
-        Assert.Equal(SignInLevel.Single, level0.MinimumLevel);
-        Assert.Equal(SignInLevel.Single, level0.AdministrationMinimumLevel);
-        Assert.True(level0.EmailCode);
-        Assert.Equal(SignInLevel.Multi, level1.MinimumLevel);
-        Assert.Equal(SignInLevel.Multi, level1.AdministrationMinimumLevel);
-        Assert.Equal(7, level1.SetupGraceDays);
-        Assert.False(level2.Password);
+        Assert.Equal(SignInLevel.Single, withNativeGrants.MinimumLevel);
+        Assert.Equal(SignInLevel.Multi, withNativeGrants.AdministrationMinimumLevel);
+        Assert.Equal(14, withNativeGrants.SetupGraceDays);
+        Assert.True(withNativeGrants.Password);
+        Assert.True(withNativeGrants.Passkey);
+        Assert.True(withNativeGrants.EmailCode);
+        Assert.False(withoutNativeGrants.EmailCode);
+    }
+
+    [Fact]
+    public void An_app_only_raises_the_realm_floor()
+    {
+        var floor = SignInPolicy.Defaults with { MinimumLevel = SignInLevel.Multi, EmailCode = false };
+        var below = new ApplicationSignInOverrides { MinimumLevel = SignInLevel.Single, EmailCode = true, Password = false };
+
+        var effective = EffectiveSettings.ApplySignInOverrides(floor, below);
+
+        Assert.Equal(SignInLevel.Multi, effective.MinimumLevel);
+        Assert.False(effective.EmailCode);
+        Assert.False(effective.Password);
+        Assert.Equal(["MinimumLevel", "EmailCode"], EffectiveSettings.BelowFloor(floor, below));
     }
 }

@@ -136,6 +136,11 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         var plainId = new ShortGuid(Guid.NewGuid()).ToString();
         RealmManifest Manifest(string productName) => new()
         {
+            // ADR 0025 amendment A — the realm must offer the e-mail code the App offers.
+            Settings = new Modgud.Application.DTOs.RealmSettings.UpdateRealmSettingsDto
+            {
+                SignIn = new Modgud.Application.DTOs.RealmSettings.UpdateSignInPolicyDto { EmailCode = true },
+            },
             Apps =
             [
                 new RealmManifestApp

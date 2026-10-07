@@ -255,14 +255,17 @@ function bufferToBase64Url(b: ArrayBuffer): string {
         </div>
       </CoarCard>
 
-      <CoarCard elevated class="cursor-pointer hover:ring-2 hover:ring-blue-300 transition" @click="activeSetup = 'email-otp'">
+      <!-- ADR 0025: the e-mail code is a second factor only after a password. A user who
+           signs in by e-mail code or magic link would prove the same mailbox twice, so it is
+           not offered to them — they would only find out at their next sign-in. -->
+      <CoarCard v-if="authStore.user?.HasPassword" elevated class="cursor-pointer hover:ring-2 hover:ring-blue-300 transition" @click="activeSetup = 'email-otp'">
         <div class="p-4 flex items-center gap-4">
           <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100 text-green-600 flex-shrink-0">
             <CoarIcon name="mail" size="m" />
           </div>
           <div>
             <div class="font-medium">{{ t('auth.secureSetup.emailOtpCard', {}, 'Email Code') }}</div>
-            <div class="text-xs text-surface-500">{{ t('auth.secureSetup.emailOtpCardDescription', {}, 'One-time code sent to your email.') }}</div>
+            <div class="text-xs text-surface-500">{{ t('auth.secureSetup.emailOtpAfterPassword', {}, 'One-time code to your email, after your password. Protects against a stolen password, not against access to your mailbox.') }}</div>
           </div>
         </div>
       </CoarCard>

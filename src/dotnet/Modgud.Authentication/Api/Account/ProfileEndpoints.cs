@@ -97,6 +97,17 @@ public static class ProfileEndpoints
                     return Results.Conflict(new { Message = "Email already in use" });
             }
 
+            // ADR 0025 amendment C — the e-mail address is where sign-in codes, magic links
+            // and password resets go: changing it is an account change.
+            var emailChanges = emailSubmitted
+                && !string.Equals(desiredEmail, user.Email, StringComparison.OrdinalIgnoreCase);
+            if (emailChanges)
+            {
+                var accountChanges = context.RequestServices.GetRequiredService<IAccountChangeGuard>();
+                if (await accountChanges.RequireRecentProofAsync(context, user, ct) is { } reauth) return reauth;
+                await accountChanges.NotifyAsync(user, AccountChange.EmailChangeRequested, ct);
+            }
+
             var existing = (await session.Query<UserChangeRequest>()
                 .Where(r => r.UserId == user.Id && r.Type == ChangeRequestType.Profile
                          && (r.Status == ChangeRequestStatus.EmailVerificationPending

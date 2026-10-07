@@ -19,14 +19,13 @@ public class UserSecurityData
     public string? AuthenticatorKey { get; set; }
     public bool TwoFactorEnabled { get; set; }
 
-    // 2FA grace period — when AuthenticationMinimumLevel >= 1 is enforced, users without
-    // any 2FA method get a configurable number of days (AppSettings.TwoFactorGracePeriodDays)
-    // to set one up. The due date is stamped on the first post-enforcement login that
-    // triggers the check. Null means the user hasn't been checked yet (pre-enforcement
+    // 2FA setup grace — when a target requires multi and the user has no second factor,
+    // they get the policy's SetupGraceDays to set one up (ADR 0025). The due date is stamped
+    // on the first sign-in that owes it. Null means the user hasn't been checked yet (pre-enforcement
     // installs, or user already had 2FA so the check never fired).
     public DateTime? SecureSetupDueAt { get; set; }
 
-    // Per-user grace override (null = use AppSettings.TwoFactorGracePeriodDays). Setting
+    // Per-user grace override (null = use the sign-in policy's SetupGraceDays). Setting
     // a larger number for one user (e.g. 365) gives them a longer runway without loosening
     // the global policy. The value is the total days granted when stamping a fresh grace —
     // resetting grace for the user uses this number instead of the default.

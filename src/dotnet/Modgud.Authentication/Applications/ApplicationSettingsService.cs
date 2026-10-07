@@ -55,8 +55,7 @@ public interface IApplicationSettingsService
 public sealed class ApplicationSettingsService(
     IDocumentSession session,
     IGlobalStore globalStore,
-    IRealmCache realmCache,
-    IAuthSettings? authSettings = null) : IApplicationSettingsService
+    IRealmCache realmCache) : IApplicationSettingsService
 {
     private static readonly Regex CssColorRegex = new(
         @"^(#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})" +
@@ -435,7 +434,23 @@ public sealed class ApplicationSettingsService(
 
         var realm = await session.LoadAsync<Modgud.Domain.RealmSettings.RealmSettings>(
             Modgud.Domain.RealmSettings.RealmSettings.SingletonId, ct);
-        var effective = EffectiveSettings.ApplySignInOverrides(SignInPolicyRules.InForce(realm, authSettings), overrides);
+        var floor = await SignInPolicyRules.InForceAsync(session, realm, ct);
+
+        // ADR 0025 amendment A — an App can only raise the realm's floor. The portal is shared
+        // by every user of the realm; an App below it strands its users when they need their
+        // profile. The message names the realm setting to change instead.
+        foreach (var field in EffectiveSettings.BelowFloor(floor, overrides))
+        {
+            return field == nameof(ApplicationSignInOverrides.MinimumLevel)
+                ? Error.Validation("SignIn.BelowRealmMinimum",
+                    $"The realm's minimum level is {floor.MinimumLevel}; an App can only require the same or more. " +
+                    "To let this App sign in with less, lower the realm's minimum level (Realm settings → Security).")
+                : Error.Validation("SignIn.MethodNotOfferedByRealm",
+                    $"{field} is switched off for the realm; an App can only offer what the realm offers. " +
+                    $"To offer it in this App, switch on {field} for the realm (Realm settings → Security).");
+        }
+
+        var effective = EffectiveSettings.ApplySignInOverrides(floor, overrides);
         if (await SignInPolicyRules.CheckSatisfiableAsync(
                 session, effective, includeAdministration: false,
                 loginExperience?.LoginProviderIds, "Effective sign-in policy of this App", ct) is { } error)

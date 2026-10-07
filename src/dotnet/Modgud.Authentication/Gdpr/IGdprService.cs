@@ -10,7 +10,7 @@ public interface IGdprService
     /// end of the realm's grace window unless the user logs in and cancels.
     /// The user stays active during grace. Requires the caller's current
     /// password. Sends a notification email (no confirm token).</summary>
-    Task<ErrorOr<DeletionRequestResponseDto>> RequestDeletionAsync(Guid userId, string password, string? reason, CancellationToken ct = default);
+    Task<ErrorOr<DeletionRequestResponseDto>> RequestDeletionAsync(Guid userId, string? password, string? reason, CancellationToken ct = default);
 
     /// <summary>Cancels a pending deletion. A self-service cancel passes
     /// <paramref name="cancelledByAdminUserId"/>=null; an admin cancel passes

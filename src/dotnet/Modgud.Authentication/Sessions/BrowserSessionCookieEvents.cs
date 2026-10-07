@@ -78,6 +78,16 @@ public sealed class BrowserSessionCookieEvents(ISessionService sessions) : Cooki
             return;
         }
 
+        // ADR 0025 amendment F — a cookie from before sign-in factors were recorded cannot say
+        // how it was signed in. It ends once; the user signs in again and that sign-in records
+        // its factors. Only the browser cookie is dropped: the session row and the Apps that
+        // signed in through it are left to their own lifetimes (no back-channel logout).
+        if (!SignInAssurance.IsRecorded(context.Principal) && SignInAssurance.ReadFactors(context.Principal).Count == 0)
+        {
+            await RejectAsync(context);
+            return;
+        }
+
         await SecurityStampValidator.ValidatePrincipalAsync(context);
     }
 
@@ -127,6 +137,7 @@ public sealed class BrowserSessionCookieEvents(ISessionService sessions) : Cooki
             factors = SignInAssurance.Union(factors, SignInAssurance.ReadFactors(current));
 
         SignInAssurance.Stamp(identity, factors);
+        SignInAssurance.MarkRecorded(identity);
     }
 
     private static Guid? ParseUserId(ClaimsPrincipal? principal)

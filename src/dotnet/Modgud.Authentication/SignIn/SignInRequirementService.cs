@@ -70,7 +70,7 @@ public interface ISignInRequirementService
 
     /// <summary>The target of a sign-in on the login page, from its return URL: a pending
     /// <c>/connect/authorize</c> request names the client and resources; any other return URL
-    /// is Modgud's own UI, i.e. the self-service portal (the <c>modgud</c> App).</summary>
+    /// is Modgud's own UI, i.e. the self-service portal, which runs under the realm's policy.</summary>
     Task<SignInTarget> ResolveTargetFromReturnUrlAsync(string? returnUrl, CancellationToken ct = default);
 
     /// <summary>The realm's administration surface (<c>/api/admin/*</c>).</summary>
@@ -152,9 +152,9 @@ public sealed class SignInRequirementService(
                 || returnUrl.StartsWith("/admin?", StringComparison.OrdinalIgnoreCase)))
             return await AdministrationTargetAsync(ct);
 
-        var portal = await session.Query<App>()
-            .FirstOrDefaultAsync(a => a.Slug == AppSlugs.Modgud && !a.IsDeleted, ct);
-        return await BuildTargetAsync(portal is null ? [] : [portal.Id], clientRpId: null, ct);
+        // Modgud's own self-service portal is shared by every user of the realm, whatever App
+        // they came through: it runs under the realm's policy — the floor (amendment A).
+        return await BuildTargetAsync([], clientRpId: null, ct);
     }
 
     public async Task<SignInTarget> AdministrationTargetAsync(CancellationToken ct = default)

@@ -716,6 +716,12 @@ public class UserInfoPerAudienceTests : IntegrationTestBase
             ?? throw new InvalidOperationException($"user '{userName}' not found");
         var principal = await signInManager.CreateUserPrincipalAsync(user);
         var identity = (ClaimsIdentity)principal.Identity!;
+        // A cookie the current release issued records its sign-in factors (ADR 0025).
+        Modgud.Authentication.SignIn.SignInAssurance.Stamp(identity, new Dictionary<string, DateTimeOffset>
+        {
+            [Modgud.Authentication.SignIn.SignInMethods.External] = DateTimeOffset.UtcNow,
+        });
+        Modgud.Authentication.SignIn.SignInAssurance.MarkRecorded(identity);
         foreach (var gid in sessionGroupIds)
             identity.AddClaim(new Claim(FederationClaimTypes.SessionGroup, gid.ToString()));
 

@@ -472,6 +472,8 @@ try
             foreach (var claim in current.FindAll(Modgud.Authentication.SignIn.SignInAssurance.FactorClaimType))
                 if (!newIdentity.HasClaim(claim.Type, claim.Value))
                     newIdentity.AddClaim(new Claim(claim.Type, claim.Value));
+            if (Modgud.Authentication.SignIn.SignInAssurance.IsRecorded(current))
+                Modgud.Authentication.SignIn.SignInAssurance.MarkRecorded(newIdentity);
 
             return Task.CompletedTask;
         };
@@ -732,6 +734,9 @@ try
         Modgud.Authentication.SignIn.SignInRequirementService>();
     builder.Services.AddScoped<Modgud.Authentication.SignIn.IMfaContinuationService,
         Modgud.Authentication.SignIn.MfaContinuationService>();
+    // ADR 0025 amendment C — account changes need a recent proof of the account factor.
+    builder.Services.AddScoped<Modgud.Authentication.Api.Account.IAccountChangeGuard,
+        Modgud.Authentication.Api.Account.AccountChangeGuard>();
 
     // ADR-0011 — native passwordless registration: creates a passwordless user
     // from an email (JIT sign-up). Scoped (uses the tenant-scoped UserManager).

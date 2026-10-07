@@ -37,9 +37,9 @@ public static class TwoFactorHelper
     /// <summary>
     /// Forces the SecureSetupModal to be blocking on the user's next request — same as
     /// the admin "Force immediate enforcement" action. Used after a user removes their
-    /// last 2FA method while AuthenticationMinimumLevel ≥ 1: instead of refusing the
+    /// last 2FA method while Modgud's own UI requires multi: instead of refusing the
     /// removal, we let it through but expire the grace so the next login lands on the
-    /// blocking setup modal without a fresh 14-day window.
+    /// blocking setup modal without a fresh grace window.
     ///
     /// Returns <c>false</c> (no-op) when the user is <c>TwoFactorExempt</c> — exempt
     /// users bypass enforcement anyway, so stamping a past DueAt would have no effect

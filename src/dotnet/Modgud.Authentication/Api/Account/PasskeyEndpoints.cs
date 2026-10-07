@@ -101,10 +101,14 @@ public static class PasskeyEndpoints
             RpIdResolver rpIdResolver,
             IDocumentSession session,
             UserManager<ApplicationUser> userManager,
+            IAccountChangeGuard accountChanges,
             CancellationToken ct) =>
         {
             var user = await userManager.GetUserAsync(context.User);
             if (user is null) return Results.Unauthorized();
+            // Adding a passkey is an account change (amendment C). The ceremony this starts
+            // is short-lived and bound to the user, so the register step needs no second check.
+            if (await accountChanges.RequireRecentProofAsync(context, user, ct) is { } reauth) return reauth;
 
             // RP = current realm's primary domain. Built per request so the
             // same RP is used to create and (later) verify the credential.
@@ -192,6 +196,8 @@ public static class PasskeyEndpoints
             HttpContext context,
             RealmScopedFido2Factory fido2Factory,
             IDocumentSession session,
+            UserManager<ApplicationUser> userManager,
+            IAccountChangeGuard accountChanges,
             JsonElement body,
             CancellationToken ct) =>
         {
@@ -261,6 +267,8 @@ public static class PasskeyEndpoints
             };
             session.Store(stored);
             await session.SaveChangesAsync();
+            if (await userManager.FindByIdAsync(userId.Value.ToString()) is { } owner)
+                await accountChanges.NotifyAsync(owner, AccountChange.PasskeyAdded, ct);
 
             return Results.Ok(new { Message = "Passkey registered successfully." });
         })
@@ -273,7 +281,8 @@ public static class PasskeyEndpoints
             UserManager<ApplicationUser> userManager,
             Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements,
             IDocumentSession session,
-            Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker) =>
+            Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker,
+            IAccountChangeGuard accountChanges) =>
         {
             var userId = context.GetUserId();
             if (userId is null) return Results.Unauthorized();
@@ -281,6 +290,11 @@ public static class PasskeyEndpoints
             var credential = await session.LoadAsync<StoredPasskeyCredential>(id);
             if (credential is null || credential.UserId != userId.Value)
                 return Results.NotFound();
+
+            var owner = await userManager.GetUserAsync(context.User);
+            if (owner is null) return Results.Unauthorized();
+            if (await accountChanges.RequireRecentProofAsync(context, owner, context.RequestAborted) is { } reauth)
+                return reauth;
 
             // If this was the last 2FA method (last passkey + no other types) and
             // enforcement is active, expire the grace immediately so the user lands on
@@ -310,6 +324,7 @@ public static class PasskeyEndpoints
             // end with it: the shift's trust anchor (the tap) is gone.
             await staffingRevoker.EndAllForPasskeyAsync(
                 credential.Id, Modgud.Domain.PositionTerminals.StaffingSessionEndReason.PasskeyDeleted);
+            await accountChanges.NotifyAsync(owner, AccountChange.PasskeyRemoved, context.RequestAborted);
 
             return Results.Ok(new { SecureSetupRequired = secureSetupRequired });
         })

@@ -163,28 +163,28 @@ public class EffectiveSettingsTests
             var realm = Realm();
             realm.SignIn = new SignInPolicy
             {
-                MinimumLevel = SignInLevel.Multi,
+                MinimumLevel = SignInLevel.Single,
                 SetupGraceDays = 30,
                 Password = true,
-                EmailCode = false,
+                EmailCode = true,
                 AdministrationMinimumLevel = SignInLevel.Multi,
             };
             var app = new ApplicationSettings
             {
-                // Lower the minimum and turn the e-mail code on; everything else inherits.
+                // Raise the minimum and turn the password off; everything else inherits.
                 SignIn = new ApplicationSignInOverrides
                 {
-                    MinimumLevel = SignInLevel.Single,
-                    EmailCode = true,
+                    MinimumLevel = SignInLevel.Multi,
+                    Password = false,
                     PasskeyRpId = "  app.example.com  ",
                 },
             };
 
             var eff = EffectiveSettings.Merge(realm, app);
 
-            Assert.Equal(SignInLevel.Single, eff.SignIn!.MinimumLevel);
+            Assert.Equal(SignInLevel.Multi, eff.SignIn!.MinimumLevel);
             Assert.True(eff.SignIn.EmailCode);
-            Assert.True(eff.SignIn.Password);
+            Assert.False(eff.SignIn.Password);
             Assert.Equal(30, eff.SignIn.SetupGraceDays);
             // The administration level is realm-only: an App cannot touch it.
             Assert.Equal(SignInLevel.Multi, eff.SignIn.AdministrationMinimumLevel);

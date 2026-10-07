@@ -154,6 +154,12 @@ public class FederatedLogoutTests : IntegrationTestBase
             ?? throw new InvalidOperationException("Default test user not found.");
         var principal = await signInManager.CreateUserPrincipalAsync(user);
         var identity = (ClaimsIdentity)principal.Identity!;
+        // A cookie the current release issued records its sign-in factors (ADR 0025).
+        Modgud.Authentication.SignIn.SignInAssurance.Stamp(identity, new Dictionary<string, DateTimeOffset>
+        {
+            [Modgud.Authentication.SignIn.SignInMethods.External] = DateTimeOffset.UtcNow,
+        });
+        Modgud.Authentication.SignIn.SignInAssurance.MarkRecorded(identity);
         identity.AddClaim(new Claim(
             "modgud.external.loginProviderId",
             loginProviderId.ToString()));

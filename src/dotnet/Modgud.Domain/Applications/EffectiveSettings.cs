@@ -164,20 +164,46 @@ public sealed record EffectiveSettings
         return ApplySignInOverrides(realm, app);
     }
 
-    public static SignInPolicy ApplySignInOverrides(SignInPolicy b, ApplicationSignInOverrides? app)
+    /// <summary>
+    /// ADR 0025 amendment A — the realm's policy is the floor: an App can only raise it. The
+    /// App's minimum level never goes below the realm's, and it offers a method only where the
+    /// realm does. An override saved before that rule which goes below the floor is clamped
+    /// here, so the App runs under the floor until an admin resolves the conflict.
+    /// <paramref name="appDefaults"/> is what an App inherits where it sets nothing (the realm
+    /// policy itself, unless the derived policy seeds an App-specific default).
+    /// </summary>
+    public static SignInPolicy ApplySignInOverrides(
+        SignInPolicy floor, ApplicationSignInOverrides? app, SignInPolicy? appDefaults = null)
     {
-        if (app is null) return b;
+        var b = appDefaults ?? floor;
+        if (app is null && appDefaults is null) return floor;
         return b with
         {
-            MinimumLevel = app.MinimumLevel ?? b.MinimumLevel,
-            SetupGraceDays = app.SetupGraceDays ?? b.SetupGraceDays,
-            Password = app.Password ?? b.Password,
-            EmailCode = app.EmailCode ?? b.EmailCode,
-            Passkey = app.Passkey ?? b.Passkey,
-            Totp = app.Totp ?? b.Totp,
-            EmailAfterPassword = app.EmailAfterPassword ?? b.EmailAfterPassword,
-            OwnFactorNotOffered = app.OwnFactorNotOffered ?? b.OwnFactorNotOffered,
+            MinimumLevel = (SignInLevel)Math.Max((int)floor.MinimumLevel, (int)(app?.MinimumLevel ?? b.MinimumLevel)),
+            AdministrationMinimumLevel = floor.AdministrationMinimumLevel,
+            SetupGraceDays = app?.SetupGraceDays ?? b.SetupGraceDays,
+            Password = floor.Password && (app?.Password ?? b.Password),
+            EmailCode = floor.EmailCode && (app?.EmailCode ?? b.EmailCode),
+            Passkey = floor.Passkey && (app?.Passkey ?? b.Passkey),
+            Totp = floor.Totp && (app?.Totp ?? b.Totp),
+            EmailAfterPassword = floor.EmailAfterPassword && (app?.EmailAfterPassword ?? b.EmailAfterPassword),
+            OwnFactorNotOffered = app?.OwnFactorNotOffered ?? b.OwnFactorNotOffered,
         };
+    }
+
+    /// <summary>The parts of an App override that go below the realm's floor (amendment A):
+    /// empty when the override only raises it.</summary>
+    public static IReadOnlyList<string> BelowFloor(SignInPolicy floor, ApplicationSignInOverrides? app)
+    {
+        var conflicts = new List<string>();
+        if (app is null) return conflicts;
+        if (app.MinimumLevel is { } level && level < floor.MinimumLevel) conflicts.Add(nameof(app.MinimumLevel));
+        if (app.Password == true && !floor.Password) conflicts.Add(nameof(app.Password));
+        if (app.EmailCode == true && !floor.EmailCode) conflicts.Add(nameof(app.EmailCode));
+        if (app.Passkey == true && !floor.Passkey) conflicts.Add(nameof(app.Passkey));
+        if (app.Totp == true && !floor.Totp) conflicts.Add(nameof(app.Totp));
+        if (app.EmailAfterPassword == true && !floor.EmailAfterPassword) conflicts.Add(nameof(app.EmailAfterPassword));
+        return conflicts;
     }
 
     private static NativeGrantSettings? MergeNativeGrants(

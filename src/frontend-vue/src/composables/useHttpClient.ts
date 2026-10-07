@@ -30,12 +30,44 @@ function isStepUpBlock(body: unknown): boolean {
 }
 
 /**
- * Both blocks continue on the login page, which asks for the missing factor (or the
- * setup) for the page the user was on, then returns there.
+ * ADR 0025 amendment C — an account change (a factor, the password, the e-mail address,
+ * the deletion) needs a recent proof of the user's account factor, or of what they have.
  */
-function redirectToStepUp() {
+function isReauthenticationBlock(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && (body as Record<string, unknown>).RequiresReauthentication === true
+}
+
+/** A blocked request to the realm's administration (`/api/admin/*`). */
+function isAdministrationUrl(url: string): boolean {
+  return /^\/?api\/admin(\/|$|\?)/i.test(url)
+}
+
+const STEP_UP_GUARD_KEY = 'modgud.stepup.last'
+
+/**
+ * All three blocks continue on the login page, which asks for the missing factor (or the
+ * setup, or the fresh proof), then returns to the page the user was on.
+ *
+ * The login page evaluates the step-up against a target. Which target is decided by the
+ * blocked request, not by the page: an admin widget on the dashboard is blocked by the
+ * administration's level, while the dashboard itself is the portal — evaluating the
+ * dashboard's URL found nothing missing and sent the user straight back into the same
+ * block, a reload loop. `for=admin` names the administration.
+ *
+ * A guard stops a second redirect for the same page and kind within a few seconds: the
+ * login page has just raised the session or found nothing to raise, so another round
+ * would only loop. The request then fails like any other 403.
+ */
+function redirectToStepUp(reauthenticate: boolean, administration: boolean) {
   const here = window.location.pathname + window.location.search
-  window.location.href = `/login?stepup=1&redirect=${encodeURIComponent(here)}`
+  const key = `${here}|${reauthenticate}|${administration}`
+  try {
+    const last = JSON.parse(sessionStorage.getItem(STEP_UP_GUARD_KEY) ?? 'null') as { key: string; at: number } | null
+    if (last && last.key === key && Date.now() - last.at < 10_000) return
+    sessionStorage.setItem(STEP_UP_GUARD_KEY, JSON.stringify({ key, at: Date.now() }))
+  } catch { /* storage unavailable: no guard, the target fix alone prevents the loop */ }
+  const flags = `${reauthenticate ? '&reauth=1' : ''}${administration ? '&for=admin' : ''}`
+  window.location.href = `/login?stepup=1${flags}&redirect=${encodeURIComponent(here)}`
 }
 
 class HttpClient {
@@ -168,7 +200,9 @@ class HttpClient {
       // the server is blocking non-setup endpoints. Send them to /login where the
       // SecureSetupModal will appear (in its blocking form, since grace is over).
       if (response.status === 403 && (isSecureSetupBlock(errorBody) || isStepUpBlock(errorBody))) {
-        redirectToStepUp()
+        redirectToStepUp(false, isAdministrationUrl(url))
+      } else if (response.status === 403 && isReauthenticationBlock(errorBody)) {
+        redirectToStepUp(true, false)
       }
 
       throw new HttpClientError(response.status, response.statusText, errorBody);

@@ -44,7 +44,18 @@ public static class GdprEndpoints
             var userId = context.GetUserId();
             if (userId is null) return Results.Unauthorized();
 
+            // ADR 0025 amendment C — never blocked by a sign-in policy (the enforcement lets
+            // it through), but it needs the same recent proof as every account change.
+            var user = await context.RequestServices
+                .GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Modgud.Authentication.Domain.ApplicationUser>>()
+                .GetUserAsync(context.User);
+            if (user is null) return Results.Unauthorized();
+            var accountChanges = context.RequestServices.GetRequiredService<IAccountChangeGuard>();
+            if (await accountChanges.RequireRecentProofAsync(context, user, ct) is { } reauth) return reauth;
+
             var result = await svc.RequestDeletionAsync(userId.Value, dto.Password, dto.Reason, ct);
+            if (!result.IsError)
+                await accountChanges.NotifyAsync(user, AccountChange.DeletionRequested, ct);
             return result.ToResult();
         })
         .WithName("Auth_RequestDeletion");

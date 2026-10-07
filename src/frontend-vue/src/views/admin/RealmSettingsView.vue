@@ -1247,10 +1247,10 @@ async function rotateSigningKey() {
               <h2 class="section-title">{{ t('admin.realmSettings.sections.signIn', {}, 'Sign-in policy') }}</h2>
             </CoarDivider>
             <p class="section-description">
-              {{ t('admin.realmSettings.signIn.hint', {}, 'The default sign-in strength and methods for every app of this realm. An app can override any part of it in its own settings.') }}
+              {{ t('admin.realmSettings.signIn.hint', {}, 'The floor for this realm: it applies to the self-service portal, which every user shares, and every app starts from it. An app can require more or offer fewer methods in its own settings, never less.') }}
             </p>
             <CoarNotice v-if="signInUnconfigured" variant="info">
-              {{ t('admin.realmSettings.signIn.unconfigured', {}, `Not configured yet — this realm currently follows the deployment's former authentication level.`) }}
+              {{ t('admin.realmSettings.signIn.unconfigured', {}, 'Not saved yet — this realm runs under the defaults shown here: single for the portal and apps, multi for the administration.') }}
               <template #cta>
                 <CoarButton size="s" variant="ghost" :disabled="signInAdopt" @click="signInAdopt = true">
                   {{ t('admin.realmSettings.signIn.adopt', {}, 'Use these values') }}
@@ -1265,6 +1265,9 @@ async function rotateSigningKey() {
               <CoarFormField :label="t('admin.signIn.administrationMinimumLevel', {}, 'Administration minimum level')"
                 :hint="t('admin.signIn.administrationMinimumLevelHint', {}, `The level a session needs to use this realm's administration. Separate from the minimum level, so end users of a code-only app are not pushed into 2FA by opening their profile.`)">
                 <CoarSelect v-model="signInForm.AdministrationMinimumLevel" :options="signInLevelOptions" />
+                <CoarNotice v-if="signInForm.AdministrationMinimumLevel === 'Single'" variant="warning" class="mt-2">
+                  {{ t('admin.signIn.administrationSingleWarning', {}, 'Whoever administers this realm then needs no second factor. Meant for test and development realms only.') }}
+                </CoarNotice>
               </CoarFormField>
               <CoarFormField :label="t('admin.signIn.setupGraceDays', {}, 'Setup grace (days, 0–365)')"
                 :hint="t('admin.signIn.setupGraceDaysHint', {}, 'How long a user without a second factor may keep signing in to an app that requires multi-factor. 0 = set up immediately.')">

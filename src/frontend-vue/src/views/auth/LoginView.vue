@@ -149,6 +149,11 @@ const primaryOtpEmail = ref('')
 const magicLinkEmail = ref('')
 const magicLinkSent = ref(false)
 
+// ADR 0025 amendment C — the user is confirming an account change by signing in again.
+const reauthenticating = ref(false)
+const reauthenticateText = computed(() => t('auth.login.reauthenticate', {},
+  'To confirm this change to your account, sign in once more. You will return right after.'))
+
 // Grace period state (populated from login response when RequiresSecureSetup)
 const secureSetupInGrace = ref(false)
 const secureSetupDueAt = ref<string | null>(null)
@@ -223,6 +228,7 @@ const loginViewState = computed(() => step.value === 'primary-otp'
 // `auth.passkey*` values a PageBuilder page reads.
 const passkeySupport = usePasskeySupport()
 const passkeyAvailable = computed(() => isPasskeyAvailable(appConfig.config, passkeySupport.value))
+const passkeyFirst = computed(() => mfaMethods.value.includes('passkey') && passkeySupport.value.webAuthn)
 
 const loginRuntimeContext = computed(() => createAuthRuntimeContext({
   config: appConfig.config,
@@ -266,9 +272,22 @@ async function resumeSecondFactor() {
   }
   if (route.query.stepup !== '1') return
   try {
-    const result = await authStore.beginStepUp(redirectTarget.value)
+    // `for=admin`: the block came from the realm's administration, whatever page the user
+    // is on — evaluate against it (the server reads "/admin" as the administration target).
+    const stepUpTarget = route.query.for === 'admin' ? '/admin' : redirectTarget.value
+    const result = await authStore.beginStepUp(stepUpTarget, route.query.reauth === '1')
     if (result.RequiresMfa) await enterSecondFactor(result.MfaMethods ?? [])
     else if (result.RequiresSecureSetup) applySecureSetup(result)
+    else if (result.RequiresFirstFactor) {
+      // Amendment C — an account change wants a recent proof and the user has no account
+      // factor: the regular sign-in below, prefilled, joins the current session.
+      reauthenticating.value = true
+      if (result.Email) {
+        primaryOtpEmail.value = result.Email
+        magicLinkEmail.value = result.Email
+        if (!userName.value) userName.value = result.Email
+      }
+    }
     else finishLogin()
   } catch {
     // No session to raise (expired, signed out elsewhere): a normal sign-in follows.
@@ -650,6 +669,7 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
 
     <template v-else-if="['credentials', 'primary-otp'].includes(step) && customLoginSchema">
       <CoarNotice v-if="error && !customSchemaRendersHostError" variant="error" class="custom-login-error">{{ error }}</CoarNotice>
+      <CoarNotice v-if="reauthenticating" variant="info" class="custom-login-error">{{ reauthenticateText }}</CoarNotice>
       <AuthRuntimePageRenderer
         page-id="auth-login"
         :schema="customLoginSchema"
@@ -667,7 +687,8 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
       <div class="mb-8 text-center">
         <AuthBrand spacing="compact" />
         <p class="mt-2 text-sm text-surface-500">
-          <template v-if="step === 'credentials'">{{ t('auth.login.subtitle', {}, 'Sign in to continue.') }}</template>
+          <template v-if="step === 'credentials' && reauthenticating">{{ reauthenticateText }}</template>
+          <template v-else-if="step === 'credentials'">{{ t('auth.login.subtitle', {}, 'Sign in to continue.') }}</template>
           <template v-else-if="step === 'mfa-choice'">{{ t('auth.mfa.chooseMethod', {}, 'Choose a verification method.') }}</template>
           <template v-else-if="step === 'totp'">{{ t('auth.mfa.totpSubtitle', {}, 'Enter the code from your authenticator app.') }}</template>
           <template v-else-if="step === 'email-otp'">{{ t('auth.mfa.emailOtpSubtitle', {}, 'Enter the code from your email.') }}</template>
@@ -787,16 +808,17 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
 
         <!-- Step: MFA Choice -->
         <div v-else-if="step === 'mfa-choice'" class="space-y-4">
-          <CoarButton v-if="mfaMethods.includes('totp')" full-width @click="chooseMfaMethod('totp')">
+          <!-- ADR 0025 amendment D — a usable passkey first: one step, multi on its own. -->
+          <CoarButton v-if="passkeyFirst" full-width :loading="passkeyLoading" @click="handlePasskeyLogin()">
+            {{ t('auth.mfa.passkey', {}, 'Confirm with passkey') }}
+          </CoarButton>
+
+          <CoarButton v-if="mfaMethods.includes('totp')" full-width :variant="passkeyFirst ? 'secondary' : 'primary'" @click="chooseMfaMethod('totp')">
             {{ t('auth.mfa.authenticatorApp', {}, 'Authenticator App') }}
           </CoarButton>
 
           <CoarButton v-if="mfaMethods.includes('email')" full-width variant="secondary" @click="chooseMfaMethod('email')">
             {{ t('auth.mfa.emailCode', {}, 'Code via Email') }}
-          </CoarButton>
-
-          <CoarButton v-if="mfaMethods.includes('passkey') && passkeySupport.webAuthn" full-width variant="secondary" :loading="passkeyLoading" @click="handlePasskeyLogin()">
-            {{ t('auth.mfa.passkey', {}, 'Confirm with passkey') }}
           </CoarButton>
 
           <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>

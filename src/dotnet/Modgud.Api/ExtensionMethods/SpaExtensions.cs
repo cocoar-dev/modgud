@@ -43,6 +43,10 @@ public static class SpaExtensions
             {
                 FileProvider = fileProvider
             })
-            .WithMetadata(SpaFallbackEndpointMetadata.Instance);
+            .WithMetadata(SpaFallbackEndpointMetadata.Instance)
+            // The page shell carries no data. It must load for a session below the
+            // required sign-in level too, so the SPA can show the step-up or the
+            // second-factor setup instead of the API's raw 403 body.
+            .AllowAnonymous();
     }
 }
