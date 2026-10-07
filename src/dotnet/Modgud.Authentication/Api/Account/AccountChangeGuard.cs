@@ -133,7 +133,7 @@ public sealed class AccountChangeGuard(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Account-change notice could not be sent to user {UserId} ({Change})", user.Id, change);
+            logger.LogWarning(ex, "Account-change notice could not be sent to user {UserId}", user.Id);
         }
     }
 
