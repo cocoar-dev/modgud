@@ -315,6 +315,9 @@ public class GdprService(
         //    email — drop it too.
         session.Delete<EmailOtpChallenge>(userId);
 
+        //    ADR 0026 — a test account's fixed-code hash goes with the account.
+        session.Delete<TestAccountEmailCode>(userId);
+
         //    External identity links carry Email, DisplayName, and the raw IdP
         //    claim payload on their OWN streams (keyed by link id). Drop the
         //    projection doc here; the PII-bearing events are masked + archived

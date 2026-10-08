@@ -1945,9 +1945,18 @@ public static class AuthorizationEndpoints
             if (!user.EmailConfirmed && !isPasswordlessRegistration)
                 return await ForbidFactorFailureAsync("Invalid or expired code.");
 
-            var verify = await emailOtpService.VerifyOtpAsync(user.Id, code, ct);
-            if (verify.IsError)
+            // ADR 0026 — a test account with a fixed code signs in with that code.
+            var fixedCode = await httpContext.RequestServices
+                .GetRequiredService<Modgud.Authentication.TestAccounts.ITestAccountService>()
+                .VerifyFixedEmailCodeAsync(user, code, httpContext.Connection.RemoteIpAddress?.ToString(), request.ClientId, ct);
+            if (fixedCode == Modgud.Authentication.TestAccounts.FixedEmailCodeResult.Rejected)
                 return await ForbidFactorFailureAsync("Invalid or expired code.");
+            if (fixedCode == Modgud.Authentication.TestAccounts.FixedEmailCodeResult.NotApplicable)
+            {
+                var verify = await emailOtpService.VerifyOtpAsync(user.Id, code, ct);
+                if (verify.IsError)
+                    return await ForbidFactorFailureAsync("Invalid or expired code.");
+            }
 
             if (!user.EmailConfirmed)
             {
@@ -2397,6 +2406,10 @@ public static class AuthorizationEndpoints
                 claims["resource_access"] = resourceAccess;
         }
 
+        // ADR 0026 — the test-account marker, for every client and scope set.
+        if (user.IsTestAccount)
+            claims[Modgud.Authentication.TestAccounts.TestAccountClaims.Type] = true;
+
         return Results.Ok(claims);
     }
 
@@ -2769,6 +2782,12 @@ public static class AuthorizationEndpoints
             if (!string.IsNullOrEmpty(user.Firstname)) identity.SetClaim(Claims.GivenName, user.Firstname);
             if (!string.IsNullOrEmpty(user.Lastname)) identity.SetClaim(Claims.FamilyName, user.Lastname);
         }
+
+        // ADR 0026 — a test account is recognisable to every app, whatever the scopes.
+        // Read from the user loaded for this grant, so a refresh reflects the marker as
+        // it is now.
+        if (user.IsTestAccount)
+            identity.AddClaim(new Claim(Modgud.Authentication.TestAccounts.TestAccountClaims.Type, "true", ClaimValueTypes.Boolean));
 
         // Federation v1 (decision D/E): copy the session-group carrier claim(s)
         // from the cookie/grant principal onto this grant. One claim per matched
@@ -3251,6 +3270,12 @@ internal static class AuthorizationEndpointHelpers
             case SignInAssurance.FactorClaimType:
                 yield break;
             case Claims.AuthenticationContextReference or Claims.AuthenticationMethodReference:
+                yield return Destinations.AccessToken;
+                yield return Destinations.IdentityToken;
+                yield break;
+
+            // ADR 0026 — every token of a test account says so.
+            case Modgud.Authentication.TestAccounts.TestAccountClaims.Type:
                 yield return Destinations.AccessToken;
                 yield return Destinations.IdentityToken;
                 yield break;
