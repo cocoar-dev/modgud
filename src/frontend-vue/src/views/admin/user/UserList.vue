@@ -97,6 +97,7 @@ const displayUsers = computed<UserRow[]>(() => {
       UserName: str(entity.UserName) || str(entity.Email),
       IsActive: true,
       HasPassword: draft.SecretSlots.some((slot) => slot === `users/${entry.Key}/Password`),
+      IsTestAccount: entity.IsTestAccount === true,
       EmailConfirmed: entity.EmailConfirmed === true,
       ExternalLoginProviderIds: [],
       Status: 'Active',
@@ -123,6 +124,7 @@ const displayUsers = computed<UserRow[]>(() => {
       Acronym: str(e.Acronym) || row.Acronym,
       Email: str(e.Email) || row.Email,
       UserName: str(e.UserName).toLowerCase() || row.UserName,
+      IsTestAccount: typeof e.IsTestAccount === 'boolean' ? e.IsTestAccount : row.IsTestAccount,
       DraftStaged: 'update' as const,
     }
   })
@@ -195,6 +197,13 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<UserRow>(), { opena
     })
       .header('Active', 'admin.users.active').width(110)
       .option('valueGetter', (p: any) => p.data?.IsActive ? 'active' : 'inactive'),
+    // ADR 0026 — test accounts at a glance (staged markers included via the overlay).
+    (col) => col.tag('IsTestAccount', {
+      variantMap: { test: 'warning' },
+      i18nPrefix: 'admin.users.testAccountTag.',
+    })
+      .header('Test account', 'admin.users.testAccount').width(130)
+      .option('valueGetter', (p: any) => p.data?.IsTestAccount ? 'test' : undefined),
     // ADR-0017: staged rows (edited or created in the active draft).
     (col) => draftStagedColumn(col, t),
     // Lifecycle badge — only meaningful for pending-deletion rows (visible

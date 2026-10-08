@@ -301,6 +301,40 @@ public class ManagementApiAuthorizationTests : IntegrationTestBase
     /// every one of them threw for a service account.
     /// </summary>
     [Fact]
+    public async Task A_management_bearer_cannot_mark_a_test_account_or_set_its_fixed_code()
+    {
+        // ADR 0026 — a fixed code is set by a person in the admin console, never by a pipeline.
+        var ct = TestContext.Current.CancellationToken;
+        var serviceAccount = await CreateServiceAccountAsync("realm-config-fixed-code");
+        Assert.True(ShortGuid.TryParse(serviceAccount.Id, out Guid serviceAccountId));
+        await GrantRealmAdminAsync(serviceAccountId);
+        var clientId = $"realm-config-fixed-code-{Guid.NewGuid():N}";
+        await CreateClientCredentialsClientAsync(clientId, serviceAccount.Id, [ModgudManagementApi.Scope], AccessTokenType.Reference);
+        var token = await IssueClientCredentialsTokenAsync(clientId, ModgudManagementApi.Scope, ModgudManagementApi.Audience);
+        using var bearerClient = Factory.CreateClient();
+        bearerClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var user = new { Key = "tu", Email = "test@test.com", UserName = "tu", IsTestAccount = true, FixedEmailCode = "246810" };
+
+        using (var stage = await bearerClient.PutAsJsonAsync("/api/admin/realm-config/drafts/active/entities/users", user, ct))
+            Assert.Equal(HttpStatusCode.Forbidden, stage.StatusCode);
+        using (var apply = await bearerClient.PostAsJsonAsync("/api/admin/realm-config/apply", new { Users = new[] { user } }, ct))
+            Assert.Equal(HttpStatusCode.Forbidden, apply.StatusCode);
+        using (var create = await bearerClient.PostAsJsonAsync("/api/admin/realm-config/drafts",
+                   new { Name = "bearer", Source = "manifest", Manifest = new { Users = new[] { user } } }, ct))
+            Assert.Equal(HttpStatusCode.Forbidden, create.StatusCode);
+
+        // Changing the marker needs a person too ...
+        using (var marker = await bearerClient.PutAsJsonAsync("/api/admin/realm-config/drafts/active/entities/users",
+                   new { user.Key, user.Email, user.UserName, user.IsTestAccount }, ct))
+            Assert.Equal(HttpStatusCode.Forbidden, marker.StatusCode);
+        // ... but a marker that matches the live state (an export re-applied) passes.
+        using var unchanged = await bearerClient.PutAsJsonAsync("/api/admin/realm-config/drafts/active/entities/users",
+            new { user.Key, user.Email, user.UserName, IsTestAccount = false }, ct);
+        Assert.True(unchanged.IsSuccessStatusCode, await unchanged.Content.ReadAsStringAsync(ct));
+    }
+
+    [Fact]
     public async Task Realm_config_drafts_stage_plan_and_apply_a_deletion_with_a_management_bearer()
     {
         var ct = TestContext.Current.CancellationToken;

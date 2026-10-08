@@ -79,9 +79,9 @@ public static class RealmConfigEndpoints
         // out are left alone — deleting is a staged deletion in a draft. Never drops the
         // realm database.
         group.MapPost("apply", async (
-            RealmManifest manifest, HttpContext http, RealmManifestApplier applier, CancellationToken ct) =>
+            RealmManifest manifest, HttpContext http, Marten.IQuerySession query, RealmManifestApplier applier, CancellationToken ct) =>
         {
-            if (TestAccountCodeGuard.Reject(http, manifest) is { } refused) return refused;
+            if (await TestAccountCodeGuard.RejectAsync(http, query, manifest, ct) is { } refused) return refused;
             // The target is the caller's own realm, always — a manifest carries no realm
             // identity, so there is nothing here that could aim at a different one. That
             // IS the data-plane safety boundary: cross-realm writes and realm lifecycle
@@ -111,9 +111,9 @@ public static class RealmConfigEndpoints
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
 
         drafts.MapPost("", async (
-            CreateRealmDraftDto dto, HttpContext http, RealmDraftService service, CancellationToken ct) =>
+            CreateRealmDraftDto dto, HttpContext http, Marten.IQuerySession query, RealmDraftService service, CancellationToken ct) =>
         {
-            if (TestAccountCodeGuard.Reject(http, dto.Manifest) is { } refused) return refused;
+            if (await TestAccountCodeGuard.RejectAsync(http, query, dto.Manifest, ct) is { } refused) return refused;
             var result = await service.CreateAsync(
                 dto, TenantContext.Current, RequireUserId(http), UserName(http), ct);
             return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
@@ -131,9 +131,9 @@ public static class RealmConfigEndpoints
         .RequiresManagementPermission(PermissionEvaluator.RealmAdminPermission);
 
         drafts.MapPut("{id:guid}", async (
-            Guid id, UpdateRealmDraftDto dto, HttpContext http, RealmDraftService service, CancellationToken ct) =>
+            Guid id, UpdateRealmDraftDto dto, HttpContext http, Marten.IQuerySession query, RealmDraftService service, CancellationToken ct) =>
         {
-            if (TestAccountCodeGuard.Reject(http, dto.Manifest) is { } refused) return refused;
+            if (await TestAccountCodeGuard.RejectAsync(http, query, dto.Manifest, ct) is { } refused) return refused;
             var result = await service.UpdateAsync(
                 id, dto, TenantContext.Current, RequireUserId(http), UserName(http), ct);
             return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
@@ -188,9 +188,9 @@ public static class RealmConfigEndpoints
         // manifest entity; the natural key is computed server-side.
         drafts.MapPut("active/entities/{section}", async (
             string section, System.Text.Json.Nodes.JsonObject entity,
-            HttpContext http, RealmDraftService service, CancellationToken ct) =>
+            HttpContext http, Marten.IQuerySession query, RealmDraftService service, CancellationToken ct) =>
         {
-            if (TestAccountCodeGuard.Reject(http, section, entity) is { } refused) return refused;
+            if (await TestAccountCodeGuard.RejectAsync(http, query, section, entity, ct) is { } refused) return refused;
             var result = await service.StageEntityAsync(
                 section, entity, TenantContext.Current, RequireUserId(http), UserName(http), ct);
             return result.IsError ? ToErrorResult(result.Errors) : Results.Ok(result.Value);
