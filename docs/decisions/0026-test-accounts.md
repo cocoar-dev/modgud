@@ -26,7 +26,11 @@ A realm admin marks a single user account as a **test account**. It stays an ord
 - it is announced to every app (section 2);
 - it keeps the account out of administration (section 4) and out of groups that exclude test accounts (section 5).
 
-Marking is per account, never by an address pattern: a pattern would be a master key for every address that matches it. Marking and unmarking need their own permission (`user:test-account`), so `user:write` alone cannot create one.
+Marking is per account, never by an address pattern: a pattern would be a master key for every address that matches it.
+
+Marking, unmarking and configuring a test capability (setting a fixed code, for example) need their own permission, `user:test-account`. A fixed code is a way into the account: with `user:write` alone, anyone who may edit users could mark a real customer's account, set a code only they know and sign in as that customer. The permission keeps this with the people it is given to deliberately.
+
+The capabilities exist only while the marker is set. Removing the marker turns the account back into an ordinary account and **deletes** its capabilities — a fixed code is removed, not kept dormant, so no forgotten secret becomes valid again when the account is marked later. Marking it again starts without capabilities.
 
 Only users can be marked. Service accounts and OAuth clients are not people; nothing about them needs a sign-in without a mailbox, and a test client is already just another client. The claim name (section 2) is not user-specific, so a later extension to service accounts would not rename it.
 
