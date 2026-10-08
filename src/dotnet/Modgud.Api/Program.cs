@@ -863,6 +863,7 @@ try
         builder.Services.AddSingleton<IEmailService>(emailService);
     
     builder.Services.AddScoped<IEmailOtpService, EmailOtpService>();
+    builder.Services.AddScoped<Modgud.Authentication.TestAccounts.ITestAccountService, Modgud.Authentication.TestAccounts.TestAccountService>();
 
     // Per-user device-session tracking + GDPR self-service.
     // DeviceInfoService is a thin façade over Wangkanai.Detection (HttpContext-
@@ -1485,6 +1486,7 @@ try
     // both behind the LoginProviders endpoints living in the Authentication slice.
     app.MapAdminMagicLinkEndpoints("api");
     app.MapAdminGraceEndpoints("api");
+    Modgud.Authentication.Api.Admin.AdminTestAccountEndpoints.MapAdminTestAccountEndpoints(app, "api");
     app.MapAdminChangeRequestEndpoints("api");
     app.MapAdminSessionEndpoints("api");
     app.MapAdminGdprEndpoints("api");

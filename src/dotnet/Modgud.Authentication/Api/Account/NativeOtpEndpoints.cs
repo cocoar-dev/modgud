@@ -54,6 +54,7 @@ public static class NativeOtpEndpoints
             IRegistrationInviteService inviteService,
             UserManager<ApplicationUser> userManager,
             ILoggerFactory loggerFactory,
+            Modgud.Authentication.TestAccounts.ITestAccountService testAccounts,
             CancellationToken ct) =>
         {
             const string genericMessage = "If your email is registered, you will receive a verification code.";
@@ -107,7 +108,7 @@ public static class NativeOtpEndpoints
                     request.Email, request.FirstName, request.LastName,
                     request.InviteCode, httpContext.GetApplicationId(),
                     settings.SelfRegPosture, session, userManager,
-                    emailOtpService, registrationPipeline, inviteService, ct);
+                    emailOtpService, registrationPipeline, inviteService, testAccounts, ct);
             }
 
             // Same jitter on every branch (incl. success, which did real work) so
@@ -154,6 +155,7 @@ public static class NativeOtpEndpoints
         IEmailOtpService emailOtpService,
         IRegistrationPipeline registrationPipeline,
         IRegistrationInviteService inviteService,
+        Modgud.Authentication.TestAccounts.ITestAccountService testAccounts,
         CancellationToken ct)
     {
         var user = await session.Query<ApplicationUser>()
@@ -168,6 +170,9 @@ public static class NativeOtpEndpoints
         switch (action)
         {
             case NativeOtpAction.Login:
+                // ADR 0026 — a test account with a fixed code gets no mail and no
+                // cooldown: its fixed code is the code.
+                if (await testAccounts.HasUsableFixedEmailCodeAsync(user!, ct)) break;
                 _ = await emailOtpService.RequestNativeOtpAsync(user!.Id, ct);
                 break;
             case NativeOtpAction.ResendRegistration:

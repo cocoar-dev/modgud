@@ -37,7 +37,8 @@ public static class AppRealmSeeder
         ("oauth-authorization", ["read", "revoke"]),
 
         // Identity / directory
-        ("user", ["read", "write"]),
+        // ADR 0026 — test-account: mark accounts and set their fixed sign-in code.
+        ("user", ["read", "write", "test-account"]),
         ("service-account", ["read", "write"]),
         ("position", ["read", "write"]),
         ("position-terminal", ["enroll"]),

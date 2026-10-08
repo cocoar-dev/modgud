@@ -765,6 +765,24 @@
       "emailVerifiedLabel": "E-Mail-Status",
       "username": {
         "hintRequired": "Anmeldename; muss eindeutig sein und ist Pflicht."
+      },
+      "testAccount": {
+        "heading": "Testkonto",
+        "marker": "Das ist ein Testkonto",
+        "markerHint": "Ein normales Konto, das jedes Token mit modgud.test_account kennzeichnet. Es erhält nie Rechte der Modgud-Administration und bleibt aus Gruppen draußen, die Testkonten ausschließen. Wirkt sofort.",
+        "fixedCode": "Fester E-Mail-Code:",
+        "codeUntil": "Gesetzt, gültig bis {date}",
+        "codeSet": "Gesetzt, ohne Ablauf",
+        "codeNone": "Keiner – Codes werden per E-Mail geschickt",
+        "lastUsed": "Zuletzt benutzt {date} ({client})",
+        "codeInfo": "Mit einem festen Code bekommt das Konto keine Code-Mail: Die Anmeldung per E-Mail-Code nimmt stattdessen diesen Code an. Sechs Ziffern, wie ein verschickter Code. Er wird nur jetzt angezeigt – notiere ihn vor dem Speichern.",
+        "newCode": "Neuer Code",
+        "generate": "Erzeugen",
+        "validDays": "Gültig für (Tage)",
+        "validDaysHint": "Leer = kein Ablauf.",
+        "saveCode": "Code setzen",
+        "removeCode": "Code entfernen",
+        "saved": "Code gespeichert."
       }
     },
     "setPassword": {
@@ -927,7 +945,9 @@
         "nameRequired": "Name ist erforderlich.",
         "scriptRequired": "Für automatische Gruppen ist ein Membership-Script erforderlich.",
         "incomplete": "Fehlende Angaben"
-      }
+      },
+      "excludeTestAccounts": "Testkonten ausschließen",
+      "excludeTestAccounts.hint": "Kein Testkonto wird je Mitglied – weder von Hand noch per Skript, über eine verschachtelte Gruppe oder einen externen Anbieter. Typisch für die Admin-Gruppe einer App. Gruppen mit Rechten der Modgud-Administration schließen Testkonten ohnehin aus."
     },
     "changeRequests": {
       "title": "Änderungsanfragen",

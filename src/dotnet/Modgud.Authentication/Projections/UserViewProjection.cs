@@ -25,6 +25,7 @@ public partial class UserViewProjection : MultiStreamProjection<UserView, Guid>
         Identity<UserDeactivatedEvent>(e => e.UserId);
         Identity<UserDeletedEvent>(e => e.Id);
         Identity<UserPasswordChangedEvent>(e => e.UserId);
+        Identity<UserTestAccountChangedEvent>(e => e.UserId);
 
         // External-identity link events live on the user's stream (the mirror
         // copies emitted by ExternalLoginProcessor / DeleteUsersHandler). Use
@@ -116,6 +117,11 @@ public partial class UserViewProjection : MultiStreamProjection<UserView, Guid>
     public UserView Apply(UserDeactivatedEvent @event, UserView current)
     {
         return current with { IsActive = false };
+    }
+
+    public UserView Apply(UserTestAccountChangedEvent @event, UserView current)
+    {
+        return current with { IsTestAccount = @event.IsTestAccount };
     }
 
     public UserView Apply(UserPasswordChangedEvent @event, UserView current)

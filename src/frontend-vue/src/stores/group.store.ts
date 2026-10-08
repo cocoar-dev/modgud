@@ -31,6 +31,7 @@ interface GroupPayload {
   MembershipScript?: string
   /** Federation v1: opt this Auto group into login-time externally-derived membership. */
   ExternallyDrivable?: boolean
+  ExcludeTestAccounts?: boolean
   Email?: string
   EmailMode?: 'Shared' | 'ExpandToMembers'
   /**

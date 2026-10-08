@@ -75,6 +75,18 @@ All gated on `user:write` (the whole group shares the gate).
 | `POST` | `/api/admin/users/{id}/grace/reset` | `user:write` |
 | `DELETE` | `/api/admin/users/{id}/grace` | `user:write` |
 
+### Admin test accounts
+
+[ADR 0026](../decisions/0026-test-accounts). All gated on `user:test-account`; cookie session only (no Management API bearer token). Definitions in `Modgud.Authentication/Api/Admin/AdminTestAccountEndpoints.cs`.
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/api/admin/test-accounts` | `user:test-account` |
+| `GET` | `/api/admin/users/{id}/test-account` | `user:test-account` |
+| `PUT` | `/api/admin/users/{id}/test-account` `{ IsTestAccount }` | `user:test-account` |
+| `PUT` | `/api/admin/users/{id}/test-account/fixed-email-code` `{ Code, ExpiresAt? }` | `user:test-account` |
+| `DELETE` | `/api/admin/users/{id}/test-account/fixed-email-code` | `user:test-account` |
+
 ### Admin external links
 
 Definitions in `Modgud.Authentication/Api/ExternalAuth/ProfileLinkEndpoints.cs`.

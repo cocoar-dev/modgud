@@ -139,6 +139,16 @@ export const useUserStore = defineStore('user', () => {
     await http.addPath(userId, 'groups', groupId).delete()
   }
 
+  /** ADR 0026 — GET /api/admin/users/{id}/test-account. */
+  interface TestAccountStatus {
+    IsTestAccount: boolean
+    HasFixedEmailCode: boolean
+    FixedEmailCodeExpiresAt: string | null
+    FixedEmailCodeSetAt: string | null
+    FixedEmailCodeLastUsedAt: string | null
+    FixedEmailCodeLastUsedClientId: string | null
+  }
+
   // Admin security-info (2FA methods + grace due date). Requires app:admin.
   const adminHttp = useHttpClient('/api/admin/users')
 
@@ -174,6 +184,26 @@ export const useUserStore = defineStore('user', () => {
     await adminHttp.addPath(userId, 'grace', 'policy').put(policy)
   }
 
+  // ADR 0026 — test accounts. Live writes (not staged): the fixed code is a secret that
+  // never travels in a manifest, and it needs the marker to be live first.
+  const testAccountHttp = useHttpClient('/api/admin/users')
+
+  async function getTestAccount(userId: string): Promise<TestAccountStatus> {
+    return await testAccountHttp.addPath(userId, 'test-account').get<TestAccountStatus>()
+  }
+
+  async function setTestAccount(userId: string, isTestAccount: boolean): Promise<void> {
+    await testAccountHttp.addPath(userId, 'test-account').put({ IsTestAccount: isTestAccount })
+  }
+
+  async function setFixedEmailCode(userId: string, code: string, expiresAt: string | null): Promise<void> {
+    await testAccountHttp.addPath(userId, 'test-account', 'fixed-email-code').put({ Code: code, ExpiresAt: expiresAt })
+  }
+
+  async function removeFixedEmailCode(userId: string): Promise<void> {
+    await testAccountHttp.addPath(userId, 'test-account', 'fixed-email-code').delete()
+  }
+
   return {
     ...service,
     lookupEntities,
@@ -192,5 +222,9 @@ export const useUserStore = defineStore('user', () => {
     resetGrace,
     clearGrace,
     setGracePolicy,
+    getTestAccount,
+    setTestAccount,
+    setFixedEmailCode,
+    removeFixedEmailCode,
   }
 })

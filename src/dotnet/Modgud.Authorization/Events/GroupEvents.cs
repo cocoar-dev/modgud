@@ -17,7 +17,9 @@ public record GroupCreatedEvent(
     List<string>? BoundTo = null,
     // Federation v1 (decision G). Trailing optional param so existing positional
     // construction sites are unaffected; old streams replay to default false.
-    bool ExternallyDrivable = false);
+    bool ExternallyDrivable = false,
+    // ADR 0026 — no test account is ever an effective member. Old streams replay to false.
+    bool ExcludeTestAccounts = false);
 
 public record GroupUpdatedEvent(
     Guid Id,
@@ -34,7 +36,9 @@ public record GroupUpdatedEvent(
     List<string>? BoundTo = null,
     // Full-replace event: every producer MUST pass the current value or it resets
     // to false. Trailing optional keeps positional callers compiling.
-    bool ExternallyDrivable = false);
+    bool ExternallyDrivable = false,
+    // ADR 0026 — full-replace like ExternallyDrivable: pass the current value.
+    bool ExcludeTestAccounts = false);
 
 public record GroupMembershipRecomputedEvent(
     Guid Id,

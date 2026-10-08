@@ -467,6 +467,9 @@ public sealed record RealmManifestUser
     [Description("Exempts the user from 2FA enforcement entirely — no grace period, no prompt. Absent = unchanged / false on create. Meant for explicitly approved exception or legacy accounts; every exempt request is logged.")]
     public bool? TwoFactorExempt { get; init; }
 
+    [Description("Marks the account as a test account (ADR 0026): an ordinary account that every token flags with modgud.test_account and that never holds Modgud's own administration. Its fixed sign-in code is never part of a manifest; set it in the admin console. Removing the marker deletes that code. Absent = unchanged / false on create.")]
+    public bool? IsTestAccount { get; init; }
+
     public string ResolveKey() => Key ?? UserName ?? Email;
 }
 
@@ -505,6 +508,9 @@ public sealed record RealmManifestGroup
 
     [Description("Allow an external IdP (federation) to drive this group's membership. A realm:admin-conferring group can never be externally drivable. Absent = unchanged / default false on create.")]
     public bool? ExternallyDrivable { get; init; }
+
+    [Description("No test account is ever an effective member of this group (ADR 0026): not by hand, by script, through a nested group or an external provider. Absent = unchanged / default false on create.")]
+    public bool? ExcludeTestAccounts { get; init; }
 }
 
 /// <summary>An external login provider (OIDC/SAML). <see cref="Slug"/> is the natural key.</summary>

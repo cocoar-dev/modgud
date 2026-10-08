@@ -97,7 +97,8 @@ public class LegacyAdminGroupRenameBootstrap(
                     Email: legacyGroup.Email,
                     EmailMode: legacyGroup.EmailMode,
                     BoundTo: legacyGroup.BoundTo,
-                    ExternallyDrivable: legacyGroup.ExternallyDrivable));
+                    ExternallyDrivable: legacyGroup.ExternallyDrivable,
+                    ExcludeTestAccounts: legacyGroup.ExcludeTestAccounts));
 
                 await session.SaveChangesAsync(cancellationToken);
                 renamedCount++;

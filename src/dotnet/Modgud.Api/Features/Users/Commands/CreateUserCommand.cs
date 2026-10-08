@@ -198,7 +198,8 @@ public class CreateUserHandler(
                 group.MembershipScriptDependencies,
                 group.Email, group.EmailMode,
                 BoundTo: group.BoundTo,
-                ExternallyDrivable: group.ExternallyDrivable));
+                ExternallyDrivable: group.ExternallyDrivable,
+                ExcludeTestAccounts: group.ExcludeTestAccounts));
         }
 
         // One Marten SaveChanges = one PostgreSQL transaction for the complete

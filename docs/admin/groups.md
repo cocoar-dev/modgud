@@ -63,6 +63,10 @@ A group can have members and roles without taking effect for permissions. The de
 
 **Default for new groups:** empty (dormant). A freshly created group is not active in any app until you explicitly pick one or more apps (or the **★ All apps (\*)** wildcard) here — don't forget this step, or the group's roles will never take effect.
 
+#### Exclude test accounts
+
+Tick **Exclude test accounts** to keep [test accounts](../concepts/test-accounts) out of the group — not added by hand, by a membership script, through a nested group or an external provider. Typical for an app's admin group. Saving with the box ticked is refused while a test account is a direct member; the message names it. Groups that grant Modgud's own administration exclude test accounts anyway.
+
 ## Static membership
 
 Tab **Members** shows two listboxes (drag-and-drop): all principals (users + sub-groups) on the left, current members on the right.

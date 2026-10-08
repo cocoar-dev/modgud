@@ -313,6 +313,7 @@ public static class AccountEndpoints
             IRegistrationInviteService inviteService,
             UserManager<ApplicationUser> userManager,
             ISignInRequirementService signInRequirements,
+            Modgud.Authentication.TestAccounts.ITestAccountService testAccounts,
             CancellationToken ct) =>
         {
             const string genericMessage = "If your email is registered, you will receive a verification code.";
@@ -341,7 +342,7 @@ public static class AccountEndpoints
             await NativeOtpEndpoints.IssueOtpForRequestAsync(
                 request.Email, request.FirstName, request.LastName, request.InviteCode,
                 applicationId, effective.SelfRegPosture, session, userManager,
-                emailOtpService, registrationPipeline, inviteService, ct);
+                emailOtpService, registrationPipeline, inviteService, testAccounts, ct);
             await NativeOtpEndpoints.AntiTimingDelayAsync();
             return Results.Ok(new { Message = genericMessage });
         })
@@ -363,6 +364,7 @@ public static class AccountEndpoints
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             ISignInRequirementService signInRequirements,
+            Modgud.Authentication.TestAccounts.ITestAccountService testAccounts,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(request?.Email) || string.IsNullOrWhiteSpace(request.Code))
@@ -415,9 +417,18 @@ public static class AccountEndpoints
                 if (!user.EmailConfirmed && !isPasswordlessRegistration)
                     return await InvalidCode();
 
-                var verify = await emailOtpService.VerifyOtpAsync(user.Id, request.Code, ct);
-                if (verify.IsError)
+                // ADR 0026 — a test account with a fixed code signs in with that code.
+                var fixedCode = await testAccounts.VerifyFixedEmailCodeAsync(
+                    user, request.Code, context.Connection.RemoteIpAddress?.ToString(),
+                    ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl), ct);
+                if (fixedCode == Modgud.Authentication.TestAccounts.FixedEmailCodeResult.Rejected)
                     return await InvalidCode();
+                if (fixedCode == Modgud.Authentication.TestAccounts.FixedEmailCodeResult.NotApplicable)
+                {
+                    var verify = await emailOtpService.VerifyOtpAsync(user.Id, request.Code, ct);
+                    if (verify.IsError)
+                        return await InvalidCode();
+                }
             }
 
             if (!user.EmailConfirmed)

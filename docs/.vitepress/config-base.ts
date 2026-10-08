@@ -161,6 +161,7 @@ export const baseConfig = {
             { text: 'Control Plane / Data Plane', link: '/concepts/control-plane' },
             { text: 'Authentication', link: '/concepts/authentication' },
             { text: 'Sign-in levels', link: '/concepts/sign-in-levels' },
+            { text: 'Test accounts', link: '/concepts/test-accounts' },
             { text: 'Authorization (RBAC)', link: '/concepts/groups-and-authorization' },
             { text: 'Permissions & gating', link: '/concepts/permissions' },
             { text: 'Auto-Membership', link: '/concepts/auto-membership' },

@@ -50,7 +50,10 @@ public static class AuditDurability
         AuditEvents.InstallationCompleted or
         AuditEvents.ControlPlaneRealmOperation or
         AuditEvents.BootstrapInviteIssued or
-        AuditEvents.DcrClientRegistered
+        AuditEvents.DcrClientRegistered or
+        AuditEvents.TestAccountCodeSet or
+        AuditEvents.TestAccountCodeRemoved or
+        AuditEvents.TestAccountCodeUsed
             => AuditDurabilityClass.Required,
 
         AuditEvents.ExternalLoginProtocolRejected or
@@ -68,7 +71,8 @@ public static class AuditDurability
         AuditEvents.ExternalLoginPolicyRejected or
         AuditEvents.RateLimitTriggered or
         AuditEvents.DcrRegistrationRejected or
-        AuditEvents.BootstrapInviteRejected
+        AuditEvents.BootstrapInviteRejected or
+        AuditEvents.TestAccountCodeRejected
             => AuditDurabilityClass.Abuse,
 
         AuditEvents.ExternalLoginConfigurationError or

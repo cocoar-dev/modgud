@@ -54,6 +54,7 @@ public class PermissionService(IQuerySession session) : IPermissionService
         var roles = await session.Query<PermissionRole>()
             .Where(r => r.Id.IsOneOf(roleIds) && !r.IsDeleted)
             .ToListAsync(ct);
+        roles = await WithoutAdministrationForTestAccountAsync(userId, roles, ct);
 
         // Resolve the requested App once. Roles whose AppId matches contribute
         // their PermissionIds; everything else is filtered out (apart from
@@ -101,6 +102,7 @@ public class PermissionService(IQuerySession session) : IPermissionService
             .ToListAsync(ct)).ToList();
 
         var parentMap = BuildParentMap(allGroups);
+        var closed = await ClosedGroupsForAsync(userId, ct);
 
         var resolved = new Dictionary<Guid, Group>();
         var visited = new HashSet<Guid> { userId };
@@ -114,6 +116,8 @@ public class PermissionService(IQuerySession session) : IPermissionService
 
             foreach (var parent in parents)
             {
+                // ADR 0026 — a test account's membership ends at a group closed to it.
+                if (closed?.Invoke(parent) == true) continue;
                 if (visited.Add(parent.Id))
                 {
                     resolved[parent.Id] = parent;
@@ -146,6 +150,7 @@ public class PermissionService(IQuerySession session) : IPermissionService
         var roles = await session.Query<PermissionRole>()
             .Where(r => r.Id.IsOneOf(roleIds.ToArray()) && !r.IsDeleted)
             .ToListAsync(ct);
+        roles = await WithoutAdministrationForTestAccountAsync(userId, roles, ct);
 
         // Roles applicable to the requested app: same AppId, OR
         // realm-admin roles (which travel everywhere).
@@ -195,6 +200,7 @@ public class PermissionService(IQuerySession session) : IPermissionService
         var roles = await session.Query<PermissionRole>()
             .Where(r => r.Id.IsOneOf(roleIds) && !r.IsDeleted)
             .ToListAsync(ct);
+        roles = await WithoutAdministrationForTestAccountAsync(userId, roles, ct);
 
         var requestedApp = await session.Query<App>()
             .FirstOrDefaultAsync(a => a.Slug == appSlug && !a.IsDeleted, ct);
@@ -254,6 +260,7 @@ public class PermissionService(IQuerySession session) : IPermissionService
         var roles = await session.Query<PermissionRole>()
             .Where(r => r.Id.IsOneOf(roleIds.ToArray()) && !r.IsDeleted)
             .ToListAsync(ct);
+        roles = await WithoutAdministrationForTestAccountAsync(userId, roles, ct);
 
         // A realm-admin role travels everywhere — but only when reached durably
         // (provenance guard, mirroring GetUserPermissionsAsync). App-scoped roles
@@ -290,17 +297,18 @@ public class PermissionService(IQuerySession session) : IPermissionService
 
         var byId = allGroups.ToDictionary(g => g.Id);
         var parentMap = BuildParentMap(allGroups);
+        var closed = await ClosedGroupsForAsync(userId, ct);
 
         // Durable pass: the user is not itself a group, so the seed is not
         // collected — only its ancestors (mirrors GetUserGroupsAsync(userId)).
         var local = new Dictionary<Guid, Group>();
-        WalkAncestors([userId], includeSeeds: false, parentMap, byId, local);
+        WalkAncestors([userId], includeSeeds: false, parentMap, byId, local, closed);
 
         // Session pass: each matched session group IS a membership, so collect the
         // seed groups themselves and then walk their ancestors.
         var sessionResolved = new Dictionary<Guid, Group>();
         if (sessionGroupIds.Count > 0)
-            WalkAncestors(sessionGroupIds, includeSeeds: true, parentMap, byId, sessionResolved);
+            WalkAncestors(sessionGroupIds, includeSeeds: true, parentMap, byId, sessionResolved, closed);
 
         var resolved = new List<ResolvedGroup>(local.Count + sessionResolved.Count);
         foreach (var g in local.Values)
@@ -323,15 +331,20 @@ public class PermissionService(IQuerySession session) : IPermissionService
         bool includeSeeds,
         Dictionary<Guid, List<Group>> parentMap,
         Dictionary<Guid, Group> byId,
-        Dictionary<Guid, Group> into)
+        Dictionary<Guid, Group> into,
+        Func<Group, bool>? closed = null)
     {
         var visited = new HashSet<Guid>();
         var queue = new Queue<Guid>();
         foreach (var seed in seeds)
         {
+            Group? seedGroup = null;
+            if (includeSeeds) byId.TryGetValue(seed, out seedGroup);
+            // A seed is itself a membership: a closed one is not one at all.
+            if (seedGroup is not null && closed?.Invoke(seedGroup) == true) continue;
             if (!visited.Add(seed)) continue;
             queue.Enqueue(seed);
-            if (includeSeeds && byId.TryGetValue(seed, out var seedGroup))
+            if (seedGroup is not null)
                 into[seed] = seedGroup;
         }
 
@@ -342,6 +355,7 @@ public class PermissionService(IQuerySession session) : IPermissionService
 
             foreach (var parent in parents)
             {
+                if (closed?.Invoke(parent) == true) continue;
                 if (visited.Add(parent.Id))
                 {
                     into[parent.Id] = parent;
@@ -352,6 +366,32 @@ public class PermissionService(IQuerySession session) : IPermissionService
     }
 
     private readonly record struct ResolvedGroup(Group Group, bool IsLocal);
+
+    // ── ADR 0026: test accounts ───────────────────────────────────────────
+
+    /// <summary>
+    /// For a test account, the predicate of groups closed to it (it excludes test
+    /// accounts, or it grants Modgud's own administration); <c>null</c> for anyone else.
+    /// </summary>
+    private async Task<Func<Group, bool>?> ClosedGroupsForAsync(Guid principalId, CancellationToken ct)
+    {
+        if (!await TestAccountGroupPolicy.IsTestAccountAsync(session, principalId, ct)) return null;
+        var administrationRoleIds = await TestAccountGroupPolicy.AdministrationRoleIdsAsync(session, ct);
+        return g => TestAccountGroupPolicy.IsClosed(g, administrationRoleIds);
+    }
+
+    /// <summary>
+    /// Second line behind the membership cut: whatever path a role arrived by, a test
+    /// account never holds one of Modgud's own administration.
+    /// </summary>
+    private async Task<IReadOnlyList<PermissionRole>> WithoutAdministrationForTestAccountAsync(
+        Guid principalId, IReadOnlyList<PermissionRole> roles, CancellationToken ct)
+    {
+        if (roles.Count == 0 || !await TestAccountGroupPolicy.IsTestAccountAsync(session, principalId, ct))
+            return roles.ToList();
+        var administrationRoleIds = await TestAccountGroupPolicy.AdministrationRoleIdsAsync(session, ct);
+        return roles.Where(r => !r.IsRealmAdmin && !administrationRoleIds.Contains(r.Id)).ToList();
+    }
 
     public async Task<HashSet<Guid>> GetDescendantGroupIdsAsync(Guid groupId, CancellationToken ct = default)
     {

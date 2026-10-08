@@ -395,6 +395,12 @@ public static class UsersEndpoints
                 if (group.MemberIds.Contains(id.Guid))
                     return Results.NoContent(); // idempotent
 
+                // ADR 0026 — a group closed to test accounts refuses them.
+                var testAccountError = await TestAccountGroupPolicy.RejectTestAccountMembersAsync(
+                    session, group.ExcludeTestAccounts, group.RoleIds, [id.Guid], CancellationToken.None);
+                if (testAccountError is not null)
+                    return Results.BadRequest(new { error = testAccountError.Value.Description });
+
                 var newMemberIds = group.MemberIds.Append(id.Guid).ToList();
                 session.Events.Append(groupId, new GroupUpdatedEvent(
                     groupId, group.Name, group.Description,
@@ -403,7 +409,8 @@ public static class UsersEndpoints
                     group.MembershipScriptDependencies,
                     group.Email, group.EmailMode,
                     BoundTo: group.BoundTo,
-                    ExternallyDrivable: group.ExternallyDrivable));
+                    ExternallyDrivable: group.ExternallyDrivable,
+                    ExcludeTestAccounts: group.ExcludeTestAccounts));
                 await session.SaveChangesAsync();
                 return Results.NoContent();
             })
@@ -436,7 +443,8 @@ public static class UsersEndpoints
                     group.MembershipScriptDependencies,
                     group.Email, group.EmailMode,
                     BoundTo: group.BoundTo,
-                    ExternallyDrivable: group.ExternallyDrivable));
+                    ExternallyDrivable: group.ExternallyDrivable,
+                    ExcludeTestAccounts: group.ExcludeTestAccounts));
                 await session.SaveChangesAsync();
                 return Results.NoContent();
             })

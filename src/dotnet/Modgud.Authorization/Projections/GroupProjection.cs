@@ -46,6 +46,7 @@ public partial class GroupProjection : SingleStreamProjection<Group, Guid>
         EmailMode = @event.EmailMode,
         BoundTo = @event.BoundTo ?? [],
         ExternallyDrivable = @event.ExternallyDrivable,
+        ExcludeTestAccounts = @event.ExcludeTestAccounts,
         IsActive = true,
         IsDeleted = false,
     };
@@ -64,6 +65,7 @@ public partial class GroupProjection : SingleStreamProjection<Group, Guid>
         group.EmailMode = @event.EmailMode;
         group.BoundTo = @event.BoundTo ?? [];
         group.ExternallyDrivable = @event.ExternallyDrivable;
+        group.ExcludeTestAccounts = @event.ExcludeTestAccounts;
         group.MembershipLastError = null;
         return group;
     }

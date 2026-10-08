@@ -29,7 +29,9 @@ public record CreateGroupCommand(
     // created event is appended onto that stream (revive) instead of starting a
     // new one. Resolved by the applier via PinnedEntityId (layering: this project
     // cannot see Modgud.Application).
-    bool ReviveExistingStream = false);
+    bool ReviveExistingStream = false,
+    // ADR 0026 — no test account is ever an effective member of the group.
+    bool ExcludeTestAccounts = false);
 
 public class CreateGroupHandler(
     IDocumentSession session,
@@ -107,6 +109,12 @@ public class CreateGroupHandler(
             ? new List<Guid>()
             : command.MemberIds.ToList();
 
+        // ADR 0026 — a group closed to test accounts (it excludes them, or it grants
+        // Modgud's own administration) refuses them as direct members.
+        var testAccountError = await TestAccountGroupPolicy.RejectTestAccountMembersAsync(
+            session, command.ExcludeTestAccounts, command.RoleIds, memberIds, ct);
+        if (testAccountError is not null) return testAccountError.Value;
+
         var group = new Group
         {
             Id = command.Id ?? Guid.NewGuid(),
@@ -122,6 +130,7 @@ public class CreateGroupHandler(
             EmailMode = command.EmailMode,
             BoundTo = command.BoundTo?.ToList() ?? [],
             ExternallyDrivable = command.ExternallyDrivable,
+            ExcludeTestAccounts = command.ExcludeTestAccounts,
         };
 
         var createdEvent = new GroupCreatedEvent(group.Id, group.Name, group.Description,
@@ -129,7 +138,7 @@ public class CreateGroupHandler(
             group.MembershipMode, group.MembershipScript, group.CompiledMembershipScript,
             group.MembershipScriptDependencies,
             group.Email, group.EmailMode,
-            group.BoundTo, group.ExternallyDrivable);
+            group.BoundTo, group.ExternallyDrivable, group.ExcludeTestAccounts);
         if (command.ReviveExistingStream)
             session.Events.Append(group.Id, createdEvent);
         else

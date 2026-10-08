@@ -67,6 +67,13 @@ public class Group : Principal, IPrincipalWithMembers, IPrincipalEmailAddressabl
     public bool ExternallyDrivable { get; set; }
 
     /// <summary>
+    /// ADR 0026 — no test account is ever an effective member of this group: not added
+    /// by hand, not through a membership script, a nested group or an external provider.
+    /// Typical for an app's admin group.
+    /// </summary>
+    public bool ExcludeTestAccounts { get; set; }
+
+    /// <summary>
     /// Dotted property paths the membership script reads from the principal
     /// directory (e.g. <c>"Person.Firstname"</c>, <c>"Email"</c>). The auto-membership
     /// pipeline uses this to skip groups whose scripts don't touch a changed field.

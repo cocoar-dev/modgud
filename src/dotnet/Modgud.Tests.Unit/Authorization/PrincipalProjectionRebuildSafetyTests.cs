@@ -34,6 +34,7 @@ public class PrincipalProjectionRebuildSafetyTests
             typeof(UserDeletedEvent),
             typeof(UserExternalIdentityLinkedEvent),
             typeof(UserExternalIdentityUnlinkedEvent),
+            typeof(UserTestAccountChangedEvent),
         ];
 
         var groupProjection = new GroupProjection();

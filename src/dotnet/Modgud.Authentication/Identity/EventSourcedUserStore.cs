@@ -170,6 +170,7 @@ public class EventSourcedUserStore(IDocumentSession session)
 
         // Delete SecurityData
         session.Delete<UserSecurityData>(user.Id);
+        session.Delete<TestAccountEmailCode>(user.Id);
 
         await session.SaveChangesAsync(cancellationToken);
 
