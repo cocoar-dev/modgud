@@ -30,7 +30,7 @@ Marking is per account, never by an address pattern: a pattern would be a master
 
 Marking, unmarking and configuring a test capability (setting a fixed code, for example) need their own permission, `user:test-account`. A fixed code is a way into the account: with `user:write` alone, anyone who may edit users could mark a real customer's account, set a code only they know and sign in as that customer. The permission keeps this with the people it is given to deliberately.
 
-Only a person does this, in the admin console: a signed-in admin holding `user:test-account`, at the realm's administration level (ADR 0025). The permission is not available to service accounts and not part of the Management API. Setting a fixed code is setting a credential for someone else's sign-in; it is not something a pipeline should be able to do on its own. Automated tests receive the code like any other secret, from their secret store, and never set or fetch it.
+Only a person does this, in the admin console: a signed-in admin holding `user:test-account`, at the realm's administration level (ADR 0025). For a realm admin the change is staged in the draft like every other change (ADR 0005) and takes effect when the draft is applied; an admin without drafts writes it directly. The realm-config routes also accept a Management API token, so they refuse a token-authenticated request that carries a fixed code or would change a marker (a marker matching the live state passes, so an export can be re-applied). Setting a fixed code is setting a credential for someone else's sign-in; it is not something a pipeline should be able to do on its own. Automated tests receive the code like any other secret, from their secret store, and never set or fetch it.
 
 The capabilities exist only while the marker is set. Removing the marker turns the account back into an ordinary account and **deletes** its capabilities — a fixed code is removed, not kept dormant, so no forgotten secret becomes valid again when the account is marked later. Marking it again starts without capabilities.
 
@@ -80,7 +80,7 @@ Ticking the box is refused while test accounts are direct members of the group; 
 ### 6. Provisioning and administration
 
 - **Admin UI.** The user's page shows the marker, the capabilities and, for the fixed code, the last use and the expiry. A list of all test accounts of the realm shows the same at a glance. The group page shows the exclusion setting.
-- **Manifest.** The marker and the group exclusion are part of the realm manifest. The fixed code is not: it is set separately, like a service account's credential secret, and an apply never shows or exports it.
+- **Manifest and draft.** The marker and the group exclusion are part of the realm manifest. The fixed code is a write-only manifest field: a draft extracts it into its encrypted secret store, like a user's initial password; a plan only says that a code will be set, and an export never contains it.
 
 ## Options considered
 
@@ -103,4 +103,4 @@ Ticking the box is refused while test accounts are direct members of the group; 
 ## Settled
 
 - **Passkeys are allowed on a test account**, like on any account. A passkey is bound to a device and does not widen who can sign in.
-- **No one-time-code endpoint for automation** (see Options considered), and no way to mark accounts or set codes through the Management API or a service account.
+- **No one-time-code endpoint for automation** (see Options considered), and no way to mark accounts or set codes with a Management API token or a service account.

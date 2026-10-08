@@ -20,7 +20,7 @@ Only users can be marked. Marking is per account, never by an address pattern.
 
 Marking, unmarking and setting a fixed code need the permission `user:test-account`. `user:write` alone is not enough: a fixed code is a way into the account, so anyone who may only edit users must not be able to mark a real customer's account, set a code and sign in as that customer.
 
-The admin console is the only place to do it: the endpoints live under `/api/admin` (so the realm's [administration level](./sign-in-levels#the-realm-is-the-floor) applies) and accept only a signed-in admin's browser session. No service account and no Management API token reaches them. Automated tests keep the fixed code in their secret store; they never set or fetch it.
+The admin console is the only place to do it. A realm admin stages the marker and the code in the [draft](../admin/configuration-drafts) like any other change; they take effect when the draft is applied. The code goes into the draft's encrypted secret store, like a user's initial password: a plan only says that a code will be set, and an export never contains it. An admin who holds `user:test-account` without drafts writes directly through `/api/admin` (where the realm's [administration level](./sign-in-levels#the-realm-is-the-floor) applies). A Management API token can neither set a fixed code nor change a marker; a manifest whose markers match the live state still applies. Automated tests keep the fixed code in their secret store; they never set or fetch it.
 
 ## Fixed e-mail code
 
@@ -37,7 +37,7 @@ The regular e-mail-code sign-in — the login page, a PageBuilder page, the nati
 | Every sign-in with the fixed code is logged (time, caller address, client); wrong codes are logged as abuse signals | Misuse becomes visible |
 | It is a sign-in by e-mail code in every other respect: one possession-class factor, level `single` | A target requiring `multi` still asks for a second factor |
 
-The user's **Security** tab in the admin console shows the marker, whether a code is set, its expiry and its last use; `GET /api/admin/test-accounts` lists all test accounts of the realm.
+In the admin console the marker is a checkbox on the user's **General** tab; a test account gets a **Test account** tab with the applied code (expiry, last use), a code staged in the draft, a generator and the validity in days. The user list has a **Test account** column. `GET /api/admin/test-accounts` lists all test accounts of the realm.
 
 ## The administration barrier
 
@@ -58,7 +58,7 @@ Roles of other Apps are unaffected, including an app's own admin roles — tick 
 
 ## Manifest
 
-The marker (`IsTestAccount` on a user) and the group setting (`ExcludeTestAccounts`) travel in the [realm manifest](../admin/configuration-drafts). The fixed code never does: it is set in the admin console, and an export never contains it. An apply sets markers after the groups, so one manifest can take an account out of an admin group and mark it.
+The marker (`IsTestAccount` on a user) and the group setting (`ExcludeTestAccounts`) travel in the [realm manifest](../admin/configuration-drafts). The fixed code is the write-only field `FixedEmailCode` (with `FixedEmailCodeExpiresAt`, or `RemoveFixedEmailCode`): a draft keeps it encrypted, a plan never shows it, an export never contains it. An apply sets markers after the groups and codes after the markers, so one manifest can take an account out of an admin group, mark it and give it a code.
 
 ## Limits
 
