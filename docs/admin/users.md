@@ -75,7 +75,7 @@ Actions that live elsewhere but affect the same user: **Set password** and **Sen
 
 ### Test account
 
-Only with the permission `user:test-account`. The checkbox **This is a test account** sits on the **General** tab; a [test account](../concepts/test-accounts) then gets its own **Test account** tab: the applied fixed e-mail code (expiry, last use), a code already staged in the draft, a **Generate** button, the validity in days, and **Remove the fixed code**. Like the rest of the dialog, it saves onto the [draft](./configuration-drafts) for a realm admin; the code goes into the draft's encrypted secret store and is never shown again — write it down before saving. Removing the marker deletes the code. The user list shows test accounts in the **Test account** column.
+Only with the permission `user:test-account`. The checkbox **This is a test account** sits on the **General** tab; a [test account](../concepts/test-accounts) then gets its own **Test account** tab: the applied fixed e-mail code (expiry, last use), a code already staged in the draft, a **Generate** button, the validity in days, and **Remove the fixed code**. Like the rest of the dialog, it saves onto the [draft](./configuration-drafts) for a realm admin; the code goes into the draft's encrypted secret store and is never shown again — write it down before saving. Removing the marker deletes the code. The user list marks a test account with a flask icon next to its username.
 
 ## Viewing a linked external identity's claims
 

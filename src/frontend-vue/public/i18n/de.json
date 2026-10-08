@@ -436,10 +436,7 @@
       "confirmRestore": "Aus dem Papierkorb wiederherstellen? Die vorgemerkte Löschung wird abgebrochen und der Benutzer reaktiviert.",
       "forceDeleteReason": "Grund für die endgültige Löschung (wird im Audit-Log festgehalten):",
       "confirmForceDelete": "Diesen Benutzer jetzt endgültig löschen? Damit wird der Papierkorb für ihn geleert und kann NICHT rückgängig gemacht werden.",
-      "testAccount": "Testkonto",
-      "testAccountTag": {
-        "test": "Testkonto"
-      }
+      "testAccount": "Testkonto"
     },
     "idpClaims": {
       "type": "Typ",

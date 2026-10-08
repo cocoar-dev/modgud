@@ -37,7 +37,7 @@ The regular e-mail-code sign-in — the login page, a PageBuilder page, the nati
 | Every sign-in with the fixed code is logged (time, caller address, client); wrong codes are logged as abuse signals | Misuse becomes visible |
 | It is a sign-in by e-mail code in every other respect: one possession-class factor, level `single` | A target requiring `multi` still asks for a second factor |
 
-In the admin console the marker is a checkbox on the user's **General** tab; a test account gets a **Test account** tab with the applied code (expiry, last use), a code staged in the draft, a generator and the validity in days. The user list has a **Test account** column. `GET /api/admin/test-accounts` lists all test accounts of the realm.
+In the admin console the marker is a checkbox on the user's **General** tab; a test account gets a **Test account** tab with the applied code (expiry, last use), a code staged in the draft, a generator and the validity in days. The user list marks a test account with a flask icon next to its username. `GET /api/admin/test-accounts` lists all test accounts of the realm.
 
 ## The administration barrier
 

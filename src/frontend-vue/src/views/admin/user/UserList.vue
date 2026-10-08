@@ -186,8 +186,19 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<UserRow>(), { opena
       .option('tooltipValueGetter', () => null),
     // Identity column — pinned next to the password indicator and
     // emphasized as the row's primary label.
-    (col) => col.field('UserName').header('Username', 'admin.users.username')
-      .width(150).pinned('left').cellClass('user-name-cell'),
+    // ADR 0026 — a test account carries a flask next to its name (staged markers
+    // included via the draft overlay).
+    (col) => col
+      .wrap(col.field('UserName').header('Username', 'admin.users.username')
+        .width(150).pinned('left').cellClass('user-name-cell')
+        // The name itself does not change when a marker is staged, so let every
+        // row update repaint the cell — otherwise the flask never appears.
+        .option('equals', () => false))
+      .right({
+        icon: (r: any) => r?.IsTestAccount ? 'flask-conical' : null,
+        color: 'var(--coar-text-warning-primary, #b45309)',
+        tooltip: t('admin.users.testAccount', {}, 'Test account'),
+      }),
     (col) => col.field('Firstname').header('First Name', 'admin.users.firstname').flex(1),
     (col) => col.field('Lastname').header('Last Name', 'admin.users.lastname').flex(1),
     (col) => col.field('Acronym').header('Acronym', 'admin.users.acronym').width(100),
@@ -197,13 +208,6 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<UserRow>(), { opena
     })
       .header('Active', 'admin.users.active').width(110)
       .option('valueGetter', (p: any) => p.data?.IsActive ? 'active' : 'inactive'),
-    // ADR 0026 — test accounts at a glance (staged markers included via the overlay).
-    (col) => col.tag('IsTestAccount', {
-      variantMap: { test: 'warning' },
-      i18nPrefix: 'admin.users.testAccountTag.',
-    })
-      .header('Test account', 'admin.users.testAccount').width(130)
-      .option('valueGetter', (p: any) => p.data?.IsTestAccount ? 'test' : undefined),
     // ADR-0017: staged rows (edited or created in the active draft).
     (col) => draftStagedColumn(col, t),
     // Lifecycle badge — only meaningful for pending-deletion rows (visible
