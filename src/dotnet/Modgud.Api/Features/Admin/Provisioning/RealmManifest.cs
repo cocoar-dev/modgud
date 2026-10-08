@@ -467,6 +467,9 @@ public sealed record RealmManifestUser
     [Description("Exempts the user from 2FA enforcement entirely — no grace period, no prompt. Absent = unchanged / false on create. Meant for explicitly approved exception or legacy accounts; every exempt request is logged.")]
     public bool? TwoFactorExempt { get; init; }
 
+    [Description("Marks the account as a test account (ADR 0026): an ordinary account that every token flags with modgud.test_account and that never holds Modgud's own administration. Its fixed sign-in code is never part of a manifest; set it in the admin console. Removing the marker deletes that code. Absent = unchanged / false on create.")]
+    public bool? IsTestAccount { get; init; }
+
     public string ResolveKey() => Key ?? UserName ?? Email;
 }
 

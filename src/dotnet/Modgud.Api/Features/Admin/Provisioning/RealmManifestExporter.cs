@@ -262,6 +262,7 @@ public sealed class RealmManifestExporter(
             IsActive = appUsers.TryGetValue(p.Id, out var active) ? active.IsActive : p.IsActive,
             GracePeriodDaysOverride = Opt(securityById.TryGetValue(p.Id, out var sec) ? sec.GracePeriodDaysOverride : null),
             TwoFactorExempt = securityById.TryGetValue(p.Id, out var policy) && policy.TwoFactorExempt,
+            IsTestAccount = p.IsTestAccount,
         }).ToList();
 
         // ── Service accounts — HULLS only (credentials are per-environment secret

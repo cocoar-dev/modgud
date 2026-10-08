@@ -549,6 +549,9 @@ public sealed partial class RealmManifestApplier(
             session,
             sp.GetRequiredService<UserManager<ApplicationUser>>(),
             sp.GetRequiredService<IApplicationSettingsResolver>());
+        // ADR 0026 — test-account markers are applied after the groups, so one manifest can
+        // take an account out of an admin group and mark it in the same apply.
+        var testAccountMarkers = new List<(Guid UserId, bool IsTestAccount, string Context)>();
         foreach (var u in manifest.Users)
         {
             var ctx = $"user '{u.Email}'";
@@ -558,6 +561,7 @@ public sealed partial class RealmManifestApplier(
             var existing = await MatchByPinnedIdAsync<Person>(session, u.Id, x => x.IsDeleted, ct);
 
             Guid? uid;
+            var readOnly = false;
             if (existing is null)
             {
                 var createCmd = new CreateUserCommand(OrNull(u.Firstname), OrNull(u.Lastname), OrNull(u.Acronym),
@@ -584,6 +588,7 @@ public sealed partial class RealmManifestApplier(
                     "Manifest apply skipped {Context}: the user has a pending deletion and is read-only. "
                     + "Restore the user (or let the retention purge finish) to make it writable again.", ctx);
                 uid = existing.Id;
+                readOnly = true;
             }
             else
             {
@@ -630,6 +635,9 @@ public sealed partial class RealmManifestApplier(
                     await SetUserTwoFactorPolicyAsync(session, existing.Id,
                         u.GracePeriodDaysOverride, u.TwoFactorExempt, ct);
             }
+            if (u.IsTestAccount is { } wantTestAccount && uid is { } markedId && !readOnly)
+                testAccountMarkers.Add((markedId, wantTestAccount, ctx));
+
             if (uid.HasValue)
             {
                 identity.Assign(u.Id, uid.Value);
@@ -741,6 +749,21 @@ public sealed partial class RealmManifestApplier(
                         ExcludeTestAccounts: excludeTestAccounts), ct), ctx);
                 }
             }
+        }
+
+        // ── Test-account markers (ADR 0026) — through the same rules as the admin
+        //    console: refused while the account stays in a group closed to test accounts.
+        if (testAccountMarkers.Count > 0)
+        {
+            var testAccounts = new Modgud.Authentication.TestAccounts.TestAccountService(
+                session,
+                sp.GetRequiredService<IPasswordHasher<ApplicationUser>>(),
+                sp.GetRequiredService<Modgud.Authorization.Membership.IAutoMembershipRecalculator>(),
+                sp.GetRequiredService<Modgud.Infrastructure.Audit.ISecurityAuditLog>(),
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<ILogger<Modgud.Authentication.TestAccounts.TestAccountService>>());
+            foreach (var (userId, isTestAccount, ctx) in testAccountMarkers)
+                EnsureOk(await testAccounts.SetMarkerAsync(userId, isTestAccount, actorId: null, ct), ctx);
         }
 
         // ── Positions (MG-FT) — after users so grants can resolve their handles ───

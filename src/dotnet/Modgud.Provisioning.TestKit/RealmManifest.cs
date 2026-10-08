@@ -242,6 +242,8 @@ public sealed record RealmManifestUser
     /// <summary>Null = unchanged (false on create). True exempts the user from 2FA
     /// enforcement entirely.</summary>
     public bool? TwoFactorExempt { get; init; }
+    /// <summary>Null = unchanged (false on create). ADR 0026 test-account marker.</summary>
+    public bool? IsTestAccount { get; init; }
 }
 
 public sealed record RealmManifestGroup
