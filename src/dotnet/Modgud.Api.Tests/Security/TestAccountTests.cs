@@ -352,6 +352,22 @@ public class TestAccountTests : IntegrationTestBase
         Assert.DoesNotContain(FixedCode, await Client.GetStringAsync("/api/admin/realm-config/export", Ct));
     }
 
+    [Fact]
+    public async Task A_draft_from_the_export_applies_with_a_person_that_has_no_sign_in_account()
+    {
+        // The export carries IsTestAccount for every user; a person without an
+        // ApplicationUser must not fail the apply (regression, found on a dev realm).
+        await Factory.CreateTestUserAsync("No", "Login", "nl", "nologin@test.com");
+
+        var create = await Client.PostAsJsonAsync("/api/admin/realm-config/drafts", new { Name = "from export", Source = "export" }, Ct);
+        Assert.True(create.IsSuccessStatusCode, await create.Content.ReadAsStringAsync(Ct));
+        var draftId = (await create.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("Id").GetString();
+
+        var apply = await Client.PostAsJsonAsync($"/api/admin/realm-config/drafts/{draftId}/apply", new { }, Ct);
+
+        Assert.True(apply.IsSuccessStatusCode, await apply.Content.ReadAsStringAsync(Ct));
+    }
+
     // ── Manifest ──
 
     [Fact]

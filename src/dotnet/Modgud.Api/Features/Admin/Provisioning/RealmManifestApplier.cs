@@ -767,7 +767,14 @@ public sealed partial class RealmManifestApplier(
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<Modgud.Authentication.TestAccounts.TestAccountService>>());
             foreach (var (userId, isTestAccount, ctx) in testAccountMarkers)
+            {
+                // An exported manifest carries the marker for EVERY user: only an actual
+                // change is applied, so a person without a sign-in account (no
+                // ApplicationUser) or an untouched user never fails the apply.
+                var person = await session.LoadAsync<Person>(userId, ct);
+                if ((person?.IsTestAccount ?? false) == isTestAccount) continue;
                 EnsureOk(await testAccounts.SetMarkerAsync(userId, isTestAccount, actorId: null, ct), ctx);
+            }
         }
 
         // ── Fixed e-mail codes (ADR 0026) — after the markers: only a test account has one.
