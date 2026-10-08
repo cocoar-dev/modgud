@@ -486,6 +486,9 @@ public sealed class RealmDraftService(
 
         Extract(root["Users"], u => (u["Key"] ?? u["UserName"] ?? u["Email"])?.GetValue<string>(),
             "users", "Password");
+        // ADR 0026 — a test account's fixed e-mail code is a secret like a password.
+        Extract(root["Users"], u => (u["Key"] ?? u["UserName"] ?? u["Email"])?.GetValue<string>(),
+            "users", "FixedEmailCode");
         Extract(root["Clients"], c => c["ClientId"]?.GetValue<string>(), "clients", "ClientSecret");
         Extract(root["LoginProviders"], p => p["Slug"]?.GetValue<string>(), "loginProviders", "ClientSecret");
 

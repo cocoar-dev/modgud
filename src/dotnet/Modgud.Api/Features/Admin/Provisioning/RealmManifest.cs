@@ -470,6 +470,15 @@ public sealed record RealmManifestUser
     [Description("Marks the account as a test account (ADR 0026): an ordinary account that every token flags with modgud.test_account and that never holds Modgud's own administration. Its fixed sign-in code is never part of a manifest; set it in the admin console. Removing the marker deletes that code. Absent = unchanged / false on create.")]
     public bool? IsTestAccount { get; init; }
 
+    [Description("A test account's fixed e-mail code (ADR 0026): exactly six digits. Write-only — staged in a draft's encrypted secret slot like Password, never exported, never shown in a plan. Only a person in the admin console may set it: a Management API bearer request carrying it is refused. The account must be (or become in the same apply) a test account.")]
+    public string? FixedEmailCode { get; init; }
+
+    [Description("Optional end of validity of FixedEmailCode; applied together with it. Never exported.")]
+    public DateTimeOffset? FixedEmailCodeExpiresAt { get; init; }
+
+    [Description("True removes the account's fixed e-mail code (its sign-in falls back to a sent code). Never exported.")]
+    public bool? RemoveFixedEmailCode { get; init; }
+
     public string ResolveKey() => Key ?? UserName ?? Email;
 }
 

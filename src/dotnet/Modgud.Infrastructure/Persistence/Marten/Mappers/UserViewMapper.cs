@@ -18,6 +18,7 @@ public static class UserViewMapper
             UserName = view.UserName,
             IsActive = view.IsActive,
             HasPassword = view.HasPassword,
+            IsTestAccount = view.IsTestAccount,
             ExternalLoginProviderIds = view.ExternalLoginProviderIds
                 .Select(id => new ShortGuid(id).ToString())
                 .ToList(),

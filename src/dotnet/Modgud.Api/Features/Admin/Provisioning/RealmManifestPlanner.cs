@@ -685,7 +685,7 @@ public sealed class RealmManifestPlanner(
 
         var policy = new SectionPolicy<RealmManifestUser>
         {
-            Skip = ["Key", "Password"],
+            Skip = ["Key", "Password", "FixedEmailCode", "FixedEmailCodeExpiresAt", "RemoveFixedEmailCode"],
             ImmutableIgnored = ["Id"],
             KeyField = "Key",
             KeyRenameable = true,
@@ -758,6 +758,13 @@ public sealed class RealmManifestPlanner(
                     : "Password will be UPDATED for this existing user (value not shown).");
             else if (existing is null)
                 entry.Notes.Add("Created passwordless (no password in the manifest).");
+            // ADR 0026 — the fixed code is a secret: say that it changes, never what to.
+            if (!string.IsNullOrWhiteSpace(u.FixedEmailCode))
+                entry.Notes.Add(u.FixedEmailCodeExpiresAt is { } until
+                    ? $"Test account: a fixed e-mail code will be set, valid until {until:yyyy-MM-dd HH:mm} UTC (value not shown)."
+                    : "Test account: a fixed e-mail code will be set, without expiry (value not shown).");
+            else if (u.RemoveFixedEmailCode == true)
+                entry.Notes.Add("Test account: the fixed e-mail code will be removed; sign-in falls back to a sent code.");
             if ((entry.Notes.Count > 0 || entry.Conflicts.Count > 0) && entry.Action == "unchanged")
                 entry = entry with { Action = "update" };
             // Mirrors the applier's read-only skip: a user with a pending deletion (recycle

@@ -244,6 +244,10 @@ public sealed record RealmManifestUser
     public bool? TwoFactorExempt { get; init; }
     /// <summary>Null = unchanged (false on create). ADR 0026 test-account marker.</summary>
     public bool? IsTestAccount { get; init; }
+    /// <summary>ADR 0026 — write-only fixed e-mail code; never exported.</summary>
+    public string? FixedEmailCode { get; init; }
+    public DateTimeOffset? FixedEmailCodeExpiresAt { get; init; }
+    public bool? RemoveFixedEmailCode { get; init; }
 }
 
 public sealed record RealmManifestGroup

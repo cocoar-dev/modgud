@@ -552,6 +552,7 @@ public sealed partial class RealmManifestApplier(
         // ADR 0026 — test-account markers are applied after the groups, so one manifest can
         // take an account out of an admin group and mark it in the same apply.
         var testAccountMarkers = new List<(Guid UserId, bool IsTestAccount, string Context)>();
+        var testAccountCodes = new List<(Guid UserId, string? Code, DateTimeOffset? ExpiresAt, bool Remove, string Context)>();
         foreach (var u in manifest.Users)
         {
             var ctx = $"user '{u.Email}'";
@@ -637,6 +638,9 @@ public sealed partial class RealmManifestApplier(
             }
             if (u.IsTestAccount is { } wantTestAccount && uid is { } markedId && !readOnly)
                 testAccountMarkers.Add((markedId, wantTestAccount, ctx));
+            if (uid is { } codeUserId && !readOnly
+                && (!string.IsNullOrWhiteSpace(u.FixedEmailCode) || u.RemoveFixedEmailCode == true))
+                testAccountCodes.Add((codeUserId, u.FixedEmailCode, u.FixedEmailCodeExpiresAt, u.RemoveFixedEmailCode == true, ctx));
 
             if (uid.HasValue)
             {
@@ -764,6 +768,25 @@ public sealed partial class RealmManifestApplier(
                 sp.GetRequiredService<ILogger<Modgud.Authentication.TestAccounts.TestAccountService>>());
             foreach (var (userId, isTestAccount, ctx) in testAccountMarkers)
                 EnsureOk(await testAccounts.SetMarkerAsync(userId, isTestAccount, actorId: null, ct), ctx);
+        }
+
+        // ── Fixed e-mail codes (ADR 0026) — after the markers: only a test account has one.
+        if (testAccountCodes.Count > 0)
+        {
+            var testAccounts = new Modgud.Authentication.TestAccounts.TestAccountService(
+                session,
+                sp.GetRequiredService<IPasswordHasher<ApplicationUser>>(),
+                sp.GetRequiredService<Modgud.Authorization.Membership.IAutoMembershipRecalculator>(),
+                sp.GetRequiredService<Modgud.Infrastructure.Audit.ISecurityAuditLog>(),
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<ILogger<Modgud.Authentication.TestAccounts.TestAccountService>>());
+            foreach (var (userId, code, expiresAt, remove, ctx) in testAccountCodes)
+            {
+                if (!string.IsNullOrWhiteSpace(code))
+                    EnsureOk(await testAccounts.SetFixedEmailCodeAsync(userId, code, expiresAt, actorId: null, ct), ctx);
+                else if (remove)
+                    EnsureOk(await testAccounts.RemoveFixedEmailCodeAsync(userId, actorId: null, ct), ctx);
+            }
         }
 
         // ── Positions (MG-FT) — after users so grants can resolve their handles ───
