@@ -54,6 +54,10 @@ public static class AuditEvents
     public const string AccountPasswordChanged = "account.password_changed";
     public const string AccountActivated = "account.activated";
     public const string AccountDeactivated = "account.deactivated";
+    /// <summary>ADR 0026 — a realm admin marked the account as a test account.</summary>
+    public const string AccountTestAccountMarked = "account.test_account_marked";
+    /// <summary>ADR 0026 — the test-account marker was removed; its capabilities are gone.</summary>
+    public const string AccountTestAccountUnmarked = "account.test_account_unmarked";
 
     // ── Federation (user-stream mirror events) ───────────────────────
     public const string IdentityLinked = "federation.identity_linked";
@@ -152,6 +156,19 @@ public static class AuditEvents
     /// <summary>A bootstrap-admin invite consume was rejected (wrong/expired code).
     /// Carries Ip. NB: the invite code itself is never stored.</summary>
     public const string BootstrapInviteRejected = "security.bootstrap_invite_rejected";
+
+    // ── Test accounts (ADR 0026) ─────────────────────────────────────
+    /// <summary>A realm admin set or replaced a test account's fixed e-mail code.
+    /// Fields: ActorSubjectId, TargetSubjectId.</summary>
+    public const string TestAccountCodeSet = "account.test_account_code_set";
+    /// <summary>A test account's fixed e-mail code was removed. Fields: ActorSubjectId,
+    /// TargetSubjectId.</summary>
+    public const string TestAccountCodeRemoved = "account.test_account_code_removed";
+    /// <summary>A sign-in with a test account's fixed e-mail code. Fields: TargetSubjectId,
+    /// Ip, OAuthClientId.</summary>
+    public const string TestAccountCodeUsed = "auth.test_account_code_used";
+    /// <summary>A wrong fixed e-mail code for a test account. Fields: TargetSubjectId, Ip.</summary>
+    public const string TestAccountCodeRejected = "auth.test_account_code_rejected";
 
     // ── Audit-of-the-audit (tenant-visible) ──────────────────────────
     /// <summary>The audit/security log was exported by an operator.</summary>

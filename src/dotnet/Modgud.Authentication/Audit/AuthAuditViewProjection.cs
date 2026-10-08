@@ -103,6 +103,11 @@ public partial class AuthAuditViewProjection : EventProjection
     public AuthAuditView Create(IEvent<UserDeactivatedEvent> e) =>
         Row(e, AuditCategories.Account, AuditEvents.AccountDeactivated, userId: e.StreamId, level: "Warning");
 
+    public AuthAuditView Create(IEvent<UserTestAccountChangedEvent> e) =>
+        Row(e, AuditCategories.Account,
+            e.Data.IsTestAccount ? AuditEvents.AccountTestAccountMarked : AuditEvents.AccountTestAccountUnmarked,
+            userId: e.StreamId, level: "Warning");
+
     // ── Federation (user-stream mirror events) ───────────────────────
     public AuthAuditView Create(IEvent<UserExternalIdentityLinkedEvent> e) =>
         Row(e, AuditCategories.Federation, AuditEvents.IdentityLinked, userId: e.StreamId);

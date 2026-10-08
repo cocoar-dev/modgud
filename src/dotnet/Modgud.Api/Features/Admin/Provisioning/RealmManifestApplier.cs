@@ -713,6 +713,7 @@ public sealed partial class RealmManifestApplier(
                 var email = g.Email.HasValue ? g.Email.Value : existing?.Email;
                 var script = g.MembershipScript ?? existing?.MembershipScript;
                 var externallyDrivable = g.ExternallyDrivable ?? existing?.ExternallyDrivable ?? false;
+                var excludeTestAccounts = g.ExcludeTestAccounts ?? existing?.ExcludeTestAccounts ?? false;
 
                 if (existing is null)
                 {
@@ -723,7 +724,8 @@ public sealed partial class RealmManifestApplier(
                         g.Name, description, memberIds, groupRoleIds, mode,
                         script, email, emailMode,
                         g.BoundTo ?? [AppSlugs.Modgud], externallyDrivable, CallerIsRealmAdmin: true,
-                        Id: pinnedGroup.Id, ReviveExistingStream: pinnedGroup.Revive), ct);
+                        Id: pinnedGroup.Id, ReviveExistingStream: pinnedGroup.Revive,
+                        ExcludeTestAccounts: excludeTestAccounts), ct);
                     EnsureOk(createdGroup, ctx);
                     identity.Assign(g.Id, createdGroup.Value.Id);
                     identity.Applied(ManifestIdentity.Sections.Groups, createdGroup.Value.Id);
@@ -735,7 +737,8 @@ public sealed partial class RealmManifestApplier(
                     EnsureOk(await updateHandler.Handle(new UpdateGroupCommand(
                         existing.Id, g.Name, description, memberIds, groupRoleIds, mode,
                         script, email, emailMode,
-                        g.BoundTo, externallyDrivable, CallerIsRealmAdmin: true), ct), ctx);
+                        g.BoundTo, externallyDrivable, CallerIsRealmAdmin: true,
+                        ExcludeTestAccounts: excludeTestAccounts), ct), ctx);
                 }
             }
         }

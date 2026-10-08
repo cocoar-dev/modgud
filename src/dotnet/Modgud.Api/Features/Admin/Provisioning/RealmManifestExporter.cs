@@ -335,6 +335,7 @@ public sealed class RealmManifestExporter(
             // to the system app, conferring its roles, where the source had none.
             BoundTo = g.BoundTo,
             ExternallyDrivable = g.ExternallyDrivable,
+            ExcludeTestAccounts = g.ExcludeTestAccounts,
         }).ToList();
 
         // ── Positions (MG-FT) — policy + grants are authored config; terminal SLOTS are

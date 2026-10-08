@@ -262,4 +262,5 @@ public sealed record RealmManifestGroup
     public string EmailMode { get; init; } = "Shared";
     public List<string>? BoundTo { get; init; }
     public bool ExternallyDrivable { get; init; }
+    public bool ExcludeTestAccounts { get; init; }
 }

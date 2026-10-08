@@ -269,7 +269,7 @@ public static class DependencyInjection
             opt.RegisterResource(app, "oauth-authorization", "read", "revoke");
 
             // Identity / directory
-            opt.RegisterResource(app, "user", "read", "write");
+            opt.RegisterResource(app, "user", "read", "write", "test-account");
             opt.RegisterResource(app, "service-account", "read", "write");
             // MG-FT-01 — the position principal ("Portier Kunde XY"): the fourth
             // principal kind, staffed via shared terminals.

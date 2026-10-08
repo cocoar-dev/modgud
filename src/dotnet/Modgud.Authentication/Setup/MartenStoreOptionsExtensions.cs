@@ -64,6 +64,12 @@ public static class MartenStoreOptionsExtensions
         options.Schema.For<UserSecurityData>()
             .Identity(x => x.Id);
 
+        // ADR 0026 — a test account's fixed e-mail code. Version-checked so a failed
+        // attempt's counter and a concurrent admin change cannot overwrite each other.
+        options.Schema.For<TestAccountEmailCode>()
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true);
+
         // Same one-time-use reasoning as MagicLinkChallenge below: the consume is
         // a version-checked Store of ConsumedAt (Marten does not version-check
         // deletes), so exactly one of two concurrent redemptions of the same code

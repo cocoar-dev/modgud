@@ -505,6 +505,9 @@ public sealed record RealmManifestGroup
 
     [Description("Allow an external IdP (federation) to drive this group's membership. A realm:admin-conferring group can never be externally drivable. Absent = unchanged / default false on create.")]
     public bool? ExternallyDrivable { get; init; }
+
+    [Description("No test account is ever an effective member of this group (ADR 0026): not by hand, by script, through a nested group or an external provider. Absent = unchanged / default false on create.")]
+    public bool? ExcludeTestAccounts { get; init; }
 }
 
 /// <summary>An external login provider (OIDC/SAML). <see cref="Slug"/> is the natural key.</summary>

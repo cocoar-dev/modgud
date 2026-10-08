@@ -20,6 +20,9 @@ public class AuditDurabilityTests
         { AuditEvents.ControlPlaneRealmOperation, AuditDurabilityClass.Required },
         { AuditEvents.BootstrapInviteIssued, AuditDurabilityClass.Required },
         { AuditEvents.DcrClientRegistered, AuditDurabilityClass.Required },
+        { AuditEvents.TestAccountCodeSet, AuditDurabilityClass.Required },
+        { AuditEvents.TestAccountCodeRemoved, AuditDurabilityClass.Required },
+        { AuditEvents.TestAccountCodeUsed, AuditDurabilityClass.Required },
 
         { AuditEvents.ExternalLoginProtocolRejected, AuditDurabilityClass.Incident },
         { AuditEvents.SamlSignatureRejected, AuditDurabilityClass.Incident },
@@ -34,6 +37,7 @@ public class AuditDurabilityTests
         { AuditEvents.RateLimitTriggered, AuditDurabilityClass.Abuse },
         { AuditEvents.DcrRegistrationRejected, AuditDurabilityClass.Abuse },
         { AuditEvents.BootstrapInviteRejected, AuditDurabilityClass.Abuse },
+        { AuditEvents.TestAccountCodeRejected, AuditDurabilityClass.Abuse },
 
         { AuditEvents.ExternalLoginConfigurationError, AuditDurabilityClass.Telemetry },
         { AuditEvents.SigningKeyPurged, AuditDurabilityClass.Telemetry },
