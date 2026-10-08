@@ -192,10 +192,9 @@ public sealed partial class TestAccountService(
         if (!user.IsTestAccount) return FixedEmailCodeResult.NotApplicable;
         var row = await session.LoadAsync<TestAccountEmailCode>(user.Id, ct);
         var now = time.GetUtcNow();
-        if (row is null) return FixedEmailCodeResult.NotApplicable;
-        // An expired code no longer signs in, and no code is sent for it either:
-        // the sign-in fails like a wrong code until an admin sets a new one.
-        if (row.IsExpired(now)) return FixedEmailCodeResult.Rejected;
+        // No code, or an expired one: the account signs in like any other, with a sent
+        // code (the request path mails one again once the fixed code has expired).
+        if (row is null || row.IsExpired(now)) return FixedEmailCodeResult.NotApplicable;
 
         // Progressive delay: inside the wait the code is not even checked, so the
         // answer carries no information about it.

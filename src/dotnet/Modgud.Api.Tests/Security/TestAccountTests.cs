@@ -209,6 +209,15 @@ public class TestAccountTests : IntegrationTestBase
         }
 
         Assert.False((await NativeOtpAsync(FixedCode)).IsSuccessStatusCode);
+
+        // Expired: the account is an ordinary one again and gets a sent code.
+        var mail = Factory.Services.GetRequiredService<InMemoryEmailService>();
+        mail.Clear();
+        await Factory.CreateClient().PostAsJsonAsync("/api/account/native/otp/request", new { Email = TestAccountEmail }, Ct);
+        var sent = mail.GetLastEmailTo(TestAccountEmail);
+        Assert.NotNull(sent);
+        var code = System.Text.RegularExpressions.Regex.Match(sent!.HtmlBody, @"\b(\d{6})\b").Groups[1].Value;
+        Assert.True((await NativeOtpAsync(code)).IsSuccessStatusCode);
     }
 
     [Fact]

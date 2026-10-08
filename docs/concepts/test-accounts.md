@@ -31,7 +31,7 @@ The regular e-mail-code sign-in — the login page, a PageBuilder page, the nati
 | Exactly six digits, like a sent code | The app's UI accepts nothing else, and a reviewer uses that UI |
 | Stored as a hash, shown only while it is entered | It is a secret like a password |
 | No code mail is sent, and the wait between two code requests does not apply | The purpose |
-| Optional expiry | A review account can be time-limited; a CI account would otherwise need renewing |
+| Optional expiry; once expired the account signs in like any other, with a sent code | A review account can be time-limited; a CI account would otherwise need renewing |
 | Rate limits per account and per caller apply unchanged | Six digits are a small space |
 | After three wrong codes each further attempt waits longer (1 s, doubling, at most 15 minutes) instead of locking the account | A hard lockout would let anyone who knows the address lock the review account during a review |
 | Every sign-in with the fixed code is logged (time, caller address, client); wrong codes are logged as abuse signals | Misuse becomes visible |
