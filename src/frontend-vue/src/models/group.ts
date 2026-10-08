@@ -17,6 +17,8 @@ export interface GroupDto {
    * A group whose roles confer realm:admin cannot be marked drivable.
    */
   ExternallyDrivable?: boolean
+  /** ADR 0026 — no test account is ever an effective member. */
+  ExcludeTestAccounts?: boolean
   Email?: string
   EmailMode: EmailMode
   /**

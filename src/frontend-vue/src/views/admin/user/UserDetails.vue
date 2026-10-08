@@ -11,6 +11,7 @@ import { CoarNotice, CoarTextInput, CoarPasswordInput, CoarNumberInput, CoarForm
 import type { CoarListboxOption } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
+import TestAccountPanel from './TestAccountPanel.vue'
 
 const { t } = useI18n()
 
@@ -42,6 +43,8 @@ const draftStore = useRealmDraftStore()
 const isDraftRow = computed(() => props.id.startsWith('draft__'))
 const draftKey = computed(() => (isDraftRow.value ? props.id.slice('draft__'.length) : null))
 const stagingActive = computed(() => authStore.hasPermission('realm:admin'))
+/** ADR 0026 — marking test accounts and setting their fixed code is its own permission. */
+const canManageTestAccounts = computed(() => authStore.hasPermission('user:test-account'))
 /** Manifest Key for the staged upsert — pinned to the ORIGINAL identity so a
  * username edit replaces the right entry instead of duplicating it. */
 const stagedKey = ref<string | null>(null)
@@ -866,6 +869,9 @@ watch(() => form.value.UserName, () => {
               </CoarFormField>
             </div>
           </div>
+
+          <!-- ADR 0026 — test account: live writes, its own permission -->
+          <TestAccountPanel v-if="canManageTestAccounts" :user-id="props.id" />
         </section>
       </div>
 

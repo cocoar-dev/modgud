@@ -96,6 +96,8 @@ const form = ref({
   // Federation v1: only meaningful for Auto groups — opts the group into
   // login-time externally-derived membership (session-scoped).
   ExternallyDrivable: false,
+  // ADR 0026 — no test account is ever an effective member (typical: an app's admin group).
+  ExcludeTestAccounts: false,
   Email: '' as string | undefined,
   EmailMode: 'Shared' as EmailMode,
   // App slugs the group is active in. The synthetic "*" entry means
@@ -158,6 +160,7 @@ function fromStagedInto(e: ManifestEntity) {
     MembershipScript: str(e.MembershipScript),
     MembershipLastError: null,
     ExternallyDrivable: e.ExternallyDrivable === true,
+    ExcludeTestAccounts: e.ExcludeTestAccounts === true,
     Email: str(e.Email),
     EmailMode: (str(e.EmailMode) || 'Shared') as EmailMode,
     BoundTo: arr(e.BoundTo),
@@ -171,6 +174,7 @@ function toStaged(): ManifestEntity {
     MembershipMode: form.value.MembershipMode,
     EmailMode: form.value.EmailMode,
     ExternallyDrivable: isAuto && form.value.ExternallyDrivable && !hasRealmAdminRole.value,
+    ExcludeTestAccounts: form.value.ExcludeTestAccounts,
     // References as { Key, Id }: the apply follows the Id (identity, ADR 0024), the Key
     // is the readable hint the plan shows — the same form the export writes, so nothing
     // diffs spuriously. Anything the form could not resolve rides along unchanged.
@@ -468,6 +472,7 @@ onMounted(async () => {
           MembershipScript: clone.MembershipScript || '',
           MembershipLastError: null,
           ExternallyDrivable: clone.ExternallyDrivable ?? false,
+          ExcludeTestAccounts: clone.ExcludeTestAccounts ?? false,
           Email: clone.Email || '',
           EmailMode: clone.EmailMode || 'Shared',
           BoundTo: [...(clone.BoundTo ?? [])],
@@ -486,6 +491,7 @@ onMounted(async () => {
           MembershipScript: group.MembershipScript || '',
           MembershipLastError: group.MembershipLastError ?? null,
           ExternallyDrivable: group.ExternallyDrivable ?? false,
+          ExcludeTestAccounts: group.ExcludeTestAccounts ?? false,
           Email: group.Email || '',
           EmailMode: group.EmailMode || 'Shared',
           BoundTo: [...(group.BoundTo ?? [])],
@@ -524,6 +530,7 @@ async function save() {
       // Only an Auto group can be externally driven; never send true for Manual
       // (the deriver ignores non-Auto groups anyway, but keep the payload honest).
       ExternallyDrivable: isAutoMode.value && form.value.ExternallyDrivable && !hasRealmAdminRole.value,
+      ExcludeTestAccounts: form.value.ExcludeTestAccounts,
       Email: form.value.EmailMode === 'Shared'
         ? (form.value.Email?.trim() || undefined)
         : undefined,
@@ -776,6 +783,13 @@ async function save() {
               searchable
               clearable
               :placeholder="t('admin.groupDetails.boundTo.placeholder', {}, 'Select applications…')" />
+          </CoarFormField>
+          <CoarFormField class="col-full"
+            :label="t('admin.groupDetails.excludeTestAccounts', {}, 'Exclude test accounts')"
+            :hint="t('admin.groupDetails.excludeTestAccounts.hint', {}, 'No test account is ever a member — not by hand, by script, through a nested group or an external provider. Typical for an app\'s admin group. Groups granting Modgud\'s own administration exclude them anyway.')"
+            layout="inline"
+            label-position="after">
+            <CoarCheckbox v-model="form.ExcludeTestAccounts" />
           </CoarFormField>
         </section>
 
