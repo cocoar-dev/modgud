@@ -30,6 +30,8 @@ Marking is per account, never by an address pattern: a pattern would be a master
 
 Marking, unmarking and configuring a test capability (setting a fixed code, for example) need their own permission, `user:test-account`. A fixed code is a way into the account: with `user:write` alone, anyone who may edit users could mark a real customer's account, set a code only they know and sign in as that customer. The permission keeps this with the people it is given to deliberately.
 
+Only a person does this, in the admin console: a signed-in admin holding `user:test-account`, at the realm's administration level (ADR 0025). The permission is not available to service accounts and not part of the Management API. Setting a fixed code is setting a credential for someone else's sign-in; it is not something a pipeline should be able to do on its own. Automated tests receive the code like any other secret, from their secret store, and never set or fetch it.
+
 The capabilities exist only while the marker is set. Removing the marker turns the account back into an ordinary account and **deletes** its capabilities — a fixed code is removed, not kept dormant, so no forgotten secret becomes valid again when the account is marked later. Marking it again starts without capabilities.
 
 Only users can be marked. Service accounts and OAuth clients are not people; nothing about them needs a sign-in without a mailbox, and a test client is already just another client. The claim name (section 2) is not user-specific, so a later extension to service accounts would not rename it.
@@ -82,7 +84,7 @@ Ticking the box is refused while test accounts are direct members of the group; 
 
 ## Options considered
 
-**A fixed code for every purpose, versus a fixed code for review and one-time codes for automation.** Automated tests could instead fetch a fresh one-time code for a test account from an admin endpoint, authenticated as a service account. That keeps a permanent secret out of the pipeline at the cost of a second mechanism. App review has no such alternative: the reviewer needs something fixed. This ADR builds the fixed code; the endpoint can follow if a deployment wants it.
+**One-time codes for automation from an endpoint.** Automated tests could fetch a fresh one-time code for a test account from an endpoint, authenticated as a service account. Rejected: such an endpoint belongs to the Management API and would have to be secured at least as strictly as setting the fixed code — and then it is only a second, automatable way to the same sign-in. Credentials for a test account are set by a person (section 1); the pipeline keeps the fixed code in its secret store.
 
 **Restricting test accounts more (no roles at all).** Rejected: an app cannot be reviewed or tested with an account that cannot do what its users do.
 
@@ -101,4 +103,4 @@ Ticking the box is refused while test accounts are direct members of the group; 
 ## Settled
 
 - **Passkeys are allowed on a test account**, like on any account. A passkey is bound to a device and does not widen who can sign in.
-- **No one-time-code endpoint for automation for now** (see Options considered). Automated tests use the fixed code; the endpoint can be added later without changing anything here.
+- **No one-time-code endpoint for automation** (see Options considered), and no way to mark accounts or set codes through the Management API or a service account.
