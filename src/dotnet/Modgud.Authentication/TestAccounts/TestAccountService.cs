@@ -92,6 +92,8 @@ public sealed partial class TestAccountService(
     public async Task<ErrorOr<Success>> SetMarkerAsync(Guid userId, bool isTestAccount, Guid? actorId, CancellationToken ct = default)
     {
         var user = await session.LoadAsync<ApplicationUser>(userId, ct);
+        // Not a test account and nothing to sign in with: unmarking has nothing to do.
+        if (user is null && !isTestAccount) return Result.Success;
         if (user is null || user.IsDeleted)
             return Error.NotFound("TestAccount.UserNotFound", "User not found.");
         if (user.IsTestAccount == isTestAccount) return Result.Success;

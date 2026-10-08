@@ -9,6 +9,8 @@ export interface UserDto {
   UserName: string
   IsActive: boolean
   HasPassword: boolean
+  /** ADR 0026 — marked as a test account. */
+  IsTestAccount?: boolean
   EmailConfirmed: boolean
   /** LoginProvider ShortGuids of active external-identity links. Empty = local-only. */
   ExternalLoginProviderIds: string[]

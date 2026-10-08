@@ -315,6 +315,59 @@ public class TestAccountTests : IntegrationTestBase
         Assert.Contains("ta", await update.Content.ReadAsStringAsync(Ct));
     }
 
+    // ── Draft (ADR 0026: staged like an initial password) ──
+
+    [Fact]
+    public async Task Marker_and_fixed_code_stage_through_the_draft_and_take_effect_on_apply()
+    {
+        var target = await CreateTestAccountUserAsync();
+        await EnableNativeGrantsAsync();
+        await SeedNativeClientAsync();
+
+        var stage = await Client.PutAsJsonAsync("/api/admin/realm-config/drafts/active/entities/users", new
+        {
+            Key = "ta", Id = Id(target), Email = TestAccountEmail, UserName = "ta",
+            IsTestAccount = true, FixedEmailCode = FixedCode,
+        }, Ct);
+        var staged = await stage.Content.ReadAsStringAsync(Ct);
+        Assert.True(stage.IsSuccessStatusCode, staged);
+        Assert.DoesNotContain(FixedCode, staged);
+        Assert.Contains("users/ta/FixedEmailCode", staged);
+        var draftId = JsonDocument.Parse(staged).RootElement.GetProperty("Id").GetString();
+
+        // Nothing has happened yet: the draft is the working state.
+        Assert.False((await NativeOtpAsync(FixedCode)).IsSuccessStatusCode);
+
+        var plan = await Client.PostAsJsonAsync($"/api/admin/realm-config/drafts/{draftId}/plan", new { }, Ct);
+        var planBody = await plan.Content.ReadAsStringAsync(Ct);
+        Assert.True(plan.IsSuccessStatusCode, planBody);
+        Assert.DoesNotContain(FixedCode, planBody);
+        Assert.Contains("fixed e-mail code will be set", planBody);
+
+        var apply = await Client.PostAsJsonAsync($"/api/admin/realm-config/drafts/{draftId}/apply", new { }, Ct);
+        Assert.True(apply.IsSuccessStatusCode, await apply.Content.ReadAsStringAsync(Ct));
+
+        var token = await NativeOtpAsync(FixedCode);
+        Assert.True(token.IsSuccessStatusCode, await token.Content.ReadAsStringAsync(Ct));
+        Assert.DoesNotContain(FixedCode, await Client.GetStringAsync("/api/admin/realm-config/export", Ct));
+    }
+
+    [Fact]
+    public async Task A_draft_from_the_export_applies_with_a_person_that_has_no_sign_in_account()
+    {
+        // The export carries IsTestAccount for every user; a person without an
+        // ApplicationUser must not fail the apply (regression, found on a dev realm).
+        await Factory.CreateTestUserAsync("No", "Login", "nl", "nologin@test.com");
+
+        var create = await Client.PostAsJsonAsync("/api/admin/realm-config/drafts", new { Name = "from export", Source = "export" }, Ct);
+        Assert.True(create.IsSuccessStatusCode, await create.Content.ReadAsStringAsync(Ct));
+        var draftId = (await create.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("Id").GetString();
+
+        var apply = await Client.PostAsJsonAsync($"/api/admin/realm-config/drafts/{draftId}/apply", new { }, Ct);
+
+        Assert.True(apply.IsSuccessStatusCode, await apply.Content.ReadAsStringAsync(Ct));
+    }
+
     // ── Manifest ──
 
     [Fact]

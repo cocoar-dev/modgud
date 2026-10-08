@@ -97,6 +97,7 @@ const displayUsers = computed<UserRow[]>(() => {
       UserName: str(entity.UserName) || str(entity.Email),
       IsActive: true,
       HasPassword: draft.SecretSlots.some((slot) => slot === `users/${entry.Key}/Password`),
+      IsTestAccount: entity.IsTestAccount === true,
       EmailConfirmed: entity.EmailConfirmed === true,
       ExternalLoginProviderIds: [],
       Status: 'Active',
@@ -123,6 +124,7 @@ const displayUsers = computed<UserRow[]>(() => {
       Acronym: str(e.Acronym) || row.Acronym,
       Email: str(e.Email) || row.Email,
       UserName: str(e.UserName).toLowerCase() || row.UserName,
+      IsTestAccount: typeof e.IsTestAccount === 'boolean' ? e.IsTestAccount : row.IsTestAccount,
       DraftStaged: 'update' as const,
     }
   })
@@ -184,8 +186,19 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<UserRow>(), { opena
       .option('tooltipValueGetter', () => null),
     // Identity column — pinned next to the password indicator and
     // emphasized as the row's primary label.
-    (col) => col.field('UserName').header('Username', 'admin.users.username')
-      .width(150).pinned('left').cellClass('user-name-cell'),
+    // ADR 0026 — a test account carries a flask next to its name (staged markers
+    // included via the draft overlay).
+    (col) => col
+      .wrap(col.field('UserName').header('Username', 'admin.users.username')
+        .width(150).pinned('left').cellClass('user-name-cell')
+        // The name itself does not change when a marker is staged, so let every
+        // row update repaint the cell — otherwise the flask never appears.
+        .option('equals', () => false))
+      .right({
+        icon: (r: any) => r?.IsTestAccount ? 'flask-conical' : null,
+        color: 'var(--coar-text-warning-primary, #b45309)',
+        tooltip: t('admin.users.testAccount', {}, 'Test account'),
+      }),
     (col) => col.field('Firstname').header('First Name', 'admin.users.firstname').flex(1),
     (col) => col.field('Lastname').header('Last Name', 'admin.users.lastname').flex(1),
     (col) => col.field('Acronym').header('Acronym', 'admin.users.acronym').width(100),

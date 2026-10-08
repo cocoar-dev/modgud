@@ -12,6 +12,8 @@ public class UserDto
     public string? UserName { get; set; }
     public bool IsActive { get; set; } = true;
     public bool HasPassword { get; set; }
+    /// <summary>ADR 0026 — marked as a test account.</summary>
+    public bool IsTestAccount { get; set; }
     /// <summary>
     /// Identity-side EmailConfirmed flag. Sourced from the ApplicationUser
     /// document (not the read-projection) and joined in at query time; the

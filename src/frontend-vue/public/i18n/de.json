@@ -435,7 +435,8 @@
       "confirmStagedBin": "Löschung in den Draft übernehmen? Beim Anwenden wandert der Benutzer in den Papierkorb (deaktiviert, zur Löschung vorgemerkt, bis zur endgültigen Löschung wiederherstellbar).",
       "confirmRestore": "Aus dem Papierkorb wiederherstellen? Die vorgemerkte Löschung wird abgebrochen und der Benutzer reaktiviert.",
       "forceDeleteReason": "Grund für die endgültige Löschung (wird im Audit-Log festgehalten):",
-      "confirmForceDelete": "Diesen Benutzer jetzt endgültig löschen? Damit wird der Papierkorb für ihn geleert und kann NICHT rückgängig gemacht werden."
+      "confirmForceDelete": "Diesen Benutzer jetzt endgültig löschen? Damit wird der Papierkorb für ihn geleert und kann NICHT rückgängig gemacht werden.",
+      "testAccount": "Testkonto"
     },
     "idpClaims": {
       "type": "Typ",
@@ -711,7 +712,8 @@
         "general": "Allgemein",
         "groups": "Gruppen",
         "security": "Sicherheit",
-        "effective": "Effektiv"
+        "effective": "Effektiv",
+        "testAccount": "Testkonto"
       },
       "twoFactorHeading": "Zwei-Faktor-Authentifizierung",
       "twoFactor": "2FA:",
@@ -767,10 +769,8 @@
         "hintRequired": "Anmeldename; muss eindeutig sein und ist Pflicht."
       },
       "testAccount": {
-        "heading": "Testkonto",
         "marker": "Das ist ein Testkonto",
-        "markerHint": "Ein normales Konto, das jedes Token mit modgud.test_account kennzeichnet. Es erhält nie Rechte der Modgud-Administration und bleibt aus Gruppen draußen, die Testkonten ausschließen. Wirkt sofort.",
-        "fixedCode": "Fester E-Mail-Code:",
+        "markerHint": "Ein normales Konto, das jedes Token mit modgud.test_account kennzeichnet. Es erhält nie Rechte der Modgud-Administration und bleibt aus Gruppen draußen, die Testkonten ausschließen. Den festen Anmeldecode setzt du im Reiter „Testkonto“.",
         "codeUntil": "Gesetzt, gültig bis {date}",
         "codeSet": "Gesetzt, ohne Ablauf",
         "codeNone": "Keiner – Codes werden per E-Mail geschickt",
@@ -780,9 +780,15 @@
         "generate": "Erzeugen",
         "validDays": "Gültig für (Tage)",
         "validDaysHint": "Leer = kein Ablauf.",
-        "saveCode": "Code setzen",
-        "removeCode": "Code entfernen",
-        "saved": "Code gespeichert."
+        "removeCode": "Festen Code entfernen",
+        "fixedCodeHeading": "Fester E-Mail-Code",
+        "applied": "Angewendet:",
+        "inDraft": "Im Entwurf:",
+        "staged": "Neuer Code vorgemerkt, ohne Ablauf",
+        "stagedUntil": "Neuer Code vorgemerkt, gültig bis {date}",
+        "codeInfoStaged": "Mit einem festen Code bekommt das Konto keine Code-Mail: Die Anmeldung per E-Mail-Code nimmt stattdessen diesen Code an. Sechs Ziffern, wie ein verschickter Code. Er wird verschlüsselt im Entwurf abgelegt, nie wieder angezeigt und nie exportiert – notiere ihn vor dem Speichern. Er wirkt, sobald der Entwurf angewendet wird.",
+        "codeFormat": "Genau sechs Ziffern.",
+        "removeCodeHint": "Die Anmeldung läuft dann wieder über einen per E-Mail geschickten Code."
       }
     },
     "setPassword": {

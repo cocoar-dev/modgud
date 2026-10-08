@@ -11,7 +11,7 @@ import { CoarNotice, CoarTextInput, CoarPasswordInput, CoarNumberInput, CoarForm
 import type { CoarListboxOption } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
-import TestAccountPanel from './TestAccountPanel.vue'
+import TestAccountPanel, { type TestAccountLiveStatus } from './TestAccountPanel.vue'
 
 const { t } = useI18n()
 
@@ -70,6 +70,10 @@ function profileSnapshot(): string {
     isActive: isActive.value,
     graceOverride: parsedOverride.value,
     exempt: exemptLocal.value,
+    testAccount: isTestAccount.value,
+    testCode: testCode.value,
+    testValidDays: testValidDays.value,
+    testRemove: testRemoveCode.value,
   })
 }
 
@@ -92,6 +96,22 @@ function buildStagedEntity(): ManifestEntity {
   // clears it back to the realm default (what the admin endpoint spells as -1).
   entity.GracePeriodDaysOverride = parsedOverride.value
   entity.TwoFactorExempt = exemptLocal.value
+  // ADR 0026 — the marker is plain config; the code is a secret the draft extracts into
+  // its encrypted slot (like Password). Its expiry rides along; it is re-sent while a
+  // staged code exists, because a staged entity is replaced as a whole.
+  if (canManageTestAccounts.value) {
+    entity.IsTestAccount = isTestAccount.value
+    if (isTestAccount.value) {
+      if (testCodeValid.value) {
+        entity.FixedEmailCode = testCode.value
+        entity.FixedEmailCodeExpiresAt = testExpiresAt()
+      } else if (testRemoveCode.value) {
+        entity.RemoveFixedEmailCode = true
+      } else if (stagedTestCode.value && stagedTestExpiresAt.value) {
+        entity.FixedEmailCodeExpiresAt = stagedTestExpiresAt.value
+      }
+    }
+  }
   // Stage the LIVE entity's id: the apply matches by identity, so editing the name
   // is a RENAME of this entity instead of staging a second one. A user the draft
   // creates gets a '#handle' instead — the apply assigns the real id and resolves
@@ -100,7 +120,31 @@ function buildStagedEntity(): ManifestEntity {
   return entity
 }
 const loading = ref(false)
-const activeTab = ref<'general' | 'groups' | 'effective' | 'security'>('general')
+const activeTab = ref<'general' | 'groups' | 'effective' | 'security' | 'testAccount'>('general')
+
+// ── ADR 0026: test account ─────────────────────────────────────────────
+const isTestAccount = ref(false)
+const originalTestAccount = ref(false)
+const testCode = ref('')
+const testValidDays = ref<number | null>(null)
+const testRemoveCode = ref(false)
+const testLive = ref<TestAccountLiveStatus | null>(null)
+const stagedTestExpiresAt = ref<string | null>(null)
+const testCodeValid = computed(() => /^[0-9]{6}$/.test(testCode.value))
+/** The draft's secret slot of this user's fixed code (same key rule as Password). */
+const testCodeSlot = computed(() => {
+  const key = draftKey.value ?? stagedKey.value ?? (form.value.UserName.trim() || form.value.Email.trim())
+  return key ? `users/${key}/FixedEmailCode` : null
+})
+const stagedTestCode = computed(() =>
+  !!testCodeSlot.value && (draftStore.current?.SecretSlots ?? []).includes(testCodeSlot.value))
+function testExpiresAt(): string | null {
+  return testValidDays.value && testValidDays.value > 0
+    ? new Date(Date.now() + testValidDays.value * 24 * 60 * 60 * 1000).toISOString()
+    : null
+}
+// The tab only exists for a test account; leaving it when the marker goes.
+watch(isTestAccount, (marked) => { if (!marked && activeTab.value === 'testAccount') activeTab.value = 'general' })
 
 // Security info (2FA methods + grace due date) — loaded with user profile.
 const securityInfo = ref<{
@@ -447,6 +491,8 @@ onMounted(async () => {
       isActive.value = entity.IsActive !== false
       overrideInput.value = typeof entity.GracePeriodDaysOverride === 'number' ? entity.GracePeriodDaysOverride : null
       exemptLocal.value = entity.TwoFactorExempt === true
+      isTestAccount.value = entity.IsTestAccount === true
+      stagedTestExpiresAt.value = typeof entity.FixedEmailCodeExpiresAt === 'string' ? entity.FixedEmailCodeExpiresAt : null
       stagedKey.value = str(entity.Key) || draftKey.value
       if (isHandle(entity.Id as string)) stagedHandle.value = entity.Id as string
     }
@@ -477,6 +523,10 @@ onMounted(async () => {
       originalEmailConfirmed.value = user.EmailConfirmed
       isActive.value = user.IsActive
       originalActive.value = user.IsActive
+      isTestAccount.value = user.IsTestAccount === true
+      originalTestAccount.value = isTestAccount.value
+      if (canManageTestAccounts.value && isTestAccount.value)
+        testLive.value = await userStore.getTestAccount(props.id).catch(() => null)
       securityInfo.value = sec
       overrideInput.value = sec.GracePeriodDaysOverride ?? null
       exemptLocal.value = sec.TwoFactorExempt
@@ -502,6 +552,9 @@ onMounted(async () => {
           if ('GracePeriodDaysOverride' in entity)
             overrideInput.value = typeof entity.GracePeriodDaysOverride === 'number' ? entity.GracePeriodDaysOverride : null
           if (typeof entity.TwoFactorExempt === 'boolean') exemptLocal.value = entity.TwoFactorExempt
+          if (typeof entity.IsTestAccount === 'boolean') isTestAccount.value = entity.IsTestAccount
+          if (typeof entity.FixedEmailCodeExpiresAt === 'string') stagedTestExpiresAt.value = entity.FixedEmailCodeExpiresAt
+          if (entity.RemoveFixedEmailCode === true) testRemoveCode.value = true
         }
       } else {
         stagedKey.value = user.UserName || user.Email || null
@@ -559,6 +612,8 @@ async function save() {
         // through the draft overlay, and the live row is still the truth until apply.
         if (profileSnapshot() !== profileBaseline.value) {
           await draftStore.upsertEntity('users', stagedKey.value ?? form.value.Email, buildStagedEntity())
+          if (!isTestAccount.value && stagedTestCode.value && testCodeSlot.value)
+            await draftStore.clearSecret(testCodeSlot.value)
         }
       } else {
         // Optimistic update — update store immediately with expected state
@@ -601,6 +656,17 @@ async function save() {
           GracePeriodDaysOverride: parsedOverride.value === null ? -1 : parsedOverride.value,
           TwoFactorExempt: exemptLocal.value,
         })
+      }
+
+      // ADR 0026 — test account, live path (an admin with user:test-account but no
+      // realm:admin, hence no draft): marker first, then the code.
+      if (!stagingActive.value && canManageTestAccounts.value) {
+        if (isTestAccount.value !== originalTestAccount.value)
+          await userStore.setTestAccount(props.id, isTestAccount.value)
+        if (isTestAccount.value && testCodeValid.value)
+          await userStore.setFixedEmailCode(props.id, testCode.value, testExpiresAt())
+        else if (isTestAccount.value && testRemoveCode.value)
+          await userStore.removeFixedEmailCode(props.id)
       }
 
       // Direct-group membership: commit the diff as part of the one Save — onto the
@@ -674,6 +740,9 @@ watch(() => form.value.UserName, () => {
         <CoarTab id="groups">{{ t('admin.userDetails.tabs.groups', {}, 'Direct Groups') }}</CoarTab>
         <CoarTab v-if="!isCreate && !isDraftRow" id="effective">{{ t('admin.userDetails.tabs.effective', {}, 'Effektiv') }}</CoarTab>
         <CoarTab id="security">{{ t('admin.userDetails.tabs.security', {}, 'Security') }}</CoarTab>
+        <CoarTab v-if="canManageTestAccounts && isTestAccount" id="testAccount">
+          {{ t('admin.userDetails.tabs.testAccount', {}, 'Test account') }}
+        </CoarTab>
       </CoarTabGroup>
 
       <!-- Tab: General -->
@@ -732,6 +801,16 @@ watch(() => form.value.UserName, () => {
                 layout="inline"
                 label-position="after">
                 <CoarCheckbox v-model="isActive" />
+              </CoarFormField>
+              <!-- ADR 0026 — test account (own permission). Manifest-modelled: stages with
+                   the form; the code is set on the Test account tab that appears. -->
+              <CoarFormField v-if="canManageTestAccounts && (!isCreate || stagingActive)"
+                class="col-half account-flag-field"
+                :label="t('admin.userDetails.testAccount.marker', {}, 'This is a test account')"
+                :hint="t('admin.userDetails.testAccount.markerHint', {}, 'An ordinary account that every token flags with modgud.test_account. It never holds Modgud\'s own administration and is kept out of groups that exclude test accounts. Its fixed sign-in code is set on the Test account tab.')"
+                layout="inline"
+                label-position="after">
+                <CoarCheckbox v-model="isTestAccount" />
               </CoarFormField>
               <CoarFormField
                 class="col-full"
@@ -870,14 +949,23 @@ watch(() => form.value.UserName, () => {
             </div>
           </div>
 
-          <!-- ADR 0026 — test account: live writes, its own permission -->
-          <TestAccountPanel v-if="canManageTestAccounts" :user-id="props.id" />
         </section>
       </div>
 
       <!-- Tab: Direct Groups — the editor surface. The admin picks who
            the user is a direct member of; everything else (inheritance,
            auto-script matches) is shown on the Effektiv tab. -->
+      <div v-if="canManageTestAccounts && isTestAccount" v-show="activeTab === 'testAccount'" class="tab-content">
+        <TestAccountPanel
+          v-model:code="testCode"
+          v-model:valid-days="testValidDays"
+          v-model:remove-code="testRemoveCode"
+          :live="testLive"
+          :staged-code="stagedTestCode"
+          :staged-expires-at="stagedTestExpiresAt"
+          :staging="stagingActive" />
+      </div>
+
       <div v-show="activeTab === 'groups'" class="tab-content">
         <!-- In edit mode the body has a fixed height (.user-edit-frame, so the
              modal doesn't resize on tab switch); this section fills it via flex so
