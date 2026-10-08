@@ -36,6 +36,7 @@ context* — it never appears in the permission string itself.
 |---|---|
 | `user:read` | Read user list/detail |
 | `user:write` | Create/edit users |
+| `user:test-account` | Mark [test accounts](./test-accounts) and set their fixed sign-in code |
 | `user:admin` | Resource-wide bypass for all user actions |
 | `oauth-client:read` | Read OAuth clients |
 | `oauth-client:write` | Create/edit OAuth clients |

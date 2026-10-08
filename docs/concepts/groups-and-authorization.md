@@ -141,6 +141,10 @@ via a visited set.
   └── "Support"     (Auto: matches support)
 ```
 
+### Groups closed to test accounts
+
+A group with **Exclude test accounts**, and any group whose roles grant Modgud's own administration, never has a [test account](./test-accounts) as an effective member — not by hand, by script, through a nested group or an external provider — and the resolution stops there, so the groups above it are not reached through it either.
+
 ## What this architecture is *not*
 
 - **No deny rules.** Only positive grants; effective access is the

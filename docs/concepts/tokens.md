@@ -78,6 +78,10 @@ and resource servers use it to match a logout notification to a session
 (see [logout propagation](../integrate/login-flows#logout-propagation-to-relying-parties)).
 Client-credentials tokens have no user, no session and no `sid`.
 
+### The `modgud.test_account` claim
+
+Every token of a [test account](./test-accounts) — ID token, access token and the userinfo response — carries `modgud.test_account: true`, for every client and scope set. Other accounts carry no such claim. The value is read from the account at issuance and at each refresh.
+
 ### Refresh Token
 
 Lets the app fetch new access tokens without signing the user in

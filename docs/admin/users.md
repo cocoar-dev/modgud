@@ -71,6 +71,8 @@ Overview of the user's 2FA status:
 - **Grace period** (when an App requires multi-factor but the user has no second factor yet) — days remaining before enforcement kicks in (the realm's or App's [setup grace](../concepts/sign-in-levels#setup-grace-and-exemption)), with **Reset grace** and **Force immediate enforcement** actions.
 - **Individual policy override** — a per-user grace-period-days override, and a checkbox to exempt this user from the 2FA requirement entirely (for service-style accounts or migrated legacy users). Use sparingly; changes here are audited. The policy is configuration: for a realm admin it saves onto the [draft](./configuration-drafts) with the rest of the form (and travels in a manifest as `GracePeriodDaysOverride` / `TwoFactorExempt`), while the two grace-clock buttons above act at once.
 
+- **Test account** (only with the permission `user:test-account`) — marks the account as a [test account](../concepts/test-accounts) and sets, replaces or removes its fixed e-mail code (six digits, optional validity in days; shown only while entered), with its last use. These act at once, not through the draft: the code is a secret that never travels in a manifest. Removing the marker deletes the code.
+
 Actions that live elsewhere but affect the same user: **Set password** and **Send Magic Link** are right-click actions on the user list (see [User list](#user-list) above), not fields inside this tab.
 
 ## Viewing a linked external identity's claims
