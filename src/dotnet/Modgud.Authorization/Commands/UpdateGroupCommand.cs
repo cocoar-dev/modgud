@@ -30,7 +30,10 @@ public record UpdateGroupCommand(
     // the authenticated principal. Defaults false (fail-closed): a command
     // constructed without it cannot confer realm:admin or alter the membership
     // of a realm:admin-conferring group.
-    bool CallerIsRealmAdmin = false);
+    bool CallerIsRealmAdmin = false,
+    // ADR 0026 — null = unchanged, so a caller that does not know the setting can
+    // never reset it.
+    bool? ExcludeTestAccounts = null);
 
 public class UpdateGroupHandler(
     IDocumentSession session,
@@ -151,6 +154,18 @@ public class UpdateGroupHandler(
             : command.MemberIds.ToList();
 
         var boundTo = command.BoundTo?.ToList() ?? group.BoundTo.ToList();
+        var excludeTestAccounts = command.ExcludeTestAccounts ?? group.ExcludeTestAccounts;
+
+        // ADR 0026 — a group closed to test accounts refuses them as direct members,
+        // also when the closing change (the exclusion, an administration role) comes
+        // with this update. An auto group's members are computed; the recalculator
+        // leaves test accounts out.
+        if (command.MembershipMode == MembershipMode.Manual)
+        {
+            var testAccountError = await TestAccountGroupPolicy.RejectTestAccountMembersAsync(
+                session, excludeTestAccounts, command.RoleIds, memberIds, ct);
+            if (testAccountError is not null) return testAccountError.Value;
+        }
 
         session.Events.Append(command.Id, new GroupUpdatedEvent(
             command.Id, command.Name, command.Description,
@@ -158,7 +173,7 @@ public class UpdateGroupHandler(
             command.MembershipMode, command.MembershipScript, compiledMembership,
             membershipDeps,
             command.Email, command.EmailMode,
-            boundTo, command.ExternallyDrivable));
+            boundTo, command.ExternallyDrivable, excludeTestAccounts));
 
         if (command.MembershipMode == MembershipMode.Auto)
         {
@@ -177,6 +192,7 @@ public class UpdateGroupHandler(
                 EmailMode = command.EmailMode,
                 BoundTo = boundTo,
                 ExternallyDrivable = command.ExternallyDrivable,
+                ExcludeTestAccounts = excludeTestAccounts,
             };
             await recalculator.RecalculateForGroupAsync(updatedGroup, session, ct);
         }

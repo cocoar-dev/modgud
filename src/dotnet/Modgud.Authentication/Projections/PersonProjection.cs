@@ -36,6 +36,7 @@ public partial class PersonProjection : SingleStreamProjection<Person, Guid>
         IncludeType<UserDeletedEvent>();
         IncludeType<UserExternalIdentityLinkedEvent>();
         IncludeType<UserExternalIdentityUnlinkedEvent>();
+        IncludeType<UserTestAccountChangedEvent>();
     }
 
     // Use Apply instead of Create for creation events so a teardown-free rebuild
@@ -118,6 +119,12 @@ public partial class PersonProjection : SingleStreamProjection<Person, Guid>
         person.ExternalIdentities = person.ExternalIdentities
             .Where(r => r.LinkId != @event.LinkId)
             .ToList();
+        return person;
+    }
+
+    public Person Apply(UserTestAccountChangedEvent @event, Person person)
+    {
+        person.IsTestAccount = @event.IsTestAccount;
         return person;
     }
 

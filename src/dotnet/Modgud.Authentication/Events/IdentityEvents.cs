@@ -34,6 +34,14 @@ public record UserProfileUpdatedEvent(
 public record UserActivatedEvent(Guid UserId);
 public record UserDeactivatedEvent(Guid UserId);
 
+// ADR 0026 — the account was marked as a test account, or the marker was removed.
+// The capabilities (a fixed e-mail code) are secrets and live on UserSecurityData,
+// never in an event.
+public record UserTestAccountChangedEvent(
+    Guid UserId,
+    bool IsTestAccount,
+    Guid? ChangedByUserId);
+
 // Security events (metadata only — no hashes!)
 public record UserPasswordChangedEvent(
     Guid UserId,

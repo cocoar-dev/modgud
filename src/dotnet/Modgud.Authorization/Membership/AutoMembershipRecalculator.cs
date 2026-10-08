@@ -52,6 +52,12 @@ public class AutoMembershipRecalculator(
             .Where(g => !g.IsDeleted && g.MembershipMode == MembershipMode.Auto && !g.ExternallyDrivable)
             .ToListAsync(ct);
 
+        // ADR 0026 — a test account never becomes a member of a group closed to it.
+        var isTestAccount = principal is Person { IsTestAccount: true };
+        var administrationRoleIds = isTestAccount
+            ? await TestAccountGroupPolicy.AdministrationRoleIdsAsync(session, ct)
+            : null;
+
         foreach (var group in groups)
         {
             if (string.IsNullOrWhiteSpace(group.CompiledMembershipScript)) continue;
@@ -71,6 +77,7 @@ public class AutoMembershipRecalculator(
 
             var shouldBeMember = principal is not null
                 && !principal.IsDeleted
+                && !(administrationRoleIds is not null && TestAccountGroupPolicy.IsClosed(group, administrationRoleIds))
                 && EvaluateSafe(group.CompiledMembershipScript, principal, ct);
             var isMember = group.MemberIds.Contains(principalId);
 
@@ -118,6 +125,16 @@ public class AutoMembershipRecalculator(
                 .Where(predicate)
                 .Select(p => p.Id)
                 .ToListAsync(ct);
+
+            // ADR 0026 — a group closed to test accounts leaves them out, whatever the
+            // script says.
+            var administrationRoleIds = await TestAccountGroupPolicy.AdministrationRoleIdsAsync(session, ct);
+            if (TestAccountGroupPolicy.IsClosed(group, administrationRoleIds))
+            {
+                var testAccounts = (await TestAccountGroupPolicy.TestAccountsAmongAsync(session, newMembers.ToList(), ct))
+                    .Select(p => p.Id).ToHashSet();
+                if (testAccounts.Count > 0) newMembers = newMembers.Where(id => !testAccounts.Contains(id)).ToList();
+            }
 
             var changed = !SameSet(group.MemberIds, newMembers.ToList());
             var hadError = !string.IsNullOrEmpty(group.MembershipLastError);

@@ -26,6 +26,13 @@ public class Person : Principal, IPrincipalWithAccount, IPrincipalEmailAddressab
     /// </summary>
     public List<ExternalIdentityRef> ExternalIdentities { get; set; } = [];
 
+    /// <summary>
+    /// ADR 0026 — an ordinary account marked by a realm admin as a test account. It is
+    /// never an effective member of a group that grants Modgud's own administration or
+    /// that excludes test accounts, and never resolves such a permission.
+    /// </summary>
+    public bool IsTestAccount { get; set; }
+
     public override string DisplayName
     {
         get

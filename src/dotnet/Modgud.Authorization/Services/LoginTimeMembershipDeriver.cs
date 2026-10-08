@@ -92,6 +92,13 @@ public sealed class LoginTimeMembershipDeriver(
                 matched.Add(g);
         }
 
+        // ADR 0026 — a test account never becomes a member of a group closed to it.
+        if (person.IsTestAccount && matched.Count > 0)
+        {
+            var administrationRoleIds = await TestAccountGroupPolicy.AdministrationRoleIdsAsync(session, ct);
+            matched = matched.Where(g => !TestAccountGroupPolicy.IsClosed(g, administrationRoleIds)).ToList();
+        }
+
         if (matched.Count == 0) return DerivedMembershipResult.Empty;
 
         // Belt-and-braces: realm:admin is hard local-only (decision G). The

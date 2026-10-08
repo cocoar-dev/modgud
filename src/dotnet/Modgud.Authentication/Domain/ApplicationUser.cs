@@ -19,6 +19,9 @@ public class ApplicationUser
     public string? Acronym { get; set; }
     public bool IsActive { get; set; } = true;
     public bool IsDeleted { get; set; }
+    /// <summary>ADR 0026 — mirrors the test-account marker of the user stream, so token
+    /// issuance can stamp <c>modgud.test_account</c> from the user it already loads.</summary>
+    public bool IsTestAccount { get; set; }
     public bool LockoutEnabled { get; set; } = true;
     public DateTimeOffset? LockoutEnd { get; set; }
     public int AccessFailedCount { get; set; }

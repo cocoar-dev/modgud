@@ -14,6 +14,8 @@ public record UserView
     public bool IsActive { get; init; } = true;
     public bool IsDeleted { get; init; }
     public bool HasPassword { get; init; }
+    /// <summary>ADR 0026 — marked as a test account.</summary>
+    public bool IsTestAccount { get; init; }
 
     /// <summary>
     /// LoginProvider ids the user has an active external-identity link with.
