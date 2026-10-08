@@ -33,3 +33,4 @@ Records are numbered once and never renumbered or reused. A superseded record ke
 | [0023](./0023-public-origin-is-declared) | The public origin is declared, not derived | Accepted |
 | [0024](./0024-a-manifest-identifies-by-id-never-by-name) | A manifest identifies by id, never by name | Accepted |
 | [0025](./0025-sign-in-assurance-is-required-by-the-target-app) | Sign-in assurance is required by the target app, not by the entry URL | Proposed |
+| [0026](./0026-test-accounts) | Test accounts are ordinary accounts with a marker | Proposed |
