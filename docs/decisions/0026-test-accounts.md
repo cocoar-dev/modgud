@@ -98,7 +98,7 @@ Ticking the box is refused while test accounts are direct members of the group; 
 - Every app that admits test accounts has to decide what they may not do, using `modgud.test_account`.
 - Membership computation and permission resolution gain a check per principal; both already load the principal.
 
-## Open
+## Settled
 
-- Whether passkeys may be enrolled on a test account. Nothing in this ADR forbids it; a passkey is bound to a device and does not widen who can sign in.
-- Whether the one-time-code endpoint for automation (Options considered) is wanted.
+- **Passkeys are allowed on a test account**, like on any account. A passkey is bound to a device and does not widen who can sign in.
+- **No one-time-code endpoint for automation for now** (see Options considered). Automated tests use the fixed code; the endpoint can be added later without changing anything here.
