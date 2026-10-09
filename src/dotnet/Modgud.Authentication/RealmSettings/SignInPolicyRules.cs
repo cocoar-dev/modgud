@@ -49,6 +49,27 @@ internal static partial class SignInPolicyRules
         return null;
     }
 
+    /// <summary>Normalises the App's Android app origins (see
+    /// <see cref="Modgud.Authentication.Identity.RealmFido2.NormalizeAndroidAppOrigin"/>);
+    /// null/empty passes as null. Duplicates collapse.</summary>
+    public static Error? ValidateAndroidOrigins(string[]? raw, out string[]? normalized)
+    {
+        normalized = null;
+        if (raw is null) return null;
+        var result = new List<string>();
+        foreach (var entry in raw)
+        {
+            if (string.IsNullOrWhiteSpace(entry)) continue;
+            if (Modgud.Authentication.Identity.RealmFido2.NormalizeAndroidAppOrigin(entry) is not { } origin)
+                return Error.Validation("SignIn.InvalidPasskeyAndroidOrigin",
+                    $"'{entry.Trim()}' is not an Android app origin. Use android:apk-key-hash:<base64url hash> "
+                    + "or the SHA-256 fingerprint of the signing certificate (e.g. 37:12:A2:…).");
+            if (!result.Contains(origin, StringComparer.Ordinal)) result.Add(origin);
+        }
+        normalized = result.Count == 0 ? null : [.. result];
+        return null;
+    }
+
     /// <summary>
     /// Rejects a policy nobody could satisfy: a Multi level (minimum, or the realm-only
     /// administration level) with no way to reach it, or no way to sign in at all.

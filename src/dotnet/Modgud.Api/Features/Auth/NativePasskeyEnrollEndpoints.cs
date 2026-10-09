@@ -177,6 +177,12 @@ public static class NativePasskeyEnrollEndpoints
             if (attestation is null)
                 return Results.BadRequest(new { Message = "Invalid attestation response." });
 
+            // A native Android app signs android:apk-key-hash:<cert hash>; accepted only when
+            // the client's App lists it for the ceremony's RP ID.
+            var presentedOrigins = PresentedOrigins(attestation.Response?.ClientDataJson);
+            var appOrigins = await new PasskeyAppOrigins(settingsResolver).AcceptedAsync(
+                session, clientId, ceremony.RpId, presentedOrigins?[0], ct);
+
             IFido2 fido2;
             try
             {
@@ -184,7 +190,7 @@ public static class NativePasskeyEnrollEndpoints
                 // cannot drift the attestation's RP ID). The accepted origin is the
                 // signed one, filtered to this RP-ID's own subdomains in BuildConfiguration.
                 fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: ceremony.RpId,
-                    additionalOrigins: PresentedOrigins(attestation.Response?.ClientDataJson));
+                    additionalOrigins: presentedOrigins, appOrigins: appOrigins);
             }
             catch (RelyingPartyUnavailableException ex)
             {

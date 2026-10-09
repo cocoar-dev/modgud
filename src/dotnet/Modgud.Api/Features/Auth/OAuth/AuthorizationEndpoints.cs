@@ -2183,10 +2183,17 @@ public static class AuthorizationEndpoints
         }
         catch (JsonException) { /* leave null — verifier fails closed below */ }
 
+        // A native Android app signs android:apk-key-hash:<cert hash>; accepted only when the
+        // App of the redeeming client lists it for this RP ID — also on a brokered ceremony,
+        // where the App's web client redeems what its Android app produced.
+        var appOrigins = await new PasskeyAppOrigins(settingsResolver).AcceptedAsync(
+            session, request.ClientId, activeRpId, presentedOrigins?[0], ct);
+
         IFido2 fido2;
         try
         {
-            fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: activeRpId, additionalOrigins: presentedOrigins);
+            fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: activeRpId, additionalOrigins: presentedOrigins,
+                appOrigins: appOrigins);
         }
         catch (RelyingPartyUnavailableException)
         {

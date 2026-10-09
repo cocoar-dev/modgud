@@ -93,6 +93,7 @@ const f = reactive({
     values: {} as Partial<SignInPolicyDto>,
     passkeyRpId: '',
     relatedOrigins: false,
+    androidOrigins: '',
   },
   clientSessions: { override: false, idle: '', absolute: '' },
   nativeGrants: { override: false, enabled: false, access: '', refresh: '' },
@@ -305,7 +306,7 @@ function resetForm() {
   f.selfReg.termsOfServiceUrl = ''; f.selfReg.privacyPolicyUrl = ''
   f.registrationFields.override = false; f.registrationFields.username = ''
   f.registrationFields.firstname = ''; f.registrationFields.lastname = ''
-  f.signIn.override = false; f.signIn.values = {}; f.signIn.passkeyRpId = ''; f.signIn.relatedOrigins = false
+  f.signIn.override = false; f.signIn.values = {}; f.signIn.passkeyRpId = ''; f.signIn.relatedOrigins = false; f.signIn.androidOrigins = ''
   f.clientSessions.override = false; f.clientSessions.idle = ''; f.clientSessions.absolute = ''
   f.nativeGrants.override = false; f.nativeGrants.enabled = false; f.nativeGrants.access = ''; f.nativeGrants.refresh = ''
   f.rateLimits.override = false; f.rateLimits.overrides = emptyRateLimitOverrides()
@@ -390,6 +391,7 @@ function populate(s?: ApplicationSettingsDto | null) {
     f.signIn.values = pinned as Partial<SignInPolicyDto>
     f.signIn.passkeyRpId = si.PasskeyRpId ?? ''
     f.signIn.relatedOrigins = si.PasskeyRelatedOrigins === true
+    f.signIn.androidOrigins = (si.PasskeyAndroidOrigins ?? []).join('\n')
   }
   if (s.NativeGrants) {
     f.nativeGrants.override = true
@@ -582,6 +584,9 @@ function build(): ApplicationSettingsDto {
           OwnFactorNotOffered: f.signIn.values.OwnFactorNotOffered ?? null,
           PasskeyRpId: f.signIn.passkeyRpId.trim() || null,
           PasskeyRelatedOrigins: f.signIn.passkeyRpId.trim() && f.signIn.relatedOrigins ? true : null,
+          PasskeyAndroidOrigins: f.signIn.passkeyRpId.trim() && androidOriginList.value.length
+            ? androidOriginList.value
+            : null,
         }
       : null,
     NativeGrants: f.nativeGrants.override
@@ -665,6 +670,13 @@ const relatedOriginsJson = computed(() => {
   if (sub) origins.push(`https://${sub}`)
   return JSON.stringify({ origins: [...new Set(origins)] }, null, 2)
 })
+// Native Android apps: one origin / hash / certificate fingerprint per line. The server
+// normalises each to android:apk-key-hash:<base64url>; Android itself checks the RP's
+// assetlinks.json before it lets the app use the RP ID.
+const androidOriginList = computed(() => f.signIn.androidOrigins
+  .split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0))
+const assetLinksUrl = computed(() => `https://${f.signIn.passkeyRpId.trim()}/.well-known/assetlinks.json`)
+
 const domainBoundLabels: Record<keyof typeof DOMAIN_BINDING, () => string> = {
   emailBranding: () => t('admin.appSettings.hostBound.section.emailBranding', {}, 'E-mail branding'),
   selfReg: () => t('admin.appSettings.hostBound.section.selfReg', {}, 'Registration policy'),
@@ -1048,6 +1060,19 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         </CoarNotice>
         <pre class="related-origins-json">{{ relatedOriginsJson }}</pre>
       </template>
+      <CoarFormField :label="t('admin.signIn.androidOrigins', {}, 'Android apps')"
+        :hint="t('admin.signIn.androidOriginsHint', {}, 'Native Android apps that may use this app\'s passkeys, one per line: the SHA-256 fingerprint of the signing certificate (as shown in the Play Console) or android:apk-key-hash:<hash>. Needs the passkey RP ID.')">
+        <textarea
+          v-model="f.signIn.androidOrigins"
+          class="android-origins"
+          rows="3"
+          spellcheck="false"
+          :disabled="!f.signIn.override || !f.signIn.passkeyRpId.trim()"
+          placeholder="37:12:A2:19:EC:6E:C8:11:…" />
+      </CoarFormField>
+      <CoarNotice v-if="androidOriginList.length && f.signIn.passkeyRpId.trim()" variant="info">
+        {{ t('admin.signIn.androidOriginsNotice', { url: assetLinksUrl }, 'Android only lets the app use the passkeys when {url} lists the app\'s package and certificate with the permission delegate_permission/common.get_login_creds.') }}
+      </CoarNotice>
     </div>
 
     <!-- Native app / OAuth client sessions -->
@@ -1224,6 +1249,18 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
   border-radius: 6px;
   background: var(--coar-background-neutral-secondary);
   font-size: 12px;
+}
+.android-origins {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--coar-border-neutral, #d1d5db);
+  border-radius: 0.375rem;
+  background: var(--coar-background-neutral-primary, #fff);
+  color: inherit;
+  resize: vertical;
 }
 .override-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .tab-content { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
