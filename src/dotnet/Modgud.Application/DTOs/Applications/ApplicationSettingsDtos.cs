@@ -122,6 +122,11 @@ public record ApplicationSignInDto
     /// <summary>The App publishes <c>https://{PasskeyRpId}/.well-known/webauthn</c> listing the
     /// Modgud login origin(s) (WebAuthn related origin requests). Requires <see cref="PasskeyRpId"/>.</summary>
     public bool? PasskeyRelatedOrigins { get; init; }
+    /// <summary>Native Android apps that may use the App's passkeys. Each entry is the app's
+    /// origin <c>android:apk-key-hash:&lt;hash&gt;</c>, the bare hash, or the SHA-256 signing
+    /// certificate fingerprint (<c>37:12:A2:…</c>); stored as the origin. Requires
+    /// <see cref="PasskeyRpId"/>. Empty = none.</summary>
+    public string[]? PasskeyAndroidOrigins { get; init; }
 }
 
 public record ApplicationClientSessionsDto

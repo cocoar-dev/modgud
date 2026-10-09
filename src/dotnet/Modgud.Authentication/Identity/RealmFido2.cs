@@ -55,7 +55,8 @@ public static class RealmFido2
         IWebHostEnvironment env,
         string? rpIdOverride = null,
         IEnumerable<string>? additionalOrigins = null,
-        IEnumerable<string>? relatedOrigins = null)
+        IEnumerable<string>? relatedOrigins = null,
+        IEnumerable<string>? appOrigins = null)
     {
         ArgumentNullException.ThrowIfNull(realm);
         ArgumentNullException.ThrowIfNull(env);
@@ -116,6 +117,19 @@ public static class RealmFido2
             }
         }
 
+        // Native Android apps: Credential Manager reports android:apk-key-hash:<cert hash>
+        // instead of a web origin. The caller passes the presented origin only when the App
+        // the ceremony's client belongs to lists it for this RP ID (PasskeyAppOrigins); any
+        // other shape is dropped here, so this can never widen to a web origin.
+        if (appOrigins is not null)
+        {
+            foreach (var origin in appOrigins)
+            {
+                if (IsAndroidAppOrigin(origin))
+                    origins.Add(origin);
+            }
+        }
+
         return new Fido2Configuration
         {
             // RP ID — the effective domain a passkey is bound to.
@@ -168,6 +182,58 @@ public static class RealmFido2
             && uri.Port == expectedPort;
     }
 
+    /// <summary>The prefix of the origin Android's Credential Manager reports for a native
+    /// app: <c>android:apk-key-hash:</c> + base64url (no padding) of the SHA-256 of the
+    /// app's signing certificate. The platform sets it; an app cannot choose it.</summary>
+    public const string AndroidAppOriginPrefix = "android:apk-key-hash:";
+
+    /// <summary>True when <paramref name="origin"/> is exactly an Android app origin:
+    /// the prefix followed by 43 base64url characters (32 bytes, unpadded).</summary>
+    public static bool IsAndroidAppOrigin(string? origin)
+    {
+        if (origin is null || !origin.StartsWith(AndroidAppOriginPrefix, StringComparison.Ordinal)) return false;
+        var hash = origin.AsSpan(AndroidAppOriginPrefix.Length);
+        if (hash.Length != 43) return false;
+        foreach (var c in hash)
+            if (!(char.IsAsciiLetterOrDigit(c) || c is '-' or '_')) return false;
+        return true;
+    }
+
+    /// <summary>
+    /// Normalises what an administrator pastes for an Android app to its origin: the full
+    /// <c>android:apk-key-hash:…</c> origin, the bare base64url hash (padded or standard
+    /// base64 too), or the SHA-256 certificate fingerprint as shown by Play Console and
+    /// <c>keytool</c> (<c>37:12:A2:…</c>). Null when the value is none of these.
+    /// </summary>
+    public static string? NormalizeAndroidAppOrigin(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var value = raw.Trim();
+        if (value.StartsWith(AndroidAppOriginPrefix, StringComparison.OrdinalIgnoreCase))
+            value = value[AndroidAppOriginPrefix.Length..];
+
+        byte[]? bytes = null;
+        var hex = value.Replace(":", "", StringComparison.Ordinal);
+        if (hex.Length == 64 && hex.All(char.IsAsciiHexDigit))
+        {
+            bytes = Convert.FromHexString(hex);
+        }
+        else
+        {
+            var b64 = value.TrimEnd('=').Replace('-', '+').Replace('_', '/');
+            if (b64.Length == 43)
+            {
+                try { bytes = Convert.FromBase64String(b64 + "="); }
+                catch (FormatException) { bytes = null; }
+            }
+        }
+        if (bytes is not { Length: 32 }) return null;
+
+        var origin = AndroidAppOriginPrefix
+            + Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        return IsAndroidAppOrigin(origin) ? origin : null;
+    }
+
     /// <summary>
     /// Extracts the WebAuthn <c>origin</c> from a clientDataJSON byte payload (the
     /// value Fido2NetLib already base64url-decoded onto the raw response). Returns
@@ -206,7 +272,8 @@ public sealed class RealmScopedFido2Factory(
         CancellationToken ct = default,
         string? rpIdOverride = null,
         IEnumerable<string>? additionalOrigins = null,
-        IEnumerable<string>? relatedOrigins = null)
+        IEnumerable<string>? relatedOrigins = null,
+        IEnumerable<string>? appOrigins = null)
     {
         var http = httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException(
@@ -221,7 +288,7 @@ public sealed class RealmScopedFido2Factory(
         // only has to supply the value here — no new RP-ID code path.
         // additionalOrigins carries the actual signed origin at verify time so a
         // per-client RP-ID that is a suffix of the app origin is accepted.
-        var config = RealmFido2.BuildConfiguration(realm, env, rpIdOverride, additionalOrigins, relatedOrigins);
+        var config = RealmFido2.BuildConfiguration(realm, env, rpIdOverride, additionalOrigins, relatedOrigins, appOrigins);
         // metadataService is optional — the previous global setup used the
         // library's NullMetadataService (no attestation-metadata validation),
         // and passing null here gives the identical behaviour.

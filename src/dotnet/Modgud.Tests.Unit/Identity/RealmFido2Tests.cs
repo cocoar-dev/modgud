@@ -131,6 +131,54 @@ public class RealmFido2Tests
         Assert.DoesNotContain("not a url", config.Origins);
     }
 
+    // ── Android app origins ──────────────────────────────────────────────────────
+
+    private const string PlayOrigin = "android:apk-key-hash:NxKiGexuyBGDGdVtp4Is8MhaKBquHQNHiw-IG3hPtiw";
+
+    [Theory]
+    [InlineData(PlayOrigin)]                                            // the origin itself
+    [InlineData("NxKiGexuyBGDGdVtp4Is8MhaKBquHQNHiw-IG3hPtiw")]         // the bare hash
+    [InlineData("NxKiGexuyBGDGdVtp4Is8MhaKBquHQNHiw+IG3hPtiw=")]        // standard base64, padded
+    [InlineData("37:12:A2:19:EC:6E:C8:11:83:19:D5:6D:A7:82:2C:F0:C8:5A:28:1A:AE:1D:03:47:8B:0F:88:1B:78:4F:B6:2C")] // Play Console fingerprint
+    [InlineData("  3712a219ec6ec8118319d56da7822cf0c85a281aae1d03478b0f881b784fb62c ")] // hex, lower case
+    public void NormalizeAndroidAppOrigin_AcceptsTheFormsAnAdminPastes(string raw)
+        => Assert.Equal(PlayOrigin, RealmFido2.NormalizeAndroidAppOrigin(raw));
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("https://amzettel.at")]
+    [InlineData("android:apk-key-hash:tooShort")]
+    [InlineData("37:12:A2:19")]                                          // a truncated fingerprint
+    [InlineData("SHA1:37:12:A2:19:EC:6E:C8:11:83:19:D5:6D:A7:82:2C:F0:C8:5A:28:1A")]
+    public void NormalizeAndroidAppOrigin_RejectsEverythingElse(string raw)
+        => Assert.Null(RealmFido2.NormalizeAndroidAppOrigin(raw));
+
+    [Fact]
+    public void BuildConfiguration_AppOrigins_AcceptOnlyAndroidAppOrigins()
+    {
+        var realm = new Realm { Slug = "system", DisplayName = "Acme", PrimaryDomain = "auth.cocoar.dev" };
+
+        var config = RealmFido2.BuildConfiguration(
+            realm, ProdEnv, rpIdOverride: "amzettel.at",
+            appOrigins: [PlayOrigin, "https://evil.at", "android:apk-key-hash:short"]);
+
+        Assert.Contains(PlayOrigin, config.Origins);
+        Assert.DoesNotContain("https://evil.at", config.Origins);
+        Assert.DoesNotContain("android:apk-key-hash:short", config.Origins);
+    }
+
+    [Fact]
+    public void BuildConfiguration_AndroidOrigin_IsNeverAcceptedAsASignedOrRelatedOrigin()
+    {
+        var realm = new Realm { Slug = "system", DisplayName = "Acme", PrimaryDomain = "auth.cocoar.dev" };
+
+        var config = RealmFido2.BuildConfiguration(
+            realm, ProdEnv, rpIdOverride: "amzettel.at",
+            additionalOrigins: [PlayOrigin], relatedOrigins: [PlayOrigin]);
+
+        Assert.DoesNotContain(PlayOrigin, config.Origins);
+    }
+
     private static readonly IWebHostEnvironment ProdEnv = new FakeWebHostEnvironment("Production");
 
     private sealed class FakeWebHostEnvironment(string environmentName) : IWebHostEnvironment

@@ -481,12 +481,12 @@ public partial class CocoarPasskeyGrantFlowTests : IntegrationTestBase
         return doc is not null && !doc.IsConsumed && !doc.IsExpired;
     }
 
-    private Task SeedPasskeyClientAsync(string clientId, string? rpId = null) =>
-        SeedClientAsync(clientId, [CocoarGrantTypes.Passkey, "refresh_token"], rpId);
+    private Task SeedPasskeyClientAsync(string clientId, string? rpId = null, Guid? appId = null) =>
+        SeedClientAsync(clientId, [CocoarGrantTypes.Passkey, "refresh_token"], rpId, appId);
 
-    private async Task SeedClientAsync(string clientId, List<string> grantTypes, string? rpId = null)
+    private async Task SeedClientAsync(string clientId, List<string> grantTypes, string? rpId = null, Guid? appId = null)
     {
-        var app = await CreateAppAsync($"{clientId}-catalog", clientId);
+        var appGuid = appId ?? (await CreateAppAsync($"{clientId}-catalog", clientId)).Id;
 
         using var scope = Factory.Services.CreateScope();
         var oauthAdmin = scope.ServiceProvider.GetRequiredService<OAuthAdminService>();
@@ -504,7 +504,7 @@ public partial class CocoarPasskeyGrantFlowTests : IntegrationTestBase
             RequireConsent = false,
             AccessTokenType = AccessTokenType.Jwt,
             WebAuthnRpId = rpId,
-            AppIds = [new ShortGuid(app.Id).ToString()],
+            AppIds = [new ShortGuid(appGuid).ToString()],
         };
         var result = await oauthAdmin.CreateClientAsync(dto, TestContext.Current.CancellationToken);
         if (result.IsError)

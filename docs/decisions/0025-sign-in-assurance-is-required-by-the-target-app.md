@@ -156,6 +156,8 @@ A passkey enrolled in a native app under the App's RP ID is usable on the web on
 
 Either way, the web ceremony has to use the RP ID of the *target* App (section 3), not the realm's primary domain, which is what a DCR/CIMD client gets today.
 
+**Native Android apps** (added in 0.19). Android's Credential Manager signs `android:apk-key-hash:<certificate hash>` instead of a web origin, so it never passes the RP-ID host check. The App lists the Android apps that may use its passkeys (`SignIn.PasskeyAndroidOrigins`); a presented `android:` origin is accepted only as an exact match, only for a ceremony on the App's passkey RP ID, and only when the ceremony's client belongs to that App. The list is per App rather than per client: the RP's `assetlinks.json` vouches for the app on behalf of the RP, which the App owns, and a backend that redeems an assertion from its Android app with its web client belongs to the same App. Never a blanket acceptance of `android:` origins: the RP-ID hash proves the credential is the RP's, the origin is what proves which app asked.
+
 ## Consequences
 
 - A consumer app can run on e-mail codes while an admin app on the same realm requires 2FA, and the URL used to reach the login page changes nothing.

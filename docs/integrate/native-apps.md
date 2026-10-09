@@ -43,7 +43,7 @@ Granting a native grant on the client sets the matching `gt:urn:cocoar:*` permis
 
 > **Server-side BFF (confidential redeem).** "Public" is the right posture for a true native app that can't keep a secret. A **backend-for-frontend** that redeems the OTP / magic / passkey grant *server-side* (browser never touches Modgud) may instead use a **confidential** client — there is no public-only enforcement on these grants, so a `client_secret` adds client authentication on top of the user's factor. If such a BFF also acts machine-to-machine (e.g. minting [invite codes](../admin/applications#invite-codes-the-invitecode-posture) via `client_credentials`), that is a **separate** client: a single client cannot hold both user-flow and `client_credentials` grants (see [strict grant separation](../admin/service-accounts#strict-grant-separation)). So a dual-role BFF runs **two clients** — a login client carrying `urn:cocoar:otp` (public for a single shared secret, or confidential for client-auth on the redeem) **plus** a separate SA-linked client for `client_credentials`.
 
-### 3. Passkeys: set the per-client RP-ID and serve an AASA
+### 3. Passkeys: set the per-client RP-ID and serve an AASA / asset links
 
 For `urn:cocoar:passkey`, set the client's **WebAuthn RP-ID** to the app's branded apex (e.g. `app.example.com`). If left blank it falls back to the realm's primary domain.
 
@@ -53,6 +53,13 @@ Two things must be true app-side (Modgud never serves or routes the apex — it 
 - The apex serves a valid **`/.well-known/apple-app-site-association`** (AASA) file from the app's own infrastructure.
 
 > Changing the RP-ID later invalidates every passkey already enrolled for that client. Choose the apex deliberately.
+
+**Android.** Android's Credential Manager does not report a web origin for a native app. The `origin` in the signed client data is `android:apk-key-hash:<base64url SHA-256 of the app's signing certificate>`, set by the platform. Modgud accepts it only when the App the client belongs to lists it:
+
+- On the App, set the passkey RP ID (**Sign-in** tab, the same value as the client's RP-ID) and add the app under **Android apps**, one per line. Paste the SHA-256 fingerprint of the signing certificate as the Play Console or `keytool` shows it (`37:12:A2:…`), the bare hash, or the full `android:apk-key-hash:…` origin; Modgud stores the origin. Each signing certificate is its own entry: Google Play app signing, a locally signed release build, a separate beta app.
+- The RP ID domain serves `/.well-known/assetlinks.json` listing the app's package and certificate with the permission `delegate_permission/common.get_login_creds`. Android checks this before it lets the app use the RP ID; Modgud never serves it.
+
+The list belongs to the App, not to a client: every client of the App whose ceremony runs on the App's RP ID accepts it. That covers a backend that begins and redeems the passkey grant with the App's web client for an assertion the Android app produced. A presented `android:` origin that the App does not list, or a client of another App, is rejected as before. In the realm manifest the list is `Settings.SignIn.PasskeyAndroidOrigins` on the App.
 
 ---
 

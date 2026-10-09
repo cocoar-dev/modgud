@@ -2459,7 +2459,10 @@
       "passkeyRpId": "Passkey-RP-ID",
       "passkeyRpIdHint": "Domain, an die die Passkeys dieser App gebunden sind. Leer = die Domain des Realms. Native Clients können sie pro Client überschreiben.",
       "relatedOrigins": "Passkeys der App auch auf der Modgud-Login-Seite anbieten (Related Origins)",
-      "relatedOriginsHint": "Die App muss diese Datei unter {url} ausliefern. Browser mit Related-Origins-Unterstützung (Chrome, Edge, Safari) bieten dann die Passkeys der App auf der Modgud-Login-Seite an; andere nutzen weiter die Passkeys des Realms."
+      "relatedOriginsHint": "Die App muss diese Datei unter {url} ausliefern. Browser mit Related-Origins-Unterstützung (Chrome, Edge, Safari) bieten dann die Passkeys der App auf der Modgud-Login-Seite an; andere nutzen weiter die Passkeys des Realms.",
+      "androidOrigins": "Android-Apps",
+      "androidOriginsHint": "Native Android-Apps, die die Passkeys dieser App verwenden dürfen, eine pro Zeile: der SHA-256-Fingerabdruck des Signaturzertifikats (wie in der Play Console angezeigt) oder android:apk-key-hash:<hash>. Braucht die Passkey-RP-ID.",
+      "androidOriginsNotice": "Android erlaubt der App die Passkeys nur, wenn {url} das Paket und das Zertifikat der App mit der Berechtigung delegate_permission/common.get_login_creds aufführt."
     }
   },
   "permissions": {

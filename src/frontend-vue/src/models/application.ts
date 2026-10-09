@@ -159,6 +159,9 @@ export interface ApplicationSignInDto {
   PasskeyRpId?: string | null
   /** The app publishes https://<PasskeyRpId>/.well-known/webauthn listing the Modgud login origin(s). */
   PasskeyRelatedOrigins?: boolean | null
+  /** Native Android apps that may use the app's passkeys: android:apk-key-hash:<hash> (or the
+   *  bare hash / SHA-256 certificate fingerprint, normalised by the server). */
+  PasskeyAndroidOrigins?: string[] | null
 }
 
 export interface ApplicationChangeFeedDto {
