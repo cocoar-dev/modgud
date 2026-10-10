@@ -20,6 +20,8 @@ import { useRealmSettingsStore } from '@/stores/realmSettings.store'
 import { useAppPagesApi, type AppSlotDto } from '@/composables/usePagesApi'
 import type { ApplicationSettingsDto } from '@/models/application'
 import AssetPicker from '@/components/AssetPicker.vue'
+import InfoTip from '@/components/InfoTip.vue'
+import WellKnownFileDialog from '@/components/WellKnownFileDialog.vue'
 import ColorField from '@/components/ColorField.vue'
 import type { AssetDto } from '@/models/assets'
 import BrandingPreview from '@/components/BrandingPreview.vue'
@@ -661,11 +663,12 @@ const DOMAIN_BINDING = {
 const hasOwnDomain = computed(() => f.origin.subdomain.trim().length > 0)
 
 // WebAuthn related origins: the file the app publishes on its RP ID, listing every
-// origin the Modgud login page runs on for this app (the realm host this admin UI is
-// served from, and the app's own subdomain when it has one).
+// origin the Modgud login page runs on for this app — the realm's DECLARED public
+// origin (ADR 0023; the browser's address only while it is unknown) and the app's own
+// subdomain when it has one. Only this installation is known here; the dialog says so.
 const relatedOriginsUrl = computed(() => `https://${f.signIn.passkeyRpId.trim()}/.well-known/webauthn`)
 const relatedOriginsJson = computed(() => {
-  const origins = [window.location.origin]
+  const origins = [appConfig.config.PublicOrigin ?? window.location.origin]
   const sub = f.origin.subdomain.trim()
   if (sub) origins.push(`https://${sub}`)
   return JSON.stringify({ origins: [...new Set(origins)] }, null, 2)
@@ -676,10 +679,19 @@ const relatedOriginsJson = computed(() => {
 // assetlinks.json before it lets the app use the RP ID.
 const appOriginList = computed(() => f.signIn.appOrigins
   .split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0))
-// Android entries: an origin, or a 64-hex / colon fingerprint, or a bare 43-char hash.
-const hasAndroidEntry = computed(() => appOriginList.value.some((line) =>
-  /^android:/i.test(line) || /^[0-9a-f:]{64,95}$/i.test(line) || /^[A-Za-z0-9_+/-]{43}=?$/.test(line)))
 const assetLinksUrl = computed(() => `https://${f.signIn.passkeyRpId.trim()}/.well-known/assetlinks.json`)
+
+function showRelatedOriginsFile() {
+  dialog.open(WellKnownFileDialog, {
+    title: t('admin.signIn.relatedOriginsFileTitle', {}, 'Related origins file'),
+    size: 'm',
+  }, {
+    url: relatedOriginsUrl.value,
+    description: t('admin.signIn.relatedOriginsFileIntro', {}, 'The app has to serve this file on its passkey domain, at this address:'),
+    note: t('admin.signIn.relatedOriginsFileNote', {}, 'It lists the login addresses of this Modgud installation. If the app also signs in through another installation (e.g. a test server), add that installation\'s addresses to the same file.'),
+    content: relatedOriginsJson.value,
+  })
+}
 
 const domainBoundLabels: Record<keyof typeof DOMAIN_BINDING, () => string> = {
   emailBranding: () => t('admin.appSettings.hostBound.section.emailBranding', {}, 'E-mail branding'),
@@ -843,14 +855,13 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         </CoarFormField>
       </div>
 
-      <CoarCheckbox
-        v-if="appConfig.config.Features.PageBuilder"
-        v-model="f.pageTheme.override"
-        :label="t('admin.appSettings.pageTheme.override', {}, 'Custom page theme')" />
+      <div v-if="appConfig.config.Features.PageBuilder" class="check-row">
+        <CoarCheckbox
+          v-model="f.pageTheme.override"
+          :label="t('admin.appSettings.pageTheme.override', {}, 'Custom page theme')" />
+        <InfoTip :text="t('admin.appSettings.pageTheme.scope', {}, 'These tokens apply only inside this application’s custom pages. Built-in pages and the Modgud administration UI are never affected.')" />
+      </div>
       <template v-if="appConfig.config.Features.PageBuilder">
-        <CoarNotice variant="info">
-          {{ t('admin.appSettings.pageTheme.scope', {}, 'These tokens apply only inside this application’s custom pages. Built-in pages and the Modgud administration UI are never affected.') }}
-        </CoarNotice>
         <div class="grid grid-cols-2 gap-3">
           <CoarFormField :label="t('admin.appSettings.pageTheme.accentColor', {}, 'Accent color')">
             <ColorField v-bind="fieldBind('pageTheme', 'accentColor')" placeholder="#10b981" />
@@ -1045,27 +1056,32 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         </div>
       </div>
       <CoarFormField :label="t('admin.signIn.ownFactorNotOffered', {}, `User's own second factor, not offered by an app`)"
-        :hint="t('admin.signIn.ownFactorNotOfferedHint', {}, 'What happens when a user turned on a second factor (e.g. an authenticator app) that an app does not offer.')">
+        :hint="t('admin.signIn.ownFactorNotOfferedHint', {}, 'What happens when a user turned on a second factor (e.g. an authenticator app) that an app does not offer.')
+          + (signInEffective.OwnFactorNotOffered === 'Ignore'
+            ? ' ' + t('admin.signIn.ownFactorIgnoreNotice', {}, 'Users who set up their own second factor (e.g. an authenticator app) are not asked for it when signing in to this app, unless the app offers it.')
+            : '')">
         <CoarSelect v-bind="signInBind('OwnFactorNotOffered')" :options="ownFactorOptions" />
       </CoarFormField>
-      <CoarNotice v-if="signInEffective.OwnFactorNotOffered === 'Ignore'" variant="info">
-        {{ t('admin.signIn.ownFactorIgnoreNotice', {}, 'Users who set up their own second factor (e.g. an authenticator app) are not asked for it when signing in to this app, unless the app offers it.') }}
-      </CoarNotice>
       <CoarFormField :label="t('admin.signIn.passkeyRpId', {}, 'Passkey RP ID')"
         :hint="t('admin.signIn.passkeyRpIdHint', {}, `Domain passkeys of this app are bound to. Empty = the realm's domain. Native clients may override it per client.`)">
         <CoarTextInput v-model="f.signIn.passkeyRpId" :disabled="!f.signIn.override" clearable placeholder="app.example.com" />
       </CoarFormField>
-      <CoarCheckbox v-model="f.signIn.relatedOrigins"
-        :disabled="!f.signIn.override || !f.signIn.passkeyRpId.trim()"
-        :label="t('admin.signIn.relatedOrigins', {}, 'Offer the app\'s passkeys on the Modgud login page (related origins)')" />
-      <template v-if="f.signIn.relatedOrigins && f.signIn.passkeyRpId.trim()">
-        <CoarNotice variant="info">
-          {{ t('admin.signIn.relatedOriginsHint', { url: relatedOriginsUrl }, 'The app must serve this file at {url}. Browsers that support related origins (Chrome, Edge, Safari) then offer the app\'s passkeys on the Modgud login page; others fall back to the realm\'s passkeys.') }}
-        </CoarNotice>
-        <pre class="related-origins-json">{{ relatedOriginsJson }}</pre>
-      </template>
+      <div class="check-row">
+        <CoarCheckbox v-model="f.signIn.relatedOrigins"
+          :disabled="!f.signIn.override || !f.signIn.passkeyRpId.trim()"
+          :label="t('admin.signIn.relatedOrigins', {}, 'Offer the app\'s passkeys on the Modgud login page (related origins)')" />
+        <InfoTip :text="t('admin.signIn.relatedOriginsInfo', {}, 'Browsers that support related origins (Chrome, Edge, Safari) then offer the app\'s passkeys on the Modgud login page; others fall back to the realm\'s passkeys. The app has to publish a file on its passkey domain for this.')" />
+        <CoarButton
+          v-if="f.signIn.relatedOrigins && f.signIn.passkeyRpId.trim()"
+          size="s" variant="ghost" @click="showRelatedOriginsFile">
+          {{ t('admin.signIn.relatedOriginsShowFile', {}, 'Show file') }}
+        </CoarButton>
+      </div>
       <CoarFormField :label="t('admin.signIn.appOrigins', {}, 'Native app origins')"
-        :hint="t('admin.signIn.appOriginsHint', {}, 'Native apps whose platform reports no web origin and that may use this app\'s passkeys, one per line: the exact origin the app signs (e.g. app://notes). For Android, the SHA-256 fingerprint of the signing certificate (as shown in the Play Console) or android:apk-key-hash:<hash>. iOS and macOS apps report https://<RP ID> and need no entry. Needs the passkey RP ID.')">
+        :hint="t('admin.signIn.appOriginsHint', {}, 'Native apps whose platform reports no web origin and that may use this app\'s passkeys, one per line: the exact origin the app signs (e.g. app://notes). For Android, the SHA-256 fingerprint of the signing certificate (as shown in the Play Console) or android:apk-key-hash:<hash>. iOS and macOS apps report https://<RP ID> and need no entry. Needs the passkey RP ID.')
+          + (f.signIn.passkeyRpId.trim()
+            ? ' ' + t('admin.signIn.appOriginsAndroidNotice', { url: assetLinksUrl }, 'Android only lets the app use the passkeys when {url} lists the app\'s package and certificate with the permission delegate_permission/common.get_login_creds.')
+            : '')">
         <textarea
           v-model="f.signIn.appOrigins"
           class="app-origins"
@@ -1074,22 +1090,16 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
           :disabled="!f.signIn.override || !f.signIn.passkeyRpId.trim()"
           placeholder="37:12:A2:19:EC:6E:C8:11:…&#10;app://notes" />
       </CoarFormField>
-      <CoarNotice v-if="hasAndroidEntry && f.signIn.passkeyRpId.trim()" variant="info">
-        {{ t('admin.signIn.appOriginsAndroidNotice', { url: assetLinksUrl }, 'Android only lets the app use the passkeys when {url} lists the app\'s package and certificate with the permission delegate_permission/common.get_login_creds.') }}
-      </CoarNotice>
     </div>
 
     <!-- Native app / OAuth client sessions -->
     <div v-show="activeTab === 'sessions'" class="tab-content">
-      <CoarNotice truncate variant="info">
-        {{ t('admin.appSettings.sessions.hintShort', {}, 'Override the realm default for this app\'s refresh-token sessions.') }}
-        <template #details>
-          {{ t('admin.appSettings.sessions.hint', {}, 'Override the realm default for refresh-token-backed sessions in this app. Individual OAuth clients can override this again. Access-token lifetime is configured separately and remains short.') }}
-        </template>
-      </CoarNotice>
-      <CoarCheckbox
-        v-model="f.clientSessions.override"
-        :label="t('admin.appSettings.sessions.override', {}, 'Custom client-session policy')" />
+      <div class="check-row">
+        <CoarCheckbox
+          v-model="f.clientSessions.override"
+          :label="t('admin.appSettings.sessions.override', {}, 'Custom client-session policy')" />
+        <InfoTip :text="t('admin.appSettings.sessions.hint', {}, 'Override the realm default for refresh-token-backed sessions in this app. Individual OAuth clients can override this again. Access-token lifetime is configured separately and remains short.')" />
+      </div>
       <div class="grid grid-cols-2 gap-3">
         <CoarFormField :label="t('admin.appSettings.sessions.idle', {}, 'Idle lifetime (days, 1–3650)')">
           <CoarTextInput v-bind="fieldBind('clientSessions', 'idle')" clearable placeholder="30" />
@@ -1184,15 +1194,12 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
     <!-- Consumer change feed -->
     <div v-show="activeTab === 'sync'" class="tab-content">
-      <CoarNotice truncate variant="info">
-        {{ t('admin.appSettings.changeFeed.hintShort', {}, 'Expose this app\'s current scope through a resumable consumer change feed.') }}
-        <template #details>
-          {{ t('admin.appSettings.changeFeed.hint', {}, 'Authorized OAuth clients assigned to this application can take a full snapshot and then resume changes through SSE or the polling endpoint. The feed contains a short-lived integration projection, not raw event-store events.') }}
-        </template>
-      </CoarNotice>
-      <CoarCheckbox
-        v-model="f.changeFeed.enabled"
-        :label="t('admin.appSettings.changeFeed.enabled', {}, 'Enable consumer change feed')" />
+      <div class="check-row">
+        <CoarCheckbox
+          v-model="f.changeFeed.enabled"
+          :label="t('admin.appSettings.changeFeed.enabled', {}, 'Enable consumer change feed')" />
+        <InfoTip :text="t('admin.appSettings.changeFeed.hint', {}, 'Authorized OAuth clients assigned to this application can take a full snapshot and then resume changes through SSE or the polling endpoint. The feed contains a short-lived integration projection, not raw event-store events.')" />
+      </div>
       <div class="grid grid-cols-2 gap-3">
         <CoarFormField
           :label="t('admin.appSettings.changeFeed.retentionAge', {}, 'Minimum retention age (days)')"
@@ -1224,12 +1231,10 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         {{ t('admin.appSettings.pages.saveFirst', {}, 'Save the application first, then you can give its authentication pages their own layout.') }}
       </CoarNotice>
       <template v-else>
-        <CoarNotice truncate variant="info">
+        <p class="check-row text-sm text-surface-500">
           {{ t('admin.appSettings.pages.hintV3Short', {}, 'Pick which page variant this app uses per slot; inherit follows the realm.') }}
-          <template #details>
-            {{ t('admin.appSettings.pages.hintV3', {}, 'Pick which authentication page this application uses. Inherit follows the realm; variants are authored in Platform → Pages.') }}
-          </template>
-        </CoarNotice>
+          <InfoTip :text="t('admin.appSettings.pages.hintV3', {}, 'Pick which authentication page this application uses. Inherit follows the realm; variants are authored in Platform → Pages.')" />
+        </p>
         <CoarNotice v-if="pagesError" variant="error">{{ pagesError }}</CoarNotice>
 
         <CoarFormField v-for="m in PAGE_SLOT_META" :key="m.slug" :label="m.label">
@@ -1246,14 +1251,7 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
 
 <style scoped>
 .tab-bar { margin-bottom: 8px; }
-.related-origins-json {
-  margin: 0;
-  padding: 8px 12px;
-  overflow-x: auto;
-  border-radius: 6px;
-  background: var(--coar-background-neutral-secondary);
-  font-size: 12px;
-}
+.check-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0; }
 .app-origins {
   width: 100%;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

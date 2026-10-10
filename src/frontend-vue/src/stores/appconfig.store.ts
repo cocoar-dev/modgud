@@ -67,6 +67,8 @@ export interface SignInConfig {
 }
 
 export interface AppConfig {
+  /** The realm's declared public origin (ADR 0023) — where its login page runs. Null until loaded. */
+  PublicOrigin: string | null
   SignIn: SignInConfig
   InternalLoginEnabled: boolean
   MagicLinkSelfService: boolean
@@ -82,6 +84,7 @@ export interface AppConfig {
 }
 
 const defaults: AppConfig = {
+  PublicOrigin: null,
   SignIn: { Password: true, EmailCode: false, Passkey: true, MinimumLevel: 'Single' },
   InternalLoginEnabled: true,
   MagicLinkSelfService: true,
