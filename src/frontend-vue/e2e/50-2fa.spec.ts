@@ -27,6 +27,9 @@ const TEST_PASSWORD = 'TestPass1234!'
 
 const SUFFIX = uniqueSuffix()
 const userName = `totp-${SUFFIX}`
+// A user signs in with the e-mail address: the account's user name is the address, the
+// acronym is only a display handle.
+const email = `${userName}@modgud.test`
 
 test.describe.configure({ mode: 'serial' })
 
@@ -39,7 +42,7 @@ test.beforeAll(async ({ request }) => {
   const created = await (await request.post('/api/user', {
     data: {
       Firstname: 'Totp', Lastname: 'User', Acronym: userName,
-      Email: `${userName}@modgud.test`,
+      Email: email,
     },
   })).json()
   const passRes = await request.put(`/api/user/${created.Id}/password`, {
@@ -49,9 +52,43 @@ test.beforeAll(async ({ request }) => {
   await request.post('/api/account/logout')
 })
 
+test('§3 the setup dialog draws the QR code itself', async ({ page, baseURL }) => {
+  // The QR code carries the TOTP secret, so the page has to draw it itself: an image from a
+  // QR service would hand the secret to that service, and the production CSP
+  // (`img-src 'self' data:`) refuses such an image anyway — a broken picture in the dialog.
+  // The specs below talk to the API only; this one opens the dialog.
+  await apiLogin(page, email, TEST_PASSWORD)
+
+  const origin = new URL(baseURL!).origin
+  const foreignRequests: string[] = []
+  const cspViolations: string[] = []
+  page.on('request', (r) => {
+    const url = new URL(r.url())
+    if (url.protocol.startsWith('http') && url.origin !== origin) foreignRequests.push(r.url())
+  })
+  page.on('console', (m) => {
+    if (m.type() === 'error' && /Content Security Policy/i.test(m.text())) cspViolations.push(m.text())
+  })
+
+  await page.goto('/profile')
+  await page.getByRole('menuitem', { name: /Sicherheit|Security/i }).click()
+  const setupResponse = page.waitForResponse((r) => r.url().endsWith('/api/account/mfa/setup'))
+  await page.getByRole('button', { name: /MFA einrichten|Set up MFA/i }).click()
+  expect((await setupResponse).ok()).toBeTruthy()
+
+  // Drawn in the page: an <svg> with the modules as one path, not an image from elsewhere.
+  const qr = page.locator('svg[role="img"][aria-label="QR Code"]')
+  await expect(qr).toBeVisible()
+  const modules = await qr.locator('path').getAttribute('d')
+  expect(modules?.length ?? 0).toBeGreaterThan(1000)
+
+  expect(foreignRequests).toEqual([])
+  expect(cspViolations).toEqual([])
+})
+
 test('§3 TOTP setup + sign-in with code', async ({ page, request }) => {
   // Authenticate the user (cookie via page.request).
-  await apiLogin(page, userName, TEST_PASSWORD)
+  await apiLogin(page, email, TEST_PASSWORD)
 
   // Step 1: Request authenticator setup. Backend resets the key + returns
   // the otpauth:// URI for the QR plus the human-format `SharedKey`.
@@ -79,7 +116,7 @@ test('§3 TOTP setup + sign-in with code', async ({ page, request }) => {
   await page.request.post('/api/account/logout')
 
   const firstLogin = await request.post('/api/account/login', {
-    data: { UserName: userName, Password: TEST_PASSWORD, RememberMe: false },
+    data: { UserName: email, Password: TEST_PASSWORD, RememberMe: false },
   })
   expect(firstLogin.ok()).toBeTruthy()
   const firstBody = await firstLogin.json()
@@ -98,7 +135,7 @@ test('§3 TOTP setup + sign-in with code', async ({ page, request }) => {
   // Step 5: /me on the same request context now returns the user — full
   // sign-in completed.
   const me = await (await request.get('/api/account/me')).json()
-  expect(me.UserName).toBe(userName)
+  expect(me.UserName).toBe(email)
   expect(me.Has2FA).toBe(true)
   expect(me.TwoFactorMethods).toContain('totp')
 })
@@ -106,7 +143,7 @@ test('§3 TOTP setup + sign-in with code', async ({ page, request }) => {
 test('§3 invalid TOTP on second-factor login is rejected', async ({ request }) => {
   // The previous test enabled TOTP. Try a wrong code on a fresh login.
   const passRes = await request.post('/api/account/login', {
-    data: { UserName: userName, Password: TEST_PASSWORD, RememberMe: false },
+    data: { UserName: email, Password: TEST_PASSWORD, RememberMe: false },
   })
   expect(passRes.ok()).toBeTruthy()
   expect((await passRes.json()).RequiresMfa).toBe(true)
