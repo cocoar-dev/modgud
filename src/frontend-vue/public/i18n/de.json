@@ -2637,10 +2637,6 @@
   },
   "dashboard": {
     "title": "Dashboard",
-    "section": {
-      "personal": "Mein Konto",
-      "operations": "Realm-Betrieb"
-    },
     "welcomeTitle": "Willkommen bei Modgud",
     "welcomeBody": "Du bist angemeldet als",
     "errors": {
@@ -2654,12 +2650,10 @@
     },
     "kpi": {
       "attention": "Achtung",
-      "activeSessions": "Aktive Sitzungen",
-      "securityScore": "Sicherheits-Score",
-      "userCount": "User im Realm",
-      "failedLast24h": "Fehlversuche 24h",
+      "failedLast24h": "Fehlgeschlagene Anmeldungen, 24 h",
       "pendingChangeRequests": "Offene Anfragen",
-      "activeLoginProviders": "Login-Provider aktiv"
+      "realmSessions": "Aktive Sitzungen im Realm",
+      "securityAttention": "Sicherheitsereignisse, 24 h"
     },
     "security": {
       "title": "Account-Sicherheit",
@@ -2682,10 +2676,11 @@
       "unknownDevice": "Unbekanntes Gerät",
       "unknownBrowser": "Browser",
       "deviceLabel": "{browser} auf {os}",
-      "cta": "Sessions verwalten →"
+      "cta": "Sessions verwalten →",
+      "app": "App"
     },
     "systemActivity": {
-      "title": "System-Aktivität",
+      "title": "Letzte Sicherheitsereignisse",
       "none": "Noch keine Ereignisse.",
       "cta": "Vollständig anzeigen →"
     },
@@ -2696,6 +2691,72 @@
       "disabled": "Deaktiviert",
       "system": "System",
       "cta": "Verwalten →"
+    },
+    "directory": {
+      "title": "Verzeichnis"
+    },
+    "applications": {
+      "title": "Anwendungen & Anmeldung",
+      "enabled": "{n} aktiviert"
+    },
+    "logins": {
+      "title": "Anmeldungen",
+      "succeeded": "Erfolgreich",
+      "failed": "Fehlgeschlagen",
+      "subtitle": "Bekannte Konten, letzte {n} Tage",
+      "cta": "Audit-Log öffnen →"
+    },
+    "loginMethods": {
+      "title": "Anmeldemethoden",
+      "subtitle": "Erfolgreiche Anmeldungen, letzte {n} Tage",
+      "none": "Keine Anmeldungen in diesem Zeitraum.",
+      "total": "Anmeldungen",
+      "method": {
+        "password": "Passwort",
+        "passkey": "Passkey",
+        "external": "Externer Provider",
+        "magic_link": "Login-Link",
+        "email_otp": "E-Mail-Code",
+        "mfa": "Mit zweitem Faktor",
+        "other": "Sonstige"
+      }
+    },
+    "securityEvents": {
+      "title": "Sicherheitsereignisse",
+      "subtitle": "Letzte {n} Tage",
+      "none": "Keine Sicherheitsereignisse in diesem Zeitraum.",
+      "cta": "Sicherheits-Log öffnen →",
+      "total": "Ereignisse",
+      "error": "Fehler",
+      "warning": "Warnungen",
+      "info": "Hinweise",
+      "top": "Häufigste Warnungen und Fehler"
+    },
+    "customize": {
+      "start": "Anpassen",
+      "hint": "Widgets per Ziehen umsortieren, in der Breite ändern oder entfernen. Diese Anordnung gilt nur für dich.",
+      "reset": "Zurück zum Standard",
+      "add": "Hinzufügen:",
+      "allPlaced": "Alle verfügbaren Widgets sind auf dem Dashboard.",
+      "empty": "Keine Widgets auf dem Dashboard.",
+      "moveEarlier": "Nach vorne",
+      "moveLater": "Nach hinten",
+      "narrower": "Schmaler",
+      "wider": "Breiter",
+      "remove": "Entfernen",
+      "saved": "Dein Dashboard wurde gespeichert.",
+      "resetDone": "Dein Dashboard folgt wieder dem Standard.",
+      "saveFailed": "Das Dashboard konnte nicht gespeichert werden.",
+      "realmHintSet": "Dieser Realm hat einen eigenen Standard. Wer sein Dashboard nie angepasst hat, sieht ihn.",
+      "realmHintUnset": "Dieser Realm nutzt den eingebauten Standard. Du kannst die Anordnung unten zum Standard für alle machen, die ihr Dashboard nie angepasst haben.",
+      "saveDefault": "Als Realm-Standard speichern",
+      "saveDefaultTitle": "Als Realm-Standard verwenden?",
+      "saveDefaultMessage": "Alle in diesem Realm, die ihr Dashboard nicht selbst angepasst haben, bekommen diese Anordnung. Jeder sieht weiterhin nur die Widgets, für die er berechtigt ist.",
+      "defaultSaved": "Als Standard für diesen Realm gespeichert.",
+      "removeDefault": "Realm-Standard entfernen",
+      "removeDefaultTitle": "Realm-Standard entfernen?",
+      "removeDefaultMessage": "Wer kein eigenes Dashboard hat, bekommt wieder die eingebaute Anordnung.",
+      "defaultRemoved": "Der Realm-Standard wurde entfernt; es gilt die eingebaute Anordnung."
     }
   },
   "grid": {

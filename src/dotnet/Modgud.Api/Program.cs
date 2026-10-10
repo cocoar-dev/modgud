@@ -1499,6 +1499,7 @@ try
     Modgud.Api.Features.Admin.Jobs.JobsEndpoints.MapJobsEndpoints(app, "api");
     Modgud.Api.Features.Inbox.InboxEndpoints.MapInboxEndpoints(app, "api");
     Modgud.Api.Features.Inbox.InboxSettingsEndpoints.MapInboxSettingsEndpoints(app, "api");
+    Modgud.Api.Features.Dashboard.DashboardEndpoints.MapDashboardEndpoints(app, "api");
 
     // Account & Setup Endpoints (have additional strict "auth" rate limit)
     app.MapAccountEndpoints("api");
