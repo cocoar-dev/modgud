@@ -417,11 +417,11 @@ public sealed class ApplicationSettingsService(
         if (d.PasskeyRelatedOrigins == true && rpId is null)
             return Error.Validation("SignIn.RelatedOriginsWithoutRpId",
                 "Related origins need the app's passkey RP ID: the file lives at https://<RP ID>/.well-known/webauthn.");
-        if (SignInPolicyRules.ValidateAndroidOrigins(d.PasskeyAndroidOrigins, out var androidOrigins) is { } androidError)
-            return androidError;
-        if (androidOrigins is not null && rpId is null)
-            return Error.Validation("SignIn.AndroidOriginsWithoutRpId",
-                "Android apps need the app's passkey RP ID: Android checks https://<RP ID>/.well-known/assetlinks.json.");
+        if (SignInPolicyRules.ValidateAppOrigins(d.PasskeyAppOrigins, out var appOrigins) is { } appOriginError)
+            return appOriginError;
+        if (appOrigins is not null && rpId is null)
+            return Error.Validation("SignIn.AppOriginsWithoutRpId",
+                "Native app origins need the app's passkey RP ID: the platform ties the app to that domain.");
 
         var overrides = new ApplicationSignInOverrides
         {
@@ -435,7 +435,7 @@ public sealed class ApplicationSettingsService(
             OwnFactorNotOffered = ownFactor.Value,
             PasskeyRpId = rpId,
             PasskeyRelatedOrigins = d.PasskeyRelatedOrigins,
-            PasskeyAndroidOrigins = androidOrigins,
+            PasskeyAppOrigins = appOrigins,
         };
 
         var realm = await session.LoadAsync<Modgud.Domain.RealmSettings.RealmSettings>(
@@ -812,7 +812,7 @@ public sealed class ApplicationSettingsService(
                 OwnFactorNotOffered = doc.SignIn.OwnFactorNotOffered?.ToString(),
                 PasskeyRpId = doc.SignIn.PasskeyRpId,
                 PasskeyRelatedOrigins = doc.SignIn.PasskeyRelatedOrigins,
-                PasskeyAndroidOrigins = doc.SignIn.PasskeyAndroidOrigins,
+                PasskeyAppOrigins = doc.SignIn.PasskeyAppOrigins,
             },
             ClientSessions = doc.ClientSessions is null ? null : new ApplicationClientSessionsDto
             {

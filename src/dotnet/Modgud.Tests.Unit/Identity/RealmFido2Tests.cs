@@ -153,16 +153,39 @@ public class RealmFido2Tests
     public void NormalizeAndroidAppOrigin_RejectsEverythingElse(string raw)
         => Assert.Null(RealmFido2.NormalizeAndroidAppOrigin(raw));
 
+    [Theory]
+    [InlineData("app://notes.desktop", "app://notes.desktop")]          // a desktop app's own scheme, kept as written
+    [InlineData("  ms-app://S-1-15-2-1  ", "ms-app://S-1-15-2-1")]       // trimmed only
+    [InlineData("37:12:A2:19:EC:6E:C8:11:83:19:D5:6D:A7:82:2C:F0:C8:5A:28:1A:AE:1D:03:47:8B:0F:88:1B:78:4F:B6:2C", PlayOrigin)]
+    public void NormalizeAppOrigin_AcceptsNativeAppOrigins(string raw, string expected)
+        => Assert.Equal(expected, RealmFido2.NormalizeAppOrigin(raw));
+
+    [Theory]
+    [InlineData("https://amzettel.at")]              // web origins: RP ID and related origins cover them
+    [InlineData("http://localhost:4300")]
+    [InlineData("file://")]                          // shared by every app — proves nothing
+    [InlineData("data:text/html,x")]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("android:apk-key-hash:short")]       // a broken Android origin is not a generic one
+    [InlineData("app://has space")]
+    [InlineData("noscheme")]
+    [InlineData("1app://x")]
+    [InlineData("app:")]
+    public void NormalizeAppOrigin_RefusesWebAndNonAppOrigins(string raw)
+        => Assert.Null(RealmFido2.NormalizeAppOrigin(raw));
+
     [Fact]
-    public void BuildConfiguration_AppOrigins_AcceptOnlyAndroidAppOrigins()
+    public void BuildConfiguration_AppOrigins_AcceptOnlyNativeAppOrigins()
     {
         var realm = new Realm { Slug = "system", DisplayName = "Acme", PrimaryDomain = "auth.cocoar.dev" };
 
         var config = RealmFido2.BuildConfiguration(
             realm, ProdEnv, rpIdOverride: "amzettel.at",
-            appOrigins: [PlayOrigin, "https://evil.at", "android:apk-key-hash:short"]);
+            appOrigins: [PlayOrigin, "app://notes.desktop", "https://evil.at", "file://", "android:apk-key-hash:short"]);
 
         Assert.Contains(PlayOrigin, config.Origins);
+        Assert.Contains("app://notes.desktop", config.Origins);
+        Assert.DoesNotContain("file://", config.Origins);
         Assert.DoesNotContain("https://evil.at", config.Origins);
         Assert.DoesNotContain("android:apk-key-hash:short", config.Origins);
     }

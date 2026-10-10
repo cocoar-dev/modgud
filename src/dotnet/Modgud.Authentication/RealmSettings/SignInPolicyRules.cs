@@ -49,10 +49,10 @@ internal static partial class SignInPolicyRules
         return null;
     }
 
-    /// <summary>Normalises the App's Android app origins (see
-    /// <see cref="Modgud.Authentication.Identity.RealmFido2.NormalizeAndroidAppOrigin"/>);
+    /// <summary>Normalises the App's native app origins (see
+    /// <see cref="Modgud.Authentication.Identity.RealmFido2.NormalizeAppOrigin"/>);
     /// null/empty passes as null. Duplicates collapse.</summary>
-    public static Error? ValidateAndroidOrigins(string[]? raw, out string[]? normalized)
+    public static Error? ValidateAppOrigins(string[]? raw, out string[]? normalized)
     {
         normalized = null;
         if (raw is null) return null;
@@ -60,10 +60,11 @@ internal static partial class SignInPolicyRules
         foreach (var entry in raw)
         {
             if (string.IsNullOrWhiteSpace(entry)) continue;
-            if (Modgud.Authentication.Identity.RealmFido2.NormalizeAndroidAppOrigin(entry) is not { } origin)
-                return Error.Validation("SignIn.InvalidPasskeyAndroidOrigin",
-                    $"'{entry.Trim()}' is not an Android app origin. Use android:apk-key-hash:<base64url hash> "
-                    + "or the SHA-256 fingerprint of the signing certificate (e.g. 37:12:A2:…).");
+            if (Modgud.Authentication.Identity.RealmFido2.NormalizeAppOrigin(entry) is not { } origin)
+                return Error.Validation("SignIn.InvalidPasskeyAppOrigin",
+                    $"'{entry.Trim()}' is not a native app origin. Use the origin the app signs (e.g. app://notes; "
+                    + "not http, https or file), or for Android the SHA-256 fingerprint of the signing certificate "
+                    + "(e.g. 37:12:A2:…) or android:apk-key-hash:<base64url hash>.");
             if (!result.Contains(origin, StringComparer.Ordinal)) result.Add(origin);
         }
         normalized = result.Count == 0 ? null : [.. result];

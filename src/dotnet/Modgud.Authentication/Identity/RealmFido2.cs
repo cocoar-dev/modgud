@@ -117,15 +117,16 @@ public static class RealmFido2
             }
         }
 
-        // Native Android apps: Credential Manager reports android:apk-key-hash:<cert hash>
-        // instead of a web origin. The caller passes the presented origin only when the App
-        // the ceremony's client belongs to lists it for this RP ID (PasskeyAppOrigins); any
-        // other shape is dropped here, so this can never widen to a web origin.
+        // Native apps whose platform reports no web origin (Android's Credential Manager:
+        // android:apk-key-hash:<cert hash>; a desktop app with a scheme of its own). The
+        // caller passes the presented origin only when the App the ceremony's client
+        // belongs to lists it for this RP ID (PasskeyAppOrigins); web origins and other
+        // shapes are dropped here, so this can never widen to a web origin.
         if (appOrigins is not null)
         {
             foreach (var origin in appOrigins)
             {
-                if (IsAndroidAppOrigin(origin))
+                if (IsNativeAppOrigin(origin))
                     origins.Add(origin);
             }
         }
@@ -233,6 +234,44 @@ public static class RealmFido2
             + Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
         return IsAndroidAppOrigin(origin) ? origin : null;
     }
+
+    // Schemes that can never identify a native app: web origins are covered by the RP ID
+    // and related origins (an https entry here would skip the RP's own consent file), and
+    // the rest are shared by every app or not origins at all.
+    private static readonly HashSet<string> NonAppSchemes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "http", "https", "file", "data", "blob", "javascript", "about",
+    };
+
+    /// <summary>
+    /// Normalises what an administrator enters as a native app origin. An Android app
+    /// (its origin, bare hash or certificate fingerprint, see
+    /// <see cref="NormalizeAndroidAppOrigin"/>) becomes <c>android:apk-key-hash:…</c>; any
+    /// other entry must already be an origin with its own scheme (e.g. <c>app://notes</c>)
+    /// and is kept exactly as written, because the match against the signed origin is
+    /// ordinal. Null for web origins, schemes shared by every app, and anything malformed.
+    /// </summary>
+    public static string? NormalizeAppOrigin(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var value = raw.Trim();
+        if (NormalizeAndroidAppOrigin(value) is { } android) return android;
+        if (value.StartsWith("android:", StringComparison.OrdinalIgnoreCase)) return null;
+
+        if (value.Length > 512 || value.Any(c => char.IsWhiteSpace(c) || char.IsControl(c))) return null;
+        var colon = value.IndexOf(':');
+        if (colon <= 0 || colon == value.Length - 1) return null;
+        var scheme = value[..colon];
+        if (!char.IsAsciiLetter(scheme[0])
+            || !scheme.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '-' or '.'))
+            return null;
+        return NonAppSchemes.Contains(scheme) ? null : value;
+    }
+
+    /// <summary>True when <paramref name="origin"/> is, unchanged, a native app origin
+    /// <see cref="NormalizeAppOrigin"/> would store.</summary>
+    public static bool IsNativeAppOrigin(string? origin)
+        => origin is not null && string.Equals(NormalizeAppOrigin(origin), origin, StringComparison.Ordinal);
 
     /// <summary>
     /// Extracts the WebAuthn <c>origin</c> from a clientDataJSON byte payload (the

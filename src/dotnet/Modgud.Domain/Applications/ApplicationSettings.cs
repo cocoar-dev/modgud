@@ -233,13 +233,15 @@ public record ApplicationSignInOverrides
     /// domain uses the App's RP ID.</summary>
     public bool? PasskeyRelatedOrigins { get; init; }
 
-    /// <summary>Native Android apps of this App that may use its passkeys: each entry the
-    /// origin Android's Credential Manager reports for the app,
-    /// <c>android:apk-key-hash:&lt;base64url SHA-256 of the signing certificate&gt;</c>.
-    /// Accepted only for a ceremony on <see cref="PasskeyRpId"/> whose client belongs to this
-    /// App, and only as an exact match. The app side of the trust is the RP's
-    /// <c>https://{PasskeyRpId}/.well-known/assetlinks.json</c>. Null = no Android app.</summary>
-    public string[]? PasskeyAndroidOrigins { get; init; }
+    /// <summary>Origins of this App's native apps whose platform reports no web origin, so
+    /// they may use its passkeys: an Android app as
+    /// <c>android:apk-key-hash:&lt;base64url SHA-256 of the signing certificate&gt;</c>, any
+    /// other app with the exact origin it signs (e.g. <c>app://notes</c>). Web origins are
+    /// never listed here. Accepted only for a ceremony on <see cref="PasskeyRpId"/> whose
+    /// client belongs to this App, and only as an exact match. The app side of the trust is
+    /// the platform's association with the RP (Android:
+    /// <c>https://{PasskeyRpId}/.well-known/assetlinks.json</c>). Null = none.</summary>
+    public string[]? PasskeyAppOrigins { get; init; }
 }
 
 /// <summary>Nullable-field mirror of <see cref="ClientSessionPolicy"/>. Null
