@@ -3,6 +3,7 @@ import { computed, ref, onMounted } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useI18n } from '@cocoar/vue-localization'
 import ModalLayout from '@/components/ModalLayout.vue'
+import QrCode from '@/components/QrCode.vue'
 import {
   CoarNotice,
   CoarOtpInput,
@@ -79,13 +80,7 @@ async function verifyCode() {
 
         <!-- QR Code -->
         <div class="flex justify-center py-4">
-          <img
-            :src="`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(authenticatorUri)}`"
-            alt="QR Code"
-            width="200"
-            height="200"
-            class="rounded border"
-          />
+          <QrCode v-if="authenticatorUri" :value="authenticatorUri" class="rounded border" />
         </div>
 
         <!-- Shared Key -->

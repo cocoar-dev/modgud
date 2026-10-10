@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
 import { useAuthStore } from '@/stores/auth.store'
 import { useI18n } from '@cocoar/vue-localization'
+import QrCode from '@/components/QrCode.vue'
 import {
   CoarNotice,
   CoarCard,
@@ -167,7 +168,7 @@ function bufferToBase64Url(b: ArrayBuffer): string {
           <p class="text-sm text-surface-600">{{ t('auth.secureSetup.totpScanQr', {}, 'Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.).') }}</p>
 
           <div class="flex justify-center">
-            <img :src="`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(totpAuthUri)}`" alt="QR Code" class="rounded" />
+            <QrCode v-if="totpAuthUri" :value="totpAuthUri" class="rounded" />
           </div>
 
           <details class="text-xs text-surface-500">
