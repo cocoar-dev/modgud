@@ -94,15 +94,18 @@ const tiles = computed(() => group.value.tiles.flatMap(tile => {
   padding: 0.75rem;
   border: 1px solid var(--coar-border-neutral-tertiary, rgba(0, 0, 0, 0.08));
   border-radius: 0.5rem;
-  background: var(--coar-background-neutral-secondary, #f9fafb);
+  /* One step lighter than the card it sits on, so the tile reads as a surface
+     of its own rather than an outline. */
+  background: var(--coar-background-neutral-primary, #ffffff);
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .counts__tile:hover,
 .counts__tile:focus-visible {
   border-color: var(--coar-accent, #1077be);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 .counts__icon {
   display: flex;
@@ -112,7 +115,7 @@ const tiles = computed(() => group.value.tiles.flatMap(tile => {
   height: 1.75rem;
   margin-bottom: 0.375rem;
   border-radius: 0.5rem;
-  background: var(--coar-background-neutral-tertiary, rgba(0, 0, 0, 0.05));
+  background: var(--coar-background-neutral-secondary, rgba(0, 0, 0, 0.05));
   color: var(--coar-text-neutral-secondary, #6b7280);
 }
 .counts__value {

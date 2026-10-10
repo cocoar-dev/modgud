@@ -143,7 +143,7 @@ const active = ref<string | null>(null)
 }
 
 .donut__legend {
-  flex: 1 1 9rem;
+  flex: 1 1 15rem;
   min-width: 0;
   margin: 0;
   padding: 0;
