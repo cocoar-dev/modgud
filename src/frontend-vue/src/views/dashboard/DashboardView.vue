@@ -1,16 +1,23 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from '@cocoar/vue-localization'
-import { CoarButton, CoarIcon, CoarPopconfirm, CoarSpinner, useToast } from '@cocoar/vue-ui'
+import {
+  CoarButton, CoarCheckbox, CoarIcon, CoarPopconfirm, CoarSegmentedControl, CoarSpinner, useToast,
+} from '@cocoar/vue-ui'
 import { useUI } from '@/composables/useUI'
 import { useHttpClient } from '@/composables/useHttpClient'
+import { useAppConfigStore } from '@/stores/appconfig.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { useDashboardStats } from './dashboardStats'
-import { resolveLayout, type WidgetDefinition, type WidgetPlacement } from './layout'
+import {
+  resolveLayout, resolveOptions,
+  type WidgetDefinition, type WidgetOptionChoice, type WidgetOptionDefinition, type WidgetPlacement,
+} from './layout'
 import { BUILT_IN_LAYOUT, WIDGETS, WIDGET_CATALOG } from './widgets/registry'
 
 const { t, language } = useI18n()
 const authStore = useAuthStore()
+const appConfig = useAppConfigStore()
 const toast = useToast()
 
 const ui = useUI()
@@ -73,9 +80,48 @@ function definition(placement: WidgetPlacement): WidgetDefinition {
   return WIDGET_CATALOG.get(placement.Widget)!
 }
 
+/** What the widget component is rendered with: its fixed props plus its resolved options. */
+function widgetProps(placement: WidgetPlacement): Record<string, unknown> {
+  const def = definition(placement)
+  return def.options
+    ? { ...def.props, options: resolveOptions(def, placement.Options) }
+    : { ...def.props }
+}
+
 function startEditing() {
   draft.value = activeLayout.value.map(p => ({ ...p }))
+  configuring.value = null
   editing.value = true
+}
+
+// ─── A widget's own settings ─────────────────────────────────────────────
+/** Id of the widget whose settings panel is open, if any. */
+const configuring = ref<string | null>(null)
+
+/** A choice is offered only where it can ever show something for this viewer. */
+function availableChoices(option: WidgetOptionDefinition): WidgetOptionChoice[] {
+  return option.choices.filter(choice =>
+    (!choice.requireFeature || appConfig.config.Features[choice.requireFeature])
+    && (!choice.requirePermissions || choice.requirePermissions.some(p => authStore.hasPermission(p))))
+}
+
+function chosen(placement: WidgetPlacement, option: WidgetOptionDefinition): string[] {
+  return resolveOptions(definition(placement), placement.Options)[option.key] ?? []
+}
+
+function setOption(index: number, option: WidgetOptionDefinition, values: string[]) {
+  draft.value = draft.value.map((p, i) =>
+    i === index ? { ...p, Options: { ...p.Options, [option.key]: values } } : p)
+}
+
+function toggleChoice(index: number, option: WidgetOptionDefinition, value: string, on: boolean) {
+  const placement = draft.value[index]
+  if (!placement) return
+  const current = chosen(placement, option)
+  // Kept in the catalog's order, so the widget shows tiles in a stable sequence.
+  setOption(index, option, option.choices
+    .map(c => c.value)
+    .filter(v => v === value ? on : current.includes(v)))
 }
 
 function move(from: number, to: number) {
@@ -262,12 +308,35 @@ function removeRealmDefault() {
               size="s" variant="ghost" icon-start="plus" :disabled="!canResize(placement, 1)"
               :title="t('dashboard.customize.wider', {}, 'Wider')" @click="resize(index, 1)" />
             <CoarButton
+              v-if="definition(placement).options"
+              size="s" :variant="configuring === placement.Widget ? 'secondary' : 'ghost'" icon-start="settings"
+              :title="t('dashboard.customize.settings', {}, 'Settings')"
+              @click="configuring = configuring === placement.Widget ? null : placement.Widget" />
+            <CoarButton
               size="s" variant="ghost" icon-start="x"
               :title="t('dashboard.customize.remove', {}, 'Remove')" @click="remove(index)" />
           </div>
+
+          <div v-if="editing && configuring === placement.Widget" class="dash-cell__settings">
+            <div v-for="option in definition(placement).options" :key="option.key" class="dash-cell__option">
+              <span class="dash-cell__option-label">{{ t(option.labelKey, {}, option.labelEn) }}</span>
+              <div v-if="option.kind === 'multi'" class="dash-cell__choices">
+                <CoarCheckbox
+                  v-for="choice in availableChoices(option)" :key="choice.value"
+                  :label="t(choice.labelKey, {}, choice.labelEn)"
+                  :model-value="chosen(placement, option).includes(choice.value)"
+                  @update:model-value="toggleChoice(index, option, choice.value, $event)" />
+              </div>
+              <CoarSegmentedControl
+                v-else
+                :options="availableChoices(option).map(c => ({ value: c.value, label: t(c.labelKey, {}, c.labelEn) }))"
+                :model-value="chosen(placement, option)[0] ?? ''"
+                @update:model-value="setOption(index, option, [$event])" />
+            </div>
+          </div>
           <!-- While arranging, the widget is a preview: not clickable, not focusable. -->
           <div class="dash-cell__content" :inert="editing || undefined">
-            <component :is="definition(placement).component" v-bind="definition(placement).props" />
+            <component :is="definition(placement).component" v-bind="widgetProps(placement)" />
           </div>
         </div>
       </div>
@@ -403,6 +472,30 @@ function removeRealmDefault() {
   align-items: center;
   gap: 0.125rem;
   padding: 0 0.125rem 0.25rem 0.25rem;
+}
+.dash-cell__settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin: 0 0.25rem 0.375rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.375rem;
+  background: var(--coar-background-neutral-primary, #ffffff);
+  font-size: 0.8125rem;
+  cursor: default;
+}
+.dash-cell__option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.dash-cell__option-label {
+  font-weight: 600;
+}
+.dash-cell__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 1rem;
 }
 .dash-cell__grip {
   color: var(--coar-text-neutral-secondary, #9ca3af);

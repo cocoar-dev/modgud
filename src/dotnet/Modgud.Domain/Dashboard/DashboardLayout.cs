@@ -34,9 +34,21 @@ public sealed class DashboardLayout
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
-/// <summary>One widget on the dashboard. List order is display order.</summary>
-public sealed record DashboardWidgetPlacement(string Widget, string Size)
+/// <summary>
+/// One widget on the dashboard. List order is display order.
+/// <paramref name="Options"/> are the widget's own settings (which tiles a
+/// counts widget shows, how many rows a list shows): option key → chosen values.
+/// Like the widget id they are the frontend's vocabulary — an option the widget
+/// does not know is ignored, and no option reveals data the endpoints withhold.
+/// </summary>
+public sealed record DashboardWidgetPlacement(
+    string Widget,
+    string Size,
+    Dictionary<string, List<string>>? Options = null)
 {
+    public const int MaxOptions = 8;
+    public const int MaxOptionValues = 24;
+
     /// <summary>Column spans the grid understands (see the frontend's size map).</summary>
     public static readonly IReadOnlySet<string> Sizes =
         new HashSet<string>(StringComparer.Ordinal) { "xs", "s", "m", "l", "xl", "full" };

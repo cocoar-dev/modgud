@@ -4,12 +4,17 @@ import { useRouter } from 'vue-router'
 import { useI18n } from '@cocoar/vue-localization'
 import { CoarIcon } from '@cocoar/vue-ui'
 import { useDashboardStats, type DashboardCounts } from '../dashboardStats'
+import type { WidgetOptions } from '../layout'
 import WidgetCard from './WidgetCard.vue'
 
 /** A group of "how many are there" tiles, each a shortcut to its list. */
 export type CountsGroup = 'directory' | 'applications'
 
-const props = defineProps<{ group: CountsGroup }>()
+const props = defineProps<{
+  group: CountsGroup
+  /** `show`: the count keys to display, as chosen in the widget's settings. */
+  options: WidgetOptions
+}>()
 
 const { t, language } = useI18n()
 const router = useRouter()
@@ -33,6 +38,7 @@ const groups = computed<Record<CountsGroup, { title: string; icon: string; tiles
       tiles: [
         { key: 'Users', icon: 'users', label: t('nav.users', {}, 'Users'), to: '/admin/users' },
         { key: 'ServiceAccounts', icon: 'cpu', label: t('admin.serviceAccounts.title', {}, 'Service Accounts'), to: '/admin/service-accounts' },
+        { key: 'Positions', icon: 'briefcase', label: t('admin.positions.title', {}, 'Positions'), to: '/admin/positions' },
         { key: 'Groups', icon: 'users-round', label: t('nav.groups', {}, 'Groups'), to: '/admin/groups' },
         { key: 'Roles', icon: 'shield', label: t('nav.roles', {}, 'Roles'), to: '/admin/roles' },
       ],
@@ -43,6 +49,8 @@ const groups = computed<Record<CountsGroup, { title: string; icon: string; tiles
       tiles: [
         { key: 'Apps', icon: 'layout-grid', label: t('admin.apps.title', {}, 'Applications'), to: '/admin/apps' },
         { key: 'OAuthClients', icon: 'app-window', label: t('admin.oauthClients.title', {}, 'OAuth Clients'), to: '/admin/oauth/clients' },
+        { key: 'OAuthApis', icon: 'server', label: t('admin.oauthApis.title', {}, 'OAuth APIs'), to: '/admin/oauth/apis' },
+        { key: 'OAuthScopes', icon: 'tags', label: t('admin.oauthScopes.title', {}, 'OAuth Scopes'), to: '/admin/oauth/scopes' },
         {
           key: 'LoginProviders',
           icon: 'log-in',
@@ -58,15 +66,23 @@ const groups = computed<Record<CountsGroup, { title: string; icon: string; tiles
 const group = computed(() => groups.value[props.group])
 const numberFormat = computed(() => new Intl.NumberFormat(language.value))
 
-// A count the viewer has no permission for arrives as null — its tile is left out.
+// Shown: what the settings select, minus counts the viewer has no permission
+// for (those arrive as null).
 const tiles = computed(() => group.value.tiles.flatMap(tile => {
+  if (!props.options.show?.includes(tile.key)) return []
   const count = stats.value?.Counts[tile.key]
   return count == null ? [] : [{ ...tile, value: numberFormat.value.format(count) }]
 }))
 </script>
 
 <template>
-  <WidgetCard :title="group.title" :icon="group.icon" :loading="loading && !stats" :failed="failed">
+  <WidgetCard
+    :title="group.title"
+    :icon="group.icon"
+    :loading="loading && !stats"
+    :failed="failed"
+    :empty="stats && tiles.length === 0 ? t('dashboard.counts.none', {}, 'Nothing selected to show.') : null"
+  >
     <div class="counts">
       <button v-for="tile in tiles" :key="tile.key" type="button" class="counts__tile" @click="router.push(tile.to)">
         <span class="counts__icon"><CoarIcon :name="tile.icon" size="s" /></span>

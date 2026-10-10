@@ -2653,7 +2653,8 @@
       "failedLast24h": "Fehlgeschlagene Anmeldungen, 24 h",
       "pendingChangeRequests": "Offene Anfragen",
       "realmSessions": "Aktive Sitzungen im Realm",
-      "securityAttention": "Sicherheitsereignisse, 24 h"
+      "securityAttention": "Sicherheitsereignisse, 24 h",
+      "myPasskeys": "Meine Passkeys"
     },
     "security": {
       "title": "Account-Sicherheit",
@@ -2756,7 +2757,20 @@
       "removeDefault": "Realm-Standard entfernen",
       "removeDefaultTitle": "Realm-Standard entfernen?",
       "removeDefaultMessage": "Wer kein eigenes Dashboard hat, bekommt wieder die eingebaute Anordnung.",
-      "defaultRemoved": "Der Realm-Standard wurde entfernt; es gilt die eingebaute Anordnung."
+      "defaultRemoved": "Der Realm-Standard wurde entfernt; es gilt die eingebaute Anordnung.",
+      "settings": "Einstellungen"
+    },
+    "myApps": {
+      "title": "Meine Apps",
+      "subtitle": "Wo dieses Konto angemeldet ist",
+      "none": "Du hast dich mit diesem Konto noch bei keiner App angemeldet."
+    },
+    "counts": {
+      "none": "Nichts zum Anzeigen ausgewählt."
+    },
+    "options": {
+      "show": "Anzeigen",
+      "rows": "Zeilen"
     }
   },
   "grid": {

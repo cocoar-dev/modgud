@@ -4,6 +4,8 @@ using Modgud.Api.Features.Dashboard;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Authentication.Audit;
 using Modgud.Domain.Dashboard;
+using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Storage;
 using Modgud.Infrastructure.Audit;
 
 namespace Modgud.Api.Tests.Dashboard;
@@ -136,7 +138,7 @@ public class DashboardEndpointsTests(SharedPostgresFixture fixture) : Integratio
         var stats = await plain.GetFromJsonAsync<DashboardStatsDto>("/api/dashboard/stats", ct);
 
         Assert.NotNull(stats);
-        Assert.Equal(new DashboardCountsDto(null, null, null, null, null, null, null, null, null, null), stats!.Counts);
+        Assert.Equal(new DashboardCountsDto(null, null, null, null, null, null, null, null, null, null, null, null, null), stats!.Counts);
         Assert.Null(stats.Logins);
         Assert.Null(stats.Security);
     }
@@ -195,6 +197,71 @@ public class DashboardEndpointsTests(SharedPostgresFixture fixture) : Integratio
         Assert.Null((await plain.GetFromJsonAsync<DashboardLayoutsDto>("/api/dashboard/layout", ct))!.RealmDefault);
     }
 
+    [Fact]
+    public async Task Layout_keeps_a_widgets_options()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var body = new SaveDashboardLayoutDto(
+        [
+            new DashboardWidgetPlacement("directory", "l", new() { ["show"] = ["Users", "Positions"] }),
+            new DashboardWidgetPlacement("my-sessions", "m"),
+        ]);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await Client.PutAsJsonAsync("/api/dashboard/layout", body, ct)).StatusCode);
+
+        var stored = (await Client.GetFromJsonAsync<DashboardLayoutsDto>("/api/dashboard/layout", ct))!.User!;
+        Assert.Equal(["Users", "Positions"], stored[0].Options!["show"]);
+        Assert.Null(stored[1].Options);
+    }
+
+    [Theory]
+    [InlineData("show me", "Users")]
+    [InlineData("show", "<script>")]
+    public async Task Layout_rejects_malformed_options(string key, string value)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var body = new SaveDashboardLayoutDto(
+            [new DashboardWidgetPlacement("directory", "l", new() { [key] = [value] })]);
+
+        var response = await Client.PutAsJsonAsync("/api/dashboard/layout", body, ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task My_apps_lists_only_the_callers_own_valid_grants_one_row_per_client()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var other = await Factory.CreateTestUserWithIdentityAsync("Plain", "Person", "PP", "pp@test.com");
+        var app = new Modgud.Authorization.Apps.App { Id = Guid.NewGuid(), Slug = "notes", DisplayName = "Notes" };
+        var client = new OAuthApplicationState
+        {
+            Id = Guid.NewGuid(), ClientId = "notes-web", DisplayName = "Notes Web", AppIds = [app.Id],
+        };
+        var bare = new OAuthApplicationState { Id = Guid.NewGuid(), ClientId = "cli-tool" };
+        var now = DateTimeOffset.UtcNow;
+
+        await using (var session = GetTenantedDocumentSession())
+        {
+            session.Store(app);
+            session.Store(client, bare);
+            session.Store(
+                Grant(DefaultUser!.Id, client.Id, now.AddDays(-9)),
+                Grant(DefaultUser.Id, client.Id, now.AddDays(-1)),
+                Grant(DefaultUser.Id, bare.Id, now.AddDays(-3)),
+                Grant(DefaultUser.Id, bare.Id, now.AddDays(-2), status: "revoked"),
+                Grant(other.Id, client.Id, now));
+            await session.SaveChangesAsync(ct);
+        }
+
+        var mine = await Client.GetFromJsonAsync<List<MyAppDto>>("/api/dashboard/my-apps", ct);
+
+        Assert.Equal(["Notes Web", "cli-tool"], mine!.Select(m => m.Name));
+        Assert.Equal("Notes", mine[0].AppName);
+        Assert.Null(mine[1].AppName);
+        Assert.True(mine[0].FirstAuthorizedAt < mine[0].LastAuthorizedAt);
+    }
+
     [Theory]
     [InlineData("logins-chart", "huge")]
     [InlineData("Not A Widget", "m")]
@@ -225,6 +292,16 @@ public class DashboardEndpointsTests(SharedPostgresFixture fixture) : Integratio
 
     private static SaveDashboardLayoutDto Layout(params (string Widget, string Size)[] widgets) =>
         new(widgets.Select(w => new DashboardWidgetPlacement(w.Widget, w.Size)).ToList());
+
+    private static OpenIddictAuthorizationDocument Grant(
+        Guid user, Guid client, DateTimeOffset at, string status = "valid") => new()
+    {
+        ApplicationId = client.ToString(),
+        Subject = user.ToString(),
+        Status = status,
+        Type = "permanent",
+        CreationDate = at,
+    };
 
     private static AuthAuditView Login(DateTimeOffset at, string method) =>
         Audit(at, AuditEvents.LoginSucceeded) with { Method = method };

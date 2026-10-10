@@ -5,8 +5,11 @@ import { useI18n } from '@cocoar/vue-localization'
 import { CoarTag } from '@cocoar/vue-ui'
 import { useHttpClient } from '@/composables/useHttpClient'
 import type { ClientSessionDto, SessionDto, SessionListDto } from '@/models/session'
+import type { WidgetOptions } from '../layout'
 import { useRelativeTime } from '../relativeTime'
 import WidgetCard from './WidgetCard.vue'
+
+const props = defineProps<{ options: WidgetOptions }>()
 
 const { t } = useI18n()
 const router = useRouter()
@@ -32,8 +35,9 @@ onMounted(async () => {
   }
 })
 
-const top = computed(() => rows.value.slice(0, 3))
-const extra = computed(() => Math.max(0, rows.value.length - 3))
+const limit = computed(() => Number(props.options.rows?.[0]) || 3)
+const top = computed(() => rows.value.slice(0, limit.value))
+const extra = computed(() => Math.max(0, rows.value.length - limit.value))
 
 function label(s: Row): string {
   if (s.Kind === 'Client') return s.ClientDisplayName || s.ClientId

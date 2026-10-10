@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@cocoar/vue-localization'
 import { CoarTag } from '@cocoar/vue-ui'
 import { useHttpClient } from '@/composables/useHttpClient'
+import type { WidgetOptions } from '../layout'
 import { useRelativeTime } from '../relativeTime'
 import WidgetCard from './WidgetCard.vue'
+
+const props = defineProps<{ options: WidgetOptions }>()
 
 const { t } = useI18n()
 const router = useRouter()
@@ -20,13 +23,16 @@ interface SecurityLogRow {
   Message: string
 }
 
-const rows = ref<SecurityLogRow[]>([])
+// Loaded once at the largest choice; the setting only trims what is shown.
+const MAX_ROWS = 15
+const all = ref<SecurityLogRow[]>([])
+const rows = computed(() => all.value.slice(0, Number(props.options.rows?.[0]) || 8))
 const loading = ref(true)
 const failed = ref(false)
 
 onMounted(async () => {
   try {
-    rows.value = await useHttpClient('/api/admin/auth-log').setQueryParameter('limit', '8').get<SecurityLogRow[]>()
+    all.value = await useHttpClient('/api/admin/auth-log').setQueryParameter('limit', String(MAX_ROWS)).get<SecurityLogRow[]>()
   } catch {
     failed.value = true
   } finally {

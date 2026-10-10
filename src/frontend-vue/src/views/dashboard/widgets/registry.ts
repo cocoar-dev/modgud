@@ -1,18 +1,31 @@
-import type { WidgetDefinition, WidgetPlacement } from '../layout'
+import type { WidgetDefinition, WidgetOptionDefinition, WidgetPlacement } from '../layout'
 import AccountSecurityWidget from './AccountSecurityWidget.vue'
 import CountsWidget from './CountsWidget.vue'
 import LoginMethodsWidget from './LoginMethodsWidget.vue'
 import LoginProvidersWidget from './LoginProvidersWidget.vue'
 import LoginsChartWidget from './LoginsChartWidget.vue'
+import MyAppsWidget from './MyAppsWidget.vue'
+import MyPasskeysWidget from './MyPasskeysWidget.vue'
 import MySessionsWidget from './MySessionsWidget.vue'
 import RecentActivityWidget from './RecentActivityWidget.vue'
 import SecurityEventsWidget from './SecurityEventsWidget.vue'
 import StatKpiWidget from './StatKpiWidget.vue'
 
+/** "How many rows" — the one setting the list widgets share. */
+function rowsOption(choices: number[], fallback: number): WidgetOptionDefinition {
+  return {
+    key: 'rows',
+    labelKey: 'dashboard.options.rows', labelEn: 'Rows',
+    kind: 'single',
+    choices: choices.map(n => ({ value: String(n), labelKey: `dashboard.options.rowCount.${n}`, labelEn: String(n) })),
+    defaults: [String(fallback)],
+  }
+}
+
 /**
- * Every widget the dashboard can show. Ids are persisted in stored layouts —
- * never rename one; a removed id simply drops out of the layouts that name it.
- * `requirePermissions` mirrors the backend strings exactly.
+ * Every widget the dashboard can show. Ids, option keys and choice values are
+ * persisted in stored layouts — never rename one; a removed one simply drops out
+ * of the layouts that name it. `requirePermissions` mirrors the backend strings.
  */
 export const WIDGETS: WidgetDefinition[] = [
   // ── Personal — every signed-in user ──────────────────────────────────
@@ -20,15 +33,31 @@ export const WIDGETS: WidgetDefinition[] = [
     id: 'account-security',
     titleKey: 'dashboard.security.title', titleEn: 'Account security', icon: 'shield-check',
     requirePermissions: [],
-    sizes: ['m', 'l', 'xl', 'full'], defaultSize: 'l',
+    sizes: ['m', 'l', 'xl', 'full'], defaultSize: 'm',
     component: AccountSecurityWidget,
   },
   {
     id: 'my-sessions',
     titleKey: 'dashboard.sessions.title', titleEn: 'Active sessions', icon: 'monitor',
     requirePermissions: [],
-    sizes: ['m', 'l', 'xl', 'full'], defaultSize: 'l',
+    sizes: ['m', 'l', 'xl', 'full'], defaultSize: 'm',
     component: MySessionsWidget,
+    options: [rowsOption([3, 5, 10], 3)],
+  },
+  {
+    id: 'my-apps',
+    titleKey: 'dashboard.myApps.title', titleEn: 'My apps', icon: 'app-window',
+    requirePermissions: [],
+    sizes: ['m', 'l', 'xl', 'full'], defaultSize: 'm',
+    component: MyAppsWidget,
+    options: [rowsOption([3, 5, 10], 5)],
+  },
+  {
+    id: 'kpi-my-passkeys',
+    titleKey: 'dashboard.kpi.myPasskeys', titleEn: 'My passkeys', icon: 'fingerprint',
+    requirePermissions: [],
+    sizes: ['xs', 's', 'm'], defaultSize: 's',
+    component: MyPasskeysWidget,
   },
 
   // ── Realm operations — each gated on what backs its data ─────────────
@@ -77,16 +106,43 @@ export const WIDGETS: WidgetDefinition[] = [
   {
     id: 'directory',
     titleKey: 'dashboard.directory.title', titleEn: 'Directory', icon: 'users',
-    requirePermissions: ['user:read', 'service-account:read', 'authorization-group:read', 'permission-role:read'],
+    requirePermissions: ['user:read', 'service-account:read', 'position:read', 'authorization-group:read', 'permission-role:read'],
     sizes: ['m', 'l', 'xl', 'full'], defaultSize: 'l',
     component: CountsWidget, props: { group: 'directory' },
+    // Choice values are the count keys of the statistics endpoint.
+    options: [{
+      key: 'show',
+      labelKey: 'dashboard.options.show', labelEn: 'Show',
+      kind: 'multi',
+      choices: [
+        { value: 'Users', labelKey: 'nav.users', labelEn: 'Users', requirePermissions: ['user:read'] },
+        { value: 'ServiceAccounts', labelKey: 'admin.serviceAccounts.title', labelEn: 'Service Accounts', requirePermissions: ['service-account:read'] },
+        { value: 'Positions', labelKey: 'admin.positions.title', labelEn: 'Positions', requirePermissions: ['position:read'], requireFeature: 'PositionTerminals' },
+        { value: 'Groups', labelKey: 'nav.groups', labelEn: 'Groups', requirePermissions: ['authorization-group:read'] },
+        { value: 'Roles', labelKey: 'nav.roles', labelEn: 'Roles', requirePermissions: ['permission-role:read'] },
+      ],
+      defaults: ['Users', 'ServiceAccounts', 'Positions', 'Groups', 'Roles'],
+    }],
   },
   {
     id: 'applications',
     titleKey: 'dashboard.applications.title', titleEn: 'Applications & sign-in', icon: 'layout-grid',
-    requirePermissions: ['app:read', 'oauth-client:read', 'login-provider:read'],
+    requirePermissions: ['app:read', 'oauth-client:read', 'oauth-api:read', 'oauth-scope:read', 'login-provider:read'],
     sizes: ['m', 'l', 'xl', 'full'], defaultSize: 'l',
     component: CountsWidget, props: { group: 'applications' },
+    options: [{
+      key: 'show',
+      labelKey: 'dashboard.options.show', labelEn: 'Show',
+      kind: 'multi',
+      choices: [
+        { value: 'Apps', labelKey: 'admin.apps.title', labelEn: 'Applications', requirePermissions: ['app:read'] },
+        { value: 'OAuthClients', labelKey: 'admin.oauthClients.title', labelEn: 'OAuth Clients', requirePermissions: ['oauth-client:read'] },
+        { value: 'OAuthApis', labelKey: 'admin.oauthApis.title', labelEn: 'OAuth APIs', requirePermissions: ['oauth-api:read'] },
+        { value: 'OAuthScopes', labelKey: 'admin.oauthScopes.title', labelEn: 'OAuth Scopes', requirePermissions: ['oauth-scope:read'] },
+        { value: 'LoginProviders', labelKey: 'admin.loginProviders.title', labelEn: 'Login Providers', requirePermissions: ['login-provider:read'] },
+      ],
+      defaults: ['Apps', 'OAuthClients', 'LoginProviders'],
+    }],
   },
   {
     id: 'security-events',
@@ -101,6 +157,7 @@ export const WIDGETS: WidgetDefinition[] = [
     requirePermissions: ['auth-log:read'],
     sizes: ['l', 'xl', 'full'], defaultSize: 'xl',
     component: RecentActivityWidget,
+    options: [rowsOption([5, 8, 15], 8)],
   },
   {
     id: 'login-providers',
@@ -119,8 +176,9 @@ export const WIDGET_CATALOG = new Map(WIDGETS.map(w => [w.id, w]))
  * for a viewer who sees everything; with fewer permissions the rest closes ranks.
  */
 export const BUILT_IN_LAYOUT: WidgetPlacement[] = [
-  { Widget: 'account-security', Size: 'l' },
-  { Widget: 'my-sessions', Size: 'l' },
+  { Widget: 'account-security', Size: 'm' },
+  { Widget: 'my-sessions', Size: 'm' },
+  { Widget: 'my-apps', Size: 'm' },
 
   { Widget: 'kpi-active-sessions', Size: 's' },
   { Widget: 'kpi-failed-logins', Size: 's' },

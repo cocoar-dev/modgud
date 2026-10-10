@@ -7,10 +7,13 @@ import { useHttpClient } from '@/composables/useHttpClient'
 export interface DashboardCounts {
   Users: number | null
   ServiceAccounts: number | null
+  Positions: number | null
   Groups: number | null
   Roles: number | null
   Apps: number | null
   OAuthClients: number | null
+  OAuthApis: number | null
+  OAuthScopes: number | null
   LoginProviders: number | null
   LoginProvidersEnabled: number | null
   ActiveSessions: number | null

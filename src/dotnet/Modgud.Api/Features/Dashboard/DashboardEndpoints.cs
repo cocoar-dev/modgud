@@ -12,7 +12,10 @@ using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
 using Modgud.Authorization.Services;
 using Modgud.Domain.Dashboard;
+using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Applications;
+using Modgud.Domain.OAuth.Scopes;
+using Modgud.Domain.OAuth.Storage;
 using Modgud.Domain.Realms;
 using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
@@ -44,6 +47,7 @@ public static partial class DashboardEndpoints
             .RequireAuthorization();
 
         group.MapGet("stats", GetStatsAsync).WithName("Dashboard_Stats");
+        group.MapGet("my-apps", GetMyAppsAsync).WithName("Dashboard_MyApps");
 
         // ── Layout: the caller's own arrangement ─────────────────────────
         group.MapGet("layout", async (HttpContext http, IQuerySession session, CancellationToken ct) =>
@@ -142,6 +146,27 @@ public static partial class DashboardEndpoints
                 return $"Size must be one of: {string.Join(", ", DashboardWidgetPlacement.Sizes.Order())}.";
             if (!seen.Add(placement.Widget))
                 return $"Widget '{placement.Widget}' is listed twice.";
+            if (ValidateOptions(placement.Options) is { } optionProblem)
+                return optionProblem;
+        }
+
+        return null;
+    }
+
+    private static string? ValidateOptions(Dictionary<string, List<string>>? options)
+    {
+        if (options is null) return null;
+        if (options.Count > DashboardWidgetPlacement.MaxOptions)
+            return $"A widget holds at most {DashboardWidgetPlacement.MaxOptions} options.";
+
+        foreach (var (key, values) in options)
+        {
+            if (!OptionTokenPattern().IsMatch(key))
+                return "Option keys are letters, digits and dashes (1-64 characters).";
+            if (values is null || values.Count > DashboardWidgetPlacement.MaxOptionValues)
+                return $"An option holds at most {DashboardWidgetPlacement.MaxOptionValues} values.";
+            if (values.Any(v => v is null || !OptionTokenPattern().IsMatch(v)))
+                return "Option values are letters, digits and dashes (1-64 characters).";
         }
 
         return null;
@@ -150,6 +175,61 @@ public static partial class DashboardEndpoints
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,63}$")]
     private static partial Regex WidgetIdPattern();
 
+    [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9-]{0,63}$")]
+    private static partial Regex OptionTokenPattern();
+
+    // ───────────────────────────────────────────── My apps ─────────────────
+
+    private const int MyAppsScan = 500;
+
+    /// <summary>
+    /// The OAuth clients the caller has a valid authorization with — "where have
+    /// I signed in with this account". Strictly the caller's own grants; one row
+    /// per client however many authorizations it holds.
+    /// </summary>
+    private static async Task<IResult> GetMyAppsAsync(
+        HttpContext http, IQuerySession session, CancellationToken ct)
+    {
+        var userId = http.GetUserId();
+        if (userId is null) return Results.Unauthorized();
+
+        var subject = userId.Value.ToString();
+        var grants = await session.Query<OpenIddictAuthorizationDocument>()
+            .Where(x => x.Subject == subject && x.Status == OpenIddict.Abstractions.OpenIddictConstants.Statuses.Valid)
+            .OrderByDescending(x => x.CreationDate)
+            .Take(MyAppsScan)
+            .ToListAsync(ct);
+
+        var byClient = grants
+            .Where(g => Guid.TryParse(g.ApplicationId, out _))
+            .GroupBy(g => Guid.Parse(g.ApplicationId!))
+            .ToDictionary(g => g.Key, g => (First: g.Min(x => x.CreationDate), Last: g.Max(x => x.CreationDate)));
+
+        var clientKeys = byClient.Keys.ToList();
+        var clients = clientKeys.Count == 0
+            ? []
+            : await session.Query<OAuthApplicationState>()
+                .Where(c => clientKeys.Contains(c.Id) && !c.IsDeleted)
+                .ToListAsync(ct);
+
+        var appIds = clients.SelectMany(c => c.AppIds).Distinct().ToList();
+        var apps = appIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : (await session.Query<App>().Where(a => appIds.Contains(a.Id) && !a.IsDeleted).ToListAsync(ct))
+                .ToDictionary(a => a.Id, a => a.DisplayName);
+
+        var rows = clients
+            .Select(c => new MyAppDto(
+                string.IsNullOrWhiteSpace(c.DisplayName) ? c.ClientId : c.DisplayName,
+                c.AppIds.Select(id => apps.GetValueOrDefault(id)).FirstOrDefault(name => !string.IsNullOrEmpty(name)),
+                byClient[c.Id].First,
+                byClient[c.Id].Last))
+            .OrderByDescending(r => r.LastAuthorizedAt)
+            .ToList();
+
+        return Results.Ok(rows);
+    }
+
     // ───────────────────────────────────────────── Statistics ──────────────
 
     private static async Task<IResult> GetStatsAsync(
@@ -157,6 +237,7 @@ public static partial class DashboardEndpoints
         IDocumentSession session,
         IPermissionService permissions,
         IRealmSettingsService realmSettings,
+        AppSettings settings,
         int? days,
         string? tz,
         CancellationToken ct)
@@ -176,6 +257,8 @@ public static partial class DashboardEndpoints
                 ? await session.Query<UserView>().CountAsync(u => !u.IsDeleted, ct) : null,
             ServiceAccounts: Can("service-account:read")
                 ? await session.Query<ServiceAccount>().CountAsync(s => !s.IsDeleted, ct) : null,
+            Positions: settings.Features.PositionTerminals && Can("position:read")
+                ? await session.Query<PositionPrincipal>().CountAsync(p => !p.IsDeleted, ct) : null,
             Groups: Can("authorization-group:read")
                 ? await session.Query<Modgud.Authorization.Principals.Group>().CountAsync(g => !g.IsDeleted, ct) : null,
             Roles: Can("permission-role:read")
@@ -184,6 +267,10 @@ public static partial class DashboardEndpoints
                 ? await session.Query<App>().CountAsync(a => !a.IsDeleted, ct) : null,
             OAuthClients: Can("oauth-client:read")
                 ? await session.Query<OAuthApplicationState>().CountAsync(c => !c.IsDeleted, ct) : null,
+            OAuthApis: Can("oauth-api:read")
+                ? await session.Query<OAuthApiState>().CountAsync(a => !a.IsDeleted, ct) : null,
+            OAuthScopes: Can("oauth-scope:read")
+                ? await session.Query<OAuthScopeState>().CountAsync(s => !s.IsDeleted, ct) : null,
             LoginProviders: Can("login-provider:read")
                 ? await session.Query<LoginProvider>().CountAsync(p => !p.IsDeleted, ct) : null,
             LoginProvidersEnabled: Can("login-provider:read")
@@ -372,6 +459,14 @@ public sealed record DashboardLayoutsDto(
 
 public sealed record SaveDashboardLayoutDto(List<DashboardWidgetPlacement>? Widgets);
 
+/// <summary>A client the caller authorized. <paramref name="AppName"/> is the
+/// Application the client belongs to, when it belongs to one.</summary>
+public sealed record MyAppDto(
+    string Name,
+    string? AppName,
+    DateTimeOffset? FirstAuthorizedAt,
+    DateTimeOffset? LastAuthorizedAt);
+
 /// <summary><paramref name="Days"/> is the requested window; a block may cover
 /// fewer days (see <see cref="LoginStatsDto.Days"/>).</summary>
 public sealed record DashboardStatsDto(
@@ -386,10 +481,13 @@ public sealed record DashboardStatsDto(
 public sealed record DashboardCountsDto(
     int? Users,
     int? ServiceAccounts,
+    int? Positions,
     int? Groups,
     int? Roles,
     int? Apps,
     int? OAuthClients,
+    int? OAuthApis,
+    int? OAuthScopes,
     int? LoginProviders,
     int? LoginProvidersEnabled,
     int? ActiveSessions,
