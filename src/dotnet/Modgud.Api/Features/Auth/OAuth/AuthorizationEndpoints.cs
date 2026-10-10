@@ -2216,7 +2216,8 @@ public static class AuthorizationEndpoints
         // Scoped to the active RP ID (ADR-0009): a credential enrolled under another
         // app's RP ID is never even considered here.
         var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(
-            fido2, options, assertionJson, session, activeRpId, primaryDomain, ct);
+            fido2, options, assertionJson, session, activeRpId, primaryDomain, ct,
+            httpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Modgud.Passkeys"));
         if (storedCredential is null)
             return await ForbidFactorFailureAsync("Passkey verification failed.");
 

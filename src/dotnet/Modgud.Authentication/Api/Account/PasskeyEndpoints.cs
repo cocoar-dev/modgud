@@ -553,7 +553,8 @@ public static class PasskeyEndpoints
                 additionalOrigins: presentedOrigins,
                 relatedOrigins: ceremony.RelatedOrigin ? presentedOrigins : null);
             var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(
-                fido2, options, body.GetRawText(), session, ceremonyRpId, ceremonyRpId, ct);
+                fido2, options, body.GetRawText(), session, ceremonyRpId, ceremonyRpId, ct,
+                context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Modgud.Passkeys"));
             if (storedCredential is null)
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
 
