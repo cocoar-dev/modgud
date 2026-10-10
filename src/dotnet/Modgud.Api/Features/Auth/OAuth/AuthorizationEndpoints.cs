@@ -2183,9 +2183,9 @@ public static class AuthorizationEndpoints
         }
         catch (JsonException) { /* leave null — verifier fails closed below */ }
 
-        // A native Android app signs android:apk-key-hash:<cert hash>; accepted only when the
-        // App of the redeeming client lists it for this RP ID — also on a brokered ceremony,
-        // where the App's web client redeems what its Android app produced.
+        // A native app without a web origin (Android: android:apk-key-hash:<cert hash>) is
+        // accepted only when the App of the redeeming client lists its origin for this RP ID — also on a brokered ceremony,
+        // where the App's web client redeems what its native app produced.
         var appOrigins = await new PasskeyAppOrigins(settingsResolver).AcceptedAsync(
             session, request.ClientId, activeRpId, presentedOrigins?[0], ct);
 

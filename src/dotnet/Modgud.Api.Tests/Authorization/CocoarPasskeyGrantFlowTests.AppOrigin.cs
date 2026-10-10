@@ -2,16 +2,19 @@ using System.Text;
 using System.Text.Json;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Modgud.Authentication.Setup;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Domain.Applications;
 
 namespace Modgud.Api.Tests.Authorization;
 
 /// <summary>
-/// Native Android passkeys: Credential Manager signs <c>android:apk-key-hash:&lt;hash&gt;</c>
-/// as the origin. It verifies only when the App the ceremony's client belongs to lists that
-/// exact origin for the ceremony's RP ID — including a brokered ceremony, where the App's
-/// web client redeems what its Android app produced.
+/// Passkeys from native apps without a web origin. Android's Credential Manager signs
+/// <c>android:apk-key-hash:&lt;hash&gt;</c>; a desktop app may sign an origin with a scheme of
+/// its own. It verifies only when the App the ceremony's client belongs to lists that exact
+/// origin for the ceremony's RP ID — including a brokered ceremony, where the App's web
+/// client redeems what its native app produced.
 /// </summary>
 public partial class CocoarPasskeyGrantFlowTests
 {
@@ -19,12 +22,13 @@ public partial class CocoarPasskeyGrantFlowTests
     // SHA-256 fingerprint 37:12:A2:19:… in its origin form.
     private const string ListedAndroidOrigin = "android:apk-key-hash:NxKiGexuyBGDGdVtp4Is8MhaKBquHQNHiw-IG3hPtiw";
     private const string UnlistedAndroidOrigin = "android:apk-key-hash:8MCA0HyEcdTiOZIgwjfDzC-NQV8gVghlFDHQtjNVIfY";
+    private const string DesktopOrigin = "app://notes.desktop";
 
     [Fact]
     public async Task NativeEnroll_from_a_listed_Android_app_origin_succeeds()
     {
         await EnableNativeGrantsAsync();
-        var appId = await SeedAndroidAppAsync([ListedAndroidOrigin]);
+        var appId = await SeedNativeAppAsync([ListedAndroidOrigin]);
         await SeedPasskeyClientAsync("and-enroll", rpId: AndroidRpId, appId: appId);
 
         var bearer = await BearerForAsync("and-enroll");
@@ -40,7 +44,7 @@ public partial class CocoarPasskeyGrantFlowTests
     public async Task NativeEnroll_from_an_unlisted_Android_app_origin_is_rejected()
     {
         await EnableNativeGrantsAsync();
-        var appId = await SeedAndroidAppAsync([ListedAndroidOrigin]);
+        var appId = await SeedNativeAppAsync([ListedAndroidOrigin]);
         await SeedPasskeyClientAsync("and-unlisted", rpId: AndroidRpId, appId: appId);
 
         var bearer = await BearerForAsync("and-unlisted");
@@ -55,7 +59,7 @@ public partial class CocoarPasskeyGrantFlowTests
     public async Task NativeLogin_from_a_listed_Android_app_origin_mints_a_token()
     {
         await EnableNativeGrantsAsync();
-        var appId = await SeedAndroidAppAsync([ListedAndroidOrigin]);
+        var appId = await SeedNativeAppAsync([ListedAndroidOrigin]);
         await SeedPasskeyClientAsync("and-login", rpId: AndroidRpId, appId: appId);
 
         var response = await AndroidLoginAsync("and-login", ListedAndroidOrigin);
@@ -71,7 +75,7 @@ public partial class CocoarPasskeyGrantFlowTests
         // amZettel's backend begins and redeems the ceremony with its web client; the
         // assertion comes from the Android app. Both clients belong to the same App.
         await EnableNativeGrantsAsync();
-        var appId = await SeedAndroidAppAsync([ListedAndroidOrigin]);
+        var appId = await SeedNativeAppAsync([ListedAndroidOrigin]);
         await SeedPasskeyClientAsync("and-android", rpId: AndroidRpId, appId: appId);
         await SeedPasskeyClientAsync("and-web", rpId: AndroidRpId, appId: appId);
 
@@ -94,14 +98,14 @@ public partial class CocoarPasskeyGrantFlowTests
         switch (setup)
         {
             case "other-app":
-                await SeedAndroidAppAsync([ListedAndroidOrigin]);
-                appId = await SeedAndroidAppAsync(null);
+                await SeedNativeAppAsync([ListedAndroidOrigin]);
+                appId = await SeedNativeAppAsync(null);
                 break;
             case "no-rp-id":
-                appId = await SeedAndroidAppAsync([ListedAndroidOrigin], passkeyRpId: null);
+                appId = await SeedNativeAppAsync([ListedAndroidOrigin], passkeyRpId: null);
                 break;
             default:
-                appId = await SeedAndroidAppAsync([ListedAndroidOrigin]);
+                appId = await SeedNativeAppAsync([ListedAndroidOrigin]);
                 break;
         }
         await SeedPasskeyClientAsync(clientId, rpId: AndroidRpId, appId: appId);
@@ -117,13 +121,68 @@ public partial class CocoarPasskeyGrantFlowTests
     public async Task An_https_origin_still_verifies_for_an_App_with_Android_apps()
     {
         await EnableNativeGrantsAsync();
-        var appId = await SeedAndroidAppAsync([ListedAndroidOrigin]);
+        var appId = await SeedNativeAppAsync([ListedAndroidOrigin]);
         await SeedPasskeyClientAsync("and-https", rpId: AndroidRpId, appId: appId);
 
         var response = await AndroidLoginAsync("and-https", $"https://{AndroidRpId}");
 
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.True(response.IsSuccessStatusCode, $"https login failed ({(int)response.StatusCode}): {body}");
+    }
+
+    [Fact]
+    public async Task NativeLogin_from_a_listed_desktop_app_origin_mints_a_token()
+    {
+        await EnableNativeGrantsAsync();
+        var appId = await SeedNativeAppAsync([ListedAndroidOrigin, DesktopOrigin]);
+        await SeedPasskeyClientAsync("app-desktop", rpId: AndroidRpId, appId: appId);
+
+        var listed = await AndroidLoginAsync("app-desktop", DesktopOrigin);
+        var listedBody = await listed.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(listed.IsSuccessStatusCode, $"login from a listed desktop origin failed ({(int)listed.StatusCode}): {listedBody}");
+
+        // The match is exact: another app scheme, or a case variant, is not the listed app.
+        foreach (var other in new[] { "app://other.desktop", "APP://notes.desktop" })
+        {
+            var refused = await AndroidLoginAsync("app-desktop", other);
+            Assert.False(refused.IsSuccessStatusCode, $"unlisted origin {other} was accepted");
+        }
+    }
+
+    [Fact]
+    public async Task The_0_19_setting_name_moves_to_PasskeyAppOrigins_on_boot()
+    {
+        // 0.19 stored SignIn.PasskeyAndroidOrigins; the boot migration moves it unchanged.
+        var ct = TestContext.Current.CancellationToken;
+        await EnableNativeGrantsAsync();
+        var appId = await SeedNativeAppAsync([ListedAndroidOrigin]);
+        using (var scope = NewSystemTenantScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            session.QueueSqlCommand(
+                "update mt_doc_applicationsettings set data = jsonb_set(data #- '{SignIn,PasskeyAppOrigins}', "
+                + "'{SignIn,PasskeyAndroidOrigins}', data->'SignIn'->'PasskeyAppOrigins') where id = '" + appId + "'");
+            await session.SaveChangesAsync(ct);
+        }
+        await SeedPasskeyClientAsync("app-renamed", rpId: AndroidRpId, appId: appId);
+        Assert.False((await AndroidLoginAsync("app-renamed", ListedAndroidOrigin)).IsSuccessStatusCode,
+            "the old property name must not be read any more");
+
+        var migration = Factory.Services.GetServices<IHostedService>().OfType<PasskeyAppOriginsRename>().Single();
+        await migration.StartAsync(ct);
+        await migration.StartAsync(ct); // idempotent
+
+        using (var scope = NewSystemTenantScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            var settings = await session.LoadAsync<ApplicationSettings>(appId, ct);
+            Assert.Equal([ListedAndroidOrigin], settings!.SignIn!.PasskeyAppOrigins);
+            var raw = (await session.QueryAsync<string>(
+                "select data::text from mt_doc_applicationsettings where id = '" + appId + "'", ct)).Single();
+            Assert.DoesNotContain("PasskeyAndroidOrigins", raw);
+        }
+        var response = await AndroidLoginAsync("app-renamed", ListedAndroidOrigin);
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync(ct));
     }
 
     private async Task<HttpResponseMessage> AndroidLoginAsync(string clientId, string origin)
@@ -169,7 +228,7 @@ public partial class CocoarPasskeyGrantFlowTests
         return ((int)response.StatusCode, await response.Content.ReadAsStringAsync(ct), enrolling.CredentialId);
     }
 
-    private async Task<Guid> SeedAndroidAppAsync(string[]? androidOrigins, string? passkeyRpId = AndroidRpId)
+    private async Task<Guid> SeedNativeAppAsync(string[]? appOrigins, string? passkeyRpId = AndroidRpId)
     {
         var app = await CreateAppAsync($"android-{Guid.NewGuid():N}"[..20], "Android test app");
         using var scope = NewSystemTenantScope();
@@ -181,7 +240,7 @@ public partial class CocoarPasskeyGrantFlowTests
             SignIn = new ApplicationSignInOverrides
             {
                 PasskeyRpId = passkeyRpId,
-                PasskeyAndroidOrigins = androidOrigins,
+                PasskeyAppOrigins = appOrigins,
             },
         });
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);

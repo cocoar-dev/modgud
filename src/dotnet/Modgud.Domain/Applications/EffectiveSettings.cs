@@ -38,9 +38,9 @@ public sealed record EffectiveSettings
     /// listing Modgud's login origin.</summary>
     public bool PasskeyRelatedOrigins { get; init; }
 
-    /// <summary>Android app origins (<c>android:apk-key-hash:…</c>) allowed to use the App's
-    /// passkeys on <see cref="PasskeyRpId"/>. Empty without an RP ID.</summary>
-    public IReadOnlyList<string> PasskeyAndroidOrigins { get; init; } = [];
+    /// <summary>Native app origins (e.g. <c>android:apk-key-hash:…</c>) allowed to use the
+    /// App's passkeys on <see cref="PasskeyRpId"/>. Empty without an RP ID.</summary>
+    public IReadOnlyList<string> PasskeyAppOrigins { get; init; } = [];
 
     /// <summary>ADR 0025 — the App these settings were resolved for (null = realm only).</summary>
     public Guid? ApplicationId { get; init; }
@@ -100,9 +100,9 @@ public sealed record EffectiveSettings
         SignIn = MergeSignIn(realm.SignIn, app.SignIn),
         PasskeyRpId = string.IsNullOrWhiteSpace(app.SignIn?.PasskeyRpId) ? null : app.SignIn.PasskeyRpId.Trim(),
         PasskeyRelatedOrigins = !string.IsNullOrWhiteSpace(app.SignIn?.PasskeyRpId) && app.SignIn?.PasskeyRelatedOrigins == true,
-        PasskeyAndroidOrigins = string.IsNullOrWhiteSpace(app.SignIn?.PasskeyRpId)
+        PasskeyAppOrigins = string.IsNullOrWhiteSpace(app.SignIn?.PasskeyRpId)
             ? []
-            : app.SignIn?.PasskeyAndroidOrigins ?? [],
+            : app.SignIn?.PasskeyAppOrigins ?? [],
         ApplicationId = app.Id,
         AuthRateLimits = AuthRateLimitSettings.Merge(realm.AuthRateLimits, app.AuthRateLimits),
         ClientSessions = MergeClientSessions(realm.ClientSessions, app.ClientSessions),

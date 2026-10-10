@@ -177,8 +177,8 @@ public static class NativePasskeyEnrollEndpoints
             if (attestation is null)
                 return Results.BadRequest(new { Message = "Invalid attestation response." });
 
-            // A native Android app signs android:apk-key-hash:<cert hash>; accepted only when
-            // the client's App lists it for the ceremony's RP ID.
+            // A native app without a web origin (Android: android:apk-key-hash:<cert hash>) is
+            // accepted only when the client's App lists its origin for the ceremony's RP ID.
             var presentedOrigins = PresentedOrigins(attestation.Response?.ClientDataJson);
             var appOrigins = await new PasskeyAppOrigins(settingsResolver).AcceptedAsync(
                 session, clientId, ceremony.RpId, presentedOrigins?[0], ct);

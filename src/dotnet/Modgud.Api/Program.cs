@@ -778,6 +778,8 @@ try
     // so they can use the advertised /connect/par endpoint (fixes unauthorized_client
     // / ID2183 without a manual re-save). Same cold-start-walks-every-realm pattern.
     builder.Services.AddHostedService<Modgud.Authentication.Setup.PushedAuthorizationPermissionBackfill>();
+    // 0.19 → 0.20: SignIn.PasskeyAndroidOrigins became SignIn.PasskeyAppOrigins.
+    builder.Services.AddHostedService<Modgud.Authentication.Setup.PasskeyAppOriginsRename>();
     builder.Services.AddSingleton<UserUpdateScriptRunner>();
     builder.Services.AddSingleton<Modgud.Authentication.Api.ExternalAuth.OidcSchemeRealmRegistry>();
     builder.Services.AddSingleton<DynamicOidcSchemeManager>();
