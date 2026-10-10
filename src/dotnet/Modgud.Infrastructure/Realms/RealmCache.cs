@@ -12,7 +12,7 @@ namespace Modgud.Infrastructure.Realms;
 /// used to anchor the OIDC issuer to the tenant when a request arrives on an
 /// Application subdomain. Null only for legacy/hand-built infos.</para>
 /// </summary>
-public sealed record TenantInfo(string Slug, bool IsControlPlane, bool IsActive, string? PrimaryDomain = null);
+public sealed record TenantInfo(string Slug, bool IsControlPlane, bool IsActive, string? PrimaryDomain = null, string? PublicBaseUrl = null);
 
 /// <summary>
 /// ADR-0011 — a host → (tenant, Application) resolution. <see cref="ApplicationId"/>
@@ -169,7 +169,7 @@ public sealed class RealmCache : IRealmCache
 
         foreach (var realm in activeRealms)
         {
-            var info = new TenantInfo(realm.Slug, realm.IsControlPlane, realm.IsActive, realm.PrimaryDomain);
+            var info = new TenantInfo(realm.Slug, realm.IsControlPlane, realm.IsActive, realm.PrimaryDomain, realm.PublicBaseUrl);
             foreach (var domain in realm.Domains)
             {
                 byDomain[domain] = info;
@@ -186,7 +186,7 @@ public sealed class RealmCache : IRealmCache
         if (activeRealms.Count == 1)
         {
             var only = activeRealms[0];
-            single = new TenantInfo(only.Slug, only.IsControlPlane, only.IsActive, only.PrimaryDomain);
+            single = new TenantInfo(only.Slug, only.IsControlPlane, only.IsActive, only.PrimaryDomain, only.PublicBaseUrl);
         }
 
         _snapshot = new CacheSnapshot(byDomain, byAppDomain, single, DateTimeOffset.UtcNow);

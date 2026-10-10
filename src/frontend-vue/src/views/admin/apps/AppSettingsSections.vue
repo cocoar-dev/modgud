@@ -663,11 +663,12 @@ const DOMAIN_BINDING = {
 const hasOwnDomain = computed(() => f.origin.subdomain.trim().length > 0)
 
 // WebAuthn related origins: the file the app publishes on its RP ID, listing every
-// origin the Modgud login page runs on for this app (the realm host this admin UI is
-// served from, and the app's own subdomain when it has one).
+// origin the Modgud login page runs on for this app — the realm's DECLARED public
+// origin (ADR 0023; the browser's address only while it is unknown) and the app's own
+// subdomain when it has one. Only this installation is known here; the dialog says so.
 const relatedOriginsUrl = computed(() => `https://${f.signIn.passkeyRpId.trim()}/.well-known/webauthn`)
 const relatedOriginsJson = computed(() => {
-  const origins = [window.location.origin]
+  const origins = [appConfig.config.PublicOrigin ?? window.location.origin]
   const sub = f.origin.subdomain.trim()
   if (sub) origins.push(`https://${sub}`)
   return JSON.stringify({ origins: [...new Set(origins)] }, null, 2)
@@ -687,6 +688,7 @@ function showRelatedOriginsFile() {
   }, {
     url: relatedOriginsUrl.value,
     description: t('admin.signIn.relatedOriginsFileIntro', {}, 'The app has to serve this file on its passkey domain, at this address:'),
+    note: t('admin.signIn.relatedOriginsFileNote', {}, 'It lists the login addresses of this Modgud installation. If the app also signs in through another installation (e.g. a test server), add that installation\'s addresses to the same file.'),
     content: relatedOriginsJson.value,
   })
 }

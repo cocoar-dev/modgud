@@ -9,6 +9,8 @@ const props = defineProps<{
   url: string
   description: string
   content: string
+  /** Shown below the file — e.g. what the generated content cannot know. */
+  note?: string
   close: () => void
 }>()
 
@@ -27,6 +29,7 @@ async function copy() {
     <p class="text-sm">{{ description }}</p>
     <code class="well-known__url">{{ url }}</code>
     <pre class="well-known__content">{{ content }}</pre>
+    <p v-if="note" class="well-known__note">{{ note }}</p>
     <div class="well-known__actions">
       <CoarButton variant="secondary" @click="copy">
         {{ copied ? t('common.copied', {}, 'Copied') : t('common.copy', {}, 'Copy') }}
@@ -48,5 +51,6 @@ async function copy() {
   font-size: 0.8125rem;
   line-height: 1.5;
 }
+.well-known__note { margin: 0; font-size: 0.8125rem; color: var(--coar-text-neutral-secondary, #6b7280); }
 .well-known__actions { display: flex; justify-content: flex-end; gap: 8px; }
 </style>

@@ -62,8 +62,15 @@ public static class AppSettingsEndpoints
                 var passkeyNeedsRelatedOrigins = signInTarget.PasskeyRelatedOrigins
                     && signInTarget.PasskeyRpId is { } appRpId
                     && !Modgud.Authentication.SignIn.SignInRequirementService.IsHostUnderRpId(http.Request.Host.Host, appRpId);
+                // The realm's declared public origin (ADR 0023): where its login page runs.
+                // Not a secret — every link the realm sends carries it. The admin UI builds
+                // an App's related-origins file from it instead of the browser's address.
+                // Read from the cached tenant, so the anonymous login page costs no extra query.
+                var publicOrigin = RealmPublicOrigin.Normalize(tenant?.PublicBaseUrl)
+                    ?? (string.IsNullOrWhiteSpace(tenant?.PrimaryDomain) ? null : $"https://{tenant.PrimaryDomain.Trim()}");
                 return Results.Ok(new
                 {
+                    PublicOrigin = publicOrigin,
                     SignIn = new
                     {
                         signInPolicy.Password,

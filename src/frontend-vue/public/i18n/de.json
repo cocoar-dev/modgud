@@ -2465,7 +2465,8 @@
       "relatedOriginsInfo": "Browser mit Related-Origins-Unterstützung (Chrome, Edge, Safari) bieten dann die Passkeys der App auf der Modgud-Login-Seite an; andere nutzen weiter die Passkeys des Realms. Dafür muss die App eine Datei auf ihrer Passkey-Domain veröffentlichen.",
       "relatedOriginsShowFile": "Datei anzeigen",
       "relatedOriginsFileTitle": "Datei für Related Origins",
-      "relatedOriginsFileIntro": "Die App muss diese Datei auf ihrer Passkey-Domain unter dieser Adresse ausliefern:"
+      "relatedOriginsFileIntro": "Die App muss diese Datei auf ihrer Passkey-Domain unter dieser Adresse ausliefern:",
+      "relatedOriginsFileNote": "Die Datei listet die Login-Adressen dieser Modgud-Installation. Meldet sich die App auch über eine andere Installation an (z. B. einen Testserver), deren Adressen in dieselbe Datei ergänzen."
     }
   },
   "permissions": {
