@@ -318,6 +318,11 @@ public class GdprService(
         //    ADR 0026 — a test account's fixed-code hash goes with the account.
         session.Delete<TestAccountEmailCode>(userId);
 
+        //    The user's own dashboard arrangement — no PII in it, but it is keyed
+        //    on the user id and has no reason to outlive the account.
+        session.Delete<Modgud.Domain.Dashboard.DashboardLayout>(
+            Modgud.Domain.Dashboard.DashboardLayout.UserId(userId));
+
         //    External identity links carry Email, DisplayName, and the raw IdP
         //    claim payload on their OWN streams (keyed by link id). Drop the
         //    projection doc here; the PII-bearing events are masked + archived

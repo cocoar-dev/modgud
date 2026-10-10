@@ -1,0 +1,67 @@
+/* Chart colours by role. The categorical slots are assigned in this fixed order
+   and never cycled; the order is what keeps neighbouring series apart for
+   colour-vision deficiencies. Status colours are reserved for severity and are
+   always paired with an icon or a label. Dark values are separate steps of the
+   same hues, chosen for the dark surface. */
+.dash-chart {
+  --chart-surface: var(--coar-background-neutral-secondary, #ffffff);
+  --chart-ink: var(--coar-text-neutral-primary, #0b0b0b);
+  --chart-ink-secondary: var(--coar-text-neutral-secondary, #52514e);
+  --chart-muted: #898781;
+  --chart-grid: #e1e0d9;
+  --chart-axis: #c3c2b7;
+
+  --chart-series-1: #2a78d6;
+  --chart-series-2: #eb6834;
+  --chart-series-3: #1baf7a;
+  --chart-series-4: #eda100;
+  --chart-series-5: #e87ba4;
+  --chart-series-6: #008300;
+  --chart-series-other: #898781;
+
+  --chart-status-neutral: #c3c2b7;
+  --chart-status-warning: #fab219;
+  --chart-status-critical: #d03b3b;
+}
+
+.dark-mode .dash-chart {
+  --chart-grid: #2c2c2a;
+  --chart-axis: #383835;
+
+  --chart-series-1: #3987e5;
+  --chart-series-2: #d95926;
+  --chart-series-3: #199e70;
+  --chart-series-4: #c98500;
+  --chart-series-5: #d55181;
+
+  --chart-status-neutral: #52514e;
+}
+
+/* The table twin of a chart: read by assistive tech, invisible otherwise. */
+.dash-chart__table {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dash-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  font-size: 0.75rem;
+  color: var(--chart-ink-secondary);
+}
+.dash-chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.dash-chart__swatch {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 2px;
+  flex-shrink: 0;
+}

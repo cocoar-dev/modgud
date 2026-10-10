@@ -118,6 +118,13 @@ public static class MartenConfiguration
         options.Schema.For<Modgud.Application.Inbox.InboxRetentionSettings>()
             .Identity(x => x.Id);
 
+        // Dashboard arrangements — the realm default (fixed id) and one per user
+        // ("user:<id>"). Plain documents; the widget catalog itself lives in the
+        // frontend.
+        options.Schema.For<Modgud.Domain.Dashboard.DashboardLayout>()
+            .DocumentAlias("dashboard_layout")
+            .Identity(x => x.Id);
+
         // Authentication-specific Marten setup (documents + events + projections)
         // is wired via UseModgudAuthentication(), called from AddInfrastructure's
         // additionalMartenConfig callback so Infrastructure stays unaware of Authentication.
