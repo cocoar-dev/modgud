@@ -367,6 +367,8 @@ function removeRealmDefault() {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 1rem;
+  /* Breathing room below the last row when scrolled to the end. */
+  padding-bottom: 2rem;
 }
 .dash-cell {
   min-width: 0;
