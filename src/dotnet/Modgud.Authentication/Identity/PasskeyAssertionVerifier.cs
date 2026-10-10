@@ -2,6 +2,7 @@ using System.Text.Json;
 using Fido2NetLib;
 using Fido2NetLib.Objects;
 using Marten;
+using Microsoft.Extensions.Logging;
 using Modgud.Authentication.Domain;
 
 namespace Modgud.Authentication.Identity;
@@ -38,6 +39,11 @@ public static class PasskeyAssertionVerifier
     /// the realm/web path is unchanged. This candidate filter is defense-in-depth;
     /// the FIDO2 <c>rpIdHash == SHA256(ServerDomain)</c> crypto check remains the
     /// primary cross-RP boundary.</para>
+    ///
+    /// <para><paramref name="logger"/>: the caller still only learns "failed", but the
+    /// reason is logged (unknown credential, origin/signature/counter mismatch) with the
+    /// RP ID and the signed origin — never key material — so an operator can tell a
+    /// misconfigured app origin from a passkey the server does not know.</para>
     /// </summary>
     public static async Task<StoredPasskeyCredential?> VerifyAsync(
         IFido2 fido2,
@@ -46,7 +52,8 @@ public static class PasskeyAssertionVerifier
         IDocumentSession session,
         string activeRpId,
         string fallbackPrimaryDomain,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        ILogger? logger = null)
     {
         AuthenticatorAssertionRawResponse? assertionResponse;
         try
@@ -56,6 +63,7 @@ public static class PasskeyAssertionVerifier
         }
         catch (JsonException)
         {
+            logger?.LogWarning("Passkey assertion refused for RP {RpId}: the assertion is not valid JSON", activeRpId);
             return null;
         }
 
@@ -63,7 +71,11 @@ public static class PasskeyAssertionVerifier
         // {"id":"…","type":"public-key"} deserializes with a null Response and
         // would NRE inside MakeAssertionAsync — reject it here (fail closed).
         if (assertionResponse is null || string.IsNullOrEmpty(assertionResponse.Id) || assertionResponse.Response is null)
+        {
+            logger?.LogWarning("Passkey assertion refused for RP {RpId}: incomplete assertion", activeRpId);
             return null;
+        }
+        var signedOrigin = RealmFido2.TryGetClientDataOrigin(assertionResponse.Response.ClientDataJson);
 
         // Decode the base64url credential id the authenticator returned.
         byte[] assertionCredentialId;
@@ -75,6 +87,7 @@ public static class PasskeyAssertionVerifier
         }
         catch (FormatException)
         {
+            logger?.LogWarning("Passkey assertion refused for RP {RpId}: the credential id is not base64url", activeRpId);
             return null;
         }
 
@@ -96,7 +109,14 @@ public static class PasskeyAssertionVerifier
             .ToList();
         var storedCredential = candidates.FirstOrDefault(c => c.CredentialId.SequenceEqual(assertionCredentialId));
         if (storedCredential is null)
+        {
+            // The authenticator offered a passkey this server does not hold for this RP —
+            // typically one deleted here but still on the device, or made for another server.
+            logger?.LogWarning(
+                "Passkey assertion refused for RP {RpId}: unknown credential (signed origin {Origin}, {Candidates} known for this RP)",
+                activeRpId, signedOrigin, candidates.Count);
             return null;
+        }
 
         VerifyAssertionResult result;
         try
@@ -116,8 +136,11 @@ public static class PasskeyAssertionVerifier
                 },
             }, ct);
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.LogWarning(
+                "Passkey assertion refused for RP {RpId}, signed origin {Origin}: {Reason} ({ExceptionType})",
+                activeRpId, signedOrigin, ex.Message, ex.GetType().Name);
             // ANY throw out of the verify path is a rejected proof, not a
             // recoverable server fault: a Fido2VerificationException (signature /
             // origin / RP-ID / counter mismatch) OR a raw parser exception from
