@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authorization.Apps;
+using Modgud.Authorization.Services;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.Realms;
@@ -74,6 +75,14 @@ public interface ISignInRequirementService
     /// is Modgud's own UI, i.e. the self-service portal, which runs under the realm's policy.</summary>
     Task<SignInTarget> ResolveTargetFromReturnUrlAsync(string? returnUrl, CancellationToken ct = default);
 
+    /// <summary>The target of a sign-in on the login page once the user is known. As
+    /// <see cref="ResolveTargetFromReturnUrlAsync"/>, except that an administrator who signs
+    /// in to Modgud's own UI is held to the administration's level right away, where that is
+    /// higher than the portal's — they are not let in at the portal's level and asked again
+    /// a moment later. A sign-in for an App or a client (a pending authorization, a device
+    /// approval) keeps that App's rules, whoever signs in.</summary>
+    Task<SignInTarget> ResolveSignInTargetAsync(ApplicationUser user, string? returnUrl, CancellationToken ct = default);
+
     /// <summary>The realm's administration surface (<c>/api/admin/*</c>).</summary>
     Task<SignInTarget> AdministrationTargetAsync(CancellationToken ct = default);
 
@@ -107,7 +116,8 @@ public sealed class SignInRequirementService(
     IDocumentSession session,
     IApplicationSettingsResolver settingsResolver,
     RpIdResolver rpIdResolver,
-    IHttpContextAccessor httpContextAccessor) : ISignInRequirementService
+    IHttpContextAccessor httpContextAccessor,
+    IPermissionService permissionService) : ISignInRequirementService
 {
     public async Task<SignInTarget> ResolveTargetAsync(
         string? clientId, IEnumerable<string> resources, CancellationToken ct = default)
@@ -162,6 +172,32 @@ public sealed class SignInRequirementService(
         // they came through: it runs under the realm's policy — the floor (amendment A).
         return await BuildTargetAsync([], clientRpId: null, ct);
     }
+
+    public async Task<SignInTarget> ResolveSignInTargetAsync(ApplicationUser user, string? returnUrl, CancellationToken ct = default)
+    {
+        var target = await ResolveTargetFromReturnUrlAsync(returnUrl, ct);
+        if (target.IsAdministration || !IsOwnUi(returnUrl)) return target;
+
+        var administration = await AdministrationTargetAsync(ct);
+        if (administration.Policy.MinimumLevel <= target.Policy.MinimumLevel) return target;
+
+        return await IsAdministratorAsync(user.Id, ct) ? administration : target;
+    }
+
+    /// <summary>Whether a login page's return URL leads into Modgud's own UI: everything
+    /// except the OAuth endpoints and the device approval, which belong to a client.</summary>
+    internal static bool IsOwnUi(string? returnUrl) =>
+        string.IsNullOrWhiteSpace(returnUrl)
+        || !(returnUrl.StartsWith("/connect/", StringComparison.OrdinalIgnoreCase)
+             || returnUrl.Equals("/device", StringComparison.OrdinalIgnoreCase)
+             || returnUrl.StartsWith("/device?", StringComparison.OrdinalIgnoreCase)
+             || returnUrl.StartsWith("/device/", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>An administrator is whoever the admin console opens for: a user holding any
+    /// permission in Modgud's own Apps.</summary>
+    private async Task<bool> IsAdministratorAsync(Guid userId, CancellationToken ct) =>
+        (await permissionService.GetUserPermissionsAsync(userId, AppSlugs.Modgud, ct)).Count > 0
+        || (await permissionService.GetUserPermissionsAsync(userId, AppSlugs.ControlPlane, ct)).Count > 0;
 
     public async Task<SignInTarget> AdministrationTargetAsync(CancellationToken ct = default)
     {

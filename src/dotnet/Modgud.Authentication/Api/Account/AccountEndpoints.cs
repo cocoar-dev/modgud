@@ -198,6 +198,10 @@ public static class AccountEndpoints
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
             }
 
+            // The user is known: an administrator signing in to Modgud itself is held to the
+            // administration's level from here on.
+            signInTarget = await signInRequirements.ResolveSignInTargetAsync(user, request.ReturnUrl, context.RequestAborted);
+
             // ADR 0025 — decide up front (as if the password were right) whether this
             // sign-in needs a second step; Identity's two-factor branch follows the decision
             // instead of "the account has a factor" (AppSignInManager). Evaluated before the
@@ -453,6 +457,7 @@ public static class AccountEndpoints
             if (!await signInManager.CanSignInAsync(user))
                 return await InvalidCode();
 
+            signInTarget = await signInRequirements.ResolveSignInTargetAsync(user, request.ReturnUrl, ct);
             var proven = new Dictionary<string, DateTimeOffset> { [SignInMethods.Email] = DateTimeOffset.UtcNow };
             var decision = await signInRequirements.EvaluateAsync(
                 user, signInTarget, proven, SignInSurface.Web, startSetupGrace: false, ct);

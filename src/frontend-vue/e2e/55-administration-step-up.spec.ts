@@ -3,19 +3,23 @@ import { apiLogin, uniqueSuffix } from './helpers'
 
 /**
  * ADR 0025 — the portal opens at the realm's sign-in level, the administration
- * (`/api/admin/*`) may ask for a higher one. A session in between used to see the
- * dashboard for a moment and was then pulled to the login page: a dashboard widget read
- * the security log from the administration, the request was refused, and the HTTP client
- * answered the refusal with a redirect.
+ * (`/api/admin/*`) may ask for a higher one. An administrator who signed in to Modgud
+ * with one factor used to see the dashboard for a moment and was then pulled to the login
+ * page: a dashboard widget read the security log from the administration, the request was
+ * refused, and the HTTP client answered the refusal with a redirect.
  *
- * `/api/account/me` now says whether the administration would ask
- * (`AdministrationNeedsStepUp`); the page asks before it goes there and loads nothing from
- * there into the dashboard.
+ * Two rules replace that (amendment 2):
+ *   - an administrator signing in to Modgud itself is held to the administration's level
+ *     in that sign-in — the first spec;
+ *   - a session that is below it anyway (signed in for an App, then opening Modgud) keeps
+ *     the portal: `/api/account/me` says that the administration would ask
+ *     (`AdministrationNeedsStepUp`), the page asks before it goes there and loads nothing
+ *     from there into the dashboard — the other two.
  *
- * The user here is a realm administrator, has no second factor and a setup grace of zero
- * days: the portal is open to them (one factor), the administration
- * (two by default) is not. The same holds for a user who has a passkey and signed in with
- * a password — the rig cannot run a passkey ceremony, see 06-passwordless-login.
+ * The user here is a realm administrator without a second factor and with a setup grace
+ * of zero days, so the administration is closed to them until they set one up. The same
+ * holds for an administrator who has a passkey and signed in with a password — the rig
+ * cannot run a passkey ceremony, see 06-passwordless-login.
  */
 
 const ADMIN_USER = 'admin'
@@ -73,6 +77,29 @@ function administrationRequests(page: Page): string[] {
   return seen
 }
 
+test('an administrator signing in to Modgud is asked before anything is shown', async ({ page }) => {
+  const toAdministration = administrationRequests(page)
+  const visited: string[] = []
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) visited.push(new URL(frame.url()).pathname)
+  })
+
+  await page.goto('/login')
+  await page.getByRole('textbox', { name: /benutzername|username/i }).fill(email)
+  await page.getByRole('textbox', { name: /passwort|password/i }).fill(TEST_PASSWORD)
+  await page.getByRole('button', { name: /anmelden|sign in|login/i }).first().click()
+
+  // The setup of the missing factor, on the login page — required, not postponable.
+  await expect(page.getByText(/Authenticator.App/i).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /Später|Postpone|Later|Skip/i })).toHaveCount(0)
+  await page.waitForLoadState('networkidle')
+
+  expect(visited.filter((path) => path !== '/login')).toEqual([])
+  expect(toAdministration).toEqual([])
+})
+
+// The session of the next two specs is signed in but below the administration's level, as
+// a sign-in for an App leaves an administrator's session.
 test('the dashboard stays open and asks instead of loading administration data', async ({ page }) => {
   const toAdministration = administrationRequests(page)
   await apiLogin(page, email, TEST_PASSWORD)

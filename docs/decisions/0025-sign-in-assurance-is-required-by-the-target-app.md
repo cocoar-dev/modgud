@@ -289,3 +289,21 @@ This replaces the write-once migration of section 2: no value is carried over, b
 - New contract: account changes answer `403 { RequiresReauthentication: true, Methods: [...] }` when the proof is missing or older than 15 minutes; the SPA asks for it and retries.
 - A possible follow-up, not decided here: Modgud serving the app-association files (`apple-app-site-association`, `assetlinks.json`) for its own domains, so a native App can enroll passkeys under the realm's RP ID when it wants them to be account factors.
 
+## Amendment 2 — an administrator signs in to Modgud at the administration's level
+
+### Why
+
+With the realm at `single` and the administration at `multi`, an administrator who signed in to Modgud with a password was let in at the portal's level. The dashboard appeared, one of its widgets read from the administration, the request was refused, and the page was replaced by the prompt for the second factor about a second later. Showing a page and taking it away again is not a sign-in flow: if the second factor is going to be required, it is asked for before anything is shown.
+
+### Decision
+
+- **A sign-in to Modgud's own UI by an administrator is evaluated against the administration** when the administration requires more than the portal. The second factor follows the first in the same sign-in; an administrator without one gets the setup (grace, then required), as on the first visit to the administration before.
+- **An administrator is whoever the admin console opens for:** a user holding any permission in Modgud's own Apps (the IdP's App and the control plane).
+- **A sign-in for an App or a client is unaffected.** A pending authorization or a device approval as the login page's continuation follows that App's rules (§3), whoever signs in. The Host still decides nothing.
+- **The portal's own level is unchanged.** A session below the administration's level still exists — an administrator signed in for an App who opens Modgud afterwards, a federated sign-in — and still opens the portal. For those, Modgud's UI learns from `/api/account/me` whether the administration would ask (`AdministrationNeedsStepUp`), asks before it opens an administration page, and loads no administration data into a portal page.
+
+### Consequences
+
+- An administrator who has lost their second factor can no longer sign in to Modgud at the portal's level to look around; the way back in is another administrator or the recovery CLI, as it already was for the administration itself.
+- An administrator without a second factor sees the setup offer at every sign-in to Modgud during the grace, not only after the first visit to the administration.
+- Scenario S14 is new; S43 now describes the session that comes from an App.

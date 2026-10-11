@@ -52,7 +52,9 @@ The minimum that applies to a request comes from what is being accessed:
 3. Modgud's own UI → the realm's policy for the portal, the administration minimum for `/api/admin/*`.
 4. Nothing identifies an App → the realm's policy.
 
-A session that meets the portal's level but not the administration's keeps the portal. Modgud's UI asks for the missing factor when the administration is opened, before its page loads; a dashboard widget that shows administration data (the recent security events) offers the confirmation in place of its content instead of loading it.
+**An administrator signs in to Modgud at the administration's level.** Whoever the admin console opens for — a user holding any permission in Modgud's own Apps — and signs in to Modgud itself is asked for what the administration requires right away, where that is more than the portal requires: the second factor after the first, or its setup. They are not let in at the portal's level and asked again a moment later. A sign-in for an App or a client (a pending authorization, a device approval) is not affected: it follows that App's rules, whoever signs in.
+
+A session can still meet the portal's level but not the administration's — an administrator who signed in for an App and opens Modgud afterwards. Such a session keeps the portal. Modgud's UI asks for the missing factor when the administration is opened, before its page loads; a dashboard widget that shows administration data (the recent security events) offers the confirmation in place of its content instead of loading it.
 
 The Host never lowers or raises the required level: opening the profile on an App's subdomain is still the portal. It does choose which issuer is advertised, and on an App's own domain it chooses how the login page looks.
 
@@ -176,6 +178,7 @@ Each scenario has a fixed number; the integration tests carry the same number. U
 | S11 | The user has TOTP; App A does not offer TOTP and is set to `RequireViaBrowser` | The native grant answers `mfa_required`; the browser asks for the TOTP code and returns to the App |
 | S12 | A session signed in with an e-mail code opens the admin console | The administration asks for the missing factor (step-up) or, without one, for its setup |
 | S13 | A session below the required level opens any page of Modgud's UI | The page loads and shows the step-up or the setup, never a raw error body |
+| S14 | An administrator signs in to Modgud itself with a password or an e-mail code | The second factor is asked before the sign-in completes; without one, the setup is offered (grace) or required. The same administrator signing in for App A follows App A's rules |
 
 ### The account
 
@@ -208,7 +211,7 @@ Each scenario has a fixed number; the integration tests carry the same number. U
 | S40 | An App's minimum is set below the realm's | Refused, naming the realm setting |
 | S41 | An App offers a method the realm does not | Refused, naming the realm setting |
 | S42 | An App policy saved before these rules is below the floor | Shown as a conflict; the App runs under the floor |
-| S43 | Realm minimum `single`, administration `multi`; a user signs in with an e-mail code | Profile and Apps open; the admin console asks for the second factor |
+| S43 | Realm minimum `single`, administration `multi`; an administrator signs in for an App with an e-mail code, then opens Modgud | Profile and Apps open; the admin console asks for the second factor before its page loads |
 
 ### Upgrading
 
