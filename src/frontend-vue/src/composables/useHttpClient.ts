@@ -60,14 +60,25 @@ const STEP_UP_GUARD_KEY = 'modgud.stepup.last'
  */
 function redirectToStepUp(reauthenticate: boolean, administration: boolean) {
   const here = window.location.pathname + window.location.search
+  if (!claimStepUp(here, reauthenticate, administration)) return
+  window.location.href = stepUpUrl(here, reauthenticate, administration)
+}
+
+/** The login page's address for a step-up that returns to `here` afterwards. */
+export function stepUpUrl(here: string, reauthenticate: boolean, administration: boolean): string {
+  const flags = `${reauthenticate ? '&reauth=1' : ''}${administration ? '&for=admin' : ''}`
+  return `/login?stepup=1${flags}&redirect=${encodeURIComponent(here)}`
+}
+
+/** The loop guard described above: false when this step-up was just started for `here`. */
+export function claimStepUp(here: string, reauthenticate: boolean, administration: boolean): boolean {
   const key = `${here}|${reauthenticate}|${administration}`
   try {
     const last = JSON.parse(sessionStorage.getItem(STEP_UP_GUARD_KEY) ?? 'null') as { key: string; at: number } | null
-    if (last && last.key === key && Date.now() - last.at < 10_000) return
+    if (last && last.key === key && Date.now() - last.at < 10_000) return false
     sessionStorage.setItem(STEP_UP_GUARD_KEY, JSON.stringify({ key, at: Date.now() }))
   } catch { /* storage unavailable: no guard, the target fix alone prevents the loop */ }
-  const flags = `${reauthenticate ? '&reauth=1' : ''}${administration ? '&for=admin' : ''}`
-  window.location.href = `/login?stepup=1${flags}&redirect=${encodeURIComponent(here)}`
+  return true
 }
 
 class HttpClient {

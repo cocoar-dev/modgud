@@ -2642,6 +2642,10 @@
     "errors": {
       "loadFailed": "Daten konnten nicht geladen werden."
     },
+    "locked": {
+      "text": "Gehört zur Administration – sie verlangt zuerst einen zweiten Faktor.",
+      "action": "Bestätigen"
+    },
     "time": {
       "justNow": "gerade eben",
       "minutesAgo": "vor {n} Min.",

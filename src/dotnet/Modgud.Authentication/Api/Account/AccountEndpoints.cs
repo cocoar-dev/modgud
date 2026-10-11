@@ -103,7 +103,14 @@ public static class AccountEndpoints
         /// Whether the user has a password. The e-mail code is a second factor only after a
         /// password, so the setup screens offer it only to users who have one (ADR 0025).
         /// </summary>
-        bool HasPassword = false);
+        bool HasPassword = false,
+        /// <summary>
+        /// ADR 0025 — the current session is below what the realm's administration
+        /// (<c>/api/admin/*</c>) requires: a request there would be answered with the
+        /// step-up or the setup block. The SPA asks for the missing factor before it opens
+        /// the administration, and does not load administration data into a portal page.
+        /// </summary>
+        bool AdministrationNeedsStepUp = false);
 
     public static WebApplication MapAccountEndpoints(this WebApplication application, string path)
     {
@@ -582,6 +589,7 @@ public static class AccountEndpoints
             HttpContext context,
             UserManager<ApplicationUser> userManager,
             IPermissionService permissionService,
+            ISignInRequirementService signInRequirements,
             IQuerySession session) =>
         {
             var user = await userManager.GetUserAsync(context.User);
@@ -635,9 +643,9 @@ public static class AccountEndpoints
                 isFederated,
                 idpDisplayName,
                 user.EmailConfirmed,
-                await context.RequestServices.GetRequiredService<ISignInRequirementService>()
-                    .OwnUiRequiresSecondFactorAsync(context.RequestAborted),
-                !string.IsNullOrEmpty(user.PasswordHash)));
+                await signInRequirements.OwnUiRequiresSecondFactorAsync(context.RequestAborted),
+                !string.IsNullOrEmpty(user.PasswordHash),
+                !await signInRequirements.MeetsAdministrationLevelAsync(user, context.User, context.RequestAborted)));
         })
         .WithName("Account_Me");
 

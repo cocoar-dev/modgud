@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { CoarCard, CoarIcon, CoarNotice, CoarSpinner } from '@cocoar/vue-ui'
+import { CoarButton, CoarCard, CoarIcon, CoarNotice, CoarSpinner } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
+import { useRoute, useRouter } from 'vue-router'
+import { stepUpUrl } from '@/composables/useHttpClient'
 
 /** The shared frame of a dashboard widget: heading, body states, footer link. */
 defineProps<{
@@ -10,6 +12,12 @@ defineProps<{
   subtitle?: string
   loading?: boolean
   failed?: boolean
+  /**
+   * The widget shows administration data and the session is below the administration's
+   * sign-in level (`AdministrationNeedsStepUp`). The widget must not request its data
+   * then: the refusal would pull the user off the dashboard to the login page.
+   */
+  locked?: boolean
   /** Shown instead of the body when there is nothing to show. */
   empty?: string | null
   /** Footer link label; emits `open` when clicked. */
@@ -19,6 +27,12 @@ defineProps<{
 defineEmits<{ open: [] }>()
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
+
+function unlock() {
+  router.push(stepUpUrl(route.fullPath, false, true))
+}
 </script>
 
 <template>
@@ -36,6 +50,12 @@ const { t } = useI18n()
       <div class="widget-card__body">
         <div v-if="loading" class="widget-card__state">
           <CoarSpinner size="m" />
+        </div>
+        <div v-else-if="locked" class="widget-card__state widget-card__state--locked">
+          <span>{{ t('dashboard.locked.text', {}, 'Part of the administration, which asks for a second factor first.') }}</span>
+          <CoarButton size="s" icon-start="lock" @click="unlock">
+            {{ t('dashboard.locked.action', {}, 'Confirm') }}
+          </CoarButton>
         </div>
         <CoarNotice v-else-if="failed" variant="error">
           {{ t('dashboard.errors.loadFailed', {}, 'Failed to load the data.') }}
@@ -97,6 +117,13 @@ const { t } = useI18n()
 .widget-card__state--empty {
   font-size: 0.875rem;
   color: var(--coar-text-neutral-secondary, #9ca3af);
+  text-align: center;
+}
+.widget-card__state--locked {
+  flex-direction: column;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--coar-text-neutral-secondary, #6b7280);
   text-align: center;
 }
 .widget-card__footer {

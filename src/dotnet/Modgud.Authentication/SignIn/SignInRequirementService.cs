@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Marten;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
@@ -75,6 +76,11 @@ public interface ISignInRequirementService
 
     /// <summary>The realm's administration surface (<c>/api/admin/*</c>).</summary>
     Task<SignInTarget> AdministrationTargetAsync(CancellationToken ct = default);
+
+    /// <summary>Whether the session of <paramref name="principal"/> meets what the realm's
+    /// administration requires — the answer the enforcement gives a request to
+    /// <c>/api/admin/*</c>, without starting a setup grace.</summary>
+    Task<bool> MeetsAdministrationLevelAsync(ApplicationUser user, ClaimsPrincipal principal, CancellationToken ct = default);
 
     /// <summary>Whether Modgud's own UI requires a second factor anywhere — the portal or
     /// the administration. Drives the "last second factor" warnings and the grace reset
@@ -164,6 +170,18 @@ public sealed class SignInRequirementService(
             IsAdministration: true);
     }
 
+    public async Task<bool> MeetsAdministrationLevelAsync(ApplicationUser user, ClaimsPrincipal principal, CancellationToken ct = default)
+    {
+        // A multi-factor session meets every requirement.
+        var factors = SignInAssurance.ReadFactors(principal);
+        if (SignInAssurance.LevelOf(factors.Keys) >= SignInLevel.Multi) return true;
+        // The grace a first visit would start is assumed, not stored: with a grace of zero
+        // days that visit is refused, and the answer here has to say so.
+        var decision = await EvaluateAsync(
+            user, await AdministrationTargetAsync(ct), factors, SignInSurface.Web, SetupGrace.Assume, ct);
+        return decision.IsSatisfied;
+    }
+
     public async Task<bool> OwnUiRequiresSecondFactorAsync(CancellationToken ct = default)
     {
         var portal = await ResolveTargetFromReturnUrlAsync(returnUrl: null, ct);
@@ -220,13 +238,26 @@ public sealed class SignInRequirementService(
         OwnFactorNotOffered = (OwnFactorNotOffered)Math.Max((int)a.OwnFactorNotOffered, (int)b.OwnFactorNotOffered),
     };
 
-    public async Task<SignInDecision> EvaluateAsync(
+    public Task<SignInDecision> EvaluateAsync(
         ApplicationUser user,
         SignInTarget target,
         IReadOnlyDictionary<string, DateTimeOffset> factors,
         SignInSurface surface,
         bool startSetupGrace,
-        CancellationToken ct = default)
+        CancellationToken ct = default) =>
+        EvaluateAsync(user, target, factors, surface, startSetupGrace ? SetupGrace.Start : SetupGrace.Leave, ct);
+
+    /// <summary>What an evaluation does with a setup grace that has not started yet: leave it
+    /// alone, start and store it, or decide as if it started now without storing it.</summary>
+    private enum SetupGrace { Leave, Start, Assume }
+
+    private async Task<SignInDecision> EvaluateAsync(
+        ApplicationUser user,
+        SignInTarget target,
+        IReadOnlyDictionary<string, DateTimeOffset> factors,
+        SignInSurface surface,
+        SetupGrace setupGrace,
+        CancellationToken ct)
     {
         var passkeyRpIds = (await session.Query<StoredPasskeyCredential>()
             .Where(c => c.UserId == user.Id)
@@ -260,14 +291,18 @@ public sealed class SignInRequirementService(
 
         // Start the setup grace at the first sign-in that owes a second factor the user
         // does not have. Persisted once; later sign-ins read the stamped date.
-        if (startSetupGrace && decision.SetupPending && facts.SetupDueAt is null && !facts.Exempt)
+        if (setupGrace != SetupGrace.Leave && decision.SetupPending && facts.SetupDueAt is null && !facts.Exempt)
         {
-            security ??= UserSecurityData.Create(user.Id);
-            var graceDays = Math.Max(0, security.GracePeriodDaysOverride ?? target.Policy.SetupGraceDays);
-            security.SecureSetupDueAt = DateTime.UtcNow.AddDays(graceDays);
-            session.Store(security);
-            await session.SaveChangesAsync(ct);
-            decision = Evaluate(target.Policy, facts with { SetupDueAt = new DateTimeOffset(security.SecureSetupDueAt.Value, TimeSpan.Zero) },
+            var graceDays = Math.Max(0, security?.GracePeriodDaysOverride ?? target.Policy.SetupGraceDays);
+            var dueAt = DateTime.UtcNow.AddDays(graceDays);
+            if (setupGrace == SetupGrace.Start)
+            {
+                security ??= UserSecurityData.Create(user.Id);
+                security.SecureSetupDueAt = dueAt;
+                session.Store(security);
+                await session.SaveChangesAsync(ct);
+            }
+            decision = Evaluate(target.Policy, facts with { SetupDueAt = new DateTimeOffset(dueAt, TimeSpan.Zero) },
                 factors.Keys.ToHashSet(StringComparer.Ordinal), surface, DateTimeOffset.UtcNow);
         }
 

@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { NavigationGuard, RouteLocationGeneric } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
+import { claimStepUp, stepUpUrl } from '@/composables/useHttpClient'
 import { MODAL_MD, MODAL_LG, MODAL_LIST_FORM } from './modal-sizes'
 
 /**
@@ -587,6 +588,12 @@ router.beforeEach(async (to) => {
     ]
     if (!ADMIN_PERMS.some((p) => authStore.hasPermission(p))) {
       return '/dashboard'
+    }
+    // ADR 0025 — the administration asks for its sign-in level before the page opens, not
+    // after: without this the admin shell renders, its first request is refused and the
+    // user is pulled away to the login page a moment later.
+    if (authStore.user?.AdministrationNeedsStepUp && claimStepUp(to.fullPath, false, true)) {
+      return stepUpUrl(to.fullPath, false, true)
     }
   }
 

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from '@cocoar/vue-localization'
 import { CoarTag } from '@cocoar/vue-ui'
 import { useLoginProviderStore } from '@/stores/loginProvider.store'
+import { useAdministrationLock } from '../administrationLock'
 import WidgetCard from './WidgetCard.vue'
 
 const { t } = useI18n()
@@ -13,8 +14,14 @@ const store = useLoginProviderStore()
 const loading = ref(true)
 const failed = ref(false)
 const providers = computed(() => store.providers)
+// The provider list is read from the administration.
+const locked = useAdministrationLock()
 
 onMounted(async () => {
+  if (locked.value) {
+    loading.value = false
+    return
+  }
   try {
     await store.loadAll()
   } catch {
@@ -37,6 +44,7 @@ function open(id: string) {
     icon="log-in"
     :loading="loading"
     :failed="failed"
+    :locked="locked"
     :empty="providers.length === 0 ? t('dashboard.loginProviderStatus.none', {}, 'No providers configured.') : null"
     :cta="t('dashboard.loginProviderStatus.cta', {}, 'Manage →')"
     @open="router.push('/admin/login-providers')"

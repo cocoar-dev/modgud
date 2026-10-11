@@ -92,6 +92,66 @@ public partial class SignInLevelWebFlowTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task Me_tells_the_page_that_the_administration_would_ask_before_any_request_goes_there()
+    {
+        await PatchSignInAsync(new UpdateSignInPolicyDto { AdministrationMinimumLevel = "Multi" });
+        await SeedPasskeyAsync(DefaultUser!.Id, rpId: null);
+        var passwordOnly = await CreateAuthenticatedClientAsync("tu", DefaultPassword);
+
+        var me = await passwordOnly.GetFromJsonAsync<JsonElement>("/api/account/me", TestContext.Current.CancellationToken);
+
+        // The same answer the administration gives, so the page can ask first.
+        Assert.True(me.GetProperty("AdministrationNeedsStepUp").GetBoolean());
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await passwordOnly.GetAsync("/api/admin/realm-settings", TestContext.Current.CancellationToken)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Me_reports_an_open_administration_during_the_setup_grace_without_starting_it()
+    {
+        await PatchSignInAsync(new UpdateSignInPolicyDto { AdministrationMinimumLevel = "Multi", SetupGraceDays = 14 });
+        var passwordOnly = await CreateAuthenticatedClientAsync("tu", DefaultPassword);
+        var before = (await Factory.GetDocumentAsync<UserSecurityData>(DefaultUser!.Id))?.SecureSetupDueAt;
+
+        var me = await passwordOnly.GetFromJsonAsync<JsonElement>("/api/account/me", TestContext.Current.CancellationToken);
+
+        Assert.False(me.GetProperty("AdministrationNeedsStepUp").GetBoolean());
+        // Reading /me is not a visit to the administration: it starts no grace.
+        Assert.Equal(before, (await Factory.GetDocumentAsync<UserSecurityData>(DefaultUser!.Id))?.SecureSetupDueAt);
+        Assert.Equal(HttpStatusCode.OK,
+            (await passwordOnly.GetAsync("/api/admin/realm-settings", TestContext.Current.CancellationToken)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Me_reports_a_closed_administration_when_the_setup_grace_is_zero_days()
+    {
+        await PatchSignInAsync(new UpdateSignInPolicyDto { AdministrationMinimumLevel = "Multi", SetupGraceDays = 0 });
+        var passwordOnly = await CreateAuthenticatedClientAsync("tu", DefaultPassword);
+
+        var me = await passwordOnly.GetFromJsonAsync<JsonElement>("/api/account/me", TestContext.Current.CancellationToken);
+
+        // No grace has started yet; the first visit would start one that is over at once.
+        Assert.True(me.GetProperty("AdministrationNeedsStepUp").GetBoolean());
+        Assert.Null((await Factory.GetDocumentAsync<UserSecurityData>(DefaultUser!.Id))?.SecureSetupDueAt);
+        var admin = await passwordOnly.GetAsync("/api/admin/realm-settings", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, admin.StatusCode);
+        Assert.True((await admin.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken))
+            .GetProperty("RequiresSecureSetup").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Me_reports_an_open_administration_when_the_realm_asks_it_for_one_factor()
+    {
+        await PatchSignInAsync(new UpdateSignInPolicyDto { AdministrationMinimumLevel = "Single" });
+        await SeedPasskeyAsync(DefaultUser!.Id, rpId: null);
+        var passwordOnly = await CreateAuthenticatedClientAsync("tu", DefaultPassword);
+
+        var me = await passwordOnly.GetFromJsonAsync<JsonElement>("/api/account/me", TestContext.Current.CancellationToken);
+
+        Assert.False(me.GetProperty("AdministrationNeedsStepUp").GetBoolean());
+    }
+
+    [Fact]
     public async Task A_user_without_a_second_factor_uses_the_administration_during_the_setup_grace()
     {
         await PatchSignInAsync(new UpdateSignInPolicyDto { AdministrationMinimumLevel = "Multi", SetupGraceDays = 14 });
