@@ -70,13 +70,20 @@ public abstract class IntegrationTestBase : IAsyncLifetime, IDisposable
     /// Creates an HttpClient authenticated via Cookie Auth (POST /api/account/login).
     /// The client stores the session cookie and sends it with all subsequent requests.
     /// </summary>
-    protected async Task<HttpClient> CreateAuthenticatedClientAsync(string userName, string password)
+    /// <remarks>
+    /// Without <paramref name="returnUrl"/> this is a sign-in to Modgud itself: an
+    /// administrator who has a second factor is asked for it and the client holds only the
+    /// partial sign-in (ADR 0025, amendment 2). A test that needs a password-only session
+    /// of such a user passes the continuation the sign-in is for, e.g. a pending
+    /// <c>/connect/authorize?client_id=…</c>.
+    /// </remarks>
+    protected async Task<HttpClient> CreateAuthenticatedClientAsync(string userName, string password, string? returnUrl = null)
     {
         var cookieHandler = new CookieContainerHandler();
         var client = Factory.CreateDefaultClient(cookieHandler);
 
         var loginResponse = await client.PostAsJsonAsync("/api/account/login",
-            new { UserName = userName, Password = password }, TestContext.Current.CancellationToken);
+            new { UserName = userName, Password = password, ReturnUrl = returnUrl }, TestContext.Current.CancellationToken);
 
         if (!loginResponse.IsSuccessStatusCode)
         {

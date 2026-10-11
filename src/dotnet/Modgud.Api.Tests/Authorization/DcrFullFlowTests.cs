@@ -249,7 +249,10 @@ public class DcrFullFlowTests : IntegrationTestBase
     private async Task<HttpResponseMessage> AuthorizeResponseAsync(string clientId, string redirectUri, string? scope = null)
     {
         var challenge = GeneratePkceS256Challenge(GeneratePkceVerifier());
-        var cookieClient = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
+        // Signed in for this client: its rules apply, not the administration's (the default
+        // user is a realm administrator, and a sign-in to Modgud itself would ask for more).
+        var cookieClient = await CreateAuthenticatedClientAsync(
+            "tu", "TestPass1234", returnUrl: $"/connect/authorize?client_id={Uri.EscapeDataString(clientId)}");
         var uri = "/connect/authorize?" + string.Join("&", new[]
         {
             "response_type=code",
@@ -760,7 +763,10 @@ public class DcrFullFlowTests : IntegrationTestBase
         var challenge = GeneratePkceS256Challenge(verifier);
         var state = Guid.NewGuid().ToString("N");
 
-        var cookieClient = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
+        // Signed in for this client: its rules apply, not the administration's (the default
+        // user is a realm administrator, and a sign-in to Modgud itself would ask for more).
+        var cookieClient = await CreateAuthenticatedClientAsync(
+            "tu", "TestPass1234", returnUrl: $"/connect/authorize?client_id={Uri.EscapeDataString(clientId)}");
 
         // ── Step A: /connect/authorize → expect 302 to /consent?ticket=… ──
         var authorizeUri = "/connect/authorize?" + string.Join("&", new[]
