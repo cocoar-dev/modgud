@@ -103,7 +103,14 @@ public static class AccountEndpoints
         /// Whether the user has a password. The e-mail code is a second factor only after a
         /// password, so the setup screens offer it only to users who have one (ADR 0025).
         /// </summary>
-        bool HasPassword = false);
+        bool HasPassword = false,
+        /// <summary>
+        /// ADR 0025 — the current session is below what the realm's administration
+        /// (<c>/api/admin/*</c>) requires: a request there would be answered with the
+        /// step-up or the setup block. The SPA asks for the missing factor before it opens
+        /// the administration, and does not load administration data into a portal page.
+        /// </summary>
+        bool AdministrationNeedsStepUp = false);
 
     public static WebApplication MapAccountEndpoints(this WebApplication application, string path)
     {
@@ -190,6 +197,10 @@ public static class AccountEndpoints
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.Password, ModgudMeters.LoginOutcome.Locked);
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
             }
+
+            // The user is known: an administrator signing in to Modgud itself is held to the
+            // administration's level from here on.
+            signInTarget = await signInRequirements.ResolveSignInTargetAsync(user, request.ReturnUrl, context.RequestAborted);
 
             // ADR 0025 — decide up front (as if the password were right) whether this
             // sign-in needs a second step; Identity's two-factor branch follows the decision
@@ -446,6 +457,7 @@ public static class AccountEndpoints
             if (!await signInManager.CanSignInAsync(user))
                 return await InvalidCode();
 
+            signInTarget = await signInRequirements.ResolveSignInTargetAsync(user, request.ReturnUrl, ct);
             var proven = new Dictionary<string, DateTimeOffset> { [SignInMethods.Email] = DateTimeOffset.UtcNow };
             var decision = await signInRequirements.EvaluateAsync(
                 user, signInTarget, proven, SignInSurface.Web, startSetupGrace: false, ct);
@@ -582,6 +594,7 @@ public static class AccountEndpoints
             HttpContext context,
             UserManager<ApplicationUser> userManager,
             IPermissionService permissionService,
+            ISignInRequirementService signInRequirements,
             IQuerySession session) =>
         {
             var user = await userManager.GetUserAsync(context.User);
@@ -635,9 +648,9 @@ public static class AccountEndpoints
                 isFederated,
                 idpDisplayName,
                 user.EmailConfirmed,
-                await context.RequestServices.GetRequiredService<ISignInRequirementService>()
-                    .OwnUiRequiresSecondFactorAsync(context.RequestAborted),
-                !string.IsNullOrEmpty(user.PasswordHash)));
+                await signInRequirements.OwnUiRequiresSecondFactorAsync(context.RequestAborted),
+                !string.IsNullOrEmpty(user.PasswordHash),
+                !await signInRequirements.MeetsAdministrationLevelAsync(user, context.User, context.RequestAborted)));
         })
         .WithName("Account_Me");
 

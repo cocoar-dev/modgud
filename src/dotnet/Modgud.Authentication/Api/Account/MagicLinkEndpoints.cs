@@ -279,7 +279,7 @@ public static class MagicLinkEndpoints
             // is exactly the channel TOTP is meant to survive. The partial sign-in
             // carries the mailbox factor to the second step; the e-mail second factor is
             // never offered here (the mailbox is already in play).
-            var signInTarget = await signInRequirements.ResolveTargetFromReturnUrlAsync(request.ReturnUrl, context.RequestAborted);
+            var signInTarget = await signInRequirements.ResolveSignInTargetAsync(user, request.ReturnUrl, context.RequestAborted);
             var proven = new Dictionary<string, DateTimeOffset>
             {
                 [Modgud.Authentication.SignIn.SignInMethods.Email] = DateTimeOffset.UtcNow,

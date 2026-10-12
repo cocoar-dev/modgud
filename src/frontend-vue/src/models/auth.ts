@@ -22,6 +22,9 @@ export interface AuthUser {
   IdpDisplayName?: string | null
   /** Identity-side EmailConfirmed flag. Drives the in-app unverified-email banner. */
   EmailConfirmed?: boolean
+  /** ADR 0025 — the session is below what the administration (`/api/admin/*`) requires:
+   *  ask for the missing factor before opening it, and load none of its data elsewhere. */
+  AdministrationNeedsStepUp?: boolean
 }
 
 export interface LoginRequest {

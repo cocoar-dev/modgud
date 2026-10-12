@@ -42,7 +42,7 @@ namespace Modgud.Api.Tests.Security;
 /// (no related-origin capability → the realm's RP ID); S9 natively and S11 —
 /// CocoarNativeGrantFlowTests.Otp_Grant_TwoFactorUser_*; S10 natively —
 /// Otp_Grant_App_That_Ignores_The_Users_Own_Factor_Does_Not_Ask_For_Totp; S13 —
-/// Modgud.Tests.Unit SpaShellTests; S50 — Modgud.Tests.Unit SignInRequirementEvaluationTests.
+/// Modgud.Tests.Unit SpaShellTests; S14 — SignInLevelWebFlowTests.An_administrator_*; S50 — Modgud.Tests.Unit SignInRequirementEvaluationTests.
 /// Not automated: S52 (a refresh token from before factors were recorded cannot be minted
 /// by the current release; the refresh check skips tokens without factors).
 /// </summary>
@@ -67,10 +67,13 @@ public class SignInScenarioTests : IntegrationTestBase
     public async Task S1_an_e_mail_code_is_the_whole_sign_in_for_a_single_target()
     {
         await RealmPolicyAsync(new UpdateSignInPolicyDto { MinimumLevel = "Single", EmailCode = true });
+        // Not an administrator: for those a sign-in to Modgud itself is S14.
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Plain", lastname: "User", acronym: "PU", email: "plain@test.com", password: DefaultPassword);
         var browser = Factory.CreateDefaultClient(new CookieContainerHandler());
 
         var login = await browser.PostAsJsonAsync("/api/account/passwordless-otp/login",
-            new { Email = TestEmail, Code = await IssueCodeAsync() }, Ct);
+            new { Email = "plain@test.com", Code = await IssueCodeAsync(user.Id, "plain@test.com") }, Ct);
 
         var body = await login.Content.ReadAsStringAsync(Ct);
         Assert.True(login.StatusCode == HttpStatusCode.OK, body);
@@ -519,14 +522,16 @@ public class SignInScenarioTests : IntegrationTestBase
         return id;
     }
 
-    private async Task<string> IssueCodeAsync()
+    private Task<string> IssueCodeAsync() => IssueCodeAsync(DefaultUser!.Id, TestEmail);
+
+    private async Task<string> IssueCodeAsync(Guid userId, string address)
     {
         Mail.Clear();
         using var scope = TenantScope();
         var result = await scope.ServiceProvider.GetRequiredService<Modgud.Authentication.Identity.IEmailOtpService>()
-            .RequestNativeOtpAsync(DefaultUser!.Id, Ct);
+            .RequestNativeOtpAsync(userId, Ct);
         Assert.False(result.IsError, "RequestNativeOtpAsync failed to issue a challenge");
-        var email = Mail.GetLastEmailTo(TestEmail);
+        var email = Mail.GetLastEmailTo(address);
         Assert.NotNull(email);
         return System.Text.RegularExpressions.Regex.Match(email!.HtmlBody, @"\b(\d{6})\b").Groups[1].Value;
     }

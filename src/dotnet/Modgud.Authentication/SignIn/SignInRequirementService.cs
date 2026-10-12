@@ -1,9 +1,11 @@
+using System.Security.Claims;
 using Marten;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.Domain;
 using Modgud.Authorization.Apps;
+using Modgud.Authorization.Services;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.Realms;
@@ -73,8 +75,21 @@ public interface ISignInRequirementService
     /// is Modgud's own UI, i.e. the self-service portal, which runs under the realm's policy.</summary>
     Task<SignInTarget> ResolveTargetFromReturnUrlAsync(string? returnUrl, CancellationToken ct = default);
 
+    /// <summary>The target of a sign-in on the login page once the user is known. As
+    /// <see cref="ResolveTargetFromReturnUrlAsync"/>, except that an administrator who signs
+    /// in to Modgud's own UI is held to the administration's level right away, where that is
+    /// higher than the portal's — they are not let in at the portal's level and asked again
+    /// a moment later. A sign-in for an App or a client (a pending authorization, a device
+    /// approval) keeps that App's rules, whoever signs in.</summary>
+    Task<SignInTarget> ResolveSignInTargetAsync(ApplicationUser user, string? returnUrl, CancellationToken ct = default);
+
     /// <summary>The realm's administration surface (<c>/api/admin/*</c>).</summary>
     Task<SignInTarget> AdministrationTargetAsync(CancellationToken ct = default);
+
+    /// <summary>Whether the session of <paramref name="principal"/> meets what the realm's
+    /// administration requires — the answer the enforcement gives a request to
+    /// <c>/api/admin/*</c>, without starting a setup grace.</summary>
+    Task<bool> MeetsAdministrationLevelAsync(ApplicationUser user, ClaimsPrincipal principal, CancellationToken ct = default);
 
     /// <summary>Whether Modgud's own UI requires a second factor anywhere — the portal or
     /// the administration. Drives the "last second factor" warnings and the grace reset
@@ -101,7 +116,8 @@ public sealed class SignInRequirementService(
     IDocumentSession session,
     IApplicationSettingsResolver settingsResolver,
     RpIdResolver rpIdResolver,
-    IHttpContextAccessor httpContextAccessor) : ISignInRequirementService
+    IHttpContextAccessor httpContextAccessor,
+    IPermissionService permissionService) : ISignInRequirementService
 {
     public async Task<SignInTarget> ResolveTargetAsync(
         string? clientId, IEnumerable<string> resources, CancellationToken ct = default)
@@ -157,11 +173,49 @@ public sealed class SignInRequirementService(
         return await BuildTargetAsync([], clientRpId: null, ct);
     }
 
+    public async Task<SignInTarget> ResolveSignInTargetAsync(ApplicationUser user, string? returnUrl, CancellationToken ct = default)
+    {
+        var target = await ResolveTargetFromReturnUrlAsync(returnUrl, ct);
+        if (target.IsAdministration || !IsOwnUi(returnUrl)) return target;
+
+        var administration = await AdministrationTargetAsync(ct);
+        if (administration.Policy.MinimumLevel <= target.Policy.MinimumLevel) return target;
+
+        return await IsAdministratorAsync(user.Id, ct) ? administration : target;
+    }
+
+    /// <summary>Whether a login page's return URL leads into Modgud's own UI: everything
+    /// except the OAuth endpoints and the device approval, which belong to a client.</summary>
+    internal static bool IsOwnUi(string? returnUrl) =>
+        string.IsNullOrWhiteSpace(returnUrl)
+        || !(returnUrl.StartsWith("/connect/", StringComparison.OrdinalIgnoreCase)
+             || returnUrl.Equals("/device", StringComparison.OrdinalIgnoreCase)
+             || returnUrl.StartsWith("/device?", StringComparison.OrdinalIgnoreCase)
+             || returnUrl.StartsWith("/device/", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>An administrator is whoever the admin console opens for: a user holding any
+    /// permission in Modgud's own Apps.</summary>
+    private async Task<bool> IsAdministratorAsync(Guid userId, CancellationToken ct) =>
+        (await permissionService.GetUserPermissionsAsync(userId, AppSlugs.Modgud, ct)).Count > 0
+        || (await permissionService.GetUserPermissionsAsync(userId, AppSlugs.ControlPlane, ct)).Count > 0;
+
     public async Task<SignInTarget> AdministrationTargetAsync(CancellationToken ct = default)
     {
         var realm = (await settingsResolver.ResolveAsync(null, ct)).SignIn ?? SignInPolicy.Defaults;
         return new SignInTarget([], realm with { MinimumLevel = realm.AdministrationMinimumLevel }, PasskeyRpId: null,
             IsAdministration: true);
+    }
+
+    public async Task<bool> MeetsAdministrationLevelAsync(ApplicationUser user, ClaimsPrincipal principal, CancellationToken ct = default)
+    {
+        // A multi-factor session meets every requirement.
+        var factors = SignInAssurance.ReadFactors(principal);
+        if (SignInAssurance.LevelOf(factors.Keys) >= SignInLevel.Multi) return true;
+        // The grace a first visit would start is assumed, not stored: with a grace of zero
+        // days that visit is refused, and the answer here has to say so.
+        var decision = await EvaluateAsync(
+            user, await AdministrationTargetAsync(ct), factors, SignInSurface.Web, SetupGrace.Assume, ct);
+        return decision.IsSatisfied;
     }
 
     public async Task<bool> OwnUiRequiresSecondFactorAsync(CancellationToken ct = default)
@@ -220,13 +274,26 @@ public sealed class SignInRequirementService(
         OwnFactorNotOffered = (OwnFactorNotOffered)Math.Max((int)a.OwnFactorNotOffered, (int)b.OwnFactorNotOffered),
     };
 
-    public async Task<SignInDecision> EvaluateAsync(
+    public Task<SignInDecision> EvaluateAsync(
         ApplicationUser user,
         SignInTarget target,
         IReadOnlyDictionary<string, DateTimeOffset> factors,
         SignInSurface surface,
         bool startSetupGrace,
-        CancellationToken ct = default)
+        CancellationToken ct = default) =>
+        EvaluateAsync(user, target, factors, surface, startSetupGrace ? SetupGrace.Start : SetupGrace.Leave, ct);
+
+    /// <summary>What an evaluation does with a setup grace that has not started yet: leave it
+    /// alone, start and store it, or decide as if it started now without storing it.</summary>
+    private enum SetupGrace { Leave, Start, Assume }
+
+    private async Task<SignInDecision> EvaluateAsync(
+        ApplicationUser user,
+        SignInTarget target,
+        IReadOnlyDictionary<string, DateTimeOffset> factors,
+        SignInSurface surface,
+        SetupGrace setupGrace,
+        CancellationToken ct)
     {
         var passkeyRpIds = (await session.Query<StoredPasskeyCredential>()
             .Where(c => c.UserId == user.Id)
@@ -260,14 +327,18 @@ public sealed class SignInRequirementService(
 
         // Start the setup grace at the first sign-in that owes a second factor the user
         // does not have. Persisted once; later sign-ins read the stamped date.
-        if (startSetupGrace && decision.SetupPending && facts.SetupDueAt is null && !facts.Exempt)
+        if (setupGrace != SetupGrace.Leave && decision.SetupPending && facts.SetupDueAt is null && !facts.Exempt)
         {
-            security ??= UserSecurityData.Create(user.Id);
-            var graceDays = Math.Max(0, security.GracePeriodDaysOverride ?? target.Policy.SetupGraceDays);
-            security.SecureSetupDueAt = DateTime.UtcNow.AddDays(graceDays);
-            session.Store(security);
-            await session.SaveChangesAsync(ct);
-            decision = Evaluate(target.Policy, facts with { SetupDueAt = new DateTimeOffset(security.SecureSetupDueAt.Value, TimeSpan.Zero) },
+            var graceDays = Math.Max(0, security?.GracePeriodDaysOverride ?? target.Policy.SetupGraceDays);
+            var dueAt = DateTime.UtcNow.AddDays(graceDays);
+            if (setupGrace == SetupGrace.Start)
+            {
+                security ??= UserSecurityData.Create(user.Id);
+                security.SecureSetupDueAt = dueAt;
+                session.Store(security);
+                await session.SaveChangesAsync(ct);
+            }
+            decision = Evaluate(target.Policy, facts with { SetupDueAt = new DateTimeOffset(dueAt, TimeSpan.Zero) },
                 factors.Keys.ToHashSet(StringComparer.Ordinal), surface, DateTimeOffset.UtcNow);
         }
 

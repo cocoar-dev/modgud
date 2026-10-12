@@ -5,6 +5,7 @@ import { useI18n } from '@cocoar/vue-localization'
 import { CoarTag } from '@cocoar/vue-ui'
 import { useHttpClient } from '@/composables/useHttpClient'
 import type { WidgetOptions } from '../layout'
+import { useAdministrationLock } from '../administrationLock'
 import { useRelativeTime } from '../relativeTime'
 import WidgetCard from './WidgetCard.vue'
 
@@ -30,7 +31,14 @@ const rows = computed(() => all.value.slice(0, Number(props.options.rows?.[0]) |
 const loading = ref(true)
 const failed = ref(false)
 
+// The security log is read from the administration.
+const locked = useAdministrationLock()
+
 onMounted(async () => {
+  if (locked.value) {
+    loading.value = false
+    return
+  }
   try {
     all.value = await useHttpClient('/api/admin/auth-log').setQueryParameter('limit', String(MAX_ROWS)).get<SecurityLogRow[]>()
   } catch {
@@ -51,6 +59,7 @@ function variant(severity: SecurityLogRow['Severity']): 'neutral' | 'warning' | 
     icon="scroll-text"
     :loading="loading"
     :failed="failed"
+    :locked="locked"
     :empty="rows.length === 0 ? t('dashboard.systemActivity.none', {}, 'No events yet.') : null"
     :cta="t('dashboard.systemActivity.cta', {}, 'View all →')"
     @open="router.push('/admin/logs')"

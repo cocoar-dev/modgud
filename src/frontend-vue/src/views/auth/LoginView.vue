@@ -294,7 +294,12 @@ async function resumeSecondFactor() {
         if (!userName.value) userName.value = result.Email
       }
     }
-    else finishLogin()
+    else {
+      // Nothing to raise (another tab did it meanwhile): what this page knows about the
+      // session is stale, and the route guard would send the user straight back here.
+      await authStore.fetchMe()
+      finishLogin()
+    }
   } catch {
     // No session to raise (expired, signed out elsewhere): a normal sign-in follows.
   }
