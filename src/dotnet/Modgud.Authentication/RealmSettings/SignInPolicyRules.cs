@@ -38,6 +38,11 @@ internal static partial class SignInPolicyRules
             ? Error.Validation("SignIn.InvalidSetupGraceDays", "SetupGraceDays must be between 0 and 365.")
             : null;
 
+    public static Error? ValidateEmailFallbackWaitHours(int? hours) =>
+        hours is < 0 or > 720
+            ? Error.Validation("SignIn.InvalidEmailFallbackWaitHours", "EmailFallbackWaitHours must be between 0 and 720.")
+            : null;
+
     /// <summary>Null/blank passes (no RP ID). Returns the trimmed value via <paramref name="normalized"/>.</summary>
     public static Error? ValidatePasskeyRpId(string? raw, out string? normalized)
     {

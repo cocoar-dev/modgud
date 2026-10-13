@@ -37,6 +37,11 @@ public class UserSecurityData
     // is expected to audit this flag; we log a warning on every exempt request.
     public bool TwoFactorExempt { get; set; }
 
+    // When the password was last set through the reset link sent to the mailbox. For the
+    // realm's EmailFallbackWaitHours after it, the e-mail code does not stand in for the
+    // user's own second factor: both proofs would come from the same mailbox.
+    public DateTimeOffset? PasswordResetByEmailAt { get; set; }
+
     public static UserSecurityData Create(Guid userId, string? passwordHash = null)
     {
         return new UserSecurityData

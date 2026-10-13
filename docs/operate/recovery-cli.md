@@ -295,8 +295,12 @@ to the console, not recorded.
 
 - **No admin can sign in** → `bootstrap-admin` (Direct mode) creates
   a fresh admin in one shot.
-- **A user lost their 2FA device** → `reset-2fa <username>` then
-  `magic-link <username>` so they can log in and re-enrol.
+- **A user lost their 2FA device** and cannot get back in themselves →
+  `reset-2fa <username>` then `magic-link <username>` so they can log in
+  and re-enrol. A user with a password usually does not need this: the
+  e-mail code stands in for the lost factor (see
+  [When the second factor is gone](../concepts/sign-in-levels#when-the-second-factor-is-gone)),
+  unless the realm switched that off or the account has no password.
 - **Production hostname doesn't route to a realm** → `realm-list` to confirm what's configured, then `realm-add-domain` to bind the new hostname, then `realm-set-primary-domain` to make it the realm's canonical primary.
 - **Marten projections out of sync after a schema change** →
   `rebuild-projections`.

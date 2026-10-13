@@ -47,7 +47,7 @@ Deleting a passkey on Modgud's side **only removes the registration** — your d
 Two scenarios:
 
 - **You have other passkeys / 2FA methods**: sign in with one of those, delete the lost device's passkey from Modgud, enrol a fresh one.
-- **You have nothing else**: contact your admin. They can reset 2FA for you; you'll re-enrol from a clean slate.
+- **You have nothing else**: sign in with your password and choose **Code via Email** as the second step; then delete the lost device's passkey and enrol a fresh one. The code is not offered if your organisation switched it off, if you have no password, or for a day after you reset your password by e-mail — then contact your admin.
 
 ## Browser support
 

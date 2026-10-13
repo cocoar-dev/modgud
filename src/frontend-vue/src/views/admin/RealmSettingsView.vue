@@ -1278,6 +1278,11 @@ async function rotateSigningKey() {
                 :hint="t('admin.signIn.ownFactorNotOfferedHint', {}, 'What happens when a user turned on a second factor (e.g. an authenticator app) that an app does not offer.')">
                 <CoarSelect v-model="signInForm.OwnFactorNotOffered" :options="ownFactorOptions" />
               </CoarFormField>
+              <CoarFormField :label="t('admin.signIn.emailFallbackWaitHours', {}, 'E-mail code as a fallback: wait after a password reset (hours, 0–720)')"
+                :hint="t('admin.signIn.emailFallbackWaitHoursHint', {}, 'After a password, the e-mail code can stand in for a second factor the user can no longer use (a lost passkey or authenticator app). A password that was just reset by e-mail does not count for this until the wait is over. 0 = no wait. Switch off “E-mail code after a password” to offer no fallback.')">
+                <CoarTextInput :model-value="String(signInForm.EmailFallbackWaitHours)"
+                  @update:model-value="(v) => (signInForm.EmailFallbackWaitHours = Math.min(720, Math.max(0, parseInt(v) || 0)))" />
+              </CoarFormField>
             </div>
             <CoarNotice v-if="signInForm.OwnFactorNotOffered === 'Ignore'" variant="info">
               {{ t('admin.signIn.ownFactorIgnoreNotice', {}, 'Users who set up their own second factor (e.g. an authenticator app) are not asked for it when signing in to this app, unless the app offers it.') }}

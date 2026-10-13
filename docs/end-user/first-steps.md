@@ -45,7 +45,7 @@ Profile → Account. Make sure your first name, last name, and email are correct
 - **Forgot password but have email**: use "Forgot password?" on the login page → a password-reset link arrives in your inbox → click it to set a new password directly.
 - **Forgot password, no email access**: contact your admin. They can send you a sign-in link.
 - **Lost your 2FA device, but still have another method enrolled** (e.g. a passkey): sign in with that method, then remove the lost device from Profile → Security and enrol a replacement.
-- **Lost your only 2FA device**: contact your admin. They can reset 2FA for you — you'll re-enrol from scratch.
+- **Lost your only 2FA device**: sign in with your password and choose **Code via Email** as the second step. Then remove the lost device from Profile → Security and enrol a replacement. If that choice is not offered (your organisation switched it off, you have no password, or you reset your password by e-mail in the last day), contact your admin.
 
 ## Tips
 

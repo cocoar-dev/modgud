@@ -32,6 +32,22 @@ public class EmailOtpService(
         return await IssueChallengeAsync(user, ct);
     }
 
+    // ADR 0025, amendment 3 — the code that stands in for the user's own second factor.
+    // The opt-in gate above does not apply: the caller has checked that the fallback is
+    // available for this user. A confirmed, active mailbox is still required.
+    public async Task<ErrorOr<bool>> RequestFallbackOtpAsync(Guid userId, CancellationToken ct)
+    {
+        var user = await session.LoadAsync<ApplicationUser>(userId, ct);
+        if (user is null)
+            return Error.NotFound("EmailOtp.UserNotFound", "User not found.");
+        if (string.IsNullOrEmpty(user.Email) || !user.EmailConfirmed)
+            return Error.Forbidden("EmailOtp.EmailNotConfirmed", "A confirmed email address is required.");
+        if (!user.IsActive || user.IsDeleted)
+            return Error.Forbidden("EmailOtp.AccountInactive", "The account cannot sign in.");
+
+        return await IssueChallengeAsync(user, ct);
+    }
+
     // ADR-0010 — native passwordless login. email-OTP acts here as a PRIMARY
     // factor, so (unlike the 2FA RequestOtpAsync) it does NOT require the user's
     // EmailOtpEnabled opt-in. It DOES require a confirmed, active mailbox:

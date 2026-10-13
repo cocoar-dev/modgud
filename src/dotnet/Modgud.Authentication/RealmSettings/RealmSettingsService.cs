@@ -536,6 +536,7 @@ public sealed class RealmSettingsService(
         var ownFactor = SignInPolicyRules.ParseOwnFactor(patch.OwnFactorNotOffered);
         if (ownFactor.IsError) return ownFactor.FirstError;
         if (SignInPolicyRules.ValidateGraceDays(patch.SetupGraceDays) is { } graceError) return graceError;
+        if (SignInPolicyRules.ValidateEmailFallbackWaitHours(patch.EmailFallbackWaitHours) is { } waitError) return waitError;
 
         var merged = s with
         {
@@ -547,6 +548,7 @@ public sealed class RealmSettingsService(
             Passkey = patch.Passkey ?? s.Passkey,
             Totp = patch.Totp ?? s.Totp,
             EmailAfterPassword = patch.EmailAfterPassword ?? s.EmailAfterPassword,
+            EmailFallbackWaitHours = patch.EmailFallbackWaitHours ?? s.EmailFallbackWaitHours,
             OwnFactorNotOffered = ownFactor.Value ?? s.OwnFactorNotOffered,
         };
 
@@ -566,6 +568,7 @@ public sealed class RealmSettingsService(
         Passkey = s.Passkey,
         Totp = s.Totp,
         EmailAfterPassword = s.EmailAfterPassword,
+        EmailFallbackWaitHours = s.EmailFallbackWaitHours,
         OwnFactorNotOffered = s.OwnFactorNotOffered.ToString(),
     };
 

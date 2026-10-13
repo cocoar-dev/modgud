@@ -2446,6 +2446,8 @@
       "administrationSingleWarning": "Wer diesen Realm verwaltet, braucht dann keinen zweiten Faktor. Nur für Test- und Entwicklungs-Realms gedacht.",
       "setupGraceDays": "Einrichtungsfrist (Tage, 0–365)",
       "setupGraceDaysHint": "Wie lange sich ein Nutzer ohne zweiten Faktor weiter bei einer App anmelden darf, die mehrere Faktoren verlangt. 0 = sofort einrichten.",
+      "emailFallbackWaitHours": "E-Mail-Code als Ersatz: Wartezeit nach Passwort-Zurücksetzen (Stunden, 0–720)",
+      "emailFallbackWaitHoursHint": "Nach dem Passwort kann der E-Mail-Code einen zweiten Faktor ersetzen, den der Nutzer nicht mehr verwenden kann (verlorener Passkey oder Authenticator-App). Ein Passwort, das gerade per E-Mail zurückgesetzt wurde, zählt dafür erst nach der Wartezeit. 0 = keine Wartezeit. „E-Mail-Code nach dem Passwort“ ausschalten, um keinen Ersatz anzubieten.",
       "ownFactorNotOffered": "Eigener zweiter Faktor des Nutzers, von der App nicht angeboten",
       "ownFactorNotOfferedHint": "Was passiert, wenn ein Nutzer einen zweiten Faktor (z. B. eine Authenticator-App) eingeschaltet hat, den eine App nicht anbietet.",
       "ownFactorIgnoreNotice": "Nutzer, die einen eigenen zweiten Faktor eingerichtet haben (z. B. eine Authenticator-App), werden bei der Anmeldung an dieser App nicht danach gefragt, solange die App ihn nicht anbietet.",

@@ -46,7 +46,7 @@ Some realms require 2FA. If you try to disable your only remaining method there,
 Two scenarios:
 
 - **You have another 2FA method enrolled** (e.g. a passkey) → sign in with that instead, then remove the lost authenticator from Profile → Security and enrol a replacement.
-- **The authenticator was your only method** → contact your admin. They can `Reset 2FA completely` for you, opening a fresh grace period in which you can re-enrol.
+- **The authenticator was your only method** → sign in with your password and choose **Code via Email** as the second step; then remove the lost authenticator from Profile → Security and enrol a replacement. The code is not offered if your organisation switched it off, if you have no password, or for a day after you reset your password by e-mail — then contact your admin.
 
 ## Multiple methods
 

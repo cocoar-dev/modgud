@@ -8,6 +8,13 @@ public interface IEmailOtpService
     /// Gated on the user's <c>EmailOtpEnabled</c> opt-in.</summary>
     Task<ErrorOr<bool>> RequestOtpAsync(Guid userId, CancellationToken ct);
 
+    /// <summary>ADR 0025, amendment 3 — issues an email-OTP code that stands in for the
+    /// user's own second factor after a password. Not gated on the <c>EmailOtpEnabled</c>
+    /// opt-in; the caller decides whether the fallback is available
+    /// (<c>ISignInRequirementService.EmailFallbackAvailableAsync</c>). Requires a confirmed,
+    /// active mailbox.</summary>
+    Task<ErrorOr<bool>> RequestFallbackOtpAsync(Guid userId, CancellationToken ct);
+
     /// <summary>ADR-0010 — issues an email-OTP code as a PRIMARY passwordless
     /// factor for native (cookieless) login. Unlike <see cref="RequestOtpAsync"/>
     /// this does NOT require <c>EmailOtpEnabled</c>, but it DOES require a
