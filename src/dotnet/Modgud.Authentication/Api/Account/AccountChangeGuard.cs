@@ -46,6 +46,7 @@ public interface IAccountChangeGuard
 public sealed class AccountChangeGuard(
     IDocumentSession session,
     RpIdResolver rpIdResolver,
+    ISignInRequirementService signInRequirements,
     IEmailService email,
     IEmailBrandingResolver branding,
     ILogger<AccountChangeGuard> logger) : IAccountChangeGuard
@@ -69,6 +70,14 @@ public sealed class AccountChangeGuard(
         if (accountFactors.Count > 0)
         {
             var allowed = proven.Any(f => AccountFactorProofs.Contains(f.Key) && f.Value >= since);
+            // Amendment 3 — a session signed in with the password may confirm the change
+            // with a fresh e-mail code instead: the way to remove a factor that is gone.
+            if (proven.ContainsKey(SignInMethods.Password)
+                && await signInRequirements.EmailFallbackAvailableAsync(user, ct))
+            {
+                allowed = allowed || (proven.TryGetValue(SignInMethods.Email, out var mailboxAt) && mailboxAt >= since);
+                accountFactors.Add(SignInMethods.Email);
+            }
             return new AccountChangeCheck(allowed, HasAccountFactor: true, accountFactors);
         }
 

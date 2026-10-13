@@ -1,5 +1,7 @@
 using System.Text;
 using System.Web;
+using Marten;
+using Marten.Patching;
 using Microsoft.AspNetCore.Identity;
 using Modgud.Authentication;
 using Modgud.Authentication.Domain;
@@ -98,7 +100,9 @@ public static class PasswordResetEndpoints
             UserManager<ApplicationUser> userManager,
             Modgud.Authentication.Sessions.IUserAccessRevoker accessRevoker,
             Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker,
-            Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements) =>
+            Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements,
+            IAccountChangeGuard accountChanges,
+            IDocumentSession session) =>
         {
             if (!await signInRequirements.PortalAllowsPasswordAsync())
                 return Results.Json(new { Message = "Password operations are disabled" }, statusCode: 403);
@@ -124,6 +128,13 @@ public static class PasswordResetEndpoints
                 return Results.Json(new { Message = string.Join(" ", errors) }, statusCode: 400);
             }
 
+            // ADR 0025, amendment 3 — this password came through the mailbox. Until the
+            // realm's wait is over, an e-mail code does not stand in for the user's own
+            // second factor: password and code would be the same proof. An atomic patch,
+            // like the other fields of this document that Identity does not own.
+            session.Patch<UserSecurityData>(user.Id).Set(x => x.PasswordResetByEmailAt, DateTimeOffset.UtcNow);
+            await session.SaveChangesAsync();
+
             // Audit remediation #3: the anonymous ATO-recovery path. ResetPasswordAsync
             // rotates the Identity stamp (cuts cookies + refresh-token continuation) but
             // touches no OAuth grants and no device-session rows — leaving an attacker's
@@ -133,6 +144,9 @@ public static class PasswordResetEndpoints
             await staffingRevoker.EndAllForUserAsync(
                 user.Id,
                 Modgud.Domain.PositionTerminals.StaffingSessionEndReason.ActivationCredentialInvalidated);
+
+            // The owner hears of a reset they did not ask for while the wait above still runs.
+            await accountChanges.NotifyAsync(user, AccountChange.PasswordChanged);
 
             return Results.Ok(new { Message = "Passwort wurde erfolgreich zurückgesetzt." });
         })

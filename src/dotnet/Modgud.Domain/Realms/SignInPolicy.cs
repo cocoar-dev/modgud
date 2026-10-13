@@ -71,6 +71,12 @@ public record SignInPolicy
     /// magic-link sign-in: it would prove the same mailbox twice.</summary>
     public bool EmailAfterPassword { get; init; } = true;
 
+    /// <summary>Realm-level only: hours after a password reset by e-mail during which the
+    /// e-mail code does not stand in for a user's own second factor. A password that just
+    /// came through the mailbox and a code sent to the same mailbox are one proof, not two.
+    /// 0 = no wait. App overrides do not touch it.</summary>
+    public int EmailFallbackWaitHours { get; init; } = 24;
+
     /// <summary>What happens when a user has their own second factor that this App
     /// does not offer.</summary>
     public OwnFactorNotOffered OwnFactorNotOffered { get; init; } = OwnFactorNotOffered.RequireViaBrowser;

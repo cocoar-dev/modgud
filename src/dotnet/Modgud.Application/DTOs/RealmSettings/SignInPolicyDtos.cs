@@ -17,6 +17,7 @@ public record SignInPolicyDto
     public bool Passkey { get; init; } = true;
     public bool Totp { get; init; } = true;
     public bool EmailAfterPassword { get; init; } = true;
+    public int EmailFallbackWaitHours { get; init; } = 24;
     public string OwnFactorNotOffered { get; init; } = "RequireViaBrowser";
 }
 
@@ -34,5 +35,6 @@ public record UpdateSignInPolicyDto
     public bool? Passkey { get; init; }
     public bool? Totp { get; init; }
     public bool? EmailAfterPassword { get; init; }
+    public int? EmailFallbackWaitHours { get; init; }
     public string? OwnFactorNotOffered { get; init; }
 }

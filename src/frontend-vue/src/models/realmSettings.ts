@@ -281,6 +281,8 @@ export interface SignInPolicyDto {
   Passkey: boolean
   Totp: boolean
   EmailAfterPassword: boolean
+  /** Realm-only: hours after a password reset by e-mail before the e-mail code stands in for a user's own second factor. */
+  EmailFallbackWaitHours: number
   OwnFactorNotOffered: OwnFactorNotOffered
 }
 
@@ -296,6 +298,7 @@ export const SIGN_IN_POLICY_DEFAULTS: SignInPolicyDto = {
   Passkey: true,
   Totp: true,
   EmailAfterPassword: true,
+  EmailFallbackWaitHours: 24,
   OwnFactorNotOffered: 'RequireViaBrowser',
 }
 

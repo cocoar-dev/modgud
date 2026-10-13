@@ -143,15 +143,25 @@ public static class EmailOtpEndpoints
 
         // POST /api/account/email-otp/login/request — Send OTP code via email
         group.MapPost("login/request", async (
+            HttpContext context,
             SignInManager<ApplicationUser> signInManager,
             IEmailOtpService emailOtpService,
+            Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements,
             CancellationToken ct) =>
         {
             var user = await signInManager.GetTwoFactorAuthenticationUserAsync();
             if (user is null)
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
 
-            var result = await emailOtpService.RequestOtpAsync(user.Id, ct);
+            // The user's own e-mail second factor, or — after a password — the code that
+            // stands in for a second factor they can no longer use (ADR 0025, amendment 3).
+            var partial = await Modgud.Authentication.SignIn.SignInAssurance.ReadPartialAsync(context);
+            var asFallback = !user.EmailOtpEnabled
+                && partial?.Factors.ContainsKey(Modgud.Authentication.SignIn.SignInMethods.Password) == true
+                && await signInRequirements.EmailFallbackAvailableAsync(user, ct);
+            var result = asFallback
+                ? await emailOtpService.RequestFallbackOtpAsync(user.Id, ct)
+                : await emailOtpService.RequestOtpAsync(user.Id, ct);
             if (result.IsError)
             {
                 var error = result.FirstError;
@@ -172,6 +182,7 @@ public static class EmailOtpEndpoints
             HttpContext context,
             SignInManager<ApplicationUser> signInManager,
             IEmailOtpService emailOtpService,
+            Modgud.Authentication.SignIn.ISignInRequirementService signInRequirements,
             CancellationToken ct) =>
         {
             // Empty body / missing field — reject at the boundary instead of letting the service NRE.
@@ -199,9 +210,21 @@ public static class EmailOtpEndpoints
             }
 
             // ADR 0025 — an e-mail code is a second factor only after a password. After an
-            // e-mail-code or magic-link sign-in it would prove the same mailbox twice.
+            // e-mail-code or magic-link sign-in alone it would prove the same mailbox twice.
+            // A session that carries a password may prove its mailbox again: that is how an
+            // account change is confirmed with the e-mail fallback (amendment 3).
             var partial = await Modgud.Authentication.SignIn.SignInAssurance.ReadPartialAsync(context);
-            if (partial is null || partial.Value.Factors.ContainsKey(Modgud.Authentication.SignIn.SignInMethods.Email))
+            if (partial is null || !partial.Value.Factors.ContainsKey(Modgud.Authentication.SignIn.SignInMethods.Password))
+            {
+                ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.EmailOtp, ModgudMeters.LoginOutcome.Failure);
+                return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+            }
+
+            // The code counts as this user's second factor only where one may be issued for
+            // it: their own e-mail second factor, or the fallback. A code issued on another
+            // path (the e-mail-code sign-in shares the challenge) must not get around that,
+            // or around the wait after a password reset by e-mail.
+            if (!user.EmailOtpEnabled && !await signInRequirements.EmailFallbackAvailableAsync(user, ct))
             {
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.EmailOtp, ModgudMeters.LoginOutcome.Failure);
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);

@@ -307,3 +307,41 @@ With the realm at `single` and the administration at `multi`, an administrator w
 - An administrator who has lost their second factor can no longer sign in to Modgud at the portal's level to look around; the way back in is another administrator or the recovery CLI, as it already was for the administration itself.
 - An administrator without a second factor sees the setup offer at every sign-in to Modgud during the grace, not only after the first visit to the administration.
 - Scenario S14 is new; S43 now describes the session that comes from an App.
+
+## Amendment 3 — the e-mail code stands in for a second factor that is gone
+
+### Why
+
+An administrator enrolled a passkey as their only second factor and the device broke. The sign-in asked for that passkey and offered nothing else. The e-mail code could not be switched on, because switching it on is an account change and an account change needs the account factor — the same passkey. The only way back in was the recovery CLI, which a realm administrator cannot reach: it needs a shell on the server. Amendment 2 names "another administrator" as a way back in; the admin console has no such action.
+
+"Password + e-mail code" already is `multi` (§1). It was only offered to users who had switched it on.
+
+### Decision
+
+- **After a password, the e-mail code is offered beside the user's own second factor** — TOTP or a usable passkey — wherever the target offers the e-mail code after a password (`EmailAfterPassword`). The user does not have to switch it on. It needs a confirmed e-mail address.
+- **It stands in; it does not replace the setup.** A user without any second factor still gets the setup duty (grace, then required). The fallback creates no demand of its own: it never raises the level a sign-in must reach. The user's own switch keeps its meaning (§7).
+- **Still only after a password.** After an e-mail code or a magic link, a second e-mail code proves the same mailbox again. An account without a password has no fallback.
+- **The same proof confirms an account change.** A session that was signed in with the password and proved the mailbox within the window (C) may change what protects the account — remove the passkey that is gone, set up an authenticator app. The login page offers the e-mail code in that step.
+- **A password that came through the mailbox does not count.** For `EmailFallbackWaitHours` (realm setting, default 24, `0` = no wait) after a password reset by e-mail, the fallback is neither offered at sign-in nor accepted for an account change: the password and the code would be one proof. A password the user changed while signed in, or one an administrator set, starts no wait.
+- **A realm switches the fallback off** by not offering the e-mail code after a password. Then the ways back in are the recovery CLI or an administrator action, as before.
+
+### What this changes about "what the mailbox alone can do"
+
+The table in C gains a time dimension for a user with an account factor and a password:
+
+| The user has… | With the mailbox alone, an attacker… |
+|---|---|
+| An account factor and a password, fallback on | resets the password and, once the wait is over, signs in with the e-mail code and can change the account. The reset ends every session, and the reset and every account change send a notice to the address |
+| An account factor, fallback off or no password | as before: no account change |
+
+The wait does not stop an attacker who holds the mailbox for longer than the wait and whose reset goes unnoticed. It stops the reset-then-code sequence from being a single step, and it gives the owner the length of the wait to react to a reset they did not ask for. A realm that needs "the mailbox alone is never enough" switches the fallback off.
+
+This reverses an earlier hardening on purpose: the e-mail second factor was issued only to users who had switched it on, so that an account with TOTP could not be reduced to its mailbox. The switch still gates the code for a user without another factor; beside another factor, the wait takes its place.
+
+### Consequences
+
+- A user who lost their only second factor signs in with password and e-mail code, removes the lost factor and sets up a new one, without an administrator or the operator.
+- Users with TOTP or a passkey see "Code via Email" as a further choice after their password where the target offers it.
+- Not covered: an account without a password, and a realm that does not offer the e-mail code after a password. Recovery codes and a reset by another administrator in the admin console remain possible additions; neither is decided here.
+- New realm setting `EmailFallbackWaitHours`; `UserSecurityData.PasswordResetByEmailAt` records the last reset by e-mail.
+- Scenarios S15–S17 are new.

@@ -100,6 +100,13 @@ public interface ISignInRequirementService
     /// for password reset and change.</summary>
     Task<bool> PortalAllowsPasswordAsync(CancellationToken ct = default);
 
+    /// <summary>Whether the e-mail code after a password may stand in for the user's own
+    /// second factor (ADR 0025, amendment 3) — the way back in for a user whose passkey or
+    /// authenticator app is gone. It needs a password, a confirmed address, a second factor
+    /// to stand in for, the realm offering the e-mail code after a password, and a password
+    /// that was not just reset through the same mailbox.</summary>
+    Task<bool> EmailFallbackAvailableAsync(ApplicationUser user, CancellationToken ct = default);
+
     /// <summary>Evaluate <paramref name="factors"/> for <paramref name="user"/> against
     /// <paramref name="target"/>. With <paramref name="startSetupGrace"/> a user who owes a
     /// second factor and has none gets their grace started (persisted).</summary>
@@ -271,8 +278,30 @@ public sealed class SignInRequirementService(
         Passkey = a.Passkey && b.Passkey,
         Totp = a.Totp && b.Totp,
         EmailAfterPassword = a.EmailAfterPassword && b.EmailAfterPassword,
+        EmailFallbackWaitHours = Math.Max(a.EmailFallbackWaitHours, b.EmailFallbackWaitHours),
         OwnFactorNotOffered = (OwnFactorNotOffered)Math.Max((int)a.OwnFactorNotOffered, (int)b.OwnFactorNotOffered),
     };
+
+    public async Task<bool> EmailFallbackAvailableAsync(ApplicationUser user, CancellationToken ct = default)
+    {
+        var realm = (await settingsResolver.ResolveAsync(null, ct)).SignIn ?? SignInPolicy.Defaults;
+        if (!realm.EmailAfterPassword) return false;
+        var hasOwnFactor = user.TwoFactorEnabled
+            || await session.Query<StoredPasskeyCredential>().AnyAsync(c => c.UserId == user.Id, ct);
+        var security = await session.LoadAsync<UserSecurityData>(user.Id, ct);
+        return EmailFallbackAllowed(user, security, hasOwnFactor, realm.EmailFallbackWaitHours, DateTimeOffset.UtcNow);
+    }
+
+    /// <summary>The user-side conditions of the e-mail fallback; whether the target offers
+    /// the e-mail code after a password is the policy's part.</summary>
+    internal static bool EmailFallbackAllowed(
+        ApplicationUser user, UserSecurityData? security, bool hasOwnFactor, int waitHours, DateTimeOffset now) =>
+        hasOwnFactor
+        && user.EmailConfirmed
+        && !string.IsNullOrEmpty(user.Email)
+        // The hash lives in the security document; the user carries it only when the store loaded it.
+        && !string.IsNullOrEmpty(user.PasswordHash ?? security?.PasswordHash)
+        && !(security?.PasswordResetByEmailAt is { } resetAt && resetAt.AddHours(Math.Max(0, waitHours)) > now);
 
     public Task<SignInDecision> EvaluateAsync(
         ApplicationUser user,
@@ -320,6 +349,9 @@ public sealed class SignInRequirementService(
             HasEmailSecondFactor: user.EmailOtpEnabled && !string.IsNullOrEmpty(user.Email),
             HasUsablePasskey: hasUsablePasskey,
             HasAnySecondFactor: hasAnySecondFactor,
+            EmailFallback: EmailFallbackAllowed(
+                user, security, user.TwoFactorEnabled || passkeyRpIds.Count > 0,
+                target.Policy.EmailFallbackWaitHours, DateTimeOffset.UtcNow),
             Exempt: security?.TwoFactorExempt == true,
             SetupDueAt: security?.SecureSetupDueAt is { } due ? new DateTimeOffset(DateTime.SpecifyKind(due, DateTimeKind.Utc)) : null);
 
@@ -351,6 +383,7 @@ public sealed class SignInRequirementService(
         bool HasEmailSecondFactor,
         bool HasUsablePasskey,
         bool HasAnySecondFactor,
+        bool EmailFallback,
         bool Exempt,
         DateTimeOffset? SetupDueAt);
 
@@ -370,6 +403,10 @@ public sealed class SignInRequirementService(
         var webTotp = user.HasTotp && !proven.Contains(SignInMethods.Totp) && (policy.Totp || viaBrowser);
         var webEmail = user.HasEmailSecondFactor && passwordOnly && (policy.EmailAfterPassword || viaBrowser);
         var webPasskey = user.HasUsablePasskey && policy.Passkey && !proven.Contains(SignInMethods.Passkey);
+        // Amendment 3 — the e-mail code beside the user's own second factor, for when that
+        // factor is gone. Offered where the App offers the e-mail code after a password; it
+        // is not the user's own demand, so it never raises the level.
+        var fallbackEmail = user.EmailFallback && passwordOnly && policy.EmailAfterPassword && (webTotp || webPasskey);
 
         // The user's own second factor: a demand wherever it can be honoured.
         var ownDemand = (user.HasTotp && (policy.Totp || viaBrowser))
@@ -384,7 +421,7 @@ public sealed class SignInRequirementService(
         if (surface == SignInSurface.Web)
         {
             if (webTotp) usable.Add(SignInMethods.Totp);
-            if (webEmail) usable.Add(SignInMethods.Email);
+            if (webEmail || fallbackEmail) usable.Add(SignInMethods.Email);
             if (webPasskey) usable.Add(SignInMethods.Passkey);
         }
         else
@@ -392,6 +429,7 @@ public sealed class SignInRequirementService(
             // Natively the App can only ask for what it implements; the rest needs the browser.
             if (webTotp) (policy.Totp ? usable : browserOnly).Add(SignInMethods.Totp);
             if (webEmail) (policy.EmailAfterPassword ? usable : browserOnly).Add(SignInMethods.Email);
+            // The e-mail fallback is a browser matter: no native grant starts with a password.
             // A passkey bound to the App's RP ID is used through the native passkey grant.
             if (webPasskey) usable.Add(SignInMethods.Passkey);
         }

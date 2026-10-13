@@ -115,6 +115,14 @@ need a recent proof (within **15 minutes**) of an account factor the user has. E
 
 "Recent" is read from the session: a sign-in a minute ago is the proof, and nothing is asked again. Adding the *first* account factor needs only the proof of what the user has; adding a further one needs the existing one. Every account change sends a notice to the account's e-mail address.
 
+### When the second factor is gone
+
+A passkey lives on a device and an authenticator app on a phone; both can be lost. After a **password**, the login page therefore offers the e-mail code beside the user's own second factor, wherever the target offers the e-mail code after a password. The user does not have to switch it on; the address must be confirmed. The same proof — a session signed in with the password, the mailbox proven within the window — confirms an account change, so the user can remove the factor that is gone and set up a new one.
+
+It stands in for a factor the user has; it is no substitute for having one. A user without any second factor still gets the setup duty, and the fallback never raises the level a sign-in must reach.
+
+A password that was just reset by e-mail does not count: for the realm's **wait** (`EmailFallbackWaitHours`, default 24) the fallback is not offered, because the password and the code would both come from the same mailbox. With the fallback on, whoever holds the mailbox for longer than the wait can take over an account that has a password. A realm that does not accept that switches "E-mail code after a password" off; then a lost factor is reset by the operator with the [recovery CLI](/operate/recovery-cli).
+
 **Account deletion is always reachable.** No minimum level and no setup grace ever block it; it needs the same proof as every other account change.
 
 Account-change endpoints answer `403 { "RequiresReauthentication": true, "Methods": [...] }` when the proof is missing or too old; the SPA asks for it and retries.
@@ -179,6 +187,9 @@ Each scenario has a fixed number; the integration tests carry the same number. U
 | S12 | A session signed in with an e-mail code opens the admin console | The administration asks for the missing factor (step-up) or, without one, for its setup |
 | S13 | A session below the required level opens any page of Modgud's UI | The page loads and shows the step-up or the setup, never a raw error body |
 | S14 | An administrator signs in to Modgud itself with a password or an e-mail code | The second factor is asked before the sign-in completes; without one, the setup is offered (grace) or required. The same administrator signing in for App A follows App A's rules |
+| S15 | An administrator's only second factor is a passkey on a device that is gone; they sign in with the password | The e-mail code is offered beside the passkey; with it the session is `multi`, and the same session removes the passkey |
+| S16 | The same, but the password was reset by e-mail an hour ago and the realm's wait is 24 hours | Only the passkey is offered; no code is sent |
+| S17 | A password-only session wants to remove a passkey that is an account factor | The page asks for the passkey or a fresh e-mail code |
 
 ### The account
 

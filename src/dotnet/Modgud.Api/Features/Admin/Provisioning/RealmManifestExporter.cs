@@ -524,6 +524,7 @@ public sealed class RealmManifestExporter(
             Passkey = s.SignIn.Passkey,
             Totp = s.SignIn.Totp,
             EmailAfterPassword = s.SignIn.EmailAfterPassword,
+            EmailFallbackWaitHours = s.SignIn.EmailFallbackWaitHours,
             OwnFactorNotOffered = s.SignIn.OwnFactorNotOffered,
         },
         BrowserSessions = new UpdateBrowserSessionPolicyDto

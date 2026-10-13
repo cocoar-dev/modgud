@@ -16,8 +16,9 @@ public class SignInRequirementEvaluationTests
 
     private static Facts User(
         bool totp = false, bool emailSecondFactor = false, bool usablePasskey = false,
-        bool anySecondFactor = false, bool exempt = false, DateTimeOffset? dueAt = null) =>
-        new(totp, emailSecondFactor, usablePasskey, anySecondFactor || totp || emailSecondFactor || usablePasskey, exempt, dueAt);
+        bool anySecondFactor = false, bool exempt = false, DateTimeOffset? dueAt = null, bool emailFallback = false) =>
+        new(totp, emailSecondFactor, usablePasskey, anySecondFactor || totp || emailSecondFactor || usablePasskey,
+            emailFallback, exempt, dueAt);
 
     private static IReadOnlySet<string> Proven(params string[] methods) => methods.ToHashSet(StringComparer.Ordinal);
 
@@ -240,5 +241,72 @@ public class SignInRequirementEvaluationTests
         Assert.False(effective.EmailCode);
         Assert.False(effective.Password);
         Assert.Equal(["MinimumLevel", "EmailCode"], EffectiveSettings.BelowFloor(floor, below));
+    }
+
+    // ── Amendment 3 — the e-mail code stands in for a second factor that is gone ──
+
+    private static readonly SignInPolicy MultiApp = SignInPolicy.Defaults with { MinimumLevel = SignInLevel.Multi };
+
+    [Fact]
+    public void After_a_password_the_e_mail_code_is_offered_beside_the_users_own_second_factor()
+    {
+        var withPasskey = Evaluate(MultiApp, User(usablePasskey: true, emailFallback: true), Proven(SignInMethods.Password));
+        var withTotp = Evaluate(MultiApp, User(totp: true, emailFallback: true), Proven(SignInMethods.Password));
+
+        Assert.Equal([SignInMethods.Email, SignInMethods.Passkey], withPasskey.SecondFactors);
+        Assert.Equal([SignInMethods.Totp, SignInMethods.Email], withTotp.SecondFactors);
+    }
+
+    [Fact]
+    public void The_e_mail_fallback_is_not_offered_after_an_e_mail_code_or_where_the_app_does_not_offer_it()
+    {
+        var user = User(usablePasskey: true, emailFallback: true);
+
+        var afterCode = Evaluate(MultiApp with { EmailCode = true }, user, Proven(SignInMethods.Email));
+        var notOffered = Evaluate(MultiApp with { EmailAfterPassword = false }, user, Proven(SignInMethods.Password));
+
+        Assert.Equal([SignInMethods.Passkey], afterCode.SecondFactors);
+        Assert.Equal([SignInMethods.Passkey], notOffered.SecondFactors);
+    }
+
+    [Fact]
+    public void The_e_mail_fallback_replaces_no_setup_and_raises_no_level()
+    {
+        // Nothing to stand in for: the setup duty stays what it was.
+        var nothingToReplace = Evaluate(MultiApp, User(emailFallback: true), Proven(SignInMethods.Password));
+        // A single-level App asks for nothing because the fallback exists.
+        var singleApp = Evaluate(SignInPolicy.Defaults, User(usablePasskey: true, emailFallback: true), Proven(SignInMethods.Password));
+
+        Assert.Equal(SignInOutcome.Satisfied, nothingToReplace.Outcome);
+        Assert.True(nothingToReplace.SetupPending);
+        Assert.Equal(SignInOutcome.Satisfied, singleApp.Outcome);
+        Assert.False(singleApp.SetupPending);
+    }
+
+    [Theory]
+    [InlineData(1, 24, false)]   // the password just came through the mailbox
+    [InlineData(25, 24, true)]   // the wait is over
+    [InlineData(1, 0, true)]     // the realm set no wait
+    public void A_password_reset_by_e_mail_holds_the_fallback_back_for_the_realms_wait(int hoursAgo, int waitHours, bool expected)
+    {
+        var user = new Modgud.Authentication.Domain.ApplicationUser
+        {
+            Email = "a@example.com", EmailConfirmed = true, PasswordHash = "hash",
+        };
+        var security = new Modgud.Authentication.Domain.UserSecurityData { PasswordResetByEmailAt = Now.AddHours(-hoursAgo) };
+
+        Assert.Equal(expected, SignInRequirementService.EmailFallbackAllowed(user, security, hasOwnFactor: true, waitHours, Now));
+    }
+
+    [Fact]
+    public void The_e_mail_fallback_needs_a_password_a_confirmed_address_and_a_factor_to_stand_in_for()
+    {
+        Modgud.Authentication.Domain.ApplicationUser Account(bool confirmed = true, string? password = "hash") =>
+            new() { Email = "a@example.com", EmailConfirmed = confirmed, PasswordHash = password };
+
+        Assert.True(SignInRequirementService.EmailFallbackAllowed(Account(), null, hasOwnFactor: true, 24, Now));
+        Assert.False(SignInRequirementService.EmailFallbackAllowed(Account(confirmed: false), null, hasOwnFactor: true, 24, Now));
+        Assert.False(SignInRequirementService.EmailFallbackAllowed(Account(password: null), null, hasOwnFactor: true, 24, Now));
+        Assert.False(SignInRequirementService.EmailFallbackAllowed(Account(), null, hasOwnFactor: false, 24, Now));
     }
 }

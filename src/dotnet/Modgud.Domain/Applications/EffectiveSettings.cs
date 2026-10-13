@@ -194,6 +194,7 @@ public sealed record EffectiveSettings
             Passkey = floor.Passkey && (app?.Passkey ?? b.Passkey),
             Totp = floor.Totp && (app?.Totp ?? b.Totp),
             EmailAfterPassword = floor.EmailAfterPassword && (app?.EmailAfterPassword ?? b.EmailAfterPassword),
+            EmailFallbackWaitHours = floor.EmailFallbackWaitHours,
             OwnFactorNotOffered = app?.OwnFactorNotOffered ?? b.OwnFactorNotOffered,
         };
     }
