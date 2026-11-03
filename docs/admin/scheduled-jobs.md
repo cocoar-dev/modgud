@@ -115,7 +115,10 @@ accept the first, immediate attempt (see
 - **What it does:** sweeps the realm's pending deliveries whose next attempt is
   due, mints a fresh logout token for each and POSTs it. A delivered or
   given-up row is removed; every attempt is a security-log entry and updates
-  the client's "last delivery" status.
+  the client's "last delivery" status. An attempt interrupted before it
+  finished (shutdown, signing-key or database failure) is picked up again by a
+  later sweep; a last attempt interrupted three times is given up with the
+  outcome `failed:interrupted`.
 - **On failure:** that realm's run fails and is written to its own history; no
   other realm's run is affected.
 

@@ -57,6 +57,11 @@ public sealed class BackChannelLogoutDeliverer(
         var realm = TenantContext.Current;
         var now = clock.GetUtcNow();
 
+        // CL02 — only a due delivery is attempted. The dispatcher may reach a queued id
+        // after the retry job already attempted it and scheduled the next step; it loads
+        // the current row, which is then not due yet.
+        if (delivery.NextAttemptAt > now) return false;
+
         var client = await work.Query<OAuthApplicationState>()
             .FirstOrDefaultAsync(a => a.ClientId == delivery.ClientId && !a.IsDeleted, ct);
         if (client is null
@@ -70,36 +75,51 @@ public sealed class BackChannelLogoutDeliverer(
             return true;
         }
 
-        // Claim the attempt (version-checked): whoever saves first sends; the other skips.
         var attempt = delivery.Attempts + 1;
-        var last = attempt > BackChannelLogoutConstants.RetrySchedule.Length;
-        delivery.Attempts = attempt;
-        delivery.NextAttemptAt = last
-            ? DateTimeOffset.MaxValue
-            : now + BackChannelLogoutConstants.RetrySchedule[attempt - 1];
-        work.Store(delivery);
-        try
+        var scheduled = BackChannelLogoutConstants.RetrySchedule.Length;
+        var last = attempt > scheduled;
+        string outcome;
+        var elapsed = TimeSpan.Zero;
+        if (attempt > scheduled + 1 + BackChannelLogoutConstants.InterruptedLastAttemptRetries)
         {
-            await work.SaveChangesAsync(ct);
+            // The last attempt was claimed and then interrupted repeatedly (mint failure,
+            // shutdown, abort): give up with a recorded outcome instead of retrying forever.
+            outcome = BackChannelLogoutConstants.InterruptedOutcome;
         }
-        catch (JasperFx.ConcurrencyException)
+        else
         {
-            return false;
+            // Claim the attempt (version-checked): whoever saves first sends; the other skips.
+            // CL01 — every claim, the last one included, is a bounded lease: an attempt
+            // interrupted between this save and the final one leaves a row that is due
+            // again, never one parked at MaxValue that no sweep reaches.
+            delivery.Attempts = attempt;
+            delivery.NextAttemptAt = now + (last
+                ? BackChannelLogoutConstants.LastAttemptLease
+                : BackChannelLogoutConstants.RetrySchedule[attempt - 1]);
+            work.Store(delivery);
+            try
+            {
+                await work.SaveChangesAsync(ct);
+            }
+            catch (JasperFx.ConcurrencyException)
+            {
+                return false;
+            }
+
+            // Spec: sid is REQUIRED when the client requires it; it is present whenever the
+            // ended scope names a session. A user-level end has none and logs out every
+            // session of the subject at the RP.
+            var sid = delivery.SessionId?.ToString();
+            if (sid is null && delivery.Scope == AccessEndScope.Session
+                && ReadBool(client.Properties, OAuthApplicationPropertyKeys.BackChannelLogoutSessionRequired, true))
+                logger.LogWarning("Client {ClientId} requires sid in logout tokens but the session end carried none", delivery.ClientId);
+
+            var token = await minter.MintAsync(realm, delivery.Issuer, delivery.ClientId, delivery.UserId.ToString(), sid, ct);
+
+            var started = Stopwatch.GetTimestamp();
+            outcome = await PostAsync(uri, token, ct);
+            elapsed = Stopwatch.GetElapsedTime(started);
         }
-
-        // Spec: sid is REQUIRED when the client requires it; it is present whenever the
-        // ended scope names a session. A user-level end has none and logs out every
-        // session of the subject at the RP.
-        var sid = delivery.SessionId?.ToString();
-        if (sid is null && delivery.Scope == AccessEndScope.Session
-            && ReadBool(client.Properties, OAuthApplicationPropertyKeys.BackChannelLogoutSessionRequired, true))
-            logger.LogWarning("Client {ClientId} requires sid in logout tokens but the session end carried none", delivery.ClientId);
-
-        var token = await minter.MintAsync(realm, delivery.Issuer, delivery.ClientId, delivery.UserId.ToString(), sid, ct);
-
-        var started = Stopwatch.GetTimestamp();
-        var outcome = await PostAsync(uri, token, ct);
-        var elapsed = Stopwatch.GetElapsedTime(started);
         var delivered = outcome == BackChannelLogoutDeliveryStatus.Delivered;
 
         delivery.LastOutcome = outcome;
