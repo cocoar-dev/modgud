@@ -44,6 +44,24 @@ public partial class CimdFullFlowTests
         Assert.InRange(LifetimeMinutes(doc.RootElement.GetProperty("access_token").GetString()!), 4, 6);
     }
 
+    [Fact]
+    public async Task A_metadata_body_held_back_after_the_headers_does_not_hold_the_request()
+    {
+        await SeedAsync();
+        RegisterCimdDocument();
+        Factory.CimdBodyDelays[_clientIdUrl] = TimeSpan.FromSeconds(40);
+
+        var watch = Stopwatch.StartNew();
+        using var authorize = await Factory.CreateClient().GetAsync(
+            $"/connect/authorize?response_type=code&client_id={Uri.EscapeDataString(_clientIdUrl)}" +
+            $"&redirect_uri={Uri.EscapeDataString(RedirectUri)}&scope=openid&code_challenge=abc&code_challenge_method=S256",
+            TestContext.Current.CancellationToken);
+        watch.Stop();
+
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(20), $"the authorize request waited {watch.Elapsed} for the body");
+        Assert.False(authorize.IsSuccessStatusCode && authorize.Headers.Location?.Query.Contains("code=") == true);
+    }
+
     private static double LifetimeMinutes(string accessToken)
     {
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
