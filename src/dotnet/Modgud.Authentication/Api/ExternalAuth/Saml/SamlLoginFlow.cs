@@ -172,7 +172,12 @@ public class SamlLoginFlow(
         {
             binding = new Saml2PostBinding();
             saml2Response = new Saml2AuthnResponse(ctx.Configuration);
-            binding.ReadSamlResponse(http.Request.ToGenericHttpRequest(), saml2Response);
+            // ReadSamlResponse skips XML signatures while still running token checks.
+            // Unbind initializes the trusted metadata certificates/algorithms and
+            // validates signatures before any request is consumed or user touched.
+            binding.Unbind(http.Request.ToGenericHttpRequest(), saml2Response);
+            if (saml2Response.Status == Saml2StatusCodes.Success)
+                ValidateAssertionBinding(saml2Response, ctx.Configuration, contextBuilder.BuildAcsUrl(provider.Slug));
         }
         catch (Exception ex)
         {
@@ -209,12 +214,9 @@ public class SamlLoginFlow(
             return Results.Redirect($"/login?error=saml-{Uri.EscapeDataString(saml2Response.Status.ToString() ?? "status")}");
         }
 
-        // ITfoxtec validates signatures that ARE present against
-        // SignatureValidationCertificates but does not require signatures to be
-        // present — an IdP could send an unsigned Response/Assertion and
-        // ReadSamlResponse would happily return. Enforce the admin-configured
-        // FlavorData toggles by post-checking the XML for Signature elements
-        // at the expected levels.
+        // Unbind requires a valid signature, but accepts either a signed Response
+        // or Assertion. Preserve the provider's stricter placement requirements
+        // in addition to (never instead of) that cryptographic validation.
         var sigError = CheckRequiredSignatures(saml2Response.XmlDocument, provider.FlavorData);
         if (sigError is not null)
         {
@@ -440,11 +442,10 @@ public class SamlLoginFlow(
     }
 
     /// <summary>
-    /// Post-parse signature enforcement. ITfoxtec does NOT require signatures
-    /// to be present in the response — it only validates whatever is there
-    /// against <see cref="Saml2Configuration.SignatureValidationCertificates"/>.
-    /// So if the admin has configured WantResponseSigned / WantAssertionsSigned
-    /// we have to check the XML ourselves for the presence of the relevant
+    /// Additional signature-placement enforcement AFTER cryptographic validation.
+    /// ITfoxtec accepts a valid Response OR Assertion signature. If the admin has
+    /// configured WantResponseSigned / WantAssertionsSigned we additionally
+    /// check the XML ourselves for the presence of the relevant
     /// <c>ds:Signature</c> element. Returns a short error-tag suitable for the
     /// redirect query string when enforcement fails; null when OK.
     /// </summary>
@@ -484,6 +485,30 @@ public class SamlLoginFlow(
         }
 
         return null;
+    }
+
+    private static void ValidateAssertionBinding(Saml2AuthnResponse response, Saml2Configuration config, string acsUrl)
+    {
+        var assertion = response.Saml2SecurityToken.Assertion;
+        var recipient = new Uri(acsUrl);
+        var now = DateTime.UtcNow;
+        // The library checks the wrapper issuer and assertion conditions/audience,
+        // but not the assertion issuer or bearer recipient/request binding. With
+        // assertion-only signing, the wrapper's InResponseTo is attacker-editable.
+        if (string.IsNullOrWhiteSpace(config.AllowedIssuer)
+            || !string.Equals(assertion.Issuer?.Value, config.AllowedIssuer, StringComparison.Ordinal)
+            || (response.Destination is not null && response.Destination != recipient)
+            || string.IsNullOrWhiteSpace(response.InResponseToAsString)
+            || !assertion.Subject.SubjectConfirmations.Any(confirmation =>
+                confirmation.Method == Saml2Constants.Saml2BearerToken
+                && confirmation.SubjectConfirmationData is { } data
+                && data.Recipient == recipient
+                && string.Equals(data.InResponseTo?.Value, response.InResponseToAsString, StringComparison.Ordinal)
+                && data.NotOnOrAfter is { } expires && expires > now
+                && (data.NotBefore is null || data.NotBefore <= now)))
+        {
+            throw new Saml2RequestException("SAML assertion is not bound to this provider, recipient and request.");
+        }
     }
 
     private static string? ExtractRelayStateReturnUrl(Saml2PostBinding binding)
