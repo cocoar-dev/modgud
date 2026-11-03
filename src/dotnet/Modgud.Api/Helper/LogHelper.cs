@@ -1,8 +1,10 @@
-﻿using Serilog;
+﻿using System.Text.RegularExpressions;
+using Modgud.Authentication.ExtensionMethods;
+using Serilog;
 
 namespace Modgud.Api.Helper;
 
-public static class LogHelper
+public static partial class LogHelper
 {
     public static void EnrichFromRequest(IDiagnosticContext diagnosticContext, HttpContext httpContext)
     {
@@ -14,12 +16,16 @@ public static class LogHelper
         diagnosticContext.Set("Protocol", request.Protocol);
         diagnosticContext.Set("Scheme", request.Scheme?.ToLower());
 
-        diagnosticContext.Set("User", request.HttpContext.User?.Identity?.Name ?? "Anonymous");
+        // B9-J01 — the id, not the user name: the request log is exported as-is and a
+        // plain user name is not one of the collector's redaction patterns.
+        diagnosticContext.Set("UserId", httpContext.GetUserId()?.ToString() ?? "anonymous");
 
-        // Only set it if available. You're not sending sensitive data in a querystring right?!
+        // B9-J01 — links carry one-time secrets in the query (magic-login, reset-password,
+        // verify-email, bootstrap, install, consent/device tickets). The collector cannot
+        // recognise an opaque token, so no query value is ever logged; names stay.
         if (request.QueryString.HasValue)
         {
-            diagnosticContext.Set("QueryString", request.QueryString.Value);
+            diagnosticContext.Set("QueryString", RedactQuery(request.QueryString.Value!));
         }
 
         // Set the content-type of the Response at this point
@@ -32,5 +38,22 @@ public static class LogHelper
             diagnosticContext.Set("EndpointName", endpoint.DisplayName);
         }
     }
-}
 
+    /// <summary>Keeps the parameter names of a query and replaces every value. A segment
+    /// without '=' or with an unusual name is itself a value and is replaced whole.</summary>
+    internal static string RedactQuery(string query)
+    {
+        var segments = query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(segment =>
+            {
+                var equals = segment.IndexOf('=');
+                return equals > 0 && SafeName().IsMatch(segment[..equals])
+                    ? $"{segment[..equals]}=[redacted]"
+                    : "[redacted]";
+            });
+        return "?" + string.Join('&', segments);
+    }
+
+    [GeneratedRegex(@"^[A-Za-z][A-Za-z0-9_.\-]{0,39}$")]
+    private static partial Regex SafeName();
+}
