@@ -380,6 +380,9 @@ try
 
     builder.Services.AddScoped<Modgud.Api.Features.ChangeFeed.AppChangeFeedQueryService>();
     builder.Services.AddScoped<Modgud.Api.Features.Management.ManagementBearerAuthorizationService>();
+    builder.Services.AddScoped<Modgud.Api.Features.Management.ManagementDpopProofValidator>();
+    builder.Services.AddOpenIddict().AddValidation(options => options.AddEventHandler(
+        Modgud.Api.Features.Management.ManagementDpopTokenExtractionHandler.Descriptor));
 
 
     builder.Services.AddSingleton<DataEventDispatcher>();
