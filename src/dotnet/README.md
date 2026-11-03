@@ -20,29 +20,40 @@ GDPR, sessions, granular gating).
 
 ## Build & run
 
+Follow the [workspace safety rules](../../AGENTS.md) and
+[development preflight](../../docs/contribute/developing-locally.md) first:
+existing `postgres-dev`, exclusive `127.0.0.1:5433` and dedicated volume,
+private development credentials, a work-owned database and unused loopback
+API port. Verify the **resolved** startup configuration before bootstrap.
+Do not copy shared connection strings or reset shared databases.
+
+From the repository root, in your verified private development shell:
+
 ```bash
+: "${DbSettings__ConnectionString:?Set and verify the private postgres-dev target first}"
+: "${AppUrl:?Set and verify an unused loopback API address first}"
 cd src/dotnet
 dotnet build
-
-# Reset dev DB
-docker exec cocoar-postgres psql -U postgres -c "DROP DATABASE IF EXISTS <master-db>;"
-docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE <master-db>;"
-
-# Run the API
 cd Modgud.Api
 ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile
-# → http://localhost:9099
-
-# Tests
-cd src/dotnet
-dotnet test
 ```
+
+For pure units, from the repository root:
+
+```bash
+dotnet test src/dotnet/Modgud.Tests.Unit/Modgud.Tests.Unit.csproj --no-restore
+```
+
+API tests need the separately verified `MODGUD_TEST_POSTGRES_CONNECTION_STRING`
+opt-in and a fresh `modgud_review_*` database on Dev5433. Use the filtered
+example in the preflight guide; do not default to Testcontainers or run
+unreviewed fixture/container lifecycles in this shared workspace.
 
 ## Configuration
 
 `Modgud.Api/data/configuration.json` (committed defaults) +
 `configuration.local.json` (gitignored, local overrides). Cocoar.Configuration
-v5 layered binding.
+v6 layered binding; environment overrides win over both files.
 
 ## History
 

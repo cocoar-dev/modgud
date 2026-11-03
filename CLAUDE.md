@@ -71,11 +71,19 @@ Tailwind 4, `@cocoar/vue-ui` (CoarButton, CoarSidebar, CoarMenu, ...),
 
 ## Build & run
 
+First follow [AGENTS.md](AGENTS.md) and the
+[development preflight](docs/contribute/developing-locally.md): existing
+`postgres-dev`, exclusive `127.0.0.1:5433`/dedicated volume, work-owned database,
+private development credentials and an unused loopback API port. Verify the
+resolved startup configuration before connecting/bootstrapping. Never copy
+stable connection strings, reset shared DBs or alter `modgud`/`postgres`.
+
 ```bash
-# Backend (port 9099)
+# Backend, from repo root in the verified private development shell
+: "${DbSettings__ConnectionString:?Set and verify the private postgres-dev target first}"
+: "${AppUrl:?Set and verify an unused loopback API address first}"
 cd src/dotnet
 dotnet build
-docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE <master-db>;"  # first time
 cd Modgud.Api
 ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile
 
@@ -92,7 +100,12 @@ pnpm dev
 ## Testing
 
 - `Modgud.Api.Tests` — integration tests on Testcontainers + PostgreSQL
-- `dotnet test` from `src/dotnet`
+- Pure units from repo root:
+  `dotnet test src/dotnet/Modgud.Tests.Unit/Modgud.Tests.Unit.csproj --no-restore`.
+- Shared-fixture API tests: verify Dev5433 first, set the private
+  `MODGUD_TEST_POSTGRES_CONNECTION_STRING` opt-in with a fresh
+  `modgud_review_*` DB, and use the guide's filtered example. No automatic
+  Testcontainers fallback or unreviewed container lifecycles in this workspace.
 - xUnit collections + a shared Postgres container + per-class DB
   isolation keep parallelism safe.
 

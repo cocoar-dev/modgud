@@ -85,12 +85,21 @@ handled.
 
 ## Build it yourself
 
+For this workspace, follow [AGENTS.md](./AGENTS.md) and the
+[development preflight](./docs/contribute/developing-locally.md).
+Use only the existing `postgres-dev` at `127.0.0.1:5433`, a private,
+work-owned database and an unused loopback API port. Verify the **resolved**
+startup configuration before any database/bootstrap work. Never reset or
+reuse the shared `modgud`/`postgres` services or their connection strings.
+
 ```bash
 # Prereqs: .NET 10 SDK, Node 22 + pnpm (via Corepack), Docker
 
-# Backend (port 9099)
+# Backend: private variables and resolved target verified as documented above
+: "${DbSettings__ConnectionString:?Set and verify the private postgres-dev target first}"
+: "${AppUrl:?Set and verify an unused loopback API address first}"
 cd src/dotnet
-docker exec cocoar-postgres psql -U postgres -c "CREATE DATABASE modgud;"
+dotnet build
 cd Modgud.Api
 ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile
 
