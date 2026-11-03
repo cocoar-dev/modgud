@@ -46,7 +46,7 @@ public class SamlMetadataFetcher
     /// callers log + carry on with the stale cached data rather than crashing
     /// the login flow.
     /// </summary>
-    public async Task<SamlIdpMetadata?> FetchAsync(string metadataUrl, CancellationToken ct = default)
+    public async Task<SamlIdpMetadata?> FetchAsync(string metadataUrl, CancellationToken ct = default, string? entityIdOverride = null)
     {
         try
         {
@@ -54,7 +54,7 @@ public class SamlMetadataFetcher
             using var response = await http.GetAsync(metadataUrl, ct);
             response.EnsureSuccessStatusCode();
             var xml = await response.Content.ReadAsStringAsync(ct);
-            return Parse(xml);
+            return Parse(xml, entityIdOverride);
         }
         catch (Exception ex)
         {
@@ -69,7 +69,10 @@ public class SamlMetadataFetcher
     /// firewalled IdPs that don't publish a reachable URL — admin pastes the
     /// XML into the FlavorData.MetadataXml field).
     /// </summary>
-    public SamlIdpMetadata? Parse(string xml)
+    /// <param name="entityIdOverride">B6-SAML-05 — the provider's configured IdP Entity ID
+    /// ("set explicitly only if the metadata omits it or you need to override"). When set
+    /// it replaces the metadata's entityID, so it is the accepted issuer everywhere.</param>
+    public SamlIdpMetadata? Parse(string xml, string? entityIdOverride = null)
     {
         try
         {
@@ -78,7 +81,9 @@ public class SamlMetadataFetcher
             if (entityDescriptor is null || entityDescriptor.Name != MdNs + "EntityDescriptor")
                 return null;
 
-            var entityId = entityDescriptor.Attribute("entityID")?.Value;
+            var entityId = string.IsNullOrWhiteSpace(entityIdOverride)
+                ? entityDescriptor.Attribute("entityID")?.Value
+                : entityIdOverride.Trim();
             if (string.IsNullOrWhiteSpace(entityId)) return null;
 
             var idpSsoDescriptor = entityDescriptor.Element(MdNs + "IDPSSODescriptor");
