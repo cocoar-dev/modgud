@@ -511,8 +511,9 @@ public static class AccountEndpoints
                 if (check.HasAccountFactor)
                 {
                     // The second step proves the account factor again; its sign-in unions the
-                    // fresh time back into this session.
-                    await SignInAssurance.SignInPartialAsync(context, user.Id, factors);
+                    // fresh time back into this session. The protected purpose also lets
+                    // passkey options distinguish this from an ordinary App sign-in.
+                    await SignInAssurance.SignInPartialAsync(context, user.Id, factors, accountReauthentication: true);
                     return Results.Ok(new { RequiresMfa = true, MfaMethods = check.Methods });
                 }
                 // No account factor: sign in again with what the user has (e-mail code,

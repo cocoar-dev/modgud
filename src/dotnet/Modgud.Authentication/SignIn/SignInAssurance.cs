@@ -51,6 +51,9 @@ public static class SignInAssurance
     /// factors were recorded; it ends once (ADR 0025 amendment F).</summary>
     public const string RecordedClaimType = "modgud.signin.recorded";
 
+    /// <summary>Purpose of an authenticated account-change partial, not a proven factor.</summary>
+    public const string AccountReauthenticationClaimType = "modgud.signin.account_reauthentication";
+
     /// <summary><c>acr</c> values (ADR 0025 "Settled details").</summary>
     public const string AcrSingle = "urn:modgud:acr:single";
     public const string AcrMulti = "urn:modgud:acr:multi";
@@ -178,12 +181,26 @@ public static class SignInAssurance
     /// Same principal shape Identity writes itself (the user id in <see cref="ClaimTypes.Name"/>),
     /// so its <c>TwoFactor*SignInAsync</c> completion keeps working.</summary>
     public static Task SignInPartialAsync(
-        HttpContext http, Guid userId, IReadOnlyDictionary<string, DateTimeOffset> provenFactors)
+        HttpContext http, Guid userId, IReadOnlyDictionary<string, DateTimeOffset> provenFactors,
+        bool accountReauthentication = false)
     {
         var identity = new ClaimsIdentity(IdentityConstants.TwoFactorUserIdScheme);
         identity.AddClaim(new Claim(ClaimTypes.Name, userId.ToString()));
+        if (accountReauthentication)
+            identity.AddClaim(new Claim(AccountReauthenticationClaimType, "1"));
         Stamp(identity, provenFactors);
         return http.SignInAsync(IdentityConstants.TwoFactorUserIdScheme, new ClaimsPrincipal(identity));
+    }
+
+    /// <summary>Only the authenticated, short-lived partial can select an account-change
+    /// ceremony. Caller flags and ordinary password/MFA partials cannot opt into it.</summary>
+    public static async Task<Guid?> ReadAccountReauthenticationAsync(HttpContext http)
+    {
+        var result = await http.AuthenticateAsync(IdentityConstants.TwoFactorUserIdScheme);
+        return result.Succeeded
+            && result.Principal?.HasClaim(AccountReauthenticationClaimType, "1") == true
+            && Guid.TryParse(result.Principal.FindFirstValue(ClaimTypes.Name), out var userId)
+                ? userId : null;
     }
 
     /// <summary>The user id and first factor(s) of the pending partial sign-in, if any.

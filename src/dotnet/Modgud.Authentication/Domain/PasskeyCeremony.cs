@@ -48,6 +48,11 @@ public class PasskeyCeremony
     /// page's own origin for that RP ID; the browser has already checked the file.</summary>
     public bool RelatedOrigin { get; set; }
 
+    /// <summary>Authenticated owner of an account-change web ceremony. Null for ordinary
+    /// web/native login. The same owner and live account partial must still be present
+    /// when redeeming; the nonempty assertion allow-list contains only this user's keys.</summary>
+    public Guid? AccountReauthenticationUserId { get; set; }
+
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
