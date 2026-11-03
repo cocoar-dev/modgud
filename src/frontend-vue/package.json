@@ -8,6 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test:unit": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test:browser:isolated": "playwright test --config playwright.isolated.config.ts",
     "test:e2e": "playwright test",
     "test:e2e:local": "E2E_BASE_URL=http://localhost:4300 playwright test",
     "type-check": "vue-tsc --build",

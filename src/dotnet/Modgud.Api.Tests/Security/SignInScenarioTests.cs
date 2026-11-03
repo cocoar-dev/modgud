@@ -215,8 +215,18 @@ public class SignInScenarioTests : IntegrationTestBase
 
         // The fresh code is a sign-in of the same user; it unions into the session.
         await RealmPolicyAsync(new UpdateSignInPolicyDto { EmailCode = true });
+        var code = await IssueCodeAsync();
+        var wrongCode = (code[0] == '0' ? "1" : "0") + code[1..];
+        var invalid = await browser.PostAsJsonAsync("/api/account/passwordless-otp/login",
+            new { Email = TestEmail, Code = wrongCode }, Ct);
+        Assert.False(invalid.IsSuccessStatusCode);
+        var stillRefused = await browser.PostAsJsonAsync("/api/auth/delete-account", new { Reason = "Invalid proof" }, Ct);
+        Assert.Equal(HttpStatusCode.Forbidden, stillRefused.StatusCode);
+        Assert.True((await stillRefused.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("RequiresReauthentication").GetBoolean());
+        Assert.False((await browser.GetFromJsonAsync<JsonElement>("/api/auth/deletion-status", Ct))
+            .GetProperty("IsPending").GetBoolean());
         var relogin = await browser.PostAsJsonAsync("/api/account/passwordless-otp/login",
-            new { Email = TestEmail, Code = await IssueCodeAsync() }, Ct);
+            new { Email = TestEmail, Code = code }, Ct);
         Assert.Equal(HttpStatusCode.OK, relogin.StatusCode);
 
         var accepted = await browser.PostAsJsonAsync("/api/auth/delete-account", new { Reason = "S21" }, Ct);
@@ -306,8 +316,57 @@ public class SignInScenarioTests : IntegrationTestBase
         var portal = await browser.GetAsync("/api/auth/sessions", Ct);
         Assert.Equal(HttpStatusCode.Forbidden, portal.StatusCode);
 
+        Assert.Equal(HttpStatusCode.OK, (await browser.GetAsync("/api/account/me", Ct)).StatusCode);
+        foreach (var path in new[] { "/api/account/profile/request", "/api/account/external-links", "/api/account/passkey", "/api/inbox" })
+        {
+            var background = await browser.GetAsync(path, Ct);
+            Assert.Equal(HttpStatusCode.Forbidden, background.StatusCode);
+            var error = await background.Content.ReadFromJsonAsync<JsonElement>(Ct);
+            Assert.True(error.GetProperty("RequiresSecureSetup").GetBoolean());
+        }
+        var mutation = await browser.PutAsJsonAsync("/api/account/profile/request", new { Firstname = "Forbidden change" }, Ct);
+        Assert.Equal(HttpStatusCode.Forbidden, mutation.StatusCode);
+
         var delete = await browser.PostAsJsonAsync("/api/auth/delete-account", new { Reason = "S28" }, Ct);
         Assert.True(delete.IsSuccessStatusCode, await delete.Content.ReadAsStringAsync(Ct));
+        var status = await browser.GetFromJsonAsync<JsonElement>("/api/auth/deletion-status", Ct);
+        Assert.True(status.GetProperty("IsPending").GetBoolean());
+        Assert.Equal("SelfService", status.GetProperty("Initiator").GetString());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task S28_stale_or_missing_proof_still_requires_reauthentication(bool stale)
+    {
+        await RealmPolicyAsync(new UpdateSignInPolicyDto { MinimumLevel = "Multi", EmailCode = true });
+        await ExpireSetupGraceAsync();
+        var browser = stale
+            ? await SessionAsync((SignInMethods.Password, HourAgo))
+            : await SessionAsync();
+
+        var response = await browser.PostAsJsonAsync("/api/auth/delete-account", new { Reason = "S28 refusal" }, Ct);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.True((await response.Content.ReadFromJsonAsync<JsonElement>(Ct))
+            .GetProperty("RequiresReauthentication").GetBoolean());
+        var status = await browser.GetFromJsonAsync<JsonElement>("/api/auth/deletion-status", Ct);
+        Assert.False(status.GetProperty("IsPending").GetBoolean());
+    }
+
+    [Fact]
+    public async Task S28_enrolled_second_factor_keeps_background_reads_protected_by_step_up()
+    {
+        await EnableTotpAsync();
+        await RealmPolicyAsync(new UpdateSignInPolicyDto { MinimumLevel = "Multi", EmailCode = true });
+        await ExpireSetupGraceAsync();
+        var browser = await SessionAsync((SignInMethods.Password, MinuteAgo));
+        foreach (var path in new[] { "/api/account/profile/request", "/api/account/external-links", "/api/account/passkey", "/api/inbox" })
+        {
+            var response = await browser.GetAsync(path, Ct);
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.True((await response.Content.ReadFromJsonAsync<JsonElement>(Ct))
+                .GetProperty("RequiresStepUp").GetBoolean());
+        }
     }
 
     [Fact]

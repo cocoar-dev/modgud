@@ -36,6 +36,9 @@ export interface EntityServiceConfig {
   enableSignalR?: boolean;
   /** Load all entities on initialization (default: true) */
   loadOnInit?: boolean;
+  /** Navigate to MFA setup/step-up when loadAll is refused (default: true).
+   * Optional shell widgets can keep background loads local; mutations stay unchanged. */
+  redirectOnLoadStepUp?: boolean;
   /** Handle FullSync events from SignalR */
   handleFullSync?: boolean;
 }
@@ -102,6 +105,7 @@ export function useEntityService<
   const resolvedConfig: Required<EntityServiceConfig> = {
     enableSignalR: true,
     loadOnInit: true,
+    redirectOnLoadStepUp: true,
     handleFullSync: false,
     ...config,
   };
@@ -171,7 +175,7 @@ export function useEntityService<
   // ---------------------------------------------------------------------------
 
   async function loadAll(): Promise<TDto[]> {
-    const data = await httpClient.get<TDto[]>();
+    const data = await httpClient.get<TDto[]>({ redirectOnStepUp: resolvedConfig.redirectOnLoadStepUp });
     setAllStoreEntities(data);
     return data;
   }

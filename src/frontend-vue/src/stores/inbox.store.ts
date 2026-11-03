@@ -22,6 +22,9 @@ export const useInboxStore = defineStore('inbox', () => {
     enableSignalR: true,
     // Initialization happens lazily after auth — see InboxBell's onMounted.
     loadOnInit: false,
+    // The header bell also loads while the user is on the allowed deletion page.
+    // A refused background load (including reconnects) must not take that page away.
+    redirectOnLoadStepUp: false,
   })
 
   /** Sorted newest-first, dismissed filtered — what the panel renders. */

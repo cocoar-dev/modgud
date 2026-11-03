@@ -46,6 +46,34 @@ The dev server proxies `/api`, `/signalr`, `/.well-known/*`,
 
 ## Patterns
 
+### Isolated HTTP client regression tests
+
+With the project's Node 22 runtime, `pnpm test:unit` runs Node tests of the HTTP
+client against synthetic responses. It does not start Vite,
+Playwright, Docker or a backend and makes no network requests. This is not a
+substitute for browser or backend integration tests.
+
+Optional background GETs can use `{ redirectOnStepUp: false }` to retain the
+current page when the server requires area-level MFA. They still reject with
+`HttpClientError`; 401 and fresh account-proof redirects remain unchanged.
+Do not apply this to explicit user actions. Entity-service `loadAll` callers
+can opt out through `redirectOnLoadStepUp: false` (for example, the header inbox);
+all other callers keep the default navigation.
+
+For the real SPA in a browser **without any backend or server**, first build to
+an isolated directory, then run:
+
+```bash
+MODGUD_BROWSER_DIST=/absolute/path/to/isolated-build pnpm test:browser:isolated
+```
+
+This separate Playwright configuration has no global setup, web server or
+container lifecycle. Tests serve the built files and simulated API replies via
+browser interception, reject unknown requests, and block WebSockets/service
+workers. They verify Vue/profile/header navigation, not real authentication,
+database writes, SignalR reconnects or backend policy enforcement. They require
+an already installed matching Chromium; they do not download one automatically.
+
 - `useUI()` — page header/footer/content context
 - `useEntityService()` — generic CRUD + Pinia integration; SignalR
   auto-resubscribe on entities that publish change streams
