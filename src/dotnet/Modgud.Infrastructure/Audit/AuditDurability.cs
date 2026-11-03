@@ -53,7 +53,8 @@ public static class AuditDurability
         AuditEvents.DcrClientRegistered or
         AuditEvents.TestAccountCodeSet or
         AuditEvents.TestAccountCodeRemoved or
-        AuditEvents.TestAccountCodeUsed
+        AuditEvents.TestAccountCodeUsed or
+        AuditEvents.AccountErased
             => AuditDurabilityClass.Required,
 
         AuditEvents.ExternalLoginProtocolRejected or

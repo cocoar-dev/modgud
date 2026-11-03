@@ -299,6 +299,7 @@ internal static class AuditEventRenderer
             AuditEvents.ControlPlaneTransferred => "Control-Plane transfer",
             AuditEvents.ControlPlaneRealmOperation => "Control-Plane realm operation",
             AuditEvents.AccountLifecycleSwept => "Account lifecycle sweep",
+            AuditEvents.AccountErased => "Account permanently erased",
             AuditEvents.BootstrapInviteIssued => "Bootstrap invite issuance",
             AuditEvents.DcrClientRegistered => "Dynamic client registration",
             AuditEvents.DcrClientFirstUsed => "Dynamic client first use",

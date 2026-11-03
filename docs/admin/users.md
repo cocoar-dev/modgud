@@ -123,7 +123,7 @@ If someone registered the same username or email in the meantime, the restore fa
 
 ### Delete permanently (force-delete)
 
-Show recycle bin → right-click the pending user → **Delete permanently**. You're asked for a reason (recorded in the [auth log](./auth-log)) and a final confirmation. This empties the recycle bin for that user **now**, ahead of the retention deadline.
+Show recycle bin → right-click the pending user → **Delete permanently**. You're asked for a reason (kept with the account's deletion record) and a final confirmation. The [Security log](./auth-log) records every permanent erase as `account.erased` — who erased which account, and whether it was a manual erase, the recycle-bin auto-purge or an expired self-deletion — but not the free-text reason, since Security events carry no free text. This empties the recycle bin for that user **now**, ahead of the retention deadline.
 
 If **auto-purge** is enabled for the realm (default), a scheduled job erases recycle-bin accounts automatically once their retention window elapses — so you don't have to empty the bin by hand.
 

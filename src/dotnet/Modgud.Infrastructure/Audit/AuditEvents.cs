@@ -227,6 +227,13 @@ public static class AuditEvents
     /// auto-purge counts). Realm-owned operational summary.</summary>
     public const string AccountLifecycleSwept = "ops.account_lifecycle_swept";
 
+    /// <summary>A.gdpr-C004 — an account was permanently erased (GDPR Art. 17). Fields:
+    /// ActorSubjectId (admin, or none for a sweep), TargetSubjectId (the erased subject),
+    /// ReasonCode (<c>admin-force-delete</c>, <c>admin-retention-purge</c>,
+    /// <c>self-service-grace-expired</c>, <c>system-erase</c> e.g. the unconfirmed-registration
+    /// reaper). The admin's free-text reason is not logged.</summary>
+    public const string AccountErased = "account.erased";
+
     /// <summary>One or more position staffing sessions were ended outside their
     /// natural token flow (MG-FT-07): local/remote lock, revocation cascade
     /// (user/passkey/grant/terminal/position), or the expiry janitor. The

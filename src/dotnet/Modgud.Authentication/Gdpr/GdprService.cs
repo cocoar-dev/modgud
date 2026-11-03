@@ -9,6 +9,7 @@ using Modgud.Authorization.Services;
 using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
 using Modgud.Authentication.RealmSettings;
 using Modgud.Domain.Realms;
+using Modgud.Infrastructure.Audit;
 using Modgud.Infrastructure.Email;
 using Modgud.Infrastructure.Observability;
 using Modgud.Infrastructure.Persistence.Tenancy;
@@ -38,7 +39,8 @@ public class GdprService(
     IUserAccessRevoker accessRevoker,
     IRealmSettingsService realmSettings,
     IHttpContextAccessor httpContextAccessor,
-    Modgud.Authentication.Devices.IDeviceTrust deviceTrust) : IGdprService
+    Modgud.Authentication.Devices.IDeviceTrust deviceTrust,
+    ISecurityAuditLog audit) : IGdprService
 {
     public async Task<ErrorOr<UserDataExportDto>> ExportUserDataAsync(Guid userId, CancellationToken ct = default)
     {
@@ -246,6 +248,9 @@ public class GdprService(
         };
     }
 
+    private const string AdminRetentionPurgeReason = "Admin recycle-bin retention expired";
+    private const string SelfServiceGraceReason = "Self-service grace period expired";
+
     public async Task<ErrorOr<bool>> PermanentlyEraseAsync(Guid userId, Guid? adminUserId, string reason, CancellationToken ct = default)
     {
         await using var erasureLock = await TryAcquireErasureLockAsync(ct);
@@ -407,6 +412,30 @@ public class GdprService(
             await auditSession.SaveChangesAsync(ct);
         }
 
+        // A.gdpr-C004 — the irreversible action gets its own required Security-log
+        // event, committed with the tombstone below (who, whom, which path; never the
+        // free-text reason). Read the path before the pending fields are cleared.
+        // The path comes from the persisted intent, so a resumed erasure logs the same.
+        var reasonCode = progress.Reason switch
+        {
+            AdminRetentionPurgeReason => "admin-retention-purge",
+            SelfServiceGraceReason => "self-service-grace-expired",
+            _ when progress.AdminUserId is not null => "admin-force-delete",
+            _ => "system-erase",
+        };
+        var byAdmin = reasonCode == "admin-force-delete" && progress.AdminUserId is not null;
+        audit.StoreRequired(session, new SecurityAuditRecord
+        {
+            EventType = AuditEvents.AccountErased,
+            RealmSlug = tenantId,
+            CaptureRequestContext = byAdmin,
+            ActorKind = byAdmin ? AuditActorKind.User : AuditActorKind.System,
+            ActorSubjectId = byAdmin ? progress.AdminUserId : null,
+            TargetSubjectId = userId,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            ReasonCode = reasonCode,
+        });
+
         // Only every completed durable step makes this a terminal tombstone.
         // If this final commit fails, a fresh scope repeats the idempotent work
         // using the saved link inventory, even after all streams were archived.
@@ -461,7 +490,7 @@ public class GdprService(
             if (state.Erasure is not null || deadline <= now)
             {
                 var result = await PerformPermanentEraseAsync(
-                    state.Id, adminUserId: null, "Self-service grace period expired", state, ct);
+                    state.Id, adminUserId: null, SelfServiceGraceReason, state, ct);
                 // A failed optimistic commit may leave pending writes in this
                 // session. Do not continue into another user's erasure with it.
                 if (result.IsError)
@@ -512,7 +541,7 @@ public class GdprService(
         foreach (var state in due)
         {
             var result = await PerformPermanentEraseAsync(
-                state.Id, state.DeletionRequestedByUserId, "Admin recycle-bin retention expired", state, ct);
+                state.Id, state.DeletionRequestedByUserId, AdminRetentionPurgeReason, state, ct);
             if (result.IsError)
                 throw new InvalidOperationException("Deletion state changed; retry the sweep in a fresh scope.");
             purged++;
