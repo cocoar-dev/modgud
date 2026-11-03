@@ -18,7 +18,7 @@ const appsStore = useApplicationsStore()
 const ctx = useAppContextStore()
 const { t } = useI18n()
 
-onMounted(() => appsStore.initialize())
+onMounted(() => { void appsStore.initialize().catch(() => {}) })
 
 const options = computed(() => {
   const apps = [...appsStore.apps].sort((a, b) =>
@@ -43,6 +43,9 @@ const value = computed({
   <div class="app-context-selector" :title="`Filter the OAuth/Authorization grids by workspace`">
     <span class="label">App:</span>
     <CoarSelect v-model="value" :options="options" size="s" />
+    <span v-if="appsStore.loadFailed" role="status" class="app-load-warning">
+      {{ t('common.listLoadFailed', {}, 'The list could not be refreshed. Reconnect or reload the page to try again.') }}
+    </span>
   </div>
 </template>
 
@@ -59,6 +62,10 @@ const value = computed({
   font-weight: 500;
   letter-spacing: 0.02em;
   opacity: 0.8;
+}
+.app-load-warning {
+  font-size: 0.78rem;
+  max-width: 20rem;
 }
 .app-context-selector :deep(.coar-select) {
   min-width: 12rem;

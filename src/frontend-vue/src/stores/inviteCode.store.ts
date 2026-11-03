@@ -31,6 +31,8 @@ export const useInviteCodeStore = defineStore('invite-code', () => {
 
   const codes = ref<InviteCodeDto[]>([])
   const loaded = ref(false)
+  const loadFailed = ref(false)
+  let snapshotRevision = 0
   const selectedAppId = ref<string | null>(null)
   let subscribed = false
 
@@ -39,10 +41,23 @@ export const useInviteCodeStore = defineStore('invite-code', () => {
   }
 
   async function loadAll(): Promise<InviteCodeDto[]> {
-    const res = await adminHttp.get<InviteCodeDto[]>()
-    codes.value = res
-    loaded.value = true
-    return res
+    const revision = ++snapshotRevision
+    try {
+      const res = await adminHttp.get<InviteCodeDto[]>()
+      if (revision === snapshotRevision) {
+        codes.value = res
+        loaded.value = true
+        loadFailed.value = false
+      }
+      return res
+    } catch (error) {
+      if (revision === snapshotRevision) {
+        codes.value = []
+        loaded.value = false
+        loadFailed.value = true
+      }
+      throw error
+    }
   }
 
   function refresh(): Promise<InviteCodeDto[]> {
@@ -55,14 +70,14 @@ export const useInviteCodeStore = defineStore('invite-code', () => {
       // Codes minted/revoked out-of-band (M2M backend, another admin/tab)
       // appear without a manual reload. useSignalR restores the stream itself.
       subscribeToSignalR()
-      signalr.runOnReconnect(() => void loadAll(), 'InviteCodeActions.Reload')
+      signalr.runOnReconnect(() => loadAll().catch(() => {}), 'InviteCodeActions.Reload')
     }
-    if (!loaded.value) void loadAll()
+    if (!loaded.value) void loadAll().catch(() => {})
   }
 
   function subscribeToSignalR() {
     signalr.stream<InviteCodeDataEvent>('InviteCodeActions.Subscribe').subscribe({
-      next: () => void loadAll(),
+      next: () => { void loadAll().catch(() => {}) },
       error: (err) => console.error('[invite-code] SignalR stream error:', err),
     })
   }
@@ -81,6 +96,7 @@ export const useInviteCodeStore = defineStore('invite-code', () => {
   return {
     codes,
     loaded,
+    loadFailed,
     selectedAppId,
     setApp,
     loadAll,

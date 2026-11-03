@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import {
   CoarButton,
+  CoarNotice,
   CoarCheckbox,
   useContextMenu,
   CoarContextMenu,
@@ -249,7 +250,7 @@ async function cloneSelected() {
 // per-row HTTP fetches. SignalR keeps the store fresh from there.
 onMounted(async () => {
   await Promise.all([
-    store.initialize(),
+    store.initialize().catch(() => {}), // loadFailed is rendered below
     saStore.entities.length === 0 ? saStore.loadAll() : Promise.resolve(),
     // Position names for the Terminal column — only while the feature is on
     // (the endpoints 404 otherwise); a missing position:read just leaves the
@@ -283,12 +284,15 @@ function openClient(client: OAuthClientDto) {
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
+    <CoarNotice v-if="store.loadFailed" variant="warning" role="status">
+      {{ t('common.listLoadFailed', {}, 'The list could not be refreshed. Reconnect or reload the page to try again.') }}
+    </CoarNotice>
     <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarCheckbox v-model="showDcrOnly"
           :label="t('admin.oauthClients.dcrOnly', {}, 'DCR only')"
           :title="t('admin.oauthClients.dcrOnly.help', {}, 'Show only clients minted via /connect/register (RFC 7591). Useful for spotting agent-registered clients separate from admin-created ones.')" />
-        <CoarButton size="s" variant="ghost" icon-start="rotate-ccw" @click="store.loadAll()"
+        <CoarButton size="s" variant="ghost" icon-start="rotate-ccw" @click="store.loadAll().catch(() => {})"
           :title="t('admin.oauthClients.refresh.help', {}, 'Reload the list — picks up clients registered out-of-band (DCR via /connect/register, another admin, another tab).')">
           {{ t('common.refresh', {}, 'Refresh') }}
         </CoarButton>

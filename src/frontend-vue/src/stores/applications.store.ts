@@ -30,20 +30,37 @@ export const useApplicationsStore = defineStore('applications', () => {
 
   const apps = ref<ApplicationDto[]>([])
   const loaded = ref(false)
+  const loadFailed = ref(false)
+  let snapshotRevision = 0
   let signalrSubscribed = false
 
   async function loadAll(): Promise<ApplicationDto[]> {
-    const res = await http.get<ApplicationDto[]>()
-    apps.value = res
-    loaded.value = true
-    return res
+    const revision = ++snapshotRevision
+    try {
+      const res = await http.get<ApplicationDto[]>()
+      if (revision === snapshotRevision) {
+        apps.value = res
+        loaded.value = true
+        loadFailed.value = false
+      }
+      return res
+    } catch (error) {
+      if (revision === snapshotRevision) {
+        apps.value = []
+        loaded.value = false
+        loadFailed.value = true
+      }
+      throw error
+    }
   }
 
   async function initialize() {
     if (!signalrSubscribed) {
       signalrSubscribed = true
       subscribeToSignalR()
-      signalr.runOnReconnect(() => void loadAll(), 'AppActions.Reload')
+      // Background only: loadAll exposes failure state and explicit callers
+      // still receive its rejection. useSignalR restores the existing stream.
+      signalr.runOnReconnect(() => loadAll().catch(() => {}), 'AppActions.Reload')
     }
     if (!loaded.value) await loadAll()
   }
@@ -97,6 +114,7 @@ export const useApplicationsStore = defineStore('applications', () => {
   return {
     apps,
     loaded,
+    loadFailed,
     initialize,
     loadAll,
     loadOne,
