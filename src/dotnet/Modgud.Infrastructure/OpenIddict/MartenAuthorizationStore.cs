@@ -235,6 +235,8 @@ public class MartenAuthorizationStore : IOpenIddictAuthorizationStore<OpenIddict
             foreach (var authorization in authorizations)
             {
                 authorization.Status = OpenIddictConstants.Statuses.Revoked;
+                // B4-01 — rotate like UpdateAsync (see MartenTokenStore.RevokeMatchingAsync).
+                authorization.ConcurrencyToken = Guid.NewGuid().ToString();
                 session.Store(authorization);
             }
             return authorizations.Count;
