@@ -2077,9 +2077,20 @@ public static class AuthorizationEndpoints
 
         // The link is single-use: consume it before the second factor is settled, so
         // a known-good link cannot be reused to brute-force the TOTP. A still-owed
-        // second factor continues through the mfa_token (ADR 0025 §8).
-        session.Delete(challenge);
-        await session.SaveChangesAsync(ct);
+        // second factor continues through the mfa_token (ADR 0025 §8). B5-01 / EG-09:
+        // consume with a version-checked Store of ConsumedAt like the web redemption —
+        // Marten does not version-check deletes, so two overlapping native redemptions
+        // would both delete-and-proceed and each mint tokens.
+        challenge.ConsumedAt = DateTimeOffset.UtcNow;
+        session.Store(challenge);
+        try
+        {
+            await session.SaveChangesAsync(ct);
+        }
+        catch (JasperFx.ConcurrencyException)
+        {
+            return ForbidNativeGrant(Errors.InvalidGrant, "Invalid or expired link.");
+        }
 
         return await FinishNativeSignInAsync(
             user, new Dictionary<string, DateTimeOffset> { [SignInMethods.Email] = DateTimeOffset.UtcNow },
