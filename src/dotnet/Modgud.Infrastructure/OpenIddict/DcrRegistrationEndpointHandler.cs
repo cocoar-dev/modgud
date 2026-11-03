@@ -1,4 +1,7 @@
 using Marten;
+using Microsoft.AspNetCore.Http;
+using Modgud.Domain.Applications;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using OpenIddict.Server;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 using static OpenIddict.Server.OpenIddictServerEvents;
@@ -47,18 +50,27 @@ public sealed class DcrRegistrationEndpointHandler
             .Build();
 
     private readonly IDocumentSession _session;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public DcrRegistrationEndpointHandler(IDocumentSession session)
+    public DcrRegistrationEndpointHandler(IDocumentSession session, IHttpContextAccessor httpContextAccessor)
     {
         _session = session;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async ValueTask HandleAsync(HandleConfigurationRequestContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // DCR/CIMD-B5-04 — advertise what registration will actually accept: the
+        // effective (App ⊕ realm) switch of the App whose domain this request came in on,
+        // the same rule the /connect/register endpoint applies.
         var settings = await _session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId);
-        if (settings?.Dcr is null || !settings.Dcr.Enabled) return;
+        var enabled = settings?.Dcr?.Enabled ?? false;
+        if (_httpContextAccessor.HttpContext?.GetApplicationId() is { } appId
+            && (await _session.LoadAsync<ApplicationSettings>(appId))?.Dcr?.Enabled is { } appEnabled)
+            enabled = appEnabled;
+        if (!enabled) return;
 
         // context.BaseUri is the realm-aware issuer-root populated by
         // OpenIddict's ResolveRequestUri handler (and adopted by our
