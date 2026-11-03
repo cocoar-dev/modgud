@@ -24,7 +24,10 @@ public class SharedPostgresFixture : IAsyncLifetime
         .WithCommand("-c", "max_connections=500")
         .Build();
 
-    public string ConnectionString => TestPostgres.WithGenerousConnectTimeout(Container.GetConnectionString());
+    private string? _developmentConnectionString;
+
+    public string ConnectionString => _developmentConnectionString ??
+        TestPostgres.WithGenerousConnectTimeout(Container.GetConnectionString());
 
     /// <summary>
     /// Test configuration context - created after container starts.
@@ -39,9 +42,24 @@ public class SharedPostgresFixture : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        await Container.StartAsync();
+        var developmentConnectionString = Environment.GetEnvironmentVariable("MODGUD_TEST_POSTGRES_CONNECTION_STRING");
+        var browserProject = Environment.GetEnvironmentVariable("MODGUD_TEST_BROWSER_PROJECT");
+        if (browserProject is not null && developmentConnectionString is null)
+            throw new InvalidOperationException("Live browser tests require the explicit postgres-dev connection.");
+        if (developmentConnectionString is null)
+        {
+            await Container.StartAsync();
+        }
+        else
+        {
+            _developmentConnectionString = TestPostgres.ValidateDevelopmentConnectionString(developmentConnectionString);
+            await TestPostgres.CreateDevelopmentDatabaseAsync(_developmentConnectionString);
+        }
 
-        // Create the test configuration context AFTER container is ready
+        // Replace all startup sources, rather than layering a connection over
+        // local files/env. In development mode ConnectionString has already
+        // been validated and the dedicated database created before this
+        // configuration can be resolved by Program (and before any host starts).
         TestContext = TestConfigurationContext.Replace(rule =>
         [
             rule.For<StartUpConfiguration>().FromStatic(_ => new StartUpConfiguration
@@ -95,12 +113,18 @@ public class SharedPostgresFixture : IAsyncLifetime
 
         // Create factory ONCE — the host (including async daemon) starts here
         Factory = new ModgudWebApplicationFactory(this);
+        if (browserProject is not null)
+            Factory.UseKestrel(options => options.Listen(System.Net.IPAddress.Loopback, 0));
     }
 
     public async ValueTask DisposeAsync()
     {
-        await Factory.DisposeAsync();
-        await Container.DisposeAsync();
+        if (Factory is not null)
+            await Factory.DisposeAsync();
+        if (_developmentConnectionString is null)
+            await Container.DisposeAsync();
+        // External postgres-dev and its test databases remain available for
+        // diagnosis; this fixture never stops or removes a user-owned container.
     }
 }
 
