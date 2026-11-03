@@ -578,7 +578,9 @@ public static class AuthorizationEndpoints
                     httpContext.RequestAborted);
                 var decision = await requirements.EvaluateAsync(
                     user, target, tokenFactors, SignInSurface.Native, startSetupGrace: false, httpContext.RequestAborted);
-                if (!decision.IsSatisfied)
+                // Refresh cannot award an unstarted setup grace after a policy change.
+                // An interactive sign-in starts it; an existing deadline is still honoured.
+                if (!decision.IsSatisfied || (decision.SetupPending && decision.SetupDueAt is null))
                     return ForbidInvalidGrant("The application now requires a stronger sign-in; please sign in again.");
             }
 
