@@ -13,6 +13,9 @@ namespace Modgud.Infrastructure.PositionTerminals;
 /// </summary>
 public static class PositionTerminalsMartenSetup
 {
+    /// <summary>B3-P2 — at most one non-revoked grant per (position, user).</summary>
+    public const string LiveGrantPairIndex = "mt_doc_positiongrant_uidx_live_pair";
+
     public static StoreOptions UseModgudPositionTerminals(this StoreOptions options)
     {
         // Grant documents — inline projection of the grant streams. Indexes per
@@ -23,7 +26,17 @@ public static class PositionTerminalsMartenSetup
             .Index(x => x.PositionPrincipalId)
             .Index(x => x.UserId)
             .Index(x => x.Status)
-            .Index(x => new { x.PositionPrincipalId, x.UserId });
+            .Index(x => new { x.PositionPrincipalId, x.UserId })
+            // B3-P2 — the database, not a read-then-write check, keeps one live grant per
+            // pair: overlapping issues and two spellings of one user id cannot both win.
+            // Partial, so a revoked pair can be granted again. The document is the inline
+            // projection, written in the same transaction as the issue event.
+            .Index(x => new { x.PositionPrincipalId, x.UserId }, idx =>
+            {
+                idx.Name = LiveGrantPairIndex;
+                idx.IsUnique = true;
+                idx.Predicate = "(data ->> 'Status') <> 'Revoked'";
+            });
 
         options.Projections.Add<PositionGrantProjection>(ProjectionLifecycle.Inline);
 

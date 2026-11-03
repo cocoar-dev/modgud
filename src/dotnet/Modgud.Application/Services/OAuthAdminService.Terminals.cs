@@ -257,7 +257,8 @@ public partial class OAuthAdminService
                 if (!person.IsActive)
                     return Error.Validation("PositionGrant.UserInactive",
                         $"Grant user '{rawUserId}' is inactive.");
-                stagedGrantUserIds.Add(grantUserId);
+                // B3-P2 — two spellings (ShortGuid / Guid) can name one user: one grant each.
+                if (!stagedGrantUserIds.Contains(grantUserId)) stagedGrantUserIds.Add(grantUserId);
             }
 
             position = new PositionPrincipal

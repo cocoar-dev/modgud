@@ -116,7 +116,16 @@ public static class PositionGrantsEndpoints
                 };
                 session.Events.StartStream<PositionGrant>(grant.Id, new PositionGrantIssued(
                     grant.Id, grant.PositionPrincipalId, grant.UserId, grant.CreatedByUserId, grant.CreatedAt));
-                await session.SaveChangesAsync(ct);
+                try
+                {
+                    await session.SaveChangesAsync(ct);
+                }
+                catch (Exception ex) when (IsLiveGrantPairViolation(ex))
+                {
+                    // B3-P2 — an overlapping issue for the same pair committed first.
+                    return Results.Conflict(new { Error = "PositionGrant.AlreadyGranted",
+                        Message = "The user already holds a grant for this position." });
+                }
 
                 var created = ToDto(grant, person, userHasPasskey: false);
                 dispatcher.DispatchCreatedEvent("PositionGrant", created, session.TenantId);
@@ -150,6 +159,18 @@ public static class PositionGrantsEndpoints
             .RequiresPermission("position:write");
 
         return application;
+    }
+
+    /// <summary>True when <paramref name="ex"/> is a unique violation (23505) of the live
+    /// (position, user) grant index; Marten wraps it differently per path.</summary>
+    internal static bool IsLiveGrantPairViolation(Exception? ex)
+    {
+        for (; ex is not null; ex = ex.InnerException)
+            if (ex is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation } pg
+                && string.Equals(pg.ConstraintName,
+                    Modgud.Infrastructure.PositionTerminals.PositionTerminalsMartenSetup.LiveGrantPairIndex, StringComparison.Ordinal))
+                return true;
+        return false;
     }
 
     /// <summary>
