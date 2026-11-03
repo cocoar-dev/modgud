@@ -26,7 +26,7 @@ namespace Modgud.Api.Tests.Authorization;
 /// same DCR audience containment.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class CimdFullFlowTests : IntegrationTestBase
+public partial class CimdFullFlowTests : IntegrationTestBase
 {
     public CimdFullFlowTests(SharedPostgresFixture fixture) : base(fixture) { }
 
