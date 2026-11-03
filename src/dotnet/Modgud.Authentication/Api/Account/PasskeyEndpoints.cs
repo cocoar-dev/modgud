@@ -16,6 +16,7 @@ using Modgud.Infrastructure.Observability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Modgud.Authentication.Applications;
+using Modgud.Authentication.SignIn;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -362,14 +363,42 @@ public static class PasskeyEndpoints
             var webRpId = Modgud.Authentication.SignIn.SignInRequirementService.WebRpIdFor(
                 signInTarget.PasskeyRpId, primaryDomain, context.Request.Host.Host,
                 relatedOrigins: signInTarget.PasskeyRelatedOrigins && request?.RelatedOrigins == true);
+
+            List<PublicKeyCredentialDescriptor>? allowedCredentials = null;
+            var accountOwner = await SignInAssurance.ReadAccountReauthenticationAsync(context);
+            if (accountOwner is not null)
+            {
+                if (context.User.Identity?.IsAuthenticated != true || context.GetUserId() != accountOwner)
+                    return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+
+                // Match AccountChangeGuard's account-factor boundary, not ReturnUrl,
+                // caller UserName or related-origin capability. Only this user's keys
+                // for an RP this host actually sits under can confirm the account.
+                var credentials = (await session.Query<StoredPasskeyCredential>()
+                    .Where(c => c.UserId == accountOwner.Value).ToListAsync(ct))
+                    .Where(c => SignInRequirementService.IsHostUnderRpId(
+                        context.Request.Host.Host, c.RpId ?? primaryDomain))
+                    .ToList();
+                var accountRpId = credentials.Select(c => c.RpId ?? primaryDomain)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderByDescending(rp => string.Equals(rp, primaryDomain, StringComparison.OrdinalIgnoreCase))
+                    .ThenByDescending(rp => rp.Length)
+                    .ThenBy(rp => rp, StringComparer.OrdinalIgnoreCase)
+                    .FirstOrDefault();
+                if (accountRpId is null)
+                    return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+                webRpId = accountRpId;
+                allowedCredentials = credentials
+                    .Where(c => string.Equals(c.RpId ?? primaryDomain, webRpId, StringComparison.OrdinalIgnoreCase))
+                    .Select(c => new PublicKeyCredentialDescriptor(c.CredentialId))
+                    .ToList();
+            }
             var relatedOriginCeremony = !Modgud.Authentication.SignIn.SignInRequirementService
                 .IsHostUnderRpId(context.Request.Host.Host, webRpId);
 
             var fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: webRpId);
 
-            List<PublicKeyCredentialDescriptor>? allowedCredentials = null;
-
-            if (!string.IsNullOrEmpty(request?.UserName))
+            if (accountOwner is null && !string.IsNullOrEmpty(request?.UserName))
             {
                 var user = await session.Query<ApplicationUser>()
                     .FirstOrDefaultAsync(u => u.NormalizedUserName == request.UserName.ToUpperInvariant());
@@ -427,6 +456,7 @@ public static class PasskeyEndpoints
                 ClientId = clientId,
                 RpId = webRpId,
                 RelatedOrigin = relatedOriginCeremony,
+                AccountReauthenticationUserId = accountOwner,
                 ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(PasskeyCeremony.ExpirationMinutes),
                 CreatedAt = DateTimeOffset.UtcNow,
             };
@@ -504,6 +534,12 @@ public static class PasskeyEndpoints
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
             }
 
+            if (ceremony.AccountReauthenticationUserId is { } accountOwner
+                && (context.User.Identity?.IsAuthenticated != true
+                    || context.GetUserId() != accountOwner
+                    || await SignInAssurance.ReadAccountReauthenticationAsync(context) != accountOwner))
+                return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+
             AssertionOptions options;
             try
             {
@@ -544,6 +580,11 @@ public static class PasskeyEndpoints
             }
             catch (JsonException) { /* leave null — the shared verifier fails closed below */ }
 
+            // Account confirmation is request-origin-bound, never a related-origin
+            // fallback through the canonical origin in the FIDO2 configuration.
+            if (ceremony.AccountReauthenticationUserId is not null && presentedOrigins is null)
+                return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
+
             // A related-origin ceremony (begun for an App RP ID this page is not under):
             // the page's own, request-matched origin is accepted for that RP ID — the
             // browser already checked the RP's /.well-known/webauthn before it signed.
@@ -555,7 +596,8 @@ public static class PasskeyEndpoints
             var storedCredential = await PasskeyAssertionVerifier.VerifyAsync(
                 fido2, options, body.GetRawText(), session, ceremonyRpId, ceremonyRpId, ct,
                 context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Modgud.Passkeys"));
-            if (storedCredential is null)
+            if (storedCredential is null
+                || (ceremony.AccountReauthenticationUserId is { } owner && storedCredential.UserId != owner))
                 return Results.Json(new { Message = "Invalid credentials" }, statusCode: 401);
 
             // PasskeyAssertionVerifier.VerifyAsync (above) already ran the FIDO2

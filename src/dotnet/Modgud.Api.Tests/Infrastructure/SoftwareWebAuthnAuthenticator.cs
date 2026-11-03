@@ -49,10 +49,11 @@ public sealed class SoftwareWebAuthnAuthenticator : IDisposable
     /// Builds an <c>AuthenticatorAssertionRawResponse</c> JSON for the given
     /// challenge (base64url, exactly as it appears in the begin options),
     /// relying-party id, and origin. UP+UV flags are set (the begin requires
-    /// UserVerification), and the signature is a valid ES256 signature over
+    /// UserVerification by default; optionally absent for negative tests), and
+    /// the signature is a valid ES256 signature over
     /// <c>authenticatorData ‖ SHA256(clientDataJSON)</c>.
     /// </summary>
-    public string CreateAssertionJson(string challengeB64Url, string rpId, string origin, uint signCount = 1)
+    public string CreateAssertionJson(string challengeB64Url, string rpId, string origin, uint signCount = 1, bool userVerified = true)
     {
         // clientDataJSON — built once and used for BOTH the signature and the wire,
         // so the server hashes exactly the bytes that were signed.
@@ -61,7 +62,7 @@ public sealed class SoftwareWebAuthnAuthenticator : IDisposable
 
         // authenticatorData = rpIdHash(32) ‖ flags(1) ‖ signCount(4, big-endian).
         var rpIdHash = SHA256.HashData(Encoding.UTF8.GetBytes(rpId));
-        const byte flags = 0x05; // UP (0x01) | UV (0x04)
+        var flags = userVerified ? (byte)0x05 : (byte)0x01; // UP, optionally UV for negative tests
         var counter = new byte[4];
         BinaryPrimitives.WriteUInt32BigEndian(counter, signCount);
         var authData = Concat(rpIdHash, [flags], counter);
