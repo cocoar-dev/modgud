@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import { CoarIcon, CoarButton, CoarTabGroup, CoarTab } from '@cocoar/vue-ui'
+import { CoarIcon, CoarButton, CoarTabGroup, CoarTab, CoarNotice } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useInboxStore } from '@/stores/inbox.store'
 import type { InboxItemDto } from '@/models/InboxItem'
@@ -89,12 +89,16 @@ function asI18nParams(p: Record<string, unknown> | null | undefined): Record<str
       </CoarTabGroup>
     </header>
 
-    <div v-if="filteredItems.length === 0" class="empty-state">
+    <CoarNotice v-if="inboxStore.loadFailed" variant="warning" role="status">
+      {{ t('inbox.loadFailed', {}, 'Notifications could not be refreshed. Reconnect or reload the page to try again.') }}
+    </CoarNotice>
+
+    <div v-else-if="filteredItems.length === 0" class="empty-state">
       <CoarIcon name="inbox" size="l" />
       <p>{{ t('inbox.empty', {}, 'No notifications') }}</p>
     </div>
 
-    <ul v-else class="item-list">
+    <ul v-if="filteredItems.length > 0" class="item-list">
       <li
         v-for="item in filteredItems"
         :key="item.Id"

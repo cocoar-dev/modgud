@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
-import { CoarButton, useContextMenu, CoarContextMenu, CoarMenuItem, CoarMenuDivider } from '@cocoar/vue-ui'
+import { CoarButton, CoarNotice, useContextMenu, CoarContextMenu, CoarMenuItem, CoarMenuDivider } from '@cocoar/vue-ui'
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useServiceAccountStore } from '@/stores/serviceAccount.store'
@@ -108,12 +108,15 @@ async function deleteRows() {
 }
 
 onMounted(() => {
-  store.initialize()
+  void store.initialize().catch(() => {}) // loadFailed is rendered below
 })
 </script>
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
+    <CoarNotice v-if="store.loadFailed" variant="warning" role="status">
+      {{ t('common.listLoadFailed', {}, 'The list could not be refreshed. Reconnect or reload the page to try again.') }}
+    </CoarNotice>
     <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">{{ t('common.create', {}, 'Create') }}</CoarButton>
