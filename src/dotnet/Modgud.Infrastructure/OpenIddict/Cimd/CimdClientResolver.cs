@@ -373,9 +373,17 @@ public sealed class CimdClientResolver
         }
 
         var (set, ttl) = await FetchJwksAsync(uri, cancellationToken);
-        if (set is null) return cached?.Set;
+        if (set is null)
+        {
+            // DCR/CIMD-B5-03 — a failed unknown-kid refetch starts the cooldown too, so a
+            // stream of made-up kids during an outage fetches at most once a minute. The
+            // known set is kept until its original expiry, not extended.
+            if (cached is not null && kidRefetchAt is not null && cached.ExpiresAt > DateTimeOffset.UtcNow)
+                _cache.Set(cacheKey, cached with { KidRefetchAt = kidRefetchAt }, cached.ExpiresAt);
+            return cached?.Set;
+        }
         if (ttl > TimeSpan.Zero)
-            _cache.Set(cacheKey, new CachedJwks(set, kidRefetchAt), ttl);
+            _cache.Set(cacheKey, new CachedJwks(set, kidRefetchAt, DateTimeOffset.UtcNow + ttl), ttl);
         return set;
     }
 
@@ -442,7 +450,7 @@ public sealed class CimdClientResolver
             ? element.GetString()
             : null;
 
-    private sealed record CachedJwks(JsonWebKeySet Set, DateTimeOffset? KidRefetchAt);
+    private sealed record CachedJwks(JsonWebKeySet Set, DateTimeOffset? KidRefetchAt, DateTimeOffset ExpiresAt);
 
     private static List<string> BuildPermissions(CimdMetadata meta, IReadOnlyList<string> requestableScopes)
     {

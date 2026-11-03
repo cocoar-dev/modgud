@@ -62,6 +62,51 @@ public partial class CimdFullFlowTests
         Assert.False(authorize.IsSuccessStatusCode && authorize.Headers.Location?.Query.Contains("code=") == true);
     }
 
+    [Fact]
+    public async Task A_failed_unknown_kid_refetch_cools_down_and_keeps_the_known_keys()
+    {
+        await SeedAsync();
+        var ct = TestContext.Current.CancellationToken;
+        using var keys = new TestJwks("b503-1");
+        var jwksUri = $"https://cimd-app.test/oauth/{Guid.NewGuid():N}/jwks.json";
+        Factory.CimdDocuments[jwksUri] = keys.PublicJwks;
+        Factory.CimdDocuments[_clientIdUrl] = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["client_id"] = _clientIdUrl,
+            ["client_name"] = "B5-03",
+            ["redirect_uris"] = new[] { RedirectUri },
+            ["token_endpoint_auth_method"] = "private_key_jwt",
+            ["token_endpoint_auth_signing_alg"] = "RS256",
+            ["jwks_uri"] = jwksUri,
+            ["grant_types"] = new[] { "authorization_code", "refresh_token" },
+            ["response_types"] = new[] { "code" },
+        });
+        var issuer = await IssuerAsync();
+        var scope = $"openid offline_access {ScopeName}";
+
+        var ok = await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience],
+            clientAssertion: keys.MintAssertion(_clientIdUrl, issuer));
+        Assert.True(ok.IsSuccessStatusCode, await ok.Content.ReadAsStringAsync(ct));
+
+        // The client's key host goes down.
+        Factory.CimdDocuments.TryRemove(jwksUri, out _);
+        var before = Factory.CimdFetchCounts[jwksUri];
+        using var madeUpA = new TestJwks("b503-made-up-a");
+        using var madeUpB = new TestJwks("b503-made-up-b");
+        await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience],
+            expectConsent: false, clientAssertion: madeUpA.MintAssertion(_clientIdUrl, issuer));
+        await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience],
+            expectConsent: false, clientAssertion: madeUpB.MintAssertion(_clientIdUrl, issuer));
+
+        // One refetch for the first unknown kid, then the cooldown holds.
+        Assert.Equal(before + 1, Factory.CimdFetchCounts[jwksUri]);
+
+        // The keys the client still uses keep working meanwhile.
+        var still = await DriveCimdFlowThroughToTokenAsync(_clientIdUrl, scope, AllowedAudience, [AllowedAudience],
+            expectConsent: false, clientAssertion: keys.MintAssertion(_clientIdUrl, issuer));
+        Assert.True(still.IsSuccessStatusCode, await still.Content.ReadAsStringAsync(ct));
+    }
+
     private static double LifetimeMinutes(string accessToken)
     {
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
