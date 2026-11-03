@@ -64,8 +64,10 @@ public static class CimdJwks
             };
             if (!complete) continue;
 
-            usable.Add(key.DeepClone());
-            if (usable.Count == MaxKeys) break;
+            // DCR/CIMD-B5-05 — cap what is kept, never what is checked: a private member
+            // after the first MaxKeys usable keys must still fail the whole set.
+            if (usable.Count < MaxKeys)
+                usable.Add(key.DeepClone());
         }
 
         if (usable.Count == 0)
