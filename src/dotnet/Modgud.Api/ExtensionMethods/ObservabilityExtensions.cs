@@ -91,11 +91,17 @@ internal static class ObservabilityExtensions
                             !ctx.Request.Path.StartsWithSegments("/metrics") &&
                             !ctx.Request.Path.StartsWithSegments("/health");
 
-                        // Stamp the active realm onto every request-root span.
-                        // TenantContext is AsyncLocal-backed and set by
-                        // RealmMiddleware before the endpoint runs.
-                        options.EnrichWithHttpRequest = (activity, _) =>
-                            activity.SetTag("cocoar.realm", TenantContext.Current);
+                        // Request enrichment runs before RealmMiddleware. At
+                        // response completion its ambient scope has unwound,
+                        // but the resolved realm remains on this HttpContext.
+                        // Tenantless requests must not invent a system realm.
+                        options.EnrichWithHttpResponse = (activity, response) =>
+                        {
+                            if (response.HttpContext.Items.TryGetValue(
+                                    TenantConstants.HttpContextTenantIdKey, out var value) &&
+                                value is string realm && !string.IsNullOrWhiteSpace(realm))
+                                activity.SetTag("cocoar.realm", realm);
+                        };
                     })
                     .AddHttpClientInstrumentation()
                     // Npgsql ships its own ActivitySource — adds query spans
