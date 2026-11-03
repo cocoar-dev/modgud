@@ -219,7 +219,16 @@ public class DynamicSamlSchemeManager(
             IdpMetadata = fresh,
             MetadataFetchedAt = clock.GetUtcNow(),
         };
-        _cache[loginProviderId] = updated;
+        // B6-SAML-03 — write back only if the entry is still the one this refresh read.
+        // A provider disabled, deleted or re-registered while the fetch ran keeps that
+        // newer state instead of being resurrected with its old configuration.
+        if (!_cache.TryUpdate(loginProviderId, updated, existing))
+        {
+            logger.LogInformation(
+                "SAML metadata refresh for provider {Id} discarded: the registration changed meanwhile",
+                loginProviderId);
+            return false;
+        }
 
         // Log only when the cert set actually changes — refreshes that
         // confirm the same certs are not interesting in steady state.
