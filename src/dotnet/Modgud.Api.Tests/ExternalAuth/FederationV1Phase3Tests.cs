@@ -106,6 +106,38 @@ public class FederationV1Phase3Tests : IntegrationTestBase
         Assert.Equal("Changed", b!.Firstname);  // creator default authority patches
     }
 
+    /// <summary>EP-06 — the JIT creator is authoritative only "until an admin promotes
+    /// another" provider (LoginProvider.AuthoritativeForProfile, docs: one authoritative
+    /// provider at a time, no flapping). The creator kept patching after a linked provider
+    /// was promoted, so alternating logins flapped the profile.</summary>
+    [Fact]
+    public async Task ProfileGate_Creator_Yields_To_A_Promoted_Linked_Provider()
+    {
+        const string Script = "(claims) => ({ firstname: claims.given_name })";
+        var creator = await CreateOidcProviderAsync(trustForAuthorization: false, userUpdateScript: Script);
+        var promoted = await CreateOidcProviderAsync(trustForAuthorization: false, userUpdateScript: Script,
+            authoritativeForProfile: true);
+        var user = await Factory.CreateTestUserWithIdentityAsync("Original", "Promo", "OP", "gate-promo@acme.com");
+        await LinkUserAsync(user.Id, creator.Id, "sub-promo-creator", isCreator: true);
+        await LinkUserAsync(user.Id, promoted.Id, "sub-promo-promoted", isCreator: false);
+
+        await RunLoginAsync(creator.Id, "sub-promo-creator", "gate-promo@acme.com", [], givenName: "FromCreator");
+        Assert.Equal("Original", await FirstnameAsync(user.Id)); // the creator no longer writes
+
+        await RunLoginAsync(promoted.Id, "sub-promo-promoted", "gate-promo@acme.com", [], givenName: "FromPromoted");
+        Assert.Equal("FromPromoted", await FirstnameAsync(user.Id));
+
+        await RunLoginAsync(creator.Id, "sub-promo-creator", "gate-promo@acme.com", [], givenName: "FromCreator");
+        Assert.Equal("FromPromoted", await FirstnameAsync(user.Id)); // no flapping back
+    }
+
+    private async Task<string?> FirstnameAsync(Guid userId)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        return (await users.FindByIdAsync(userId.ToString()))!.Firstname;
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────
 
     private async Task<ExternalLoginResult> RunLoginAsync(
@@ -119,7 +151,8 @@ public class FederationV1Phase3Tests : IntegrationTestBase
 
     private async Task<LoginProvider> CreateOidcProviderAsync(
         bool trustForAuthorization,
-        string userUpdateScript = "(claims) => ({ email: claims.email })")
+        string userUpdateScript = "(claims) => ({ email: claims.email })",
+        bool authoritativeForProfile = false)
     {
         var id = Guid.NewGuid();
         var slug = $"fed{Guid.NewGuid():N}"[..12];
@@ -134,7 +167,7 @@ public class FederationV1Phase3Tests : IntegrationTestBase
             AutoCreateUsers: false, AllowLinking: true, TrustForEmailLink: false,
             AllowedEmailDomains: null, IconName: null, ButtonColorHex: null, FlavorData: null,
             CreatedAt: DateTimeOffset.UtcNow,
-            TrustForAuthorization: trustForAuthorization, AuthoritativeForProfile: false));
+            TrustForAuthorization: trustForAuthorization, AuthoritativeForProfile: authoritativeForProfile));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
         return (await session.LoadAsync<LoginProvider>(id, TestContext.Current.CancellationToken))!;
     }
