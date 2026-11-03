@@ -90,6 +90,9 @@ public class SamlContextBuilder(
             DecryptionCertificates = [.. decryptionCerts],
             SignAuthnRequest = provider.FlavorData.SignAuthnRequest,
             AllowedIssuer = idp.EntityId,
+            // Request correlation/single-use is enforced durably by our tenant
+            // store after validation, not by a second process-local token cache.
+            DetectReplayedTokens = false,
             CertificateValidationMode =
                 System.ServiceModel.Security.X509CertificateValidationMode.None,
             RevocationMode = X509RevocationMode.NoCheck,
