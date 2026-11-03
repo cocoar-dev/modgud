@@ -44,6 +44,15 @@ public sealed class SamlPendingAuthnRequest
 
     public DateTimeOffset ExpiresAt { get; set; }
 
+    /// <summary>
+    /// B6-SAML-01 — SHA-256 (hex) of the browser binding cookie the login start set or
+    /// reused. The ACS accepts a Response for this request only from a browser that
+    /// presents the matching cookie, so an attacker's own Response cannot be submitted
+    /// from a victim's browser (login CSRF / session swapping). <c>null</c> on requests
+    /// recorded before the binding existed.
+    /// </summary>
+    public string? BrowserBindingHash { get; set; }
+
     /// <summary>Set when a Response for this request was accepted. Single-use marker.</summary>
     public DateTimeOffset? ConsumedAt { get; set; }
 

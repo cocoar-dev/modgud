@@ -21,7 +21,7 @@ public interface ISamlAuthnRequestStore
     /// Record an AuthnRequest we are about to send, so the matching Response can
     /// be correlated back to it.
     /// </summary>
-    Task RecordAsync(string requestId, Guid loginProviderId, CancellationToken ct);
+    Task RecordAsync(string requestId, Guid loginProviderId, CancellationToken ct, string? browserBinding = null);
 
     /// <summary>
     /// Atomically claim the pending request identified by <paramref name="requestId"/>.
@@ -29,7 +29,7 @@ public interface ISamlAuthnRequestStore
     /// replayed one — they warrant different audit reasons, though both are refused.
     /// </summary>
     Task<SamlAuthnRequestConsumeResult> TryConsumeAsync(
-        string? requestId, Guid loginProviderId, CancellationToken ct);
+        string? requestId, Guid loginProviderId, CancellationToken ct, string? browserBinding = null);
 }
 
 public enum SamlAuthnRequestConsumeResult
@@ -51,11 +51,15 @@ public enum SamlAuthnRequestConsumeResult
 
     /// <summary>The request was sent to a different provider than the ACS it arrived at.</summary>
     ProviderMismatch,
+
+    /// <summary>B6-SAML-01 — the Response arrived from a browser that did not start the
+    /// request (no or a different binding cookie). Not consumed.</summary>
+    BrowserMismatch,
 }
 
 internal sealed class MartenSamlAuthnRequestStore(IDocumentSession session) : ISamlAuthnRequestStore
 {
-    public async Task RecordAsync(string requestId, Guid loginProviderId, CancellationToken ct)
+    public async Task RecordAsync(string requestId, Guid loginProviderId, CancellationToken ct, string? browserBinding = null)
     {
         var now = DateTimeOffset.UtcNow;
 
@@ -71,6 +75,7 @@ internal sealed class MartenSamlAuthnRequestStore(IDocumentSession session) : IS
         {
             Id = requestId,
             LoginProviderId = loginProviderId,
+            BrowserBindingHash = browserBinding is null ? null : HashBinding(browserBinding),
             CreatedAt = now,
             ExpiresAt = now.AddMinutes(SamlPendingAuthnRequest.ExpirationMinutes),
         });
@@ -79,7 +84,7 @@ internal sealed class MartenSamlAuthnRequestStore(IDocumentSession session) : IS
     }
 
     public async Task<SamlAuthnRequestConsumeResult> TryConsumeAsync(
-        string? requestId, Guid loginProviderId, CancellationToken ct)
+        string? requestId, Guid loginProviderId, CancellationToken ct, string? browserBinding = null)
     {
         if (string.IsNullOrWhiteSpace(requestId))
             return SamlAuthnRequestConsumeResult.Unsolicited;
@@ -96,6 +101,14 @@ internal sealed class MartenSamlAuthnRequestStore(IDocumentSession session) : IS
 
         if (pending.IsExpired)
             return SamlAuthnRequestConsumeResult.Expired;
+
+        // B6-SAML-01 — only the browser that started the login may finish it.
+        if (pending.BrowserBindingHash is { } expected
+            && (browserBinding is null
+                || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                    System.Text.Encoding.ASCII.GetBytes(expected),
+                    System.Text.Encoding.ASCII.GetBytes(HashBinding(browserBinding)))))
+            return SamlAuthnRequestConsumeResult.BrowserMismatch;
 
         // Version-checked Store of the consume marker (see the type doc for why
         // this is not a Delete). Mutating the LOADED instance keeps the version
@@ -115,4 +128,7 @@ internal sealed class MartenSamlAuthnRequestStore(IDocumentSession session) : IS
 
         return SamlAuthnRequestConsumeResult.Consumed;
     }
+
+    private static string HashBinding(string value) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)));
 }

@@ -50,9 +50,15 @@ public class SamlLoginFlow(
     /// <paramref name="returnUrl"/> rides RelayState round-trip so the ACS
     /// callback knows where to send the user after sign-in.
     /// </summary>
+    /// <summary>B6-SAML-01 — the browser binding cookie. The ACS POST comes cross-site from
+    /// the IdP, so it must be SameSite=None, which browsers only accept with Secure:
+    /// SAML sign-in therefore needs HTTPS (plain-HTTP SAML logins fail with a mismatch).</summary>
+    internal const string BrowserBindingCookie = "Modgud.Saml.Binding";
+
     public async Task<IResult> StartLoginAsync(
         RegisteredSamlProvider provider,
         string? returnUrl,
+        HttpContext http,
         CancellationToken ct)
     {
         if (provider.IdpMetadata is null)
@@ -112,8 +118,23 @@ public class SamlLoginFlow(
         // it, any correctly-signed Response is acceptable at any time, which is
         // precisely the precondition for replay. Recorded after Bind so we persist
         // the exact ID that went onto the wire.
+        // B6-SAML-01 — bind the request to this browser. A value the browser already holds
+        // is reused, so logins started in several tabs all stay finishable.
+        var browserBinding = http.Request.Cookies[BrowserBindingCookie];
+        if (browserBinding is not { Length: 43 })
+            browserBinding = Microsoft.AspNetCore.WebUtilities.Base64UrlTextEncoder.Encode(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+        http.Response.Cookies.Append(BrowserBindingCookie, browserBinding, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = http.Request.IsHttps,
+            SameSite = SameSiteMode.None,
+            Path = "/saml/",
+            MaxAge = TimeSpan.FromMinutes(Modgud.Authentication.Domain.Saml.SamlPendingAuthnRequest.ExpirationMinutes),
+            IsEssential = true,
+        });
+
         await authnRequestStore.RecordAsync(
-            authnRequest.Id.Value, provider.LoginProviderId, ct);
+            authnRequest.Id.Value, provider.LoginProviderId, ct, browserBinding);
 
         logger.LogInformation(
             "SAML AuthnRequest built for provider {Id} → IdP {IdpEntity}",
@@ -268,7 +289,8 @@ public class SamlLoginFlow(
         // AuthnRequest we issued makes each Response answerable exactly once, and
         // only at the provider it was solicited from.
         var correlation = await authnRequestStore.TryConsumeAsync(
-            saml2Response.InResponseToAsString, provider.LoginProviderId, ct);
+            saml2Response.InResponseToAsString, provider.LoginProviderId, ct,
+            http.Request.Cookies[BrowserBindingCookie]);
         if (correlation != SamlAuthnRequestConsumeResult.Consumed)
         {
             var reason = correlation switch
@@ -277,6 +299,7 @@ public class SamlLoginFlow(
                 SamlAuthnRequestConsumeResult.AlreadyConsumed => "replayed",
                 SamlAuthnRequestConsumeResult.Expired => "expired",
                 SamlAuthnRequestConsumeResult.ProviderMismatch => "provider-mismatch",
+                SamlAuthnRequestConsumeResult.BrowserMismatch => "browser-mismatch",
                 _ => "unknown-request",
             };
 
