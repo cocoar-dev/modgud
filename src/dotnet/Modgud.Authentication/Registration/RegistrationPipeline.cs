@@ -101,6 +101,7 @@ public sealed class RegistrationPipeline(
     IEmailBrandingResolver emailBranding,
     IRegistrationInviteService inviteService,
     Modgud.Authentication.RateLimiting.IRegistrationThrottle throttle,
+    Modgud.Authorization.Services.IPermissionService permissionService,
     ILogger<RegistrationPipeline> logger) : IRegistrationPipeline
 {
     /// <summary>Lifetime of a numeric code — same as the login OTP.</summary>
@@ -337,6 +338,17 @@ public sealed class RegistrationPipeline(
             if (!Guid.TryParse(raw, out var gid)) continue;
             var group = await session.LoadAsync<Group>(gid, ct);
             if (group is null || group.IsDeleted) continue;
+            // AREG-01 — registering never confers realm:admin. Every other membership
+            // change of such a group needs a caller who is already a realm admin; here the
+            // actor is the registering person, whoever configured the defaults.
+            if (await Modgud.Authorization.Commands.GroupMembershipGuards.GroupConfersRealmAdminAsync(
+                    session, permissionService, group, ct))
+            {
+                logger.LogWarning(
+                    "Registration: default group {GroupId} confers realm:admin and was not joined (source={Source})",
+                    group.Id, pending.Source);
+                continue;
+            }
             if (!group.MemberIds.Contains(user.Id))
             {
                 group.MemberIds.Add(user.Id);

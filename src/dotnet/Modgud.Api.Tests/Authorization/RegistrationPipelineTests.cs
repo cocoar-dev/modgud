@@ -34,7 +34,7 @@ namespace Modgud.Api.Tests.Authorization;
 /// pending record is a hard-deletable document that never blocks the real owner.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class RegistrationPipelineTests : IntegrationTestBase
+public partial class RegistrationPipelineTests : IntegrationTestBase
 {
     public RegistrationPipelineTests(SharedPostgresFixture fixture) : base(fixture) { }
 
