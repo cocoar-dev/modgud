@@ -137,8 +137,15 @@ public sealed class CimdClientResolver
         }
 
         var cacheKey = $"cimd:doc:{TenantContext.Current}:{clientId}";
+        // DCR/CIMD-B5-01 — the cache memoizes the fetched document, not the policy: the
+        // lifetimes come from the settings just read (realm ⊕ this request's App), so a
+        // second App or a changed lifetime takes effect at once instead of at cache expiry.
         if (_cache.TryGetValue<CachedCimd>(cacheKey, out var cached) && cached is not null)
-            return Synthesize(cached, requestableScopes);
+            return Synthesize(cached with
+            {
+                AccessTokenLifetime = settings.AccessTokenLifetime,
+                RefreshTokenLifetime = settings.RefreshTokenLifetime,
+            }, requestableScopes);
 
         if (!CimdClientId.TryValidateUrl(clientId, out var uri, out var urlError) || uri is null)
         {
