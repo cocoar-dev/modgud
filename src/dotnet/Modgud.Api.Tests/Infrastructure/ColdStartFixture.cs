@@ -1,5 +1,6 @@
 using Cocoar.Configuration.Providers;
 using Cocoar.Configuration.Testing;
+using Npgsql;
 using Testcontainers.PostgreSql;
 using Modgud.Api;
 using Modgud.Authentication.Identity;
@@ -23,6 +24,14 @@ namespace Modgud.Api.Tests.Infrastructure;
 ///   against a brand-new master DB (in the same container) for tests that mutate
 ///   realm/user state and want a throwaway "cold metal" boot.</description></item>
 /// </list>
+///
+/// <para>With <c>MODGUD_TEST_POSTGRES_CONNECTION_STRING</c> set (the same opt-in as
+/// <see cref="SharedPostgresFixture"/>), no container starts: every host boots against a
+/// new database on the dedicated postgres-dev (127.0.0.1:5433), each verified not to exist
+/// yet, and the host creates it itself as in a real cold boot. The names are derived from
+/// the supplied <c>modgud_review_*</c> name but never start with <c>&lt;name&gt;_</c>, so a
+/// run that also uses the shared fixture keeps its own freshness check intact. The
+/// databases stay on postgres-dev for diagnosis; nothing is dropped.</para>
 /// </summary>
 public class ColdStartFixture : IAsyncLifetime
 {
@@ -44,11 +53,25 @@ public class ColdStartFixture : IAsyncLifetime
     /// <summary>The shared cold-boot host — booted once, kept pristine.</summary>
     public ColdStartWebApplicationFactory Factory { get; private set; } = null!;
 
+    /// <summary>The validated postgres-dev target in development mode; null with Testcontainers.</summary>
+    private string? _development;
+
     public async ValueTask InitializeAsync()
     {
-        await Container.StartAsync();
+        var development = Environment.GetEnvironmentVariable("MODGUD_TEST_POSTGRES_CONNECTION_STRING");
+        string master;
+        if (development is null)
+        {
+            await Container.StartAsync();
+            master = Container.GetConnectionString();
+        }
+        else
+        {
+            _development = TestPostgres.ValidateDevelopmentConnectionString(development);
+            master = await DevelopmentTargetAsync("cs", unique: false);
+        }
 
-        TestContext = BuildContext(Container.GetConnectionString());
+        TestContext = BuildContext(master);
         CocoarTestConfiguration.Apply(TestContext);
 
         // Host is built lazily on first CreateClient() (the test base does that
@@ -65,9 +88,10 @@ public class ColdStartFixture : IAsyncLifetime
     public async Task<IsolatedColdStartHost> CreateIsolatedHostAsync(
         bool useBackgroundProjectionDaemon = false)
     {
-        var isolatedDb = "coldstart_" + Guid.NewGuid().ToString("N")[..12];
-        var isolatedConnectionString = Container.GetConnectionString()
-            .Replace($"Database={MasterDbName}", $"Database={isolatedDb}", StringComparison.OrdinalIgnoreCase);
+        var isolatedConnectionString = _development is not null
+            ? await DevelopmentTargetAsync("ci", unique: true)
+            : Container.GetConnectionString().Replace($"Database={MasterDbName}",
+                "Database=coldstart_" + Guid.NewGuid().ToString("N")[..12], StringComparison.OrdinalIgnoreCase);
 
         var ctx = BuildContext(isolatedConnectionString);
         CocoarTestConfiguration.Apply(ctx);
@@ -92,9 +116,10 @@ public class ColdStartFixture : IAsyncLifetime
     /// </summary>
     public async Task<UninitializedColdStartHost> CreateUninitializedHostAsync()
     {
-        var isolatedDb = "install_" + Guid.NewGuid().ToString("N")[..12];
-        var isolatedConnectionString = Container.GetConnectionString()
-            .Replace($"Database={MasterDbName}", $"Database={isolatedDb}", StringComparison.OrdinalIgnoreCase);
+        var isolatedConnectionString = _development is not null
+            ? await DevelopmentTargetAsync("in", unique: true)
+            : Container.GetConnectionString().Replace($"Database={MasterDbName}",
+                "Database=install_" + Guid.NewGuid().ToString("N")[..12], StringComparison.OrdinalIgnoreCase);
 
         var ctx = BuildContext(isolatedConnectionString);
         CocoarTestConfiguration.Apply(ctx);
@@ -104,6 +129,16 @@ public class ColdStartFixture : IAsyncLifetime
 
         CocoarTestConfiguration.Apply(TestContext);
         return new UninitializedColdStartHost(factory);
+    }
+
+    /// <summary>A new postgres-dev database name derived from the supplied one:
+    /// <c>modgud_review_&lt;kind&gt;&lt;suffix&gt;[&lt;random&gt;]</c>, verified not to exist yet.</summary>
+    private async Task<string> DevelopmentTargetAsync(string kind, bool unique)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(_development);
+        var suffix = builder.Database!["modgud_review_".Length..];
+        builder.Database = $"modgud_review_{kind}{suffix}" + (unique ? Guid.NewGuid().ToString("N")[..8] : "");
+        return await TestPostgres.EnsureFreshDevelopmentDatabaseAsync(builder.ConnectionString);
     }
 
     private static TestConfigurationContext BuildContext(string connectionString) =>
@@ -143,7 +178,10 @@ public class ColdStartFixture : IAsyncLifetime
     public async ValueTask DisposeAsync()
     {
         await Factory.DisposeAsync();
-        await Container.DisposeAsync();
+        // postgres-dev and its test databases stay for diagnosis; only a container we
+        // started is ours to remove.
+        if (_development is null)
+            await Container.DisposeAsync();
     }
 }
 

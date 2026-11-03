@@ -29,20 +29,12 @@ public static class TestPostgres
 
     public static async Task<string> CreateDevelopmentDatabaseAsync(string connectionString)
     {
-        var validated = ValidateDevelopmentConnectionString(connectionString);
+        var validated = await EnsureFreshDevelopmentDatabaseAsync(connectionString);
         var admin = new NpgsqlConnectionStringBuilder(validated);
         var database = admin.Database!;
         admin.Database = "postgres";
         await using var connection = new NpgsqlConnection(admin.ConnectionString);
         await connection.OpenAsync();
-        // Marten derives realm database names from the master name. An orphaned
-        // *_system database must not be silently reused by the test data reset.
-        await using var existing = new NpgsqlCommand(
-            "SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = @name OR starts_with(datname, @prefix))", connection);
-        existing.Parameters.AddWithValue("name", database);
-        existing.Parameters.AddWithValue("prefix", database + "_");
-        if (await existing.ExecuteScalarAsync() is true)
-            throw new InvalidOperationException("The development test database or a derived realm database already exists; choose a new unique name.");
 
         // Exclusively create both databases before the factory can reset data.
         // No IF NOT EXISTS: even a concurrent creator of *_system must fail,
@@ -56,6 +48,29 @@ public static class TestPostgres
             await create.ExecuteNonQueryAsync();
         }
         Console.WriteLine($"Isolated integration target verified: 127.0.0.1:5433/{database} (fresh database).");
+        return validated;
+    }
+
+    /// <summary>
+    /// Validates a postgres-dev target and refuses it unless neither the database nor any
+    /// database derived from its name exists yet. Marten derives realm database names from
+    /// the master name, so an orphaned <c>*_system</c> must not be silently reused. Creates
+    /// nothing: a cold-start host creates its master database itself.
+    /// </summary>
+    public static async Task<string> EnsureFreshDevelopmentDatabaseAsync(string connectionString)
+    {
+        var validated = ValidateDevelopmentConnectionString(connectionString);
+        var admin = new NpgsqlConnectionStringBuilder(validated);
+        var database = admin.Database!;
+        admin.Database = "postgres";
+        await using var connection = new NpgsqlConnection(admin.ConnectionString);
+        await connection.OpenAsync();
+        await using var existing = new NpgsqlCommand(
+            "SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = @name OR starts_with(datname, @prefix))", connection);
+        existing.Parameters.AddWithValue("name", database);
+        existing.Parameters.AddWithValue("prefix", database + "_");
+        if (await existing.ExecuteScalarAsync() is true)
+            throw new InvalidOperationException("The development test database or a derived realm database already exists; choose a new unique name.");
         return validated;
     }
 
