@@ -1,4 +1,7 @@
 using Marten;
+using Microsoft.AspNetCore.Http;
+using Modgud.Domain.Applications;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using OpenIddict.Server;
 using RealmSettingsDoc = Modgud.Domain.RealmSettings.RealmSettings;
 using static OpenIddict.Server.OpenIddictServerEvents;
@@ -37,18 +40,26 @@ public sealed class CimdMetadataDocumentSupportedHandler
             .Build();
 
     private readonly IDocumentSession _session;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public CimdMetadataDocumentSupportedHandler(IDocumentSession session)
+    public CimdMetadataDocumentSupportedHandler(IDocumentSession session, IHttpContextAccessor httpContextAccessor)
     {
         _session = session;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async ValueTask HandleAsync(HandleConfigurationRequestContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // DCR/CIMD-B5-04 — the effective (App ⊕ realm) switch, as CimdClientResolver
+        // applies it when a client_id URL is actually resolved on this host.
         var settings = await _session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId);
-        if (settings?.Cimd is null || !settings.Cimd.Enabled) return;
+        var enabled = settings?.Cimd?.Enabled ?? false;
+        if (_httpContextAccessor.HttpContext?.GetApplicationId() is { } appId
+            && (await _session.LoadAsync<ApplicationSettings>(appId))?.Cimd?.Enabled is { } appEnabled)
+            enabled = appEnabled;
+        if (!enabled) return;
 
         context.Metadata[MetadataKey] = true;
     }
