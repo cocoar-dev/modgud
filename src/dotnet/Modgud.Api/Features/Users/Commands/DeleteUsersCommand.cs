@@ -40,16 +40,26 @@ public class DeleteUsersHandler(
         var deadline = now.AddDays(retentionDays);
 
         // Resolve the users that will actually be binned: skip missing, already
-        // permanently-erased, and already-pending users (idempotent re-delete).
+        // permanently-erased, and already admin-binned users (idempotent re-delete).
+        // A.gdpr-C002 — a pending SELF-SERVICE request is not skipped silently: the
+        // admin delete still cuts the account off (revoke, end staffing, deactivate),
+        // while the user's own request and erasure date stay as they are.
         var toBin = new List<Guid>();
+        var toCutOff = new List<Guid>();
         foreach (var id in command.UserIds)
         {
             var user = await session.LoadAsync<Person>(id, ct);
             if (user is null || user.IsDeleted)
                 continue;
             var state = await session.LoadAsync<UserDeletionState>(id, ct);
-            if (state?.IsDeletionPending == true || state?.IsDataMasked == true || state?.Erasure is not null)
+            if (state?.IsDataMasked == true || state?.Erasure is not null)
                 continue;
+            if (state?.IsDeletionPending == true)
+            {
+                if (state.DeletionInitiator == DeletionInitiator.SelfService && !state.DeactivatedByAdminDelete)
+                    toCutOff.Add(id);
+                continue;
+            }
             toBin.Add(id);
         }
 
@@ -64,7 +74,7 @@ public class DeleteUsersHandler(
         // command MUST be dispatched in-process (bus.InvokeAsync from an HTTP
         // endpoint) so RealmMiddleware's tenant is still ambient — do NOT move it
         // to durable/background dispatch without making the revoker tenant-explicit.
-        foreach (var id in toBin)
+        foreach (var id in toBin.Concat(toCutOff))
         {
             await accessRevoker.RevokeAllAccessAsync(id, AccessRevocationReason.Deletion, ct);
             // MG-FT-07 §15.4 — shifts this person opened on shared terminals
@@ -98,6 +108,21 @@ public class DeleteUsersHandler(
                 session.Store(appUser);
                 session.Events.Append(id, new UserDeactivatedEvent(id));
             }
+        }
+
+        foreach (var id in toCutOff)
+        {
+            // Self-service pending: keep initiator, deadline and reason (the sweep still
+            // erases on the user's date); record that this deactivation came from the
+            // admin delete so an admin restore reactivates the account.
+            var appUser = await session.LoadAsync<ApplicationUser>(id, ct);
+            if (appUser is null || !appUser.IsActive) continue;
+            appUser.IsActive = false;
+            session.Store(appUser);
+            session.Events.Append(id, new UserDeactivatedEvent(id));
+            var state = (await session.LoadAsync<UserDeletionState>(id, ct))!;
+            state.DeactivatedByAdminDelete = true;
+            session.Store(state);
         }
 
         await session.SaveChangesAsync(ct);
