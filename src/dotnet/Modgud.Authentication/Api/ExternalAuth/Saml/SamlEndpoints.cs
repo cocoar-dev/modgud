@@ -97,7 +97,7 @@ public static class SamlEndpoints
         if (allowed is not null && !allowed.Contains(provider.LoginProviderId))
             return Results.NotFound();
 
-        return await flow.StartLoginAsync(provider, returnUrl, ct);
+        return await flow.StartLoginAsync(provider, returnUrl, http, ct);
     }
 
     private static async Task<IResult> AcsAsync(
