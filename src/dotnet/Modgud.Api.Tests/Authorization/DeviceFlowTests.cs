@@ -19,7 +19,7 @@ namespace Modgud.Api.Tests.Authorization;
 /// verification step completes the flow.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class DeviceFlowTests : IntegrationTestBase
+public partial class DeviceFlowTests : IntegrationTestBase
 {
     public DeviceFlowTests(SharedPostgresFixture fixture) : base(fixture) { }
 

@@ -82,6 +82,17 @@ public static class DeviceVerificationEndpoints
         var request = httpContext.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("The OpenID Connect request cannot be retrieved.");
 
+        // EG-01 — the decision binds this session to a device code by user_code alone.
+        // A page on another origin of the same site gets the session cookie sent along
+        // (SameSite does not separate sibling subdomains), so it could approve the
+        // attacker's own code. Only the IdP's own page may submit the decision.
+        if (HttpMethods.IsPost(httpContext.Request.Method) && !IsFromOwnOrigin(httpContext.Request))
+            return Results.Json(new
+            {
+                error = "cross_origin_decision",
+                message = "The device decision must be submitted from this sign-in page.",
+            }, statusCode: StatusCodes.Status403Forbidden);
+
         // Require an interactive session; bounce to the SPA login and back.
         var authResult = await httpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
         if (!authResult.Succeeded)
@@ -202,6 +213,31 @@ public static class DeviceVerificationEndpoints
         await session.SaveChangesAsync();
 
         return Results.Redirect($"/device?ticket={ticket.Id:N}");
+    }
+
+    /// <summary>
+    /// True when a browser-borne request comes from the request's own origin. Browsers
+    /// send Sec-Fetch-Site on every fetch and form POST; without it, Origin (or Referer)
+    /// must be exactly this origin. A caller without any of them is not a browser and
+    /// carries no ambient session cookie of a victim.
+    /// </summary>
+    internal static bool IsFromOwnOrigin(HttpRequest request)
+    {
+        var fetchSite = request.Headers["Sec-Fetch-Site"].ToString();
+        if (fetchSite.Length > 0)
+            return string.Equals(fetchSite, "same-origin", StringComparison.OrdinalIgnoreCase);
+
+        var origin = request.Headers.Origin.ToString();
+        if (origin.Length > 0)
+            return Modgud.Authentication.Identity.RealmFido2.IsOriginForRequest(origin, request.Scheme, request.Host);
+
+        var referer = request.Headers.Referer.ToString();
+        if (referer.Length > 0)
+            return Uri.TryCreate(referer, UriKind.Absolute, out var from)
+                && Modgud.Authentication.Identity.RealmFido2.IsOriginForRequest(
+                    from.GetLeftPart(UriPartial.Authority), request.Scheme, request.Host);
+
+        return true;
     }
 
     // ─── connect/device-verification (SPA read API) ──────────────────────
