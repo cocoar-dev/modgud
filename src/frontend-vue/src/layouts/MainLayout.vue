@@ -24,6 +24,7 @@ import DraftStagingBar from '@/views/admin/realm-config/DraftStagingBar.vue'
 import HeaderExportChip from '@/views/admin/realm-config/HeaderExportChip.vue'
 import InboxBell from '@/components/InboxBell.vue'
 import UnverifiedEmailBanner from '@/components/UnverifiedEmailBanner.vue'
+import { adminLandingPath } from '@/router/admin-navigation'
 
 const { t } = useI18n()
 
@@ -115,29 +116,8 @@ const connectionColor = computed(() =>
     signalR.state.value === 'Connected' ? 'var(--coar-background-semantic-success-bold)' : 'var(--coar-background-semantic-error-bold)'
 )
 
-// Permissions that grant access to *any* admin area. Mirrors the resource list
-// in `AdminView.vue` so the top-level "Administration" entry hides cleanly when
-// the user has zero admin permissions. Bare 2-segment form (App context is
-// implicit; modgud's grants drive everything except `realm:read` which is
-// the control-plane realm-management resource). `hasPermission` short-circuits
-// on `realm:admin` and `<resource>:admin`, so we don't list those.
-const ADMIN_RESOURCE_PERMISSIONS = [
-    'user:read',
-    'permission-role:read',
-    'authorization-group:read',
-    'oauth-client:read',
-    'oauth-scope:read',
-    'oauth-api:read',
-    'login-provider:read',
-    'realm:read',
-    'auth-log:read',
-    'platform-audit:read',
-    'session:read',
-    'app:read',
-] as const
-
 const hasAnyAdminPermission = computed(() =>
-    ADMIN_RESOURCE_PERMISSIONS.some((p) => authStore.hasPermission(p))
+    Boolean(adminLandingPath(authStore.hasPermission, appConfig.config.Features))
 )
 
 // Permission gate for the "Platform" sidebar entry — its own wrapper view
