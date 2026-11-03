@@ -137,8 +137,14 @@ class HttpClient {
   // HTTP methods
   // ---------------------------------------------------------------------------
 
-  get<T>(): Promise<T> {
-    return this.request<T>('GET');
+  /**
+   * Optional background reads may handle an area's MFA refusal locally instead of
+   * navigating away from an otherwise allowed page. The request still rejects;
+   * 401 and account-change reauthentication keep their normal redirects. This is
+   * per GET only, so it cannot suppress enforcement navigation on a later mutation.
+   */
+  get<T>(options: { redirectOnStepUp?: boolean } = {}): Promise<T> {
+    return this.request<T>('GET', undefined, options.redirectOnStepUp ?? true);
   }
 
   post<T>(body?: unknown): Promise<T> {
@@ -177,7 +183,7 @@ class HttpClient {
     return `${path}?${qs.toString()}`;
   }
 
-  private async request<T>(method: string, body?: unknown): Promise<T> {
+  private async request<T>(method: string, body?: unknown, redirectOnStepUp = true): Promise<T> {
     const url = this.buildUrl();
 
     const headers: Record<string, string> = {};
@@ -211,7 +217,7 @@ class HttpClient {
       // the server is blocking non-setup endpoints. Send them to /login where the
       // SecureSetupModal will appear (in its blocking form, since grace is over).
       if (response.status === 403 && (isSecureSetupBlock(errorBody) || isStepUpBlock(errorBody))) {
-        redirectToStepUp(false, isAdministrationUrl(url))
+        if (redirectOnStepUp) redirectToStepUp(false, isAdministrationUrl(url))
       } else if (response.status === 403 && isReauthenticationBlock(errorBody)) {
         redirectToStepUp(true, false)
       }

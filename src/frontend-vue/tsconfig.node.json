@@ -8,5 +8,5 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "playwright.isolated.config.ts", "playwright.live-fixes.config.ts", "tests/browser/**/*.ts", "tests/live/**/*.ts"]
 }

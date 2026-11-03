@@ -226,7 +226,8 @@ function toggleLinkExpand(linkId: string) {
 
 async function loadExternalLinks() {
   try {
-    externalLinks.value = await linksHttp.get<ExternalLinkDto[]>()
+    // Optional background data must not displace the always-reachable deletion UI.
+    externalLinks.value = await linksHttp.get<ExternalLinkDto[]>({ redirectOnStepUp: false })
   } catch (e: any) {
     linksError.value = e?.message ?? String(e)
   }
@@ -322,7 +323,9 @@ const profileDirty = computed(() => {
 
 async function loadRequest() {
   try {
-    const res = await profileHttp.addPath('request').get<{ Open: OpenRequest | null; LastTerminal: TerminalRequest | null }>()
+    // A blocked background read must not navigate away from the allowed deletion flow.
+    // Explicit profile changes below still use the normal step-up redirects.
+    const res = await profileHttp.addPath('request').get<{ Open: OpenRequest | null; LastTerminal: TerminalRequest | null }>({ redirectOnStepUp: false })
     openRequest.value = res.Open
     lastTerminal.value = res.LastTerminal
   } catch { /* ignore */ }
@@ -506,7 +509,7 @@ async function toggleEmailOtp() {
 }
 
 async function loadPasskeys() {
-  try { passkeys.value = await passkeyHttp.get() } catch { /* ignore */ }
+  try { passkeys.value = await passkeyHttp.get({ redirectOnStepUp: false }) } catch { /* ignore */ }
 }
 
 async function registerPasskey() {
