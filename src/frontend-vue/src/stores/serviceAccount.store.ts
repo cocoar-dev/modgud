@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { useEntityService } from '@/composables/useEntityService'
 import type { ServiceAccountDto, ServiceAccountCreateDto } from '@/models/serviceAccount'
+import { createServiceAccount } from './serviceAccountCreation'
 
 export const useServiceAccountStore = defineStore('serviceAccount', () => {
   const service = useEntityService<ServiceAccountDto, ServiceAccountCreateDto>({
@@ -12,5 +13,8 @@ export const useServiceAccountStore = defineStore('serviceAccount', () => {
     loadOnInit: true,
   })
 
-  return { ...service }
+  return {
+    ...service,
+    createEntity: (dto: ServiceAccountCreateDto) => createServiceAccount(service, dto),
+  }
 })
