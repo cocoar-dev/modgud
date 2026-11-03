@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import { claimStepUp, stepUpUrl } from '@/composables/useHttpClient'
 import { MODAL_MD, MODAL_LG, MODAL_LIST_FORM } from './modal-sizes'
+import { adminLandingPath } from './admin-navigation'
 
 /**
  * Per-route gate for routes that depend on the page-builder feature
@@ -233,7 +234,6 @@ const routes = [
           path: 'admin',
           component: () => import('@/views/admin/AdminView.vue'),
           children: [
-            { path: '', redirect: '/admin/users' },
             {
               path: 'users',
               component: () => import('@/views/admin/user/UserList.vue'),
@@ -569,31 +569,21 @@ router.beforeEach(async (to) => {
     return redirect ? `/login?redirect=${encodeURIComponent(redirect)}` : '/login'
   }
 
-  // Admin routes require *any* admin-resource read permission. The per-resource
-  // sidebar gating in AdminView further hides individual menu items the user
-  // cannot see; this guard just keeps users with zero admin permissions out of
-  // the empty admin shell. `hasPermission` short-circuits on realm:admin and
-  // <resource>:admin. Strings are bare 2-segment form (modgud context is
-  // implicit; realm:read is control-plane).
-  if (to.path.startsWith('/admin')) {
-    const ADMIN_PERMS = [
-      'user:read', 'permission-role:read',
-      'authorization-group:read',
-      'oauth-client:read', 'oauth-scope:read',
-      'oauth-api:read',
-      'login-provider:read',
-      'realm:read', 'realm-settings:read',
-      'auth-log:read', 'audit-log:read', 'platform-audit:read', 'session:read', 'observability:read', 'asset:read',
-      'app:read',
-    ]
-    if (!ADMIN_PERMS.some((p) => authStore.hasPermission(p))) {
-      return '/dashboard'
-    }
+  // Require an actually visible admin destination, using the sidebar's same
+  // permissions and feature gates. Per-resource server authorization is unchanged.
+  if (to.path === '/admin' || to.path.startsWith('/admin/')) {
+    const appConfig = useAppConfigStore()
+    await appConfig.load()
+    const landing = adminLandingPath(authStore.hasPermission, appConfig.config.Features)
+    if (!landing) return '/dashboard'
     // ADR 0025 — the administration asks for its sign-in level before the page opens, not
     // after: without this the admin shell renders, its first request is refused and the
     // user is pulled away to the login page a moment later.
     if (authStore.user?.AdministrationNeedsStepUp && claimStepUp(to.fullPath, false, true)) {
       return stepUpUrl(to.fullPath, false, true)
+    }
+    if (to.path === '/admin' || to.path === '/admin/') {
+      return { path: landing, query: to.query, hash: to.hash, replace: true }
     }
   }
 
