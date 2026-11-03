@@ -100,11 +100,11 @@ public class DynamicSamlSchemeManager(
         SamlIdpMetadata? idpMetadata = null;
         if (!string.IsNullOrWhiteSpace(flavorData.MetadataUrl))
         {
-            idpMetadata = await metadataFetcher.FetchAsync(flavorData.MetadataUrl);
+            idpMetadata = await metadataFetcher.FetchAsync(flavorData.MetadataUrl, entityIdOverride: flavorData.EntityId);
         }
         else if (!string.IsNullOrWhiteSpace(flavorData.MetadataXml))
         {
-            idpMetadata = metadataFetcher.Parse(flavorData.MetadataXml);
+            idpMetadata = metadataFetcher.Parse(flavorData.MetadataXml, flavorData.EntityId);
         }
 
         var entry = new RegisteredSamlProvider(
@@ -205,11 +205,11 @@ public class DynamicSamlSchemeManager(
         SamlIdpMetadata? fresh = null;
         if (!string.IsNullOrWhiteSpace(existing.FlavorData.MetadataUrl))
         {
-            fresh = await metadataFetcher.FetchAsync(existing.FlavorData.MetadataUrl, ct);
+            fresh = await metadataFetcher.FetchAsync(existing.FlavorData.MetadataUrl, ct, existing.FlavorData.EntityId);
         }
         else if (!string.IsNullOrWhiteSpace(existing.FlavorData.MetadataXml))
         {
-            fresh = metadataFetcher.Parse(existing.FlavorData.MetadataXml);
+            fresh = metadataFetcher.Parse(existing.FlavorData.MetadataXml, existing.FlavorData.EntityId);
         }
 
         if (fresh is null) return false;

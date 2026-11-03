@@ -353,11 +353,14 @@ public partial class SamlAcsReplayEndToEndTests : IntegrationTestBase
     private async Task<LoginProvider> CreateAndRegisterProviderAsync(X509Certificate2 idpCert,
         Saml2AuthnResponseSignTypes signType = Saml2AuthnResponseSignTypes.SignAssertion,
         bool wantAssertionsEncrypted = false,
-        bool postOnlySso = false)
+        bool postOnlySso = false,
+        string? entityIdOverride = null,
+        bool metadataWithoutEntityId = false)
     {
         var flavorData = JsonDocument.Parse(JsonSerializer.Serialize(new
         {
-            metadataXml = BuildIdpMetadataXml(idpCert, postOnlySso),
+            metadataXml = BuildIdpMetadataXml(idpCert, postOnlySso, metadataWithoutEntityId),
+            entityId = entityIdOverride,
             wantAssertionsSigned = signType != Saml2AuthnResponseSignTypes.SignResponse,
             wantResponseSigned = signType != Saml2AuthnResponseSignTypes.SignAssertion,
             wantAssertionsEncrypted,
@@ -485,7 +488,7 @@ public partial class SamlAcsReplayEndToEndTests : IntegrationTestBase
             cert.Export(X509ContentType.Pkcs12), password: null, X509KeyStorageFlags.Exportable);
     }
 
-    private static string BuildIdpMetadataXml(X509Certificate2 idpCert, bool postOnlySso = false)
+    private static string BuildIdpMetadataXml(X509Certificate2 idpCert, bool postOnlySso = false, bool withoutEntityId = false)
     {
         XNamespace md = "urn:oasis:names:tc:SAML:2.0:metadata";
         XNamespace ds = "http://www.w3.org/2000/09/xmldsig#";
@@ -493,7 +496,7 @@ public partial class SamlAcsReplayEndToEndTests : IntegrationTestBase
 
         var doc = new XDocument(
             new XElement(md + "EntityDescriptor",
-                new XAttribute("entityID", IdpEntityId),
+                withoutEntityId ? null : new XAttribute("entityID", IdpEntityId),
                 new XAttribute(XNamespace.Xmlns + "md", md.NamespaceName),
                 new XAttribute(XNamespace.Xmlns + "ds", ds.NamespaceName),
                 new XElement(md + "IDPSSODescriptor",
