@@ -1,4 +1,7 @@
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Security.Cryptography;
+using Microsoft.AspNetCore.DataProtection;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -90,6 +93,29 @@ public static class AuthorizationEndpoints
         return app;
     }
 
+    private const string PromptLoginMarker = "modgud_login_after";
+    private const string PromptLoginMarkerPurpose = "Modgud.Authorize.PromptLogin.v1";
+    private static readonly TimeSpan PromptLoginMarkerLifetime = TimeSpan.FromMinutes(30);
+
+    /// <summary>EG-02 — true when the request carries a valid prompt=login marker and the
+    /// session proved a sign-in factor at or after the time it records.</summary>
+    private static bool PromptLoginSatisfied(
+        HttpContext httpContext, ITimeLimitedDataProtector protector, ClaimsPrincipal? principal)
+    {
+        var raw = httpContext.Request.Query[PromptLoginMarker].ToString();
+        if (string.IsNullOrEmpty(raw)) return false;
+        try
+        {
+            var issuedAt = DateTimeOffset.FromUnixTimeSeconds(
+                long.Parse(protector.Unprotect(raw), NumberStyles.None, CultureInfo.InvariantCulture));
+            return SignInAssurance.ReadFactors(principal).Values.Any(provenAt => provenAt >= issuedAt);
+        }
+        catch (Exception ex) when (ex is CryptographicException or FormatException or OverflowException)
+        {
+            return false;
+        }
+    }
+
     private static async Task<IResult> AuthorizeAsync(
         HttpContext httpContext,
         IOpenIddictApplicationManager applicationManager,
@@ -126,9 +152,30 @@ public static class AuthorizationEndpoints
             if (sessionAge > TimeSpan.FromSeconds(request.MaxAge.Value)) needsLogin = true;
         }
 
+        // EG-02 — prompt=login asks for a fresh sign-in, once. The return URL used to repeat
+        // the unchanged query, so the re-entry after a successful sign-in challenged again
+        // forever. The first pass now stamps a protected, time-limited marker onto the
+        // return URL; the re-entry is satisfied by a sign-in factor proven after it. The
+        // session that existed before the prompt is not (merely visiting the login page
+        // does not do), and a pushed request (PAR) works the same since nothing in the
+        // original request is rewritten.
+        string? promptLoginReturnUrl = null;
         if (!string.IsNullOrEmpty(request.Prompt) && request.Prompt.Contains("login", StringComparison.OrdinalIgnoreCase))
         {
-            needsLogin = true;
+            var protector = httpContext.RequestServices.GetRequiredService<IDataProtectionProvider>()
+                .CreateProtector(PromptLoginMarkerPurpose).ToTimeLimitedDataProtector();
+            if (!(authResult.Succeeded && PromptLoginSatisfied(httpContext, protector, authResult.Principal)))
+            {
+                needsLogin = true;
+                var marker = protector.Protect(
+                    DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture),
+                    PromptLoginMarkerLifetime);
+                promptLoginReturnUrl = httpContext.Request.PathBase + httpContext.Request.Path + QueryString.Create(
+                    httpContext.Request.Query
+                        .Where(q => !string.Equals(q.Key, PromptLoginMarker, StringComparison.Ordinal))
+                        .SelectMany(q => q.Value.Select(v => new KeyValuePair<string, string?>(q.Key, v)))
+                        .Append(new KeyValuePair<string, string?>(PromptLoginMarker, marker)));
+            }
         }
 
         // ADR 0025 §8 — a native sign-in continues in the browser: the App starts its
@@ -167,7 +214,11 @@ public static class AuthorizationEndpoints
         if (needsLogin)
         {
             return Results.Challenge(
-                new AuthenticationProperties { RedirectUri = httpContext.Request.PathBase + httpContext.Request.Path + httpContext.Request.QueryString },
+                new AuthenticationProperties
+                {
+                    RedirectUri = promptLoginReturnUrl
+                                  ?? httpContext.Request.PathBase + httpContext.Request.Path + httpContext.Request.QueryString,
+                },
                 new[] { IdentityConstants.ApplicationScheme });
         }
 
