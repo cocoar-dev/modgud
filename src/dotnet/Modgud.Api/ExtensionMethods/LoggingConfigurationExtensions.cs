@@ -11,7 +11,7 @@ public static class LoggingConfigurationExtensions
         {
             options.EnrichDiagnosticContext = LogHelper.EnrichFromRequest;
             options.MessageTemplate =
-                "[{RequestMethod}] {RequestPath} | {User} | {StatusCode} in {Elapsed:0.0000} ms";
+                "[{RequestMethod}] {RequestPath} | {UserId} | {StatusCode} in {Elapsed:0.0000} ms";
         });
 
         return app;
