@@ -93,74 +93,53 @@ workers. They verify Vue/profile/header navigation, not real authentication,
 database writes, SignalR reconnects or backend policy enforcement. They require
 an already installed matching Chromium; they do not download one automatically.
 
-### Isolated HTTP client regression tests
+### Opt-in live fix integration
 
-With the project's Node 22 runtime, `pnpm test:unit` runs Node tests of the HTTP
-client against synthetic responses and of the entity service using the installed
-Vue reactivity with an isolated fake SignalR transport. It does not start Vite,
-Playwright, Docker or a backend and makes no network requests. This is not a
-substitute for browser or backend integration tests.
+`Modgud.Api.Tests/Security/LiveFixBrowserTests.cs` runs the built SPA against a
+real loopback Kestrel host, actual HTTP cookie authentication and SignalR, and a
+fresh database on the dedicated `postgres-dev` container. It uses
+`playwright.live-fixes.config.ts`, **not** the existing E2E Docker setup.
 
-Optional background GETs can use `{ redirectOnStepUp: false }` to retain the
-current page when the server requires area-level MFA. They still reject with
-`HttpClientError`; 401 and fresh account-proof redirects remain unchanged.
-Do not apply this to explicit user actions. Entity-service `loadAll` callers
-can opt out through `redirectOnLoadStepUp: false` (for example, the header inbox);
-all other callers keep the default navigation.
+Before running, verify the container's binding is exclusively `127.0.0.1:5433`.
+Set these environment variables in a private shell/launcher (never commit or
+print the connection-string password):
 
-Entity-list reconnect reloads handle their background rejection locally. A failed
-full-list read clears the cached list, resets `allLoaded` and sets `loadFailed`;
-it is not a successful empty snapshot. Inbox and the user/service-account/position
-lists show a generic warning, not raw HTTP bodies. A later full REST read or
-authoritative FullSync clears the failure; incremental pushes alone do not prove
-the full list is current. No retry loop or extra subscription is started.
-Explicit `loadAll`/`initialize` and CRUD calls still reject to their callers.
-Overlapping full reads use the latest-started read for store state; an authoritative
-FullSync supersedes pending reads. Older completions still resolve/reject to their
-explicit callers but cannot overwrite or invalidate a newer snapshot. Later deltas
-or a mutation rollback may partially refill a failed list; the warning remains.
+- `MODGUD_TEST_POSTGRES_CONNECTION_STRING`: Npgsql connection string for
+  `Host=127.0.0.1`, `Port=5433`, `Username=modgud_dev`, and a **new**, unique
+  `Database=modgud_review_<suffix>` (ASCII identifier, at most 40 characters).
+- `MODGUD_TEST_BROWSER_PROJECT`: absolute path to this frontend directory.
+- `MODGUD_BROWSER_DIST`: absolute path to a fresh, isolated `pnpm build --outDir`
+  output matching the current source.
 
-For the real SPA in a browser **without any backend or server**, first build to
-an isolated directory, then run:
+From the repository root:
 
 ```bash
-MODGUD_BROWSER_DIST=/absolute/path/to/isolated-build pnpm test:browser:isolated
+dotnet test src/dotnet/Modgud.Api.Tests/Modgud.Api.Tests.csproj --no-restore \
+  --filter FullyQualifiedName~LiveFixBrowserTests
 ```
 
-This separate Playwright configuration has no global setup, web server or
-container lifecycle. Tests serve the built files and simulated API replies via
-browser interception, reject unknown requests, and block WebSockets/service
-workers. They verify Vue/profile/header navigation, not real authentication,
-database writes, SignalR reconnects or backend policy enforcement. They require
-an already installed matching Chromium; they do not download one automatically.
+The fixture refuses other targets and pre-existing databases before starting the
+host. It replaces startup configuration rather than inheriting private application
+settings. API tests may reset only this test-owned database and its realm databases.
+The external container and diagnostic test databases are not deleted on disposal.
+Use the browser opt-in only with the shown filter: other suites may require
+TestServer-specific handlers, and cold-start fixtures have their own lifecycle.
+The browser uses real APIs/feeds; interception serves only static SPA files and
+can delay a real request or interrupt that browser's transport. No API payloads
+are replaced. Secret assertions return booleans, not credential values; traces,
+screenshots, videos and automatic DOM error snapshots are disabled.
+The harness grants Chromium local-network access only to its validated loopback
+origin; it does not disable browser security globally. The read-only subscriber
+has only `service-account:read`: the shared admin navigation gates the sidebar,
+top-level entry and permission-aware `/admin` landing page consistently
+(B10-UI01). No unrelated read grant, write permission or router bypass is used.
 
-### Isolated HTTP client regression tests
-
-With the project's Node 22 runtime, `pnpm test:unit` runs Node tests of the HTTP
-client against synthetic responses. It does not start Vite,
-Playwright, Docker or a backend and makes no network requests. This is not a
-substitute for browser or backend integration tests.
-
-Optional background GETs can use `{ redirectOnStepUp: false }` to retain the
-current page when the server requires area-level MFA. They still reject with
-`HttpClientError`; 401 and fresh account-proof redirects remain unchanged.
-Do not apply this to explicit user actions. Entity-service `loadAll` callers
-can opt out through `redirectOnLoadStepUp: false` (for example, the header inbox);
-all other callers keep the default navigation.
-
-For the real SPA in a browser **without any backend or server**, first build to
-an isolated directory, then run:
-
-```bash
-MODGUD_BROWSER_DIST=/absolute/path/to/isolated-build pnpm test:browser:isolated
-```
-
-This separate Playwright configuration has no global setup, web server or
-container lifecycle. Tests serve the built files and simulated API replies via
-browser interception, reject unknown requests, and block WebSockets/service
-workers. They verify Vue/profile/header navigation, not real authentication,
-database writes, SignalR reconnects or backend policy enforcement. They require
-an already installed matching Chromium; they do not download one automatically.
+This is a Testing-environment, single-node integration host, with captured email
+and explicitly driven projections. It does not prove production backplane,
+retention, rollout or credential-revocation behavior. The inbox reconnect test
+checks the `p3h6` correction: a real refused reload invalidates a previously loaded
+notification, shows a warning without an unhandled rejection, and a later real
+reconnect restores the same persisted notification and clears the failure.
 
 - `useUI()` — page header/footer/content context
 - `useEntityService()` — generic CRUD + Pinia integration; SignalR
