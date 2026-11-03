@@ -1,5 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Collections.Concurrent;
+using System.Reactive.Linq;
+using System.Text.Json;
+using BuildingBlocks.EventDispatcher;
 using BuildingBlocks.Helper;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +24,11 @@ public class ServiceAccountCreateCompletenessTests(SharedPostgresFixture fixture
     {
         var ct = TestContext.Current.CancellationToken;
         var accountName = $"complete-{Guid.NewGuid():N}"[..32];
+        var events = new ConcurrentQueue<DataEvent>();
+        using var subscription = Factory.Services.GetRequiredService<DataEventDispatcher>()
+            .Notifications
+            .Where(ev => ev.Subject == "ServiceAccount" && ev.Action == DataEventAction.Created)
+            .Subscribe(events.Enqueue);
 
         var response = await Client.PostAsJsonAsync("/api/service-account", new
         {
@@ -45,6 +54,13 @@ public class ServiceAccountCreateCompletenessTests(SharedPostgresFixture fixture
         Assert.False(string.IsNullOrWhiteSpace(created.InitialCredential.ClientSecret));
         Assert.False(created.InitialCredential.Credential.Enabled);
         Assert.True(ShortGuid.TryParse(created.Id, out Guid serviceAccountId));
+
+        // The creator keeps the one-time credential, but the same request's read
+        // notification must be a different DTO without that response-only field.
+        var notification = Assert.Single(events.SelectMany(ev => ev.Payload)
+            .OfType<ServiceAccountDto>().Where(sa => sa.Id == created.Id));
+        Assert.Null(notification.InitialCredential);
+        Assert.DoesNotContain(created.InitialCredential.ClientSecret, JsonSerializer.Serialize(notification));
 
         using var scope = Factory.Services.CreateScope();
         var query = scope.ServiceProvider.GetRequiredService<IQuerySession>();

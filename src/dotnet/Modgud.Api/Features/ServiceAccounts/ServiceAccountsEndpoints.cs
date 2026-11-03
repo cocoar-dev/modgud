@@ -118,17 +118,7 @@ public static class ServiceAccountsEndpoints
                     }, ct);
                     if (result.IsError) return result.ToResult();
 
-                    var createdWithCredential = result.Value.CreatedServiceAccount!;
-                    createdWithCredential.InitialCredential = new ServiceAccountCredentialIssuedDto
-                    {
-                        Credential = result.Value.Client,
-                        ClientSecret = result.Value.ClientSecret!,
-                    };
-                    // Keep both admin grids in sync: this endpoint created both
-                    // aggregate types even though the response is SA-shaped.
-                    dispatcher.DispatchCreatedEvent("OAuthClient", result.Value.Client, session.TenantId);
-                    dispatcher.DispatchCreatedEvent("ServiceAccount", createdWithCredential, session.TenantId);
-                    return Results.Ok(createdWithCredential);
+                    return Results.Ok(CompleteCreateWithInitialCredential(result.Value, dispatcher, session.TenantId));
                 }
 
                 var sa = new ServiceAccount
@@ -371,6 +361,45 @@ public static class ServiceAccountsEndpoints
             .RequiresPermission("service-account:write");
 
         return application;
+    }
+
+    internal static ServiceAccountDto CompleteCreateWithInitialCredential(
+        OAuthClientCreatedDto created,
+        DataEventDispatcher dispatcher,
+        string tenantId)
+    {
+        var source = created.CreatedServiceAccount!;
+        // Explicitly project the read-stream payload so even an accidentally
+        // enriched service result cannot forward its response-only credential.
+        var account = new ServiceAccountDto
+        {
+            Id = source.Id,
+            AccountName = source.AccountName,
+            Purpose = source.Purpose,
+            IsActive = source.IsActive,
+            Status = source.Status,
+        };
+        // The one-time secret belongs only to the creator's response. Never enrich
+        // the event DTO, even after dispatch: local subscribers and delayed relays
+        // can retain that same object and serialize it later.
+        var response = new ServiceAccountDto
+        {
+            Id = account.Id,
+            AccountName = account.AccountName,
+            Purpose = account.Purpose,
+            IsActive = account.IsActive,
+            Status = account.Status,
+            InitialCredential = new ServiceAccountCredentialIssuedDto
+            {
+                Credential = created.Client,
+                ClientSecret = created.ClientSecret!,
+            },
+        };
+
+        // Keep both admin grids in sync without publishing the response-only secret.
+        dispatcher.DispatchCreatedEvent("OAuthClient", created.Client, tenantId);
+        dispatcher.DispatchCreatedEvent("ServiceAccount", account, tenantId);
+        return response;
     }
 
     private static IResult? ValidateAccountName(string normalised)
