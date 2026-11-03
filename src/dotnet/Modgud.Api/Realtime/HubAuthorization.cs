@@ -14,7 +14,7 @@ namespace Modgud.Api.Realtime;
 /// <para>SignalARR shares the cookie-auth pipeline and <c>UIHub</c>'s class-level
 /// <c>[Authorize]</c> enforces authentication — but there is no per-method
 /// authorization attribute, so a hub that streams privileged data must check the
-/// caller's permission imperatively at subscribe time. This is the shared,
+/// caller's permission imperatively — at subscribe time and before every item (B9-RT01). This is the shared,
 /// documented default for every entity stream (audit H2): the previous revision
 /// only gated <c>ObservabilityHub</c>, leaving <c>UserHub</c> /
 /// <c>ServiceAccountHub</c> streaming PII to any authenticated realm user.</para>
@@ -37,11 +37,12 @@ public static class HubAuthorization
         => http?.Items[TenantConstants.HttpContextTenantIdKey] as string;
 
     /// <summary>
-    /// Gates <paramref name="source"/> behind a one-shot <paramref name="permission"/>
-    /// check (within <see cref="AppSlugs.Modgud"/>) in the caller's realm. When
-    /// authorized the source is forwarded verbatim and torn down on unsubscribe;
-    /// otherwise the stream completes empty. The check runs once at subscribe
-    /// time — standard for long-lived push channels.
+    /// Gates <paramref name="source"/> behind <paramref name="permission"/> (within
+    /// <see cref="AppSlugs.Modgud"/>) in the caller's realm. Unauthorized at subscribe
+    /// time: the stream completes empty. Authorized: items are forwarded in order and
+    /// torn down on unsubscribe — but the permission is checked again before EACH item
+    /// (B9-RT01): a caller whose permission was withdrawn while the browser session and
+    /// the connection stay alive receives no further payload, and the stream completes.
     /// </summary>
     public static IObservable<T> AuthorizedRealmStream<T>(
         HttpContext? http, string? realm, string permission, IObservable<T> source)
@@ -54,7 +55,20 @@ public static class HubAuthorization
                 return Disposable.Empty;
             }
 
-            return source.Subscribe(observer);
+            // Captured now: the per-item checks run long after this subscribe call, so
+            // they use the root scope factory (never a request scope that may be gone by
+            // then) and the user id the connection authenticated as.
+            var scopes = http!.RequestServices.GetRequiredService<IServiceScopeFactory>();
+            var userId = http.GetUserId()!.Value;
+
+            // Concat keeps the source order; each item waits for its own check.
+            return source
+                .Select(item => Observable.FromAsync(async () =>
+                    (Item: item, Allowed: await StillAuthorizedAsync(scopes, userId, realm!, permission))))
+                .Concat()
+                .TakeWhile(checkedItem => checkedItem.Allowed)
+                .Select(checkedItem => checkedItem.Item)
+                .Subscribe(observer);
         });
     }
 
@@ -74,5 +88,23 @@ public static class HubAuthorization
         await using var scope = http.RequestServices.CreateAsyncScope();
         var permissions = scope.ServiceProvider.GetRequiredService<IPermissionService>();
         return await permissions.HasPermissionAsync(userId.Value, AppSlugs.Modgud, permission);
+    }
+
+    /// <summary>The per-item re-check of <see cref="AuthorizedRealmStream{T}"/>. Fails
+    /// closed: a lookup that throws ends the stream instead of forwarding the item.</summary>
+    private static async Task<bool> StillAuthorizedAsync(
+        IServiceScopeFactory scopes, Guid userId, string realm, string permission)
+    {
+        try
+        {
+            using var _ = TenantContext.Enter(realm);
+            await using var scope = scopes.CreateAsyncScope();
+            var permissions = scope.ServiceProvider.GetRequiredService<IPermissionService>();
+            return await permissions.HasPermissionAsync(userId, AppSlugs.Modgud, permission);
+        }
+        catch
+        {
+            return false;
+        }
     }
 }
