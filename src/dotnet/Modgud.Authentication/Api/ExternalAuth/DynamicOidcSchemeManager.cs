@@ -76,9 +76,13 @@ public class DynamicOidcSchemeManager(
             return;
         }
 
+        // EP-05 — a configuration that cannot be registered also drops the previous
+        // registration: leaving the old scheme with its old options in place would keep
+        // the provider usable under a configuration the database no longer holds.
         if (!flavors.TryGet(config.Flavor, out var flavor))
         {
             logger.LogWarning("Cannot register LoginProvider {Id}: unknown flavor {Flavor}", config.Id, config.Flavor);
+            await UnregisterAsync(config.Id);
             return;
         }
 
@@ -87,12 +91,14 @@ public class DynamicOidcSchemeManager(
         catch (Exception ex)
         {
             logger.LogError(ex, "Cannot register LoginProvider {Id}: flavor endpoint derivation failed", config.Id);
+            await UnregisterAsync(config.Id);
             return;
         }
 
         if (string.IsNullOrWhiteSpace(config.ClientId))
         {
             logger.LogWarning("Cannot register LoginProvider {Id}: ClientId is empty", config.Id);
+            await UnregisterAsync(config.Id);
             return;
         }
 

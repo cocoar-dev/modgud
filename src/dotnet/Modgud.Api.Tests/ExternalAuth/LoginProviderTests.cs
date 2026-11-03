@@ -12,7 +12,7 @@ using Wolverine;
 namespace Modgud.Api.Tests.ExternalAuth;
 
 [Collection(IntegrationTestCollection.Name)]
-public class LoginProviderTests : IntegrationTestBase
+public partial class LoginProviderTests : IntegrationTestBase
 {
     public LoginProviderTests(SharedPostgresFixture fixture) : base(fixture) { }
 
