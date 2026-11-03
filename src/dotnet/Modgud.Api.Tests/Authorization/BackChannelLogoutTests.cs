@@ -30,7 +30,7 @@ namespace Modgud.Api.Tests.Authorization;
 /// <c>session</c> entity kind of the Application change feed.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class BackChannelLogoutTests(SharedPostgresFixture fixture) : IntegrationTestBase(fixture)
+public partial class BackChannelLogoutTests(SharedPostgresFixture fixture) : IntegrationTestBase(fixture)
 {
     private const string Password = "TestPass1234";
 

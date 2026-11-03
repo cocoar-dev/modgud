@@ -33,4 +33,17 @@ public static class BackChannelLogoutConstants
         TimeSpan.FromMinutes(5),
         TimeSpan.FromMinutes(30),
     ];
+
+    /// <summary>CL01 — how long the claim of the last attempt holds the row. A finished
+    /// attempt deletes the row long before; an interrupted one (mint failure, shutdown,
+    /// abort) is due again after this and is picked up by the retry job.</summary>
+    public static readonly TimeSpan LastAttemptLease = TimeSpan.FromMinutes(10);
+
+    /// <summary>How often an interrupted last attempt is resumed before the delivery is
+    /// given up with <see cref="InterruptedOutcome"/>.</summary>
+    public const int InterruptedLastAttemptRetries = 2;
+
+    /// <summary>Recorded outcome of a delivery given up because its last attempt never
+    /// finished.</summary>
+    public const string InterruptedOutcome = "failed:interrupted";
 }
