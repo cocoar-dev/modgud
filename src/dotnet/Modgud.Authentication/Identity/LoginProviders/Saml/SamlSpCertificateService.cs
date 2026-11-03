@@ -262,11 +262,12 @@ public class SamlSpCertificateService
         if (doc is not null && doc.ActiveCertPfxEncrypted.Length > 0)
             return doc;
 
-        // First-use generation. Locking is unnecessary because Marten's
-        // upsert is last-write-wins on Identity-keyed docs; a race between
-        // two concurrent first-uses would result in two generated certs of
-        // which only one ends up stored — neither is a security incident
-        // (both are valid self-signed certs, the loser is just thrown away).
+        // First-use generation. B6-SAML-06 — two concurrent first uses used to
+        // Store their own cert (last write wins) and each hand theirs out; the loser's
+        // cert could already sit in published metadata or sign a request the realm no
+        // longer backs. The first-use write is now an Insert: the loser's save fails,
+        // its pending changes are dropped and it returns the winner's stored cert.
+        var isFirstUse = doc is null;
         var realmSlug = TenantContext.CurrentOrNull
             ?? throw new InvalidOperationException(
                 "SamlSpCertificateService requires an ambient TenantContext.");
@@ -282,7 +283,8 @@ public class SamlSpCertificateService
             ActiveCertCreatedAt = _clock.GetUtcNow(),
         };
 
-        _session.Store(doc);
+        if (isFirstUse) _session.Insert(doc);
+        else _session.Store(doc);
         _securityAudit.StoreRequired(_session, new SecurityAuditRecord
         {
             EventType = AuditEvents.SamlCertRotated,
@@ -292,9 +294,31 @@ public class SamlSpCertificateService
             KeyId = doc.ActiveCertThumbprint,
             EffectiveAt = doc.ActiveCertNotAfter,
         });
-        await _session.SaveChangesAsync(ct);
+        try
+        {
+            await _session.SaveChangesAsync(ct);
+        }
+        catch (Exception ex) when (isFirstUse && IsAlreadyExists(ex))
+        {
+            // A concurrent first use stored its cert first: hand out that one.
+            _session.EjectAllPendingChanges();
+            await using var fresh = _session.DocumentStore.QuerySession(_session.TenantId);
+            var winner = await fresh.LoadAsync<SamlSpCertificateDocument>(SamlSpCertificateDocument.SingletonId, ct);
+            if (winner is null || winner.ActiveCertPfxEncrypted.Length == 0) throw;
+            return winner;
+        }
 
         return doc;
+    }
+
+    private static bool IsAlreadyExists(Exception? ex)
+    {
+        for (; ex is not null; ex = ex.InnerException)
+        {
+            if (ex is JasperFx.DocumentAlreadyExistsException) return true;
+            if (ex is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation }) return true;
+        }
+        return false;
     }
 
     private (X509Certificate2 Cert, byte[] PfxEncrypted) GenerateAndEncrypt(string realmSlug)
