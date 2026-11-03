@@ -413,7 +413,7 @@ public partial class BackChannelLogoutTests(SharedPostgresFixture fixture) : Int
         return (view.Id, acronym);
     }
 
-    private async Task<RelyingParty> CreateRelyingPartyAsync(string tag, AccessTokenType tokenType, string? logoutUri, List<Guid>? appIds = null)
+    private async Task<RelyingParty> CreateRelyingPartyAsync(string tag, AccessTokenType tokenType, string? logoutUri, List<Guid>? appIds = null, List<string>? scopes = null)
     {
         var clientId = $"bcl-{tag}-{Guid.NewGuid():N}"[..40];
         var secret = $"secret-{Guid.NewGuid():N}";
@@ -428,7 +428,7 @@ public partial class BackChannelLogoutTests(SharedPostgresFixture fixture) : Int
             ConsentType = OAuthConsentTypes.Implicit,
             DisplayName = clientId,
             RedirectUris = [redirect],
-            Scopes = ["openid", "profile", "offline_access"],
+            Scopes = scopes ?? ["openid", "profile", "offline_access"],
             AllowedGrantTypes = ["authorization_code", "refresh_token"],
             RequireConsent = false,
             AccessTokenType = tokenType,
@@ -440,7 +440,7 @@ public partial class BackChannelLogoutTests(SharedPostgresFixture fixture) : Int
         return new RelyingParty(result.Value.Client.Id, clientId, secret, redirect, logoutUri);
     }
 
-    private async Task<JsonDocument> DriveAuthCodeFlowAsync(HttpClient cookieClient, RelyingParty rp)
+    private async Task<JsonDocument> DriveAuthCodeFlowAsync(HttpClient cookieClient, RelyingParty rp, string scope = "openid profile offline_access")
     {
         var ct = TestContext.Current.CancellationToken;
         var verifier = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
@@ -451,7 +451,7 @@ public partial class BackChannelLogoutTests(SharedPostgresFixture fixture) : Int
             "response_type=code",
             $"client_id={Uri.EscapeDataString(rp.ClientId)}",
             $"redirect_uri={Uri.EscapeDataString(rp.RedirectUri)}",
-            "scope=openid%20profile%20offline_access",
+            $"scope={Uri.EscapeDataString(scope)}",
             $"state={Guid.NewGuid():N}",
             $"code_challenge={challenge}",
             "code_challenge_method=S256",
