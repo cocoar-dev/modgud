@@ -6,7 +6,8 @@ using Modgud.Infrastructure.RateLimiting;
 namespace Modgud.Tests.Unit.Infrastructure;
 
 /// <summary>ADR 0020 — the two failure buckets, the spray signal, the unlock guard,
-/// log-only, and that failures (not attempts) are what count.</summary>
+/// log-only, and that failures (not attempts) are what count. B8-AJ-01: an attempt is a
+/// check that reserves a slot, then either a failure that keeps it or a release.</summary>
 public class LoginThrottleCoreTests
 {
     private sealed class TestClock(DateTimeOffset start) : TimeProvider
@@ -49,22 +50,40 @@ public class LoginThrottleCoreTests
     }
 
     [Fact]
-    public async Task Checking_never_charges_only_failures_do()
+    public async Task A_released_attempt_does_not_count_only_failures_do()
     {
         var (sut, _, _) = Build();
         var settings = Login(new PolicyLimits { Target = RateLimitRule.Fixed(2, 15) });
 
         for (var i = 0; i < 10; i++)
-            Assert.True((await sut.CheckAsync(Scope, User, null, false, settings)).Allowed);
+        {
+            var success = await sut.CheckAsync(Scope, User, null, false, settings);
+            Assert.True(success.Allowed);
+            await sut.ReleaseAsync(Scope, success);
+        }
 
-        var d = await sut.CheckAsync(Scope, User, null, false, settings);
-        await sut.RecordFailureAsync(Scope, User, d, "203.0.113.1", false, settings);
-        await sut.RecordFailureAsync(Scope, User, d, "203.0.113.1", false, settings);
+        for (var i = 0; i < 2; i++)
+        {
+            var d = await sut.CheckAsync(Scope, User, null, false, settings);
+            await sut.RecordFailureAsync(Scope, User, d, "203.0.113.1", false, settings);
+        }
 
         var refused = await sut.CheckAsync(Scope, User, null, false, settings);
         Assert.False(refused.Allowed);
         Assert.Equal(LoginBucket.Untrusted, refused.Bucket);
         Assert.True(refused.RetryAfterSeconds > 0);
+    }
+
+    [Fact]
+    public async Task Overlapping_checks_cannot_admit_more_attempts_than_the_limit()
+    {
+        // B8-AJ-01 — every check before any failure is recorded: a peek admitted all of them.
+        var (sut, _, _) = Build();
+        var settings = Login(new PolicyLimits { Target = RateLimitRule.Fixed(5, 15) });
+        var decisions = new List<LoginThrottleDecision>();
+        for (var i = 0; i < 30; i++)
+            decisions.Add(await sut.CheckAsync(Scope, User, null, false, settings));
+        Assert.Equal(5, decisions.Count(d => d.Allowed));
     }
 
     [Fact]
@@ -126,10 +145,12 @@ public class LoginThrottleCoreTests
         Assert.Equal(1, outcomes.Count(o => o.UnlockDue));
 
         clock.Now = T0.AddMinutes(16);
-        var later = await sut.CheckAsync(Scope, User, null, false, settings);
-        Assert.True(later.Allowed);
         for (var i = 0; i < 3; i++)
+        {
+            var later = await sut.CheckAsync(Scope, User, null, false, settings);
+            if (i == 0) Assert.True(later.Allowed);
             outcomes.Add(await sut.RecordFailureAsync(Scope, User, later, "203.0.113.1", false, settings));
+        }
         Assert.Equal(2, outcomes.Count(o => o.UnlockDue));
     }
 
@@ -211,6 +232,38 @@ public class LoginThrottleCoreTests
         await store.HitAsync(Scope, "b", bucket, T0);
         Assert.False((await store.PeekAsync(Scope, "b", bucket, T0)).Allowed);
         Assert.True((await store.PeekAsync(Scope, "b", bucket, T0.AddSeconds(2))).Allowed);
+    }
+
+    [Fact]
+    public async Task Release_gives_back_one_hit_within_its_window_and_one_token()
+    {
+        var store = new InMemoryRateLimitStore();
+        var fixedRule = RateLimitRule.Fixed(2, 15);
+        await store.HitAsync(Scope, "k", fixedRule, T0);
+        await store.HitAsync(Scope, "k", fixedRule, T0);
+        Assert.False((await store.PeekAsync(Scope, "k", fixedRule, T0)).Allowed);
+        await store.ReleaseAsync(Scope, "k", fixedRule, T0);
+        Assert.True((await store.PeekAsync(Scope, "k", fixedRule, T0)).Allowed);
+        // Never below zero, and a release for an older window changes nothing.
+        await store.ReleaseAsync(Scope, "k", fixedRule, T0);
+        await store.ReleaseAsync(Scope, "k", fixedRule, T0);
+        await store.HitAsync(Scope, "k", fixedRule, T0);
+        await store.HitAsync(Scope, "k", fixedRule, T0);
+        Assert.False((await store.PeekAsync(Scope, "k", fixedRule, T0)).Allowed);
+        await store.ReleaseAsync(Scope, "k", fixedRule, T0.AddMinutes(15));
+        Assert.False((await store.PeekAsync(Scope, "k", fixedRule, T0)).Allowed);
+
+        var bucket = RateLimitRule.Bucket(60, 1, 2);
+        await store.HitAsync(Scope, "b", bucket, T0);
+        await store.HitAsync(Scope, "b", bucket, T0);
+        Assert.False((await store.PeekAsync(Scope, "b", bucket, T0)).Allowed);
+        await store.ReleaseAsync(Scope, "b", bucket, T0);
+        Assert.True((await store.PeekAsync(Scope, "b", bucket, T0)).Allowed);
+        await store.ReleaseAsync(Scope, "b", bucket, T0);
+        await store.ReleaseAsync(Scope, "b", bucket, T0);
+        await store.HitAsync(Scope, "b", bucket, T0);
+        await store.HitAsync(Scope, "b", bucket, T0);
+        Assert.False((await store.PeekAsync(Scope, "b", bucket, T0)).Allowed);   // capped at capacity 2
     }
 
     [Theory]

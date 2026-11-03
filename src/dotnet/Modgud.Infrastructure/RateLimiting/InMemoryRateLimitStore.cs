@@ -69,6 +69,24 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore
         }
     }
 
+    public Task ReleaseAsync(RateLimitScope scope, string key, RateLimitRule rule, DateTimeOffset now, CancellationToken ct = default)
+    {
+        if (!_buckets.TryGetValue($"{scope.TenantId ?? "-"}|{key}", out var bucket)) return Task.CompletedTask;
+        lock (bucket)
+        {
+            if (rule.IsTokenBucket)
+            {
+                var (capacity, _) = RateLimitMath.Bucket(rule);
+                bucket.Tokens = Math.Min(capacity, (bucket.Tokens ?? capacity) + 1);
+            }
+            else if (bucket.WindowStart == RateLimitMath.WindowStart(now, rule))
+            {
+                bucket.Hits = Math.Max(0, bucket.Hits - 1);
+            }
+        }
+        return Task.CompletedTask;
+    }
+
     public Task<int> PruneAsync(RateLimitScope scope, DateTimeOffset olderThan, CancellationToken ct = default)
     {
         var removed = 0;

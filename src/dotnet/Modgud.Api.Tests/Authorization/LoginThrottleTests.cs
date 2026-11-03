@@ -21,7 +21,7 @@ namespace Modgud.Api.Tests.Authorization;
 /// unlock e-mail once per window, log-only, and the signal-only source cell.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class LoginThrottleTests : IntegrationTestBase
+public partial class LoginThrottleTests : IntegrationTestBase
 {
     public LoginThrottleTests(SharedPostgresFixture fixture) : base(fixture) { }
 

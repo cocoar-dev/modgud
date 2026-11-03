@@ -28,6 +28,12 @@ public interface IRateLimitStore
     /// fewer than one refilled token.</summary>
     Task<RateLimitHit> PeekAsync(RateLimitScope scope, string key, RateLimitRule rule, DateTimeOffset now, CancellationToken ct = default);
 
+    /// <summary>Gives back one hit an allowed <see cref="HitAsync"/> took, when the attempt it
+    /// reserved turned out not to count (B8-AJ-01: a login reserves before the password check
+    /// and returns the slot on success). Fixed window: one hit less in the same window, never
+    /// below zero; token bucket: one token more, never above capacity.</summary>
+    Task ReleaseAsync(RateLimitScope scope, string key, RateLimitRule rule, DateTimeOffset now, CancellationToken ct = default);
+
     /// <summary>Deletes buckets untouched since <paramref name="olderThan"/>. Returns the count.</summary>
     Task<int> PruneAsync(RateLimitScope scope, DateTimeOffset olderThan, CancellationToken ct = default);
 }

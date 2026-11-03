@@ -124,6 +124,30 @@ public sealed class PostgresRateLimitStore(IRateLimitConnectionSource connection
             : new RateLimitHit(false, RateLimitMath.RetryAfterForWindow(now, rule));
     }
 
+    public async Task ReleaseAsync(RateLimitScope scope, string key, RateLimitRule rule, DateTimeOffset now, CancellationToken ct = default)
+    {
+        await using var connection = await connections.OpenAsync(scope, ct);
+        await EnsureTableAsync(connection, ct);
+        if (rule.IsTokenBucket)
+        {
+            var (capacity, _) = RateLimitMath.Bucket(rule);
+            await using var cmd = new NpgsqlCommand(
+                $"UPDATE {TableName} SET tokens = LEAST(@cap, COALESCE(tokens, @cap) + 1) WHERE key = @key", connection);
+            cmd.Parameters.AddWithValue("key", key);
+            cmd.Parameters.AddWithValue("cap", capacity);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        else
+        {
+            // Only within the window the hit was taken in: a new window already reset it.
+            await using var cmd = new NpgsqlCommand(
+                $"UPDATE {TableName} SET hits = GREATEST(hits - 1, 0) WHERE key = @key AND window_start = @ws", connection);
+            cmd.Parameters.AddWithValue("key", key);
+            cmd.Parameters.AddWithValue("ws", RateLimitMath.WindowStart(now, rule).UtcDateTime);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
     public async Task<int> PruneAsync(RateLimitScope scope, DateTimeOffset olderThan, CancellationToken ct = default)
     {
         await using var connection = await connections.OpenAsync(scope, ct);
