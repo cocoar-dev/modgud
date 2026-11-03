@@ -33,6 +33,11 @@ public class UserDeletionState
     public bool IsDeletionPending { get; set; }
     public bool IsDataMasked { get; set; }
 
+    /// <summary>Durable, irreversible erasure intent. Retained across failures so
+    /// retries do not need the projection documents or a still-live user stream
+    /// to rediscover external-link streams. Null before start and after success.</summary>
+    public UserErasureProgress? Erasure { get; set; }
+
     /// <summary>Who asked for the deletion. Only meaningful while
     /// <see cref="IsDeletionPending"/> is <c>true</c>. Decides whether the
     /// user can self-cancel (self-service) or is in the admin recycle bin.</summary>
@@ -59,4 +64,15 @@ public class UserDeletionState
     public DateTimeOffset? DataMaskedAt { get; set; }
     public string? DataMaskedReason { get; set; }
     public Guid? DataMaskedByUserId { get; set; }
+}
+
+public class UserErasureProgress
+{
+    public DateTimeOffset StartedAt { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public Guid? AdminUserId { get; set; }
+    public List<Guid> ExternalLinkIds { get; set; } = [];
+    /// <summary>Committed atomically with the primary document cleanup. Once set,
+    /// retries must not append revocation events to a possibly archived stream.</summary>
+    public bool DocumentsCleared { get; set; }
 }

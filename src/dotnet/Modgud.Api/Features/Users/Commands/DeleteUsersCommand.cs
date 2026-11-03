@@ -48,7 +48,7 @@ public class DeleteUsersHandler(
             if (user is null || user.IsDeleted)
                 continue;
             var state = await session.LoadAsync<UserDeletionState>(id, ct);
-            if (state?.IsDeletionPending == true || state?.IsDataMasked == true)
+            if (state?.IsDeletionPending == true || state?.IsDataMasked == true || state?.Erasure is not null)
                 continue;
             toBin.Add(id);
         }
