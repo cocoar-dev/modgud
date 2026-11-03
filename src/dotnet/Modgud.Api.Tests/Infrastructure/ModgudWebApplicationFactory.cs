@@ -48,6 +48,9 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     private IHost? _host;
     private readonly bool _enableDirectScopeTenantFallback;
     private readonly TokenPipelineFaultInjector _tokenPipelineFaults = new();
+    private readonly TestFailureCorrelation? _failureCorrelation =
+        Environment.GetEnvironmentVariable(TestFailureCorrelation.DirectoryVariable) is { } directory
+            ? new TestFailureCorrelation(directory) : null;
     protected virtual bool ProvisionLegacySystemRealm => true;
 
     public TokenPipelineFaultInjector TokenPipelineFaults => _tokenPipelineFaults;
@@ -95,6 +98,12 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         }
     };
 
+    protected override void ConfigureClient(HttpClient client)
+    {
+        base.ConfigureClient(client);
+        _failureCorrelation?.AttachClient(client, TestContext.Current.TestOutputHelper);
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -110,6 +119,11 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
         {
+            // Explicit, test-only opt-in. The observer surrounds the existing
+            // exception handler; production responses/auth gates are not replaced.
+            if (_failureCorrelation is not null)
+                services.AddSingleton<IStartupFilter>(_failureCorrelation);
+
             services.AddSingleton(_tokenPipelineFaults);
 
             // ADR 0021 — every relying party's back-channel logout endpoint is this
