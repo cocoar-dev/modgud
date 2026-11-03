@@ -17,6 +17,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Modgud.Authentication.Applications;
 using Modgud.Authentication.SignIn;
+using Modgud.Authentication.RateLimiting;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Authentication.Api.Account;
 
@@ -524,7 +526,11 @@ public static class PasskeyEndpoints
             return Results.Content(optionsJson, "application/json");
         })
         .WithName("Passkey_LoginOptions")
-        .AllowAnonymous();
+        .AllowAnonymous()
+        // B8-P3 — every call persists a ceremony; same brake as the native begin and
+        // enrollment. No target dimension: a username-keyed limit would let anyone
+        // block another account's passkey sign-in.
+        .RequireAuthRateLimit(AuthRateLimitPolicy.PasskeyBegin);
 
         // POST /api/account/passkey/login — Verify assertion and sign in
         group.MapPost("login", async (

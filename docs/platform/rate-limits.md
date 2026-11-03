@@ -29,7 +29,7 @@ The **sign-ups-per-source** ceiling is silent on purpose. A `429` that fired onl
 | `password-reset` | `POST /api/account/forgot-password` | 1200 / 60 min, burst 300 | — | 5 / 60 min | 600 / 60 min | 3000 / 60 min |
 | `email-verification` | `POST /api/account/email/send-verification` | 1200 / 60 min, burst 300 | — | 5 / 60 min | 600 / 60 min | 3000 / 60 min |
 | `email-otp` | code verify endpoints | 600 / 1 min, burst 200 | — | 15 / 1 min | 600 / 1 min | — |
-| `passkey-begin` | passkey begin / enroll, staffing and activation ceremonies | 1200 / 5 min, burst 300 | — | 60 / 5 min | 1200 / 5 min | — |
+| `passkey-begin` | passkey begin / enroll (native and the hosted web login options), staffing and activation ceremonies | 1200 / 5 min, burst 300 | — | 60 / 5 min | 1200 / 5 min | — |
 | `oauth-token` | `POST /connect/token` | 600 / 1 min, burst 200 | — | — | 60 / 1 min, burst 60 | — |
 | `bootstrap` | first-admin bootstrap, installation | 30 / 15 min, burst 10 | — | — | — | — |
 | `login` | `POST /api/account/login` — **failures**, not attempts | 200 / 15 min, **signal only** | — | 5 / 15 min (untrusted pool) | — | — |

@@ -37,7 +37,7 @@ namespace Modgud.Api.Tests.Authorization;
 /// one via <c>X-Test-RateLimit</c>. A forwarded address always yields a real key.</para>
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class AuthRateLimitTests : IntegrationTestBase
+public partial class AuthRateLimitTests : IntegrationTestBase
 {
     public AuthRateLimitTests(SharedPostgresFixture fixture) : base(fixture) { }
 
