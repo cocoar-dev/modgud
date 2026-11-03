@@ -12,6 +12,16 @@ public static class AppChangeFeedEndpoints
 {
     public static WebApplication MapAppChangeFeedEndpoints(this WebApplication app, string path)
     {
+        app.MapGet($"{path}/app/{{id}}/change-feed/session-revocations/snapshot", async (
+                ShortGuid id,
+                int historySeconds,
+                AppChangeFeedQueryService feed,
+                CancellationToken cancellationToken) =>
+            ToResult(await feed.SessionRevocationsAsync(id.Guid, historySeconds, cancellationToken)))
+            .WithTags("Apps")
+            .WithName("V2_AppChangeFeed_SessionRevocations")
+            .RequiresManagementPermission("app-scope:read", clientAppRouteParameter: "id");
+
         app.MapGet($"{path}/app/{{id}}/change-feed/snapshot", async (
                 ShortGuid id,
                 AppChangeFeedQueryService feed,

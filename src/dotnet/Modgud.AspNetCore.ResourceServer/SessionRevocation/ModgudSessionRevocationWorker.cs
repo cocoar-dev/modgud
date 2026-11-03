@@ -5,8 +5,8 @@ namespace Modgud.AspNetCore.ResourceServer;
 
 /// <summary>
 /// Follows the Application change feed and puts every ended session on the denylist.
-/// Starts from a fresh snapshot cursor (live sessions are of no interest — only ends
-/// are), polls with the committed cursor, takes a new snapshot on reset, and retries
+/// Recovers bounded history before adopting a snapshot cursor, polls with the
+/// committed cursor, repeats recovery on reset, and retries
 /// with a fixed delay on any failure. Runs for the lifetime of the host.
 /// </summary>
 internal sealed class ModgudSessionRevocationWorker(
@@ -46,7 +46,13 @@ internal sealed class ModgudSessionRevocationWorker(
     {
         if (_cursor is null)
         {
-            _cursor = await feed.SnapshotCursorAsync(ct);
+            var snapshot = await feed.SnapshotAsync(ct);
+            // Validate every absolute expiry before changing the checkpoint.
+            var ends = snapshot.Revocations.Select(end =>
+                (end.SessionId, Until: end.EndedAt + options.AccessTokenLifetime + options.ClockSkew)).ToList();
+            foreach (var end in ends)
+                if (end.Until > clock.GetUtcNow()) denylist.Revoke(end.SessionId, end.Until);
+            _cursor = snapshot.Cursor;
             logger.LogInformation("Modgud: session revocation anchored at a fresh change-feed cursor.");
         }
 

@@ -43,3 +43,13 @@ public sealed record AppChangeFeedReadDto(
     IReadOnlyList<AppChangeFeedMessageDto> Messages,
     bool HasMore,
     bool FeedEnded = false);
+
+/// <summary>Recovery metadata, not a current-state entity snapshot. Historical
+/// ends are merged before the SDK resumes the ordinary change feed.</summary>
+public sealed record AppSessionRevocationSnapshotDto(
+    int ContractVersion,
+    string Cursor,
+    int HistorySeconds,
+    IReadOnlyList<AppSessionRevocationDto> Revocations);
+
+public sealed record AppSessionRevocationDto(string SessionId, DateTimeOffset EndedAt);

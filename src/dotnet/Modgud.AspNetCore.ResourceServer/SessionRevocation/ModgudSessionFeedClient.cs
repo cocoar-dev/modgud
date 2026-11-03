@@ -23,6 +23,9 @@ internal sealed record SessionFeedBatch(
 
 internal sealed record SessionFeedMessage(string Kind, string? ChangeKind, string? EntityKind, string? SessionId, string? Reason);
 
+internal sealed record SessionRevocationSnapshot(string Cursor, IReadOnlyList<SessionRevocationEnd> Revocations);
+internal sealed record SessionRevocationEnd(string SessionId, DateTimeOffset EndedAt);
+
 /// <summary>
 /// The HTTP side of session revocation: a cached <c>client_credentials</c> token for
 /// the Management API, the snapshot (for a fresh cursor) and the polling read of the
@@ -42,15 +45,30 @@ internal sealed class ModgudSessionFeedClient(
     private string ClientId => options.ClientId ?? resourceServer.IntrospectionClientId ?? string.Empty;
     private string ClientSecret => options.ClientSecret ?? resourceServer.IntrospectionClientSecret ?? string.Empty;
 
-    /// <summary>Returns the cursor to resume from (the snapshot's checkpoint). The
-    /// entities themselves are not needed: only ends matter for a denylist.</summary>
-    public async Task<string> SnapshotCursorAsync(CancellationToken ct)
+    /// <summary>Recovery history and its checkpoint; absence of active entities is never a revocation.</summary>
+    public async Task<SessionRevocationSnapshot> SnapshotAsync(CancellationToken ct)
     {
-        using var response = await SendAsync(HttpMethod.Get, $"{Authority}/api/app/{options.AppId}/change-feed/snapshot", ct);
+        var historySeconds = (int)Math.Ceiling((options.AccessTokenLifetime + options.ClockSkew).TotalSeconds);
+        using var response = await SendAsync(HttpMethod.Get,
+            $"{Authority}/api/app/{options.AppId}/change-feed/session-revocations/snapshot?historySeconds={historySeconds}", ct);
         await EnsureSuccessAsync(response, "snapshot", ct);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-        return document.RootElement.GetProperty("Cursor").GetString()
-               ?? throw new InvalidOperationException("Modgud: the change-feed snapshot carried no cursor.");
+        var root = document.RootElement;
+        if (root.GetProperty("ContractVersion").GetInt32() != 1
+            || root.GetProperty("HistorySeconds").GetInt32() != historySeconds)
+            throw new InvalidOperationException("Modgud: unsupported session revocation history contract.");
+        var cursor = root.GetProperty("Cursor").GetString();
+        if (string.IsNullOrWhiteSpace(cursor))
+            throw new InvalidOperationException("Modgud: the session revocation snapshot carried no cursor.");
+        var ends = new List<SessionRevocationEnd>();
+        foreach (var row in root.GetProperty("Revocations").EnumerateArray())
+        {
+            var sid = row.GetProperty("SessionId").GetString();
+            if (string.IsNullOrWhiteSpace(sid))
+                throw new InvalidOperationException("Modgud: invalid session revocation history.");
+            ends.Add(new(sid, row.GetProperty("EndedAt").GetDateTimeOffset()));
+        }
+        return new(cursor, ends);
     }
 
     public async Task<SessionFeedBatch> ReadAsync(string cursor, CancellationToken ct)

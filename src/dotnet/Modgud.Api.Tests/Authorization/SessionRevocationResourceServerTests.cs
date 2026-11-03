@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Modgud.Api.Features.Admin.Apps;
@@ -25,6 +26,8 @@ using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
 using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Common;
+using Modgud.Infrastructure.ChangeFeed;
+using Modgud.Api.Features.ChangeFeed;
 
 namespace Modgud.Api.Tests.Authorization;
 
@@ -115,11 +118,174 @@ public class SessionRevocationResourceServerTests(SharedPostgresFixture fixture)
         Assert.Contains(referenceOnly.Failures, f => f.Contains("JWT access tokens only", StringComparison.Ordinal));
     }
 
+    // SDK-B5-01 regression: recover actual public-sid ends, never infer an
+    // end merely from absence in the current entity snapshot.
+    [Theory]
+    [InlineData("restart")]
+    [InlineData("cursor-reset")]
+    [InlineData("transport-retry")]
+    public async Task Historical_ends_survive_restart_reset_and_transport_retry(string mode)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var audience = $"https://rs-{suffix}.example";
+        var userA = await Factory.CreateTestUserWithIdentityAsync("Known", "End", $"a{suffix}", $"a{suffix}@sr.example", Password);
+        var userB = await Factory.CreateTestUserWithIdentityAsync("Unknown", "End", $"b{suffix}", $"b{suffix}@sr.example", Password);
+        var userC = await Factory.CreateTestUserWithIdentityAsync("Still", "Active", $"c{suffix}", $"c{suffix}@sr.example", Password);
+        var app = await CreateAppAsync($"history-{suffix}", "Session history");
+        await CreateOAuthApiAsync(audience, app.Id);
+        var scopeName = $"history-{suffix}.read";
+        await CreateScopeAsync(scopeName, [audience], app.Id);
+        await Factory.CreateTestGroupAsync($"history-users-{suffix}", [userA.Id, userB.Id, userC.Id], [], boundTo: [app.Slug]);
+        var rp = await CreateClientAsync($"history-rp-{suffix}", ["openid", scopeName],
+            ["authorization_code", "refresh_token"], app.Id, redirect: $"https://rp-{suffix}.example/cb");
+        var serviceAccount = await CreateServiceAccountAsync($"history-reader-{suffix}");
+        var role = await Factory.CreateTestRoleAsync($"HistoryReader_{suffix}", [("app-scope", "read")]);
+        await Factory.CreateTestGroupAsync($"HistoryReaders_{suffix}", [new ShortGuid(serviceAccount.Id).Guid], [role.Id]);
+        var management = await CreateClientAsync($"history-mgmt-{suffix}", ["modgud.management"],
+            ["client_credentials"], app.Id, linkedServiceAccountId: serviceAccount.Id);
+        await EnableFeedAsync(app.Id);
+        await Factory.WaitForProjectionsAsync();
+
+        using var cookieA = await CreateAuthenticatedClientAsync($"a{suffix}", Password);
+        using var cookieB = await CreateAuthenticatedClientAsync($"b{suffix}", Password);
+        using var cookieC = await CreateAuthenticatedClientAsync($"c{suffix}", Password);
+        var tokenA = await DriveAuthCodeFlowAsync(cookieA, rp, $"openid {scopeName}", audience);
+        var tokenB = await DriveAuthCodeFlowAsync(cookieB, rp, $"openid {scopeName}", audience);
+        var tokenC = await DriveAuthCodeFlowAsync(cookieC, rp, $"openid {scopeName}", audience);
+        var sidA = new JsonWebToken(tokenA).GetClaim("sid").Value;
+        var sidB = new JsonWebToken(tokenB).GetClaim("sid").Value;
+        Assert.NotEqual(sidA, sidB);
+        await Factory.WaitForProjectionsAsync();
+
+        string liveCursor;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var query = new AppChangeFeedQueryService(scope.ServiceProvider.GetRequiredService<IDocumentSession>());
+            var live = await query.SnapshotAsync(app.Id, ct);
+            Assert.True(live.IsSuccess);
+            Assert.Contains(live.Value!.Entities, e => e.EntityKind == "session" && e.Payload.GetProperty("SessionId").GetString() == sidA);
+            Assert.Contains(live.Value.Entities, e => e.EntityKind == "session" && e.Payload.GetProperty("SessionId").GetString() == sidB);
+            liveCursor = live.Value.Cursor;
+        }
+
+        var transport = new FeedTransportControl();
+        using var original = await BuildResourceServerAsync(audience, app.Id, management, manualFeed: true, transport);
+        var worker = original.Services.GetRequiredService<ModgudSessionRevocationWorker>();
+        var denylist = original.Services.GetRequiredService<IModgudSessionDenylist>();
+        var api = original.GetTestClient();
+        await worker.StepAsync(ct);
+        Assert.NotNull(denylist.LastSyncedAt);
+        Assert.Equal(HttpStatusCode.OK, (await CallMeAsync(api, tokenA)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await CallMeAsync(api, tokenB)).StatusCode);
+
+        // A is known to the running process; B ends while this consumer is not
+        // polling. Both ends are generated by real browser logout, not feed JSON.
+        (await cookieA.PostAsJsonAsync("/api/account/logout", new { }, ct)).EnsureSuccessStatusCode();
+        await Factory.WaitForProjectionsAsync();
+        await worker.StepAsync(ct);
+        Assert.True(denylist.IsRevoked(sidA));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await CallMeAsync(api, tokenA)).StatusCode);
+        (await cookieB.PostAsJsonAsync("/api/account/logout", new { }, ct)).EnsureSuccessStatusCode();
+        await Factory.WaitForProjectionsAsync();
+        Assert.False(denylist.IsRevoked(sidB));
+
+        // The actual snapshot/checkpoint now lies after both ends and contains
+        // neither session. A resumed read cannot reconstruct these older ends.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+            var query = new AppChangeFeedQueryService(session);
+            var retained = await query.ReadAsync(app.Id, liveCursor, 500, ct);
+            Assert.True(retained.IsSuccess);
+            Assert.Contains(retained.Value!.Messages, m => m.EntityKind == "session" && m.ChangeKind == "Deleted"
+                && m.Payload!.Value.GetProperty("SessionId").GetString() == sidA);
+            Assert.Contains(retained.Value.Messages, m => m.EntityKind == "session" && m.ChangeKind == "Deleted"
+                && m.Payload!.Value.GetProperty("SessionId").GetString() == sidB);
+            var snapshot = await query.SnapshotAsync(app.Id, ct);
+            Assert.True(snapshot.IsSuccess);
+            Assert.DoesNotContain(snapshot.Value!.Entities, e => e.EntityKind == "session"
+                && (e.Payload.GetProperty("SessionId").GetString() == sidA || e.Payload.GetProperty("SessionId").GetString() == sidB));
+            var after = await query.ReadAsync(app.Id, snapshot.Value.Cursor, 500, ct);
+            Assert.True(after.IsSuccess);
+            Assert.DoesNotContain(after.Value!.Messages, m => m.EntityKind == "session" && m.ChangeKind == "Deleted");
+        }
+
+        if (mode == "restart")
+        {
+            // A second independent service provider models fresh process memory;
+            // it is not a literal OS process kill or a deployment topology test.
+            using var restarted = await BuildResourceServerAsync(audience, app.Id, management, manualFeed: true);
+            var fresh = restarted.Services.GetRequiredService<IModgudSessionDenylist>();
+            await restarted.Services.GetRequiredService<ModgudSessionRevocationWorker>().StepAsync(ct);
+            Assert.NotNull(fresh.LastSyncedAt);
+            Assert.True(fresh.IsRevoked(sidA));
+            Assert.True(fresh.IsRevoked(sidB));
+            Assert.Equal(HttpStatusCode.Unauthorized, (await CallMeAsync(restarted.GetTestClient(), tokenA)).StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, (await CallMeAsync(restarted.GetTestClient(), tokenB)).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await CallMeAsync(restarted.GetTestClient(), tokenC)).StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, (await CallMeAsync(api, tokenA)).StatusCode);
+        }
+        else if (mode == "cursor-reset")
+        {
+            // Move only this fresh test DB's retained resume floor past the
+            // consumer cursor. This exercises a real server CursorTooOld/409,
+            // without waiting for the scheduled retention pruner.
+            using (var scope = Factory.Services.CreateScope())
+            {
+                var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+                var state = (await session.LoadAsync<AppChangeFeedState>(app.Id, ct))!;
+                state.RetentionFloorSequence = state.LastProcessedSequence;
+                state.RetentionFloorOrdinal = 0;
+                session.Store(state);
+                await session.SaveChangesAsync(ct);
+            }
+            Assert.Equal(TimeSpan.Zero, await worker.StepAsync(ct));
+            Assert.Equal(1, transport.Conflicts);
+            Assert.Equal("CursorTooOld", transport.LastConflictCode);
+            // PollInterval, not Zero: the second step really reanchored and
+            // completed a nonterminal/caught-up read, not another 409/reset.
+            Assert.Equal(TimeSpan.FromMilliseconds(200), await worker.StepAsync(ct));
+            Assert.Equal(1, transport.Conflicts);
+            Assert.NotNull(denylist.LastSyncedAt);
+            Assert.True(denylist.IsRevoked(sidA));
+            Assert.True(denylist.IsRevoked(sidB));
+            Assert.Equal(HttpStatusCode.Unauthorized, (await CallMeAsync(api, tokenA)).StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, (await CallMeAsync(api, tokenB)).StatusCode);
+        }
+        else
+        {
+            transport.FailNextRead = true;
+            await Assert.ThrowsAsync<HttpRequestException>(() => worker.StepAsync(ct));
+            Assert.False(transport.FailNextRead);
+            Assert.True(denylist.IsRevoked(sidA));
+            Assert.False(denylist.IsRevoked(sidB));
+            await worker.StepAsync(ct); // unchanged cursor resumes, B is learned
+            Assert.True(denylist.IsRevoked(sidB));
+            Assert.Equal(HttpStatusCode.Unauthorized, (await CallMeAsync(api, tokenA)).StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, (await CallMeAsync(api, tokenB)).StatusCode);
+        }
+
+        Assert.Equal(HttpStatusCode.OK, (await CallMeAsync(api, tokenC)).StatusCode);
+
+        // No universal JWT bypass: actual audience and signature gates still
+        // reject this otherwise accepted token even with a fresh empty denylist.
+        using var otherAudience = await BuildResourceServerAsync(audience + "/other", app.Id, management, manualFeed: true);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await CallMeAsync(otherAudience.GetTestClient(), tokenB)).StatusCode);
+        var signatureStart = tokenB.LastIndexOf('.') + 1;
+        var tampered = tokenB[..signatureStart] + (tokenB[signatureStart] == 'A' ? "B" : "A") + tokenB[(signatureStart + 1)..];
+        using var signatureHost = await BuildResourceServerAsync(audience, app.Id, management, manualFeed: true);
+        Assert.Equal(HttpStatusCode.OK, (await CallMeAsync(signatureHost.GetTestClient(), tokenB)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await CallMeAsync(signatureHost.GetTestClient(), tampered)).StatusCode);
+        Assert.True(new JsonWebToken(tokenB).ValidTo > DateTime.UtcNow);
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private sealed record ClientCredentials(string ClientId, string Secret, string? RedirectUri);
 
-    private async Task<IHost> BuildResourceServerAsync(string audience, Guid appId, ClientCredentials management)
+    private async Task<IHost> BuildResourceServerAsync(string audience, Guid appId, ClientCredentials management,
+        bool manualFeed = false, FeedTransportControl? transport = null)
     {
         var host = new HostBuilder()
             .ConfigureWebHost(web => web
@@ -147,8 +313,13 @@ public class SessionRevocationResourceServerTests(SharedPostgresFixture fixture)
                             RetryDelay = TimeSpan.FromMilliseconds(500),
                         };
                     });
+                    // Keep the real registered singleton worker, but drive its
+                    // individual steps deterministically in the history tests.
+                    if (manualFeed) services.RemoveAll<IHostedService>();
                     services.AddHttpClient("Modgud.ResourceServer.SessionFeed")
-                        .ConfigurePrimaryHttpMessageHandler(() => Factory.Server.CreateHandler());
+                        .ConfigurePrimaryHttpMessageHandler(() => transport is null
+                            ? Factory.Server.CreateHandler()
+                            : new ControlledFeedHandler(transport) { InnerHandler = Factory.Server.CreateHandler() });
                     services.AddAuthorization();
                 })
                 .Configure(builder =>
@@ -168,6 +339,34 @@ public class SessionRevocationResourceServerTests(SharedPostgresFixture fixture)
             .Build();
         await host.StartAsync();
         return host;
+    }
+
+    private sealed class FeedTransportControl
+    {
+        public bool FailNextRead { get; set; }
+        public int Conflicts { get; set; }
+        public string? LastConflictCode { get; set; }
+    }
+
+    private sealed class ControlledFeedHandler(FeedTransportControl control) : DelegatingHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            var read = request.RequestUri!.AbsolutePath.EndsWith("/change-feed", StringComparison.Ordinal);
+            if (read && control.FailNextRead)
+            {
+                control.FailNextRead = false;
+                throw new HttpRequestException("Deliberate isolated feed transport failure.");
+            }
+            var response = await base.SendAsync(request, ct);
+            if (read && response.StatusCode == HttpStatusCode.Conflict)
+            {
+                control.Conflicts++;
+                using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+                control.LastConflictCode = problem.RootElement.GetProperty("code").GetString();
+            }
+            return response;
+        }
     }
 
     private static async Task<HttpResponseMessage> CallMeAsync(HttpClient api, string token)
@@ -257,7 +456,7 @@ public class SessionRevocationResourceServerTests(SharedPostgresFixture fixture)
         var ct = TestContext.Current.CancellationToken;
         using var response = await Client.PostAsJsonAsync("/api/service-account", new { AccountName = accountName }, JsonOptions, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
-        Assert.True(response.IsSuccessStatusCode, $"service-account arrange failed ({(int)response.StatusCode}): {body}");
+        Assert.True(response.IsSuccessStatusCode, $"service-account arrange failed ({(int)response.StatusCode}).");
         return JsonSerializer.Deserialize<ServiceAccountDto>(body, JsonOptions)!;
     }
 
@@ -291,9 +490,9 @@ public class SessionRevocationResourceServerTests(SharedPostgresFixture fixture)
             $"resource={Uri.EscapeDataString(resource)}",
         ]);
         var authorize = await cookieClient.GetAsync(authorizeUri, ct);
-        Assert.True((int)authorize.StatusCode is >= 300 and < 400, $"authorize: {(int)authorize.StatusCode} {await authorize.Content.ReadAsStringAsync(ct)}");
+        Assert.True((int)authorize.StatusCode is >= 300 and < 400, $"authorize: {(int)authorize.StatusCode}");
         var code = System.Web.HttpUtility.ParseQueryString(authorize.Headers.Location!.Query)["code"]
-                   ?? throw new Xunit.Sdk.XunitException($"no code in {authorize.Headers.Location}");
+                   ?? throw new Xunit.Sdk.XunitException("No authorization code in redirect.");
 
         var token = await Factory.CreateClient().PostAsync("/connect/token", new FormUrlEncodedContent(
         [
@@ -306,7 +505,7 @@ public class SessionRevocationResourceServerTests(SharedPostgresFixture fixture)
             new("resource", resource),
         ]), ct);
         var body = await token.Content.ReadAsStringAsync(ct);
-        Assert.True(token.IsSuccessStatusCode, $"token: {(int)token.StatusCode} {body}");
+        Assert.True(token.IsSuccessStatusCode, $"token: {(int)token.StatusCode}");
         using var json = JsonDocument.Parse(body);
         return json.RootElement.GetProperty("access_token").GetString()!;
     }

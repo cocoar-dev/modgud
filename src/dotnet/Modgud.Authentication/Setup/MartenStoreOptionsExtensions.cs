@@ -169,6 +169,11 @@ public static class MartenStoreOptionsExtensions
             .Index(x => x.UserId)
             .Index(x => x.ClientId);
 
+        // Bounded, generation-independent SDK recovery history.
+        options.Schema.For<Modgud.Authentication.Sessions.SessionRevocation>()
+            .Identity(x => x.Id)
+            .Index(x => new { x.AppId, x.EndedAt });
+
         // ADR 0021 — last logout-token delivery per client, beside the client document.
         options.Schema.For<Modgud.Domain.OAuth.Applications.BackChannelLogoutDeliveryStatus>()
             .Identity(x => x.Id);
