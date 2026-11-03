@@ -22,6 +22,9 @@ public class RestoreUsersHandler(IDocumentSession session, IGdprService gdpr)
     {
         foreach (var id in command.UserIds)
         {
+            var deletion = await session.LoadAsync<UserDeletionState>(id, ct);
+            if (deletion?.Erasure is not null)
+                return Error.Conflict("Gdpr.ErasureInProgress", "Permanent erasure has already started and cannot be cancelled.");
             var user = await session.LoadAsync<Person>(id, ct);
             if (user is null || user.IsDeleted)
                 continue;

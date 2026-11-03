@@ -16,6 +16,7 @@ using ErrorOr;
 using Marten;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Npgsql;
 
 namespace Modgud.Authentication.Gdpr;
 
@@ -129,6 +130,7 @@ public class GdprService(
 
         var state = await session.LoadAsync<UserDeletionState>(userId, ct);
         if (state?.IsDataMasked == true) return Error.Conflict("Gdpr.AlreadyDeleted", "User data has already been erased.");
+        if (state?.Erasure is not null) return Error.Conflict("Gdpr.ErasureInProgress", "Permanent erasure has already started and cannot be cancelled.");
         if (state?.IsDeletionPending == true) return Error.Conflict("Gdpr.AlreadyRequested", "A deletion request is already pending.");
 
         var deletionSettings = (await realmSettings.LoadAsync(ct)).Deletion ?? DeletionSettings.Defaults;
@@ -140,6 +142,7 @@ public class GdprService(
         // any time before the deadline (handled by CancelDeletionAsync + the
         // login interstitial). No confirm token — inaction now means deletion
         // proceeds, the inverse of the old confirm-within-7-days flow.
+        var isNewState = state is null;
         state ??= new UserDeletionState { Id = userId };
         state.IsDeletionPending = true;
         state.DeletionInitiator = DeletionInitiator.SelfService;
@@ -148,8 +151,16 @@ public class GdprService(
         state.DeletionConfirmationDeadline = deadline;
         state.ReminderSentAt = null;
         state.DeletionReason = reason;
-        session.Store(state);
-        await session.SaveChangesAsync(ct);
+        if (isNewState) session.Insert(state);
+        else session.Store(state);
+        try
+        {
+            await session.SaveChangesAsync(ct);
+        }
+        catch (Exception ex) when (ex is JasperFx.ConcurrencyException or JasperFx.DocumentAlreadyExistsException)
+        {
+            return Error.Conflict("Gdpr.DeletionChanged", "The deletion state changed. Reload before retrying.");
+        }
 
         if (!string.IsNullOrWhiteSpace(user.Email))
         {
@@ -176,6 +187,8 @@ public class GdprService(
     public async Task<ErrorOr<bool>> CancelDeletionAsync(Guid userId, Guid? cancelledByAdminUserId = null, CancellationToken ct = default)
     {
         var state = await session.LoadAsync<UserDeletionState>(userId, ct);
+        if (state?.Erasure is not null)
+            return Error.Conflict("Gdpr.ErasureInProgress", "Permanent erasure has already started and cannot be cancelled.");
         if (state is null || !state.IsDeletionPending)
             return Error.Validation("Gdpr.NoPending", "No deletion request is pending.");
 
@@ -205,7 +218,14 @@ public class GdprService(
             }
         }
 
-        await session.SaveChangesAsync(ct);
+        try
+        {
+            await session.SaveChangesAsync(ct);
+        }
+        catch (JasperFx.ConcurrencyException)
+        {
+            return Error.Conflict("Gdpr.DeletionChanged", "The deletion state changed. Reload before retrying.");
+        }
         return true;
     }
 
@@ -227,6 +247,9 @@ public class GdprService(
 
     public async Task<ErrorOr<bool>> PermanentlyEraseAsync(Guid userId, Guid? adminUserId, string reason, CancellationToken ct = default)
     {
+        await using var erasureLock = await TryAcquireErasureLockAsync(ct);
+        if (erasureLock is null)
+            return Error.Conflict("Gdpr.ErasureBusy", "Another erasure is running in this realm. Retry in a fresh scope.");
         var state = await session.LoadAsync<UserDeletionState>(userId, ct);
         if (state?.IsDataMasked == true) return Error.Conflict("Gdpr.AlreadyMasked", "User data has already been erased.");
 
@@ -243,129 +266,102 @@ public class GdprService(
                        ?? throw new InvalidOperationException(
                            "Permanent erase requires an explicit realm context.");
 
-        // 0) Revoke live access (OAuth grants + sessions + security stamp) BEFORE
-        //    the user document is masked/deleted: the stamp rotation must load
-        //    the not-yet-deleted user, and the stamp store (UserSecurityData) is
-        //    dropped below. Reason=Deletion so consent grants are revoked too.
-        await accessRevoker.RevokeAllAccessAsync(userId, AccessRevocationReason.Deletion, ct);
-
-        // 1) Mark the user document as deleted + clear PII so any document-only
-        //    consumers (Identity user store) immediately stop returning the user.
-        var user = await session.LoadAsync<ApplicationUser>(userId, ct);
-        if (user is not null)
-        {
-            // ADR 0018 — an erased address must not leave a pending registration
-            // behind either (hard delete; no-op when there is none).
-            if (!string.IsNullOrEmpty(user.NormalizedEmail))
-                session.Delete<Modgud.Authentication.Registration.PendingRegistration>(
-                    Modgud.Authentication.Registration.PendingRegistration.IdFor(user.NormalizedEmail));
-
-            // ADR 0020 — the user leaves every trusted device; devices without users go.
-            await deviceTrust.ForgetUserAsync(userId, ct);
-
-            user.IsDeleted = true;
-            user.IsActive = false;
-            user.UserName = $"deleted-{userId:N}";
-            user.NormalizedUserName = user.UserName.ToUpperInvariant();
-            user.Email = null;
-            user.NormalizedEmail = null;
-            user.Firstname = null;
-            user.Lastname = null;
-            user.Acronym = null;
-            user.PasswordHash = null;
-            user.AuthenticatorKey = null;
-            user.TwoFactorEnabled = false;
-            user.EmailOtpEnabled = false;
-            session.Store(user);
-        }
-
-        // 1b) Scrub the PII-bearing projection read-models (audit remediation #20/#21).
-        //     Marten masking rewrites event JSON only — it does NOT re-run projections —
-        //     and the UserDeletedEvent Apply handlers merely flag IsDeleted while KEEPING
-        //     Email/name. So without this the "forgotten" user's name + email survive in
-        //     the queryable Principal/Person doc (also served by /api/principal/lookup)
-        //     and the async UserView read-model (Art. 17 violation), and the Person stays
-        //     IsActive=true (selectable in pickers / auto-group recompute). Hard-delete
-        //     both docs; the stream is masked + archived below, so a rebuild (which
-        //     excludes archived events) will not recreate them.
-        session.Delete<Principal>(userId);
-        session.Delete<UserView>(userId);
-
-        // 2) Drop secondary documents (sessions + security data + change requests).
-        session.DeleteWhere<UserSession>(s => s.UserId == userId);
-        session.DeleteWhere<ClientSession>(s => s.UserId == userId);
-        session.Delete<UserSecurityData>(userId);
-
-        //    Federation v1: the per-user external-claims snapshot is a plain
-        //    (non-event-sourced) doc keyed on the user id — a straight Delete
-        //    fully erases its PII (no stream to mask). Rides this same batch.
-        session.Delete<ExternalClaimsStore>(userId);
-
-        //    WebAuthn passkeys are raw-crypto docs keyed on the user id — drop
-        //    them so a permanently-erased user leaves no orphaned credentials.
-        //    (Recycle-bin / deactivate must NOT do this — that path is reversible.)
-        session.DeleteWhere<StoredPasskeyCredential>(c => c.UserId == userId);
-
-        //    Terminal profile change-requests are retained for audit, but their
-        //    payload carries the user's name/email — drop them so no plaintext
-        //    PII survives the erase (the section comment above promised this).
-        session.DeleteWhere<UserChangeRequest>(r => r.UserId == userId);
-
-        //    Email-OTP challenge is a 1:1 doc (Id = userId) holding a plaintext
-        //    email — drop it too.
-        session.Delete<EmailOtpChallenge>(userId);
-
-        //    ADR 0026 — a test account's fixed-code hash goes with the account.
-        session.Delete<TestAccountEmailCode>(userId);
-
-        //    The user's own dashboard arrangement — no PII in it, but it is keyed
-        //    on the user id and has no reason to outlive the account.
-        session.Delete<Modgud.Domain.Dashboard.DashboardLayout>(
-            Modgud.Domain.Dashboard.DashboardLayout.UserId(userId));
-
-        //    External identity links carry Email, DisplayName, and the raw IdP
-        //    claim payload on their OWN streams (keyed by link id). Drop the
-        //    projection doc here; the PII-bearing events are masked + archived
-        //    below alongside the user stream (archiving alone only flags the
-        //    rows — the raw events must be masked to truly erase the PII).
-        //    Discover the link ids two ways and union them:
-        //      • live links via the projection-doc query, and
-        //      • EVERY link the user ever held via the user stream's
-        //        UserExternalIdentityLinkedEvent mirrors (each carries the
-        //        LinkId). When a link is unlinked/re-homed (Variant C) the
-        //        projection doc is dropped via ShouldDelete — but the stream is
-        //        deliberately LEFT LIVE (un-archived), because Marten's masking
-        //        does NOT rewrite already-archived streams. So the doc query
-        //        alone misses the forgotten link, yet its still-live stream holds
-        //        the PII; the user-stream mirror is the durable index back to it,
-        //        and the mask + archive loops below scrub it during the erase.
-        var liveLinkIds = (await session.Query<ExternalIdentityLink>()
-                .Where(l => l.UserId == userId)
-                .ToListAsync(ct))
-            .Select(l => l.Id);
-        var historicalLinkIds = (await session.Events.FetchStreamAsync(userId, token: ct))
-            .Select(e => e.Data)
-            .OfType<UserExternalIdentityLinkedEvent>()
-            .Select(e => e.LinkId);
-        var linkIds = liveLinkIds.Concat(historicalLinkIds).Distinct().ToList();
-        foreach (var linkId in linkIds)
-            session.Delete<ExternalIdentityLink>(linkId);
-
-        // 3) Update the deletion-state bookkeeping.
-        var now = DateTimeOffset.UtcNow;
+        // Persist the work's identity BEFORE revocation/secondary-doc commits.
+        // An archived user stream no longer supplies historical link ids on a
+        // retry, and the link projection documents are deleted below.
         var state = existingState ?? new UserDeletionState { Id = userId };
-        state.IsDeletionPending = false;
-        state.DeletionInitiator = null;
-        state.DeletionRequestedByUserId = null;
-        state.DeletionConfirmationDeadline = null;
-        state.ReminderSentAt = null;
-        state.IsDataMasked = true;
-        state.DataMaskedAt = now;
-        state.DataMaskedReason = reason;
-        state.DataMaskedByUserId = adminUserId;
-        session.Store(state);
+        if (state.Erasure is null)
+        {
+            var liveLinkIds = (await session.Query<ExternalIdentityLink>()
+                    .Where(l => l.UserId == userId).ToListAsync(ct)).Select(l => l.Id);
+            var historicalLinkIds = (await session.Events.FetchStreamAsync(userId, token: ct))
+                .Select(e => e.Data).OfType<UserExternalIdentityLinkedEvent>().Select(e => e.LinkId);
+            state.Erasure = new UserErasureProgress
+            {
+                StartedAt = DateTimeOffset.UtcNow,
+                Reason = reason,
+                AdminUserId = adminUserId,
+                ExternalLinkIds = liveLinkIds.Concat(historicalLinkIds).Distinct().ToList(),
+            };
+            if (existingState is null) session.Insert(state);
+            else session.Store(state);
+            try
+            {
+                await session.SaveChangesAsync(ct);
+            }
+            catch (Exception ex) when (ex is JasperFx.ConcurrencyException or JasperFx.DocumentAlreadyExistsException)
+            {
+                return Error.Conflict("Gdpr.DeletionChanged", "The deletion state changed. Reload before retrying.");
+            }
+        }
+        var progress = state.Erasure;
+        var linkIds = progress.ExternalLinkIds;
 
-        await session.SaveChangesAsync(ct);
+        if (!progress.DocumentsCleared)
+        {
+            // 0) Revoke live access before the user is deleted: stamp rotation
+            // needs the still-loadable user and its security data. Do not repeat
+            // this after document cleanup: it appends to the user's stream,
+            // which might already have been archived by an earlier attempt.
+            await accessRevoker.RevokeAllAccessAsync(userId, AccessRevocationReason.Deletion, ct);
+
+            // 1) Immediately scrub the Identity document and stop document-only
+            // consumers from loading this user.
+            var user = await session.LoadAsync<ApplicationUser>(userId, ct);
+            if (user is not null)
+            {
+                // ADR 0018 — hard-delete any matching pending registration.
+                if (!string.IsNullOrEmpty(user.NormalizedEmail))
+                    session.Delete<Modgud.Authentication.Registration.PendingRegistration>(
+                        Modgud.Authentication.Registration.PendingRegistration.IdFor(user.NormalizedEmail));
+
+                // ADR 0020 — remove this user from trusted devices. This helper
+                // may commit, so DocumentsCleared must only be set AFTER it.
+                await deviceTrust.ForgetUserAsync(userId, ct);
+
+                user.IsDeleted = true;
+                user.IsActive = false;
+                user.UserName = $"deleted-{userId:N}";
+                user.NormalizedUserName = user.UserName.ToUpperInvariant();
+                user.Email = null;
+                user.NormalizedEmail = null;
+                user.Firstname = null;
+                user.Lastname = null;
+                user.Acronym = null;
+                user.PasswordHash = null;
+                user.AuthenticatorKey = null;
+                user.TwoFactorEnabled = false;
+                user.EmailOtpEnabled = false;
+                session.Store(user);
+            }
+
+            // Masking rewrites event JSON, not existing projections. Delete both
+            // PII-bearing read models explicitly; archived streams are excluded
+            // from their rebuilds.
+            session.Delete<Principal>(userId);
+            session.Delete<UserView>(userId);
+
+            // 2) Secondary documents. Keep the same erase set as before: no
+            // changes to reversible recycle-bin/disable behavior.
+            session.DeleteWhere<UserSession>(s => s.UserId == userId);
+            session.DeleteWhere<ClientSession>(s => s.UserId == userId);
+            session.Delete<UserSecurityData>(userId);
+            session.Delete<ExternalClaimsStore>(userId);
+            session.DeleteWhere<StoredPasskeyCredential>(c => c.UserId == userId);
+            session.DeleteWhere<UserChangeRequest>(r => r.UserId == userId);
+            session.Delete<EmailOtpChallenge>(userId);
+            session.Delete<TestAccountEmailCode>(userId);
+            session.Delete<Modgud.Domain.Dashboard.DashboardLayout>(
+                Modgud.Domain.Dashboard.DashboardLayout.UserId(userId));
+            foreach (var linkId in linkIds)
+                session.Delete<ExternalIdentityLink>(linkId);
+
+            // Commit this checkpoint in the SAME transaction as document cleanup,
+            // never before a helper that might flush the injected session.
+            progress.DocumentsCleared = true;
+            session.Store(state);
+            await session.SaveChangesAsync(ct);
+        }
 
         // 4) Apply Marten's PII masking to the user stream AND every external
         //    identity-link stream — replaces name/email/IP/raw-claim fields
@@ -379,9 +375,9 @@ public class GdprService(
             foreach (var linkId in linkIds)
                 x.IncludeStream(linkId);
             x.AddHeader("gdpr_masked", true);
-            x.AddHeader("masked_at", now.ToString("O"));
-            x.AddHeader("masked_by", adminUserId?.ToString() ?? "user_request");
-            x.AddHeader("masking_reason", reason);
+            x.AddHeader("masked_at", progress.StartedAt.ToString("O"));
+            x.AddHeader("masked_by", progress.AdminUserId?.ToString() ?? "user_request");
+            x.AddHeader("masking_reason", progress.Reason);
         }, ct);
 
         // ArchiveStream lives on a fresh session — IDocumentSession state is
@@ -410,6 +406,22 @@ public class GdprService(
             await auditSession.SaveChangesAsync(ct);
         }
 
+        // Only every completed durable step makes this a terminal tombstone.
+        // If this final commit fails, a fresh scope repeats the idempotent work
+        // using the saved link inventory, even after all streams were archived.
+        state.IsDeletionPending = false;
+        state.DeletionInitiator = null;
+        state.DeletionRequestedByUserId = null;
+        state.DeletionConfirmationDeadline = null;
+        state.ReminderSentAt = null;
+        state.IsDataMasked = true;
+        state.DataMaskedAt = DateTimeOffset.UtcNow;
+        state.DataMaskedReason = progress.Reason;
+        state.DataMaskedByUserId = progress.AdminUserId;
+        state.Erasure = null;
+        session.Store(state);
+        await session.SaveChangesAsync(ct);
+
         ModgudMeters.RecordGdprRequest(ModgudMeters.GdprRequestType.Mask);
 
         return true;
@@ -424,33 +436,39 @@ public class GdprService(
     /// </summary>
     public async Task<(int Reminded, int Erased)> RunSelfServiceSweepAsync(CancellationToken ct = default)
     {
+        await using var erasureLock = await TryAcquireErasureLockAsync(ct)
+            ?? throw new InvalidOperationException("Another erasure is running in this realm. Retry the sweep in a fresh scope.");
         var deletionSettings = (await realmSettings.LoadAsync(ct)).Deletion ?? DeletionSettings.Defaults;
         var now = DateTimeOffset.UtcNow;
         var reminderWindow = TimeSpan.FromDays(deletionSettings.ReminderLeadDays);
 
-        // Small set (only users mid-grace); filter the initiator in memory to
-        // avoid LINQ translation of the nullable enum comparison.
+        // Keep the selected document/version bound to the intent commit below:
+        // a cancel after this query must cause a conflict before erasure starts.
         var pending = (await session.Query<UserDeletionState>()
-                .Where(s => s.IsDeletionPending)
+                .Where(s => s.IsDeletionPending || s.Erasure != null)
                 .ToListAsync(ct))
             .Where(s => s.DeletionInitiator == DeletionInitiator.SelfService
-                        && s.DeletionConfirmationDeadline is not null)
+                        && (s.Erasure is not null || s.DeletionConfirmationDeadline is not null))
             .ToList();
 
         var reminded = 0;
         var erased = 0;
         foreach (var state in pending)
         {
-            var deadline = state.DeletionConfirmationDeadline!.Value;
-            if (deadline <= now)
+            var deadline = state.DeletionConfirmationDeadline;
+            if (state.Erasure is not null || deadline <= now)
             {
                 var result = await PerformPermanentEraseAsync(
                     state.Id, adminUserId: null, "Self-service grace period expired", state, ct);
-                if (!result.IsError) erased++;
+                // A failed optimistic commit may leave pending writes in this
+                // session. Do not continue into another user's erasure with it.
+                if (result.IsError)
+                    throw new InvalidOperationException("Deletion state changed; retry the sweep in a fresh scope.");
+                erased++;
             }
-            else if (state.ReminderSentAt is null && deadline - now <= reminderWindow)
+            else if (state.ReminderSentAt is null && deadline!.Value - now <= reminderWindow)
             {
-                await SendDeletionReminderAsync(state.Id, deadline, ct);
+                await SendDeletionReminderAsync(state.Id, deadline.Value, ct);
                 state.ReminderSentAt = now;
                 session.Store(state);
                 await session.SaveChangesAsync(ct);
@@ -470,16 +488,22 @@ public class GdprService(
     /// </summary>
     public async Task<int> RunAdminRetentionPurgeAsync(CancellationToken ct = default)
     {
+        await using var erasureLock = await TryAcquireErasureLockAsync(ct)
+            ?? throw new InvalidOperationException("Another erasure is running in this realm. Retry the sweep in a fresh scope.");
         var deletionSettings = (await realmSettings.LoadAsync(ct)).Deletion ?? DeletionSettings.Defaults;
-        if (!deletionSettings.AutoPurgeEnabled) return 0;
 
         var now = DateTimeOffset.UtcNow;
         var due = (await session.Query<UserDeletionState>()
-                .Where(s => s.IsDeletionPending)
+                .Where(s => s.IsDeletionPending || s.Erasure != null)
                 .ToListAsync(ct))
-            .Where(s => s.DeletionInitiator == DeletionInitiator.Admin
-                        && s.DeletionConfirmationDeadline is not null
-                        && s.DeletionConfirmationDeadline.Value <= now)
+            // AutoPurge controls NEW erasures, not abandonment of an already
+            // irreversible admin/manual erasure. Self-service resumes belong
+            // to the other sweep so its telemetry is not counted as admin work.
+            .Where(s => (s.Erasure is not null && s.DeletionInitiator != DeletionInitiator.SelfService)
+                        || (deletionSettings.AutoPurgeEnabled
+                            && s.DeletionInitiator == DeletionInitiator.Admin
+                            && s.DeletionConfirmationDeadline is not null
+                            && s.DeletionConfirmationDeadline.Value <= now))
             .ToList();
 
         var purged = 0;
@@ -487,10 +511,58 @@ public class GdprService(
         {
             var result = await PerformPermanentEraseAsync(
                 state.Id, state.DeletionRequestedByUserId, "Admin recycle-bin retention expired", state, ct);
-            if (!result.IsError) purged++;
+            if (result.IsError)
+                throw new InvalidOperationException("Deletion state changed; retry the sweep in a fresh scope.");
+            purged++;
         }
 
         return purged;
+    }
+
+    // Serializes the three erase entry points BEFORE they load candidates.
+    // OCC alone cannot protect the revoker's separate Identity/event commits.
+    // The dedicated connection targets the injected session's actual realm DB;
+    // the same key therefore does not serialize unrelated realm databases.
+    private const long ErasureLockKey = 0x4D47_4552_4153_4501; // "MGERASE" 1
+
+    private async Task<IAsyncDisposable?> TryAcquireErasureLockAsync(CancellationToken ct)
+    {
+        var connection = session.Database.CreateConnection();
+        try
+        {
+            await connection.OpenAsync(ct);
+            await using var command = new NpgsqlCommand("SELECT pg_try_advisory_lock(@key)", connection);
+            command.Parameters.AddWithValue("key", ErasureLockKey);
+            if (await command.ExecuteScalarAsync(ct) is true)
+                return new ErasureLock(connection);
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+        await connection.DisposeAsync();
+        return null;
+    }
+
+    private sealed class ErasureLock(NpgsqlConnection connection) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                // Request cancellation must not prevent explicit unlock on a
+                // pooled connection. A lost lock connection is NOT fencing of
+                // the other work connections; do not silently reconnect here.
+                await using var command = new NpgsqlCommand("SELECT pg_advisory_unlock(@key)", connection);
+                command.Parameters.AddWithValue("key", ErasureLockKey);
+                await command.ExecuteScalarAsync(CancellationToken.None);
+            }
+            finally
+            {
+                await connection.DisposeAsync();
+            }
+        }
     }
 
     private async Task SendDeletionReminderAsync(Guid userId, DateTimeOffset deadline, CancellationToken ct)

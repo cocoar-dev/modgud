@@ -210,7 +210,10 @@ public static class MartenStoreOptionsExtensions
         // GDPR: per-user deletion bookkeeping (pending request + masked flag).
         // Keyed on the user id so we can simply Load it.
         options.Schema.For<UserDeletionState>()
-            .Identity(x => x.Id);
+            .Identity(x => x.Id)
+            // Decide cancellation versus irreversible erasure before any PII is
+            // removed. A stale sweep/cancel must not overwrite the winning intent.
+            .UseOptimisticConcurrency(true);
 
         // Federation v1: per-user claims-per-source snapshot (refreshable, NOT
         // event-sourced). Keyed on the user id like UserDeletionState so it can
