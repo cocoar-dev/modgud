@@ -48,7 +48,7 @@ namespace Modgud.Api.Tests.Security;
 /// </para>
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class SamlAcsReplayEndToEndTests : IntegrationTestBase
+public partial class SamlAcsReplayEndToEndTests : IntegrationTestBase
 {
     public SamlAcsReplayEndToEndTests(SharedPostgresFixture fixture) : base(fixture) { }
 
@@ -351,13 +351,15 @@ public class SamlAcsReplayEndToEndTests : IntegrationTestBase
     // ── arrange helpers ──────────────────────────────────────────────────────
 
     private async Task<LoginProvider> CreateAndRegisterProviderAsync(X509Certificate2 idpCert,
-        Saml2AuthnResponseSignTypes signType = Saml2AuthnResponseSignTypes.SignAssertion)
+        Saml2AuthnResponseSignTypes signType = Saml2AuthnResponseSignTypes.SignAssertion,
+        bool wantAssertionsEncrypted = false)
     {
         var flavorData = JsonDocument.Parse(JsonSerializer.Serialize(new
         {
             metadataXml = BuildIdpMetadataXml(idpCert),
             wantAssertionsSigned = signType != Saml2AuthnResponseSignTypes.SignResponse,
             wantResponseSigned = signType != Saml2AuthnResponseSignTypes.SignAssertion,
+            wantAssertionsEncrypted,
         }));
 
         using var scope = Factory.Services.CreateScope();
@@ -509,12 +511,14 @@ public class SamlAcsReplayEndToEndTests : IntegrationTestBase
 
     private string MintSignedResponse(X509Certificate2 idpCert, string inResponseTo, bool additionalAttributes = false,
         Saml2AuthnResponseSignTypes signType = Saml2AuthnResponseSignTypes.SignAssertion,
-        Action<Saml2AuthnResponse>? mutateBeforeSigning = null)
+        Action<Saml2AuthnResponse>? mutateBeforeSigning = null,
+        X509Certificate2? encryptFor = null)
     {
         var idpConfig = new Saml2Configuration
         {
             Issuer = IdpEntityId,
             SigningCertificate = idpCert,
+            EncryptionCertificate = encryptFor,
             // The SP's default floor is WantAssertionsSigned=true, which requires a
             // per-assertion ds:Signature. ITfoxtec signs the Response wrapper by
             // default, so ask it to sign the assertion instead.

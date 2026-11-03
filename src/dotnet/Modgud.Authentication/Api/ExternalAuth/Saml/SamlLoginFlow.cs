@@ -214,6 +214,27 @@ public class SamlLoginFlow(
             return Results.Redirect($"/login?error=saml-{Uri.EscapeDataString(saml2Response.Status.ToString() ?? "status")}");
         }
 
+        // B6-SAML-02 — "Require encrypted assertions" is a requirement, not a hint:
+        // decided on the raw form field, so it does not depend on whether the library
+        // decrypted the document in place. Before correlation, so a misconfigured IdP
+        // does not burn the pending request.
+        if (provider.FlavorData.WantAssertionsEncrypted
+            && !HasOnlyEncryptedAssertions(http.Request.HasFormContentType ? http.Request.Form["SAMLResponse"].ToString() : null))
+        {
+            await securityAudit.RecordIncidentAsync(new SecurityAuditRecord
+            {
+                EventType = AuditEvents.ExternalLoginProtocolRejected,
+                Severity = AuditSeverity.Warning,
+                LoginProviderId = provider.LoginProviderId,
+                IpAddress = ip,
+                AuthenticationMethod = "saml",
+                OutcomeCode = AuditOutcomes.Rejected,
+                ReasonCode = "assertion-not-encrypted",
+            }, ct);
+            ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.External, ModgudMeters.LoginOutcome.Failure);
+            return Results.Redirect("/login?error=saml-assertion-not-encrypted");
+        }
+
         // Unbind requires a valid signature, but accepts either a signed Response
         // or Assertion. Preserve the provider's stricter placement requirements
         // in addition to (never instead of) that cryptographic validation.
@@ -451,6 +472,33 @@ public class SamlLoginFlow(
     /// <c>ds:Signature</c> element. Returns a short error-tag suitable for the
     /// redirect query string when enforcement fails; null when OK.
     /// </summary>
+    /// <summary>B6-SAML-02 — true when the raw SAMLResponse carries at least one
+    /// <c>saml:EncryptedAssertion</c> and no plain <c>saml:Assertion</c> outside one.
+    /// Parsed with DTDs prohibited and no resolver; anything unreadable is "not encrypted".</summary>
+    internal static bool HasOnlyEncryptedAssertions(string? samlResponseBase64)
+    {
+        if (string.IsNullOrWhiteSpace(samlResponseBase64)) return false;
+        try
+        {
+            var xml = Convert.FromBase64String(samlResponseBase64);
+            using var reader = XmlReader.Create(new MemoryStream(xml), new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+            });
+            var doc = XDocument.Load(reader);
+            XNamespace saml = "urn:oasis:names:tc:SAML:2.0:assertion";
+            var encrypted = doc.Descendants(saml + "EncryptedAssertion").ToList();
+            var plain = doc.Descendants(saml + "Assertion")
+                .Where(a => !a.Ancestors(saml + "EncryptedAssertion").Any());
+            return encrypted.Count > 0 && !plain.Any();
+        }
+        catch (Exception ex) when (ex is FormatException or XmlException)
+        {
+            return false;
+        }
+    }
+
     private static string? CheckRequiredSignatures(XmlDocument? doc, SamlFlavorData flavor)
     {
         if (!flavor.WantResponseSigned && !flavor.WantAssertionsSigned) return null;
@@ -477,7 +525,10 @@ public class SamlLoginFlow(
             // allows multiple) must carry its own ds:Signature element. The
             // wrapping defense is: per-assertion signature blocks an attacker
             // from gluing a stolen wrapper signature onto a fresh assertion.
-            var assertions = doc.DocumentElement.SelectNodes("saml:Assertion", ns);
+            // B6-SAML-02 — a decrypted assertion stays inside its saml:EncryptedAssertion
+            // wrapper (XML decryption replaces only the inner xenc:EncryptedData), so it
+            // must be found there too, or every encrypted assertion fails as "missing".
+            var assertions = doc.DocumentElement.SelectNodes("saml:Assertion | saml:EncryptedAssertion/saml:Assertion", ns);
             if (assertions is null || assertions.Count == 0) return "assertion-missing";
             foreach (XmlNode assertion in assertions)
             {
