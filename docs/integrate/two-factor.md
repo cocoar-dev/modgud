@@ -160,11 +160,16 @@ created.
 
 ```http
 POST /api/account/passkey/login-options
-{ "userName": "alice" }   // optional — empty = passwordless mode
+{ "returnUrl": "/connect/authorize?..." }   // optional
 ```
 
-→ `AssertionOptions` scoped to the user's existing credentials. With
-`userName=null`, discoverable credentials are allowed (passwordless).
+→ `AssertionOptions` with an empty `allowCredentials` list: the
+authenticator offers its discoverable credentials for the RP ID. A
+`userName` is accepted for compatibility and ignored — an anonymous
+allow-list per account would tell an unknown caller which accounts have
+passkeys and disclose their credential ids. Passkeys that are not
+discoverable (some hardware security keys) therefore cannot sign in on
+the web; enrollment asks for a discoverable credential (`ResidentKey = Preferred`).
 
 ```http
 POST /api/account/passkey/login
@@ -177,7 +182,7 @@ SignCount against the stored value (replay protection), updates
 
 ### Passwordless
 
-`POST /api/account/passkey/login-options` without `userName` produces
+`POST /api/account/passkey/login-options` always produces
 options with an empty `AllowedCredentials` list → the authenticator
 picks a discoverable credential. The UserId is read from the
 `UserHandle` of the assertion.

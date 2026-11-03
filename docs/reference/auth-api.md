@@ -75,7 +75,7 @@ There are no recovery codes — losing the authenticator device means falling ba
 | `GET` | `/api/account/passkey` | List own passkeys |
 | `POST` | `/api/account/passkey/register-options` | Registration options |
 | `POST` | `/api/account/passkey/register` | Complete registration |
-| `POST` | `/api/account/passkey/login-options` | Login options (with or without `userName` for passwordless) |
+| `POST` | `/api/account/passkey/login-options` | Login options (discoverable credentials; a `userName` is ignored) |
 | `POST` | `/api/account/passkey/login` | Complete login |
 | `DELETE` | `/api/account/passkey/{id}` | Delete a passkey |
 

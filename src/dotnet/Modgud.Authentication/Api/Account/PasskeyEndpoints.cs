@@ -28,6 +28,7 @@ public static class PasskeyEndpoints
     /// <c>getClientCapabilities().relatedOrigins</c>: whether it honours an RP's
     /// <c>/.well-known/webauthn</c> file. Without it the App's related-origin RP ID is never
     /// offered, so the realm's own passkeys keep working.</summary>
+    /// <remarks><c>UserName</c> is accepted for compatibility and ignored (B8-P2).</remarks>
     public record PasskeyLoginOptionsRequest(string? UserName = null, string? ReturnUrl = null, bool RelatedOrigins = false);
     public record PasskeyDisplayDto(string Id, string DisplayName, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt);
 
@@ -441,26 +442,12 @@ public static class PasskeyEndpoints
 
             var fido2 = await fido2Factory.CreateAsync(ct, rpIdOverride: webRpId);
 
-            if (accountOwner is null && !string.IsNullOrEmpty(request?.UserName))
-            {
-                var user = await session.Query<ApplicationUser>()
-                    .FirstOrDefaultAsync(u => u.NormalizedUserName == request.UserName.ToUpperInvariant());
-
-                if (user is not null)
-                {
-                    // ADR-0009: web login only surfaces the user's credentials for the RP
-                    // this page serves (a credential bound to another RP is unusable here).
-                    var credentials = (await session.Query<StoredPasskeyCredential>()
-                        .Where(c => c.UserId == user.Id)
-                        .ToListAsync())
-                        .Where(c => string.Equals(c.RpId ?? primaryDomain, webRpId, StringComparison.OrdinalIgnoreCase))
-                        .ToList();
-
-                    allowedCredentials = credentials
-                        .Select(c => new PublicKeyCredentialDescriptor(c.CredentialId))
-                        .ToList();
-                }
-            }
+            // B8-P2 — an anonymous sign-in is discoverable / usernameless: allowCredentials
+            // stays empty and a submitted UserName is ignored, as in the native begin. A
+            // per-account allow-list here answered a known account with its credential ids
+            // and an unknown one with an empty list — an account-existence oracle that also
+            // disclosed raw credential ids before any authentication. Only the signed-in
+            // account confirmation above narrows the list, to its own keys.
 
             var options = fido2.GetAssertionOptions(new GetAssertionOptionsParams
             {
