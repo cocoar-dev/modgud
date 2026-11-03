@@ -172,7 +172,7 @@ public class ExternalLoginProcessor(
                 // authoritative for the profile (decision A) — the existing link's
                 // IsCreator covers the JIT-creator default so a JIT-created user's
                 // profile isn't frozen. Email-conflict is a hard reject.
-                if (ShouldPatchProfile(config, link))
+                if (await ShouldPatchProfileAsync(config, link, ct))
                 {
                     var applyResult = await ApplyUserUpdatesAsync(linkedUser, scriptResult, ct);
                     if (applyResult is not null)
@@ -221,7 +221,7 @@ public class ExternalLoginProcessor(
 
             // New link to an existing account — this provider did not create the
             // user, so it patches the profile only if explicitly authoritative.
-            if (ShouldPatchProfile(config, link: null))
+            if (await ShouldPatchProfileAsync(config, link: null, ct))
             {
                 var applyResult = await ApplyUserUpdatesAsync(existing, scriptResult, ct);
                 if (applyResult is not null)
@@ -296,7 +296,7 @@ public class ExternalLoginProcessor(
                 {
                     // New email-matched link to an existing account — not the
                     // creator, so patch the profile only if explicitly authoritative.
-                    if (ShouldPatchProfile(config, link: null))
+                    if (await ShouldPatchProfileAsync(config, link: null, ct))
                     {
                         var applyResult = await ApplyUserUpdatesAsync(user, scriptResult, ct);
                         if (applyResult is not null)
@@ -591,8 +591,26 @@ public class ExternalLoginProcessor(
     /// authed / email-match) are not creators, so they patch only when explicitly
     /// authoritative. Replaces the old every-provider-patches-every-login flapping.
     /// </summary>
-    private static bool ShouldPatchProfile(LoginProvider config, ExternalIdentityLink? link)
-        => config.AuthoritativeForProfile || link is { IsCreator: true };
+    /// <summary>Decision A — may this login patch the four profile fields? An explicitly
+    /// authoritative provider always may. The JIT creator's link may only "until an admin
+    /// promotes another" (EP-06): once another provider linked to the same user is
+    /// authoritative (enabled, not deleted), the creator yields, so alternating logins no
+    /// longer flap the profile.</summary>
+    private async Task<bool> ShouldPatchProfileAsync(LoginProvider config, ExternalIdentityLink? link, CancellationToken ct)
+    {
+        if (config.AuthoritativeForProfile) return true;
+        if (link is not { IsCreator: true }) return false;
+
+        var otherProviderIds = await session.Query<ExternalIdentityLink>()
+            .Where(l => l.UserId == link.UserId && l.Id != link.Id && l.LoginProviderId != link.LoginProviderId && !l.IsUnlinked)
+            .Select(l => l.LoginProviderId)
+            .ToListAsync(ct);
+        if (otherProviderIds.Count == 0) return true;
+
+        var promoted = await session.Query<LoginProvider>()
+            .AnyAsync(p => otherProviderIds.Contains(p.Id) && p.AuthoritativeForProfile && p.Enabled && !p.IsDeleted, ct);
+        return !promoted;
+    }
 
     /// <summary>Reads a claim's values as a string array (scalar → one element, absent → empty).</summary>
     private static string[] ClaimValues(IReadOnlyDictionary<string, object?> rawClaims, string type)
