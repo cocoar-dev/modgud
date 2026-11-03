@@ -28,6 +28,9 @@
     <PackageReference Include="Cocoar.JsEval.TsDefinition" />
     <PackageReference Include="Cocoar.Reflectensions" />
     <PackageReference Include="Cocoar.SignalARRR.Server" />
+    <!-- Direct pin for SignalARRR's transitive MessagePack security patch;
+         remove only when upstream requires at least the patched version. -->
+    <PackageReference Include="MessagePack" />
     <PackageReference Include="Cocoar.SignalARRR.Server.Backplane.Postgres" />
     <PackageReference Include="Cocoar.Configuration" />
     <PackageReference Include="Cocoar.Configuration.AspNetCore" />

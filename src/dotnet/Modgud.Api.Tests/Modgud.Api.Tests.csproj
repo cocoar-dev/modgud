@@ -17,6 +17,10 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <!-- These transitive dependencies survive framework pruning in this test
+         graph. Pin their security minima independently of the shared runtime. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Common" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <!-- Generic container builder for the OTel Collector in OtelLogsRedactionTests. -->

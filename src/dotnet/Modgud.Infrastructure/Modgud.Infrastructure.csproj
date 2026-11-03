@@ -18,6 +18,9 @@
     <PackageReference Include="Cocoar.JsEval.TsDefinition" />
     <PackageReference Include="Cocoar.JsEval.TypeScript" />
     <PackageReference Include="MailKit" />
+    <!-- Propagate the patched transitive MimeKit/CMS dependency to consumers;
+         remove only when upstream requires at least the patched version. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="Postmark" />
     <PackageReference Include="Marten" />
     <PackageReference Include="Marten.AspNetCore" />
