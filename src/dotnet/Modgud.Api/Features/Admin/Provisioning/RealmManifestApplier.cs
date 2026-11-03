@@ -36,6 +36,7 @@ using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Applications;
 using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.OAuth.Scopes;
+using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using Modgud.Permissions;
@@ -404,8 +405,13 @@ public sealed partial class RealmManifestApplier(
                 identity.Applied(ManifestIdentity.Sections.Clients, existing.Id);
                 // ClientType + secret are immutable through the canonical update path; an
                 // existing client keeps its secret (rotate via the dedicated endpoint).
-                EnsureOk(await oauth.UpdateClientAsync(
-                    existing.Id.ToString(), BuildClientUpdateDto(c, apps, ctx, skips), ct), ctx);
+                var updated = await oauth.UpdateClientAsync(
+                    existing.Id.ToString(), BuildClientUpdateDto(c, apps, ctx, skips), ct);
+                EnsureOk(updated, ctx);
+                // E.clients-B3 — a client the manifest disables keeps no live grants
+                // (deferred until the apply committed).
+                if (!updated.Value.Enabled)
+                    await sp.GetRequiredService<IOAuthGrantRevoker>().RevokeClientAccessAsync(existing.Id.ToString(), ct);
             }
         }
 
@@ -892,6 +898,8 @@ public sealed partial class RealmManifestApplier(
                 || c.LinkedServiceAccountId.HasValue
                 || !Wants("clients", c.ClientId)) continue;
             EnsureOk(await oauth.DeleteClientAsync(c.Id.ToString(), ct), $"delete client '{c.ClientId}'");
+            // E.clients-B3 — deferred until the apply committed (DeferringOAuthGrantRevoker).
+            await sp.GetRequiredService<IOAuthGrantRevoker>().RevokeClientAccessAsync(c.Id.ToString(), ct);
         }
 
         // ── Login providers — keep the built-in Internal provider. ───────────────────────────

@@ -42,6 +42,11 @@ public interface IOAuthGrantRevoker
     /// a by-subject revoke, which would also kill the SA's other credentials.</summary>
     Task<int> RevokeTokensByApplicationIdAsync(string applicationId, CancellationToken ct = default);
 
+    /// <summary>Revoke every authorization (consent grant) of a given OAuth application,
+    /// across all subjects. E.clients-B3: a deleted or disabled client loses its
+    /// authorizations together with its tokens.</summary>
+    Task<int> RevokeAuthorizationsByApplicationIdAsync(string applicationId, CancellationToken ct = default);
+
     /// <summary>Revoke the token family attached to one authorization/client
     /// session without affecting another device using the same OAuth client.</summary>
     Task<int> RevokeTokensByAuthorizationIdAsync(string authorizationId, CancellationToken ct = default);

@@ -29,6 +29,10 @@ public sealed class DeferringOAuthGrantRevoker(OpenIddictGrantRevoker inner) : I
         => DeferOrRun($"revoke tokens for application '{applicationId}'", ct,
             (r, c) => r.RevokeTokensByApplicationIdAsync(applicationId, c));
 
+    public Task<int> RevokeAuthorizationsByApplicationIdAsync(string applicationId, CancellationToken ct = default)
+        => DeferOrRun($"revoke authorizations for application '{applicationId}'", ct,
+            (r, c) => r.RevokeAuthorizationsByApplicationIdAsync(applicationId, c));
+
     public Task<int> RevokeTokensByAuthorizationIdAsync(string authorizationId, CancellationToken ct = default)
         => DeferOrRun($"revoke tokens for authorization '{authorizationId}'", ct,
             (r, c) => r.RevokeTokensByAuthorizationIdAsync(authorizationId, c));

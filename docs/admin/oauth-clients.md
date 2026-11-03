@@ -231,7 +231,9 @@ tokens.
 
 Open a client by double-click. Most fields can be edited live; **Client ID** is immutable after creation.
 
-The **Regenerate Secret** button at the bottom rotates the client secret. Old secret stops working immediately, new one is shown once — copy it now.
+The **Regenerate Secret** button at the bottom rotates the client secret. Old secret stops working immediately, new one is shown once — copy it now. Tokens already issued to the client stay valid (rotation does not sign its users out); to cut them off, disable or delete the client.
+
+Disabling a client (**Enabled** off) revokes every token issued to it and every consent granted to it, for all users — a reference access token is no longer reported active by introspection. Already-issued JWT access tokens stay valid until they expire (at most their lifetime).
 
 ## Cloning a client
 
@@ -239,7 +241,7 @@ The **Regenerate Secret** button at the bottom rotates the client secret. Old se
 
 ## Deleting
 
-List → right-click → **Delete**. Soft-deleted entries can still be queried for audit purposes but are excluded from the OAuth flow.
+List → right-click → **Delete**. Soft-deleted entries can still be queried for audit purposes but are excluded from the OAuth flow. Like disabling, deleting revokes the client's tokens and consents.
 
 ## Tips
 
