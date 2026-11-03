@@ -53,6 +53,11 @@ public sealed class RealmDraft
 
     /// <summary>Optimistic-concurrency counter; bumped on every content update.</summary>
     public int Version { get; set; }
+
+    /// <summary>FD-02 — set while an apply of this draft runs (claimed with a version-checked
+    /// save before the live write). Edits are refused meanwhile so none is deleted
+    /// unapplied with the consumed draft. Expires on its own if an apply never finished.</summary>
+    public DateTimeOffset? ApplyingSince { get; set; }
 }
 
 /// <summary>

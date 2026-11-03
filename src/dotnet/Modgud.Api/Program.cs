@@ -929,6 +929,10 @@ try
             options.UseModgudAuthentication();
             options.UseModgudOAuth();
             options.UseModgudPositionTerminals();
+            // FD-01 — two overlapping saves of one draft version must not both win: the
+            // ExpectedVersion check alone compared against the loaded document only.
+            options.Schema.For<Modgud.Api.Features.Admin.Provisioning.RealmDraft>()
+                .UseOptimisticConcurrency(true);
             options.Events.Subscribe(new Modgud.Api.Features.ChangeFeed.AppChangeFeedSubscription());
         },
         hosting: clusterHosting);

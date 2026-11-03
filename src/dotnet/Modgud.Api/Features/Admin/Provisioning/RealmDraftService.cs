@@ -30,12 +30,40 @@ public sealed class RealmDraftService(
     RealmManifestApplier applier,
     IDataProtectionProvider dataProtection,
     IOptions<JsonOptions> jsonOptions,
-    TimeProvider time)
+    TimeProvider time,
+    Microsoft.Extensions.Logging.ILogger<RealmDraftService> logger)
 {
     private const string ProtectorPurpose = "Modgud.RealmDraft.Secrets";
 
     private static readonly Error NotFound =
         Error.NotFound("Draft.NotFound", "The draft does not exist (or is private to another admin).");
+
+    private static readonly Error ConcurrentChange = Error.Conflict("Draft.ConcurrentChange",
+        "The draft was changed at the same time. Reload it and re-apply your change.");
+
+    private static readonly Error Applying = Error.Conflict("Draft.Applying",
+        "The draft is being applied right now. Reload it once the apply has finished.");
+
+    /// <summary>An apply claim older than this is treated as abandoned (crashed apply).</summary>
+    private static readonly TimeSpan ApplyClaimLifetime = TimeSpan.FromMinutes(10);
+
+    private bool IsBeingApplied(RealmDraft draft) =>
+        draft.ApplyingSince is { } since && time.GetUtcNow() - since < ApplyClaimLifetime;
+
+    /// <summary>FD-01 — saves with the draft's optimistic-concurrency check; a lost race is
+    /// a conflict for the caller, not a 500.</summary>
+    private async Task<Error?> SaveAsync(CancellationToken ct)
+    {
+        try
+        {
+            await session.SaveChangesAsync(ct);
+            return null;
+        }
+        catch (JasperFx.ConcurrencyException)
+        {
+            return ConcurrentChange;
+        }
+    }
 
     // ── CRUD ─────────────────────────────────────────────────────────────────────
 
@@ -105,6 +133,7 @@ public sealed class RealmDraftService(
     {
         var draft = await LoadVisibleAsync(id, userId, ct);
         if (draft is null) return NotFound;
+        if (IsBeingApplied(draft)) return Applying;
         if (draft.Version != dto.ExpectedVersion)
             return Error.Conflict("Draft.VersionConflict",
                 $"The draft was changed by {draft.LastModifiedByName} (version {draft.Version}, you edited version {dto.ExpectedVersion}). Reload it and re-apply your change.");
@@ -124,7 +153,7 @@ public sealed class RealmDraftService(
         draft.LastModifiedAt = time.GetUtcNow();
         draft.Version++;
         session.Store(draft);
-        await session.SaveChangesAsync(ct);
+        if (await SaveAsync(ct) is { } conflict) return conflict;
         return ToDto(draft, userId);
     }
 
@@ -132,9 +161,10 @@ public sealed class RealmDraftService(
     {
         var draft = await LoadVisibleAsync(id, userId, ct);
         if (draft is null) return NotFound;
+        if (IsBeingApplied(draft)) return Applying;
         session.Delete(draft);
         await ClearPointerIfActiveAsync(id, userId, ct);
-        await session.SaveChangesAsync(ct);
+        if (await SaveAsync(ct) is { } conflict) return conflict;
         return Result.Deleted;
     }
 
@@ -155,6 +185,7 @@ public sealed class RealmDraftService(
     {
         var draft = await LoadVisibleAsync(id, userId, ct);
         if (draft is null) return NotFound;
+        if (IsBeingApplied(draft)) return Applying;
         if (!draft.Secrets.Remove(slot))
             return Error.NotFound("Draft.SecretSlotNotFound", $"No staged secret at '{slot}'.");
         draft.LastModifiedBy = userId;
@@ -162,7 +193,7 @@ public sealed class RealmDraftService(
         draft.LastModifiedAt = time.GetUtcNow();
         draft.Version++;
         session.Store(draft);
-        await session.SaveChangesAsync(ct);
+        if (await SaveAsync(ct) is { } conflict) return conflict;
         return ToDto(draft, userId);
     }
 
@@ -225,6 +256,7 @@ public sealed class RealmDraftService(
         var draftResult = await GetOrCreateActiveAsync(slug, userId, userName, ct);
         if (draftResult.IsError) return draftResult.Errors;
         var draft = draftResult.Value;
+        if (IsBeingApplied(draft)) return Applying;
 
         var json = jsonOptions.Value.SerializerOptions;
         var root = JsonSerializer.SerializeToNode(draft.Manifest, json)!.AsObject();
@@ -254,7 +286,7 @@ public sealed class RealmDraftService(
             root.Deserialize<RealmManifest>(json)!, draft.Secrets);
         Touch(draft, userId, userName);
         session.Store(draft);
-        await session.SaveChangesAsync(ct);
+        if (await SaveAsync(ct) is { } conflict) return conflict;
         return ToDto(draft, userId);
     }
 
@@ -276,6 +308,7 @@ public sealed class RealmDraftService(
         var draftResult = await GetOrCreateActiveAsync(slug, userId, userName, ct);
         if (draftResult.IsError) return draftResult.Errors;
         var draft = draftResult.Value;
+        if (IsBeingApplied(draft)) return Applying;
 
         var json = jsonOptions.Value.SerializerOptions;
         var root = JsonSerializer.SerializeToNode(draft.Manifest, json)!.AsObject();
@@ -291,7 +324,7 @@ public sealed class RealmDraftService(
         draft.Manifest = SanitizeManifest(root.Deserialize<RealmManifest>(json)!, draft.Secrets);
         Touch(draft, userId, userName);
         session.Store(draft);
-        await session.SaveChangesAsync(ct);
+        if (await SaveAsync(ct) is { } conflict) return conflict;
         return ToDto(draft, userId);
     }
 
@@ -310,6 +343,7 @@ public sealed class RealmDraftService(
         if (pointer?.ActiveDraftId is not { } draftId) return NotFound;
         var draft = await LoadVisibleAsync(draftId, userId, ct);
         if (draft is null) return NotFound;
+        if (IsBeingApplied(draft)) return Applying;
 
         if (draft.Deletions.RemoveAll(d => d.Section == section && d.Key == key) == 0)
             return Error.NotFound("Draft.DeletionNotStaged",
@@ -331,7 +365,7 @@ public sealed class RealmDraftService(
             root.Deserialize<RealmManifest>(json)!, draft.Secrets);
         Touch(draft, userId, userName);
         session.Store(draft);
-        await session.SaveChangesAsync(ct);
+        if (await SaveAsync(ct) is { } conflict) return conflict;
         return ToDto(draft, userId);
     }
 
@@ -347,6 +381,7 @@ public sealed class RealmDraftService(
         if (pointer?.ActiveDraftId is not { } draftId) return NotFound;
         var draft = await LoadVisibleAsync(draftId, userId, ct);
         if (draft is null) return NotFound;
+        if (IsBeingApplied(draft)) return Applying;
 
         var json = jsonOptions.Value.SerializerOptions;
         var root = JsonSerializer.SerializeToNode(draft.Manifest, json)!.AsObject();
@@ -359,7 +394,7 @@ public sealed class RealmDraftService(
         draft.Manifest = SanitizeManifest(root.Deserialize<RealmManifest>(json)!, draft.Secrets);
         Touch(draft, userId, userName);
         session.Store(draft);
-        await session.SaveChangesAsync(ct);
+        if (await SaveAsync(ct) is { } conflict) return conflict;
         return ToDto(draft, userId);
     }
 
@@ -415,6 +450,7 @@ public sealed class RealmDraftService(
     {
         var draft = await LoadVisibleAsync(id, userId, ct);
         if (draft is null) return NotFound;
+        if (IsBeingApplied(draft)) return Applying;
 
         var exportResult = await exporter.ExportRealmAsync(slug, ct);
         if (exportResult.IsError) return exportResult.Errors;
@@ -425,7 +461,7 @@ public sealed class RealmDraftService(
         draft.LastModifiedAt = time.GetUtcNow();
         draft.Version++;
         session.Store(draft);
-        await session.SaveChangesAsync(ct);
+        if (await SaveAsync(ct) is { } conflict) return conflict;
         return ToDto(draft, userId);
     }
 
@@ -446,12 +482,17 @@ public sealed class RealmDraftService(
     /// pre-validation, nothing written) and the apply is refused while it reports
     /// apply-errors or unresolved three-way conflicts. On success the consumed
     /// draft is deleted.
+    /// <para>FD-02 — before the live write the draft is claimed (<see cref="RealmDraft.ApplyingSince"/>,
+    /// version-checked), so an edit cannot slip in and be deleted unapplied with the consumed
+    /// draft. Once the live state is committed, the caller always gets the result (including
+    /// any one-time secrets): a failed cleanup is logged, not returned.</para>
     /// </summary>
     public async Task<ErrorOr<RealmDraftApplyResult>> ApplyAsync(
         Guid id, Guid userId, CancellationToken ct)
     {
         var draft = await LoadVisibleAsync(id, userId, ct);
         if (draft is null) return NotFound;
+        if (IsBeingApplied(draft)) return Applying;
         var manifest = MergeSecrets(draft.Manifest, draft.Secrets);
 
         var planResult = await planner.PlanAsync(
@@ -462,14 +503,58 @@ public sealed class RealmDraftService(
         if (hasErrors || plan.HasConflicts)
             return new RealmDraftApplyResult { Refused = true, Plan = plan };
 
-        var applyResult = await applier.UpdateRealmAsync(
-            TenantContext.Current, manifest, draft.Deletions, ct);
-        if (applyResult.IsError) return applyResult.Errors;
+        // Claim: an edit saved since this draft was loaded makes the claim fail (the plan
+        // above would be stale); an edit after it is refused with Draft.Applying.
+        draft.ApplyingSince = time.GetUtcNow();
+        draft.Version++;
+        session.Store(draft);
+        if (await SaveAsync(ct) is { } conflict) return conflict;
 
-        session.Delete(draft);
-        await ClearPointerIfActiveAsync(id, userId, ct);
-        await session.SaveChangesAsync(ct);
+        ErrorOr<RealmImportResult> applyResult;
+        try
+        {
+            applyResult = await applier.UpdateRealmAsync(TenantContext.Current, manifest, draft.Deletions, ct);
+        }
+        catch
+        {
+            await ReleaseApplyClaimAsync(draft);
+            throw;
+        }
+        if (applyResult.IsError)
+        {
+            await ReleaseApplyClaimAsync(draft);
+            return applyResult.Errors;
+        }
+
+        // The live state is committed from here on.
+        try
+        {
+            session.Delete(draft);
+            await ClearPointerIfActiveAsync(id, userId, CancellationToken.None);
+            await session.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Draft {DraftId} was applied but could not be removed; its apply claim expires on its own", id);
+        }
         return new RealmDraftApplyResult { Refused = false, Result = applyResult.Value };
+    }
+
+    /// <summary>Best effort: a failed apply hands the draft back for editing at once; if this
+    /// save fails too, the claim simply expires.</summary>
+    private async Task ReleaseApplyClaimAsync(RealmDraft draft)
+    {
+        try
+        {
+            draft.ApplyingSince = null;
+            draft.Version++;
+            session.Store(draft);
+            await session.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Apply claim of draft {DraftId} could not be released; it expires on its own", draft.Id);
+        }
     }
 
     // ── Secret slots ─────────────────────────────────────────────────────────────
