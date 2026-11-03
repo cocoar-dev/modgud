@@ -352,11 +352,12 @@ public partial class SamlAcsReplayEndToEndTests : IntegrationTestBase
 
     private async Task<LoginProvider> CreateAndRegisterProviderAsync(X509Certificate2 idpCert,
         Saml2AuthnResponseSignTypes signType = Saml2AuthnResponseSignTypes.SignAssertion,
-        bool wantAssertionsEncrypted = false)
+        bool wantAssertionsEncrypted = false,
+        bool postOnlySso = false)
     {
         var flavorData = JsonDocument.Parse(JsonSerializer.Serialize(new
         {
-            metadataXml = BuildIdpMetadataXml(idpCert),
+            metadataXml = BuildIdpMetadataXml(idpCert, postOnlySso),
             wantAssertionsSigned = signType != Saml2AuthnResponseSignTypes.SignResponse,
             wantResponseSigned = signType != Saml2AuthnResponseSignTypes.SignAssertion,
             wantAssertionsEncrypted,
@@ -484,7 +485,7 @@ public partial class SamlAcsReplayEndToEndTests : IntegrationTestBase
             cert.Export(X509ContentType.Pkcs12), password: null, X509KeyStorageFlags.Exportable);
     }
 
-    private static string BuildIdpMetadataXml(X509Certificate2 idpCert)
+    private static string BuildIdpMetadataXml(X509Certificate2 idpCert, bool postOnlySso = false)
     {
         XNamespace md = "urn:oasis:names:tc:SAML:2.0:metadata";
         XNamespace ds = "http://www.w3.org/2000/09/xmldsig#";
@@ -503,7 +504,9 @@ public partial class SamlAcsReplayEndToEndTests : IntegrationTestBase
                             new XElement(ds + "X509Data",
                                 new XElement(ds + "X509Certificate", certB64)))),
                     new XElement(md + "SingleSignOnService",
-                        new XAttribute("Binding", "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"),
+                        new XAttribute("Binding", postOnlySso
+                            ? "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+                            : "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"),
                         new XAttribute("Location", IdpSsoUrl)))));
 
         return doc.ToString();

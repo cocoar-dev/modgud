@@ -107,11 +107,15 @@ public class SamlLoginFlow(
             },
         };
 
-        var binding = new Saml2RedirectBinding();
+        // B6-SAML-04 — an IdP that offers only HTTP-POST single sign-on gets the request as
+        // an auto-submitting form; HTTP-Redirect stays the default whenever it is offered.
+        var usePost = provider.IdpMetadata.SsoRedirectUrl is null;
+        Saml2Binding binding = usePost ? new Saml2PostBinding() : new Saml2RedirectBinding();
         if (!string.IsNullOrEmpty(returnUrl))
             binding.RelayState = returnUrl;
 
-        binding.Bind(authnRequest);
+        if (binding is Saml2PostBinding postBinding) postBinding.Bind(authnRequest);
+        else ((Saml2RedirectBinding)binding).Bind(authnRequest);
 
         // Remember the request BEFORE handing the browser to the IdP. This record
         // is what makes the Response's InResponseTo checkable at the ACS — without
@@ -140,7 +144,19 @@ public class SamlLoginFlow(
             "SAML AuthnRequest built for provider {Id} → IdP {IdpEntity}",
             provider.LoginProviderId, provider.IdpMetadata.EntityId);
 
-        return Results.Redirect(binding.RedirectLocation.OriginalString);
+        if (binding is Saml2PostBinding post)
+        {
+            // Our own narrow CSP for this one page (the security-headers middleware keeps a
+            // policy that is already set): nothing loads, the inline handler may submit, and
+            // the form may only go to the IdP's SSO origin.
+            var ssoOrigin = new Uri(ssoUrl).GetLeftPart(UriPartial.Authority);
+            http.Response.Headers.ContentSecurityPolicy =
+                $"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action {ssoOrigin}; base-uri 'none'; frame-ancestors 'none'";
+            http.Response.Headers.CacheControl = "no-store";
+            return Results.Content(post.PostContent, "text/html", Encoding.UTF8);
+        }
+
+        return Results.Redirect(((Saml2RedirectBinding)binding).RedirectLocation.OriginalString);
     }
 
     /// <summary>
