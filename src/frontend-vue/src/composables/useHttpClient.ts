@@ -16,6 +16,15 @@
 /** Paths where a 401 is expected and should NOT trigger a redirect. */
 const AUTH_PATHS = ['/api/account/me', '/api/account/login']
 
+// MFA failures belong to the login page's retry/back-to-login flow. Redirecting
+// to bare /login here discards the pending OAuth/profile/admin continuation.
+// Exact POST endpoints only: protected reads and factor-management calls retain normal 401 handling.
+const MFA_POST_PATHS = [
+  '/api/account/mfa/login',
+  '/api/account/email-otp/login',
+  '/api/account/email-otp/login/request',
+]
+
 /**
  * Detects the 2FA-enforcement 403 body shape. Any other 403 (e.g. permission denied)
  * should stay a normal error so callers can handle it locally.
@@ -209,7 +218,8 @@ class HttpClient {
       }
 
       // On 401, redirect to login unless this is an auth-related request
-      if (response.status === 401 && !AUTH_PATHS.includes(url)) {
+      if (response.status === 401 && !AUTH_PATHS.includes(url)
+        && !(method === 'POST' && MFA_POST_PATHS.includes(url))) {
         window.location.href = '/login'
       }
 
