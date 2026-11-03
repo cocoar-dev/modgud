@@ -8,13 +8,14 @@ namespace Modgud.Authentication.Domain;
 /// access token) has no session, so the dedicated
 /// <c>POST /connect/passkey/enroll/begin</c> endpoint persists the options
 /// server-side here, keyed by a server-generated Guid (the <c>ceremonyId</c>
-/// returned to the client). <c>POST /connect/passkey/enroll</c> loads +
-/// single-use-deletes it before verifying the attestation and storing the
-/// <see cref="StoredPasskeyCredential"/>.
+/// returned to the client). <c>POST /connect/passkey/enroll</c> loads it and
+/// consumes it (<see cref="ConsumedAt"/>) before verifying the attestation and
+/// storing the <see cref="StoredPasskeyCredential"/>. The web cookie register flow
+/// uses the same record and the same consume.
 ///
 /// <para>Distinct from <see cref="PasskeyCeremony"/> (the ASSERTION/login ceremony)
 /// so attestation options can never be redeemed on the assertion path or vice
-/// versa. One-time use (deleted on consume) + short TTL bound replay. Tenancy is
+/// versa. One-time use (consumed marker) + short TTL bound replay. Tenancy is
 /// the physical per-realm DB (the document rides the tenant-scoped
 /// <c>IDocumentSession</c>) — no realm field, mirroring
 /// <see cref="StoredPasskeyCredential"/>.</para>
@@ -47,7 +48,18 @@ public class PasskeyEnrollCeremony
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
+    /// <summary>
+    /// Set when a register/enroll finish consumed the ceremony. Consuming is a
+    /// version-checked <c>Store</c> of this marker rather than a Delete — Marten
+    /// does NOT enforce optimistic concurrency on deletes, so two concurrent
+    /// finishes of one ceremony would both delete-and-proceed and each store a
+    /// credential (B8-P1). Every finish rejects a consumed ceremony; the row is
+    /// reaped by expiry.
+    /// </summary>
+    public DateTimeOffset? ConsumedAt { get; set; }
+
     public const int ExpirationMinutes = 5;
 
     public bool IsExpired => DateTimeOffset.UtcNow >= ExpiresAt;
+    public bool IsConsumed => ConsumedAt is not null;
 }
