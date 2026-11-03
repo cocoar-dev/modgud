@@ -16,7 +16,7 @@ namespace Modgud.Tests.Unit.ExternalAuth;
 /// scaffolding is needed — sister tests in <c>Modgud.Api.Tests</c> cover the
 /// event-handler + bootstrap wire-up under a live ASP.NET Core host.
 /// </summary>
-public class DynamicSamlSchemeManagerTests
+public partial class DynamicSamlSchemeManagerTests
 {
     private const string Realm = "acme";
 
