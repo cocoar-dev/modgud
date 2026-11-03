@@ -115,11 +115,12 @@ Two-step ceremony. First fetch options:
 POST /api/account/passkey/login-options
 Content-Type: application/json
 
-{ "userName": "alice" }
+{ }
 ```
 
-The response contains the `AssertionOptions` (challenge, RpId,
-allowCredentials). The challenge is also stashed in a short-lived
+The response contains the `AssertionOptions` (challenge, RpId and an
+empty allowCredentials list — a `userName` is ignored, so the endpoint
+never reveals which accounts have passkeys). The challenge is also stashed in a short-lived
 `Modgud.Passkey.Challenge` cookie so anonymous users (no session yet)
 can complete the ceremony. The browser calls
 `navigator.credentials.get(...)`, the user touches their passkey. The
@@ -136,10 +137,9 @@ The server verifies the assertion, checks the sign count against
 `StoredPasskeyCredential.SignCount` (replay protection) and sets a
 persistent cookie (30 days).
 
-## Passwordless via Passkey (without `userName`)
+## Passwordless via Passkey (discoverable credentials)
 
-When `POST /api/account/passkey/login-options` is called without
-`userName`, the server generates `AssertionOptions` with an empty
+On `POST /api/account/passkey/login-options` the server generates `AssertionOptions` with an empty
 `AllowedCredentials` list. The browser uses **discoverable
 credentials** (resident keys) — the user picks a stored identity from
 the authenticator. The UserId is read from the `UserHandle` of the
