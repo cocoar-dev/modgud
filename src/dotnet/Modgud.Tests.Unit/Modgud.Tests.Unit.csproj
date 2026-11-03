@@ -18,6 +18,10 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="NetArchTest.Rules" />
+    <!-- Unlike the web host, this graph resolves these as NuGet packages.
+         Keep their transitive security minima until upstream requires them. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Common" />
   </ItemGroup>
 
   <!--
