@@ -215,6 +215,10 @@ public static class AccountEndpoints
 
             var result = await signInManager.PasswordSignInAsync(user, request.Password,
                 isPersistent: request.RememberMe, lockoutOnFailure: false);
+            // B8-AJ-01 — the check reserved this attempt; only a wrong password keeps it (the
+            // same outcomes that record a failure below), everything else gives it back.
+            if (result.Succeeded || result.RequiresTwoFactor || result.IsLockedOut)
+                await loginThrottle.ReleaseAsync(context, user, throttle, context.RequestAborted);
 
             // Audit M4: when the realm requires verified emails, an unverified
             // account must not complete login (even though it may be active).

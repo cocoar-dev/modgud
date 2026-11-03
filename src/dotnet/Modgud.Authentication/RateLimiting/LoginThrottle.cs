@@ -26,7 +26,9 @@ public enum LoginBucket
     Untrusted,
 }
 
-/// <summary>The verdict for one attempt, taken BEFORE the password is checked.</summary>
+/// <summary>The verdict for one attempt, taken BEFORE the password is checked.
+/// <paramref name="Reserved"/>: the check took one slot of the bucket for this attempt; a
+/// failure keeps it, any other outcome gives it back (B8-AJ-01).</summary>
 public sealed record LoginThrottleDecision(
     bool Allowed,
     LoginBucket Bucket,
@@ -34,7 +36,8 @@ public sealed record LoginThrottleDecision(
     bool LogOnly,
     int RetryAfterSeconds,
     RateLimitRule? Rule,
-    string Key)
+    string Key,
+    bool Reserved = false)
 {
     /// <summary>The bucket is exhausted; in enforce mode the attempt is refused, in
     /// log-only mode it would have been.</summary>
@@ -71,14 +74,26 @@ public sealed class LoginThrottleCore(IRateLimitStore store, TimeProvider clock)
         if (rule is null || !rule.Enabled)
             return new LoginThrottleDecision(true, bucket, deviceId, logOnly, 0, null, key);
 
-        var peek = await store.PeekAsync(scope, key, rule, clock.GetUtcNow(), ct);
-        var exhausted = !peek.Allowed;
+        // B8-AJ-01 — reserve the attempt atomically BEFORE the password is checked. A mere
+        // peek let N overlapping requests all read "free" and check N passwords against a
+        // limit of five; the failure was only charged afterwards. A success gives the slot
+        // back (ReleaseAsync), so still only failures count.
+        var hit = await store.HitAsync(scope, key, rule, clock.GetUtcNow(), ct);
+        var exhausted = !hit.Allowed;
         return new LoginThrottleDecision(
             Allowed: !exhausted || logOnly,
             bucket, deviceId, logOnly,
-            RetryAfterSeconds: exhausted ? peek.RetryAfterSeconds : 0,
-            rule, key);
+            RetryAfterSeconds: exhausted ? hit.RetryAfterSeconds : 0,
+            rule, key,
+            Reserved: hit.Allowed);
     }
+
+    /// <summary>The attempt did not fail (success, second step, or no password verdict): give
+    /// back the slot its check reserved.</summary>
+    public Task ReleaseAsync(RateLimitScope scope, LoginThrottleDecision decision, CancellationToken ct = default)
+        => decision is { Reserved: true, Rule: { } rule }
+            ? store.ReleaseAsync(scope, decision.Key, rule, clock.GetUtcNow(), ct)
+            : Task.CompletedTask;
 
     public async Task<LoginFailureOutcome> RecordFailureAsync(
         RateLimitScope scope, Guid userId, LoginThrottleDecision decision,
@@ -90,12 +105,10 @@ public sealed class LoginThrottleCore(IRateLimitStore store, TimeProvider clock)
 
         if (decision.Rule is { Enabled: true } rule)
         {
-            // "Tripped" = this failure filled the bucket (or found it full). The check
-            // before the next attempt refuses at "hits >= limit", so the failure that
-            // reaches the limit is the one that must trigger the unlock mail — later
-            // attempts never get as far as recording a failure.
-            var hit = await store.HitAsync(scope, decision.Key, rule, now, ct);
-            tripped = !hit.Allowed || !(await store.PeekAsync(scope, decision.Key, rule, now, ct)).Allowed;
+            // The check already charged this attempt (B8-AJ-01); a failure just keeps it.
+            // "Tripped" = the bucket is full now: the failure that reaches the limit is the
+            // one that must trigger the unlock mail — later attempts are refused at the check.
+            tripped = !(await store.PeekAsync(scope, decision.Key, rule, now, ct)).Allowed;
             if (tripped && decision.Bucket == LoginBucket.Untrusted)
             {
                 // The owner gets ONE unlock mail per window, however many attackers knock.
@@ -130,6 +143,10 @@ public interface ILoginThrottle
     /// <summary>Count the failure, raise the spray signal, send the unlock mail when due.
     /// Never throws for mail or audit problems — a failed login must stay a 401.</summary>
     Task RecordFailureAsync(HttpContext http, ApplicationUser user, LoginThrottleDecision decision, string? clientId, CancellationToken ct = default);
+
+    /// <summary>The attempt did not fail: give back the slot its check reserved.
+    /// Never throws — bookkeeping must not turn a sign-in into an error.</summary>
+    Task ReleaseAsync(HttpContext http, ApplicationUser user, LoginThrottleDecision decision, CancellationToken ct = default);
 }
 
 public sealed class LoginThrottle(
@@ -201,6 +218,18 @@ public sealed class LoginThrottle(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Login throttle bookkeeping failed for user {UserId}; the attempt stays refused", user.Id);
+        }
+    }
+
+    public async Task ReleaseAsync(HttpContext http, ApplicationUser user, LoginThrottleDecision decision, CancellationToken ct = default)
+    {
+        try
+        {
+            await _core.ReleaseAsync(Scope(), decision, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Login throttle could not release the reserved attempt for user {UserId}", user.Id);
         }
     }
 
