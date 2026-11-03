@@ -9,6 +9,7 @@ using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Services;
+using Modgud.Infrastructure.OpenIddict;
 
 namespace Modgud.Api.Features.Admin.OAuth;
 
@@ -92,9 +93,12 @@ public static class OAuthClientsEndpoints
         .WithTags("OAuth Clients")
         .RequiresManagementPermission("oauth-client:write");
 
-        group.MapPut("{id}", async (string id, UpdateOAuthClientDto dto, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
+        group.MapPut("{id}", async (string id, UpdateOAuthClientDto dto, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, IOAuthGrantRevoker revoker, CancellationToken ct) =>
         {
             var result = await svc.UpdateClientAsync(id, dto, ct);
+            // E.clients-B3 — a disabled client keeps no live tokens or authorizations.
+            if (!result.IsError && !result.Value.Enabled)
+                await revoker.RevokeClientAccessAsync(result.Value.Id, ct);
             if (!result.IsError)
                 dispatcher.DispatchUpdatedEvent("OAuthClient", result.Value, session.TenantId);
             return result.ToResult(client => Results.Ok(client));
@@ -102,10 +106,12 @@ public static class OAuthClientsEndpoints
         .WithName("OAuth_Clients_Update")
         .RequiresPermission("oauth-client:write");
 
-        group.MapDelete("{id}", async (string id, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, CancellationToken ct) =>
+        group.MapDelete("{id}", async (string id, OAuthAdminService svc, IDocumentSession session, DataEventDispatcher dispatcher, IOAuthGrantRevoker revoker, CancellationToken ct) =>
         {
             var result = await svc.DeleteClientAsync(id, ct);
             if (result.IsError) return result.ToResult();
+            // E.clients-B3 — a deleted client's tokens and authorizations end with it.
+            await revoker.RevokeClientAccessAsync(Guid.Parse(id).ToString(), ct);
             // The DTO.Id the SPA stores is the full Guid string (MapClient), so
             // emit the same here — a ShortGuid wouldn't match the grid row.
             dispatcher.DispatchDeletedEvent("OAuthClient", id, session.TenantId);
