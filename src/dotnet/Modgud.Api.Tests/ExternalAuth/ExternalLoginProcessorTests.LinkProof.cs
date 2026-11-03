@@ -58,6 +58,22 @@ public partial class ExternalLoginProcessorTests
         Assert.Equal(DefaultUser!.Id, link!.UserId);
     }
 
+    /// <summary>EP-02 — "Allow linking" off means no self-service link from the profile,
+    /// even with a recent account proof. The flag was stored but never enforced.</summary>
+    [Fact]
+    public async Task Link_to_a_provider_with_linking_disabled_is_refused_even_with_a_recent_proof()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = await CreateEnabledEntraConfig(allowLinking: false);
+        var subject = $"nolink-{Guid.NewGuid():N}";
+
+        using var response = await FinishAsync(config.Id, subject, proofAge: TimeSpan.FromMinutes(1));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.StartsWith("/login?error=Idp.LinkingDisabled", response.Headers.Location?.OriginalString);
+        Assert.Null(await LinkForAsync(subject, ct));
+    }
+
     private async Task<ExternalIdentityLink?> LinkForAsync(string subject, CancellationToken ct)
     {
         await using var session = GetTenantedSession();

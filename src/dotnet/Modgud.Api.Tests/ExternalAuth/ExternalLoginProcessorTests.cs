@@ -477,7 +477,8 @@ public partial class ExternalLoginProcessorTests : IntegrationTestBase
     private async Task<LoginProvider> CreateEnabledEntraConfig(
         bool autoCreate = false,
         bool trustForEmailLink = false,
-        string[]? allowedDomains = null)
+        string[]? allowedDomains = null,
+        bool allowLinking = true)
     {
         using var scope = Factory.Services.CreateScope();
         var bus = GetTenantedMessageBus(scope);
@@ -509,7 +510,7 @@ public partial class ExternalLoginProcessorTests : IntegrationTestBase
             StoreRawClaims: true,
             RawClaimsRetentionDays: null,
             AutoCreateUsers: autoCreate,
-            AllowLinking: true,
+            AllowLinking: allowLinking,
             TrustForEmailLink: trustForEmailLink,
             AllowedEmailDomains: allowedDomains?.ToList(),
             IconName: "microsoft",

@@ -129,6 +129,7 @@ function resolveIdpError(code: string): string {
     'Idp.Unlinked': t('auth.idp.unlinked', {}, 'This external identity has been disconnected. Contact your administrator.'),
     'Idp.LinkedToOtherUser': t('auth.idp.linkedToOtherBranded', { app }, 'This identity is already linked to a different {app} account.'),
     'Idp.LinkRequiresRecentProof': t('auth.idp.linkRequiresRecentProof', {}, 'Please confirm your account again (sign in anew) before linking another sign-in, then try again.'),
+    'Idp.LinkingDisabled': t('auth.idp.linkingDisabled', {}, 'This sign-in provider cannot be linked to an existing account.'),
     'Idp.UserMissing': t('auth.idp.userMissing', {}, 'The linked user no longer exists. Please contact your administrator.'),
     'Idp.EmailNotAllowed': t('auth.idp.emailNotAllowed', {}, 'Your email domain is not allowed for this provider.'),
     'Idp.EmailRequired': t('auth.idp.emailRequired', {}, 'The identity provider did not return an email. Cannot create a new account.'),

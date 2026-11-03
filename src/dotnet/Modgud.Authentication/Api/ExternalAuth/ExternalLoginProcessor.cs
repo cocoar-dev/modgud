@@ -194,6 +194,18 @@ public class ExternalLoginProcessor(
             if (existing is null)
                 return ExternalLoginResult.Failed("Idp.UserMissing", "Your account could not be loaded.");
 
+            // EP-02 — "Allow linking" off: this provider may not be added to an existing
+            // account from a signed-in session. Returning links, JIT and the admin's
+            // email-trust policy are separate paths and unaffected.
+            if (!config.AllowLinking)
+            {
+                logger.LogInformation(
+                    "External identity link to user {UserId} via IdP {IdpId} refused: linking is disabled for this provider",
+                    existing.Id, loginProviderId);
+                return ExternalLoginResult.Failed("Idp.LinkingDisabled",
+                    "This sign-in provider cannot be linked to an existing account.");
+            }
+
             // B6-OIDC-01/02 — a new link is an account change: it adds a sign-in path that
             // outlives this session (and, with an MFA amr, an external factor). A taken-over
             // session alone must not add one, so it needs the same recent proof as adding
