@@ -40,8 +40,10 @@ public record DeletionStatusDto
     public DateTimeOffset? ConfirmationDeadline { get; init; }
 }
 
-/// <summary>Article 20 — right to data portability. JSON dump of everything
-/// the IdP holds about the caller.</summary>
+/// <summary>Article 20 — right to data portability. JSON export of the caller's
+/// profile, security settings, IdP permissions, sessions, OAuth consents and login
+/// history. What is limited or left out is stated in <see cref="ExportMetadataDto"/>
+/// (A.gdpr-C005), never silently.</summary>
 public record UserDataExportDto
 {
     public required ExportMetadataDto Metadata { get; init; }
@@ -50,6 +52,8 @@ public record UserDataExportDto
     public required List<string> Permissions { get; init; }
     public required List<ExportSessionDto> Sessions { get; init; }
     public required List<ExportLoginEventDto> LoginHistory { get; init; }
+    /// <summary>Valid OAuth consents (authorizations) the user granted to applications.</summary>
+    public List<ExportConsentDto> OAuthConsents { get; init; } = [];
 }
 
 public record ExportMetadataDto
@@ -57,6 +61,25 @@ public record ExportMetadataDto
     public DateTimeOffset ExportedAt { get; init; }
     public required string FormatVersion { get; init; }
     public Guid UserId { get; init; }
+    /// <summary>The most recent login events are exported, at most this many.</summary>
+    public int LoginHistoryLimit { get; init; }
+    /// <summary>More login events exist than <see cref="LoginHistoryLimit"/>.</summary>
+    public bool LoginHistoryTruncated { get; init; }
+    /// <summary>The login history could not be read; <c>LoginHistory</c> is then empty
+    /// although it may not be.</summary>
+    public bool LoginHistoryUnavailable { get; init; }
+    /// <summary>Data this export deliberately does not contain.</summary>
+    public List<string> NotIncluded { get; init; } = [];
+}
+
+public record ExportConsentDto
+{
+    public string? ClientId { get; init; }
+    public string? ClientDisplayName { get; init; }
+    public List<string> Scopes { get; init; } = [];
+    /// <summary>OpenIddict authorization type: <c>permanent</c> or <c>ad-hoc</c>.</summary>
+    public string? Type { get; init; }
+    public DateTimeOffset? GrantedAt { get; init; }
 }
 
 public record ExportProfileDto
