@@ -33,18 +33,34 @@ export const useOAuthClientStore = defineStore('oauth-client', () => {
 
   const clients = ref<OAuthClientDto[]>([])
   const loaded = ref(false)
+  const loadFailed = ref(false)
+  let snapshotRevision = 0
   const totalCount = ref(0)
   let signalrSubscribed = false
 
   async function loadAll(): Promise<OAuthClientDto[]> {
-    const res = await http
-      .setQueryParameter('page', '1')
-      .setQueryParameter('pageSize', '500')
-      .get<OAuthClientListDto>()
-    clients.value = res.Items
-    totalCount.value = res.TotalCount
-    loaded.value = true
-    return res.Items
+    const revision = ++snapshotRevision
+    try {
+      const res = await http
+        .setQueryParameter('page', '1')
+        .setQueryParameter('pageSize', '500')
+        .get<OAuthClientListDto>()
+      if (revision === snapshotRevision) {
+        clients.value = res.Items
+        totalCount.value = res.TotalCount
+        loaded.value = true
+        loadFailed.value = false
+      }
+      return res.Items
+    } catch (error) {
+      if (revision === snapshotRevision) {
+        clients.value = []
+        totalCount.value = 0
+        loaded.value = false
+        loadFailed.value = true
+      }
+      throw error
+    }
   }
 
   async function initialize() {
@@ -53,7 +69,7 @@ export const useOAuthClientStore = defineStore('oauth-client', () => {
     if (!signalrSubscribed) {
       signalrSubscribed = true
       subscribeToSignalR()
-      signalr.runOnReconnect(() => void loadAll(), 'OAuthClientActions.Reload')
+      signalr.runOnReconnect(() => loadAll().catch(() => {}), 'OAuthClientActions.Reload')
     }
 
     if (!loaded.value) await loadAll()
@@ -121,6 +137,7 @@ export const useOAuthClientStore = defineStore('oauth-client', () => {
   return {
     clients,
     loaded,
+    loadFailed,
     totalCount,
     initialize,
     loadAll,

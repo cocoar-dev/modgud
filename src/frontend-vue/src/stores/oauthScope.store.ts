@@ -28,18 +28,34 @@ export const useOAuthScopeStore = defineStore('oauth-scope', () => {
 
   const scopes = ref<OAuthScopeDto[]>([])
   const loaded = ref(false)
+  const loadFailed = ref(false)
+  let snapshotRevision = 0
   const totalCount = ref(0)
   let signalrSubscribed = false
 
   async function loadAll(): Promise<OAuthScopeDto[]> {
-    const res = await http
-      .setQueryParameter('page', '1')
-      .setQueryParameter('pageSize', '500')
-      .get<OAuthScopeListDto>()
-    scopes.value = res.Items
-    totalCount.value = res.TotalCount
-    loaded.value = true
-    return res.Items
+    const revision = ++snapshotRevision
+    try {
+      const res = await http
+        .setQueryParameter('page', '1')
+        .setQueryParameter('pageSize', '500')
+        .get<OAuthScopeListDto>()
+      if (revision === snapshotRevision) {
+        scopes.value = res.Items
+        totalCount.value = res.TotalCount
+        loaded.value = true
+        loadFailed.value = false
+      }
+      return res.Items
+    } catch (error) {
+      if (revision === snapshotRevision) {
+        scopes.value = []
+        totalCount.value = 0
+        loaded.value = false
+        loadFailed.value = true
+      }
+      throw error
+    }
   }
 
   async function initialize() {
@@ -48,7 +64,7 @@ export const useOAuthScopeStore = defineStore('oauth-scope', () => {
     if (!signalrSubscribed) {
       signalrSubscribed = true
       subscribeToSignalR()
-      signalr.runOnReconnect(() => void loadAll(), 'OAuthScopeActions.Reload')
+      signalr.runOnReconnect(() => loadAll().catch(() => {}), 'OAuthScopeActions.Reload')
     }
 
     if (!loaded.value) await loadAll()
@@ -100,6 +116,7 @@ export const useOAuthScopeStore = defineStore('oauth-scope', () => {
   return {
     scopes,
     loaded,
+    loadFailed,
     initialize,
     loadAll,
     loadOne,
