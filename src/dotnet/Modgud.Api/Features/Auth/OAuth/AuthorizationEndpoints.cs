@@ -585,6 +585,20 @@ public static class AuthorizationEndpoints
             }
 
             var originalScopes = result.Principal?.GetScopes();
+
+            // EG-03 — the checks above saw request.GetScopes(), which a refresh / code /
+            // device exchange usually leaves empty, while the new principal carries the
+            // ORIGINAL granted scopes. Revalidate exactly those: a scope disabled, a client
+            // unlinked from the scope's App, or a dynamic-client opt-in withdrawn after the
+            // grant must not be minted again.
+            if (originalScopes is { IsDefaultOrEmpty: false } grantedScopes)
+            {
+                var grantedScopeError =
+                    await ValidateScopeRestrictionAsync(request.ClientId, grantedScopes, session, cimdResolver, httpContext.RequestAborted)
+                    ?? await ValidateScopesEnabledAsync(grantedScopes, session);
+                if (grantedScopeError is not null) return grantedScopeError;
+            }
+
             var principal = await CreateClaimsPrincipalAsync(
                 user, request, scopeManager, originalScopes, userManager,
                 cookiePrincipal: result.Principal);
