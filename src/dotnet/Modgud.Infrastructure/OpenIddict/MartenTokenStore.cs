@@ -241,6 +241,9 @@ public class MartenTokenStore : IOpenIddictTokenStore<OpenIddictTokenDocument>
             foreach (var token in tokens)
             {
                 token.Status = OpenIddictConstants.Statuses.Revoked;
+                // B4-01 — rotate like UpdateAsync, so a copy loaded before this revoke
+                // fails the stale-write check there instead of overwriting Revoked.
+                token.ConcurrencyToken = Guid.NewGuid().ToString();
                 session.Store(token);
             }
             return tokens.Count;
