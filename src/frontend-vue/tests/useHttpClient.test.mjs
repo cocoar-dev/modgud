@@ -176,3 +176,61 @@ test('GET options do not change URL builders, successful data or default sibling
   await assert.rejects(base.addPath('request').get(), HttpClientError)
   assert.equal(window.location.href, '/login?stepup=1&redirect=%2Fprofile')
 })
+
+const mfaPosts = [
+  '/api/account/mfa/login',
+  '/api/account/email-otp/login',
+  '/api/account/email-otp/login/request',
+]
+for (const path of mfaPosts) {
+  test(`${path}: expected POST401 rejects locally, preserving all continuation flags`, async t => {
+    const here = '/login?mfa=totp&stepup=1&reauth=1&for=admin&redirect=%2Fadmin%2Fusers'
+    window.location.href = here
+    const body = { Message: 'Invalid credentials' }
+    const fetch = respond(t, 401, body)
+    await assert.rejects(useHttpClient(path).post({ Code: 'synthetic' }), isHttpError(401, body))
+    assert.equal(window.location.href, here)
+    assert.equal(fetch.mock.callCount(), 1)
+    assert.equal(storage.size, 0)
+  })
+
+  for (const method of ['get', 'put', 'patch', 'delete']) {
+    test(`${path}: ${method}401 is not a MFA-POST navigation exception`, async t => {
+      respond(t, 401, {})
+      await assert.rejects(useHttpClient(path)[method](), HttpClientError)
+      assert.equal(window.location.href, '/login')
+    })
+  }
+}
+
+for (const path of [
+  '/api/account/mfa/setup',
+  '/api/account/email-otp/enable',
+  '/api/account/mfa/login/other',
+  '/api/account/mfa/login?other=1',
+  '/api/account/step-up',
+]) {
+  test(`${path}: nearby POST401 keeps the normal session-expiry redirect`, async t => {
+    respond(t, 401, {})
+    await assert.rejects(useHttpClient(path).post({}), HttpClientError)
+    assert.equal(window.location.href, '/login')
+  })
+}
+
+test('local MFA refusal does not opt protected sibling requests out of401 handling', async t => {
+  respond(t, 401, {})
+  const account = useHttpClient('/api/account')
+  await assert.rejects(account.addPath('mfa', 'login').post({}), HttpClientError)
+  assert.equal(window.location.href, '/profile')
+  await assert.rejects(account.addPath('profile', 'request').get(), HttpClientError)
+  assert.equal(window.location.href, '/login')
+})
+
+test('MFA POST400 still rejects locally and a later successful POST returns normally', async t => {
+  const body = { detail: 'Invalid code' }
+  respond(t, 400, body)
+  await assert.rejects(useHttpClient('/api/account/email-otp/login').post({}), isHttpError(400, body))
+  assert.equal(window.location.href, '/profile')
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ Message: 'Login successful' })))
+  assert.deepEqual(await useHttpClient('/api/account/mfa/login').post({}), { Message: 'Login successful' })
+})
