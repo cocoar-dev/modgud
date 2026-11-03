@@ -21,6 +21,7 @@ public enum AccountChange
     PasswordChanged,
     EmailChangeRequested,
     DeletionRequested,
+    ExternalIdentityLinked,
 }
 
 /// <summary>The result of checking an account change: allowed, or which proof is missing.</summary>
@@ -166,6 +167,8 @@ public sealed class AccountChangeGuard(
         (AccountChange.EmailChangeRequested, false) => "Eine Änderung der E-Mail-Adresse wurde beantragt.",
         (AccountChange.DeletionRequested, true) => "The deletion of the account was requested.",
         (AccountChange.DeletionRequested, false) => "Die Löschung des Kontos wurde beantragt.",
+        (AccountChange.ExternalIdentityLinked, true) => "A sign-in through an external identity provider was linked to your account.",
+        (AccountChange.ExternalIdentityLinked, false) => "Eine Anmeldung über einen externen Identity Provider wurde mit dem Konto verknüpft.",
         _ => change.ToString(),
     };
 }

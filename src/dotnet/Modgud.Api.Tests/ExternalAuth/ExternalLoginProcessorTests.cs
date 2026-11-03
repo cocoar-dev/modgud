@@ -19,7 +19,7 @@ using Wolverine;
 namespace Modgud.Api.Tests.ExternalAuth;
 
 [Collection(IntegrationTestCollection.Name)]
-public class ExternalLoginProcessorTests : IntegrationTestBase
+public partial class ExternalLoginProcessorTests : IntegrationTestBase
 {
     public ExternalLoginProcessorTests(SharedPostgresFixture fixture) : base(fixture) { }
 
@@ -359,7 +359,9 @@ public class ExternalLoginProcessorTests : IntegrationTestBase
         {
             var processor = scope.ServiceProvider.GetRequiredService<ExternalLoginProcessor>();
             var external = BuildExternalPrincipal("sub-rehome-1", "claimb@acme.com", "Claim Bbb");
-            var result = await processor.ProcessAsync(external, config.Id, default, authenticatedUserId: userB.Id);
+            // A new link: B's session holds a recent account proof (B6-OIDC-01/02).
+            var result = await processor.ProcessAsync(external, config.Id, default, authenticatedUserId: userB.Id,
+                authenticatedSessionMayLink: true);
             Assert.True(result.Succeeded);
             Assert.Equal(userB.Id, result.UserId);
         }

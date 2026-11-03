@@ -40,13 +40,19 @@ public class ExternalLoginProcessor(
     ILoginTimeMembershipDeriver membershipDeriver,
     ILogger<ExternalLoginProcessor> logger,
     ISecurityAuditLog securityAudit,
-    TimeProvider clock)
+    TimeProvider clock,
+    Modgud.Authentication.Api.Account.IAccountChangeGuard accountChanges)
 {
+    /// <param name="authenticatedSessionMayLink">B6-OIDC-01/02 — the caller's verdict that the
+    /// signed-in session holds a recent account proof (<see cref="Modgud.Authentication.Api.Account.IAccountChangeGuard"/>).
+    /// Only consulted when a NEW link to <paramref name="authenticatedUserId"/> would be created;
+    /// fails closed by default.</param>
     public async Task<ExternalLoginResult> ProcessAsync(
         ClaimsPrincipal externalPrincipal,
         Guid loginProviderId,
         CancellationToken ct,
-        Guid? authenticatedUserId = null)
+        Guid? authenticatedUserId = null,
+        bool authenticatedSessionMayLink = false)
     {
         var config = await session.LoadAsync<LoginProvider>(loginProviderId, ct);
         if (config is null || config.IsDeleted || !config.Enabled)
@@ -188,6 +194,19 @@ public class ExternalLoginProcessor(
             if (existing is null)
                 return ExternalLoginResult.Failed("Idp.UserMissing", "Your account could not be loaded.");
 
+            // B6-OIDC-01/02 — a new link is an account change: it adds a sign-in path that
+            // outlives this session (and, with an MFA amr, an external factor). A taken-over
+            // session alone must not add one, so it needs the same recent proof as adding
+            // a passkey, and the owner is told.
+            if (!authenticatedSessionMayLink)
+            {
+                logger.LogWarning(
+                    "External identity link to user {UserId} via IdP {IdpId} refused: no recent account proof",
+                    existing.Id, loginProviderId);
+                return ExternalLoginResult.Failed("Idp.LinkRequiresRecentProof",
+                    "Confirm your account again before linking another sign-in.");
+            }
+
             // New link to an existing account — this provider did not create the
             // user, so it patches the profile only if explicitly authoritative.
             if (ShouldPatchProfile(config, link: null))
@@ -203,6 +222,7 @@ public class ExternalLoginProcessor(
             logger.LogInformation(
                 "External identity linked to existing user {UserId} via IdP {IdpId}",
                 existing.Id, loginProviderId);
+            await accountChanges.NotifyAsync(existing, Modgud.Authentication.Api.Account.AccountChange.ExternalIdentityLinked, ct);
             return await Success(existing, addedLink, externalPrincipal, loginProviderId, issuer, config, externalGroups, ct);
         }
 

@@ -172,13 +172,15 @@ public static class ExternalAuthEndpoints
                 var existingAuth = await http.AuthenticateAsync(
                     Microsoft.AspNetCore.Identity.IdentityConstants.ApplicationScheme);
                 Guid? authenticatedUserId = null;
+                var mayLink = false;
                 if (existingAuth.Succeeded && existingAuth.Principal is not null)
                 {
                     var idClaim = existingAuth.Principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
                     if (Guid.TryParse(idClaim, out var parsed)) authenticatedUserId = parsed;
+                    mayLink = await SessionMayLinkAsync(http, existingAuth.Principal, ct);
                 }
 
-                var result = await processor.ProcessAsync(auth.Principal, loginProviderId, ct, authenticatedUserId);
+                var result = await processor.ProcessAsync(auth.Principal, loginProviderId, ct, authenticatedUserId, mayLink);
                 if (!result.Succeeded)
                 {
                     await http.SignOutAsync(Microsoft.AspNetCore.Identity.IdentityConstants.ExternalScheme);
@@ -205,6 +207,30 @@ public static class ExternalAuthEndpoints
                     : "/";
                 return Results.Redirect(returnUrl);
             }).AllowAnonymous();
+    }
+
+    /// <summary>
+    /// B6-OIDC-01/02 — whether the signed-in session (<paramref name="appPrincipal"/>) may add
+    /// a new external link: the same recent account proof any other account change needs.
+    /// </summary>
+    internal static async Task<bool> SessionMayLinkAsync(HttpContext http, System.Security.Claims.ClaimsPrincipal appPrincipal, CancellationToken ct)
+    {
+        var users = http.RequestServices.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Modgud.Authentication.Domain.ApplicationUser>>();
+        var user = await users.GetUserAsync(appPrincipal);
+        if (user is null) return false;
+        // The guard reads the proven factors from HttpContext.User; on these anonymous
+        // callback routes that is not necessarily the app session, so lend it briefly.
+        var previous = http.User;
+        http.User = appPrincipal;
+        try
+        {
+            var guard = http.RequestServices.GetRequiredService<Modgud.Authentication.Api.Account.IAccountChangeGuard>();
+            return (await guard.CheckAsync(http, user, ct)).Allowed;
+        }
+        finally
+        {
+            http.User = previous;
+        }
     }
 
     internal static string? ExtractAuthorizeClientId(string? returnUrl)
