@@ -89,6 +89,10 @@ public class SessionService(
         if (!entity.IsActive(now))
         {
             session.Delete(entity);
+            // CS01 / ADR 0021 — an expiry found here ends the relying-party sessions
+            // exactly like the retention prune; without the marker the grants would
+            // later be swept with no end event.
+            await grants.StageSessionEndAsync(session, entity.UserId, entity.Id, AccessEndReasons.Expired, initiatingClientId: null, ct);
             await session.SaveChangesAsync(ct);
             connections.Revoke(sessionId);
             return null;
