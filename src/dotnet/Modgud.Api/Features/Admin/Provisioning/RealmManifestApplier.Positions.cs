@@ -77,7 +77,9 @@ public sealed partial class RealmManifestApplier
                 grantUserIds = new List<Guid>(pos.Grants.Count);
                 foreach (var key in pos.Grants)
                 {
-                    if (await ResolveUserRefAsync(session, identity, key, $"{ctx} grant '{key}'", skips, ct) is { } uid)
+                    // B3-P2 — two references (key, id, ShortGuid/Guid) may name one user.
+                    if (await ResolveUserRefAsync(session, identity, key, $"{ctx} grant '{key}'", skips, ct) is { } uid
+                        && !grantUserIds.Contains(uid))
                         grantUserIds.Add(uid);
                 }
                 // Revoking every grant is a real instruction ([]), resolving none of them is

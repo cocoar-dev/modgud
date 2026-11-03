@@ -19,7 +19,7 @@ namespace Modgud.Api.Tests.Positions;
 /// terminal state, re-grant after revoke, and the event-stream pin.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class PositionGrantTests : IntegrationTestBase
+public partial class PositionGrantTests : IntegrationTestBase
 {
     public PositionGrantTests(SharedPostgresFixture fixture) : base(fixture) { }
 

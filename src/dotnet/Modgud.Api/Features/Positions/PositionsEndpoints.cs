@@ -172,7 +172,9 @@ public static class PositionsEndpoints
                             Message = $"Grant user '{rawUserId}' is inactive."
                         });
 
-                    grantUserIds.Add(grantUserId);
+                    // B3-P2 — the raw strings were distinct, but two spellings (ShortGuid /
+                    // Guid) can name the same user: one grant per user.
+                    if (!grantUserIds.Contains(grantUserId)) grantUserIds.Add(grantUserId);
                 }
 
                 // Event-sourced like Person/Group: the PositionPrincipal document
