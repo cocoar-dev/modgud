@@ -237,8 +237,16 @@ public sealed class CimdClientResolver
         }
     }
 
-    private static async Task<string?> ReadBoundedAsync(HttpContent content, int maxBytes, CancellationToken cancellationToken)
+    /// <summary>DCR/CIMD-B5-02 — the HttpClient timeout ends with the headers
+    /// (ResponseHeadersRead), so the body gets a deadline of its own; when it passes the
+    /// read is cancelled and the fetch counts as failed.</summary>
+    private static readonly TimeSpan BodyReadTimeout = TimeSpan.FromSeconds(5);
+
+    private static async Task<string?> ReadBoundedAsync(HttpContent content, int maxBytes, CancellationToken requestAborted)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
+        deadline.CancelAfter(BodyReadTimeout);
+        var cancellationToken = deadline.Token;
         await using var stream = await content.ReadAsStreamAsync(cancellationToken);
         var buffer = new byte[maxBytes + 1];
         var total = 0;

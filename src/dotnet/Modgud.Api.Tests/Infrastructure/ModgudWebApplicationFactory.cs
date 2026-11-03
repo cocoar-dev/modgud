@@ -86,6 +86,10 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     /// cache or a refetch cooldown held.</summary>
     public System.Collections.Concurrent.ConcurrentDictionary<string, int> CimdFetchCounts { get; } = new();
 
+    /// <summary>DCR/CIMD-B5-02 seam: for a URL listed here the stub answers its headers at
+    /// once but holds the body back for the given time (honouring cancellation).</summary>
+    public System.Collections.Concurrent.ConcurrentDictionary<string, TimeSpan> CimdBodyDelays { get; } = new();
+
     public JsonSerializerOptions JsonOptions { get; } = new JsonSerializerOptions
     {
         PropertyNamingPolicy = null, // Match API's behavior (no camelCase)
@@ -226,7 +230,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
             // exercise the full resolve→synthesize→token flow without real
             // outbound HTTP. The last ConfigurePrimaryHttpMessageHandler wins.
             services.AddHttpClient(Modgud.Infrastructure.OpenIddict.Cimd.CimdClientResolver.HttpClientName)
-                .ConfigurePrimaryHttpMessageHandler(() => new StubCimdHandler(CimdDocuments, CimdFetchCounts));
+                .ConfigurePrimaryHttpMessageHandler(() => new StubCimdHandler(CimdDocuments, CimdFetchCounts, CimdBodyDelays));
         });
     }
 
@@ -253,7 +257,8 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     /// document registered for the exact request URL, or 404.</summary>
     private sealed class StubCimdHandler(
         System.Collections.Concurrent.ConcurrentDictionary<string, string> documents,
-        System.Collections.Concurrent.ConcurrentDictionary<string, int> fetchCounts) : HttpMessageHandler
+        System.Collections.Concurrent.ConcurrentDictionary<string, int> fetchCounts,
+        System.Collections.Concurrent.ConcurrentDictionary<string, TimeSpan> bodyDelays) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
@@ -262,13 +267,33 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
             fetchCounts.AddOrUpdate(url, 1, (_, n) => n + 1);
             if (documents.TryGetValue(url, out var json))
             {
-                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-                {
-                    Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
-                });
+                HttpContent content = bodyDelays.TryGetValue(url, out var delay)
+                    ? new StreamContent(new SlowBodyStream(System.Text.Encoding.UTF8.GetBytes(json), delay))
+                    : new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = content });
             }
             return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
         }
+    }
+
+    /// <summary>A body that becomes readable only after <paramref name="delay"/>.</summary>
+    private sealed class SlowBodyStream(byte[] body, TimeSpan delay) : MemoryStream(body)
+    {
+        private bool _waited;
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (!_waited)
+            {
+                await Task.Delay(delay, cancellationToken);
+                _waited = true;
+            }
+            return await base.ReadAsync(buffer, cancellationToken);
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
     }
 
     protected override IHost CreateHost(IHostBuilder builder)
