@@ -148,6 +148,25 @@ public class UpdateLoginProviderHandler(
             || command.AllowedEmailDomains.HasValue || command.IconName.HasValue
             || command.ButtonColorHex.HasValue || command.FlavorData.HasValue;
 
+        // EP-05 — the readiness gate used to run only on disabled → enabled. A provider
+        // that stays enabled must not be edited into a configuration it could not be
+        // enabled with (e.g. an empty ClientId): the old registration would keep
+        // answering logins while the stored state says otherwise.
+        var staysEnabled = config.Enabled && !(command.Enabled.HasValue && !command.Enabled.Value);
+        if (staysEnabled && anyConfigFieldProvided)
+        {
+            var hasSecretNow = config.ClientSecretEncrypted is { Length: > 0 };
+            var activeGate = LoginProviderReadiness.CheckCanEnable(config.Type, clientIdForType, hasSecretNow, flavorData);
+            // Refuse only what this update breaks: an enabled provider that is already
+            // incomplete stays editable (that is how it gets repaired).
+            if (activeGate is not null)
+            {
+                var currentClientId = config.Type == LoginProviderType.Saml ? string.Empty : config.ClientId;
+                if (LoginProviderReadiness.CheckCanEnable(config.Type, currentClientId, hasSecretNow, config.FlavorData) is null)
+                    return activeGate.Value;
+            }
+        }
+
         if (anyConfigFieldProvided)
         {
             session.Events.Append(command.Id, new LoginProviderUpdatedEvent(

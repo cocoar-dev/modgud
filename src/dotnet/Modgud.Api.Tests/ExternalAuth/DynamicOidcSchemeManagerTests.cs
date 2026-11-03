@@ -16,7 +16,7 @@ using Wolverine;
 namespace Modgud.Api.Tests.ExternalAuth;
 
 [Collection(IntegrationTestCollection.Name)]
-public class DynamicOidcSchemeManagerTests : IntegrationTestBase
+public partial class DynamicOidcSchemeManagerTests : IntegrationTestBase
 {
     public DynamicOidcSchemeManagerTests(SharedPostgresFixture fixture) : base(fixture) { }
 
