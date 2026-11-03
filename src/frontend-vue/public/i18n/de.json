@@ -225,6 +225,7 @@
       "invalidToken": "Der Identity Provider hat keine gültige Antwort geliefert.",
       "unlinked": "Diese externe Identität wurde getrennt. Bitte Administrator kontaktieren.",
       "linkedToOther": "Diese Identität ist bereits mit einem anderen Modgud-Konto verknüpft.",
+      "linkRequiresRecentProof": "Bitte bestätige dein Konto erneut (neu anmelden), bevor du eine weitere Anmeldung verknüpfst, und versuche es dann noch einmal.",
       "userMissing": "Der verknüpfte Benutzer existiert nicht mehr. Bitte Administrator kontaktieren.",
       "emailNotAllowed": "Deine Email-Domäne ist für diesen Provider nicht erlaubt.",
       "emailRequired": "Der Identity Provider hat keine Email geliefert. Es kann kein neues Konto angelegt werden.",

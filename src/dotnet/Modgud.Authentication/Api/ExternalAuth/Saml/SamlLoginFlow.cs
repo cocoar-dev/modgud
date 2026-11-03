@@ -294,13 +294,15 @@ public class SamlLoginFlow(
         // test-server + real-IdP verification.
         var existingAuth = await http.AuthenticateAsync(IdentityConstants.ApplicationScheme);
         Guid? authenticatedUserId = null;
+        var mayLink = false;
         if (existingAuth.Succeeded && existingAuth.Principal is not null)
         {
             var idClaim = existingAuth.Principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (Guid.TryParse(idClaim, out var parsed)) authenticatedUserId = parsed;
+            mayLink = await ExternalAuthEndpoints.SessionMayLinkAsync(http, existingAuth.Principal, ct);
         }
 
-        var result = await processor.ProcessAsync(external, provider.LoginProviderId, ct, authenticatedUserId);
+        var result = await processor.ProcessAsync(external, provider.LoginProviderId, ct, authenticatedUserId, mayLink);
 
         if (!result.Succeeded)
         {
