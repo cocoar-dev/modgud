@@ -142,6 +142,15 @@ ID and access tokens carry how the user signed in, so resource servers can enfor
 
 A refresh does not raise a token family above the level its sign-in reached, and fails with `invalid_grant` ("The application now requires a stronger sign-in") when the target now requires more than the refresh token's sign-in proved.
 
+For token families with recorded sign-in factors, an already started setup grace
+still permits `single` until its stored deadline; refresh never extends it.
+If the target is raised to `multi` while the user has
+no usable second factor and no setup deadline yet, refresh fails instead of
+silently granting an unstarted grace — even with nonzero grace days. The client
+must return to the interactive sign-in/authorization flow, which starts the
+configured grace or requires immediate setup when it is zero. Explicit setup
+exemptions remain in effect and do not turn a `single` sign-in into `multi`.
+
 ## Passkeys across domains
 
 WebAuthn binds a passkey to an RP ID, and a browser offers it only on an origin whose host is that RP ID or a subdomain of it. A passkey enrolled in a native app under the App's RP ID is therefore usable on the web only if the login page is served on that domain or below it. On the web, the login page uses the **target App's** passkey RP ID when it is served on that domain or below; otherwise the realm's primary domain. A passkey the current origin cannot serve is not shown.
