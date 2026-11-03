@@ -128,12 +128,35 @@ var permissions = user.FindAll(ModgudClaimTypes.Permission)
 
 A JWT normally stays valid until `exp` even after the user signed out. With
 `SessionRevocation` enabled the library follows the Application's change feed
-with a management client and refuses every token whose `sid` belongs to an
-ended session (sign-out, force sign-out, deactivation, deletion, expiry).
+with a management client and refuses tokens whose `sid` matches a session end
+it has learned from the feed or recovery history.
 Fail-open while the feed is unreachable; the denylist is bounded by the
 access-token lifetime. See the integration guide for the Modgud-side setup
 (feed enabled on the Application, a `client_credentials` client with
 `modgud.management` and `app-scope:read`).
+
+On startup and feed reset the SDK first reads
+`/api/app/{id}/change-feed/session-revocations/snapshot`, merges bounded end
+history, and then follows its checkpoint. Active or unknown session IDs are not
+blocked merely because they are absent from a snapshot. Known denylist entries
+survive retries and resets; recovery entries expire at the recorded end time plus
+`AccessTokenLifetime + ClockSkew`, not at fetch time plus that window.
+
+The configured lifetime must cover the longest JWT lifetime accepted for this
+audience, including any relevant JWT-validation leeway. `ClockSkew` must be
+nonnegative and their sum must be at most **seven days**. Server retention uses
+the server clock; bounded clock differences remain an operational assumption.
+Deploy the server before this SDK and allow at least that recovery window to
+accumulate. Missing pre-upgrade ends cannot be reconstructed. An old server's
+404 or an incomplete bootstrap response is a failed sync, not a successful empty
+history; the worker retries without changing request-time fail-open behavior.
+
+Recovery history is independent of feed queue compaction and generation changes.
+App attribution uses the grant's published session state or its current
+client/principal scope. It cannot recover an already removed historical App
+association. It also does not make the existing net-projection live feed a
+lossless event log, repair native/public session-ID correlation, or change other
+revocation mechanisms. These are not universal immediate-logout guarantees.
 
 ```csharp
 options.SessionRevocation = new ModgudSessionRevocationOptions

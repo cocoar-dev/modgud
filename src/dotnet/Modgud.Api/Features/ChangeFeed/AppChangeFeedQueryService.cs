@@ -1,16 +1,51 @@
 using System.Buffers.Binary;
+using System.Data;
 using System.Text.Json;
 using BuildingBlocks.Helper;
 using Marten;
 using Microsoft.AspNetCore.WebUtilities;
 using Modgud.Application.DTOs.ChangeFeed;
 using Modgud.Authorization.Apps;
+using Modgud.Authentication.Sessions;
 using Modgud.Infrastructure.ChangeFeed;
 
 namespace Modgud.Api.Features.ChangeFeed;
 
-public sealed class AppChangeFeedQueryService(IQuerySession session)
+public sealed class AppChangeFeedQueryService(IQuerySession session, TimeProvider? clock = null)
 {
+    public async Task<AppChangeFeedQueryResult<AppSessionRevocationSnapshotDto>> SessionRevocationsAsync(
+        Guid appId, int historySeconds, CancellationToken ct)
+    {
+        if (historySeconds is <= 0 or > SessionRevocation.RetentionSeconds)
+            return AppChangeFeedQueryResult<AppSessionRevocationSnapshotDto>.Fail(
+                "UnsupportedRevocationHistory", "Session revocation history must be between 1 second and 7 days.", 400);
+
+        // One stable database view binds checkpoint and history. This avoids
+        // skipping ends by reading history and then a newer checkpoint separately;
+        // it does not change the existing net-projection live-feed contract.
+        await using var connection = session.Database.CreateConnection();
+        await connection.OpenAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
+        var options = Marten.Services.SessionOptions.ForTransaction(transaction, false);
+        options.TenantId = session.TenantId;
+        await using var read = session.DocumentStore.QuerySession(options);
+        var state = await read.LoadAsync<AppChangeFeedState>(appId, ct);
+        if (state is null || !state.Enabled)
+            return AppChangeFeedQueryResult<AppSessionRevocationSnapshotDto>.Fail(
+                "FeedUnavailable", "An enabled, initialized Application feed is required.", 409);
+        var app = await read.LoadAsync<App>(appId, ct);
+        if (app is null || app.IsDeleted)
+            return AppChangeFeedQueryResult<AppSessionRevocationSnapshotDto>.Fail("ApplicationNotFound", "Application not found.", 404);
+
+        var since = (clock ?? TimeProvider.System).GetUtcNow().AddSeconds(-historySeconds);
+        var recorded = await read.Query<SessionRevocation>()
+            .Where(r => r.AppId == appId && r.EndedAt >= since).ToListAsync(ct);
+        var ends = recorded.GroupBy(r => r.SessionId).ToDictionary(g => g.Key, g => g.Max(r => r.EndedAt));
+        return AppChangeFeedQueryResult<AppSessionRevocationSnapshotDto>.Ok(new(
+            AppChangeFeedContract.Version, AppChangeFeedCursor.EncodeCheckpoint(state), historySeconds,
+            ends.OrderBy(e => e.Key).Select(e => new AppSessionRevocationDto(e.Key.ToString(), e.Value)).ToList()));
+    }
+
     public async Task<AppChangeFeedQueryResult<AppChangeFeedSnapshotDto>> SnapshotAsync(
         Guid appId,
         CancellationToken cancellationToken)

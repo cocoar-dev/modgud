@@ -223,6 +223,13 @@ public static class ServiceCollectionExtensions
             failures.Add("SessionRevocation.ClientSecret is required (IntrospectionClientSecret is the fallback in reference-capable modes).");
         if (revocation.AccessTokenLifetime <= TimeSpan.Zero)
             failures.Add("SessionRevocation.AccessTokenLifetime must be positive.");
+        if (revocation.ClockSkew < TimeSpan.Zero)
+            failures.Add("SessionRevocation.ClockSkew must not be negative.");
+        // Subtraction avoids TimeSpan overflow for invalid, extremely large options.
+        if (revocation.ClockSkew > TimeSpan.FromDays(7)
+            || (revocation.ClockSkew >= TimeSpan.Zero
+                && revocation.AccessTokenLifetime > TimeSpan.FromDays(7) - revocation.ClockSkew))
+            failures.Add("SessionRevocation.AccessTokenLifetime plus ClockSkew must not exceed 7 days.");
         if (revocation.PollInterval <= TimeSpan.Zero || revocation.RetryDelay <= TimeSpan.Zero)
             failures.Add("SessionRevocation.PollInterval and RetryDelay must be positive.");
         if (revocation.BatchSize is < 1 or > 500)

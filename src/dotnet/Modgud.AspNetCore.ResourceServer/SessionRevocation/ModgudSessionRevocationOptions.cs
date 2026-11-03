@@ -37,7 +37,9 @@ public sealed class ModgudSessionRevocationOptions
     /// <summary>How long an ended session id is kept on the denylist — at least the
     /// longest access-token lifetime the realm issues to this audience (default 60 min
     /// plus the clock skew below). An entry can be dropped once every token that
-    /// could carry it has expired.</summary>
+    /// could carry it has expired. Lifetime plus ClockSkew must not exceed seven
+    /// days, the server recovery history limit. Deploy the server first and let
+    /// history accumulate for this window before relying on restart recovery.</summary>
     public TimeSpan AccessTokenLifetime { get; set; } = TimeSpan.FromMinutes(60);
 
     /// <summary>Extra time an entry stays on the denylist beyond the lifetime, covering
