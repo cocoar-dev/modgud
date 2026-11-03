@@ -277,7 +277,9 @@ public static class RealmFido2
     /// Extracts the WebAuthn <c>origin</c> from a clientDataJSON byte payload (the
     /// value Fido2NetLib already base64url-decoded onto the raw response). Returns
     /// <c>null</c> on any malformed input — the caller then simply passes no extra
-    /// origin and the verify fails closed as before.
+    /// origin and the verify fails closed as before. Valid JSON of the wrong shape (a
+    /// root that is not an object, an <c>origin</c> that is not a string) is malformed
+    /// too: the callers only catch <see cref="JsonException"/>, so it must never throw.
     /// </summary>
     public static string? TryGetClientDataOrigin(byte[]? clientDataJson)
     {
@@ -285,7 +287,11 @@ public static class RealmFido2
         try
         {
             using var doc = JsonDocument.Parse(clientDataJson);
-            return doc.RootElement.TryGetProperty("origin", out var o) ? o.GetString() : null;
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("origin", out var o)
+                && o.ValueKind == JsonValueKind.String
+                    ? o.GetString()
+                    : null;
         }
         catch (JsonException)
         {

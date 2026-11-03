@@ -58,6 +58,21 @@ public class RealmFido2Tests
         Assert.Null(RealmFido2.TryGetClientDataOrigin(Encoding.UTF8.GetBytes("{\"type\":\"webauthn.create\"}")));
     }
 
+    // B8-P4 — valid JSON of the wrong shape must yield null, not throw
+    // InvalidOperationException past the callers' JsonException catches.
+    [Theory]
+    [InlineData("{\"origin\":5}")]
+    [InlineData("{\"origin\":true}")]
+    [InlineData("{\"origin\":{\"host\":\"x\"}}")]
+    [InlineData("{\"origin\":[\"https://a.example\"]}")]
+    [InlineData("{\"origin\":null}")]
+    [InlineData("[\"https://a.example\"]")]
+    [InlineData("\"https://a.example\"")]
+    [InlineData("42")]
+    [InlineData("null")]
+    public void TryGetClientDataOrigin_MistypedJson_ReturnsNull(string json)
+        => Assert.Null(RealmFido2.TryGetClientDataOrigin(Encoding.UTF8.GetBytes(json)));
+
     // ── IsOriginForRequest — hosted web ceremonies stay same-origin ──────────────
 
     [Theory]
