@@ -58,7 +58,7 @@ Actions:
 
 Self-service GDPR operations:
 
-- **Export my data** — download everything Modgud knows about you (profile, sessions, login history, OAuth consents) as JSON. Article 20 export.
+- **Export my data** — download your data as JSON (Article 20 export): profile, security settings, your permissions in Modgud, sessions, OAuth consents and your most recent 100 login events. The file's `Metadata` says when the login history was cut to that limit or could not be read, and what the export leaves out (your permissions inside other applications).
 - **Delete my account** — schedules your account for permanent erasure after a **grace period** (default 30 days, configurable per realm). You stay able to sign in the whole time — log in any moment before the deadline and cancel to keep your account. A reminder email goes out a few days before the deadline, and your next sign-in during the window shows an [interstitial reminder](./sign-in#scheduled-for-deletion) with a one-click cancel. When the grace period expires, the account is auto-erased — see [admin docs on permanent erase](../admin/users#recycle-bin-permanent-erase) for the technical details.
 - **Cancel deletion** — visible while your own deletion request is pending. Click to abort it.
 

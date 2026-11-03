@@ -58,7 +58,8 @@ public class GdprService(
             .Where(s => s.UserId == userId)
             .ToListAsync(ct);
 
-        var loginHistory = await GetLoginHistoryAsync(userId, 100, ct);
+        var history = await GetLoginHistoryAsync(userId, LoginHistoryLimit, ct);
+        var consents = await GetConsentsAsync(userId, ct);
 
         ModgudMeters.RecordGdprRequest(ModgudMeters.GdprRequestType.Export);
 
@@ -67,9 +68,14 @@ public class GdprService(
             Metadata = new ExportMetadataDto
             {
                 ExportedAt = DateTimeOffset.UtcNow,
-                FormatVersion = "1.1",
+                FormatVersion = "1.2",
                 UserId = userId,
+                LoginHistoryLimit = LoginHistoryLimit,
+                LoginHistoryTruncated = history.Truncated,
+                LoginHistoryUnavailable = history.Unavailable,
+                NotIncluded = ["permissions in applications other than the identity provider"],
             },
+            OAuthConsents = consents,
             Profile = new ExportProfileDto
             {
                 UserName = user.UserName ?? string.Empty,
@@ -114,8 +120,42 @@ public class GdprService(
                 ExpiresAt = s.ExpiresAt,
                 AbsoluteExpiresAt = s.AbsoluteExpiresAt,
             })).ToList(),
-            LoginHistory = loginHistory,
+            LoginHistory = history.Events,
         };
+    }
+
+    private const int LoginHistoryLimit = 100;
+
+    /// <summary>A.gdpr-C005 — the OAuth consents the profile page promises: every valid
+    /// authorization of the user with its application and scopes.</summary>
+    private async Task<List<ExportConsentDto>> GetConsentsAsync(Guid userId, CancellationToken ct)
+    {
+        var subject = userId.ToString();
+        var authorizations = await session.Query<Modgud.Domain.OAuth.Storage.OpenIddictAuthorizationDocument>()
+            .Where(a => a.Subject == subject && a.Status == OpenIddict.Abstractions.OpenIddictConstants.Statuses.Valid)
+            .ToListAsync(ct);
+        var appIds = authorizations
+            .Select(a => Guid.TryParse(a.ApplicationId, out var id) ? id : (Guid?)null)
+            .OfType<Guid>().Distinct().ToList();
+        var apps = appIds.Count == 0
+            ? []
+            : (await session.Query<Modgud.Domain.OAuth.Applications.OAuthApplicationState>()
+                .Where(a => appIds.Contains(a.Id)).ToListAsync(ct)).ToDictionary(a => a.Id);
+        return authorizations
+            .OrderBy(a => a.CreationDate)
+            .Select(a =>
+            {
+                var app = Guid.TryParse(a.ApplicationId, out var id) && apps.TryGetValue(id, out var found) ? found : null;
+                return new ExportConsentDto
+                {
+                    ClientId = app?.ClientId,
+                    ClientDisplayName = app?.DisplayName,
+                    Scopes = [.. a.Scopes.Order(StringComparer.Ordinal)],
+                    Type = a.Type,
+                    GrantedAt = a.CreationDate,
+                };
+            })
+            .ToList();
     }
 
     public async Task<ErrorOr<DeletionRequestResponseDto>> RequestDeletionAsync(Guid userId, string? password, string? reason, CancellationToken ct = default)
@@ -614,40 +654,32 @@ public class GdprService(
     /// swallowed (a missing/empty stream just yields an empty list) — export
     /// must never fail because the audit trail is unavailable.
     /// </summary>
-    private async Task<List<ExportLoginEventDto>> GetLoginHistoryAsync(Guid userId, int maxEvents, CancellationToken ct)
+    /// <summary>The most recent <paramref name="maxEvents"/> login events of the user's
+    /// stream. A.gdpr-C005 — scans the whole stream (older logins were dropped behind the
+    /// last 200 events of any kind) and says when it truncated or could not read.</summary>
+    private async Task<(List<ExportLoginEventDto> Events, bool Truncated, bool Unavailable)> GetLoginHistoryAsync(
+        Guid userId, int maxEvents, CancellationToken ct)
     {
-        var result = new List<ExportLoginEventDto>();
+        IReadOnlyList<JasperFx.Events.IEvent> events;
         try
         {
-            var events = await session.Events.FetchStreamAsync(userId, token: ct);
-            foreach (var e in events.OrderByDescending(x => x.Timestamp).Take(maxEvents * 2))
-            {
-                if (e.Data is UserLoggedInEvent loggedIn)
-                {
-                    result.Add(new ExportLoginEventDto
-                    {
-                        Timestamp = e.Timestamp,
-                        Success = true,
-                        IpAddress = loggedIn.IpAddress,
-                    });
-                }
-                else if (e.Data is UserLoginFailedEvent failed)
-                {
-                    result.Add(new ExportLoginEventDto
-                    {
-                        Timestamp = e.Timestamp,
-                        Success = false,
-                        IpAddress = failed.IpAddress,
-                    });
-                }
-
-                if (result.Count >= maxEvents) break;
-            }
+            events = await session.Events.FetchStreamAsync(userId, token: ct);
         }
-        catch
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // empty stream / archived stream — return what we have
+            return ([], false, true);
         }
-        return result;
+
+        var logins = events
+            .Select(e => e.Data switch
+            {
+                UserLoggedInEvent ok => new ExportLoginEventDto { Timestamp = e.Timestamp, Success = true, IpAddress = ok.IpAddress },
+                UserLoginFailedEvent failed => new ExportLoginEventDto { Timestamp = e.Timestamp, Success = false, IpAddress = failed.IpAddress },
+                _ => null,
+            })
+            .OfType<ExportLoginEventDto>()
+            .OrderByDescending(e => e.Timestamp)
+            .ToList();
+        return ([.. logins.Take(maxEvents)], logins.Count > maxEvents, false);
     }
 }
