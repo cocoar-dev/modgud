@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import {
   CoarButton,
+  CoarNotice,
   useContextMenu,
   CoarContextMenu,
   CoarMenuItem,
@@ -294,12 +295,15 @@ async function sendMagicLink() {
 }
 
 onMounted(() => {
-  userStore.initialize()
+  void userStore.initialize().catch(() => {}) // loadFailed is rendered below
 })
 </script>
 
 <template>
   <div class="flex flex-1 flex-col min-w-0 p-4">
+    <CoarNotice v-if="userStore.loadFailed" variant="warning" role="status">
+      {{ t('common.listLoadFailed', {}, 'The list could not be refreshed. Reconnect or reload the page to try again.') }}
+    </CoarNotice>
     <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
         <label class="recycle-bin-toggle" :title="t('admin.users.showRecycleBinHint', {}, 'Reveal users pending deletion')">

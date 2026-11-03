@@ -59,8 +59,10 @@ export interface EntityService<
   entities: ComputedRef<TDto[]>;
   /** Computed record of entities keyed by Id. */
   entityMap: ComputedRef<Record<string, TDto>>;
-  /** Whether `loadAll` has been called at least once. */
+  /** Whether a full list was loaded successfully (reset after a failed reload). */
   allLoaded: Ref<boolean>;
+  /** The last full-list load failed. Incremental events do not make it complete. */
+  loadFailed: Ref<boolean>;
 
   /** Fetch all entities from the REST API and populate the store. */
   loadAll(): Promise<TDto[]>;
@@ -116,6 +118,8 @@ export function useEntityService<
 
   const store = ref(new Map<string, TDto>()) as Ref<Map<string, TDto>>;
   const allLoaded = ref(false);
+  const loadFailed = ref(false);
+  let snapshotRevision = 0;
 
   // ---------------------------------------------------------------------------
   // Derived
@@ -154,12 +158,15 @@ export function useEntityService<
   }
 
   function setAllStoreEntities(dtos: TDto[]): void {
+    // An authoritative snapshot (including FullSync) supersedes pending reads.
+    snapshotRevision++;
     const next = new Map<string, TDto>();
     for (const dto of dtos) {
       next.set(dto.Id, dto);
     }
     store.value = next;
     allLoaded.value = true;
+    loadFailed.value = false;
   }
 
   function deleteStoreEntities(ids: string[]): void {
@@ -175,9 +182,22 @@ export function useEntityService<
   // ---------------------------------------------------------------------------
 
   async function loadAll(): Promise<TDto[]> {
-    const data = await httpClient.get<TDto[]>({ redirectOnStepUp: resolvedConfig.redirectOnLoadStepUp });
-    setAllStoreEntities(data);
-    return data;
+    const revision = ++snapshotRevision;
+    try {
+      const data = await httpClient.get<TDto[]>({ redirectOnStepUp: resolvedConfig.redirectOnLoadStepUp });
+      if (revision === snapshotRevision) setAllStoreEntities(data);
+      return data;
+    } catch (error) {
+      // A refused/failed snapshot must not leave the old list looking current.
+      // Keep the failure until a full reload/FullSync succeeds; later deltas
+      // alone cannot repair everything missed during the disconnect.
+      if (revision === snapshotRevision) {
+        store.value = new Map();
+        allLoaded.value = false;
+        loadFailed.value = true;
+      }
+      throw error; // explicit callers still own normal HTTP/CRUD error handling
+    }
   }
 
   async function getById(id: string): Promise<TDto> {
@@ -295,7 +315,9 @@ export function useEntityService<
       // identical streams after every transient disconnect.
       if (!resolvedConfig.handleFullSync) {
         signalr.runOnReconnect(
-          () => void loadAll(),
+          // This is a background callback, not an awaited caller. loadAll has
+          // already invalidated its snapshot and exposed the failure state.
+          () => loadAll().catch(() => {}),
           `${resolvedConfig.entityName}Actions.Reload`,
         );
       }
@@ -314,6 +336,7 @@ export function useEntityService<
     entities,
     entityMap,
     allLoaded,
+    loadFailed,
 
     loadAll,
     getById,

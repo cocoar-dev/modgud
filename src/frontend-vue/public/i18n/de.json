@@ -1,5 +1,6 @@
 {
   "common": {
+    "listLoadFailed": "Die Liste konnte nicht aktualisiert werden. Erneut verbinden oder die Seite neu laden, um es noch einmal zu versuchen.",
     "loading": "Laden...",
     "systemManagedLabel": "System",
     "systemManaged": "Nicht veränderbar.",
@@ -2482,6 +2483,7 @@
   },
   "inbox": {
     "title": "Inbox",
+    "loadFailed": "Benachrichtigungen konnten nicht aktualisiert werden. Erneut verbinden oder die Seite neu laden, um es noch einmal zu versuchen.",
     "tabAll": "Alle",
     "tabUnread": "Ungelesen",
     "empty": "Keine Benachrichtigungen",

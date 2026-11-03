@@ -1,5 +1,9 @@
 {
+  "inbox": {
+    "loadFailed": "Notifications could not be refreshed. Reconnect or reload the page to try again."
+  },
   "common": {
+    "listLoadFailed": "The list could not be refreshed. Reconnect or reload the page to try again.",
     "statusTag": {
       "active": "Active",
       "inactive": "Inactive"
