@@ -27,7 +27,15 @@ public sealed class ManagementPermissionEndpointFilter(
         EndpointFilterDelegate next)
     {
         var http = context.HttpContext;
-        var bearerRequest = IsBearerRequest(http.Request);
+        var headers = http.Request.Headers.Authorization;
+        AuthenticationHeaderValue? authorization = null;
+        var bearerRequest = headers.Count == 1
+            && AuthenticationHeaderValue.TryParse(headers.ToString(), out authorization)
+            && (authorization.Scheme.Equals("Bearer", StringComparison.OrdinalIgnoreCase)
+                || authorization.Scheme.Equals("DPoP", StringComparison.OrdinalIgnoreCase))
+            && !string.IsNullOrWhiteSpace(authorization.Parameter);
+        // An explicit invalid token attempt must never be rescued by a cookie.
+        if (headers.Count > 0 && !bearerRequest) return Results.Unauthorized();
         var scheme = bearerRequest
             ? OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme
             : IdentityConstants.ApplicationScheme;
@@ -60,11 +68,18 @@ public sealed class ManagementPermissionEndpointFilter(
                 targetAppId = parsedAppId;
             }
 
-            var authorization = http.RequestServices
+            var bearerAuthorization = http.RequestServices
                 .GetRequiredService<ManagementBearerAuthorizationService>();
-            var denied = await authorization.AuthorizeAsync(
+            var denied = await bearerAuthorization.AuthorizeAsync(
                 caller, targetAppId, permission, http.RequestAborted);
             if (denied is not null) return BearerDenied(denied);
+
+            var proof = http.RequestServices.GetRequiredService<ManagementDpopProofValidator>();
+            if (!await proof.ValidateAsync(http, caller, authorization!))
+            {
+                http.Response.Headers.WWWAuthenticate = "DPoP error=\"invalid_dpop_proof\"";
+                return Results.Unauthorized();
+            }
 
             // Downstream handlers and audit helpers must see the explicitly
             // selected bearer identity, never an accidental cookie merge.
@@ -119,13 +134,6 @@ public sealed class ManagementPermissionEndpointFilter(
         return Forbidden(publicCode, error.Detail);
     }
 
-    private static bool IsBearerRequest(HttpRequest request)
-    {
-        if (!AuthenticationHeaderValue.TryParse(request.Headers.Authorization, out var value))
-            return false;
-        return string.Equals(value.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase);
-    }
-
     private static IResult Forbidden(string code, string detail) =>
         Results.Problem(
             statusCode: StatusCodes.Status403Forbidden,
@@ -151,6 +159,7 @@ public static class ManagementPermissionEndpointExtensions
         string? clientAppRouteParameter = null,
         bool bearerOnly = false)
     {
+        builder.WithMetadata(ManagementEndpointMetadata.Instance);
         builder.RequireAuthorization(new AuthorizeAttribute
         {
             AuthenticationSchemes = bearerOnly
