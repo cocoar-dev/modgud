@@ -9,8 +9,8 @@ namespace Modgud.Infrastructure.Authorization;
 /// <summary>
 /// Seeds the system <see cref="App"/> (<c>modgud</c>) into a tenant
 /// database. Called from <c>RealmProvisioningService</c> on new-realm
-/// creation and from app bootstrap for the system realm. Idempotent —
-/// re-running has no effect once seeded.
+/// creation and from app bootstrap for active existing realms. Idempotent —
+/// re-running only appends missing catalog entries, never role grants.
 ///
 /// <para>The modgud app is the namespace under which the IAM's own
 /// resources (user, oauth-client, session, …) live. Downstream apps
@@ -40,6 +40,7 @@ public static class AppRealmSeeder
         // ADR 0026 — test-account: mark accounts and set their fixed sign-in code.
         ("user", ["read", "write", "test-account"]),
         ("service-account", ["read", "write"]),
+        ("invite-code", ["read", "write"]),
         ("position", ["read", "write"]),
         ("position-terminal", ["enroll"]),
         ("staffing-session", ["read", "force-lock"]),
