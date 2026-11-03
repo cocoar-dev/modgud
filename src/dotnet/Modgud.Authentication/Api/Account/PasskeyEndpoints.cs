@@ -216,15 +216,25 @@ public static class PasskeyEndpoints
                 return Results.BadRequest(new { Message = "Registration session expired. Please try again." });
 
             var ceremony = await session.LoadAsync<PasskeyEnrollCeremony>(ceremonyId, ct);
-            if (ceremony is null || ceremony.IsExpired || ceremony.UserId != userId.Value)
+            if (ceremony is null || ceremony.IsExpired || ceremony.IsConsumed || ceremony.UserId != userId.Value)
             {
-                if (ceremony is not null) { session.Delete(ceremony); await session.SaveChangesAsync(ct); }
+                if (ceremony is { IsConsumed: false }) { session.Delete(ceremony); await session.SaveChangesAsync(ct); }
                 return Results.BadRequest(new { Message = "Registration session expired. Please try again." });
             }
 
-            // Single-use: consume before verifying.
-            session.Delete(ceremony);
-            await session.SaveChangesAsync(ct);
+            // Single-use: consume before verifying, via a version-checked Store of
+            // ConsumedAt (Marten does not version-check deletes), so two concurrent
+            // finishes of one ceremony cannot both store a credential (B8-P1).
+            ceremony.ConsumedAt = DateTimeOffset.UtcNow;
+            session.Store(ceremony);
+            try
+            {
+                await session.SaveChangesAsync(ct);
+            }
+            catch (JasperFx.ConcurrencyException)
+            {
+                return Results.BadRequest(new { Message = "Registration session expired. Please try again." });
+            }
 
             // Pinned at register-options so an admin editing PrimaryDomain
             // mid-ceremony cannot cause a begin/finish RP-ID drift.
@@ -233,25 +243,48 @@ public static class PasskeyEndpoints
             var options = CredentialCreateOptions.FromJson(ceremony.OptionsJson);
 
             var fido2JsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var attestationResponse = JsonSerializer.Deserialize<AuthenticatorAttestationRawResponse>(body.GetRawText(), fido2JsonOptions);
+            AuthenticatorAttestationRawResponse? attestationResponse;
+            try
+            {
+                attestationResponse = JsonSerializer.Deserialize<AuthenticatorAttestationRawResponse>(body.GetRawText(), fido2JsonOptions);
+            }
+            catch (JsonException)
+            {
+                attestationResponse = null;
+            }
             if (attestationResponse is null)
                 return Results.BadRequest(new { Message = "Invalid attestation response." });
 
-            var credential = await fido2.MakeNewCredentialAsync(new MakeNewCredentialParams
+            RegisteredPublicKeyCredential credential;
+            try
             {
-                AttestationResponse = attestationResponse,
-                OriginalOptions = options,
-                IsCredentialIdUniqueToUserCallback = async (args, ct) =>
+                credential = await fido2.MakeNewCredentialAsync(new MakeNewCredentialParams
                 {
-                    // Audit #33 — compare CredentialId (byte[]) IN MEMORY. A Marten
-                    // LINQ `c.CredentialId == args.CredentialId` is untranslatable
-                    // (Postgres 22P02), so the uniqueness guard would throw on enroll
-                    // (web register 500) instead of detecting a duplicate. Mirror the
-                    // login path: materialize, then SequenceEqual.
-                    var all = await session.Query<StoredPasskeyCredential>().ToListAsync(ct);
-                    return !all.Any(c => c.CredentialId.SequenceEqual(args.CredentialId));
-                },
-            });
+                    AttestationResponse = attestationResponse,
+                    OriginalOptions = options,
+                    IsCredentialIdUniqueToUserCallback = async (args, ct) =>
+                    {
+                        // Audit #33 — compare CredentialId (byte[]) IN MEMORY. A Marten
+                        // LINQ `c.CredentialId == args.CredentialId` is untranslatable
+                        // (Postgres 22P02), so the uniqueness guard would throw on enroll
+                        // (web register 500) instead of detecting a duplicate. Mirror the
+                        // login path: materialize, then SequenceEqual.
+                        var all = await session.Query<StoredPasskeyCredential>().ToListAsync(ct);
+                        return !all.Any(c => c.CredentialId.SequenceEqual(args.CredentialId));
+                    },
+                }, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Fail closed on any attestation failure (bad/forged response, wrong
+                // challenge, origin/RP-ID mismatch, already registered) — a 400, never
+                // a 500, as the native enroll does. The reason goes to the log only.
+                context.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Modgud.Authentication.Api.Account.PasskeyEndpoints")
+                    .LogWarning(ex, "Passkey registration verification failed (UserId={UserId}, RpId={RpId}).",
+                        userId.Value, ceremony.RpId);
+                return Results.BadRequest(new { Message = "Passkey registration failed." });
+            }
 
             var stored = new StoredPasskeyCredential
             {
@@ -267,7 +300,15 @@ public static class PasskeyEndpoints
                 CreatedAt = DateTimeOffset.UtcNow,
             };
             session.Store(stored);
-            await session.SaveChangesAsync();
+            try
+            {
+                await session.SaveChangesAsync();
+            }
+            catch (Exception ex) when (PasskeyCredentialUniqueness.IsDuplicateCredentialId(ex))
+            {
+                // A concurrent enrollment of the same authenticator stored it first.
+                return Results.BadRequest(new { Message = "This passkey is already registered." });
+            }
             if (await userManager.FindByIdAsync(userId.Value.ToString()) is { } owner)
                 await accountChanges.NotifyAsync(owner, AccountChange.PasskeyAdded, ct);
 

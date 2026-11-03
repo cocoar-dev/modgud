@@ -55,13 +55,95 @@ public class PasskeyWebRegistrationTests : IntegrationTestBase
         {
             var all = await session.Query<StoredPasskeyCredential>().ToListAsync(ct);
             Assert.Contains(all, c => c.CredentialId.SequenceEqual(authenticator.CredentialId) && c.UserId == DefaultUser.Id);
-            Assert.Empty(await session.Query<PasskeyEnrollCeremony>().Where(c => c.UserId == DefaultUser.Id).ToListAsync(ct));
+            // Consumed by a version-checked marker, not deleted (B8-P1); reaped by expiry.
+            var consumed = Assert.Single(await session.Query<PasskeyEnrollCeremony>().Where(c => c.UserId == DefaultUser.Id).ToListAsync(ct));
+            Assert.NotNull(consumed.ConsumedAt);
         }
 
         // Single use: the ceremony was consumed and the cookie deleted.
         var replay = await Client.PostAsync("/api/account/passkey/register",
             new StringContent(attestation, Encoding.UTF8, "application/json"), ct);
         Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
+    }
+
+    [Fact]
+    public async Task Register_with_an_attestation_for_another_origin_is_a_400_not_a_500()
+    {
+        using var authenticator = new SoftwareWebAuthnAuthenticator(DefaultUser!.Id.ToByteArray());
+        var (challenge, rpId) = await RegisterOptionsAsync();
+
+        var response = await RegisterAsync(authenticator.CreateAttestationJson(challenge, rpId, "https://evil.example"));
+
+        await AssertRefusedAsync(response, authenticator.CredentialId, expectedForUser: 0);
+    }
+
+    [Fact]
+    public async Task Register_with_a_credential_id_already_stored_is_a_400_not_a_500()
+    {
+        using var authenticator = new SoftwareWebAuthnAuthenticator(DefaultUser!.Id.ToByteArray());
+        // Held by another account, so this user still has no factor of its own and
+        // register-options needs no fresh second factor; the FIDO2 uniqueness callback
+        // looks at every credential of the realm.
+        await using (var seed = GetTenantedDocumentSession())
+        {
+            seed.Store(new StoredPasskeyCredential
+            {
+                Id = Guid.CreateVersion7(),
+                UserId = Guid.NewGuid(),
+                CredentialId = authenticator.CredentialId,
+                PublicKey = authenticator.CosePublicKey(),
+                UserHandle = [8, 8],
+                DisplayName = "Passkey",
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+            await seed.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        var (challenge, rpId) = await RegisterOptionsAsync();
+
+        var response = await RegisterAsync(authenticator.CreateAttestationJson(challenge, rpId, $"https://{rpId}"));
+
+        await AssertRefusedAsync(response, authenticator.CredentialId, expectedForUser: 0);
+        await using var session = GetTenantedSession();
+        Assert.Single(await session.Query<StoredPasskeyCredential>().ToListAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Register_with_a_malformed_attestation_body_is_a_400_not_a_500()
+    {
+        await RegisterOptionsAsync();
+
+        var response = await RegisterAsync("""{"id":"x","rawId":"x","type":"public-key","response":"not-an-object"}""");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    private async Task<(string Challenge, string RpId)> RegisterOptionsAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var response = await Client.PostAsync("/api/account/passkey/register-options", content: null, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        Assert.True(response.IsSuccessStatusCode, $"register-options failed ({(int)response.StatusCode})");
+        using var options = JsonDocument.Parse(body);
+        return (options.RootElement.GetProperty("challenge").GetString()!,
+            options.RootElement.GetProperty("rp").GetProperty("id").GetString()!);
+    }
+
+    private Task<HttpResponseMessage> RegisterAsync(string attestation)
+        => Client.PostAsync("/api/account/passkey/register",
+            new StringContent(attestation, Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
+
+    private async Task AssertRefusedAsync(HttpResponseMessage response, byte[] credentialId, int expectedForUser)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("Passkey registration failed", await response.Content.ReadAsStringAsync(ct));
+        await using var session = GetTenantedSession();
+        var mine = await session.Query<StoredPasskeyCredential>().Where(c => c.UserId == DefaultUser!.Id).ToListAsync(ct);
+        Assert.Equal(expectedForUser, mine.Count);
+        Assert.DoesNotContain(mine, c => c.CredentialId.SequenceEqual(credentialId));
+        // Consumed before verifying, so a refused attestation cannot be retried on it.
+        var ceremony = Assert.Single(await session.Query<PasskeyEnrollCeremony>().Where(c => c.UserId == DefaultUser!.Id).ToListAsync(ct));
+        Assert.NotNull(ceremony.ConsumedAt);
     }
 
     [Fact]

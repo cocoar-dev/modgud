@@ -188,10 +188,25 @@ public static class MartenStoreOptionsExtensions
 
         // WebAuthn/passkey credentials (raw crypto, not event-sourced). One per
         // enrolled authenticator; indexed by UserId for the per-user list/login
-        // lookup and the cascade-delete on permanent erase.
+        // lookup and the cascade-delete on permanent erase. A credential id is unique
+        // per realm database (B8-P1): the enroll paths' read-then-insert uniqueness
+        // check cannot see a concurrent enrollment, the index can.
         options.Schema.For<StoredPasskeyCredential>()
             .Identity(x => x.Id)
             .Index(x => x.UserId);
+        // A raw index on the stored base64 text: Marten's own (Unique)Index on a
+        // byte[] member casts it to jsonb, which no base64 string parses as, so
+        // every credential insert would fail with 22P02.
+        options.Policies.ForAllDocuments(mapping =>
+        {
+            if (mapping.DocumentType != typeof(StoredPasskeyCredential)) return;
+            mapping.Indexes.Add(new Weasel.Postgresql.Tables.IndexDefinition(
+                Modgud.Authentication.Identity.PasskeyCredentialUniqueness.IndexName)
+            {
+                IsUnique = true,
+                Columns = ["(data ->> 'CredentialId')"],
+            });
+        });
 
         // ADR-0010 Phase 2 — cookieless WebAuthn assertion ceremony for the
         // native urn:cocoar:passkey grant. Single-use, short-TTL; keyed by the
@@ -208,9 +223,13 @@ public static class MartenStoreOptionsExtensions
         // ADR-0009 — cookieless WebAuthn ATTESTATION ceremony for native per-client
         // passkey enrollment (Bearer-authenticated; a native client has no session
         // to stash CredentialCreateOptions). Single-use, short-TTL; same sweep index.
+        // Optimistic concurrency + the ConsumedAt marker make the web register and
+        // native enroll single use real: two concurrent finishes cannot both store
+        // a credential (a Delete would not be version-checked).
         options.Schema.For<PasskeyEnrollCeremony>()
             .Identity(x => x.Id)
-            .Index(x => x.ExpiresAt);
+            .Index(x => x.ExpiresAt)
+            .UseOptimisticConcurrency(true);
 
         // GDPR: per-user deletion bookkeeping (pending request + masked flag).
         // Keyed on the user id so we can simply Load it.

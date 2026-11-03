@@ -155,25 +155,44 @@ public static class NativePasskeyEnrollEndpoints
 
             var ceremony = await session.LoadAsync<PasskeyEnrollCeremony>(ceremonyId, ct);
             // Bind the ceremony to the authenticated user and the requesting client.
-            if (ceremony is null || ceremony.IsExpired
+            // A consumed ceremony stays until expiry, marked.
+            if (ceremony is null || ceremony.IsExpired || ceremony.IsConsumed
                 || ceremony.UserId != user!.Id
                 || (!string.IsNullOrEmpty(ceremony.ClientId)
                     && !string.Equals(ceremony.ClientId, clientId, StringComparison.Ordinal)))
             {
-                if (ceremony is not null) { session.Delete(ceremony); await session.SaveChangesAsync(ct); }
+                if (ceremony is { IsConsumed: false }) { session.Delete(ceremony); await session.SaveChangesAsync(ct); }
                 return Results.BadRequest(new { Message = "Enrollment session expired. Please try again." });
             }
 
-            // Single-use: consume before verifying.
-            session.Delete(ceremony);
-            await session.SaveChangesAsync(ct);
+            // Single-use: consume before verifying, via a version-checked Store of
+            // ConsumedAt (Marten does not version-check deletes), so two concurrent
+            // finishes of one ceremony cannot both store a credential (B8-P1).
+            ceremony.ConsumedAt = DateTimeOffset.UtcNow;
+            session.Store(ceremony);
+            try
+            {
+                await session.SaveChangesAsync(ct);
+            }
+            catch (JasperFx.ConcurrencyException)
+            {
+                return Results.BadRequest(new { Message = "Enrollment session expired. Please try again." });
+            }
 
             // Parse the attestation up-front so the origin the authenticator actually
             // signed can scope the relying party (below) — a per-client RP ID that is
             // a registrable suffix of the app origin (RP-ID acmelist.example for a page on
             // app.acmelist.example) is then accepted instead of failing the origin check.
-            var attestation = JsonSerializer.Deserialize<AuthenticatorAttestationRawResponse>(
-                attEl.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            AuthenticatorAttestationRawResponse? attestation;
+            try
+            {
+                attestation = JsonSerializer.Deserialize<AuthenticatorAttestationRawResponse>(
+                    attEl.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch (JsonException)
+            {
+                attestation = null;
+            }
             if (attestation is null)
                 return Results.BadRequest(new { Message = "Invalid attestation response." });
 
@@ -252,7 +271,15 @@ public static class NativePasskeyEnrollEndpoints
                 CreatedAt = DateTimeOffset.UtcNow,
             };
             session.Store(stored);
-            await session.SaveChangesAsync(ct);
+            try
+            {
+                await session.SaveChangesAsync(ct);
+            }
+            catch (Exception ex) when (Modgud.Authentication.Identity.PasskeyCredentialUniqueness.IsDuplicateCredentialId(ex))
+            {
+                // A concurrent enrollment of the same authenticator stored it first.
+                return Results.BadRequest(new { Message = "Passkey enrollment failed." });
+            }
 
             return Results.Ok(new { Message = "Passkey enrolled successfully." });
         })
