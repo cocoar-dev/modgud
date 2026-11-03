@@ -109,6 +109,8 @@ Effect:
 
 Reveal pending users with the **Show recycle bin** toggle on the list. Their **Lifecycle** badge reads *Recycle bin* (admin-initiated) or *Self-deletion* (the user requested it), with the deadline.
 
+Deleting a user who already has a pending *Self-deletion* still cuts the account off — it is deactivated and its live access is revoked — but the user's own request and erasure date stay as they are, so the account is still erased on that date. A **Restore** reactivates it.
+
 ### Restore
 
 Show recycle bin → right-click the pending user → **Restore**.

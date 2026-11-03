@@ -196,9 +196,10 @@ public class GdprService(
         // deletion regardless of initiator, and reactivates a user that was
         // deactivated into the admin recycle bin. A self-service cancel (no
         // admin id) only ever reaches self-pending users, who stay active.
-        var wasAdminBin = state.DeletionInitiator == DeletionInitiator.Admin;
+        var wasAdminBin = state.DeletionInitiator == DeletionInitiator.Admin || state.DeactivatedByAdminDelete;
 
         state.IsDeletionPending = false;
+        state.DeactivatedByAdminDelete = false;
         state.DeletionInitiator = null;
         state.DeletionRequestedByUserId = null;
         state.DeletionRequestedAt = null;
@@ -414,6 +415,7 @@ public class GdprService(
         state.DeletionRequestedByUserId = null;
         state.DeletionConfirmationDeadline = null;
         state.ReminderSentAt = null;
+        state.DeactivatedByAdminDelete = false;
         state.IsDataMasked = true;
         state.DataMaskedAt = DateTimeOffset.UtcNow;
         state.DataMaskedReason = progress.Reason;

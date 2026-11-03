@@ -60,6 +60,12 @@ public class UserDeletionState
     /// Keeps the scheduled reminder job idempotent (send once per window).</summary>
     public DateTimeOffset? ReminderSentAt { get; set; }
 
+    /// <summary>A.gdpr-C002 — an admin delete hit a pending self-service request and
+    /// deactivated the account, keeping the user's own request and date. An admin cancel
+    /// (restore) reactivates it like an admin-binned account. Only meaningful while
+    /// <see cref="IsDeletionPending"/> is <c>true</c>.</summary>
+    public bool DeactivatedByAdminDelete { get; set; }
+
     public string? DeletionReason { get; set; }
     public DateTimeOffset? DataMaskedAt { get; set; }
     public string? DataMaskedReason { get; set; }

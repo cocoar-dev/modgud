@@ -16,7 +16,7 @@ namespace Modgud.Api.Tests.Users;
 /// admin recycle-bin + restore, frozen edits while pending, and the scheduled
 /// sweep that erases expired self-service requests / auto-purges the admin bin.
 /// </summary>
-public class AccountLifecycleTests(SharedPostgresFixture fixture) : IntegrationTestBase(fixture)
+public partial class AccountLifecycleTests(SharedPostgresFixture fixture) : IntegrationTestBase(fixture)
 {
     private const string Password = "TestPass1234";
 
