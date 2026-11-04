@@ -69,7 +69,7 @@ public class SamlMetadataRefreshService(
 
             try
             {
-                var ok = await manager.RefreshMetadataAsync(entry.LoginProviderId, ct);
+                var ok = await manager.RefreshMetadataAsync(entry.RealmSlug, entry.LoginProviderId, ct);
                 if (ok) refreshed++;
                 else failed++;
             }

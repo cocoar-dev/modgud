@@ -106,7 +106,7 @@ public partial class DynamicSamlSchemeManagerTests
 
             await manager.RegisterAsync(provider);
 
-            Assert.True(manager.TryGet(provider.Id, out var entry));
+            Assert.True(manager.TryGet(Realm, provider.Id, out var entry));
             Assert.NotNull(entry);
             Assert.Equal(provider.Id, entry!.LoginProviderId);
             Assert.Equal(Realm, entry.RealmSlug);
@@ -121,11 +121,11 @@ public partial class DynamicSamlSchemeManagerTests
             var provider = NewSamlProvider();
 
             await manager.RegisterAsync(provider);
-            Assert.True(manager.TryGet(provider.Id, out _));
+            Assert.True(manager.TryGet(Realm, provider.Id, out _));
 
             provider.Enabled = false;
             await manager.RegisterAsync(provider);
-            Assert.False(manager.TryGet(provider.Id, out _));
+            Assert.False(manager.TryGet(Realm, provider.Id, out _));
         }
 
         [Fact]
@@ -140,7 +140,7 @@ public partial class DynamicSamlSchemeManagerTests
             provider.IsDeleted = true;
             await manager.RegisterAsync(provider);
 
-            Assert.False(manager.TryGet(provider.Id, out _));
+            Assert.False(manager.TryGet(Realm, provider.Id, out _));
         }
 
         [Fact]
@@ -153,7 +153,7 @@ public partial class DynamicSamlSchemeManagerTests
 
             await manager.RegisterAsync(oidc);
 
-            Assert.False(manager.TryGet(oidc.Id, out _));
+            Assert.False(manager.TryGet(Realm, oidc.Id, out _));
         }
 
         [Fact]
@@ -166,7 +166,7 @@ public partial class DynamicSamlSchemeManagerTests
             // Must not throw — silent skip is the contract.
             await manager.RegisterAsync(unknown);
 
-            Assert.False(manager.TryGet(unknown.Id, out _));
+            Assert.False(manager.TryGet(Realm, unknown.Id, out _));
         }
 
         [Fact]
@@ -178,7 +178,7 @@ public partial class DynamicSamlSchemeManagerTests
 
             await manager.RegisterAsync(provider);
 
-            Assert.True(manager.TryGet(provider.Id, out var entry));
+            Assert.True(manager.TryGet(Realm, provider.Id, out var entry));
             Assert.Contains(
                 "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
                 entry!.FlavorData.AttributeMap["email"]);
@@ -194,7 +194,7 @@ public partial class DynamicSamlSchemeManagerTests
             await manager.RegisterAsync(NewSamlProvider(id: id, displayName: "First"));
             await manager.RegisterAsync(NewSamlProvider(id: id, displayName: "Renamed"));
 
-            Assert.True(manager.TryGet(id, out var entry));
+            Assert.True(manager.TryGet(Realm, id, out var entry));
             Assert.Equal("Renamed", entry!.DisplayName);
         }
 
@@ -216,7 +216,7 @@ public partial class DynamicSamlSchemeManagerTests
         public void TryGet_returns_false_for_unknown_id()
         {
             var manager = NewManager();
-            Assert.False(manager.TryGet(Guid.NewGuid(), out _));
+            Assert.False(manager.TryGet(Realm, Guid.NewGuid(), out _));
         }
 
         [Fact]
@@ -306,7 +306,7 @@ public partial class DynamicSamlSchemeManagerTests
             await manager.RegisterAsync(provider);
             await manager.UnregisterAsync(provider.Id);
 
-            Assert.False(manager.TryGet(provider.Id, out _));
+            Assert.False(manager.TryGet(Realm, provider.Id, out _));
         }
 
         [Fact]
@@ -315,7 +315,7 @@ public partial class DynamicSamlSchemeManagerTests
             var manager = NewManager();
 
             // Must not throw.
-            await manager.UnregisterAsync(Guid.NewGuid());
+            await manager.UnregisterAsync(Guid.NewGuid(), Realm);
         }
     }
 }

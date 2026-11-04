@@ -67,7 +67,7 @@ public sealed class LoginProviderSchemeMaterializer(
         try
         {
             foreach (var (id, fingerprint) in state.Registered)
-                await UnregisterAsync(id, fingerprint.Type);
+                await UnregisterAsync(realmSlug, id, fingerprint.Type);
             state.Registered.Clear();
         }
         finally
@@ -113,7 +113,7 @@ public sealed class LoginProviderSchemeMaterializer(
             {
                 if (provider.IsDeleted || !provider.Enabled)
                 {
-                    await UnregisterAsync(provider.Id, provider.Type);
+                    await UnregisterAsync(realmSlug, provider.Id, provider.Type);
                     state.Registered.Remove(provider.Id);
                     continue;
                 }
@@ -126,7 +126,7 @@ public sealed class LoginProviderSchemeMaterializer(
                 try
                 {
                     if (known is not null && known.Type != provider.Type)
-                        await UnregisterAsync(provider.Id, known.Type);
+                        await UnregisterAsync(realmSlug, provider.Id, known.Type);
 
                     await RegisterAsync(provider);
                     state.Registered[provider.Id] = fingerprint;
@@ -145,7 +145,7 @@ public sealed class LoginProviderSchemeMaterializer(
             // up above; drop whatever this node still holds for them.
             foreach (var (id, type) in previouslyRegistered.Where(kv => !seen.Contains(kv.Key)))
             {
-                await UnregisterAsync(id, type);
+                await UnregisterAsync(realmSlug, id, type);
                 state.Registered.Remove(id);
             }
 
@@ -171,10 +171,12 @@ public sealed class LoginProviderSchemeMaterializer(
         _ => Task.CompletedTask,
     };
 
-    private Task UnregisterAsync(Guid id, LoginProviderType type) => type switch
+    // EP-01 — runtime registrations are keyed by (realm, id); the realm is passed
+    // explicitly because ForgetAsync runs outside any TenantContext.
+    private Task UnregisterAsync(string realmSlug, Guid id, LoginProviderType type) => type switch
     {
-        LoginProviderType.Oidc => oidc.UnregisterAsync(id),
-        LoginProviderType.Saml => saml.UnregisterAsync(id),
+        LoginProviderType.Oidc => oidc.UnregisterAsync(id, realmSlug),
+        LoginProviderType.Saml => saml.UnregisterAsync(id, realmSlug),
         _ => Task.CompletedTask,
     };
 

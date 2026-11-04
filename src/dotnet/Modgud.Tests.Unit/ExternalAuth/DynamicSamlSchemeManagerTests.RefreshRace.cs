@@ -28,17 +28,17 @@ public partial class DynamicSamlSchemeManagerTests
             var manager = NewManager(http);
             var provider = NewSamlProvider(flavorData: JsonDocument.Parse("""{"metadataUrl":"https://idp.test/metadata"}"""));
             await manager.RegisterAsync(provider);
-            Assert.True(manager.TryGet(provider.Id, out _));
+            Assert.True(manager.TryGet(Realm, provider.Id, out _));
 
             http.HoldNext();
-            var refresh = manager.RefreshMetadataAsync(provider.Id, TestContext.Current.CancellationToken);
+            var refresh = manager.RefreshMetadataAsync(Realm, provider.Id, TestContext.Current.CancellationToken);
             await http.Held.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
             await manager.UnregisterAsync(provider.Id); // disabled / deleted meanwhile
             http.Release();
             await refresh;
 
-            Assert.False(manager.TryGet(provider.Id, out _));
+            Assert.False(manager.TryGet(Realm, provider.Id, out _));
         }
     }
 

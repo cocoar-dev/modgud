@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Infrastructure.Observability;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Authentication.Applications;
 using Microsoft.AspNetCore.WebUtilities;
 
@@ -82,7 +83,7 @@ public static class ExternalAuthEndpoints
                         Message = LoginProviderErrors.TypeNotSupported(config.Type).Description,
                     });
 
-                var schemeName = DynamicOidcSchemeManager.SchemeNameFor(loginProviderId);
+                var schemeName = DynamicOidcSchemeManager.SchemeNameFor(TenantContext.Current, loginProviderId);
                 // Return URL lives in Items so the finish endpoint honors it
                 // AFTER processing; RedirectUri itself must point at finish
                 // because OIDC handler redirects there straight out of the
@@ -134,7 +135,7 @@ public static class ExternalAuthEndpoints
                     return Results.Redirect("/logged-out");
                 }
 
-                var schemeName = DynamicOidcSchemeManager.SchemeNameFor(loginProviderId);
+                var schemeName = DynamicOidcSchemeManager.SchemeNameFor(TenantContext.Current, loginProviderId);
                 if (await schemeProvider.GetSchemeAsync(schemeName) is null)
                 {
                     return Results.Redirect("/logged-out");

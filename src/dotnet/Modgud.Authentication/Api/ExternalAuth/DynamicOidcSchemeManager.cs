@@ -14,8 +14,8 @@ namespace Modgud.Authentication.Api.ExternalAuth;
 
 /// <summary>
 /// Adds, updates, and removes OIDC authentication schemes at runtime — one per
-/// enabled <see cref="LoginProvider"/>. Scheme name is <c>Oidc_{LoginProviderId}</c>,
-/// callback path <c>/signin-oidc/{LoginProviderId}</c>. A scheme is reachable
+/// enabled <see cref="LoginProvider"/>. Scheme name is <c>Oidc_{realm}_{LoginProviderId}</c>,
+/// callback path <c>/signin-oidc/{slug}</c>. A scheme is reachable
 /// by the OIDC middleware as soon as <see cref="RegisterAsync"/> returns.
 /// <para>
 /// Each scheme's <c>OpenIdConnectOptions</c> is materialized into
@@ -47,7 +47,14 @@ public class DynamicOidcSchemeManager(
 {
     public const string SchemeNamePrefix = "Oidc_";
 
-    public static string SchemeNameFor(Guid loginProviderId) => $"{SchemeNamePrefix}{loginProviderId:N}";
+    /// <summary>
+    /// EP-01 — the realm is part of the name. Provider IDs are only unique inside a
+    /// realm's database (a manifest import may pin one), and the scheme provider and
+    /// options cache are process-wide: a name from the ID alone let one realm's
+    /// registration replace or remove another realm's.
+    /// </summary>
+    public static string SchemeNameFor(string realmSlug, Guid loginProviderId)
+        => $"{SchemeNamePrefix}{realmSlug}_{loginProviderId:N}";
 
     /// <summary>
     /// Registers or updates the OIDC scheme for the given provider. Safe to
@@ -113,7 +120,7 @@ public class DynamicOidcSchemeManager(
                 "so the registered scheme knows which realm it belongs to. " +
                 "Callers (bootstrap, event handlers) must enter the realm's TenantContext first.");
 
-        var schemeName = SchemeNameFor(config.Id);
+        var schemeName = SchemeNameFor(realmSlug, config.Id);
         // Callback path keyed by the admin-chosen slug (not the Guid) so the
         // redirect URI stays stable across a delete + recreate. The slug is only
         // unique per realm; HostAwareOpenIdConnectHandler disambiguates by realm.
@@ -266,9 +273,17 @@ public class DynamicOidcSchemeManager(
             schemeName, config.DisplayName, config.Flavor, realmSlug);
     }
 
-    public async Task UnregisterAsync(Guid loginProviderId)
+    /// <summary>
+    /// Removes the provider's scheme in the given realm, or in the ambient
+    /// <see cref="TenantContext"/> when none is given. Idempotent.
+    /// </summary>
+    public async Task UnregisterAsync(Guid loginProviderId, string? realmSlug = null)
     {
-        var schemeName = SchemeNameFor(loginProviderId);
+        var realm = realmSlug ?? TenantContext.CurrentOrNull
+            ?? throw new InvalidOperationException(
+                "DynamicOidcSchemeManager.UnregisterAsync needs the provider's realm: " +
+                "pass it or enter the realm's TenantContext first.");
+        var schemeName = SchemeNameFor(realm, loginProviderId);
         schemeProvider.RemoveScheme(schemeName);
         oidcOptionsCache.TryRemove(schemeName);
         realmRegistry.Remove(schemeName);
