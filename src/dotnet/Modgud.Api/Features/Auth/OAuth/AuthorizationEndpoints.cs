@@ -2942,6 +2942,11 @@ public static class AuthorizationEndpoints
             SignInAssurance.ToAcr(SignInAssurance.LevelOf(factors.Keys)));
         identity.SetClaims(Claims.AuthenticationMethodReference,
             SignInAssurance.ToAmr(factors.Keys).ToImmutableArray());
+        // dw63 — OIDC Core §2: auth_time, REQUIRED when the RP sent max_age, and what lets an
+        // RP verify that prompt=login led to a fresh sign-in. The latest proven factor is when
+        // the user last authenticated; the factors ride codes and refresh tokens, so a refresh
+        // keeps the original time.
+        identity.SetClaim(Claims.AuthenticationTime, factors.Values.Max().ToUnixTimeSeconds());
         principal.SetDestinations(GetDestinations);
     }
 
@@ -3355,7 +3360,8 @@ internal static class AuthorizationEndpointHelpers
             // tokens so the level survives redemption); acr/amr are the public form.
             case SignInAssurance.FactorClaimType:
                 yield break;
-            case Claims.AuthenticationContextReference or Claims.AuthenticationMethodReference:
+            case Claims.AuthenticationContextReference or Claims.AuthenticationMethodReference
+                or Claims.AuthenticationTime:
                 yield return Destinations.AccessToken;
                 yield return Destinations.IdentityToken;
                 yield break;

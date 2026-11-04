@@ -139,6 +139,7 @@ ID and access tokens carry how the user signed in, so resource servers can enfor
 |---|---|
 | `acr` — how strong | `urn:modgud:acr:single`, `urn:modgud:acr:multi` |
 | `amr` — how | RFC 8176 values: `pwd`, `otp`, `hwk` + `user` for passkeys, `fed`, `mfa` |
+| `auth_time` — when | Unix time of the latest factor the sign-in proved; a refresh keeps the original value, so an App can check `max_age` / `prompt=login` itself |
 
 A refresh does not raise a token family above the level its sign-in reached, and fails with `invalid_grant` ("The application now requires a stronger sign-in") when the target now requires more than the refresh token's sign-in proved.
 
