@@ -61,6 +61,8 @@ A group can have members and roles without taking effect for permissions. The de
 
 **Practical behaviour:** you can temporarily remove an app from the list (e.g. during maintenance) without losing role assignments. Re-adding the app reactivates the group immediately. BoundTo changes never cascade-delete the group's roles.
 
+**Realm-admin groups:** for a group that confers `realm:admin` (through its own roles or a parent group), changing this list is a grant or withdrawal of realm administration for all its members. Only a realm administrator may change it, just as only a realm administrator may change such a group's members. Anyone else gets `403 Group.RealmAdminActivationForbidden`.
+
 **Default for new groups:** empty (dormant). A freshly created group is not active in any app until you explicitly pick one or more apps (or the **★ All apps (\*)** wildcard) here — don't forget this step, or the group's roles will never take effect.
 
 #### Exclude test accounts
