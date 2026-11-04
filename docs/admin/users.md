@@ -59,6 +59,8 @@ If the user changes their email themselves, double-opt-in to the new address kic
 
 Assignment to [groups](./groups) the user is a **manual, direct** member of. Group membership determines roles and therefore permissions.
 
+Adding a user to, or removing them from, a group that confers `realm:admin` (through its own roles or a parent group) requires a realm administrator. This applies here, when creating a user with initial groups, and in the group editor. `user:write` alone gets `403 Group.RealmAdminMembershipForbidden`.
+
 ### Effective
 
 Read-only view of every group the user effectively belongs to — direct, inherited through group nesting, and auto-computed by membership scripts — with a badge showing how each one was reached.
