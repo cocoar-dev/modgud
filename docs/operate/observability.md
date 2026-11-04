@@ -6,7 +6,7 @@ OpenTelemetry-based metrics + tracing + an in-app live activity view. Modgud emi
 The Prometheus scrape endpoint is **not** an admin-permissioned API — it lives outside the cookie-auth pipeline so Prometheus servers (which have no cookies) can reach it. Gate it via a **bearer token** (built in) plus a reverse-proxy / firewall that keeps it off the public internet. The boot-validator refuses to start the API if Prometheus is enabled and the bearer token is empty when `ASPNETCORE_ENVIRONMENT` is `Production`. Any other environment (Development, Staging, etc.) is not gated by this check.
 :::
 
-Permissions for the in-app live view: `observability:read`. The `realm:admin` bypass grants it.
+Permissions for the in-app live view: `observability:read`. The `realm:admin` bypass grants it. The live streams re-check it every 15 seconds: once it is withdrawn, an open view stops receiving activity and errors within that interval.
 
 ## Surfaces
 

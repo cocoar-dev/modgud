@@ -10,6 +10,7 @@ using Modgud.Authentication.ExtensionMethods;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Services;
 using Modgud.Infrastructure.Observability;
+using Modgud.Api.Realtime;
 using Modgud.Infrastructure.Persistence.Tenancy;
 
 namespace Modgud.Api.Features.Admin;
@@ -37,9 +38,10 @@ namespace Modgud.Api.Features.Admin;
 /// attribute. So each stream method here imperatively checks
 /// <c>observability:read</c> (the same permission the REST endpoints gate on)
 /// against the caller's realm via <see cref="IPermissionService"/>; an
-/// unauthorised caller gets an immediately-completed empty stream. The check is
-/// performed once at subscribe time (standard for long-lived push channels) and
-/// closes the gap the previous revision flagged as a follow-up.</para>
+/// unauthorised caller gets an immediately-completed empty stream. The check runs at
+/// subscribe time and again every <see cref="PermissionRecheckInterval"/> (gvm6): once
+/// the permission is withdrawn the feed detaches and completes, so a running admin
+/// console stops receiving data at the latest one interval later.</para>
 ///
 /// <para>Neither stream replays history on subscribe — the client already has
 /// it from the REST snapshot; replaying would double-count.</para>
@@ -96,57 +98,13 @@ public class ObservabilityHub(ObservabilityActivityBuffer buffer, RealmErrorBuff
         => http?.Items[TenantConstants.HttpContextTenantIdKey] as string;
 
     /// <summary>
-    /// Wraps a buffer subscription in an <c>observability:read</c> permission
-    /// gate. <paramref name="subscribe"/> attaches a handler and returns the
-    /// detach action; it is wired only once the caller is authorised, and torn
-    /// down when the client unsubscribes (the stream's cancellation token).
+    /// Wraps a buffer subscription in the <c>observability:read</c> gate (see
+    /// <see cref="HubAuthorization.AuthorizedRealmFeed{T}"/>).
     /// </summary>
     private static IObservable<T> AuthorizedRealmStream<T>(
         HttpContext? http, string? realm, Func<Action<T>, Action> subscribe)
-    {
-        return Observable.Create<T>(async (observer, ct) =>
-        {
-            if (!await IsAuthorizedAsync(http, realm))
-            {
-                observer.OnCompleted();
-                return;
-            }
+        => HubAuthorization.AuthorizedRealmFeed(http, realm, "observability:read", PermissionRecheckInterval, subscribe);
 
-            void OnNext(T item)
-            {
-                try { observer.OnNext(item); }
-                catch { /* observer disposed mid-flight — handled on cancel */ }
-            }
-
-            var detach = subscribe(OnNext);
-            try
-            {
-                // Keep the subscription alive until the client unsubscribes /
-                // disconnects, which cancels ct.
-                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
-            }
-            catch (OperationCanceledException) { /* expected on teardown */ }
-            finally
-            {
-                detach();
-            }
-        });
-    }
-
-    private static async Task<bool> IsAuthorizedAsync(HttpContext? http, string? realm)
-    {
-        if (http is null || string.IsNullOrEmpty(realm)) return false;
-        var userId = http.GetUserId();
-        if (userId is null) return false;
-
-        // Hub dispatch runs outside the request's tenant scope, so bind the
-        // permission lookup to the caller's realm explicitly: the tenant-scoped
-        // IQuerySession behind IPermissionService resolves TenantContext.Current
-        // at construction. A fresh DI scope avoids reusing a connection-scoped
-        // session that may already be bound to another tenant.
-        using var _ = TenantContext.Enter(realm);
-        await using var scope = http.RequestServices.CreateAsyncScope();
-        var permissions = scope.ServiceProvider.GetRequiredService<IPermissionService>();
-        return await permissions.HasPermissionAsync(userId.Value, AppSlugs.Modgud, "observability:read");
-    }
+    /// <summary>gvm6 — how often a running feed re-checks <c>observability:read</c>.</summary>
+    internal static readonly TimeSpan PermissionRecheckInterval = TimeSpan.FromSeconds(15);
 }
