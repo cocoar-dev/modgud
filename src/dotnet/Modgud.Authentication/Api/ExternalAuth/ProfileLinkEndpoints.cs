@@ -40,6 +40,7 @@ public static class ProfileLinkEndpoints
 
         group.MapGet("", async (
             HttpContext http,
+            TimeProvider clock,
             [FromServices] IQuerySession session,
             CancellationToken ct) =>
         {
@@ -56,8 +57,10 @@ public static class ProfileLinkEndpoints
                 .Where(c => providerIds.Contains(c.Id))
                 .ToListAsync(ct);
             var providerByName = providers.ToDictionary(c => c.Id, c => c.DisplayName);
+            var retention = providers.ToDictionary(c => c.Id, c => c.RawClaimsRetentionDays);
+            var now = clock.GetUtcNow();
 
-            return Results.Ok(links.Select(l => ToDto(l, providerByName)).ToArray());
+            return Results.Ok(links.Select(l => ToDto(l, providerByName, RawClaimsExpired(l, retention, now))).ToArray());
         });
 
         // Admin-side: list the external-identity links of any user, including
@@ -65,6 +68,7 @@ public static class ProfileLinkEndpoints
         // page so ops can see "what did Entra send last for this user".
         endpoints.MapGet($"{path}/admin/users/{{userId}}/external-links", async (
             ShortGuid userId,
+            TimeProvider clock,
             [FromServices] IQuerySession session,
             CancellationToken ct) =>
         {
@@ -79,8 +83,10 @@ public static class ProfileLinkEndpoints
                 .Where(c => providerIds.Contains(c.Id))
                 .ToListAsync(ct);
             var providerByName = providers.ToDictionary(c => c.Id, c => c.DisplayName);
+            var retention = providers.ToDictionary(c => c.Id, c => c.RawClaimsRetentionDays);
+            var now = clock.GetUtcNow();
 
-            return Results.Ok(links.Select(l => ToDto(l, providerByName)).ToArray());
+            return Results.Ok(links.Select(l => ToDto(l, providerByName, RawClaimsExpired(l, retention, now))).ToArray());
         })
         .RequireAuthorization()
         .RequiresPermission("user:read");
@@ -203,11 +209,15 @@ public static class ProfileLinkEndpoints
         return Results.NoContent();
     }
 
-    private static LinkDto ToDto(ExternalIdentityLink l, Dictionary<Guid, string> providerByName)
+    // EP-03 — a snapshot past its provider's retention is withheld before the sweep removes it.
+    private static bool RawClaimsExpired(ExternalIdentityLink l, Dictionary<Guid, int?> retention, DateTimeOffset now)
+        => retention.TryGetValue(l.LoginProviderId, out var days) && RawClaimsRetention.IsExpired(days, l.LastCapturedAt, now);
+
+    private static LinkDto ToDto(ExternalIdentityLink l, Dictionary<Guid, string> providerByName, bool rawClaimsExpired)
     {
         System.Text.Json.JsonElement? scriptOutput = l.LastScriptOutput is null ? null
             : System.Text.Json.JsonDocument.Parse(l.LastScriptOutput.RootElement.GetRawText()).RootElement;
-        System.Text.Json.JsonElement? rawClaims = l.LastRawClaims is null ? null
+        System.Text.Json.JsonElement? rawClaims = rawClaimsExpired || l.LastRawClaims is null ? null
             : System.Text.Json.JsonDocument.Parse(l.LastRawClaims.RootElement.GetRawText()).RootElement;
 
         return new LinkDto(

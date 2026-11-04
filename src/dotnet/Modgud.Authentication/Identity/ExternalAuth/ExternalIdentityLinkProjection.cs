@@ -41,6 +41,16 @@ public partial class ExternalIdentityLinkProjection : SingleStreamProjection<Ext
         return current;
     }
 
+    /// <summary>EP-03 — retention ended for the snapshot, unless a later login replaced it.</summary>
+    public ExternalIdentityLink Apply(
+        ExternalIdentityRawClaimsExpiredEvent @event,
+        ExternalIdentityLink current)
+    {
+        if (current.LastCapturedAt < @event.CapturedBefore)
+            current.LastRawClaims = null;
+        return current;
+    }
+
     /// <summary>
     /// Variant C — "unlink forgets the binding". Unlinking DELETES the projection
     /// doc rather than leaving a soft <c>IsUnlinked</c> tombstone, which (a) frees

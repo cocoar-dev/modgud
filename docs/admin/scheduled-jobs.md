@@ -22,12 +22,12 @@ Every realm job has its own Quartz job + trigger. Run history (`JobRunHistoryEnt
 
 ## Registered jobs
 
-Eleven job definitions ship with Modgud today:
+Fourteen job definitions ship with Modgud today:
 
-- Nine are **realm jobs**. Each active realm gets an independent Quartz job and trigger, so one customer can run at 18:00, another at 21:00, and another can disable its cron and run manually.
+- Twelve are **realm jobs**. Each active realm gets an independent Quartz job and trigger, so one customer can run at 18:00, another at 21:00, and another can disable its cron and run manually.
 - Two are **system jobs**: `system-job-run-history-retention` and `platform-audit-prune`. Each exists exactly once because it operates on a deployment-wide store, and is visible/configurable only in the realm that currently holds the Control-Plane role.
 
-The Control-Plane realm is still a realm, so it also owns its own copies of all nine realm jobs.
+The Control-Plane realm is still a realm, so it also owns its own copies of all twelve realm jobs.
 
 System-job configuration and history live in the non-tenanted global store,
 not in the Control-Plane realm's database. Transferring the Control-Plane role
@@ -140,6 +140,23 @@ this realm.
   session.
 - **On failure:** that realm's run fails and is written to its own history; no
   other realm's run is affected.
+
+### `raw-claims-retention` — Raw Claims Retention
+
+Enforces each login provider's **raw-claims retention** (*Aufbewahrung in Tagen* on the
+provider, shown when *Store raw claims* is on).
+
+- **Default cron:** `0 45 3 * * ?` (03:45 UTC daily)
+- **Parameters:** none — the retention is configured per login provider; a provider
+  without one keeps its raw claims as long as the link exists.
+- **What it does:** for every provider with a retention, clears the last raw-claims
+  snapshot of each external-identity link captured before `now − days`, and removes the
+  raw claims from the expired login events of that provider's link streams (unlinked
+  ones included). Email, display name and script output in those events stay; a GDPR
+  erase still masks them. Expired snapshots are already withheld from the admin views
+  before the job runs.
+- **On failure:** that realm's run fails and is written to its own history; no other
+  realm's run is affected.
 
 ### `security-audit-prune` — Security Audit Prune
 

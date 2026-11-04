@@ -346,6 +346,7 @@ public static class MartenStoreOptionsExtensions
         options.Events.MapEventType<ExternalIdentityLinkedEvent>("external_identity_linked");
         options.Events.MapEventType<ExternalIdentityScriptRecordedEvent>("external_identity_script_recorded");
         options.Events.MapEventType<ExternalIdentityUnlinkedEvent>("external_identity_unlinked");
+        options.Events.MapEventType<ExternalIdentityRawClaimsExpiredEvent>("external_identity_raw_claims_expired");
 
         // User-stream mirror events for external auth
         options.Events.MapEventType<UserExternalIdentityLinkedEvent>("user_external_identity_linked");
