@@ -20,7 +20,7 @@ public partial class DynamicOidcSchemeManagerTests
         using var scope = Factory.Services.CreateScope();
         var manager = scope.ServiceProvider.GetRequiredService<DynamicOidcSchemeManager>();
         var schemeProvider = scope.ServiceProvider.GetRequiredService<IAuthenticationSchemeProvider>();
-        var name = DynamicOidcSchemeManager.SchemeNameFor(config.Id);
+        var name = DynamicOidcSchemeManager.SchemeNameFor(TenantConstants.SystemTenantId, config.Id);
 
         using (TenantContext.Enter("system"))
             await manager.RegisterAsync(config);

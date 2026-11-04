@@ -25,7 +25,7 @@ public class LoginProviderSchemeMaterializerTests : IntegrationTestBase
     public async Task Provider_committed_elsewhere_is_materialised_from_the_database()
     {
         var provider = await CreateEnabledEntraProviderAsync();
-        var scheme = DynamicOidcSchemeManager.SchemeNameFor(provider.Id);
+        var scheme = DynamicOidcSchemeManager.SchemeNameFor(TenantConstants.SystemTenantId, provider.Id);
 
         // "Node B": no handler ran for this provider (the document was written
         // directly), so only a read of the database can produce the scheme.
@@ -42,10 +42,10 @@ public class LoginProviderSchemeMaterializerTests : IntegrationTestBase
     public async Task Request_path_resolves_the_scheme_for_the_current_realm()
     {
         var provider = await CreateEnabledEntraProviderAsync();
-        var scheme = DynamicOidcSchemeManager.SchemeNameFor(provider.Id);
+        var scheme = DynamicOidcSchemeManager.SchemeNameFor(TenantConstants.SystemTenantId, provider.Id);
 
         var manager = Factory.Services.GetRequiredService<DynamicOidcSchemeManager>();
-        await manager.UnregisterAsync(provider.Id);
+        await manager.UnregisterAsync(provider.Id, TenantConstants.SystemTenantId);
         // Make the realm stale so the next request-path lookup re-reads it.
         var materializer = Factory.Services.GetRequiredService<LoginProviderSchemeMaterializer>();
         await materializer.ForgetAsync(TenantConstants.SystemTenantId);
@@ -64,7 +64,7 @@ public class LoginProviderSchemeMaterializerTests : IntegrationTestBase
     public async Task Provider_disabled_in_the_database_is_unregistered_on_refresh()
     {
         var provider = await CreateEnabledEntraProviderAsync();
-        var scheme = DynamicOidcSchemeManager.SchemeNameFor(provider.Id);
+        var scheme = DynamicOidcSchemeManager.SchemeNameFor(TenantConstants.SystemTenantId, provider.Id);
         var materializer = Factory.Services.GetRequiredService<LoginProviderSchemeMaterializer>();
         var schemes = Factory.Services.GetRequiredService<IAuthenticationSchemeProvider>();
 
@@ -88,7 +88,7 @@ public class LoginProviderSchemeMaterializerTests : IntegrationTestBase
     public async Task EnsureFresh_within_the_interval_does_not_re_read_the_database()
     {
         var provider = await CreateEnabledEntraProviderAsync();
-        var scheme = DynamicOidcSchemeManager.SchemeNameFor(provider.Id);
+        var scheme = DynamicOidcSchemeManager.SchemeNameFor(TenantConstants.SystemTenantId, provider.Id);
         var materializer = Factory.Services.GetRequiredService<LoginProviderSchemeMaterializer>();
         var manager = Factory.Services.GetRequiredService<DynamicOidcSchemeManager>();
         var schemes = Factory.Services.GetRequiredService<IAuthenticationSchemeProvider>();

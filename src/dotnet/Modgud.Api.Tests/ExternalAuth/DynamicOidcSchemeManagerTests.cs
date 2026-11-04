@@ -32,7 +32,7 @@ public partial class DynamicOidcSchemeManagerTests : IntegrationTestBase
         using (TenantContext.Enter("system"))
             await manager.RegisterAsync(config);
 
-        var expectedName = DynamicOidcSchemeManager.SchemeNameFor(config.Id);
+        var expectedName = DynamicOidcSchemeManager.SchemeNameFor(TenantConstants.SystemTenantId, config.Id);
         var scheme = await schemeProvider.GetSchemeAsync(expectedName);
         Assert.NotNull(scheme);
         // Host-aware subclass: adds the per-tenant callback tiebreaker over the
@@ -52,7 +52,7 @@ public partial class DynamicOidcSchemeManagerTests : IntegrationTestBase
 
         using (TenantContext.Enter("system"))
             await manager.RegisterAsync(config);
-        var name = DynamicOidcSchemeManager.SchemeNameFor(config.Id);
+        var name = DynamicOidcSchemeManager.SchemeNameFor(TenantConstants.SystemTenantId, config.Id);
         Assert.NotNull(await schemeProvider.GetSchemeAsync(name));
 
         // ADR 0022: the database is the source of truth on every node. Disable
@@ -78,10 +78,11 @@ public partial class DynamicOidcSchemeManagerTests : IntegrationTestBase
         var manager = scope.ServiceProvider.GetRequiredService<DynamicOidcSchemeManager>();
         var schemeProvider = scope.ServiceProvider.GetRequiredService<IAuthenticationSchemeProvider>();
 
-        await manager.RegisterAsync(config);
+        using (TenantContext.Enter(TenantConstants.SystemTenantId))
+            await manager.RegisterAsync(config);
 
         // Incomplete config must NOT produce a reachable scheme (login would 500)
-        var name = DynamicOidcSchemeManager.SchemeNameFor(config.Id);
+        var name = DynamicOidcSchemeManager.SchemeNameFor(TenantConstants.SystemTenantId, config.Id);
         Assert.Null(await schemeProvider.GetSchemeAsync(name));
     }
 
@@ -107,7 +108,7 @@ public partial class DynamicOidcSchemeManagerTests : IntegrationTestBase
 
         await manager.RegisterAsync(config); // must not throw
 
-        var name = DynamicOidcSchemeManager.SchemeNameFor(config.Id);
+        var name = DynamicOidcSchemeManager.SchemeNameFor(TenantConstants.SystemTenantId, config.Id);
         Assert.Null(await schemeProvider.GetSchemeAsync(name));
     }
 
@@ -135,7 +136,7 @@ public partial class DynamicOidcSchemeManagerTests : IntegrationTestBase
 
         await manager.RegisterAsync(config);
 
-        var name = DynamicOidcSchemeManager.SchemeNameFor(config.Id);
+        var name = DynamicOidcSchemeManager.SchemeNameFor(TenantConstants.SystemTenantId, config.Id);
         Assert.Null(await schemeProvider.GetSchemeAsync(name));
     }
 
@@ -150,13 +151,13 @@ public partial class DynamicOidcSchemeManagerTests : IntegrationTestBase
 
         using (TenantContext.Enter("system"))
             await manager.RegisterAsync(config);
-        var first = optionsMonitor.Get(DynamicOidcSchemeManager.SchemeNameFor(config.Id));
+        var first = optionsMonitor.Get(DynamicOidcSchemeManager.SchemeNameFor(TenantConstants.SystemTenantId, config.Id));
         Assert.Equal("client-id-1", first.ClientId);
 
         config.ClientId = "client-id-2";
         using (TenantContext.Enter("system"))
             await manager.RegisterAsync(config);
-        var second = optionsMonitor.Get(DynamicOidcSchemeManager.SchemeNameFor(config.Id));
+        var second = optionsMonitor.Get(DynamicOidcSchemeManager.SchemeNameFor(TenantConstants.SystemTenantId, config.Id));
         Assert.Equal("client-id-2", second.ClientId);
     }
 

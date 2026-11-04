@@ -17,7 +17,7 @@ namespace Modgud.Api.Tests.ExternalAuth;
 /// <para>
 /// No running host needed: the handler is instantiated with a stub options
 /// monitor + a hand-built <see cref="DefaultHttpContext"/>. The scheme name is
-/// globally unique (<c>Oidc_{guid}</c>); the realm a scheme belongs to comes
+/// unique per process (<c>Oidc_{realm}_{guid}</c>); the realm a scheme belongs to comes
 /// from <see cref="OidcSchemeRealmRegistry"/>, and the current request's realm
 /// from <c>HttpContext.Items</c> (set by RealmMiddleware in production).
 /// </para>

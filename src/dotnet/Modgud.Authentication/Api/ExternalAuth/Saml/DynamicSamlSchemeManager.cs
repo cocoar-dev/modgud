@@ -17,10 +17,11 @@ namespace Modgud.Authentication.Api.ExternalAuth.Saml;
 /// so the SAML endpoint handlers (login / acs / metadata in <c>SamlEndpoints</c>)
 /// can look up the per-provider config without a Marten round-trip per request.
 /// <para>
-/// The cache is global (not per-tenant) because the cache key is the
-/// <c>LoginProvider.Id</c> Guid which is globally unique even across realms.
-/// The realm slug is stored on the cached entry so the endpoint handlers know
-/// which tenant context to enter when fetching/creating the linked user.
+/// The cache is process-wide and keyed by (realm, <c>LoginProvider.Id</c>): the ID is
+/// only unique inside a realm's database — a manifest import may pin it — so the
+/// realm is part of the key (EP-01). The realm slug is also stored on the cached
+/// entry so the endpoint handlers know which tenant context to enter when
+/// fetching/creating the linked user.
 /// </para>
 /// </summary>
 public class DynamicSamlSchemeManager(
@@ -30,7 +31,7 @@ public class DynamicSamlSchemeManager(
     ISecurityAuditLog securityAudit,
     ILogger<DynamicSamlSchemeManager> logger)
 {
-    private readonly ConcurrentDictionary<Guid, RegisteredSamlProvider> _cache = new();
+    private readonly ConcurrentDictionary<(string Realm, Guid Id), RegisteredSamlProvider> _cache = new();
 
     /// <summary>
     /// Registers or replaces the cached SAML provider config. Safe to call
@@ -117,7 +118,7 @@ public class DynamicSamlSchemeManager(
             IdpMetadata: idpMetadata,
             MetadataFetchedAt: idpMetadata is null ? null : clock.GetUtcNow());
 
-        _cache[config.Id] = entry;
+        _cache[(realmSlug, config.Id)] = entry;
 
         if (idpMetadata is null)
         {
@@ -136,10 +137,17 @@ public class DynamicSamlSchemeManager(
         }
     }
 
-    /// <summary>Evict the cache entry for the given provider. Idempotent.</summary>
-    public Task UnregisterAsync(Guid loginProviderId)
+    /// <summary>
+    /// Evict the cache entry for the given provider in the given realm, or in the
+    /// ambient <see cref="TenantContext"/> when none is given. Idempotent.
+    /// </summary>
+    public Task UnregisterAsync(Guid loginProviderId, string? realmSlug = null)
     {
-        if (_cache.TryRemove(loginProviderId, out var entry))
+        var realm = realmSlug ?? TenantContext.CurrentOrNull
+            ?? throw new InvalidOperationException(
+                "DynamicSamlSchemeManager.UnregisterAsync needs the provider's realm: " +
+                "pass it or enter the realm's TenantContext first.");
+        if (_cache.TryRemove((realm, loginProviderId), out var entry))
         {
             logger.LogInformation(
                 "Unregistered SAML provider {Id} ({Display})",
@@ -149,13 +157,13 @@ public class DynamicSamlSchemeManager(
     }
 
     /// <summary>
-    /// Lookup by provider id. Returns <c>false</c> for unknown / disabled
+    /// Lookup by realm and provider id. Returns <c>false</c> for unknown / disabled
     /// providers — endpoint handlers translate that to a 404 to avoid
     /// disclosing provider existence to anonymous callers.
     /// </summary>
-    public bool TryGet(Guid loginProviderId, out RegisteredSamlProvider? entry)
+    public bool TryGet(string realmSlug, Guid loginProviderId, out RegisteredSamlProvider? entry)
     {
-        return _cache.TryGetValue(loginProviderId, out entry);
+        return _cache.TryGetValue((realmSlug, loginProviderId), out entry);
     }
 
     /// <summary>
@@ -197,9 +205,10 @@ public class DynamicSamlSchemeManager(
     /// background service. Returns true on a successful fetch (whether or
     /// not the certs actually changed), false on fetch failure (kept stale).
     /// </summary>
-    public async Task<bool> RefreshMetadataAsync(Guid loginProviderId, CancellationToken ct = default)
+    public async Task<bool> RefreshMetadataAsync(string realmSlug, Guid loginProviderId, CancellationToken ct = default)
     {
-        if (!_cache.TryGetValue(loginProviderId, out var existing) || existing is null)
+        var key = (realmSlug, loginProviderId);
+        if (!_cache.TryGetValue(key, out var existing) || existing is null)
             return false;
 
         SamlIdpMetadata? fresh = null;
@@ -222,7 +231,7 @@ public class DynamicSamlSchemeManager(
         // B6-SAML-03 — write back only if the entry is still the one this refresh read.
         // A provider disabled, deleted or re-registered while the fetch ran keeps that
         // newer state instead of being resurrected with its old configuration.
-        if (!_cache.TryUpdate(loginProviderId, updated, existing))
+        if (!_cache.TryUpdate(key, updated, existing))
         {
             logger.LogInformation(
                 "SAML metadata refresh for provider {Id} discarded: the registration changed meanwhile",
