@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Marten;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Authentication.Domain;
+using Modgud.Domain.Realms;
 
 namespace Modgud.Api.Tests.Security;
 
@@ -62,13 +63,17 @@ public class LockoutConcurrencyTests : IntegrationTestBase
 
         Assert.Equal(HttpStatusCode.Unauthorized, withCorrectPassword.StatusCode);
 
-        // The per-user failure counter recorded every attempt — and, since ADR 0020,
-        // no longer locks the account itself (LockoutEnd stays the admin's lock):
-        // the owner's own trusted devices are unaffected by a stranger's burst.
+        // The per-user failure counter recorded every attempt that reached the password
+        // check — and, since ADR 0020, no longer locks the account itself (LockoutEnd stays
+        // the admin's lock): the owner's own trusted devices are unaffected by a stranger's
+        // burst. Since B8-AJ-01 the throttle reserves its slot before the password is
+        // checked, so only as many attempts as the untrusted pool allows get that far; the
+        // rest are refused without a password verdict and are not failed password checks.
+        var untrustedLimit = AuthRateLimitSettings.Effective(null, AuthRateLimitPolicy.Login, RateLimitDimension.Target)!.PermitLimit;
         await using var qs = GetTenantedSession();
         var securityData = await qs.LoadAsync<UserSecurityData>(user.Id, ct);
         Assert.NotNull(securityData);
-        Assert.Equal(parallelAttempts, securityData!.AccessFailedCount);
+        Assert.Equal(Math.Min(parallelAttempts, untrustedLimit), securityData!.AccessFailedCount);
         Assert.Null(securityData.LockoutEnd);
     }
 
