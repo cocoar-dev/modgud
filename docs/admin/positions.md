@@ -174,7 +174,8 @@ events), start, absolute end, and the end reason.
   affected sessions immediately. The same applies to password/OTP changes,
   activation-token invalidation, policy tightening, or removing a terminal's
   position assignment. Expired sessions are swept by the
-  `staffing-sweep` system job (every 5 minutes).
+  [`staffing-sweep`](./scheduled-jobs#staffing-sweep-position-staffing-sweep)
+  realm job (every 5 minutes).
 
 ## Permissions reference
 

@@ -85,6 +85,15 @@ Erases the "ghost" accounts the pre-ADR-0018 sign-up paths created before the pr
 - **What it does:** matches accounts that are unconfirmed, have no password, no passkey, no external login, no redeemed code, and whose stream is older than `olderThanDays`; erases them through the normal permanent-erase path (masking + archiving), never a raw delete. Anything an admin created with a password, or that ever signed in, is outside the signature. Leave it in dry-run until the logged list looks right, then set `dryRun=false`.
 - **On failure:** logged + inbox-notified.
 
+### `staffing-sweep` — Position Staffing Sweep
+
+Cleans up after [position terminals](./positions): deletes staffing ceremonies that were begun but never redeemed, and ends staffing sessions that ran past their absolute end — the shift ceiling a refresh can never move.
+
+- **Default cron:** `0 */5 * * * ?` (every 5 minutes — a silent terminal's session outlives its shift ceiling by at most one sweep interval)
+- **Parameters:** none.
+- **What it does:** when the `PositionTerminals` feature flag is off, the run is skipped and says so in its result. Otherwise, in its owning realm, it deletes every staffing ceremony past its expiry, then ends each active staffing session whose absolute end has passed, with the reason *Expired*, the same way a force-lock does: the terminal's tokens are revoked and the end is written to the security log. A terminal that is still in contact is already caught by its next refresh; the sweep catches terminals that went silent. Ended sessions are kept as audit records, not deleted. The run reports how many sessions it ended. Idempotent.
+- **On failure:** that realm's run fails and is written to its own history; no other realm's run is affected, and the next run five minutes later picks up whatever was left.
+
 ### `signing-key-janitor` — Signing Key Janitor
 
 Hard-deletes per-realm OAuth/OIDC signing keys whose rotation overlap window has elapsed.
