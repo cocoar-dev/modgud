@@ -36,12 +36,10 @@ public class EventSourcedUserStore(IDocumentSession session)
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(user);
         user.SecurityStamp = stamp;
-        // Persist immediately so a concurrent reader sees the new stamp.
-        // Identity's higher-level operations (UpdatePasswordHashAsync,
-        // UpdateSecurityStampAsync, etc.) call UpdateAsync afterwards which
-        // commits the rest of the user document; this Store is the lighter
-        // "set field, save" path used by the validator pipeline.
-        session.Store(user);
+        // Identity's operations that rotate the stamp (UpdatePasswordHashAsync,
+        // UpdateSecurityStampAsync, ...) always call UpdateAsync afterwards, which
+        // writes the new stamp to UserSecurityData. AID-01 — no whole-document Store
+        // here: it would write a possibly stale user object back as a whole.
         return Task.CompletedTask;
     }
 
@@ -99,6 +97,7 @@ public class EventSourcedUserStore(IDocumentSession session)
         session.Store(securityData);
 
         await session.SaveChangesAsync(cancellationToken);
+        Remember(user);
 
         return IdentityResult.Success;
     }
@@ -108,7 +107,26 @@ public class EventSourcedUserStore(IDocumentSession session)
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(user);
 
-        session.Store(user);
+        // AID-01 — write only what changed since this store handed the user out.
+        // Writing the whole object let an update that had loaded the user before a
+        // deactivation, password change or factor change put the earlier state back
+        // (IsActive, PasswordHash, SecurityStamp, 2FA). Fields owned by other writers
+        // stay as they are now in the database. A user this store did not load
+        // (raw session load) keeps the former whole-object write.
+        var changed = _loaded.TryGetValue(user, out var loaded) ? ChangedSince(loaded, user) : null;
+        var newConcurrencyStamp = Guid.NewGuid().ToString();
+        user.ConcurrencyStamp = newConcurrencyStamp;
+        if (changed is not null)
+        {
+            foreach (var name in changed)
+                session.Patch<ApplicationUser>(user.Id).Set<object?>(name, DocumentProperties[name].GetValue(user));
+            session.Patch<ApplicationUser>(user.Id).Set(x => x.ConcurrencyStamp, newConcurrencyStamp);
+        }
+        else
+        {
+            session.Store(user);
+        }
+        bool Writes(string field) => changed is null || changed.Contains(field);
 
         var securityData = await session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
         if (securityData is not null)
@@ -124,18 +142,20 @@ public class EventSourcedUserStore(IDocumentSession session)
             // from this write set. The same reasoning protects the grace-period
             // fields (SecureSetupDueAt, GracePeriodDaysOverride, TwoFactorExempt),
             // which are owned by their own admin/2FA paths.
-            var newConcurrencyStamp = Guid.NewGuid().ToString();
-            session.Patch<UserSecurityData>(user.Id)
-                .Set(x => x.PasswordHash, user.PasswordHash);
-            session.Patch<UserSecurityData>(user.Id)
-                .Set(x => x.SecurityStamp, user.SecurityStamp ?? securityData.SecurityStamp);
-            session.Patch<UserSecurityData>(user.Id)
-                .Set(x => x.TwoFactorEnabled, user.TwoFactorEnabled);
-            session.Patch<UserSecurityData>(user.Id)
-                .Set(x => x.AuthenticatorKey, user.AuthenticatorKey);
+            if (Writes(nameof(ApplicationUser.PasswordHash)))
+                session.Patch<UserSecurityData>(user.Id)
+                    .Set(x => x.PasswordHash, user.PasswordHash);
+            if (Writes(nameof(ApplicationUser.SecurityStamp)))
+                session.Patch<UserSecurityData>(user.Id)
+                    .Set(x => x.SecurityStamp, user.SecurityStamp ?? securityData.SecurityStamp);
+            if (Writes(nameof(ApplicationUser.TwoFactorEnabled)))
+                session.Patch<UserSecurityData>(user.Id)
+                    .Set(x => x.TwoFactorEnabled, user.TwoFactorEnabled);
+            if (Writes(nameof(ApplicationUser.AuthenticatorKey)))
+                session.Patch<UserSecurityData>(user.Id)
+                    .Set(x => x.AuthenticatorKey, user.AuthenticatorKey);
             session.Patch<UserSecurityData>(user.Id)
                 .Set(x => x.ConcurrencyStamp, newConcurrencyStamp);
-            user.ConcurrencyStamp = newConcurrencyStamp;
         }
         else
         {
@@ -147,13 +167,51 @@ public class EventSourcedUserStore(IDocumentSession session)
             securityData.LockoutEnd = user.LockoutEnd;
             securityData.TwoFactorEnabled = user.TwoFactorEnabled;
             securityData.AuthenticatorKey = user.AuthenticatorKey;
-            user.ConcurrencyStamp = securityData.ConcurrencyStamp;
+            securityData.ConcurrencyStamp = newConcurrencyStamp;
             session.Store(securityData);
         }
 
         await session.SaveChangesAsync(cancellationToken);
+        Remember(user);
 
         return IdentityResult.Success;
+    }
+
+    // ── AID-01 — load snapshots ──────────────────────────────────────────
+
+    private static readonly Dictionary<string, System.Reflection.PropertyInfo> DocumentProperties =
+        typeof(ApplicationUser).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+            .Where(p => p.CanRead && p.CanWrite && p.GetIndexParameters().Length == 0)
+            .ToDictionary(p => p.Name, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Each user object as this store handed it out (finders, create) or last wrote it. Keyed by
+    /// the object, not the id: Identity's validators load the same user again (user name / e-mail
+    /// uniqueness) during an update, and that fresh copy must not replace the caller's baseline.
+    /// </summary>
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<ApplicationUser, System.Text.Json.Nodes.JsonObject> _loaded = new();
+
+    private System.Text.Json.Nodes.JsonObject Snapshot(ApplicationUser user)
+        => System.Text.Json.Nodes.JsonNode.Parse(session.DocumentStore.Options.Serializer().ToJson(user))!.AsObject();
+
+    private void Remember(ApplicationUser user) => _loaded.AddOrUpdate(user, Snapshot(user));
+
+    /// <summary>
+    /// The document properties whose stored form differs from the snapshot, or null when one
+    /// cannot be mapped back to a property (then the caller falls back to a whole write).
+    /// </summary>
+    private HashSet<string>? ChangedSince(System.Text.Json.Nodes.JsonObject loaded, ApplicationUser user)
+    {
+        var current = Snapshot(user);
+        var changed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var name in loaded.Select(kv => kv.Key).Union(current.Select(kv => kv.Key)))
+        {
+            if (name == nameof(ApplicationUser.ConcurrencyStamp)) continue;
+            if (System.Text.Json.Nodes.JsonNode.DeepEquals(loaded[name], current[name])) continue;
+            if (!DocumentProperties.ContainsKey(name)) return null;
+            changed.Add(name);
+        }
+        return changed;
     }
 
     public async Task<IdentityResult> DeleteAsync(ApplicationUser user, CancellationToken cancellationToken)
@@ -500,7 +558,10 @@ public class EventSourcedUserStore(IDocumentSession session)
     {
         var securityData = await session.LoadAsync<UserSecurityData>(user.Id, cancellationToken);
         if (securityData is null)
+        {
+            Remember(user);
             return;
+        }
 
         user.PasswordHash = securityData.PasswordHash;
         user.SecurityStamp = securityData.SecurityStamp;
@@ -509,6 +570,7 @@ public class EventSourcedUserStore(IDocumentSession session)
         user.LockoutEnd = securityData.LockoutEnd;
         user.TwoFactorEnabled = securityData.TwoFactorEnabled;
         user.AuthenticatorKey = securityData.AuthenticatorKey;
+        Remember(user);
     }
 
     public void Dispose()
