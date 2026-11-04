@@ -81,7 +81,7 @@ On top of the durable `Person` fields, an `ExternallyDrivable` script may read t
 
 | Field | Type | Notes |
 |---|---|---|
-| `p.ExternalGroups` | `string[]` | the current provider's `groups` claim for this login (always an array — use `.includes(...)`) |
+| `p.ExternalGroups` | `string[]` | the current provider's `groups` claim for this login (always an array — use `.includes(...)`; it is a read-only host array, so `Array.isArray(...)` is `false`) |
 | `p.Source` | `string` | the source tag of this login: `"local"` or `"provider:<slug>"` |
 
 ```typescript

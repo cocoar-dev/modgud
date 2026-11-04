@@ -155,6 +155,11 @@ The returned patch is applied to the user (only the fields that come
 back — skipping `acronym` is fine). Fields that aren't set remain
 unchanged.
 
+Multi-valued claims arrive as read-only arrays: indexing, `includes`, `some`,
+`indexOf`, `map`, `filter`, spread and `JSON.stringify` work, but
+`Array.isArray(claims.groups)` is `false` and `push` throws. Copy with
+`[...claims.groups]` when the script needs a real JavaScript array.
+
 The test endpoint (`POST /api/admin/login-providers/{id}/test-user-update`)
 lets admins dry-run the script with synthetic claims before deployment.
 

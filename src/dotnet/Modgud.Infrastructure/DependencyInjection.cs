@@ -358,6 +358,18 @@ public static class DependencyInjection
         //
         // See the maintainers' JsEval threat-model note for the full
         // engine-globals catalog and the rationale per global.
+        services.AddModgudScriptEngine();
+
+        return services;
+    }
+
+    /// <summary>
+    /// The script engine as Modgud runs it (JsEval with LINQ, the principal discriminators and
+    /// the 2 s execution timeout, plus the TypeScript transpiler and definitions). Separate so
+    /// tests exercise exactly this configuration.
+    /// </summary>
+    public static IServiceCollection AddModgudScriptEngine(this IServiceCollection services)
+    {
         services.AddJsEval(b => b
             .AddLinq()
             .AddDiscriminatorMappings<Principal>("Type",
@@ -368,7 +380,6 @@ public static class DependencyInjection
             .WithExecutionTimeout(TimeSpan.FromSeconds(2)));
         services.AddTsTranspiler();
         services.AddTsDefinition();
-
         return services;
     }
 }
