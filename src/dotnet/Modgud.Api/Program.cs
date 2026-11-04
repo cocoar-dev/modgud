@@ -787,6 +787,7 @@ try
     builder.Services.AddSingleton<Modgud.Authentication.Api.ExternalAuth.OidcSchemeRealmRegistry>();
     builder.Services.AddSingleton<DynamicOidcSchemeManager>();
     builder.Services.AddScoped<ExternalLoginProcessor>();
+    builder.Services.AddScoped<Modgud.Authentication.Api.ExternalAuth.RawClaimsRetentionSweeper>();
 
     // ADR 0022 (D6) — every node resolves the current realm's OIDC schemes and
     // SAML providers from the database on demand instead of learning about
@@ -1184,6 +1185,12 @@ try
         name: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.Name,
         defaultCron: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.DefaultCron,
         description: Modgud.Api.Features.Admin.Jobs.AccountLifecycleSweepJob.Description);
+    // EP-03 — the login providers' raw-claims retention.
+    builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.RawClaimsRetentionJob>(
+        key: Modgud.Api.Features.Admin.Jobs.RawClaimsRetentionJob.Key,
+        name: Modgud.Api.Features.Admin.Jobs.RawClaimsRetentionJob.Name,
+        defaultCron: Modgud.Api.Features.Admin.Jobs.RawClaimsRetentionJob.DefaultCron,
+        description: Modgud.Api.Features.Admin.Jobs.RawClaimsRetentionJob.Description);
     builder.Services.AddRealmJob<Modgud.Api.Features.Admin.Jobs.SessionPruneJob>(
         key: Modgud.Api.Features.Admin.Jobs.SessionPruneJob.Key,
         name: Modgud.Api.Features.Admin.Jobs.SessionPruneJob.Name,

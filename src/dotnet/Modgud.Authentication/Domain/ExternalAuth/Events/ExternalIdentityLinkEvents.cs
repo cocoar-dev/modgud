@@ -38,6 +38,16 @@ public record ExternalIdentityScriptRecordedEvent(
     string? Email,
     string? DisplayName);
 
+/// <summary>
+/// EP-03 — the provider's raw-claims retention ended for snapshots captured before
+/// <paramref name="CapturedBefore"/>. Clears the link's last raw claims unless a newer
+/// login captured them again meanwhile. Carries no PII.
+/// </summary>
+public record ExternalIdentityRawClaimsExpiredEvent(
+    Guid Id,
+    DateTimeOffset CapturedBefore,
+    DateTimeOffset ExpiredAt);
+
 public record ExternalIdentityUnlinkedEvent(
     Guid Id,
     DateTimeOffset UnlinkedAt,

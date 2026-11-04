@@ -82,6 +82,7 @@ Marten document in the tenant store. Selected fields:
 | `FlavorData` | OIDC connection settings or SAML metadata/attribute settings |
 | `UserUpdateScript` | JavaScript snippet (Jint) |
 | `StoreRawClaims` | bool — when true, every login stores the raw claims on the link (debug) |
+| `RawClaimsRetentionDays` | optional — raw claims captured longer ago are withheld and removed by the `raw-claims-retention` job; empty = kept as long as the link exists |
 | `Enabled` | bool — disabled providers show no login button |
 | `IsDeleted` | bool — soft delete (Internal entries cannot be deleted) |
 

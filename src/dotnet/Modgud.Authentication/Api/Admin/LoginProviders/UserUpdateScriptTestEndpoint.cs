@@ -4,6 +4,7 @@ using Marten;
 using Microsoft.AspNetCore.Mvc;
 using Modgud.Authorization.AspNetCore;
 using Modgud.Authorization.Membership;
+using Modgud.Authentication.Api.ExternalAuth;
 using Modgud.Authentication.Domain.ExternalAuth;
 using Modgud.Authentication.Domain.LoginProviders;
 using Modgud.Authentication.Identity.ExternalAuth;
@@ -76,12 +77,18 @@ public static class UserUpdateScriptTestEndpoint
         // Used by the admin editor's "Load last login sample" button.
         group.MapGet("{id}/last-raw-claims",
             async (ShortGuid id,
+                   TimeProvider clock,
                    [FromServices] IQuerySession session,
                    CancellationToken ct) =>
             {
                 var providerId = id.Guid;
-                var link = await session.Query<ExternalIdentityLink>()
-                    .Where(l => l.LoginProviderId == providerId && !l.IsUnlinked && l.LastRawClaims != null)
+                var query = session.Query<ExternalIdentityLink>()
+                    .Where(l => l.LoginProviderId == providerId && !l.IsUnlinked && l.LastRawClaims != null);
+                // EP-03 — a snapshot past the provider's retention is not offered as a sample.
+                var provider = await session.LoadAsync<LoginProvider>(providerId, ct);
+                if (RawClaimsRetention.CutoffFor(provider?.RawClaimsRetentionDays, clock.GetUtcNow()) is { } cutoff)
+                    query = query.Where(l => l.LastCapturedAt >= cutoff);
+                var link = await query
                     .OrderByDescending(l => l.LastLoginAt)
                     .FirstOrDefaultAsync(ct);
 
