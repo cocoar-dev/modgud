@@ -71,8 +71,22 @@ public static class UsersEndpoints
             .WithName("V2_User_GetAll")
             .RequiresPermission("user:read");
 
-        userGroup.MapPost("", async (IMessageBus bus, UserCreateDto createDto) =>
+        userGroup.MapPost("", async (IMessageBus bus, UserCreateDto createDto,
+            HttpContext http, IPermissionService permissions, IDocumentSession session) =>
             {
+                // k692 — joining an admin-conferring group at creation is a conferral too.
+                // Unparseable or missing ids are left to the command, which rejects them.
+                var requestedGroups = new List<Group>();
+                foreach (var rawGroupId in createDto.GroupIds?.Distinct() ?? [])
+                {
+                    if (ShortGuid.TryParse(rawGroupId, out Guid requestedId)
+                        && await session.LoadAsync<Group>(requestedId) is { IsDeleted: false } requested)
+                        requestedGroups.Add(requested);
+                }
+                if (await Modgud.Api.Authorization.RealmAdminConferral.RejectMembershipChangeAsync(
+                        http, permissions, session, requestedGroups) is { } forbidden)
+                    return forbidden;
+
                 var command = new CreateUserCommand(
                     createDto.Firstname,
                     createDto.Lastname,
@@ -378,7 +392,8 @@ public static class UsersEndpoints
 
         // Add the user to a group. Auto-groups reject the add — membership is
         // script-driven and a manual add would be overwritten on next recompute.
-        userGroup.MapPost("{id}/groups", async (ShortGuid id, AddUserToGroupDto dto, IDocumentSession session) =>
+        userGroup.MapPost("{id}/groups", async (ShortGuid id, AddUserToGroupDto dto, IDocumentSession session,
+            HttpContext http, IPermissionService permissions) =>
             {
                 var person = await session.LoadAsync<Person>(id.Guid);
                 if (person is null || person.IsDeleted)
@@ -394,6 +409,10 @@ public static class UsersEndpoints
 
                 if (group.MemberIds.Contains(id.Guid))
                     return Results.NoContent(); // idempotent
+
+                if (await Modgud.Api.Authorization.RealmAdminConferral.RejectMembershipChangeAsync(
+                        http, permissions, session, [group]) is { } forbidden)
+                    return forbidden;
 
                 // ADR 0026 — a group closed to test accounts refuses them.
                 var testAccountError = await TestAccountGroupPolicy.RejectTestAccountMembersAsync(
@@ -419,7 +438,8 @@ public static class UsersEndpoints
 
         // Remove the user from a group. Only affects direct membership — inherited
         // groups must be edited at the source.
-        userGroup.MapDelete("{id}/groups/{groupId}", async (ShortGuid id, ShortGuid groupId, IDocumentSession session) =>
+        userGroup.MapDelete("{id}/groups/{groupId}", async (ShortGuid id, ShortGuid groupId, IDocumentSession session,
+            HttpContext http, IPermissionService permissions) =>
             {
                 var person = await session.LoadAsync<Person>(id.Guid);
                 if (person is null || person.IsDeleted)
@@ -434,6 +454,10 @@ public static class UsersEndpoints
 
                 if (!group.MemberIds.Contains(id.Guid))
                     return Results.NoContent(); // idempotent
+
+                if (await Modgud.Api.Authorization.RealmAdminConferral.RejectMembershipChangeAsync(
+                        http, permissions, session, [group]) is { } forbidden)
+                    return forbidden;
 
                 var newMemberIds = group.MemberIds.Where(m => m != id.Guid).ToList();
                 session.Events.Append(groupId.Guid, new GroupUpdatedEvent(
