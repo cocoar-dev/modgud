@@ -178,7 +178,8 @@ public class CreateLoginProviderHandler(
             session.Events.Append(id, @event);
         else
             session.Events.StartStream<LoginProvider>(id, @event);
-        await session.SaveChangesAsync(ct);
+        if (await LoginProviderWriteConflicts.SaveAsync(session, command.Slug, command.DisplayName, ct) is { } writeConflict)
+            return writeConflict;
 
         return (await session.LoadAsync<LoginProvider>(id, ct))!;
     }
@@ -272,7 +273,8 @@ public class CreateLoginProviderHandler(
             session.Events.Append(id, @event);
         else
             session.Events.StartStream<LoginProvider>(id, @event);
-        await session.SaveChangesAsync(ct);
+        if (await LoginProviderWriteConflicts.SaveAsync(session, command.Slug, command.DisplayName, ct) is { } writeConflict)
+            return writeConflict;
 
         return (await session.LoadAsync<LoginProvider>(id, ct))!;
     }
@@ -331,7 +333,8 @@ public class CreateLoginProviderHandler(
             session.Events.Append(id, @event);
         else
             session.Events.StartStream<LoginProvider>(id, @event);
-        await session.SaveChangesAsync(ct);
+        if (await LoginProviderWriteConflicts.SaveAsync(session, command.Slug, command.DisplayName, ct) is { } writeConflict)
+            return writeConflict;
 
         return (await session.LoadAsync<LoginProvider>(id, ct))!;
     }

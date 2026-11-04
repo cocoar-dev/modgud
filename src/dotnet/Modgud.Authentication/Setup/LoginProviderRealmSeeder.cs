@@ -64,7 +64,18 @@ public class LoginProviderRealmSeeder : ILoginProviderRealmSeeder
             CreatedAt: now);
 
         session.Events.StartStream<LoginProvider>(id, @event);
-        await session.SaveChangesAsync(ct);
+        try
+        {
+            await session.SaveChangesAsync(ct);
+        }
+        catch (Exception ex) when (Modgud.Authentication.Api.Admin.LoginProviders.Commands.LoginProviderWriteConflicts.IsActiveSlugConflict(ex))
+        {
+            // EP-04 — another instance seeded the Internal provider first (the unique
+            // active-slug index decided it): nothing left to do.
+            logger?.LogInformation(
+                "Built-in Internal login provider for tenant '{TenantId}' was seeded concurrently", tenantId);
+            return;
+        }
 
         logger?.LogInformation(
             "Seeded built-in Internal login provider for tenant '{TenantId}'",
