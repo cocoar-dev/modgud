@@ -91,17 +91,33 @@ public static class RealmSettingsEndpoints
         // overlap window (so in-flight tokens stay valid for ~30 days), and
         // returns the new key id. Operator action — gated behind the same
         // realm-settings:write permission as the rest of this surface.
+        // FK-01 — `?revokePrevious=true` is the response to a suspected compromise: the key
+        // active until now is revoked instead of retired, so it verifies nothing from this
+        // moment on (every token it signed stops working).
         group.MapPost("rotate-signing-key", async (
             IRealmKeyStore keyStore,
+            bool? revokePrevious,
             CancellationToken ct) =>
         {
             var slug = TenantContext.Current;
-            var creds = await keyStore.RotateAsync(slug, ct);
+            var creds = await keyStore.RotateAsync(slug, revokePrevious == true, ct);
             var kid = creds.Key.KeyId;
 
             return Results.Ok(new RotateSigningKeyResponseDto(kid));
         })
         .WithName("RealmSettings_RotateSigningKey")
+        .RequiresPermission("realm-settings:write");
+
+        // FK-01 — a compromise discovered after an ordinary rotation: revoke every retired key
+        // still inside its overlap window. The active key is untouched.
+        group.MapPost("signing-keys/revoke-retired", async (
+            IRealmKeyStore keyStore,
+            CancellationToken ct) =>
+        {
+            var revoked = await keyStore.RevokeRetiredKeysAsync(TenantContext.Current, ct);
+            return Results.Ok(new RevokeRetiredSigningKeysResponseDto(revoked));
+        })
+        .WithName("RealmSettings_RevokeRetiredSigningKeys")
         .RequiresPermission("realm-settings:write");
 
         return app;
@@ -110,3 +126,6 @@ public static class RealmSettingsEndpoints
 
 /// <summary>Response of <c>POST /admin/realm-settings/rotate-signing-key</c> — the new active key id.</summary>
 public sealed record RotateSigningKeyResponseDto(string Kid);
+
+/// <summary>Response of <c>POST /admin/realm-settings/signing-keys/revoke-retired</c> — how many keys were revoked.</summary>
+public sealed record RevokeRetiredSigningKeysResponseDto(int Revoked);

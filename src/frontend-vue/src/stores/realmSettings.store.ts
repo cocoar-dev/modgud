@@ -35,9 +35,21 @@ export const useRealmSettingsStore = defineStore('realmSettings', () => {
    * retired into a ~30-day verification overlap window so in-flight tokens
    * stay valid. Requires `realm-settings:write`. Returns the new active key id.
    */
-  async function rotateSigningKey(): Promise<string> {
-    const res = await http.addPath('rotate-signing-key').post<{ Kid: string }>()
+  async function rotateSigningKey(revokePrevious = false): Promise<string> {
+    const res = await http.addPath('rotate-signing-key')
+      .setOptionalQueryParameter('revokePrevious', revokePrevious ? 'true' : undefined)
+      .post<{ Kid: string }>()
     return res?.Kid ?? ''
+  }
+
+  /**
+   * FK-01 — revoke every retired signing key still inside its overlap window: they stop
+   * verifying anything at once (tokens they signed become invalid). For a key compromise
+   * discovered after an ordinary rotation. Returns the number of keys revoked.
+   */
+  async function revokeRetiredSigningKeys(): Promise<number> {
+    const res = await http.addPath('signing-keys').addPath('revoke-retired').post<{ Revoked: number }>()
+    return res?.Revoked ?? 0
   }
 
   async function previewPositionSecurity(
@@ -56,7 +68,7 @@ export const useRealmSettingsStore = defineStore('realmSettings', () => {
     return http.addPath('email-preview').post<EmailPreviewResult>(request)
   }
 
-  return { settings, loaded, load, patch, previewPositionSecurity, rotateSigningKey, previewEmail }
+  return { settings, loaded, load, patch, previewPositionSecurity, rotateSigningKey, revokeRetiredSigningKeys, previewEmail }
 })
 
 /** Unsaved form values overlaid on the effective branding for the preview. */

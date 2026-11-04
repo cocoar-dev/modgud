@@ -268,8 +268,33 @@ On rotation:
   The in-memory verification set drops it on its own as soon as the window
   passes, even before the janitor runs.
 
+### Revoking a key (suspected compromise)
+
+A plain rotation keeps the previous key **trusted for 30 days** — whoever holds
+that private key can still sign tokens the realm and its resource servers
+accept. If a key may be compromised, revoke it:
+
+- **Rotate and revoke current key** — rotates and revokes the key that was
+  active until now.
+- **Revoke retired keys** — revokes every retired key still inside its overlap
+  window, for a compromise discovered after an ordinary rotation. The active key
+  is untouched.
+
+A revoked key leaves the verification set and the JWKS at once. Every token it
+signed stops working — access and refresh tokens (reference tokens too, their
+stored payload is signed), ID tokens and logout tokens — so users and clients
+have to sign in again. Other API instances pick the revocation up within about
+a minute; until then they may still sign or accept with the old key. The
+[Auth Log](./auth-log) records a *Signing key revoked* entry per key, and the
+`signing-key-janitor` deletes revoked keys on its next run. Resource servers
+that cache the JWKS keep trusting the revoked key until they refresh it.
+
+Recovery CLI: `recover rotate-signing-key --realm <slug> --revoke-previous`
+and `recover revoke-retired-signing-keys --realm <slug>`.
+
 ::: warning When to rotate
-Rotate on **suspected key exposure** or as scheduled hygiene — not casually.
+Rotate as scheduled hygiene — not casually. On **suspected key exposure**
+revoke instead of only rotating (see above).
 Resource servers that cache the JWKS very aggressively (longer than typical)
 may briefly reject freshly-signed tokens until they refresh their key set. The
 30-day overlap is sized so a normally-behaving RS (which refreshes its JWKS far

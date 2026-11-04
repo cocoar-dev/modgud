@@ -229,6 +229,22 @@ public class RecoveryCliCommandTests(ColdStartFixture fixture) : ColdStartTestBa
         Assert.Contains("new active kid", result.StdOut);
     }
 
+    [Fact]
+    public async Task Rotate_signing_key_with_revoke_previous_and_revoke_retired_report_the_revocation()
+    {
+        // FK-01 — the CLI's emergency paths: revoke the key rotated out, or the retired ones.
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+
+        var revokePrevious = await CliHarness.RunAsync(host.Services, "rotate-signing-key", "--revoke-previous");
+        Assert.Equal(0, revokePrevious.ExitCode);
+        Assert.Contains("Previous key REVOKED", revokePrevious.StdOut);
+
+        Assert.Equal(0, (await CliHarness.RunAsync(host.Services, "rotate-signing-key")).ExitCode);
+        var revokeRetired = await CliHarness.RunAsync(host.Services, "revoke-retired-signing-keys");
+        Assert.Equal(0, revokeRetired.ExitCode);
+        Assert.Contains("revoked 1 retired key(s)", revokeRetired.StdOut);
+    }
+
     // ── migrate-cc-credentials ─────────────────────────────────────────────
 
     [Fact]

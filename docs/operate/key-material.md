@@ -54,6 +54,13 @@ until they naturally expire. A daily janitor job hard-deletes retired
 keys once their overlap window has elapsed, so retired private key
 material doesn't accumulate indefinitely in the tenant DB.
 
+The overlap is for planned rotation. If a key is **suspected
+compromised**, revoke it instead (Realm Settings → *Rotate and revoke
+current key* / *Revoke retired keys*, or `rotate-signing-key
+--revoke-previous` / `revoke-retired-signing-keys`). A revoked key
+leaves the verification set and the JWKS at once; every token it signed
+stops working, and the janitor deletes it on its next run.
+
 Because the key lives in Postgres, it restores exactly the way the
 rest of a realm's data does: restore the tenant DB dump and the key
 (active and any still-in-overlap retired keys) comes back with it. If

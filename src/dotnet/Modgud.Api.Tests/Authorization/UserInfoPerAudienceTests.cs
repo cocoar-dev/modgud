@@ -51,7 +51,7 @@ namespace Modgud.Api.Tests.Authorization;
 /// indicator so the assertion is meaningful end-to-end.</para>
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class UserInfoPerAudienceTests : IntegrationTestBase
+public partial class UserInfoPerAudienceTests : IntegrationTestBase
 {
     public UserInfoPerAudienceTests(SharedPostgresFixture fixture) : base(fixture) { }
 

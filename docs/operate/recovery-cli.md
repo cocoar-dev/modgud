@@ -253,6 +253,24 @@ API instances pick up the new key within about a minute.
 dotnet Modgud.Api.dll recover rotate-signing-key --realm acme
 ```
 
+With `--revoke-previous` the previous key is **revoked** instead of retired: it
+leaves the verification set and the JWKS at once, and every token it signed
+(access, refresh, ID and logout tokens) stops working, so users and clients have
+to sign in again. Use it when the active key is suspected compromised — a plain
+rotation keeps the old key trusted for 30 days.
+
+```bash
+dotnet Modgud.Api.dll recover rotate-signing-key --realm acme --revoke-previous
+```
+
+### `revoke-retired-signing-keys`
+Revoke every retired key that is still inside its overlap window, for a
+compromise discovered after an ordinary rotation. The active key is untouched.
+
+```bash
+dotnet Modgud.Api.dll recover revoke-retired-signing-keys --realm acme
+```
+
 ### `help`
 Show the usage summary.
 
@@ -306,9 +324,11 @@ to the console, not recorded.
   `rebuild-projections`.
 - **Legacy `client_credentials` clients fail mutation guard** →
   `migrate-cc-credentials` provisions the linked SA they need.
-- **Suspected signing-key compromise, or routine key hygiene** →
-  `rotate-signing-key` issues a fresh key while honoring in-flight
-  tokens.
+- **Routine key hygiene** → `rotate-signing-key` issues a fresh key while
+  honoring in-flight tokens.
+- **Suspected signing-key compromise** → `rotate-signing-key --revoke-previous`
+  (the active key) or `revoke-retired-signing-keys` (a key already rotated out).
+  Tokens signed with a revoked key stop working at once.
 
 For the operational story of first-time admin setup (when there's no
 admin yet to invite anyone), see

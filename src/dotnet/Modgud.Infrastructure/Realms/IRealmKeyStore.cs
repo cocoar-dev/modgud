@@ -47,6 +47,22 @@ public interface IRealmKeyStore
         string realmSlug, CancellationToken ct = default);
 
     /// <summary>
+    /// FK-01 — rotates like <see cref="RotateAsync(string, CancellationToken)"/>; with
+    /// <paramref name="revokePrevious"/> the key(s) active until now are revoked instead of
+    /// retired into the overlap window, so they verify nothing from this moment on. The
+    /// response to a suspected compromise of the active key.
+    /// </summary>
+    Task<SigningCredentials> RotateAsync(
+        string realmSlug, bool revokePrevious, CancellationToken ct = default);
+
+    /// <summary>
+    /// FK-01 — revokes every retired key still inside its overlap window (for a compromise
+    /// discovered after an ordinary rotation). The active key is untouched. Returns the number
+    /// of keys revoked.
+    /// </summary>
+    Task<int> RevokeRetiredKeysAsync(string realmSlug, CancellationToken ct = default);
+
+    /// <summary>
     /// Hard-deletes retired keys whose rotation overlap window has elapsed
     /// (<c>RetiredAt + RotationOverlap &lt; now</c>) for the given realm, and
     /// drops the cached verification set so it rebuilds without them. Active

@@ -47,6 +47,7 @@ public static class RecoveryCli
         new ControlPlaneCommand(),
         new AdoptTenantCommand(),
         new RotateSigningKeyCommand(),
+        new RevokeRetiredSigningKeysCommand(),
     ];
 
     private static readonly Dictionary<string, IRecoveryCommand> ByName =
@@ -177,10 +178,14 @@ public static class RecoveryCli
                                              Register an ALREADY-EXISTING tenant database
                                              ({master}_{slug}) as a realm — no CREATE DATABASE.
                                              Migration counterpart to creating a realm via the API.
-              rotate-signing-key             Rotate the realm's OpenIddict signing key. Generates a
+              rotate-signing-key [--revoke-previous]
+                                             Rotate the realm's OpenIddict signing key. Generates a
                                              fresh RSA keypair and retires the previous active key
                                              into a 30-day verification overlap window so in-flight
-                                             tokens stay valid. Honors --realm.
+                                             tokens stay valid. --revoke-previous revokes it instead
+                                             (suspected compromise: its tokens stop working). Honors --realm.
+              revoke-retired-signing-keys    Revoke every retired signing key still in its overlap
+                                             window (compromise found after a rotation). Honors --realm.
               help                           Show this message.
 
             Global flag:

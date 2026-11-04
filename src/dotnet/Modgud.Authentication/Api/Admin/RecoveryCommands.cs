@@ -1010,8 +1010,10 @@ internal sealed class RotateSigningKeyCommand : IRecoveryCommand
     {
         var keyStore = ctx.Services.GetRequiredService<IRealmKeyStore>();
 
-        ctx.WriteLine($"Rotating signing key for realm '{ctx.RealmSlug}'...");
-        var creds = await keyStore.RotateAsync(ctx.RealmSlug);
+        // FK-01 — --revoke-previous: the key active until now is revoked, not retired.
+        var revokePrevious = ctx.Args.Any(a => a.Equals("--revoke-previous", StringComparison.OrdinalIgnoreCase));
+        ctx.WriteLine($"Rotating signing key for realm '{ctx.RealmSlug}'{(revokePrevious ? " and revoking the previous key" : "")}...");
+        var creds = await keyStore.RotateAsync(ctx.RealmSlug, revokePrevious);
         var kid = creds.Key.KeyId;
 
         await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordRequiredAsync(new SecurityAuditRecord
@@ -1021,12 +1023,48 @@ internal sealed class RotateSigningKeyCommand : IRecoveryCommand
             RealmSlug = ctx.RealmSlug,
             ActorKind = AuditActorKind.System,
             OutcomeCode = AuditOutcomes.Succeeded,
-            OperationCode = "rotate-signing-key",
+            OperationCode = revokePrevious ? "rotate-signing-key-revoke" : "rotate-signing-key",
             KeyId = kid,
         });
         ctx.WriteLine($"  OK new active kid: {kid}");
-        ctx.WriteLine("  Previous key retired into the 30-day verification overlap window.");
-        ctx.WriteLine("  Running API instances pick up the new key within ~60 seconds.");
+        ctx.WriteLine(revokePrevious
+            ? "  Previous key REVOKED: tokens it signed are no longer valid; users and clients sign in again."
+            : "  Previous key retired into the 30-day verification overlap window.");
+        ctx.WriteLine("  Running API instances pick up the change within ~60 seconds.");
+        return 0;
+    }
+}
+
+// ── revoke-retired-signing-keys ───────────────────────────────────────────
+
+/// <summary>
+/// FK-01 — revokes every retired signing key still inside its overlap window, for a key
+/// compromise discovered after an ordinary rotation. The active key is untouched.
+/// </summary>
+internal sealed class RevokeRetiredSigningKeysCommand : IRecoveryCommand
+{
+    public string Name => "revoke-retired-signing-keys";
+    public bool RequiresRealm => true;
+
+    public async Task<int> ExecuteAsync(RecoveryCliContext ctx)
+    {
+        var keyStore = ctx.Services.GetRequiredService<IRealmKeyStore>();
+
+        ctx.WriteLine($"Revoking retired signing keys for realm '{ctx.RealmSlug}'...");
+        var revoked = await keyStore.RevokeRetiredKeysAsync(ctx.RealmSlug);
+
+        await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordRequiredAsync(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.RecoveryCliInvoked,
+            Severity = AuditSeverity.Warning,
+            RealmSlug = ctx.RealmSlug,
+            ActorKind = AuditActorKind.System,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "revoke-retired-signing-keys",
+            Count = revoked,
+        });
+        ctx.WriteLine($"  OK revoked {revoked} retired key(s); tokens they signed are no longer valid.");
+        ctx.WriteLine("  Running API instances pick up the change within ~60 seconds.");
         return 0;
     }
 }

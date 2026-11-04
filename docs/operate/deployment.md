@@ -699,7 +699,8 @@ prints the same):
 | `realm-remove-domain --slug --domain` | Remove a domain. Same restart requirement. Refuses to remove the realm's primary domain — re-point it first. |
 | `realm-set-primary-domain --slug --domain` | Set the realm's primary domain (the origin outbound email links resolve to). The domain must already be in the realm's `Domains` list (add it with `realm-add-domain` first). Changes the WebAuthn RP — existing passkeys are invalidated. Restart to refresh the realm cache. |
 | `control-plane transfer <slug>` | Relocate the control-plane role to another realm (`control-plane list` shows the current holder). |
-| `rotate-signing-key` | Rotate the realm's per-realm RSA signing key (global flag `--realm`). |
+| `rotate-signing-key` | Rotate the realm's per-realm RSA signing key (global flag `--realm`; `--revoke-previous` on suspected compromise). |
+| `revoke-retired-signing-keys` | Revoke the realm's retired signing keys still in their overlap window (global flag `--realm`). |
 | `rebuild-projections` | Rebuild all Marten projections. |
 
 Global flag `--realm <slug>` for the user-management verbs (defaults

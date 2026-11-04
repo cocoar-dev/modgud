@@ -27,6 +27,10 @@ public class LogoutTokenMinterTests
 
         public Task<SigningCredentials> RotateAsync(string realmSlug, CancellationToken ct = default) => throw new NotSupportedException();
 
+        public Task<SigningCredentials> RotateAsync(string realmSlug, bool revokePrevious, CancellationToken ct = default) => throw new NotSupportedException();
+
+        public Task<int> RevokeRetiredKeysAsync(string realmSlug, CancellationToken ct = default) => throw new NotSupportedException();
+
         public Task<int> PurgeExpiredRetiredKeysAsync(string realmSlug, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
