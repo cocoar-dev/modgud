@@ -90,6 +90,69 @@ public static class HubAuthorization
         return await permissions.HasPermissionAsync(userId.Value, AppSlugs.Modgud, permission);
     }
 
+    /// <summary>
+    /// Gate for high-rate feeds that are pushed from synchronous event handlers (the
+    /// observability activity and error feeds). <paramref name="attach"/> attaches a handler
+    /// and returns the detach action; it is wired only once the caller is authorised and torn
+    /// down when the client unsubscribes.
+    /// <para>gvm6 — a check per item (as <see cref="AuthorizedRealmStream{T}"/> does) would cost
+    /// a permission lookup per event on these feeds, so the permission is re-checked every
+    /// <paramref name="recheckInterval"/> instead. Once it is gone (or the lookup throws), no
+    /// further item is forwarded, the handler is detached and the feed completes. Items pushed
+    /// between the withdrawal and the next check are still delivered.</para>
+    /// </summary>
+    public static IObservable<T> AuthorizedRealmFeed<T>(
+        HttpContext? http, string? realm, string permission, TimeSpan recheckInterval, Func<Action<T>, Action> attach)
+    {
+        return Observable.Create<T>(async (observer, ct) =>
+        {
+            if (!await IsAuthorizedAsync(http, realm, permission))
+            {
+                observer.OnCompleted();
+                return;
+            }
+
+            // Captured now, like the per-item gate: the re-checks run long after the
+            // subscribing request, so they must not depend on its scope.
+            var scopes = http!.RequestServices.GetRequiredService<IServiceScopeFactory>();
+            var userId = http.GetUserId()!.Value;
+
+            var gate = new object();
+            var open = true;
+            void OnNext(T item)
+            {
+                lock (gate)
+                {
+                    if (!open) return;
+                    try { observer.OnNext(item); }
+                    catch { /* observer disposed mid-flight — handled on cancel */ }
+                }
+            }
+
+            var detach = attach(OnNext);
+            try
+            {
+                while (true)
+                {
+                    await Task.Delay(recheckInterval, ct);
+                    if (await StillAuthorizedAsync(scopes, userId, realm!, permission)) continue;
+
+                    lock (gate) open = false;
+                    detach();
+                    detach = static () => { };
+                    observer.OnCompleted();
+                    return;
+                }
+            }
+            catch (OperationCanceledException) { /* expected on teardown */ }
+            finally
+            {
+                lock (gate) open = false;
+                detach();
+            }
+        });
+    }
+
     /// <summary>The per-item re-check of <see cref="AuthorizedRealmStream{T}"/>. Fails
     /// closed: a lookup that throws ends the stream instead of forwarding the item.</summary>
     private static async Task<bool> StillAuthorizedAsync(
