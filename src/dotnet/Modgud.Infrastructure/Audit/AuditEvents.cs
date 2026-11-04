@@ -181,6 +181,9 @@ public static class AuditEvents
     /// <summary>A realm signing key was rotated by an admin (tenant-visible).</summary>
     public const string SigningKeyRotated = "ops.signing_key_rotated";
 
+    /// <summary>FK-01 — a realm signing key was revoked (taken out of trust at once).</summary>
+    public const string SigningKeyRevoked = "ops.signing_key_revoked";
+
     /// <summary>The owning realm's signing-key janitor purged expired retired keys.</summary>
     public const string SigningKeyPurged = "ops.signing_key_purged";
 

@@ -91,7 +91,7 @@ Hard-deletes per-realm OAuth/OIDC signing keys whose rotation overlap window has
 
 - **Default cron:** `0 0 5 * * ?` (05:00 UTC daily — after the GC + retention jobs)
 - **Parameters:** none — the overlap window is a fixed 30 days.
-- **What it does:** in its owning realm, deletes signing keys where `RetiredAt + 30 days < now`. Active keys and keys still inside their overlap window are left untouched. This is the one realm job whose trigger remains scheduled while a realm is deactivated, because soft-delete retains that realm's database and private key material. See [Realm Settings → Signing Keys](./realm-settings#signing-keys) for the rotation that produces these retired keys.
+- **What it does:** in its owning realm, deletes signing keys where `RetiredAt + 30 days < now`, and every revoked key (see [Revoking a key](./realm-settings#revoking-a-key-suspected-compromise)). Active keys and unrevoked keys still inside their overlap window are left untouched. This is the one realm job whose trigger remains scheduled while a realm is deactivated, because soft-delete retains that realm's database and private key material. See [Realm Settings → Signing Keys](./realm-settings#signing-keys) for the rotation that produces these retired keys.
 - **On failure:** logged + inbox-notified.
 
 ### `account-lifecycle-sweep` — Account Lifecycle Sweep

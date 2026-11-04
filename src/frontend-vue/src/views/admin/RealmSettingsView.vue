@@ -927,13 +927,31 @@ function saveActiveTab() {
   return save(activeTab.value)
 }
 
-async function rotateSigningKey() {
+async function rotateSigningKey(revokePrevious = false) {
   try {
     rotating.value = true
     error.value = null
-    const kid = await settingsStore.rotateSigningKey()
+    const kid = await settingsStore.rotateSigningKey(revokePrevious)
     const shortKid = kid ? kid.slice(0, 12) + '…' : ''
-    toast.success(t('admin.realmSettings.signingKeys.rotated', { kid: shortKid }, 'Signing key rotated (new kid {kid}). The previous key stays valid for in-flight tokens during the overlap window.'))
+    toast.success(revokePrevious
+      ? t('admin.realmSettings.signingKeys.rotatedRevoked', { kid: shortKid }, 'Signing key rotated (new kid {kid}). The previous key was revoked: tokens it signed are no longer valid.')
+      : t('admin.realmSettings.signingKeys.rotated', { kid: shortKid }, 'Signing key rotated (new kid {kid}). The previous key stays valid for in-flight tokens during the overlap window.'))
+  } catch (e: any) {
+    const msg = e?.body?.detail ?? e?.body?.error ?? e?.message ?? String(e)
+    error.value = msg
+    toast.error(msg)
+  } finally {
+    rotating.value = false
+  }
+}
+
+// FK-01 — a compromise found after an ordinary rotation: take the retired keys out of trust.
+async function revokeRetiredSigningKeys() {
+  try {
+    rotating.value = true
+    error.value = null
+    const count = await settingsStore.revokeRetiredSigningKeys()
+    toast.success(t('admin.realmSettings.signingKeys.retiredRevoked', { count }, 'Revoked {count} retired signing key(s). Tokens they signed are no longer valid.'))
   } catch (e: any) {
     const msg = e?.body?.detail ?? e?.body?.error ?? e?.message ?? String(e)
     error.value = msg
@@ -1398,6 +1416,29 @@ async function rotateSigningKey() {
                 @confirmed="rotateSigningKey">
                 <CoarButton :loading="rotating" variant="danger" icon-start="rotate-ccw">
                   {{ t('admin.realmSettings.signingKeys.rotateButton', {}, 'Rotate signing key') }}
+                </CoarButton>
+              </CoarPopconfirm>
+            </div>
+            <!-- FK-01 — key compromise: an ordinary rotation keeps the old key trusted for the overlap window. -->
+            <CoarNotice truncate variant="error">
+              {{ t('admin.realmSettings.signingKeys.compromiseShort', {}, 'Key compromised? Rotating alone keeps the old key trusted for 30 days — revoke it.') }}
+              <template #details>{{ t('admin.realmSettings.signingKeys.compromise', {}, 'A revoked key verifies nothing from that moment on: every token it signed (access, refresh, ID and logout tokens) stops working, so users and clients have to sign in again. Other instances pick the revocation up within a minute.') }}</template>
+            </CoarNotice>
+            <div class="danger-action">
+              <CoarPopconfirm
+                :title="t('admin.realmSettings.signingKeys.rotateRevokeConfirmTitle', {}, 'Rotate and revoke the current key?')"
+                :message="t('admin.realmSettings.signingKeys.rotateRevokeConfirmMessage', {}, 'A fresh key becomes active and the current key is revoked at once. All tokens it signed stop working. This cannot be undone.')"
+                @confirmed="rotateSigningKey(true)">
+                <CoarButton :loading="rotating" variant="danger" icon-start="shield-alert">
+                  {{ t('admin.realmSettings.signingKeys.rotateRevokeButton', {}, 'Rotate and revoke current key') }}
+                </CoarButton>
+              </CoarPopconfirm>
+              <CoarPopconfirm
+                :title="t('admin.realmSettings.signingKeys.revokeRetiredConfirmTitle', {}, 'Revoke retired keys?')"
+                :message="t('admin.realmSettings.signingKeys.revokeRetiredConfirmMessage', {}, 'Every retired key still inside its overlap window is revoked at once. Tokens signed before the last rotation stop working. This cannot be undone.')"
+                @confirmed="revokeRetiredSigningKeys">
+                <CoarButton :loading="rotating" variant="danger" icon-start="circle-off">
+                  {{ t('admin.realmSettings.signingKeys.revokeRetiredButton', {}, 'Revoke retired keys') }}
                 </CoarButton>
               </CoarPopconfirm>
             </div>

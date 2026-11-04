@@ -23,7 +23,7 @@ namespace Modgud.Api.Tests.Authorization;
 /// returns the right set is the load-bearing assertion.</para>
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class SigningKeyRotationTests : IntegrationTestBase
+public partial class SigningKeyRotationTests : IntegrationTestBase
 {
     public SigningKeyRotationTests(SharedPostgresFixture fixture) : base(fixture) { }
 

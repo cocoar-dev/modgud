@@ -289,6 +289,7 @@ internal static class AuditEventRenderer
             AuditEvents.BootstrapInviteRejected => "Bootstrap invite",
             AuditEvents.SecurityRetentionChanged => "Security-log retention",
             AuditEvents.SigningKeyRotated => "Signing key rotation",
+            AuditEvents.SigningKeyRevoked => "Signing key revoked",
             AuditEvents.SigningKeyPurged => "Signing-key cleanup",
             AuditEvents.SamlCertRotated => "SAML certificate rotation",
             AuditEvents.SamlMetadataRefreshCompleted => "SAML metadata refresh",

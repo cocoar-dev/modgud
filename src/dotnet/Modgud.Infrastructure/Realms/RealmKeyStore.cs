@@ -234,8 +234,12 @@ public sealed class RealmKeyStore : IRealmKeyStore
         _verificationCache.TryRemove(realmSlug, out _);
     }
 
-    public async Task<SigningCredentials> RotateAsync(
+    public Task<SigningCredentials> RotateAsync(
         string realmSlug, CancellationToken ct = default)
+        => RotateAsync(realmSlug, revokePrevious: false, ct);
+
+    public async Task<SigningCredentials> RotateAsync(
+        string realmSlug, bool revokePrevious, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(realmSlug);
 
@@ -257,6 +261,8 @@ public sealed class RealmKeyStore : IRealmKeyStore
             {
                 current.IsActive = false;
                 current.RetiredAt = now;
+                // FK-01 — a compromised key must not stay trusted for the overlap window.
+                if (revokePrevious) current.RevokedAt = now;
                 session.Store(current);
             }
 
@@ -269,9 +275,11 @@ public sealed class RealmKeyStore : IRealmKeyStore
                 RealmSlug = realmSlug,
                 Severity = AuditSeverity.Warning,
                 OutcomeCode = AuditOutcomes.Succeeded,
-                OperationCode = "rotate",
+                OperationCode = revokePrevious ? "rotate-and-revoke" : "rotate",
                 KeyId = fresh.KeyId,
             });
+            foreach (var revoked in revokePrevious ? actives : [])
+                StoreRevocationAudit(session, realmSlug, revoked.KeyId, "rotate-and-revoke");
             await session.SaveChangesAsync(ct);
 
             // Cache the fresh key as the active credentials DIRECTLY. Do NOT
@@ -292,6 +300,51 @@ public sealed class RealmKeyStore : IRealmKeyStore
         }
     }
 
+    public async Task<int> RevokeRetiredKeysAsync(string realmSlug, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(realmSlug);
+
+        var sem = _slugLocks.GetOrAdd(realmSlug, _ => new SemaphoreSlim(1, 1));
+        await sem.WaitAsync(ct);
+        try
+        {
+            var now = _clock.GetUtcNow();
+            var cutoff = now - RotationOverlap;
+            await using var session = _store.LightweightSession(realmSlug);
+            var retired = await session.Query<RealmSigningKey>()
+                .Where(k => !k.IsActive && k.RevokedAt == null && k.RetiredAt != null && k.RetiredAt >= cutoff)
+                .ToListAsync(ct);
+            if (retired.Count == 0)
+                return 0;
+
+            foreach (var key in retired)
+            {
+                key.RevokedAt = now;
+                session.Store(key);
+                StoreRevocationAudit(session, realmSlug, key.KeyId, "revoke-retired");
+            }
+            await session.SaveChangesAsync(ct);
+
+            InvalidateVerificationCache(realmSlug);
+            return retired.Count;
+        }
+        finally
+        {
+            sem.Release();
+        }
+    }
+
+    private void StoreRevocationAudit(IDocumentSession session, string realmSlug, string keyId, string operation)
+        => _securityAudit.StoreRequired(session, new SecurityAuditRecord
+        {
+            EventType = AuditEvents.SigningKeyRevoked,
+            RealmSlug = realmSlug,
+            Severity = AuditSeverity.Warning,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = operation,
+            KeyId = keyId,
+        });
+
     public async Task<int> PurgeExpiredRetiredKeysAsync(
         string realmSlug, CancellationToken ct = default)
     {
@@ -300,8 +353,9 @@ public sealed class RealmKeyStore : IRealmKeyStore
         var cutoff = _clock.GetUtcNow() - RotationOverlap;
 
         await using var session = _store.LightweightSession(realmSlug);
+        // Past the overlap, or revoked (FK-01): a revoked key is never trusted again.
         var expired = await session.Query<RealmSigningKey>()
-            .Where(k => !k.IsActive && k.RetiredAt != null && k.RetiredAt < cutoff)
+            .Where(k => !k.IsActive && ((k.RetiredAt != null && k.RetiredAt < cutoff) || k.RevokedAt != null))
             .ToListAsync(ct);
 
         if (expired.Count == 0)
@@ -404,6 +458,9 @@ public sealed class RealmKeyStore : IRealmKeyStore
 
         foreach (var k in all)
         {
+            // FK-01 — revoked keys verify nothing, whatever their overlap window says.
+            if (k.RevokedAt is not null)
+                continue;
             if (k.IsActive)
             {
                 byKid.TryAdd(k.KeyId, BuildPublicKey(k));

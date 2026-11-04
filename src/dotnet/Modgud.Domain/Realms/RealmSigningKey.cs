@@ -73,4 +73,11 @@ public class RealmSigningKey
     /// in the JWKS document until it can be safely garbage-collected.
     /// </summary>
     public DateTimeOffset? RetiredAt { get; set; }
+
+    /// <summary>
+    /// FK-01 — when the key was revoked (taken out of trust at once, typically after a
+    /// suspected compromise). A revoked key is neither in the verification set nor in the
+    /// JWKS, whatever its overlap window says, and the janitor deletes it on its next run.
+    /// </summary>
+    public DateTimeOffset? RevokedAt { get; set; }
 }
