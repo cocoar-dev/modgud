@@ -7,10 +7,10 @@
     <!-- SAST analyzer; injected by Directory.Build.props as
          analyzer-only PackageReference (PrivateAssets=all). -->
     <PackageVersion Include="SecurityCodeScan.VS2019" Version="5.6.7" />
-    <PackageVersion Include="Cocoar.JsEval.Engine" Version="4.1.0" />
-    <PackageVersion Include="Cocoar.JsEval.Linq" Version="4.1.0" />
-    <PackageVersion Include="Cocoar.JsEval.TsDefinition" Version="4.1.0" />
-    <PackageVersion Include="Cocoar.JsEval.TypeScript" Version="4.1.0" />
+    <PackageVersion Include="Cocoar.JsEval.Engine" Version="5.0.1" />
+    <PackageVersion Include="Cocoar.JsEval.Linq" Version="5.0.1" />
+    <PackageVersion Include="Cocoar.JsEval.TsDefinition" Version="5.0.1" />
+    <PackageVersion Include="Cocoar.JsEval.TypeScript" Version="5.0.1" />
     <PackageVersion Include="Cocoar.Reflectensions" Version="1.0.2" />
     <PackageVersion Include="Cocoar.SignalARRR.Server" Version="5.1.0" />
     <!-- ADR 0022 — Postgres backplane on the master DB; carries Modgud's live-update cluster subject. -->
