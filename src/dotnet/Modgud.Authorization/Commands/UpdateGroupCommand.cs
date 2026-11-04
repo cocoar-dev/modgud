@@ -115,11 +115,20 @@ public class UpdateGroupHandler(
                 !string.Equals(command.MembershipScript, group.MembershipScript, StringComparison.Ordinal) ||
                 (command.MembershipMode == MembershipMode.Manual &&
                  !new HashSet<Guid>(command.MemberIds).SetEquals(group.MemberIds));
-            if (membershipChanges &&
+            // B3-F01 — BoundTo decides in which apps the group's roles apply. Binding a
+            // dormant realm-admin group to Modgud confers realm:admin on its existing
+            // members just as adding them would; unbinding it strips it. Either is a
+            // conferral change.
+            var activationChanges = command.BoundTo is not null &&
+                !new HashSet<string>(command.BoundTo, StringComparer.Ordinal).SetEquals(group.BoundTo);
+            if ((membershipChanges || activationChanges) &&
                 await GroupMembershipGuards.GroupConfersRealmAdminAsync(session, permissionService, group, ct))
             {
-                return Error.Forbidden("Group.RealmAdminMembershipForbidden",
-                    "Only a realm administrator may change the membership of a group that confers realm:admin.");
+                return membershipChanges
+                    ? Error.Forbidden("Group.RealmAdminMembershipForbidden",
+                        "Only a realm administrator may change the membership of a group that confers realm:admin.")
+                    : Error.Forbidden("Group.RealmAdminActivationForbidden",
+                        "Only a realm administrator may change where a group that confers realm:admin applies.");
             }
         }
 

@@ -19,7 +19,7 @@ namespace Modgud.Api.Tests.Security;
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
 [Trait("Category", "Security")]
-public class RealmAdminEscalationGuardTests : IntegrationTestBase
+public partial class RealmAdminEscalationGuardTests : IntegrationTestBase
 {
     public RealmAdminEscalationGuardTests(SharedPostgresFixture fixture) : base(fixture) { }
 
