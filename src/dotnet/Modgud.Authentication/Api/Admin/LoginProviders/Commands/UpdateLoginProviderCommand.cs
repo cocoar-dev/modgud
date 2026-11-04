@@ -64,6 +64,12 @@ public class UpdateLoginProviderHandler(
         if (config.IsBuiltIn)
             return LoginProviderErrors.InternalNotEditable(config.DisplayName);
 
+        // EP-04 — the update appends a FULL-state event built from what was loaded here.
+        // Appending it at exactly the version loaded makes a stale update (another one
+        // committed meanwhile) fail as a conflict instead of silently resetting it.
+        var loadedVersion = (await session.Events.FetchStreamStateAsync(command.Id, ct))?.Version ?? 0;
+        var pending = new List<object>();
+
         // PATCH merge: provided fields win, absent fields keep their current
         // persisted value. The merged values are what we validate, persist, and
         // run the enable readiness gate against (so "set metadata + enable" in
@@ -169,7 +175,7 @@ public class UpdateLoginProviderHandler(
 
         if (anyConfigFieldProvided)
         {
-            session.Events.Append(command.Id, new LoginProviderUpdatedEvent(
+            pending.Add(new LoginProviderUpdatedEvent(
                 Id: command.Id,
                 DisplayName: displayName,
                 Description: description,
@@ -202,15 +208,18 @@ public class UpdateLoginProviderHandler(
                 var hasSecret = config.ClientSecretEncrypted is { Length: > 0 };
                 var gate = LoginProviderReadiness.CheckCanEnable(config.Type, clientIdForType, hasSecret, flavorData);
                 if (gate is not null) return gate.Value;
-                session.Events.Append(command.Id, new LoginProviderEnabledEvent(command.Id, now));
+                pending.Add(new LoginProviderEnabledEvent(command.Id, now));
             }
             else if (!desired && config.Enabled)
             {
-                session.Events.Append(command.Id, new LoginProviderDisabledEvent(command.Id, now));
+                pending.Add(new LoginProviderDisabledEvent(command.Id, now));
             }
         }
 
-        await session.SaveChangesAsync(ct);
+        if (pending.Count > 0)
+            session.Events.Append(command.Id, loadedVersion + pending.Count, pending.ToArray());
+        if (await LoginProviderWriteConflicts.SaveAsync(session, config.Slug, displayName, ct) is { } writeConflict)
+            return writeConflict;
         return (await session.LoadAsync<LoginProvider>(command.Id, ct))!;
     }
 }

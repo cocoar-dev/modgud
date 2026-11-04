@@ -246,12 +246,26 @@ public static class MartenStoreOptionsExtensions
         options.Schema.For<ExternalClaimsStore>()
             .Identity(x => x.Id);
 
+        // EP-04 — slug and display name are unique among providers that are not deleted;
+        // the database decides it, not only the create/update query that checks first.
         options.Schema.For<LoginProvider>()
             .Identity(x => x.Id)
             .Index(x => x.Type)
             .Index(x => x.Flavor)
             .Index(x => x.Enabled)
-            .Index(x => x.IsDeleted);
+            .Index(x => x.IsDeleted)
+            .Index(x => x.Slug, idx =>
+            {
+                idx.Name = Modgud.Authentication.Api.Admin.LoginProviders.Commands.LoginProviderWriteConflicts.ActiveSlugIndex;
+                idx.IsUnique = true;
+                idx.Predicate = Modgud.Authentication.Api.Admin.LoginProviders.Commands.LoginProviderWriteConflicts.NotDeletedPredicate;
+            })
+            .Index(x => x.DisplayName, idx =>
+            {
+                idx.Name = Modgud.Authentication.Api.Admin.LoginProviders.Commands.LoginProviderWriteConflicts.ActiveDisplayNameIndex;
+                idx.IsUnique = true;
+                idx.Predicate = Modgud.Authentication.Api.Admin.LoginProviders.Commands.LoginProviderWriteConflicts.NotDeletedPredicate;
+            });
 
         options.Schema.For<ExternalIdentityLink>()
             .Identity(x => x.Id)
