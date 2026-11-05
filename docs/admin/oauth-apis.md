@@ -44,6 +44,13 @@ An API can temporarily remain unassigned for legacy or standalone setups.
 Without an Application link, Modgud has no permission catalog to resolve and
 does not emit a `resource_access` block for that audience.
 
+A **disabled** (or deleted) API is no target of new tokens: scopes that list
+it stop granting it as an audience, a `resource=` naming it is refused with
+`invalid_target`, and no `resource_access` block is emitted for it. Tokens
+issued before it was disabled stay valid until they expire. When a client
+asks for one audience with `resource=`, its `resource_access` carries only
+that audience's block, also in the client-credentials flow.
+
 ## Creating an API
 
 Administration → **OAuth & Federation → OAuth-APIs** → **Create**.

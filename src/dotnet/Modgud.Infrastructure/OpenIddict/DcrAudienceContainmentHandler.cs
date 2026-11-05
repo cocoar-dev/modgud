@@ -96,7 +96,8 @@ public sealed class DcrAudienceContainmentHandler
         // the audience claim and the resource= value, so the lookup is
         // a single Where over the indexed Name column.
         var apis = await _session.Query<OAuthApiState>()
-            .Where(x => !x.IsDeleted && requestedResources.Contains(x.Name))
+            // B6-01: a disabled API is no target of new tokens either.
+            .Where(x => !x.IsDeleted && x.Enabled && requestedResources.Contains(x.Name))
             .ToListAsync();
         var apisByName = apis.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
@@ -106,7 +107,7 @@ public sealed class DcrAudienceContainmentHandler
             {
                 context.Reject(
                     error: Errors.InvalidTarget,
-                    description: $"The resource '{requested}' is not a registered resource server on this realm.");
+                    description: $"The resource '{requested}' is not a registered, enabled resource server on this realm.");
                 return;
             }
 

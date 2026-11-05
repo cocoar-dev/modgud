@@ -790,8 +790,15 @@ public static class AuthorizationEndpoints
             {
                 var wantsRoles = identity.GetScopes().Contains(Scopes.Roles);
                 var wantsPermissions = identity.GetScopes().Contains("permissions");
+                // B6-02: ResourceIndicatorHandler later narrows aud to the requested
+                // resource= set but does not rebuild this claim, so build it for that set
+                // here (as the user path does), not for every audience the scopes grant.
+                var requestedResources = request.GetResources();
+                var accessAudiences = requestedResources.IsDefaultOrEmpty
+                    ? clientResources
+                    : clientResources.Where(r => requestedResources.Contains(r, StringComparer.Ordinal)).ToList();
                 var resourceAccess = await BuildResourceAccessAsync(
-                    pid, clientResources, wantsRoles, wantsPermissions, session, permissionService);
+                    pid, accessAudiences, wantsRoles, wantsPermissions, session, permissionService);
                 if (resourceAccess is not null)
                 {
                     identity.SetClaim("resource_access",
@@ -2531,7 +2538,7 @@ public static class AuthorizationEndpoints
         foreach (var audience in audiences)
         {
             var api = await session.Query<OAuthApiState>()
-                .FirstOrDefaultAsync(a => a.Name == audience && !a.IsDeleted);
+                .FirstOrDefaultAsync(a => a.Name == audience && !a.IsDeleted && a.Enabled);
             if (api?.AppId is not Guid appId) continue;
 
             var app = await session.LoadAsync<App>(appId);

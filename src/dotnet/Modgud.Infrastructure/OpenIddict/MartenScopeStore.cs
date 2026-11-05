@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Modgud.Domain.OAuth.Apis;
 using Modgud.Domain.OAuth.Scopes;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Marten;
@@ -168,8 +169,29 @@ public class MartenScopeStore : IOpenIddictScopeStore<OAuthScopeState>
         return new ValueTask<ImmutableDictionary<string, JsonElement>>(builder.ToImmutable());
     }
 
-    public ValueTask<ImmutableArray<string>> GetResourcesAsync(OAuthScopeState scope, CancellationToken _)
-        => new(scope.Resources.ToImmutableArray());
+    /// <summary>
+    /// The scope's resources (API audiences) that may still be the target of a new token.
+    /// B6-01: a resource whose API is disabled or deleted is left out, so it is neither an
+    /// audience of new tokens nor an allowed resource= nor a resource_access block, on every
+    /// grant path (all resolve audiences through the scope manager). A name that matches no
+    /// API at all is kept unchanged; a name reused by a new active API after a deletion counts
+    /// as active.
+    /// </summary>
+    public async ValueTask<ImmutableArray<string>> GetResourcesAsync(OAuthScopeState scope, CancellationToken cancellationToken)
+    {
+        if (scope.Resources.Count == 0) return ImmutableArray<string>.Empty;
+
+        var names = scope.Resources.ToList();
+        await using var session = _sessionFactory.OpenQuerySession();
+        var apis = await session.Query<OAuthApiState>()
+            .Where(a => names.Contains(a.Name))
+            .Select(a => new { a.Name, a.Enabled, a.IsDeleted })
+            .ToListAsync(cancellationToken);
+        var active = apis.Where(a => a.Enabled && !a.IsDeleted).Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
+        var inactive = apis.Select(a => a.Name).Where(n => !active.Contains(n)).ToHashSet(StringComparer.Ordinal);
+
+        return scope.Resources.Where(r => !inactive.Contains(r)).ToImmutableArray();
+    }
 
     public ValueTask<OAuthScopeState> InstantiateAsync(CancellationToken _)
         => new(new OAuthScopeState { Id = Guid.NewGuid() });
