@@ -1342,6 +1342,9 @@ public sealed partial class RealmManifestApplier(
         if (wanted.ScheduledJobFeedback is { } sjf)
             doc.ScheduledJobFeedback = new() { MaxUnreadDays = sjf.MaxUnreadDays, AutoExpireDaysAfterRead = sjf.AutoExpireDaysAfterRead };
         doc.Id = Modgud.Application.Inbox.InboxRetentionSettings.SingletonId;
+        // B3-EI-07 — same rule as the endpoint.
+        if (doc.Validate() is { } problem)
+            throw new ManifestApplyException("inbox settings", [Error.Validation("InboxSettings.Invalid", problem)]);
         doc.UpdatedAt = DateTime.UtcNow;
         session.Store(doc);
         await session.SaveChangesAsync(ct);
