@@ -1603,19 +1603,9 @@ try
         {
             await using var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString);
             await bootstrapConn.OpenAsync(ct);
-            await using var checkCmd = new NpgsqlCommand(
-                "SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
-            checkCmd.Parameters.AddWithValue("@dbName", baseDbName);
-            if (await checkCmd.ExecuteScalarAsync(ct) is null)
-            {
-                var quotedName = "\"" + baseDbName.Replace("\"", "\"\"") + "\"";
-#pragma warning disable CA2100
-                await using var createCmd = new NpgsqlCommand(
-                    $"CREATE DATABASE {quotedName}", bootstrapConn);
-#pragma warning restore CA2100
-                await createCmd.ExecuteNonQueryAsync(ct);
+            // B9-ST-01 — race-safe against a second instance starting at the same time.
+            if (await Modgud.Api.Startup.MasterDatabaseBootstrap.EnsureExistsAsync(bootstrapConn, baseDbName, ct))
                 Log.Information("Created master database {DbName}", baseDbName);
-            }
         },
         startupWindow,
         onRetry: (attempt, wait, ex) => Log.Warning(
