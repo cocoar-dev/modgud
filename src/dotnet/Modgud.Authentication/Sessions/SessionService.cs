@@ -98,7 +98,7 @@ public class SessionService(
             return null;
         }
 
-        if (touch && entity.LastActiveAt <= now.Subtract(TouchInterval))
+        if (touch && entity.IsDueForTouch(now, TouchInterval))
         {
             var policy = await GetPolicyAsync(ct);
             entity.Touch(now, policy.IdleLifetime);
