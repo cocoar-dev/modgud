@@ -3,7 +3,9 @@ using Modgud.Domain.OAuth.Common;
 using Modgud.Domain.OAuth.Scopes;
 using Modgud.Domain.OAuth.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
+using OpenIddict.Server;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace Modgud.Infrastructure.OpenIddict;
@@ -284,15 +286,12 @@ public static class OpenIddictExtensions
                     // tokens); every subsequent call on the same axis adds a
                     // validation/decryption-only key for artifacts issued
                     // under a previous cert during the rotation overlap
-                    // window. (OpenIddict actually re-sorts each credential
-                    // list by X.509 expiration once configuration is
-                    // finalized and picks the furthest-expiring cert as
-                    // active, rather than literally the first call — but
-                    // that always agrees with "first call" here in practice,
-                    // because a freshly rotated cert is generated with a
-                    // later expiration than the one it's replacing. See
-                    // OpenIddictServerConfiguration's Compare/Sort of
-                    // EncryptionCredentials / SigningCredentials.)
+                    // window. OpenIddict itself re-sorts each credential list
+                    // by X.509 expiration when configuration is finalized and
+                    // uses the first (furthest-expiring) entry; FK-05 — a
+                    // post-configure step below restores the configured
+                    // active cert to the front, so a managed replacement that
+                    // expires before the old self-signed cert still wins.
                     var signingCert = LoadCertificate(settings.SigningCertificatePath);
                     options.AddSigningCertificate(signingCert);
 
@@ -330,6 +329,13 @@ public static class OpenIddictExtensions
                             options.AddEncryptionCertificate(previousCert);
                         }
                     }
+
+                    // Registered after AddServer's own OpenIddictServerConfiguration,
+                    // so it runs after OpenIddict's expiration sort.
+                    var activeSigningThumbprint = signingCert.Thumbprint;
+                    var activeEncryptionThumbprint = encryptionCert.Thumbprint;
+                    options.Services.PostConfigure<OpenIddictServerOptions>(o =>
+                        PromoteConfiguredActiveCredentials(o, activeSigningThumbprint, activeEncryptionThumbprint));
                 }
 
                 var aspNetCore = options.UseAspNetCore()
@@ -419,4 +425,32 @@ public static class OpenIddictExtensions
     private static System.Security.Cryptography.X509Certificates.X509Certificate2 LoadCertificate(string path)
         => System.Security.Cryptography.X509Certificates.X509CertificateLoader
             .LoadPkcs12FromFile(path, password: ReadOnlySpan<char>.Empty);
+
+    /// <summary>
+    /// FK-05 — OpenIddict signs and encrypts with the first entry of each credential list
+    /// after sorting it by X.509 expiration. Moves the configured active certificate back
+    /// to the front, as long as it is currently valid; an expired or not-yet-valid active
+    /// certificate keeps OpenIddict's own choice of a valid one.
+    /// </summary>
+    internal static void PromoteConfiguredActiveCredentials(
+        OpenIddictServerOptions options, string signingThumbprint, string encryptionThumbprint)
+    {
+        var now = (options.TimeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
+        MoveToFront(options.SigningCredentials, c => c.Key, signingThumbprint, now);
+        MoveToFront(options.EncryptionCredentials, c => c.Key, encryptionThumbprint, now);
+    }
+
+    private static void MoveToFront<T>(List<T> credentials, Func<T, SecurityKey> key, string thumbprint, DateTime nowUtc)
+    {
+        var index = credentials.FindIndex(c =>
+            key(c) is X509SecurityKey { Certificate: { } cert }
+            && string.Equals(cert.Thumbprint, thumbprint, StringComparison.OrdinalIgnoreCase)
+            && cert.NotBefore.ToUniversalTime() <= nowUtc
+            && cert.NotAfter.ToUniversalTime() > nowUtc);
+        if (index <= 0) return;
+
+        var active = credentials[index];
+        credentials.RemoveAt(index);
+        credentials.Insert(0, active);
+    }
 }

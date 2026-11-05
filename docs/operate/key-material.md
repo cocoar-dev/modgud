@@ -103,6 +103,12 @@ before then, using the `Previous*` overlap described above: once every
 configured signing (or encryption) certificate has expired, OpenIddict
 refuses to start, so the next restart fails.
 
+The path in `SigningCertificatePath` / `EncryptionCertificatePath` is
+always the one used for new artifacts while it is valid, even when a
+certificate listed under `Previous*` expires later (for example a
+managed certificate with a one-year lifetime replacing the two-year
+self-signed one). The `Previous*` certificates only verify and decrypt.
+
 Because this certificate is shared instance-wide, losing it (or
 letting a container restart regenerate it because the `data/keys/`
 volume wasn't persisted) has an instance-wide effect: a fresh
