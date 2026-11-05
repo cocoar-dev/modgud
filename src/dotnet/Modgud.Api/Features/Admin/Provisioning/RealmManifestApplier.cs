@@ -188,7 +188,10 @@ public sealed partial class RealmManifestApplier(
         using (applyTx.Activate())
         {
             await ApplyTenantUpdateSectionsAsync(manifest, deletions, secrets, skips, identity, ct);
-            await applyTx.CommitAsync(ct);
+            // FM-01 — once every section is staged, commit and its consequences run to
+            // completion: a request aborted mid-commit must not leave a committed change
+            // whose revocations never ran.
+            await applyTx.CommitAsync(CancellationToken.None);
         }
 
         // Consequences (token revocation, staffing-session termination) run only now,
