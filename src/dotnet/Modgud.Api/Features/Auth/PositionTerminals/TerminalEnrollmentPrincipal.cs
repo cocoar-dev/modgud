@@ -21,6 +21,32 @@ public static class TerminalEnrollmentPrincipal
 {
     /// <summary>Control-plane V2: the terminal is the subject. Business
     /// position selection is deferred to the staffing ceremony.</summary>
+    /// <summary>
+    /// The principal the approving admin binds to the pending device code (B3-P3): the
+    /// enrollment principal plus the exact position set shown at approval, so the exchange
+    /// can refuse a set that was widened in between.
+    /// </summary>
+    public static ClaimsPrincipal CreateV2Approval(TerminalEnrollment terminal)
+    {
+        var principal = CreateV2(terminal);
+        ((ClaimsIdentity)principal.Identity!).SetClaim(
+            PositionTokenClaimTypes.ApprovedPositions,
+            string.Join(' ', terminal.EffectiveAllowedPositionIds.Order()));
+        return principal;
+    }
+
+    /// <summary>B3-P3 — the positions the slot serves now that the approval did not cover;
+    /// all of them when the approval carries no set.</summary>
+    public static IReadOnlyList<Guid> PositionsBeyondApproval(ClaimsPrincipal approval, TerminalEnrollment terminal)
+    {
+        var raw = approval.GetClaim(PositionTokenClaimTypes.ApprovedPositions);
+        var approved = (raw ?? string.Empty)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => Guid.TryParse(x, out var id) ? id : Guid.Empty)
+            .ToHashSet();
+        return terminal.EffectiveAllowedPositionIds.Where(id => !approved.Contains(id)).ToList();
+    }
+
     public static ClaimsPrincipal CreateV2(TerminalEnrollment terminal)
     {
         var identity = new ClaimsIdentity(

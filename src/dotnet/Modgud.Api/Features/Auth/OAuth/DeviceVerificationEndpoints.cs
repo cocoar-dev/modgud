@@ -549,7 +549,7 @@ public static class DeviceVerificationEndpoints
         // the terminal's poll then reaches the token-endpoint enrollment
         // exchange (§11.6) with token_use=terminal_enrollment.
         return Results.SignIn(
-            TerminalEnrollmentPrincipal.CreateV2(target.Terminal),
+            TerminalEnrollmentPrincipal.CreateV2Approval(target.Terminal),
             properties: null,
             OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }

@@ -21,6 +21,9 @@ public static class PositionTokenClaimTypes
     public const string StaffingSessionId = "staffing_session_id";
     public const string ActivationProof = "activation_proof";
     public const string TerminalBinding = "terminal_binding";
+    /// <summary>B3-P3 — the positions the approving admin enrolled the slot for
+    /// (space-separated GUIDs), carried by the device-code principal only.</summary>
+    public const string ApprovedPositions = "approved_positions";
     public const string StepUpAction = "stepup_action";
     public const string StepUpNonce = "stepup_nonce";
 }

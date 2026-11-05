@@ -989,6 +989,10 @@ public static class AuthorizationEndpoints
             return Refuse("The client does not own this terminal slot.");
         if (slot.Status != TerminalEnrollmentStatus.Pending || slot.EnrollmentAuthorizationId is not null)
             return Refuse("The terminal slot is not pending enrollment; re-enrollment requires a fresh slot.");
+        // B3-P3 — the approval covers the position set the admin saw. A set widened
+        // between approval and this first exchange needs a fresh approval.
+        if (isControlV2 && TerminalEnrollmentPrincipal.PositionsBeyondApproval(tokenPrincipal, slot).Count > 0)
+            return Refuse("The terminal's positions changed after the approval; approve the enrollment again.");
 
         string? jkt = null;
         if (string.Equals(slot.Binding, DeviceBindingIds.Dpop, StringComparison.Ordinal))

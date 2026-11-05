@@ -111,6 +111,41 @@ public class TerminalDeviceEnrollmentTests : IntegrationTestBase
         Assert.False(string.IsNullOrEmpty(refreshed.RootElement.GetProperty("access_token").GetString()));
     }
 
+    /// <summary>
+    /// B3-P3 — the admin approves the slot as shown. Until the first exchange the slot's
+    /// served positions can still be extended; that extension must not ride on the earlier
+    /// approval. The exchange refuses when the slot now serves a position the approval did
+    /// not cover, and a fresh approval is needed.
+    /// </summary>
+    [Fact]
+    public async Task An_approval_does_not_cover_positions_added_before_the_exchange()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var front = await CreatePositionAsync("fn-approved", terminalEnabled: true, ct);
+        var extra = await CreatePositionAsync("fn-added-later", terminalEnabled: true, ct);
+        var terminal = await CreateTerminalAsync(front, "Tor mitte", ct);
+
+        using var deviceKey = new DpopProofBuilder();
+        var (deviceCode, userCode) = await RequestDeviceCodeAsync(
+            terminal.ClientId, deviceKey.CreateProof("POST", DeviceEndpoint, DateTimeOffset.UtcNow));
+        var admin = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
+        await OpenVerificationAsync(admin, userCode);
+        var approve = await SubmitDecisionAsync(admin, userCode, approve: true);
+        Assert.True((int)approve.StatusCode < 400, await approve.Content.ReadAsStringAsync(ct));
+
+        var widened = await Client.PutAsJsonAsync($"/api/position/{front}/terminals/{terminal.Id}/positions",
+            new { AllowedPositionIds = new[] { front, extra } }, JsonOptions, ct);
+        Assert.True(widened.IsSuccessStatusCode, await widened.Content.ReadAsStringAsync(ct));
+
+        var poll = await PollTokenAsync(terminal.ClientId, deviceCode,
+            deviceKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow));
+        Assert.False(poll.IsSuccessStatusCode, "the exchange enrolled a position set the admin never approved");
+
+        var slot = await LoadSlotAsync(terminal.Id, ct);
+        Assert.Equal(TerminalEnrollmentStatus.Pending, slot.Status);
+    }
+
     [Theory]
     [InlineData(DeviceBindingIds.ClientSecret)]
     [InlineData(DeviceBindingIds.None)]
