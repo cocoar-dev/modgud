@@ -70,7 +70,10 @@ System Admin role inside the seeded Administrators group).
 ### `reset-2fa <username>`
 Disable TOTP and Email-OTP, delete every stored passkey credential,
 and clear the grace-period stamp so the user gets a fresh secure-setup
-window on next login.
+window on next login. It also ends every existing access of the account:
+browser sessions, issued tokens and staffing sessions (consent grants
+stay), so whoever held the old factors is signed out and the account signs
+in afresh.
 
 ```bash
 dotnet Modgud.Api.dll recover reset-2fa alice

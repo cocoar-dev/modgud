@@ -19,6 +19,7 @@ using Marten;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Sessions;
 using Modgud.Domain.Users.Events;
 using Modgud.Authentication.Identity;
 using Modgud.Authentication.Projections;
@@ -179,6 +180,16 @@ internal sealed class Reset2FaCommand : IRecoveryCommand
 
         await session.SaveChangesAsync();
 
+        // RV-0004 — a factor reset is a recovery action: end every existing access of
+        // the account, as the self-service paths do for the factor they remove (TOTP
+        // disable revokes tokens, passkey delete ends staffing). Sessions, cookies and
+        // tokens go (security stamp rotated); consent grants stay. The account signs in
+        // afresh and sets up a second factor in the reset grace window.
+        await ctx.Services.GetRequiredService<IUserAccessRevoker>()
+            .RevokeAllAccessAsync(user.Id, AccessRevocationReason.ForceSignOut);
+        var staffingEnded = await ctx.Services.GetRequiredService<Modgud.Infrastructure.PositionTerminals.IStaffingRevoker>()
+            .EndAllForUserAsync(user.Id, Modgud.Domain.PositionTerminals.StaffingSessionEndReason.ActivationCredentialInvalidated);
+
         await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
@@ -197,6 +208,7 @@ internal sealed class Reset2FaCommand : IRecoveryCommand
         ctx.WriteLine($"  Email-OTP off:    {(wasEmailOtpEnabled ? "yes" : "was already off")}");
         ctx.WriteLine($"  Passkeys deleted: {passkeys.Count}");
         ctx.WriteLine($"  Grace period:    reset (fresh window on next login)");
+        ctx.WriteLine($"  Access revoked:  sessions and tokens ended; {staffingEnded} staffing session(s) ended");
         return 0;
     }
 }

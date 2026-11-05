@@ -116,7 +116,8 @@ public static class RecoveryCli
                   [--minutes <1..1440>]      Optional lifetime in minutes.
                   [--json]                   Machine-readable token/URL output for CI automation.
               list                           List all users (UserName · Email · Active · 2FA · Passkeys).
-              reset-2fa <username>           Disable TOTP + Email-OTP + delete all Passkeys for user.
+              reset-2fa <username>           Disable TOTP + Email-OTP + delete all Passkeys for user,
+                                             and end the account's sessions, tokens and staffing sessions.
               set-email <username> <email>   Update the user's email address (appends UserUpdatedEvent
                                              so projections + SignalR update live).
               magic-link <username>          Generate a one-time login URL and print it.
