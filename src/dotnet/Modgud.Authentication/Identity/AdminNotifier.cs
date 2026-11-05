@@ -69,8 +69,14 @@ public class AdminNotifier(IQuerySession session, IPrincipalEmailResolver resolv
 
         var adminRoleIds = adminRoles.Select(r => r.Id).ToArray();
 
+        // B3-EI-02 — only groups whose admin role is in force for the IdP: bound to it or to
+        // every app, exactly as PermissionService evaluates the binding. A dormant group
+        // (BoundTo = []) or one bound elsewhere confers no IdP admin right, so its members
+        // must not receive admin mail (old/new profile values) or inbox items.
         return await session.Query<Group>()
-            .Where(g => !g.IsDeleted && g.RoleIds.Any(id => id.IsOneOf(adminRoleIds)))
+            .Where(g => !g.IsDeleted && g.RoleIds.Any(id => id.IsOneOf(adminRoleIds))
+                        && (g.BoundTo.Contains(Modgud.Authorization.Services.PermissionService.AllAppsWildcard)
+                            || g.BoundTo.Contains(Modgud.Authorization.Apps.AppSlugs.Modgud)))
             .ToListAsync(ct);
     }
 }
