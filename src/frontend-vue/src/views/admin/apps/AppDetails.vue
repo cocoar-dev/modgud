@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { readStagedCatalog } from './stagedCatalog'
 import { computed, onMounted, ref } from 'vue'
 import { CoarNotice, CoarTextInput, CoarFormField, CoarButton, CoarIcon, CoarTabGroup, CoarTab, vTooltip } from '@cocoar/vue-ui'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
@@ -188,23 +189,10 @@ function fromStagedInto(e: ManifestEntity) {
     DisplayName: str(e.DisplayName),
     Description: str(e.Description),
   }
-  // Preserve live catalog-entry ids by resource:action (mirrors the applier)
-  // so the rename detection keeps working against the staged state.
-  const liveByKey = new Map((dto.value?.Permissions ?? [])
-    .map((p) => [`${p.Resource}:${p.Action}`, p.Id]))
-  catalog.value = (Array.isArray(e.Permissions) ? (e.Permissions as ManifestEntity[]) : [])
-    .map((p) => {
-      const key = `${str(p.Resource)}:${str(p.Action)}`
-      const liveId = liveByKey.get(key) ?? null
-      return {
-        _uid: liveId ?? newCatalogUid(),
-        id: liveId,
-        resource: str(p.Resource),
-        action: str(p.Action),
-        description: str(p.Description),
-        originalKey: liveId ? key : null,
-      }
-    })
+  // Preserve live catalog-entry ids — the staged Id first (a staged rename keeps it),
+  // then resource:action — so the rename detection keeps working (F7-04).
+  catalog.value = readStagedCatalog(e.Permissions, dto.value?.Permissions ?? [])
+    .map((row) => ({ _uid: row.id ?? newCatalogUid(), ...row }))
   clonePrefillSettings.value = (e.Settings as ApplicationSettingsDto | undefined) ?? null
 }
 
