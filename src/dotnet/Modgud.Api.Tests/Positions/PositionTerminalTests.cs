@@ -115,6 +115,40 @@ public class PositionTerminalTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task The_generic_secret_rotation_refuses_a_client_secret_terminal_client()
+    {
+        // E.clients-B2: oauth-client:write alone (no position right) could rotate a
+        // client-secret terminal's secret through the generic admin surface, reading
+        // the new secret or knocking the terminal out. Update/Delete already refuse.
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var position = await Client.PostAsJsonAsync("/api/position", new
+        {
+            AccountName = "fn-secret",
+            TerminalPolicy = new { Enabled = true, AllowedDeviceBindings = new[] { "dpop", "client-secret" } },
+        }, JsonOptions, ct);
+        Assert.True(position.IsSuccessStatusCode, await position.Content.ReadAsStringAsync(ct));
+        var fn = (await position.Content.ReadFromJsonAsync<PositionPrincipalDto>(JsonOptions, ct))!.Id;
+        var created = await Client.PostAsJsonAsync($"/api/position/{fn}/terminals",
+            new { DisplayName = "Secret", Location = "Tor 4", WebAuthnRpId = RpId, Binding = "client-secret" },
+            JsonOptions, ct);
+        var createdBody = await created.Content.ReadAsStringAsync(ct);
+        Assert.True(created.IsSuccessStatusCode, $"terminal create failed ({(int)created.StatusCode}): {createdBody}");
+        var terminal = JsonSerializer.Deserialize<TerminalDto>(createdBody, JsonOptions)!;
+        Assert.False(string.IsNullOrEmpty(terminal.ClientSecret));
+
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+        var appId = (await session.Query<OAuthApplicationState>()
+            .Where(c => c.ClientId == terminal.ClientId).ToListAsync(ct)).Single().Id;
+
+        var regenerate = await Client.PostAsync($"/api/admin/oauth/clients/{appId}/regenerate-secret", null, ct);
+        var body = await regenerate.Content.ReadAsStringAsync(ct);
+        Assert.False(regenerate.IsSuccessStatusCode, $"rotation must be refused, got {(int)regenerate.StatusCode}: {body}");
+        Assert.Contains("owned by a position terminal", body);
+    }
+
+    [Fact]
     public async Task The_lifecycle_is_idempotent_and_revoked_is_terminal()
     {
         var ct = TestContext.Current.CancellationToken;
