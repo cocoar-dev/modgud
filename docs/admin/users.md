@@ -106,7 +106,7 @@ Effect:
 - The account is **deactivated** — it can no longer sign in.
 - It is scheduled for permanent erasure at the end of the realm's admin-retention window.
 - Live access is revoked (sessions end, tokens stop working). The record, its email, **and its external identity links are kept** so a clean restore is possible — the deactivation alone blocks any login (including through a linked IdP). No PII is masked at this stage; that happens only at permanent erase.
-- Its profile is **frozen** (read-only) while pending — restore it first to edit again.
+- Its profile is **frozen** (read-only) while pending — restore it first to edit again. This includes the active switch: a pending account cannot be reactivated except by **Restore**.
 - The email address stays reserved (no one else can register it) until the account is permanently erased.
 
 Reveal pending users with the **Show recycle bin** toggle on the list. Their **Lifecycle** badge reads *Recycle bin* (admin-initiated) or *Self-deletion* (the user requested it), with the deadline.

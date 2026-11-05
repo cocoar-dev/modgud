@@ -47,6 +47,17 @@ public sealed class SetUserPasswordHandler(
         }
         else
         {
+            // AID-04 — validate the new password BEFORE removing the old one: a rejected
+            // password must leave the account's current password in place.
+            var rejected = new List<string>();
+            foreach (var validator in userManager.PasswordValidators)
+            {
+                var check = await validator.ValidateAsync(userManager, appUser, password);
+                if (!check.Succeeded) rejected.AddRange(check.Errors.Select(e => e.Description));
+            }
+            if (rejected.Count > 0)
+                return Error.Validation("User.PasswordError", string.Join("; ", rejected));
+
             await userManager.RemovePasswordAsync(appUser);
             var addResult = await userManager.AddPasswordAsync(appUser, password);
             if (!addResult.Succeeded)
