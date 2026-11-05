@@ -94,6 +94,15 @@ everything in flight, place the new file and list the old one in
 the transition, then drop the old path once you're confident nothing
 still depends on it.
 
+The auto-generated certificate is valid for two years and is never
+renewed automatically. The `openiddict-cert` readiness check reports
+`Degraded` (HTTP 200, logged as a warning, named in the `/health/ready`
+JSON) from 30 days before the signing or encryption certificate
+expires, and keeps doing so once it has expired. Replace the file
+before then, using the `Previous*` overlap described above: once every
+configured signing (or encryption) certificate has expired, OpenIddict
+refuses to start, so the next restart fails.
+
 Because this certificate is shared instance-wide, losing it (or
 letting a container restart regenerate it because the `data/keys/`
 volume wasn't persisted) has an instance-wide effect: a fresh

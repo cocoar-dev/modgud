@@ -461,7 +461,7 @@ curl http://localhost:8081/health/ready   # readiness — DB connection + OpenId
 ```
 
 - **`/health/live`** runs no dependency checks; it returns `200` as long as the process is up. Use it as the liveness probe.
-- **`/health/ready`** returns `200` only when the master DB connection and the OpenIddict signing/encryption certificate are both ready and the node is **not draining** after SIGTERM. Use it as the readiness probe (gate traffic on it). The JSON body names the failing check (`postgres`, `marten-schema`, `openiddict-cert`, `cluster`).
+- **`/health/ready`** returns `200` only when the master DB connection and the OpenIddict signing/encryption certificate are both ready and the node is **not draining** after SIGTERM. Use it as the readiness probe (gate traffic on it). The JSON body names the failing check (`postgres`, `marten-schema`, `openiddict-cert`, `cluster`). A signing or encryption certificate within 30 days of expiry (or past it) turns `openiddict-cert` to `Degraded`: the probe stays `200`, but the JSON body and a warning log name the certificate to replace.
 
 The image also declares a Docker `HEALTHCHECK` on `/health/ready` (every 15 s, 120 s start period), so `docker ps` shows `healthy` / `unhealthy` and other services can wait with `depends_on: condition: service_healthy`. If you change `AppUrl`, point the probe at the new address with `HEALTHCHECK_URL`.
 
