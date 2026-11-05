@@ -24,12 +24,18 @@ public sealed class DependencyPatchCompatibilityTests
     [Fact]
     public void Restored_patch_assemblies_are_actually_loaded()
     {
+        // At least the patched version: a newer shared framework on the machine
+        // (CI installs the latest 10.0.x runtime) supplies a newer assembly and wins.
         var versions = LoadedVersions();
-        Assert.True(versions["MessagePack"].StartsWith("2.5.303", StringComparison.Ordinal));
-        Assert.True(versions["Pkcs"].StartsWith("10.0.13", StringComparison.Ordinal));
-        Assert.True(versions["Xml"].StartsWith("10.0.13", StringComparison.Ordinal));
-        Assert.True(versions["SignalR.Common"].StartsWith("10.0.13", StringComparison.Ordinal));
+        AssertAtLeast(versions["MessagePack"], "2.5.303");
+        AssertAtLeast(versions["Pkcs"], "10.0.13");
+        AssertAtLeast(versions["Xml"], "10.0.13");
+        AssertAtLeast(versions["SignalR.Common"], "10.0.13");
     }
+
+    private static void AssertAtLeast(string loaded, string patched) =>
+        Assert.True(Version.Parse(loaded.Split('-')[0]) >= Version.Parse(patched),
+            $"loaded {loaded}, patched version is {patched}");
 
     [Fact]
     public void MessagePack_small_object_graph_roundtrips_with_untrusted_data_security()
@@ -119,7 +125,7 @@ public sealed class DependencyPatchCompatibilityTests
             Assert.True(fixture.Versions["Xml"].StartsWith("10.0.13", StringComparison.Ordinal));
             Assert.True(fixture.Versions["Pkcs"].StartsWith("10.0.13", StringComparison.Ordinal));
             Assert.True(fixture.Versions["SignalR.Common"].StartsWith("10.0.13", StringComparison.Ordinal));
-            Assert.True(LoadedVersions()["Xml"].StartsWith("10.0.13", StringComparison.Ordinal));
+            AssertAtLeast(LoadedVersions()["Xml"], "10.0.13");
         }
         else
         {

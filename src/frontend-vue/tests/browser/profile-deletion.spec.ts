@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve, sep, extname } from 'node:path'
 
 // Load the real built SPA through route.fulfill, not a running server. Every
@@ -95,10 +95,10 @@ async function fixture(page: Page, block: string | null, reauthenticate = false)
     const file = resolve(dist, `.${decodeURIComponent(path)}`)
     if (file.startsWith(dist + sep)) {
       try {
-        if (statSync(file).isFile()) {
-          await route.fulfill({ contentType: contentTypes[extname(file)] ?? 'application/octet-stream', body: readFileSync(file) })
-          return
-        }
+        // One read, no stat first: it throws for a missing file or a directory.
+        const body = readFileSync(file)
+        await route.fulfill({ contentType: contentTypes[extname(file)] ?? 'application/octet-stream', body })
+        return
       } catch { /* unknown static resource: fail closed below */ }
     }
     unexpected.push(path)
