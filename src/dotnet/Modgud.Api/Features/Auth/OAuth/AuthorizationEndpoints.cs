@@ -1455,7 +1455,7 @@ public static class AuthorizationEndpoints
         if (sessionLifetime > position.TerminalPolicy.MaximumStaffingSessionLifetime)
             sessionLifetime = position.TerminalPolicy.MaximumStaffingSessionLifetime;
         var absoluteExpiresAt = now + sessionLifetime;
-        principal.SetAccessTokenLifetime(TimeSpan.FromMinutes(10));
+        principal.SetAccessTokenLifetime(sessionLifetime < TimeSpan.FromMinutes(10) ? sessionLifetime : TimeSpan.FromMinutes(10));
         principal.SetRefreshTokenLifetime(sessionLifetime);
 
         // §13.3 steps 17–20 + §13.5 — the activation lock: the terminal
@@ -1629,10 +1629,28 @@ public static class AuthorizationEndpoints
         // §14.3 checks 5–7 — position alive + terminal use on; slot Active
         // and still owned by this session.
         var position = await session.LoadAsync<PositionPrincipal>(positionId, ct);
-        if (position is null || position.IsDeleted || !position.TerminalPolicy.Enabled)
+        // G-B4-04 — the refresh is the backstop for a missed or raced cascade: an
+        // inactive position ends the shift like a deleted one (the tap already checks it).
+        if (position is null || position.IsDeleted || !position.IsActive || !position.TerminalPolicy.Enabled)
         {
             await staffingRevoker.EndSessionAsync(
                 staffing.Id, StaffingSessionEndReason.PositionDisabled, ct);
+            return RequireStaffing();
+        }
+
+        // G-B4-04 — a staffing lifetime the policy shortened since the tap applies now:
+        // the shift ends at the earlier of its stored end and its start plus the current
+        // lifetime. A shift already past that ends here.
+        var currentLifetime = position.TerminalPolicy.StaffingSessionLifetime;
+        if (currentLifetime > position.TerminalPolicy.MaximumStaffingSessionLifetime)
+            currentLifetime = position.TerminalPolicy.MaximumStaffingSessionLifetime;
+        var shiftEnd = staffing.StartedAt + currentLifetime < staffing.AbsoluteExpiresAt
+            ? staffing.StartedAt + currentLifetime
+            : staffing.AbsoluteExpiresAt;
+        if (shiftEnd <= now)
+        {
+            await staffingRevoker.EndSessionAsync(
+                staffing.Id, StaffingSessionEndReason.PolicyTightened, ct);
             return RequireStaffing();
         }
 
@@ -1725,9 +1743,11 @@ public static class AuthorizationEndpoints
         principal.SetDestinations(_ => [Destinations.AccessToken]);
 
         // §14.4 — the chain can never outlive the shift: the rotated refresh
-        // token's lifetime is exactly the time to the fixed absolute end.
-        principal.SetAccessTokenLifetime(TimeSpan.FromMinutes(10));
-        principal.SetRefreshTokenLifetime(staffing.AbsoluteExpiresAt - now);
+        // token's lifetime is exactly the time to the shift's end, and the access
+        // token ends with it too (G-B4-04), at most ten minutes.
+        var remaining = shiftEnd - now;
+        principal.SetAccessTokenLifetime(remaining < TimeSpan.FromMinutes(10) ? remaining : TimeSpan.FromMinutes(10));
+        principal.SetRefreshTokenLifetime(remaining);
         principal.SetAuthorizationId(staffing.OAuthAuthorizationId);
 
         // §14.3 check 14 — rotation + reuse detection are OpenIddict's stock
