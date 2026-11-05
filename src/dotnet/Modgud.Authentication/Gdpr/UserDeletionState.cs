@@ -78,6 +78,10 @@ public class UserErasureProgress
     public string Reason { get; set; } = string.Empty;
     public Guid? AdminUserId { get; set; }
     public List<Guid> ExternalLinkIds { get; set; } = [];
+    /// <summary>B3-EI-01 — inbox item streams that carry this user's name (admin items
+    /// about their change requests, items addressed to them). Recorded with the document
+    /// cleanup so a retry masks and archives the same streams.</summary>
+    public List<Guid> InboxItemIds { get; set; } = [];
     /// <summary>Committed atomically with the primary document cleanup. Once set,
     /// retries must not append revocation events to a possibly archived stream.</summary>
     public bool DocumentsCleared { get; set; }

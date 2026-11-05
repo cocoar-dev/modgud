@@ -360,6 +360,12 @@ public static class MartenStoreOptionsExtensions
         // user. Masked-out events keep the same shape so deserialization
         // doesn't break for older daemons.
 
+        // B3-EI-01 / B3-EI-05 — inbox items carry display parameters such as a user
+        // label (name, username) or a reviewer note. Masking drops them; kind, recipient,
+        // source and timestamps stay so the archived stream still reads.
+        options.Events.AddMaskingRuleForProtectedInformation<Modgud.Application.Inbox.Events.InboxItemCreatedEvent>(e =>
+            e with { Params = null });
+
         options.Events.AddMaskingRuleForProtectedInformation<UserCreatedEvent>(e =>
             new UserCreatedEvent(
                 e.Id,

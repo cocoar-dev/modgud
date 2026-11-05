@@ -354,6 +354,14 @@ public class GdprService(
             // 1) Immediately scrub the Identity document and stop document-only
             // consumers from loading this user.
             var user = await session.LoadAsync<ApplicationUser>(userId, ct);
+
+            // B3-EI-01 / B10-PA04 — copies of the name outside the user's own stream.
+            // Read before the change requests are deleted and the username is scrubbed.
+            progress.InboxItemIds = await FindInboxItemIdsAsync(userId, ct);
+            foreach (var itemId in progress.InboxItemIds)
+                session.Delete<Modgud.Infrastructure.Persistence.Marten.Projections.Inbox.InboxItemView>(itemId);
+            await ClearPublisherSnapshotsAsync(userId, user?.UserName, ct);
+
             if (user is not null)
             {
                 // ADR 0018 — hard-delete any matching pending registration.
@@ -420,6 +428,8 @@ public class GdprService(
             x.IncludeStream(userId);
             foreach (var linkId in linkIds)
                 x.IncludeStream(linkId);
+            foreach (var itemId in progress.InboxItemIds)
+                x.IncludeStream(itemId);
             x.AddHeader("gdpr_masked", true);
             x.AddHeader("masked_at", progress.StartedAt.ToString("O"));
             x.AddHeader("masked_by", progress.AdminUserId?.ToString() ?? "user_request");
@@ -432,6 +442,8 @@ public class GdprService(
         archiveSession.Events.ArchiveStream(userId);
         foreach (var linkId in linkIds)
             archiveSession.Events.ArchiveStream(linkId);
+        foreach (var itemId in progress.InboxItemIds)
+            archiveSession.Events.ArchiveStream(itemId);
         await archiveSession.SaveChangesAsync(ct);
 
         // 5) Audit trail — mask-and-keep, NOT delete. The tenant audit is retained
@@ -496,6 +508,64 @@ public class GdprService(
         ModgudMeters.RecordGdprRequest(ModgudMeters.GdprRequestType.Mask);
 
         return true;
+    }
+
+    /// <summary>
+    /// B3-EI-01 — inbox item streams that carry this user's name: the admin items about
+    /// their change requests (user label) and the items addressed to them (reviewer
+    /// notes). Read from the events, not the async read model, so an item that is not
+    /// projected yet is found too.
+    /// </summary>
+    private async Task<List<Guid>> FindInboxItemIdsAsync(Guid userId, CancellationToken ct)
+    {
+        var ids = (await session.Events.QueryRawEventDataOnly<Modgud.Application.Inbox.Events.InboxItemCreatedEvent>()
+                .Where(e => e.RecipientUserId == userId)
+                .ToListAsync(ct))
+            .Select(e => e.Id)
+            .ToList();
+        var changeRequestIds = await session.Query<UserChangeRequest>()
+            .Where(r => r.UserId == userId)
+            .Select(r => r.Id)
+            .ToListAsync(ct);
+        foreach (var changeRequestId in changeRequestIds)
+        {
+            var aboutRequest = await session.Events.QueryRawEventDataOnly<Modgud.Application.Inbox.Events.InboxItemCreatedEvent>()
+                .Where(e => e.SourceType == Api.Account.ProfileEndpoints.ChangeRequestInboxSource && e.SourceId == changeRequestId)
+                .ToListAsync(ct);
+            ids.AddRange(aboutRequest.Select(e => e.Id));
+        }
+        return ids.Distinct().ToList();
+    }
+
+    /// <summary>
+    /// B10-PA04 — the uploader of an asset and the publisher of page and composition
+    /// revisions are kept as plain-text username snapshots. Clear the ones that name this
+    /// user; the asset keeps its pseudonymous uploader id.
+    /// </summary>
+    private async Task ClearPublisherSnapshotsAsync(Guid userId, string? userName, CancellationToken ct)
+    {
+        var assets = await session.Query<Modgud.Domain.Assets.Asset>()
+            .Where(a => a.UploadedByUserId == userId && a.UploadedByUsername != null)
+            .ToListAsync(ct);
+        foreach (var asset in assets)
+        {
+            asset.UploadedByUsername = null;
+            session.Store(asset);
+        }
+
+        if (string.IsNullOrEmpty(userName)) return;
+        var settings = await session.LoadAsync<Modgud.Domain.RealmSettings.RealmSettings>(
+            Modgud.Domain.RealmSettings.RealmSettings.SingletonId, ct);
+        if (settings is null) return;
+
+        bool Names(string? publishedBy) =>
+            publishedBy is not null && string.Equals(publishedBy, userName, StringComparison.OrdinalIgnoreCase);
+        var changed = false;
+        foreach (var version in settings.PageCompositions?.SelectMany(c => c.Versions) ?? [])
+            if (Names(version.PublishedBy)) { version.PublishedBy = null; changed = true; }
+        foreach (var revision in settings.PageSlots?.Values.SelectMany(s => s.Variants).SelectMany(v => v.Revisions) ?? [])
+            if (Names(revision.PublishedBy)) { revision.PublishedBy = null; changed = true; }
+        if (changed) session.Store(settings);
     }
 
     /// <summary>

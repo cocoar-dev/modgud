@@ -112,7 +112,7 @@ async function save() {
             <template #help>
               <span class="text-xs text-surface-500">
                 {{ t('admin.inboxSettings.help.hardDeleteDaysAfterDismissed', {},
-                  'Items completed via approve/reject are permanently deleted after this many days. Empty = never delete.') }}
+                  'Items completed via approve/reject are removed for good after this many days (parameters masked, stream archived). Empty = never remove.') }}
               </span>
             </template>
           </CoarFormField>

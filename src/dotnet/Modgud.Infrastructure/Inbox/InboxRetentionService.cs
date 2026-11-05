@@ -59,9 +59,23 @@ public class InboxRetentionService(
                 .Select(i => i.Id)
                 .ToListAsync(ct);
 
+            // B3-EI-05 — archiving only flags the stream; the created event still held
+            // the item's parameters (user label of the requester). Mask them first
+            // (Marten has no per-stream hard delete), then archive the stream and delete
+            // the read model. A failure after masking is repeated by the next run.
+            if (staleDismissed.Count > 0)
+            {
+                await session.DocumentStore.Advanced.ApplyEventDataMasking(x =>
+                {
+                    x.ForTenant(session.TenantId);
+                    foreach (var id in staleDismissed)
+                        x.IncludeStream(id);
+                    x.AddHeader("masking_reason", "inbox-retention");
+                }, ct);
+            }
+
             foreach (var id in staleDismissed)
             {
-                // Wipe the stream + projection doc.
                 session.Events.ArchiveStream(id);
                 session.Delete<InboxItemView>(id);
             }
