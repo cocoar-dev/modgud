@@ -99,7 +99,7 @@ happens to share it. Two forms of `Id`, and nothing else:
 
 **Cross-references between entities follow the same rule:**
 
-- Groups list **`Members`** (users, nested groups, service accounts) and **`Roles`**;
+- Groups list **`Members`** (users, nested groups, service accounts, positions) and **`Roles`**;
   positions list **`Grants`** (users). Each entry is a real id (`{ "Key": "acme/Author",
   "Id": "…" }`, where the `Key` is a *verified hint* — never followed, and reported when it
   disagrees), or a `"#handle"`. A **bare name is an error**: the "acme/Author" in the

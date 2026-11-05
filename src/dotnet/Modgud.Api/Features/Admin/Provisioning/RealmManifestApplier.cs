@@ -1178,8 +1178,8 @@ public sealed partial class RealmManifestApplier(
     /// <summary>
     /// Resolves a reference to a PRINCIPAL. A group's members may be users, nested groups
     /// (the domain really expands them — permissions via ApplicationScopeResolver, mail via
-    /// Group.GetEmailsAsync) or service accounts, so the manifest has to be able to name all
-    /// three; filtering the others out is what made export → apply DELETE them, Members
+    /// Group.GetEmailsAsync), service accounts or positions, so the manifest has to be able
+    /// to name all four; filtering the others out is what made export → apply DELETE them, Members
     /// being a replace-list. A position grant is narrower — only a person can staff a shift —
     /// so <paramref name="membersOnly"/> keeps that distinction where it belongs.
     ///
@@ -1226,8 +1226,16 @@ public sealed partial class RealmManifestApplier(
             VerifyHint(reference, context, "service account", skips, sa.AccountName);
             return sa.Id;
         }
+        // GP-CO-01 — a position is a group member too (it carries the group's roles while
+        // staffed), and the exporter writes it. Positions apply AFTER groups, so only an
+        // existing one resolves here; one this same file creates is a reported skip.
+        if (await session.LoadAsync<PositionPrincipal>(byId, ct) is { IsDeleted: false } position)
+        {
+            VerifyHint(reference, context, "position", skips, position.AccountName);
+            return position.Id;
+        }
         skips.Skip(context, $"member '{reference.Display}'",
-            "no user, group or service account with that id in this realm");
+            "no user, group, service account or position with that id in this realm");
         return null;
     }
 

@@ -166,9 +166,11 @@ public sealed class ManifestIdentity
             // service accounts both apply BEFORE groups, so either may be a '#handle' this
             // file declares; a nested group's handle resolves only when that group comes
             // earlier in the list (same section — the order check lets it through).
+            // A position may be a member as well, but positions apply AFTER groups: its
+            // handle is refused below as applied too late, so the author uses its real id.
             foreach (var m in g.Members ?? [])
-                CheckRef(m, "user, group or service account",
-                    $"{Sections.Users}|{Sections.Groups}|{Sections.ServiceAccounts}",
+                CheckRef(m, "user, group, service account or position",
+                    $"{Sections.Users}|{Sections.Groups}|{Sections.ServiceAccounts}|{Sections.Positions}",
                     Sections.Groups, $"group '{g.Name}' member '{m}'");
             foreach (var r in g.Roles ?? [])
                 CheckRef(r, "role", Sections.Roles, Sections.Groups, $"group '{g.Name}' role '{r}'");
