@@ -121,6 +121,58 @@ public class FirstInstallationApiTests(ColdStartFixture fixture) : ColdStartTest
         Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
     }
 
+    /// <summary>
+    /// F.inst-I1 — a failure after the initial realm document is committed but before the
+    /// realm is seeded must not strand the deployment: the half-created realm is rolled
+    /// back, and the operator can retry with the same link.
+    /// </summary>
+    [Fact]
+    public async Task A_seeding_failure_during_installation_leaves_a_retryable_deployment()
+    {
+        await using var host = await Fixture.CreateUninitializedHostAsync();
+        using var client = host.Factory.CreateClient();
+        var ct = TestContext.Current.CancellationToken;
+
+        var cli = await CliHarness.RunAsync(
+            host.Services, "install-link", "--base-url", "http://localhost", "--minutes", "10", "--json");
+        Assert.Equal(0, cli.ExitCode);
+        using var issuedJson = JsonDocument.Parse(cli.StdOut.Trim());
+        var token = issuedJson.RootElement.GetProperty("token").GetString();
+
+        object Payload() => new
+        {
+            Token = token,
+            Realm = new
+            {
+                Slug = "first",
+                DisplayName = "First Realm",
+                Domains = new[] { "localhost" },
+                PrimaryDomain = "localhost",
+            },
+            Admin = new
+            {
+                UserName = "first-admin",
+                Email = "first-admin@localhost",
+                Password = "TestPass1234",
+            },
+        };
+
+        host.Factory.SeedingFault.ArmOnce();
+        var failed = await client.PostAsJsonAsync("/api/install/complete", Payload(), ct);
+        Assert.False(failed.IsSuccessStatusCode);
+
+        var realms = host.Services.GetRequiredService<IRealmProvisioningService>();
+        Assert.Null(await realms.GetRealmBySlugAsync("first", ct));
+
+        var retry = await client.PostAsJsonAsync("/api/install/complete", Payload(), ct);
+        Assert.True(retry.StatusCode == HttpStatusCode.OK,
+            $"retry {(int)retry.StatusCode}: {await retry.Content.ReadAsStringAsync(ct)}");
+
+        var status = await client.GetFromJsonAsync<InstallationStatusResponse>("/api/install/status", ct);
+        Assert.NotNull(status);
+        Assert.True(status.IsInitialized);
+    }
+
     [Fact]
     public async Task Installation_sends_the_operator_back_to_the_exact_origin_of_the_install_link()
     {

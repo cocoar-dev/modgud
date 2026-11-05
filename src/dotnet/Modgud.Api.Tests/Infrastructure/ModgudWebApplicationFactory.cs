@@ -848,4 +848,41 @@ internal sealed class LostTokenResponseHandler
 public sealed class UninitializedModgudWebApplicationFactory : ModgudWebApplicationFactory
 {
     protected override bool ProvisionLegacySystemRealm => false;
+
+    /// <summary>
+    /// F.inst-I1 — test-only fault seam: when armed, the next realm login-provider seeding
+    /// throws once, i.e. after the realm document has been committed and before the
+    /// realm is fully seeded. The production seeder runs otherwise.
+    /// </summary>
+    public RealmSeedingFault SeedingFault { get; } = new();
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<Modgud.Application.Services.ILoginProviderRealmSeeder>();
+            services.AddScoped<Modgud.Application.Services.ILoginProviderRealmSeeder>(sp =>
+                new FaultInjectingLoginProviderRealmSeeder(
+                    ActivatorUtilities.CreateInstance<Modgud.Authentication.Setup.LoginProviderRealmSeeder>(sp),
+                    SeedingFault));
+        });
+    }
+}
+
+public sealed class RealmSeedingFault
+{
+    private int _armed;
+    public void ArmOnce() => Interlocked.Exchange(ref _armed, 1);
+    public bool TryFire() => Interlocked.Exchange(ref _armed, 0) == 1;
+}
+
+internal sealed class FaultInjectingLoginProviderRealmSeeder(
+    Modgud.Application.Services.ILoginProviderRealmSeeder inner,
+    RealmSeedingFault fault) : Modgud.Application.Services.ILoginProviderRealmSeeder
+{
+    public Task SeedAsync(string tenantId, ILogger? logger = null, CancellationToken ct = default) =>
+        fault.TryFire()
+            ? throw new InvalidOperationException("Injected realm seeding failure (test).")
+            : inner.SeedAsync(tenantId, logger, ct);
 }

@@ -131,7 +131,21 @@ public sealed class InstallationCompletionService(
                 },
             };
 
-            var realmResult = await realms.CreateInitialRealmAsync(dto, ct);
+            ErrorOr<Realm> realmResult;
+            try
+            {
+                realmResult = await realms.CreateInitialRealmAsync(dto, ct);
+            }
+            catch
+            {
+                // F.inst-I1 — CreateInitialRealmAsync commits the inactive realm document
+                // before it seeds the tenant. A failure or abort in that window would
+                // otherwise leave a realm shell that blocks every further installation
+                // attempt. Nothing else existed when we entered under the lock, so the
+                // shell (if any) is ours to compensate; the rollback is a no-op without it.
+                realmCreated = true;
+                throw;
+            }
             if (realmResult.IsError) return realmResult.Errors;
             realmCreated = true;
 
@@ -152,10 +166,12 @@ public sealed class InstallationCompletionService(
                 adminCreated = true;
             }
 
-            var activation = await realms.ActivateInitialRealmAsync(dto.Slug, ct);
+            // Once the administrator exists the realm is kept on failure (see finally), so a
+            // client or proxy abort must not stop half-way: finish activation and completion.
+            var activation = await realms.ActivateInitialRealmAsync(dto.Slug, CancellationToken.None);
             if (activation.IsError) return activation.Errors;
 
-            var completion = await challenges.CompleteAsync(request.Token, dto.Slug, ct);
+            var completion = await challenges.CompleteAsync(request.Token, dto.Slug, CancellationToken.None);
             if (completion.IsError) return completion.Errors;
 
             return new CompleteInstallationResponse(
