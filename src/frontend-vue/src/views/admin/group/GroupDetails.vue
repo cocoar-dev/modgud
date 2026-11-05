@@ -480,7 +480,8 @@ onMounted(async () => {
       }
     } else {
       await groupStore.initialize()
-      const group = groupStore.groups.find(g => g.Id === props.id)
+      // B3-F04 — edit the group as it is NOW, not as the once-loaded list cached it.
+      const group = await groupStore.fetchGroup(props.id).catch(() => groupStore.groups.find(g => g.Id === props.id))
       if (group) {
         form.value = {
           Name: group.Name,
