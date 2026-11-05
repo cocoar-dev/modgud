@@ -74,6 +74,23 @@ public partial class ExternalLoginProcessorTests
         Assert.Null(await LinkForAsync(subject, ct));
     }
 
+    /// <summary>B6-OIDC-03 — an external sign-in started from the login page while a session
+    /// exists (someone else at the owner's device, or a forced navigation) must not bind that
+    /// identity to the signed-in account, even within the owner's recent-proof window.</summary>
+    [Fact]
+    public async Task An_external_sign_in_without_link_intent_does_not_link_to_the_signed_in_account()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = await CreateEnabledEntraConfig();
+        var subject = $"other-person-{Guid.NewGuid():N}";
+
+        using var response = await FinishAsync(config.Id, subject, proofAge: TimeSpan.FromMinutes(1), linkIntent: false);
+
+        var link = await LinkForAsync(subject, ct);
+        Assert.True(link is null || link.UserId != DefaultUser!.Id,
+            $"the external identity must not be linked to the signed-in account (redirect {response.Headers.Location})");
+    }
+
     private async Task<ExternalIdentityLink?> LinkForAsync(string subject, CancellationToken ct)
     {
         await using var session = GetTenantedSession();
@@ -84,7 +101,7 @@ public partial class ExternalLoginProcessorTests
     /// <summary>The default user's real browser session, whose only proof is a password
     /// sign-in <paramref name="proofAge"/> ago, finishes an external login.</summary>
     private async Task<HttpResponseMessage> FinishAsync(Guid loginProviderId, string subject, TimeSpan proofAge,
-        IReadOnlyList<string>? amr = null)
+        IReadOnlyList<string>? amr = null, bool linkIntent = true)
     {
         var origin = new Uri("http://localhost");
         var cookies = new CookieContainerHandler();
@@ -115,6 +132,9 @@ public partial class ExternalLoginProcessorTests
             };
             externalProperties.Items["loginProviderId"] = loginProviderId.ToString("N");
             externalProperties.Items["returnUrl"] = "/profile";
+            // The profile's link button starts with intent=link (B6-OIDC-03); a login from
+            // the sign-in page carries no intent.
+            if (linkIntent) externalProperties.Items["intent"] = "link";
             using var tenant = TenantContext.Enter(TenantConstants.SystemTenantId);
             cookies.Seed(origin, app.Cookie.Name!, app.TicketDataFormat.Protect(new AuthenticationTicket(principal,
                 new AuthenticationProperties

@@ -11,6 +11,11 @@ namespace Modgud.Authentication.Api.ExternalAuth;
 
 public static class ExternalAuthEndpoints
 {
+    /// <summary>B6-OIDC-03 — authentication-properties item that marks an external sign-in
+    /// started as an explicit link from the profile.</summary>
+    internal const string IntentItem = "intent";
+    internal const string LinkIntent = "link";
+
     public static void MapExternalAuthEndpoints(this IEndpointRouteBuilder endpoints, string path)
     {
         // Public — login page needs the list to render buttons. Returns
@@ -55,6 +60,7 @@ public static class ExternalAuthEndpoints
         endpoints.MapGet($"{path}/account/external-login/{{loginProviderId:guid}}/start",
             async (Guid loginProviderId,
                    string? returnUrl,
+                   string? intent,
                    HttpContext http,
                    [FromServices] IQuerySession session,
                    [FromServices] IApplicationSettingsResolver settingsResolver,
@@ -97,6 +103,11 @@ public static class ExternalAuthEndpoints
                         ["returnUrl"] = SanitizeReturnUrl(returnUrl),
                     },
                 };
+                // B6-OIDC-03 — linking is an explicit intent (the profile's link button),
+                // recorded only for a signed-in browser; the finish step links nothing without it.
+                if (string.Equals(intent, LinkIntent, StringComparison.Ordinal)
+                    && (await http.AuthenticateAsync(Microsoft.AspNetCore.Identity.IdentityConstants.ApplicationScheme)).Succeeded)
+                    props.Items[IntentItem] = LinkIntent;
                 return Results.Challenge(props, [schemeName]);
             }).AllowAnonymous();
 
@@ -170,11 +181,16 @@ public static class ExternalAuthEndpoints
                 // initiated from Profile → Security. Pass the authenticated
                 // user id down so the processor binds the external identity
                 // to that account instead of JIT-creating a new one.
+                // B6-OIDC-03 — only a link that was started as one (intent recorded at the
+                // start) binds to the signed-in account. Any other external sign-in while a
+                // session exists is a sign-in of that external identity, never an implicit link.
+                var linkRequested = auth.Properties.Items.TryGetValue(IntentItem, out var intentValue)
+                                    && string.Equals(intentValue, LinkIntent, StringComparison.Ordinal);
                 var existingAuth = await http.AuthenticateAsync(
                     Microsoft.AspNetCore.Identity.IdentityConstants.ApplicationScheme);
                 Guid? authenticatedUserId = null;
                 var mayLink = false;
-                if (existingAuth.Succeeded && existingAuth.Principal is not null)
+                if (linkRequested && existingAuth.Succeeded && existingAuth.Principal is not null)
                 {
                     var idClaim = existingAuth.Principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
                     if (Guid.TryParse(idClaim, out var parsed)) authenticatedUserId = parsed;
