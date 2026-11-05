@@ -590,6 +590,12 @@ public sealed class RealmDraftService(
                 // slot is the "secret staged" marker, not the manifest field.
                 selfReg.Remove("CaptchaSecret");
             }
+            // FD-04 — an explicit null is a staged clear: it drops a captcha secret staged
+            // earlier in this draft instead of being overwritten by it at plan/apply.
+            else if (selfReg.ContainsKey("CaptchaSecret") && selfReg["CaptchaSecret"] is null)
+            {
+                secrets.Remove(captchaSlot);
+            }
             if (secrets.ContainsKey(captchaSlot)) validSlots.Add(captchaSlot);
         }
 
@@ -605,7 +611,13 @@ public sealed class RealmDraftService(
             {
                 if (node is not JsonObject entity) continue;
                 var entityKey = key(entity);
-                if (string.IsNullOrEmpty(entityKey)) continue;
+                if (string.IsNullOrEmpty(entityKey))
+                {
+                    // FD-03 — no key, no slot: still never store the secret in plain text.
+                    // The entity stays invalid and the plan refuses it.
+                    entity.Remove(field);
+                    continue;
+                }
                 var slot = $"{section}/{entityKey}/{field}";
                 if (entity[field] is JsonValue value &&
                     value.GetValue<string>() is { Length: > 0 } secret)
