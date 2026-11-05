@@ -158,9 +158,15 @@ public class UpdateGroupHandler(
             // recalculator's initial RecalculateForGroupAsync right below.
         }
 
-        var memberIds = command.MembershipMode == MembershipMode.Auto
-            ? group.MemberIds
-            : command.MemberIds.ToList();
+        // B3-F02 — an externally driven group's membership lives on the session only; the
+        // batch engine never writes or clears its durable MemberIds. Members stored before
+        // the switch would keep the group's roles without ever meeting the external script.
+        List<Guid> memberIds = command.MembershipMode switch
+        {
+            MembershipMode.Auto when command.ExternallyDrivable => [],
+            MembershipMode.Auto => group.MemberIds,
+            _ => command.MemberIds.ToList(),
+        };
 
         var boundTo = command.BoundTo?.ToList() ?? group.BoundTo.ToList();
         var excludeTestAccounts = command.ExcludeTestAccounts ?? group.ExcludeTestAccounts;
