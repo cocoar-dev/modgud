@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { stagedText } from './draftMergePatch'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useUserStore, type UserGroupDto, type InheritedUserGroupDto, type EffectiveGroupDto, type EffectiveGroupDiagnostic } from '@/stores/user.store'
 import { useAuthStore } from '@/stores/auth.store'
@@ -540,10 +541,13 @@ onMounted(async () => {
         const entity = stagedKey.value ? draftStore.findEntity('users', stagedKey.value) : null
         if (entity) {
           const str = (v: unknown) => (typeof v === 'string' ? v : '')
+          // AID-06 — the staged entity is a merge patch: an absent field keeps the live
+          // value, an explicit null is a staged clear. Treating absent as empty turned a
+          // partial patch into name clears on the next save.
           form.value = {
-            Firstname: str(entity.Firstname) || '',
-            Lastname: str(entity.Lastname) || '',
-            Acronym: str(entity.Acronym) || '',
+            Firstname: stagedText(entity, 'Firstname', form.value.Firstname),
+            Lastname: stagedText(entity, 'Lastname', form.value.Lastname),
+            Acronym: stagedText(entity, 'Acronym', form.value.Acronym),
             Email: str(entity.Email) || form.value.Email,
             UserName: str(entity.UserName) || form.value.UserName,
           }
