@@ -188,8 +188,12 @@ public static class PositionGrantsEndpoints
         if (await LoadPositionAsync(settings, session, positionId, ct) is not { } _)
             return Results.NotFound();
 
+        // B3-P1 — read the stream version BEFORE the document and append against it: a
+        // transition decided on a snapshot that an overlapping revoke (or any other
+        // transition) has since changed fails instead of landing on the newer state.
+        var streamState = await session.Events.FetchStreamStateAsync(grantId, ct);
         var grant = await session.LoadAsync<PositionGrant>(grantId, ct);
-        if (grant is null || grant.PositionPrincipalId != positionId)
+        if (grant is null || streamState is null || grant.PositionPrincipalId != positionId)
             return Results.NotFound();
 
         if (grant.Status == targetStatus)
@@ -207,8 +211,16 @@ public static class PositionGrantsEndpoints
             PositionGrantStatus.Active => new PositionGrantResumed(grant.Id, actor, now),
             _ => new PositionGrantRevoked(grant.Id, actor, now),
         };
-        session.Events.Append(grant.Id, @event);
-        await session.SaveChangesAsync(ct);
+        session.Events.Append(grant.Id, streamState.Version + 1, @event);
+        try
+        {
+            await session.SaveChangesAsync(ct);
+        }
+        catch (JasperFx.ConcurrencyException)
+        {
+            return Results.Conflict(new { Error = "PositionGrant.Changed",
+                Message = "The grant changed meanwhile; reload it and try again." });
+        }
 
         // MG-FT-07 §15.4 — a de-authorized user's running shifts end NOW, not
         // at the next refresh. The revoker runs on its own session, after this

@@ -20,11 +20,20 @@ public partial class PositionGrantProjection : SingleStreamProjection<PositionGr
         CreatedByUserId = e.IssuedByUserId,
     };
 
+    // B3-P1 — Revoked is terminal. A suspend or resume that read the grant before an
+    // overlapping revoke committed can still land after it in the stream; it must not
+    // revive the grant (the re-grant path is a fresh issue).
     public void Apply(PositionGrantSuspended e, PositionGrant grant)
-        => grant.Status = PositionGrantStatus.Suspended;
+    {
+        if (grant.Status != PositionGrantStatus.Revoked)
+            grant.Status = PositionGrantStatus.Suspended;
+    }
 
     public void Apply(PositionGrantResumed e, PositionGrant grant)
-        => grant.Status = PositionGrantStatus.Active;
+    {
+        if (grant.Status != PositionGrantStatus.Revoked)
+            grant.Status = PositionGrantStatus.Active;
+    }
 
     public void Apply(PositionGrantRevoked e, PositionGrant grant)
     {
