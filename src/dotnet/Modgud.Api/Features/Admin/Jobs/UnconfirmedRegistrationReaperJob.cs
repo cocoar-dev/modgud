@@ -18,7 +18,8 @@ namespace Modgud.Api.Features.Admin.Jobs;
 /// go through the normal permanent-erase path (masking + archiving), never a raw delete.
 ///
 /// <para><b>Signature</b> (all must hold): <c>EmailConfirmed=false</c>, not deleted, no
-/// password, no passkey, no external identity link, no consumed OTP challenge, and the
+/// password, no passkey, no external identity link, a sign-up OTP challenge that was issued
+/// and never consumed (AREG-08: no challenge at all is not a ghost), and the
 /// stream is older than <c>olderThanDays</c>. Anything an admin created with a password,
 /// or that ever authenticated, is outside the signature by construction.</para>
 ///
@@ -36,7 +37,7 @@ public class UnconfirmedRegistrationReaperJob(
     public const string Description =
         "Erases passwordless accounts whose registration code was never redeemed (created by the " +
         "pre-ADR-0018 sign-up paths): unconfirmed, no password, no passkey, no external login, " +
-        "no consumed code, older than the configured age. Dry-run by default — set dryRun=false to erase.";
+        "a sign-up code issued and never redeemed, older than the configured age. Dry-run by default — set dryRun=false to erase.";
 
     /// <summary>04:30 UTC daily — after the DCR sweep.</summary>
     public const string DefaultCron = "0 30 4 * * ?";
@@ -125,12 +126,15 @@ public class UnconfirmedRegistrationReaperJob(
         if (await session.Query<StoredPasskeyCredential>().AnyAsync(c => c.UserId == user.Id, ct)) return false;
         if (await session.Query<ExternalIdentityLink>().AnyAsync(l => l.UserId == user.Id, ct)) return false;
 
+        // AREG-08 — the positive marker of the old passwordless sign-up: a code was issued
+        // and never redeemed. Without any challenge the account did not come from that path
+        // (an admin-created or imported passwordless account) and is not a ghost.
         var challenge = await session.LoadAsync<EmailOtpChallenge>(user.Id, ct);
-        if (challenge?.ConsumedAt is not null) return false;
+        if (challenge is null || challenge.ConsumedAt is not null) return false;
 
         var stream = await session.Events.FetchStreamStateAsync(user.Id, ct);
-        var created = stream?.Created ?? challenge?.CreatedAt;
-        return created is not null && created < cutoff;
+        var created = stream?.Created ?? challenge.CreatedAt;
+        return created < cutoff;
     }
 
     private static bool? ReadBool(IReadOnlyDictionary<string, object?> raw, string key)
