@@ -42,7 +42,11 @@ WORKDIR /app
 # restart policy never fires. tini forwards signals, reaps zombies and lets
 # the container exit so `restart:` can do its job.
 # curl: for the HEALTHCHECK below.
+# upgrade: take the Ubuntu security fixes published since Microsoft last built
+# the base image, so the release Trivy gate (fixable CRITICAL/HIGH) does not
+# wait for the next base-image rebuild (e.g. apt CVE-2026-109518, 2026-11).
 RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends libgssapi-krb5-2 tini curl \
     && rm -rf /var/lib/apt/lists/*
 
