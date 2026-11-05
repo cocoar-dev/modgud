@@ -74,6 +74,8 @@ public sealed class LoginTimeMembershipDeriver(
             NormalizedUserName = person.NormalizedUserName,
             NormalizedEmail = person.NormalizedEmail,
             ExternalIdentities = person.ExternalIdentities,
+            // B3-F03 — a script's own "!p.IsTestAccount" must see the real flag.
+            IsTestAccount = person.IsTestAccount,
             ExternalGroups = [.. externalGroups],
             Source = source,
         };

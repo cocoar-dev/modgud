@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Authorization.Apps;
 using Modgud.Authorization.Events;
@@ -45,6 +46,30 @@ public class FederationV1Phase2Tests : IntegrationTestBase
         // No upstream group → no match.
         var none = await deriver.DeriveAsync(user.Id, ["all-staff"], "provider:test", ct);
         Assert.DoesNotContain(drivable, none.MatchedGroupIds);
+    }
+
+    /// <summary>
+    /// B3-F03 — the in-memory eval principal must carry the account's test-account flag, so
+    /// a group script's own "!p.IsTestAccount" condition sees what the batch engine sees.
+    /// </summary>
+    [Fact]
+    public async Task Deriver_Exposes_The_Test_Account_Flag_To_The_Script()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var user = await Factory.CreateTestUserWithIdentityAsync("Fed", "Tester", "FT", $"fed-tester-{Guid.NewGuid():N}@test.com");
+        var marked = await Client.PutAsJsonAsync(
+            $"/api/admin/users/{new BuildingBlocks.Helper.ShortGuid(user.Id)}/test-account", new { IsTestAccount = true }, ct);
+        Assert.True(marked.IsSuccessStatusCode, await marked.Content.ReadAsStringAsync(ct));
+
+        var group = await CreateAutoGroupAsync(
+            "(p) => Type.Is(p, 'person') && !p.IsTestAccount && p.ExternalGroups.includes('entra-staff')",
+            externallyDrivable: true);
+
+        using var scope = Factory.Services.CreateScope();
+        var deriver = scope.ServiceProvider.GetRequiredService<ILoginTimeMembershipDeriver>();
+        var matched = await deriver.DeriveAsync(user.Id, ["entra-staff"], "provider:test", ct);
+
+        Assert.DoesNotContain(group, matched.MatchedGroupIds);
     }
 
     [Fact]
