@@ -121,9 +121,11 @@ public static class RecoveryCli
               set-email <username> <email>   Update the user's email address (appends UserUpdatedEvent
                                              so projections + SignalR update live).
               magic-link <username>          Generate a one-time login URL and print it.
-              rebuild-projections            Rebuild all Marten projections (inline + async).
+              rebuild-projections [--force]  Rebuild all Marten projections (inline + async).
                                              Bootstrap path for the first migration after
                                              a schema change when no admin can authenticate yet.
+                                             Refuses while other Modgud instances are running
+                                             (stop them; --force overrides).
               migrate-cc-credentials         Phase-2C retrofit: for every OAuth client that
                                              still has the `client_credentials` grant without
                                              a LinkedServiceAccountId (i.e. seeded or pre-2C

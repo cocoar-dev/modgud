@@ -374,6 +374,26 @@ internal sealed class RebuildProjectionsCommand : IRecoveryCommand
 
     public async Task<int> ExecuteAsync(RecoveryCliContext ctx)
     {
+        // FR-CO-01 — the HTTP rebuild pauses its own projection processing and refuses
+        // with more than one node. This process cannot pause another running API, which
+        // keeps writing the same projections and their progress while they are replayed.
+        var force = ctx.Flag("--force") is not null;
+        var otherInstances = await CheckOtherInstancesAsync(ctx);
+        if (otherInstances is { Count: > 0 })
+        {
+            var names = string.Join(", ", otherInstances);
+            if (!force)
+            {
+                return ctx.Fail(
+                    $"Other Modgud instances are running against this database: {names}. " +
+                    "Stop them first and run the rebuild in a one-off container " +
+                    "(e.g. 'docker compose stop modgud', 'docker compose run --rm modgud recover rebuild-projections', " +
+                    "'docker compose start modgud'), or use the admin rebuild endpoint while an admin can still sign in. " +
+                    "Pass --force to rebuild anyway.");
+            }
+            ctx.WriteLine($"warning: --force — rebuilding while other instances are running: {names}.");
+        }
+
         var store = ctx.Services.GetRequiredService<IDocumentStore>();
         var timeout = TimeSpan.FromMinutes(10);
 
@@ -417,6 +437,36 @@ internal sealed class RebuildProjectionsCommand : IRecoveryCommand
             OperationCode = "rebuild-projections",
         });
         return 0;
+    }
+
+    /// <summary>
+    /// The names of the OTHER live instances, or null when the topology cannot be read —
+    /// a CLI process never starts the host, so the node table may be unavailable here; that
+    /// only warns, so the break-glass rebuild is never blocked by an unknown.
+    /// </summary>
+    private static async Task<IReadOnlyList<string>?> CheckOtherInstancesAsync(RecoveryCliContext ctx)
+    {
+        IReadOnlyList<Modgud.Infrastructure.Cluster.ClusterNodeInfo>? live = null;
+        try
+        {
+            if (ctx.Services.GetService<Modgud.Infrastructure.Cluster.IClusterNodes>() is { } nodes)
+                live = await nodes.TryGetLiveNodesAsync();
+        }
+        catch (Exception)
+        {
+            live = null;
+        }
+
+        if (live is null)
+        {
+            ctx.WriteLine("warning: could not read the cluster node table. Make sure no other Modgud instance " +
+                          "is running against this database while the projections are rebuilt.");
+            return null;
+        }
+
+        return live.Where(n => !n.IsSelf)
+            .Select(n => string.IsNullOrWhiteSpace(n.Description) ? n.NodeId.ToString() : n.Description)
+            .ToList();
     }
 }
 
