@@ -403,6 +403,7 @@ public class GdprService(
             session.Delete<ExternalClaimsStore>(userId);
             session.DeleteWhere<StoredPasskeyCredential>(c => c.UserId == userId);
             session.DeleteWhere<UserChangeRequest>(r => r.UserId == userId);
+            session.DeleteWhere<EmailVerificationChallenge>(c => c.UserId == userId);
             session.Delete<EmailOtpChallenge>(userId);
             session.Delete<TestAccountEmailCode>(userId);
             session.Delete<Modgud.Domain.Dashboard.DashboardLayout>(

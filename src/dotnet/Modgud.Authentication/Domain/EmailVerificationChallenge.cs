@@ -12,6 +12,15 @@ public class EmailVerificationChallenge
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
     public string TokenHash { get; set; } = "";
+
+    /// <summary>AREG-06 — SHA-256 of the normalized address the link was sent to (not the
+    /// address itself, so the challenge holds no copy of it). The link confirms only that
+    /// address; a challenge without it (issued before this field) is refused.</summary>
+    public string? EmailHash { get; set; }
+
+    public static string HashEmail(string normalizedEmail) =>
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(normalizedEmail)));
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
