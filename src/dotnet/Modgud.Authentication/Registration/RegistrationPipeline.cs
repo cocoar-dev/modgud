@@ -340,6 +340,11 @@ public sealed class RegistrationPipeline(
 
         var proofKind = persisted ? pending.ProofKind.ToString() : "None";
         session.Events.Append(user.Id, new UserRegisteredEvent(user.Id, pending.Source, proofKind));
+        // AID-02 / AREG-03 — an account awaiting approval is created inactive; record it
+        // in its stream too, or the person and the admin user view project it as active.
+        // Approval is an admin activation, which appends UserActivatedEvent.
+        if (pending.RequireAdminApproval)
+            session.Events.Append(user.Id, new Modgud.Authentication.Events.UserDeactivatedEvent(user.Id));
         if (persisted) session.Delete(pending);
         await session.SaveChangesAsync(ct);
 
