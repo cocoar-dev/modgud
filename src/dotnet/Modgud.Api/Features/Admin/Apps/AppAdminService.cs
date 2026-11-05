@@ -281,6 +281,7 @@ public sealed class AppAdminService(IDocumentSession session, IApplicationSettin
         var input = payload ?? [];
         var normalised = new List<AppPermission>(input.Count);
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seenIds = new HashSet<Guid>();
 
         foreach (var entry in input)
         {
@@ -311,6 +312,13 @@ public sealed class AppAdminService(IDocumentSession session, IApplicationSettin
             var id = Guid.NewGuid();
             if (!string.IsNullOrEmpty(entry.Id) && BuildingBlocks.Helper.ShortGuid.TryParse(entry.Id, out Guid parsed))
                 id = parsed;
+            // F7-03 / B7-SC03 — every catalog entry has its own identity: the next update and
+            // permission resolution key the catalog by id, so two entries sharing one break it.
+            if (!seenIds.Add(id))
+            {
+                return Error.Validation("App.DuplicatePermissionId",
+                    $"Permission id '{entry.Id}' is used by more than one catalog entry — each entry needs its own id.");
+            }
 
             var description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description.Trim();
             normalised.Add(new AppPermission(id, resource, action, description));
