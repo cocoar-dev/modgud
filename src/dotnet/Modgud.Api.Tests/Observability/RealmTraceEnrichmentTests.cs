@@ -51,6 +51,7 @@ public sealed class RealmTraceEnrichmentTests : IDisposable
         using var response = await client.GetAsync($"http://{host}.localhost{path}", ct);
         Assert.Equal((HttpStatusCode)status, response.StatusCode);
         await response.Content.ReadAsStringAsync(ct);
+        await spans.WaitForAsync(1, ct);
         await server.StopAsync(ct);
 
         var span = Assert.Single(spans.Realms);
@@ -110,6 +111,7 @@ public sealed class RealmTraceEnrichmentTests : IDisposable
             await response.Content.ReadAsStringAsync(ct);
         });
         await Task.WhenAll(requests);
+        await spans.WaitForAsync(2, ct);
         await server.StopAsync(ct);
         Assert.Collection(spans.Realms.Select(s => s.Realm).Order(),
             realm => Assert.Equal("alpha", realm),
@@ -174,6 +176,16 @@ public sealed class RealmTraceEnrichmentTests : IDisposable
     private sealed class CompletedSpans : BaseProcessor<Activity>
     {
         public ConcurrentQueue<(ActivitySpanId SpanId, string? Realm)> Realms { get; } = new();
+
+        // The TestServer client gets the response before the hosting layer stops
+        // the request activity, and stopping the host does not wait for it: a
+        // server span can end after the response was read.
+        public async Task WaitForAsync(int count, CancellationToken ct)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (Realms.Count < count && DateTime.UtcNow < deadline)
+                await Task.Delay(10, ct);
+        }
 
         public override void OnEnd(Activity data)
         {
