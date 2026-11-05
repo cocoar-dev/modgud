@@ -48,10 +48,18 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/actions/setup-dotnet/**'
               - 'GitVersion.yml'
+              # K10-05 — inputs the backend build and its tests consume from outside
+              # src/dotnet: analyzer severities, the image build, and the shipped
+              # collector config the OTel redaction tests pin.
+              - '.editorconfig'
+              - 'docker/**'
+              - '.dockerignore'
             frontend:
               - 'src/frontend-vue/**'
               - '.github/workflows/ci.yml'
               - '.github/actions/setup-node-pnpm/**'
+              - 'package.json'
+              - '.editorconfig'
             docs:
               - 'docs/**'
               - '.github/workflows/ci.yml'
