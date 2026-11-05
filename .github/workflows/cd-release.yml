@@ -89,6 +89,9 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
       docs-version: ${{ steps.version.outputs.DOCS_VERSION }}
+      # K10-04 — only a stable release (no version suffix, not marked prerelease on
+      # GitHub) may move the `latest` / `production` pointers.
+      stable: ${{ steps.version.outputs.STABLE }}
     steps:
       - name: Extract and validate release version
         id: version
@@ -97,6 +100,7 @@ jobs:
           # For workflow_dispatch: use the version_override input directly
           # (already in X.Y.Z form, so prefix with 'v' for unified handling).
           RAW_TAG: ${{ github.event.release.tag_name || format('v{0}', inputs.version_override) }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease || false }}
         run: |
           TAG="$RAW_TAG"
           echo "Tag/version: $TAG"
@@ -117,8 +121,17 @@ jobs:
           DOCS="v${MAJOR}.${MINOR}"
 
           echo "Using version: $VERSION (docs slot: $DOCS)"
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "DOCS_VERSION=$DOCS" >> $GITHUB_OUTPUT
+          STABLE=true
+          if [[ "$VERSION" == *-* || "$IS_PRERELEASE" == "true" ]]; then
+            STABLE=false
+            echo "Prerelease/test version: latest and production stay where they are."
+          fi
+
+          {
+            echo "VERSION=$VERSION"
+            echo "DOCS_VERSION=$DOCS"
+            echo "STABLE=$STABLE"
+          } >> "$GITHUB_OUTPUT"
 
   # ─── Phase 1: build + test (parallel) ───────────────────────────────
 
@@ -407,7 +420,9 @@ jobs:
     # Real releases always publish. Manual dispatch publishes only if
     # explicitly opted out of dry-run.
     if: github.event_name == 'release' || !inputs.dry_run
-    needs: [validate-version, release-gate]
+    # K10-03 — wait for the Docker candidate as well: a failed candidate assembly must
+    # not leave a published NuGet package behind a release that ships no image.
+    needs: [validate-version, release-gate, assemble-candidate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -490,8 +505,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest
-            type=raw,value=production
+            type=raw,value=latest,enable=${{ needs.validate-version.outputs.stable == 'true' }}
+            type=raw,value=production,enable=${{ needs.validate-version.outputs.stable == 'true' }}
             type=semver,pattern={{version}},value=${{ needs.validate-version.outputs.version }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate-version.outputs.version }}
             type=semver,pattern={{major}},value=${{ needs.validate-version.outputs.version }}
@@ -636,7 +651,8 @@ jobs:
     # Real releases always deploy docs. Manual dispatch deploys only if
     # explicitly opted out of dry-run.
     if: github.event_name == 'release' || !inputs.dry_run
-    needs: [validate-version, publish-nuget, publish-docker]
+    # K10-03 — docs go live only once the image is signed and attested.
+    needs: [validate-version, publish-nuget, publish-docker, supply-chain]
     runs-on: ubuntu-latest
     permissions:
       contents: read
