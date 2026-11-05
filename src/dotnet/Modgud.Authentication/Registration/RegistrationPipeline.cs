@@ -333,28 +333,10 @@ public sealed class RegistrationPipeline(
             return Error.Validation(ErrorRejected, $"The account could not be created: {codes}.");
         }
 
-        foreach (var raw in pending.DefaultGroupIds)
-        {
-            if (!Guid.TryParse(raw, out var gid)) continue;
-            var group = await session.LoadAsync<Group>(gid, ct);
-            if (group is null || group.IsDeleted) continue;
-            // AREG-01 — registering never confers realm:admin. Every other membership
-            // change of such a group needs a caller who is already a realm admin; here the
-            // actor is the registering person, whoever configured the defaults.
-            if (await Modgud.Authorization.Commands.GroupMembershipGuards.GroupConfersRealmAdminAsync(
-                    session, permissionService, group, ct))
-            {
-                logger.LogWarning(
-                    "Registration: default group {GroupId} confers realm:admin and was not joined (source={Source})",
-                    group.Id, pending.Source);
-                continue;
-            }
-            if (!group.MemberIds.Contains(user.Id))
-            {
-                group.MemberIds.Add(user.Id);
-                session.Store(group);
-            }
-        }
+        // AREG-01/02/04 — one join path: ShortGuid or Guid ids, no realm:admin
+        // conferral, membership recorded as a group event.
+        await RegistrationDefaultGroups.JoinAsync(
+            session, permissionService, logger, user.Id, pending.DefaultGroupIds, pending.Source.ToString(), ct);
 
         var proofKind = persisted ? pending.ProofKind.ToString() : "None";
         session.Events.Append(user.Id, new UserRegisteredEvent(user.Id, pending.Source, proofKind));
