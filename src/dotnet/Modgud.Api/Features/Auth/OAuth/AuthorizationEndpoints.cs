@@ -1524,11 +1524,7 @@ public static class AuthorizationEndpoints
         await bus.PublishAsync(new PositionStaffingSessionStarted(
             positionId, terminal.Id, sessionId, now, absoluteExpiresAt));
         if (superseded is not null)
-        {
-            await bus.PublishAsync(new PositionStaffingSessionEnded(
-                positionId, terminal.Id, superseded.Id,
-                StaffingSessionEndReason.ReplacedByNewActivation, now));
-        }
+            await bus.PublishAsync(SupersededSessionEnded(superseded, now));
 
         principal.SetAuthorizationId(authorizationId);
         return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
@@ -3264,6 +3260,17 @@ public static class AuthorizationEndpoints
             _ => false,
         };
     }
+
+    /// <summary>
+    /// GS-CO-01 — the consumer notification for a staffing session that a new tap on the
+    /// same terminal replaced. It names the REPLACED session's own position: on a
+    /// multi-position terminal the new tap may staff a different one (A → B), and a
+    /// consumer correlating per position must see A's shift end, not B's.
+    /// </summary>
+    internal static PositionStaffingSessionEnded SupersededSessionEnded(
+        StaffingSession superseded, DateTimeOffset endedAt) =>
+        new(superseded.PositionPrincipalId, superseded.TerminalEnrollmentId, superseded.Id,
+            StaffingSessionEndReason.ReplacedByNewActivation, endedAt);
 }
 
 /// <summary>
