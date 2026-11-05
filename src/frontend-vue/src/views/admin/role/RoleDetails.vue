@@ -248,7 +248,8 @@ onMounted(async () => {
   loading.value = true
   try {
     await roleStore.initialize()
-    const role = roleStore.roles.find(r => r.Id === props.id)
+    // D.roles-F02 — edit the role as it is NOW, not as the once-loaded list cached it.
+    const role = await roleStore.fetchRole(props.id).catch(() => roleStore.roles.find(r => r.Id === props.id))
     if (role) {
       form.value = {
         Name: role.Name,
