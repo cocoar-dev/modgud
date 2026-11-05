@@ -432,3 +432,7 @@ src/frontend-vue/playwright-report/
 src/frontend-vue/**/*.vue.js
 src/frontend-vue/**/*.tsbuildinfo
 .tmp-audit/
+
+# act (local GitHub Actions runs) — local config and workflow secrets, see docs/contribute/local-ci.md
+.actrc
+.secrets
