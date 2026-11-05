@@ -273,7 +273,14 @@ public sealed class RealmAdminBootstrapper(
                     new GroupUpdatedEvent(
                         existingGroup.Id, existingGroup.Name, existingGroup.Description,
                         newMemberIds, newRoleIds,
+                        // F.inst-I2 — full-replace event: carry every current value
+                        // through, or the script and mail routing reset to defaults.
+                        MembershipMode: existingGroup.MembershipMode,
+                        MembershipScript: existingGroup.MembershipScript,
+                        CompiledMembershipScript: existingGroup.CompiledMembershipScript,
+                        MembershipScriptDependencies: existingGroup.MembershipScriptDependencies,
                         Email: existingGroup.Email,
+                        EmailMode: existingGroup.EmailMode,
                         BoundTo: existingGroup.BoundTo,
                         ExternallyDrivable: existingGroup.ExternallyDrivable,
                         ExcludeTestAccounts: existingGroup.ExcludeTestAccounts));
