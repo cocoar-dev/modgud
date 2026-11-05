@@ -2,22 +2,34 @@ name: CD - GHCR Retention
 
 # Prunes old Modgud container images from GHCR so storage stays bounded.
 # There is NO automatic GHCR retention policy configured on the package —
-# this workflow IS the cleanup.
+# this workflow IS the cleanup. The decision logic lives in
+# .github/scripts/ghcr-retention.cjs (unit-tested in CI).
 #
-# Keep / age model (everything is age-based; no per-event immediate deletes):
-#   KEEP forever — any version whose tags include:
-#     - a release semver `X.Y.Z`
-#     - a long-lived moving pointer: `latest`, `beta`, `rc`
-#   AGE OUT — every other version:
-#     - untagged layers            → delete when older than UNTAGGED_DAYS
-#     - anything else tagged        → delete when older than AGED_DAYS
-#       (immutable prereleases `X.Y.Z-…N` / `X.Y.Z.N`, AND feature-slug moving
-#        pointers like `:saml-federation`)
+# GHCR lists every pushed manifest as a "version". A release is a multi-arch
+# image INDEX (tagged) whose per-platform images and attestation manifests are
+# separate UNTAGGED versions; cosign signatures are versions tagged
+# `sha256-<digest>.sig`. The tag can only be pulled while all of them exist.
+# Until 2026-11 untagged versions were pruned by age alone, which deleted the
+# content of every release after 7 days ("manifest unknown" on pull).
+#
+# Keep / age model:
+#   KEEP — every image (tagged version) that
+#     - has a release semver `X.Y.Z` or a long-lived pointer `latest`, `beta`, `rc`
+#       (kept forever), or
+#     - is among the KEEP_NEWEST most recent images (kept regardless of age), or
+#     - is not older than AGED_DAYS
+#   and, with each kept image, the manifests its index lists and the
+#   signatures / referrer tags that name it or one of those manifests.
+#   AGE OUT — everything else:
+#     - images (prereleases `X.Y.Z-…`, feature-slug pointers) older than AGED_DAYS
+#     - untagged versions and signatures that belong to no kept image, older
+#       than UNTAGGED_DAYS
+#   If the manifest of a kept image cannot be read the run fails and deletes
+#   nothing.
 #
 # Grace period for feature branches: a `:slug` pointer sits on the branch's
 # latest build. While the branch is built it stays fresh; once it's merged /
 # abandoned and stops building, that build ages and is pruned after AGED_DAYS.
-# So a merged branch's image lingers ~AGED_DAYS, not deleted on the spot.
 #
 # The scheduled run prunes for real. Manual dispatch defaults to dry_run=true
 # (logs only) — pass dry_run=false to prune from a dispatch.
@@ -34,6 +46,7 @@ on:
         default: true
 
 permissions:
+  contents: read
   packages: write
 
 env:
@@ -41,52 +54,72 @@ env:
   PACKAGE: modgud
   AGED_DAYS: '30'
   UNTAGGED_DAYS: '7'
+  KEEP_NEWEST: '3'
 
 jobs:
   prune:
     name: Prune old container versions
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout retention script
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github/scripts
+
       - name: Prune
         uses: actions/github-script@v9
         env:
           # schedule has no inputs → defaults to 'false' (live prune). Manual
           # dispatch still defaults to dry_run=true; pass dry_run=false to prune.
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          REGISTRY_TOKEN: ${{ github.token }}
         with:
           script: |
+            const { planRetention, childDigests } =
+              require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/ghcr-retention.cjs`);
             const org = process.env.ORG;
             const pkg = process.env.PACKAGE;
             const dryRun = process.env.DRY_RUN !== 'false';
-            const agedMs = Number(process.env.AGED_DAYS) * 86400000;
-            const untMs = Number(process.env.UNTAGGED_DAYS) * 86400000;
-            const now = Date.now();
-
-            const KEEP_LABELS = new Set(['latest', 'beta', 'rc']);
-            const isRelease = t => /^\d+\.\d+\.\d+$/.test(t);   // X.Y.Z (stable)
-            const isKeep = t => isRelease(t) || KEEP_LABELS.has(t);
 
             const versions = await github.paginate(
               github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
               { package_type: 'container', package_name: pkg, org, per_page: 100 }
             );
 
-            let kept = 0, deleted = 0;
+            // Registry token to read manifests (the index of each image lists
+            // its platform images and attestations).
+            const basic = Buffer.from(`x:${process.env.REGISTRY_TOKEN}`).toString('base64');
+            const tokenRes = await fetch(
+              `https://ghcr.io/token?service=ghcr.io&scope=repository:${org}/${pkg}:pull`,
+              { headers: { Authorization: `Basic ${basic}` } });
+            if (!tokenRes.ok) throw new Error(`ghcr.io token request failed: ${tokenRes.status}`);
+            const { token } = await tokenRes.json();
+            const accept = [
+              'application/vnd.oci.image.index.v1+json',
+              'application/vnd.docker.distribution.manifest.list.v2+json',
+              'application/vnd.oci.image.manifest.v1+json',
+              'application/vnd.docker.distribution.manifest.v2+json',
+            ].join(', ');
+
+            const children = new Map();
             for (const v of versions) {
               const tags = v.metadata?.container?.tags ?? [];
-              const ageDays = (now - new Date(v.created_at).getTime()) / 86400000;
-              let reason = null;
+              if (tags.length === 0 || tags.every(t => t.startsWith('sha256-'))) continue;
+              const res = await fetch(`https://ghcr.io/v2/${org}/${pkg}/manifests/${v.name}`,
+                { headers: { Authorization: `Bearer ${token}`, Accept: accept } });
+              if (res.ok) children.set(v.name, childDigests(await res.json()));
+              else core.warning(`manifest of ${tags.join(',')} (${v.name}): HTTP ${res.status}`);
+            }
 
-              if (tags.some(isKeep)) {
-                // keep forever (release semver or a long-lived pointer)
-              } else if (tags.length === 0) {
-                if (ageDays * 86400000 > untMs) reason = `untagged, ${ageDays|0}d`;
-              } else {
-                // immutable prereleases + feature-slug pointers → age out
-                if (ageDays * 86400000 > agedMs) reason = `${tags.join(',')}, ${ageDays|0}d`;
-              }
+            const plan = planRetention(versions, {
+              now: Date.now(),
+              agedDays: Number(process.env.AGED_DAYS),
+              untaggedDays: Number(process.env.UNTAGGED_DAYS),
+              keepNewest: Number(process.env.KEEP_NEWEST),
+              childrenOf: d => children.get(d),
+            });
 
-              if (!reason) { kept++; continue; }
+            for (const { version: v, reason } of plan.delete) {
               if (dryRun) {
                 core.info(`[dry-run] would delete #${v.id} (${reason})`);
               } else {
@@ -95,6 +128,5 @@ jobs:
                 });
                 core.info(`deleted #${v.id} (${reason})`);
               }
-              deleted++;
             }
-            core.notice(`${dryRun ? '[dry-run] ' : ''}kept ${kept}, ${dryRun ? 'would delete' : 'deleted'} ${deleted} (total ${versions.length})`);
+            core.notice(`${dryRun ? '[dry-run] ' : ''}kept ${plan.keep.length}, ${dryRun ? 'would delete' : 'deleted'} ${plan.delete.length} (total ${versions.length})`);

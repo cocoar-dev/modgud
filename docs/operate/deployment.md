@@ -167,6 +167,8 @@ ghcr.io/cocoar-dev/modgud:latest        # Latest release — convenient for eval
 
 Multi-arch: **linux/amd64** + **linux/arm64**. Pin a specific tag in production so an `:latest` re-pull can't move the runtime under you.
 
+Release tags (`X.Y.Z`) and the `latest` / `beta` / `rc` pointers stay available indefinitely, together with their signatures and attestations. Prerelease tags (`X.Y.Z-beta.N`) are removed 30 days after they were built, except the three newest images, which are always kept.
+
 ::: tip Production runs fail-closed
 The published image ships `ASPNETCORE_ENVIRONMENT=Production`, and Production **refuses to boot** if any of the following is true (the boot validator throws with an actionable message):
 

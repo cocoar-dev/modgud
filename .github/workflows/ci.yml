@@ -33,6 +33,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       docs: ${{ steps.filter.outputs.docs }}
+      workflow-scripts: ${{ steps.filter.outputs.workflow-scripts }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -55,6 +56,10 @@ jobs:
               - 'docs/**'
               - '.github/workflows/ci.yml'
               - '.github/actions/setup-node-pnpm/**'
+            workflow-scripts:
+              - '.github/scripts/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/cd-ghcr-retention.yml'
 
   backend:
     name: Backend Build & Test
@@ -197,13 +202,28 @@ jobs:
         run: pnpm build:all
         working-directory: ./docs
 
+  workflow-scripts:
+    name: Workflow Script Tests
+    needs: changes
+    if: needs.changes.outputs.workflow-scripts == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Test workflow scripts
+        run: node --test .github/scripts/*.test.cjs
+
   # Aggregator gate so branch protection can require a single check
   # that resolves correctly even when path-gated jobs were `skipped`.
   # `success` and `skipped` are both treated as OK; only `failure` /
   # `cancelled` fail the gate.
   ci-success:
     name: CI Pass
-    needs: [changes, backend, frontend, docs]
+    needs: [changes, backend, frontend, docs, workflow-scripts]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -222,6 +242,9 @@ jobs:
           fi
           if [[ "${{ needs.docs.result }}" == "failure" || "${{ needs.docs.result }}" == "cancelled" ]]; then
             echo "::error ::docs job ${{ needs.docs.result }}"; fail=1
+          fi
+          if [[ "${{ needs.workflow-scripts.result }}" == "failure" || "${{ needs.workflow-scripts.result }}" == "cancelled" ]]; then
+            echo "::error ::workflow-scripts job ${{ needs.workflow-scripts.result }}"; fail=1
           fi
           if [[ $fail -eq 1 ]]; then exit 1; fi
           echo "All upstream jobs OK (success or correctly skipped)"
