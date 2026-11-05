@@ -69,8 +69,68 @@ public partial class UserInfoPerAudienceTests
         }
     }
 
+    [Fact]
+    public async Task A_disabled_client_can_no_longer_introspect()
+    {
+        // EG-04: Enabled was checked at authorize and token only, so a disabled
+        // resource-server client kept introspecting other clients' tokens.
+        var ct = TestContext.Current.CancellationToken;
+        // An ordinary confidential client acting as resource server (SA-linked clients are
+        // disabled through their service account). OpenIddict only answers details to a
+        // caller that is an audience or presenter of the token, so an API named after the
+        // resource server's client id puts it into the token's aud.
+        var introspector = $"rs-eg4-{Guid.NewGuid():N}";
+        await CreateOAuthClientAsync(introspector, $"{introspector}-secret", "http://localhost/eg4-callback",
+            appIds: [], scopes: ["openid"]);
+        var rsApp = await CreateAppAsync("app-rs-eg4", "RS App", permissions: [("doc", "read")]);
+        await CreateOAuthApiAsync(introspector, rsApp.Id);
+        await CreateScopeAsync("rs-eg4", [introspector], rsApp.Id);
+        var (issuer, _, _) = await ArrangeTwoApiServiceAccountClientAsync("eg4b", extraScopes: ["rs-eg4"], extraAppIds: [rsApp.Id]);
+        using var tokenResponse = await PostClientCredentialsAsync(issuer, "rs-eg4", resource: null);
+        var tokenBody = await tokenResponse.Content.ReadAsStringAsync(ct);
+        Assert.True(tokenResponse.IsSuccessStatusCode, $"client_credentials failed: {tokenBody}");
+        var token = ReadAccessToken(tokenBody);
+
+        using (var before = await IntrospectAsClientAsync(introspector, token))
+        {
+            var beforeBody = await before.Content.ReadAsStringAsync(ct);
+            Assert.Equal(HttpStatusCode.OK, before.StatusCode);
+            using var json = JsonDocument.Parse(beforeBody);
+            Assert.True(json.RootElement.GetProperty("active").GetBoolean(),
+                $"the resource server must see its token as active before it is disabled: {beforeBody}");
+        }
+
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+        var appId = (await session.Query<Modgud.Domain.OAuth.Applications.OAuthApplicationState>()
+            .SingleAsync(c => c.ClientId == introspector, ct)).Id;
+        using (var disabled = await Client.PutAsJsonAsync($"/api/admin/oauth/clients/{appId}", new { Enabled = false }, JsonOptions, ct))
+            Assert.True(disabled.IsSuccessStatusCode, await disabled.Content.ReadAsStringAsync(ct));
+
+        using var after = await IntrospectAsClientAsync(introspector, token);
+        var afterBody = await after.Content.ReadAsStringAsync(ct);
+        Assert.False(after.IsSuccessStatusCode,
+            $"a disabled client must not introspect, got {(int)after.StatusCode}: {afterBody}");
+        Assert.Contains("invalid_client", afterBody);
+    }
+
+    private async Task<HttpResponseMessage> IntrospectAsClientAsync(string clientId, string token)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/connect/introspect")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["token"] = token,
+                ["token_type_hint"] = "access_token",
+            }),
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic", Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes($"{clientId}:{clientId}-secret")));
+        return await Factory.CreateClient().SendAsync(request, TestContext.Current.CancellationToken);
+    }
+
     private async Task<(string ClientId, string AlphaAudience, string BetaAudience)> ArrangeTwoApiServiceAccountClientAsync(
-        string tag)
+        string tag, IReadOnlyList<string>? extraScopes = null, IReadOnlyList<Guid>? extraAppIds = null)
     {
         var ct = TestContext.Current.CancellationToken;
         var appAlpha = await CreateAppAsync($"app-alpha-{tag}", "App Alpha", permissions: [("policy", "read")]);
@@ -106,11 +166,11 @@ public partial class UserInfoPerAudienceTests
             DisplayName = clientId,
             RedirectUris = [],
             PostLogoutRedirectUris = [],
-            Scopes = [$"alpha-{tag}", $"beta-{tag}", "roles", "permissions"],
+            Scopes = [$"alpha-{tag}", $"beta-{tag}", "roles", "permissions", .. extraScopes ?? []],
             AllowedGrantTypes = ["client_credentials"],
             RequireConsent = false,
             AccessTokenType = AccessTokenType.Jwt,
-            AppIds = [ShortGuid.Encode(appAlpha.Id), ShortGuid.Encode(appBeta.Id)],
+            AppIds = [ShortGuid.Encode(appAlpha.Id), ShortGuid.Encode(appBeta.Id), .. (extraAppIds ?? []).Select(ShortGuid.Encode)],
             LinkedServiceAccountId = serviceAccount.Id,
         }, ct);
         if (result.IsError)

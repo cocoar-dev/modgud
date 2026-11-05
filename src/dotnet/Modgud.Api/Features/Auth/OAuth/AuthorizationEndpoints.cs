@@ -3046,26 +3046,14 @@ public static class AuthorizationEndpoints
     /// <summary>
     /// OAUTH-14 — read the <c>cocoar:enabled</c> property off the OAuth
     /// application. Missing → treated as enabled (matches the legacy
-    /// default-true semantics from before the property was introduced).
+    /// default-true semantics from before the property was introduced); a value
+    /// that is not a JSON boolean counts as disabled (EG-04, fail closed).
     /// </summary>
     private static async Task<bool> IsApplicationEnabledAsync(
         IOpenIddictApplicationManager applicationManager,
         object application)
-    {
-        var properties = await applicationManager.GetPropertiesAsync(application);
-        if (properties.TryGetValue(
-                Modgud.Domain.OAuth.Applications.OAuthApplicationPropertyKeys.Enabled,
-                out var element))
-        {
-            return element.ValueKind switch
-            {
-                System.Text.Json.JsonValueKind.False => false,
-                System.Text.Json.JsonValueKind.True => true,
-                _ => true, // Unknown shape — fail open to current behaviour
-            };
-        }
-        return true;
-    }
+        => Modgud.Infrastructure.OpenIddict.OAuthClientEnabled.IsEnabled(
+            await applicationManager.GetPropertiesAsync(application));
 
     /// <summary>
     /// OAUTH-14 — refuse the request if any requested scope is marked
