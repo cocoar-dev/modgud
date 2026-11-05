@@ -4,6 +4,9 @@
 # requires cloning the repo. New operators follow the self-contained recipe in
 # docs/getting-started/quickstart.md (a copy-paste compose that pulls the
 # published image), and production deployments follow docs/operate/deployment.md.
+# It binds Postgres to host port 5432 under the container name `cocoar-postgres`:
+# for backend development use the isolated `postgres-dev` on 127.0.0.1:5433 per
+# docs/contribute/developing-locally.md instead, never a shared 5432 instance.
 services:
   postgres:
     image: postgres:17-alpine

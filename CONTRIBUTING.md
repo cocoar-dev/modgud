@@ -28,8 +28,11 @@ code. Short version:
 - **.NET 10 SDK** + **PowerShell or Bash**
 - **Node 22** + **`pnpm`** (via Corepack: `corepack enable`)
 - **Docker Desktop** running (Postgres dev container)
-- Postgres 17+ exposed on 5432 (the shared `cocoar-postgres` org-
-  level container is the convention)
+- The existing **`postgres-dev`** container on `127.0.0.1:5433` with a database
+  of your own — follow the preflight in
+  [developing-locally](./docs/contribute/developing-locally.md) and
+  [AGENTS.md](./AGENTS.md) before you connect; never point a dev run at 5432
+  or at a shared database
 
 Quick verify:
 
