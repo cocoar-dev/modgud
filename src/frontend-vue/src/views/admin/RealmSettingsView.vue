@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { mergeRateLimitPatch } from './rateLimitStaging'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import {
@@ -129,7 +130,18 @@ function applyStagedSettings(e: ManifestEntity) {
     signInForm.value = { ...originalSignIn.value }
     signInAdopt.value = false
   }
-  if (foldInto(originalAuthRateLimits, s.AuthRateLimits)) authRateLimitsForm.value = authRateLimitsFromDto(originalAuthRateLimits.value!)
+  // F7-06 — the staged rate-limit patch belongs in Overrides (what the editor reads), not in
+  // the effective read fields; fold it nested so the form shows the staged state.
+  if (s.AuthRateLimits && originalAuthRateLimits.value) {
+    const o = originalAuthRateLimits.value
+    const staged = s.AuthRateLimits as UpdateAuthRateLimitsDto
+    originalAuthRateLimits.value = {
+      ...o,
+      Overrides: mergeRateLimitPatch(o.Overrides, staged),
+      SourceAllowlist: staged.SourceAllowlist !== undefined ? [...(staged.SourceAllowlist ?? [])] : o.SourceAllowlist,
+    }
+    authRateLimitsForm.value = authRateLimitsFromDto(originalAuthRateLimits.value)
+  }
   if (foldInto(originalPositionSecurity, s.PositionSecurity)) {
     positionSecurityForm.value = {
       RequiredProofCapabilities: [...(originalPositionSecurity.value!.RequiredProofCapabilities ?? [])],
@@ -885,9 +897,12 @@ async function save(tab: SavableTabId) {
       for (const [section, patch] of Object.entries(payload)) {
         if (patch === undefined) continue
         const prev = (merged[section] ?? {}) as Record<string, unknown>
-        merged[section] = (typeof patch === 'object' && patch !== null && !Array.isArray(patch))
-          ? { ...prev, ...patch }
-          : patch
+        merged[section] = section === 'AuthRateLimits'
+          // F7-06 — nested merge: a second staged change keeps the first one's policies.
+          ? mergeRateLimitPatch(prev as UpdateAuthRateLimitsDto, patch as UpdateAuthRateLimitsDto)
+          : (typeof patch === 'object' && patch !== null && !Array.isArray(patch))
+            ? { ...prev, ...patch }
+            : patch
       }
       await staging.stage('settings', merged)
       applyStagedSettings(payload as ManifestEntity)
