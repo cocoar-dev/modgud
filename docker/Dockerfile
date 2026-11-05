@@ -2,6 +2,9 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend-build
 WORKDIR /src
 COPY src/dotnet/ ./
+# K10-06 — the root .editorconfig sets the security analyzers to error; without it the
+# image build would compile under weaker severities than every other build.
+COPY .editorconfig ./.editorconfig
 RUN dotnet restore Modgud.Api/Modgud.Api.csproj
 RUN dotnet publish Modgud.Api/Modgud.Api.csproj -c Release -o /app --no-restore
 
