@@ -503,14 +503,6 @@ public class SamlLoginFlow(
         return new ClaimsPrincipal(identity);
     }
 
-    /// <summary>
-    /// Additional signature-placement enforcement AFTER cryptographic validation.
-    /// ITfoxtec accepts a valid Response OR Assertion signature. If the admin has
-    /// configured WantResponseSigned / WantAssertionsSigned we additionally
-    /// check the XML ourselves for the presence of the relevant
-    /// <c>ds:Signature</c> element. Returns a short error-tag suitable for the
-    /// redirect query string when enforcement fails; null when OK.
-    /// </summary>
     /// <summary>B6-SAML-02 — true when the raw SAMLResponse carries at least one
     /// <c>saml:EncryptedAssertion</c> and no plain <c>saml:Assertion</c> outside one.
     /// Parsed with DTDs prohibited and no resolver; anything unreadable is "not encrypted".</summary>
@@ -538,6 +530,14 @@ public class SamlLoginFlow(
         }
     }
 
+    /// <summary>
+    /// Additional signature-placement enforcement AFTER cryptographic validation.
+    /// ITfoxtec accepts a valid Response OR Assertion signature. If the admin has
+    /// configured WantResponseSigned / WantAssertionsSigned we additionally
+    /// check the XML ourselves for the presence of the relevant
+    /// <c>ds:Signature</c> element. Returns a short error-tag suitable for the
+    /// redirect query string when enforcement fails; null when OK.
+    /// </summary>
     private static string? CheckRequiredSignatures(XmlDocument? doc, SamlFlavorData flavor)
     {
         if (!flavor.WantResponseSigned && !flavor.WantAssertionsSigned) return null;
