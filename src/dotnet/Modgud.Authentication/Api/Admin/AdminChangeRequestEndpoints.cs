@@ -20,7 +20,9 @@ namespace Modgud.Authentication.Api.Admin;
 /// </summary>
 public static class AdminChangeRequestEndpoints
 {
-    public record ApproveRequest(bool NotifyUser);
+    /// <param name="ExpectedUpdatedAt">B4-AP-02 — the request's UpdatedAt as the reviewer saw it.
+    /// When given and the request changed since, the approval is refused (409).</param>
+    public record ApproveRequest(bool NotifyUser, DateTimeOffset? ExpectedUpdatedAt = null);
     public record RejectRequest(string? Note, bool NotifyUser);
 
     public static WebApplication MapAdminChangeRequestEndpoints(this WebApplication application, string path)
@@ -88,6 +90,14 @@ public static class AdminChangeRequestEndpoints
             if (cr is null) return Results.NotFound();
             if (cr.Status != ChangeRequestStatus.AdminApprovalPending)
                 return Results.BadRequest(new { Message = "Request is not awaiting admin approval" });
+            // B4-AP-02 — approve what was reviewed: a request the user changed after the
+            // reviewer opened it is not applied unseen. Stored timestamps carry microseconds.
+            if (request?.ExpectedUpdatedAt is { } seen && Math.Abs((cr.UpdatedAt - seen).TotalMilliseconds) >= 1)
+                return Results.Conflict(new
+                {
+                    Error = "ChangeRequest.Changed",
+                    Message = "The request changed since you opened it. Reload and review it again.",
+                });
 
             var user = await session.LoadAsync<ApplicationUser>(cr.UserId);
             if (user is null) return Results.Problem("Target user no longer exists", statusCode: 409);
