@@ -1,5 +1,5 @@
 import { test, expect, type Page, type BrowserContext, type WebSocketRoute } from '@playwright/test'
-import { readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve, sep, extname } from 'node:path'
 
 type Login = { UserName: string; Password: string }
@@ -37,10 +37,10 @@ async function prepare(context: BrowserContext, login: Login) {
     const file = resolve(dist, `.${decodeURIComponent(url.pathname)}`)
     if (file.startsWith(dist + sep)) {
       try {
-        if (statSync(file).isFile()) {
-          await route.fulfill({ body: readFileSync(file), contentType: mime[extname(file)] ?? 'application/octet-stream' })
-          return
-        }
+        // One read, no stat first: it throws for a missing file or a directory.
+        const body = readFileSync(file)
+        await route.fulfill({ body, contentType: mime[extname(file)] ?? 'application/octet-stream' })
+        return
       } catch { /* history route below */ }
     }
     if (route.request().isNavigationRequest()) {
