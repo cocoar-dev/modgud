@@ -609,7 +609,9 @@ function buildDcrPatch(): UpdateDcrSettingsDto | undefined {
   if (cur.PerRealmRateLimitPerDay !== orig.PerRealmRateLimitPerDay)
     patch.PerRealmRateLimitPerDay = cur.PerRealmRateLimitPerDay
   if (!arrayEqual(cur.ReservedNames, orig.ReservedNames ?? []))
-    patch.ReservedNames = cur.ReservedNames.length ? cur.ReservedNames : null
+    // F7-02 — an emptied list is an explicit empty list: null in the patch means "keep",
+    // so clearing every name used to save successfully and keep the old list.
+    patch.ReservedNames = [...cur.ReservedNames]
 
   return Object.keys(patch).length === 0 ? undefined : patch
 }
