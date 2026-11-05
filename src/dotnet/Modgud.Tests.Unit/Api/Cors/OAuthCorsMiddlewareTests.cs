@@ -67,6 +67,30 @@ public class OAuthCorsMiddlewareTests
         Assert.Equal(AllowedOrigin, Acao(ctx));
     }
 
+    // HTTP-B9-02 — a browser client on a registered origin that uses DPoP sends the DPoP
+    // request header (not CORS-safelisted, so it must pass the preflight) and has to read
+    // the DPoP-Nonce challenge header from the response.
+    [Fact]
+    public async Task Preflight_allows_the_dpop_request_header()
+    {
+        var ctx = Build(HttpMethods.Options, "/connect/token", AllowedOrigin, preflight: true);
+        ctx.Request.Headers[HeaderNames.AccessControlRequestHeaders] = "dpop, content-type";
+        await Run(ctx, new FakeOriginProvider(AllowedOrigin));
+
+        var allowed = ctx.Response.Headers[HeaderNames.AccessControlAllowHeaders].ToString();
+        Assert.Contains("dpop", allowed, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Actual_request_exposes_the_dpop_nonce_header()
+    {
+        var ctx = Build(HttpMethods.Post, "/connect/token", AllowedOrigin);
+        await Run(ctx, new FakeOriginProvider(AllowedOrigin));
+
+        var exposed = ctx.Response.Headers[HeaderNames.AccessControlExposeHeaders].ToString();
+        Assert.Contains("DPoP-Nonce", exposed, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task Actual_request_for_registered_origin_gets_acao_and_continues()
     {
