@@ -16,6 +16,34 @@ namespace Modgud.Api.Features.Admin;
 
 public static class ProjectionEndpoints
 {
+    /// <summary>
+    /// ADR 0022 (D8) — a rebuild needs proof that this is the only running instance.
+    /// B9-CL01 — an unreadable node table is no such proof: it used to be read as "just me".
+    /// Returns the refusal, or null when exactly this instance is live.
+    /// </summary>
+    internal static IResult? RefuseUnlessSingleInstance(IReadOnlyList<Modgud.Infrastructure.Cluster.ClusterNodeInfo>? liveNodes)
+    {
+        if (liveNodes is null)
+        {
+            Serilog.Log.Warning("Admin: Projection rebuild rejected — the cluster topology could not be read");
+            return Results.Conflict(new
+            {
+                Message = "A projection rebuild requires proof of a single running instance, but the node table " +
+                          "could not be read. Check the database and retry.",
+            });
+        }
+        if (liveNodes.Count > 1)
+        {
+            Serilog.Log.Warning("Admin: Projection rebuild rejected — {Count} nodes are live", liveNodes.Count);
+            return Results.Conflict(new
+            {
+                Message = $"A projection rebuild requires a single running instance; {liveNodes.Count} are live. " +
+                          "Scale the deployment down to one instance, rebuild, then scale back up.",
+            });
+        }
+        return null;
+    }
+
     // Serialises the rebuild endpoint. Concurrent rebuilds would race on the
     // process-wide ProjectionSideEffects.Enabled flag — the second caller can
     // capture the first's interim `false` and permanently disable side effects
@@ -41,16 +69,8 @@ public static class ProjectionEndpoints
             // realm's shards may be running there and would keep writing
             // progression rows the rebuild is about to reset. Scale to one
             // instance, rebuild, scale back — the docs say so.
-            var liveNodes = await clusterNodes.GetLiveNodesAsync(ct);
-            if (liveNodes.Count > 1)
-            {
-                Serilog.Log.Warning("Admin: Projection rebuild rejected — {Count} nodes are live", liveNodes.Count);
-                return Results.Conflict(new
-                {
-                    Message = $"A projection rebuild requires a single running instance; {liveNodes.Count} are live. " +
-                              "Scale the deployment down to one instance, rebuild, then scale back up.",
-                });
-            }
+            if (RefuseUnlessSingleInstance(await clusterNodes.TryGetLiveNodesAsync(ct)) is { } refused)
+                return refused;
 
             if (!await _rebuildGate.WaitAsync(0, ct))
             {
