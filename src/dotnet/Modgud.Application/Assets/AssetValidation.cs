@@ -129,9 +129,18 @@ public static class AssetValidation
 
         StripDangerousNodes(doc);
 
-        var sw = new StringWriter();
-        doc.Save(sw, SaveOptions.DisableFormatting);
-        return System.Text.Encoding.UTF8.GetBytes(sw.ToString());
+        // B10-PA01 — write UTF-8 bytes through an XmlWriter so the XML declaration says
+        // utf-8 too (a StringWriter is UTF-16 and declared encoding="utf-16").
+        using var output = new MemoryStream();
+        using (var writer = XmlWriter.Create(output, new XmlWriterSettings
+               {
+                   Encoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                   Indent = false,
+               }))
+        {
+            doc.Save(writer);
+        }
+        return output.ToArray();
     }
 
     private static void StripDangerousNodes(XDocument doc)
