@@ -384,6 +384,177 @@
               "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = i18n.text(\"page.passwordlessInfo.text\", undefined, \"This application uses passwordless login.\"); // @locked @quick:props.text @value:%7B%22source%22%3A%22translation%22%2C%22key%22%3A%22page.passwordlessInfo.text%22%2C%22fallback%22%3A%22This%20application%20uses%20passwordless%20login.%22%7D\n    element.props.variant = \"info\"; // @locked @quick:props.variant @value:%22info%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    element.style.hidden = !(page.context.auth?.internalLoginEnabled && page.context.auth?.passwordless);\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
             },
             {
+              "id": "email-code-request",
+              "type": "stack",
+              "name": "emailCodeRequest",
+              "props": {
+                "direction": "column"
+              },
+              "style": {
+                "gap": "12px"
+              },
+              "visibleWhen": {
+                "all": [
+                  {
+                    "source": "context",
+                    "path": "auth.emailCodeEnabled",
+                    "operator": "equals",
+                    "value": true
+                  },
+                  {
+                    "any": [
+                      {
+                        "source": "context",
+                        "path": "runtime.viewState",
+                        "operator": "equals",
+                        "value": "credentials"
+                      },
+                      {
+                        "source": "context",
+                        "path": "runtime.viewState",
+                        "operator": "equals",
+                        "value": "passwordless"
+                      },
+                      {
+                        "source": "context",
+                        "path": "runtime.viewState",
+                        "operator": "equals",
+                        "value": "submitting"
+                      },
+                      {
+                        "source": "context",
+                        "path": "runtime.viewState",
+                        "operator": "equals",
+                        "value": "error"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "id": "email-code-email",
+                  "type": "text-input",
+                  "name": "email",
+                  "props": {
+                    "label": {
+                      "source": "translation",
+                      "key": "page.emailCode.email.label",
+                      "fallback": "Email"
+                    },
+                    "placeholder": {
+                      "source": "translation",
+                      "key": "page.emailCode.email.placeholder",
+                      "fallback": "name@example.com"
+                    }
+                  }
+                },
+                {
+                  "id": "email-code-send",
+                  "type": "button",
+                  "name": "emailCodeSend",
+                  "props": {
+                    "label": {
+                      "source": "translation",
+                      "key": "page.emailCode.send",
+                      "fallback": "Send login code"
+                    },
+                    "action": "auth:request-login-code",
+                    "variant": "secondary"
+                  },
+                  "style": {
+                    "size": "fill"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "email-code-verify",
+              "type": "stack",
+              "name": "emailCodeVerify",
+              "props": {
+                "direction": "column"
+              },
+              "style": {
+                "gap": "12px"
+              },
+              "visibleWhen": {
+                "source": "context",
+                "path": "runtime.viewState",
+                "operator": "equals",
+                "value": "login-code"
+              },
+              "children": [
+                {
+                  "id": "email-code-hint",
+                  "type": "paragraph",
+                  "name": "emailCodeHint",
+                  "props": {
+                    "text": {
+                      "source": "translation",
+                      "key": "page.emailCode.hint",
+                      "fallback": "We sent a sign-in code to your email address."
+                    }
+                  }
+                },
+                {
+                  "id": "email-code-otp",
+                  "type": "otp-input",
+                  "name": "otpCode",
+                  "props": {
+                    "label": {
+                      "source": "translation",
+                      "key": "page.emailCode.code",
+                      "fallback": "Code"
+                    }
+                  }
+                },
+                {
+                  "id": "email-code-confirm",
+                  "type": "button",
+                  "name": "emailCodeConfirm",
+                  "props": {
+                    "label": {
+                      "source": "translation",
+                      "key": "page.emailCode.verify",
+                      "fallback": "Sign in"
+                    },
+                    "action": "auth:verify-login-code",
+                    "variant": "primary"
+                  },
+                  "style": {
+                    "size": "fill"
+                  }
+                },
+                {
+                  "id": "email-code-resend",
+                  "type": "link",
+                  "name": "emailCodeResend",
+                  "props": {
+                    "label": {
+                      "source": "translation",
+                      "key": "page.emailCode.resend",
+                      "fallback": "Send a new code"
+                    },
+                    "action": "auth:resend-login-code"
+                  }
+                },
+                {
+                  "id": "email-code-back",
+                  "type": "link",
+                  "name": "emailCodeBack",
+                  "props": {
+                    "label": {
+                      "source": "translation",
+                      "key": "page.emailCode.back",
+                      "fallback": "Use a different email"
+                    },
+                    "action": "auth:back-to-email"
+                  }
+                }
+              ]
+            },
+            {
               "id": "login-alternative-context-error",
               "type": "note",
               "name": "loginAlternativeContextError",
@@ -717,7 +888,15 @@
       "page.providerButton.label": "Anmelden mit {name}",
       "page.forgotLink.label": "Passwort vergessen?",
       "page.registerLink.label": "Noch kein Konto? Registrieren →",
-      "page.languageSwitcher.label": "EN"
+      "page.languageSwitcher.label": "EN",
+      "page.emailCode.email.label": "E-Mail",
+      "page.emailCode.email.placeholder": "name@beispiel.de",
+      "page.emailCode.send": "Anmeldecode senden",
+      "page.emailCode.hint": "Wir haben einen Anmeldecode an Ihre E-Mail-Adresse gesendet.",
+      "page.emailCode.code": "Code",
+      "page.emailCode.verify": "Anmelden",
+      "page.emailCode.resend": "Neuen Code senden",
+      "page.emailCode.back": "Andere E-Mail-Adresse verwenden"
     },
     "en": {
       "page.loginSubtitle.text": "Sign in to continue.",
@@ -736,7 +915,15 @@
       "page.providerButton.label": "Sign in with {name}",
       "page.forgotLink.label": "Forgot password?",
       "page.registerLink.label": "No account yet? Register →",
-      "page.languageSwitcher.label": "DE"
+      "page.languageSwitcher.label": "DE",
+      "page.emailCode.email.label": "Email",
+      "page.emailCode.email.placeholder": "name@example.com",
+      "page.emailCode.send": "Send login code",
+      "page.emailCode.hint": "We sent a sign-in code to your email address.",
+      "page.emailCode.code": "Code",
+      "page.emailCode.verify": "Sign in",
+      "page.emailCode.resend": "Send a new code",
+      "page.emailCode.back": "Use a different email"
     }
   },
   "rootCode": "definePageRoot({\n  compute(page) {\n    page.style.padding = '16px'\n    page.style.surface = 'default'\n  },\n})"
