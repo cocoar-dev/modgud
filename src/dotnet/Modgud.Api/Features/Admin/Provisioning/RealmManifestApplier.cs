@@ -974,7 +974,7 @@ public sealed partial class RealmManifestApplier(
                 !r.IsRealmAdmin && r.AppId is { } aid ? roleAppSlugById.GetValueOrDefault(aid) : null, r.Name);
             if (Keep(ManifestIdentity.Sections.Roles, r.Id) || r.IsRealmAdmin
                 || !Wants("roles", roleKey)) continue;
-            EnsureOk(await roleAdmin.DeleteRoleAsync(r.Id, ct), $"delete role '{roleKey}'");
+            EnsureOk(await roleAdmin.DeleteRoleAsync(r.Id, callerIsRealmAdmin: true, ct), $"delete role '{roleKey}'");
         }
 
         // ── Apps — keep the system app; a still-referenced app errors. ───────────────────────

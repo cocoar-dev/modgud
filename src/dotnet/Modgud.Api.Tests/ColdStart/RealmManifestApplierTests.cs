@@ -1071,7 +1071,7 @@ public class RealmManifestApplierTests(ColdStartFixture fixture) : ColdStartTest
             var roleAdmin = sp.GetRequiredService<RoleAdminService>();
             var alpha = await session.Query<App>().SingleAsync(a => !a.IsDeleted && a.Slug == "alpha", ct);
             var reviewer = await session.Query<PermissionRole>().SingleAsync(r => !r.IsDeleted && r.Name == "Reviewer" && r.AppId == alpha.Id, ct);
-            Assert.False((await roleAdmin.DeleteRoleAsync(reviewer.Id, ct)).IsError);
+            Assert.False((await roleAdmin.DeleteRoleAsync(reviewer.Id, callerIsRealmAdmin: true, ct)).IsError);
             var again = await roleAdmin.CreateRoleAsync(
                 new RolePayload("Reviewer", null, new ShortGuid(alpha.Id).ToString(), false, [], null),
                 callerIsRealmAdmin: true, ct);
