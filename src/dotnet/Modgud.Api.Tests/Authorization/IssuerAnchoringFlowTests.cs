@@ -176,6 +176,31 @@ public class IssuerAnchoringFlowTests : IntegrationTestBase
         Assert.Equal(DefaultUser.Id.ToString(), json.RootElement.GetProperty("sub").GetString());
     }
 
+    /// <summary>F.routing-F-R2 — the VALIDATION pipeline (Bearer endpoints outside OpenIddict's own
+    /// server endpoints, such as the native passkey list) compared the token against the request
+    /// host instead of the canonical issuer, so it rejected the token minted on the same subdomain.</summary>
+    [Fact]
+    public async Task Native_Bearer_Endpoint_On_App_Subdomain_Accepts_A_Subdomain_Minted_Token()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        const string email = "test@test.com"; // the seeded DefaultUser
+        await EnableRealmNativeGrantsAsync();
+        var app = await CreateAppAsync("iss-native-app");
+        await CreateOtpClientAsync("iss-native-client", app.Id);
+        await MapApplicationDomainsAsync(("iss-native.localhost", app.Id));
+
+        var code = await IssueOtpViaServiceAsync(DefaultUser!.Id, email);
+        var token = await MintOtpTokenAsync("iss-native.localhost", "iss-native-client", email, code);
+
+        var req = new HttpRequestMessage(HttpMethod.Get, "/connect/passkey");
+        req.Headers.Host = "iss-native.localhost";
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var resp = await Client.SendAsync(req, ct);
+        var body = await resp.Content.ReadAsStringAsync(ct);
+
+        Assert.True(resp.IsSuccessStatusCode, $"the native endpoint rejected the subdomain token ({(int)resp.StatusCode}): {body} {resp.Headers.WwwAuthenticate}");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private async Task<string> GetIssuerAsync(string host)
