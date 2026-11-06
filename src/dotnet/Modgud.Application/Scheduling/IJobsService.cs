@@ -43,6 +43,15 @@ public sealed record JobOverviewDto
     public bool HasOverride { get; init; }
     public bool Enabled { get; init; }
     public DateTime? NextFireAt { get; init; }
+
+    /// <summary>
+    /// B9-JS-01 — null while the Quartz schedule matches the saved configuration; otherwise how it
+    /// deviates: <c>JobMissing</c>, <c>TriggerMissing</c> (enabled but not scheduled),
+    /// <c>UnexpectedTrigger</c> (manual-only but scheduled) or <c>CronMismatch</c>. The periodic
+    /// reconcile repairs it.
+    /// </summary>
+    public string? ScheduleDrift { get; init; }
+
     public JobRunHistoryDto? LastRun { get; init; }
 
     /// <summary>

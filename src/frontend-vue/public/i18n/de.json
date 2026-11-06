@@ -1152,6 +1152,19 @@
         "error": "Fehler",
         "neutral": "—"
       },
+      "schedule": "Zeitplan",
+      "scheduleTag": {
+        "inSync": "OK",
+        "deviates": "Abweichung"
+      },
+      "drift": {
+        "label": "Zeitplan weicht ab",
+        "JobMissing": "Der Job ist im Scheduler nicht registriert.",
+        "TriggerMissing": "Der Job ist aktiv, hat im Scheduler aber keinen Zeitplan und läuft nicht.",
+        "UnexpectedTrigger": "Der Job ist nur manuell, hat im Scheduler aber noch einen Zeitplan.",
+        "CronMismatch": "Der Scheduler verwendet einen anderen Cron als gespeichert.",
+        "repairHint": "Der regelmäßige Abgleich behebt das in wenigen Minuten; Speichern behebt es sofort."
+      },
       "section": {
         "config": "Konfiguration",
         "schedule": "Zeitplan",

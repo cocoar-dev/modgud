@@ -489,7 +489,7 @@ There is no "cluster mode" to switch on. A Production or Staging container alway
 |---|---|
 | Outbox, scheduled messages, event forwarding | Wolverine in `Balanced` mode — leader election over its node table in the master DB, work reassigned when a node's heartbeat goes stale |
 | Async projections and event subscriptions (audit view, application change feed, back-channel logout) | Wolverine-managed distribution: every realm database's projections run on exactly one live node; a dead node's databases are picked up by a survivor |
-| Scheduled jobs | Quartz.NET clustered on a Postgres job store (schema `quartz` in the master DB): a trigger fires on one node, `RequestRecovery` jobs interrupted by a crash re-run on a survivor |
+| Scheduled jobs | Quartz.NET clustered on a Postgres job store (schema `quartz` in the master DB): a trigger fires on one node, `RequestRecovery` jobs interrupted by a crash re-run on a survivor. Every 5 minutes each node compares every job's schedule with its saved configuration and repairs a deviation (a warning in the log; until then *Scheduled Jobs* shows it in the *Schedule* column) |
 | Live updates over SignalR | The SignalARRR Postgres backplane on the master database (`LISTEN`/`NOTIFY`) carrying a cluster subject with Modgud's data events: an event raised on one node is replayed into the hub streams of the other, so every browser sees it exactly once, from the node it is pinned to. A listener drop is caught up from the backplane's message table, not lost |
 | Login providers (OIDC/SAML), passkey ceremonies, sessions, rate limits, DataProtection keys | Resolved from the database by whichever node serves the request — nothing lives only in one process |
 

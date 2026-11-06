@@ -45,6 +45,8 @@ export interface ScheduledJobDto {
   Enabled: boolean
   /** ISO-8601 UTC, null when disabled. */
   NextFireAt?: string | null
+  /** B9-JS-01 — null while the scheduler matches the saved configuration; otherwise how it deviates. */
+  ScheduleDrift?: 'JobMissing' | 'TriggerMissing' | 'UnexpectedTrigger' | 'CronMismatch' | null
   LastRun?: ScheduledJobHistoryDto | null
   ParameterSchema: JobParameterField[]
   Parameters: Record<string, unknown>

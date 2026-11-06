@@ -162,6 +162,17 @@ async function triggerNow() {
   }
 }
 
+const driftFallbacks: Record<NonNullable<ScheduledJobDto['ScheduleDrift']>, string> = {
+  JobMissing: 'The job is not registered with the scheduler.',
+  TriggerMissing: 'The job is enabled but has no schedule in the scheduler, so it does not run.',
+  UnexpectedTrigger: 'The job is manual-only but still has a schedule in the scheduler.',
+  CronMismatch: 'The scheduler uses a different cron than the saved one.',
+}
+
+function driftText(drift: NonNullable<ScheduledJobDto['ScheduleDrift']>) {
+  return t(`admin.scheduledJobs.drift.${drift}`, {}, driftFallbacks[drift])
+}
+
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleString(locale.value, {
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -259,6 +270,15 @@ watch(jobKey, load)
             <span class="text-sm text-surface-500">
               {{ t('admin.scheduledJobs.nextRun', {}, 'Next run') }}:
               <strong>{{ job.NextFireAt ? fmtDate(job.NextFireAt) : '—' }}</strong>
+            </span>
+          </div>
+
+          <!-- B9-JS-01 — the scheduler deviates from the saved configuration. -->
+          <div v-if="job.ScheduleDrift" class="flex items-start gap-2 text-sm">
+            <CoarTag variant="warning" size="s">{{ t('admin.scheduledJobs.drift.label', {}, 'Schedule deviates') }}</CoarTag>
+            <span>
+              {{ driftText(job.ScheduleDrift) }}
+              {{ t('admin.scheduledJobs.drift.repairHint', {}, 'The periodic reconcile repairs this within minutes; saving repairs it at once.') }}
             </span>
           </div>
         </div>
