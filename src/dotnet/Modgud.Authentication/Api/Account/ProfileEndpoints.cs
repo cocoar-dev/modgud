@@ -4,6 +4,7 @@ using System.Text.Json;
 using BuildingBlocks.Helper;
 using Cocoar.Json.Mutable;
 using Marten;
+using Marten.Patching;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Serilog;
@@ -150,7 +151,10 @@ public static class ProfileEndpoints
             {
                 if (existing is not null)
                 {
+                    // The request is gone, so are the admins' "needs review" items (as on withdraw).
                     session.Delete(existing);
+                    await followUps.PublishAsync(session, new DismissInboxItems(
+                        [.. existing.AdminInboxItemIds], ChangeRequestInboxSource, existing.Id, InboxKind.AdminChangeRequestSubmitted));
                     await session.SaveChangesAsync();
                 }
                 return Results.Ok(new { Open = (object?)null });
@@ -180,13 +184,17 @@ public static class ProfileEndpoints
             }
             else if (!previousPendingEmail.HasValue
                   || previousPendingEmail.Value != pending.Email.Value
-                  || existingTokenHash is null)
+                  || existingTokenHash is null
+                  // The mail for the current token never left (the transport failed after the
+                  // commit): issue a new token and send again instead of leaving the user without a link.
+                  || existing?.VerificationMailSentAt is null)
             {
                 rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(VerificationTokenBytes))
                     .TrimEnd('=').Replace('+', '-').Replace('/', '_');
                 request.VerificationTokenHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(rawToken)));
                 request.VerificationExpiresAt = DateTimeOffset.UtcNow.AddHours(VerificationTokenLifetimeHours);
                 request.VerifiedAt = null;
+                request.VerificationMailSentAt = null;
             }
 
             request.Status = pending.Email.HasValue && request.VerifiedAt is null
@@ -217,6 +225,10 @@ public static class ProfileEndpoints
                         ["ActionUrl"] = verifyUrl,
                         ["ExpirationHours"] = VerificationTokenLifetimeHours.ToString(),
                     }, ct: ct), ct);
+                // A patch, not a store: only the delivery mark changes, never a state that
+                // moved on meanwhile.
+                session.Patch<UserChangeRequest>(request.Id).Set(r => r.VerificationMailSentAt, DateTimeOffset.UtcNow);
+                await session.SaveChangesAsync();
             }
 
             Log.Information("Profile: Change request upserted. UserId={UserId} Status={Status}",

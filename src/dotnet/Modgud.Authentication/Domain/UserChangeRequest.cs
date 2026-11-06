@@ -35,6 +35,10 @@ public class UserChangeRequest
     public DateTimeOffset? VerificationExpiresAt { get; set; }
     public DateTimeOffset? VerifiedAt { get; set; }
 
+    /// <summary>When the verification mail for the current token was handed to the mail transport;
+    /// null while it was not (yet) sent — then the next submit issues a new token and sends again.</summary>
+    public DateTimeOffset? VerificationMailSentAt { get; set; }
+
     public DateTimeOffset? ReviewedAt { get; set; }
     public Guid? ReviewedByUserId { get; set; }
     public string? ReviewerNote { get; set; }

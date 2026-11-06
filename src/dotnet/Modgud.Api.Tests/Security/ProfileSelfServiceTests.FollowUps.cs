@@ -102,6 +102,66 @@ public partial class ProfileSelfServiceTests
         Assert.Equal(0, Factory.EmailFaults.FailTimes);
     }
 
+    /// <summary>A verification mail that failed on submit was never sent again: the next submit
+    /// of the same address found the token hash and generated no new token and no mail.</summary>
+    [Fact]
+    public async Task A_failed_verification_mail_is_sent_again_on_the_next_submit()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var mails = Factory.Services.GetRequiredService<InMemoryEmailService>();
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Resend", lastname: "Mail", acronym: "RM", email: "rm-old@test.com", password: "TestPass1234");
+        var client = await CreateAuthenticatedClientAsync("rm", "TestPass1234");
+
+        Factory.EmailFaults.FailTemplate = EmailTemplate.EmailVerification;
+        Factory.EmailFaults.FailTimes = 1;
+        using (await client.PutAsJsonAsync("/api/account/profile/request", new { Email = "rm-new@test.com" }, ct)) { }
+        Assert.Null(mails.GetLastEmailTo("rm-new@test.com"));
+
+        using (var again = await client.PutAsJsonAsync("/api/account/profile/request", new { Email = "rm-new@test.com" }, ct))
+            Assert.True(again.IsSuccessStatusCode, await again.Content.ReadAsStringAsync(ct));
+        var mail = mails.GetLastEmailTo("rm-new@test.com");
+        Assert.NotNull(mail);
+
+        using var verify = await Factory.CreateClient().PostAsJsonAsync("/api/account/profile/request/verify-email",
+            new { RequestId = await GetOpenRequestIdAsync(user.Id), Token = ExtractTokenFromLink(mail!.HtmlBody) }, ct);
+        Assert.True(verify.IsSuccessStatusCode, await verify.Content.ReadAsStringAsync(ct));
+    }
+
+    /// <summary>A submit that reverts every pending change deletes the request; the admins'
+    /// "needs review" items stayed open for a request that no longer existed.</summary>
+    [Fact]
+    public async Task A_submit_that_reverts_every_change_dismisses_the_admins_items()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Revert", lastname: "Me", acronym: "RV", email: "rv@test.com", password: "TestPass1234");
+        var client = await CreateAuthenticatedClientAsync("rv", "TestPass1234");
+        using (var put = await client.PutAsJsonAsync("/api/account/profile/request", new { Firstname = "Changed" }, ct))
+            Assert.True(put.IsSuccessStatusCode, await put.Content.ReadAsStringAsync(ct));
+        var request = ShortGuid.Decode(await GetOpenRequestIdAsync(user.Id));
+
+        Guid adminItem = Guid.Empty;
+        await WaitUntilAsync(async () =>
+        {
+            await using var query = GetTenantedSession();
+            var slot = await query.Query<InboxSourceSlot>()
+                .FirstOrDefaultAsync(s => s.SourceType == "change-request" && s.SourceId == request, ct);
+            adminItem = slot?.OpenItemId ?? Guid.Empty;
+            return slot is not null;
+        }, "the admins got no inbox item for the request", ct);
+
+        using (var revert = await client.PutAsJsonAsync("/api/account/profile/request", new { Firstname = "Revert" }, ct))
+            Assert.True(revert.IsSuccessStatusCode, await revert.Content.ReadAsStringAsync(ct));
+
+        await WaitUntilAsync(async () =>
+        {
+            await Factory.WaitForProjectionsAsync();
+            await using var query = GetTenantedSession();
+            return (await query.LoadAsync<InboxItemView>(adminItem, ct))?.DismissedAt is not null;
+        }, "the admins' item of the deleted request stayed open", ct);
+    }
+
     private static async Task WaitUntilAsync(Func<Task<bool>> condition, string failure, CancellationToken ct)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(40);
