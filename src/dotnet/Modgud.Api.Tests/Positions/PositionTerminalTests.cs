@@ -258,6 +258,35 @@ public class PositionTerminalTests : IntegrationTestBase
         Assert.Contains("Terminal.ReenrollmentRequired", await widen.Content.ReadAsStringAsync(ct));
     }
 
+    /// <summary>
+    /// B3-P4 — the owner position always serves its own slot (the slot's client, name and
+    /// terminal policy are the owner's). Removing it is refused, also from a shared view.
+    /// </summary>
+    [Fact]
+    public async Task The_owner_position_cannot_be_removed_from_its_own_slot()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var owner = await CreatePositionAsync("fn-owner-a", terminalEnabled: true, ct);
+        var other = await CreatePositionAsync("fn-owner-b", terminalEnabled: true, ct);
+        var create = await Client.PostAsJsonAsync($"/api/position/{owner}/terminals", new
+        {
+            DisplayName = "Owned",
+            Location = "Desk",
+            WebAuthnRpId = RpId,
+            AllowedPositionIds = new[] { owner, other },
+        }, JsonOptions, ct);
+        Assert.True(create.IsSuccessStatusCode, await create.Content.ReadAsStringAsync(ct));
+        var terminal = (await create.Content.ReadFromJsonAsync<TerminalDto>(JsonOptions, ct))!;
+
+        var dropOwner = await Client.PutAsJsonAsync(
+            $"/api/position/{other}/terminals/{terminal.Id}/positions",
+            new { AllowedPositionIds = new[] { other } }, JsonOptions, ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, dropOwner.StatusCode);
+        Assert.Contains("Terminal.OwnerRequired", await dropOwner.Content.ReadAsStringAsync(ct));
+    }
+
     [Fact]
     public async Task Slots_are_event_sourced_one_event_per_transition()
     {

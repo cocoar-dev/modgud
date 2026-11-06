@@ -91,6 +91,10 @@ client editor. The selected binding fixes the security profile:
   staffing session at a time. Removing an assignment is immediate. Adding an
   assignment after enrollment is intentionally rejected: create a replacement
   multi-position slot and run Device Flow again.
+- The position a slot was created under is its **owner** and always serves it
+  (the slot's client, name and terminal policy are the owner's); it cannot be
+  removed from the slot. In a draft, edit a slot's positions on its owner
+  position.
 
 ### How terminal clients appear elsewhere
 

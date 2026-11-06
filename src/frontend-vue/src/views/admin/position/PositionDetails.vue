@@ -502,6 +502,8 @@ function editTerminalPositions(terminal: TerminalDto) {
 }
 
 function setTerminalPosition(terminal: TerminalDto, positionId: string, enabled: boolean) {
+  // B3-P4 — the owner always serves its own slot (its client, name and terminal policy).
+  if (!enabled && positionId === terminal.PositionId) return
   const current = terminalPositionDrafts.value[terminal.Id] ?? [...effectiveAllowedPositions(terminal)]
   terminalPositionDrafts.value[terminal.Id] = enabled
     ? Array.from(new Set([...current, positionId]))
@@ -515,6 +517,12 @@ function positionsForTerminal(terminal: TerminalDto) {
         && position.TerminalPolicy.Enabled
         && position.TerminalPolicy.AllowedDeviceBindings.includes(terminal.Binding)))
     .sort((left, right) => left.AccountName.localeCompare(right.AccountName))
+}
+
+/** B3-P4 — a draft stages a slot under its owner position, so a slot owned by another
+ *  position is edited from that position's view while drafting. */
+function canEditTerminalPositions(terminal: TerminalDto) {
+  return !terminalsStaged.value || terminal.PositionId === props.id
 }
 
 async function saveTerminalPositions(terminal: TerminalDto) {
@@ -1142,6 +1150,9 @@ async function save() {
                   </div>
                   <div v-if="editingTerminalPositionsId === terminal.Id"
                       class="basis-full rounded border border-surface-200 bg-surface-50 p-3">
+                    <p v-if="!canEditTerminalPositions(terminal)" class="mb-2 text-xs text-surface-500">
+                      {{ t('admin.positionTerminals.editFromOwnerHint', { owner: positionLabel(terminal.PositionId) }, 'In a draft this slot is edited on its owner position ({owner}).') }}
+                    </p>
                     <p v-if="terminal.Enrolled" class="mb-2 text-xs text-surface-500">
                       {{ t('admin.positionTerminals.enrolledAssignmentHint', {}, 'This terminal is already enrolled. Existing positions may be removed, but adding another one requires creating and enrolling a replacement multi-position slot.') }}
                     </p>
@@ -1149,10 +1160,15 @@ async function save() {
                         class="mb-2 flex items-center gap-2 text-sm">
                       <CoarCheckbox
                         :model-value="(terminalPositionDrafts[terminal.Id] ?? effectiveAllowedPositions(terminal)).includes(position.Id)"
-                        :disabled="terminal.Enrolled && !terminal.AllowedPositionIds.includes(position.Id)"
+                        :disabled="position.Id === terminal.PositionId
+                          || !canEditTerminalPositions(terminal)
+                          || (terminal.Enrolled && !terminal.AllowedPositionIds.includes(position.Id))"
                         @update:model-value="(value) => setTerminalPosition(terminal, position.Id, !!value)" />
                       <span>{{ position.AccountName }}</span>
-                      <CoarTag v-if="terminal.AllowedPositionIds.includes(position.Id)" variant="neutral">
+                      <CoarTag v-if="position.Id === terminal.PositionId" variant="info">
+                        {{ t('admin.positionTerminals.ownerAssignment', {}, 'Owner') }}
+                      </CoarTag>
+                      <CoarTag v-else-if="terminal.AllowedPositionIds.includes(position.Id)" variant="neutral">
                         {{ t('admin.positionTerminals.currentAssignment', {}, 'Assigned') }}
                       </CoarTag>
                     </div>
@@ -1161,7 +1177,8 @@ async function save() {
                         {{ t('common.cancel', {}, 'Cancel') }}
                       </CoarButton>
                       <CoarButton size="s"
-                        :disabled="(terminalPositionDrafts[terminal.Id] ?? effectiveAllowedPositions(terminal)).length === 0"
+                        :disabled="!canEditTerminalPositions(terminal)
+                          || (terminalPositionDrafts[terminal.Id] ?? effectiveAllowedPositions(terminal)).length === 0"
                         @click="saveTerminalPositions(terminal)">
                         {{ terminalsStaged ? t('admin.positionTerminals.stagePositions', {}, 'Stage') : t('common.save', {}, 'Save') }}
                       </CoarButton>
