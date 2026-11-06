@@ -29,9 +29,11 @@ export interface LoginProviderDto {
   TrustForEmailLink: boolean
   /** Federation v1: login through this provider may confer ExternallyDrivable group membership for the session (never realm:admin). Default false. */
   TrustForAuthorization: boolean
+  TrustEmailsAsVerified: boolean
   /** Federation v1: this provider may write the profile fields (firstname/lastname/email/acronym). Default false (the JIT creator is authoritative by default). */
   AuthoritativeForProfile: boolean
   AllowedEmailDomains?: string[] | null
+  MfaAmrValues?: string[] | null
   IconName?: string | null
   ButtonColorHex?: string | null
   FlavorData?: Record<string, unknown> | null
@@ -112,8 +114,10 @@ export interface CreateLoginProviderRequest {
   AllowLinking?: boolean | null
   TrustForEmailLink?: boolean | null
   TrustForAuthorization?: boolean | null
+  TrustEmailsAsVerified?: boolean | null
   AuthoritativeForProfile?: boolean | null
   AllowedEmailDomains?: string[] | null
+  MfaAmrValues?: string[] | null
   IconName?: string | null
   ButtonColorHex?: string | null
   /** Plaintext is accepted only by create and encrypted before persistence. */
@@ -135,8 +139,10 @@ export interface UpdateLoginProviderRequest {
   AllowLinking?: boolean
   TrustForEmailLink?: boolean
   TrustForAuthorization?: boolean
+  TrustEmailsAsVerified?: boolean
   AuthoritativeForProfile?: boolean
   AllowedEmailDomains?: string[] | null
+  MfaAmrValues?: string[] | null
   IconName?: string | null
   ButtonColorHex?: string | null
   FlavorData?: Record<string, unknown> | null

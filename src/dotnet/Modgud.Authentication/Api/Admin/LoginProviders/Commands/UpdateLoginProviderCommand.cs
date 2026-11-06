@@ -44,6 +44,8 @@ public record UpdateLoginProviderCommand(
     // Federation v1. Defaulted to None so existing callers / tests are unchanged
     // and an omitted field preserves the persisted value (PATCH semantics).
     Optional<bool> TrustForAuthorization = default,
+    Optional<bool> TrustEmailsAsVerified = default,
+    Optional<List<string>?> MfaAmrValues = default,
     Optional<bool> AuthoritativeForProfile = default);
 
 public class UpdateLoginProviderHandler(
@@ -85,6 +87,9 @@ public class UpdateLoginProviderHandler(
         var allowLinking = command.AllowLinking.OrDefault(config.AllowLinking);
         var trustForEmailLink = command.TrustForEmailLink.OrDefault(config.TrustForEmailLink);
         var trustForAuthorization = command.TrustForAuthorization.OrDefault(config.TrustForAuthorization);
+        var trustEmailsAsVerified = command.TrustEmailsAsVerified.OrDefault(config.TrustEmailsAsVerified);
+        var mfaAmrValues = command.MfaAmrValues.HasValue
+            ? LoginProviderAmr.Normalize(command.MfaAmrValues.Value) : config.MfaAmrValues;
         var authoritativeForProfile = command.AuthoritativeForProfile.OrDefault(config.AuthoritativeForProfile);
         var allowedEmailDomains = command.AllowedEmailDomains.HasValue ? command.AllowedEmailDomains.Value : config.AllowedEmailDomains;
         var iconName = command.IconName.HasValue ? command.IconName.Value : config.IconName;
@@ -150,7 +155,7 @@ public class UpdateLoginProviderHandler(
             || command.Scopes.HasValue || command.UserUpdateScript.HasValue || command.StoreRawClaims.HasValue
             || command.RawClaimsRetentionDays.HasValue || command.AutoCreateUsers.HasValue
             || command.AllowLinking.HasValue || command.TrustForEmailLink.HasValue
-            || command.TrustForAuthorization.HasValue || command.AuthoritativeForProfile.HasValue
+            || command.TrustForAuthorization.HasValue || command.TrustEmailsAsVerified.HasValue || command.MfaAmrValues.HasValue || command.AuthoritativeForProfile.HasValue
             || command.AllowedEmailDomains.HasValue || command.IconName.HasValue
             || command.ButtonColorHex.HasValue || command.FlavorData.HasValue;
 
@@ -188,6 +193,8 @@ public class UpdateLoginProviderHandler(
                 AllowLinking: allowLinking,
                 TrustForEmailLink: trustForEmailLink,
                 TrustForAuthorization: trustForAuthorization,
+                TrustEmailsAsVerified: trustEmailsAsVerified,
+                MfaAmrValues: mfaAmrValues,
                 AuthoritativeForProfile: authoritativeForProfile,
                 AllowedEmailDomains: allowedEmailDomains,
                 IconName: iconName,

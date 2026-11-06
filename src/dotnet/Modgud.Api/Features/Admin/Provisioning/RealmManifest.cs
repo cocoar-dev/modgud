@@ -579,11 +579,17 @@ public sealed record RealmManifestLoginProvider
     [Description("Optional. Federation: this provider's claims may drive externally-drivable group membership at login. Omit = no change / default false.")]
     public bool? TrustForAuthorization { get; init; }
 
+    [Description("Optional. B6-OIDC-05: treat every e-mail this provider issues as verified even without an email_verified claim. Only for IdPs that verify addresses themselves. Omit = no change / default false.")]
+    public bool? TrustEmailsAsVerified { get; init; }
+
     [Description("Optional. Federation: this provider is authoritative for the four profile fields. Omit = no change / default false.")]
     public bool? AuthoritativeForProfile { get; init; }
 
     [Description("Optional email-domain allowlist (e.g. ['acme.com']). Absent = unchanged / no filter on create; explicit null or [] clears the filter.")]
     public Optional<List<string>?> AllowedEmailDomains { get; init; }
+
+    [Description("Optional. B6-OIDC-04: amr values this provider only issues for a multi-factor sign-in (beyond 'mfa' or two factor classes). Absent = unchanged; explicit null or [] clears.")]
+    public Optional<List<string>?> MfaAmrValues { get; init; }
 
     [Description("Optional login-button icon name. Absent = unchanged; explicit null clears.")]
     public Optional<string?> IconName { get; init; }

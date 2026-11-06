@@ -213,6 +213,9 @@ public sealed class RealmManifestExporter(
             AllowLinking = p.AllowLinking,
             TrustForEmailLink = p.TrustForEmailLink,
             TrustForAuthorization = p.TrustForAuthorization,
+            TrustEmailsAsVerified = p.TrustEmailsAsVerified,
+            MfaAmrValues = p.MfaAmrValues is { Count: > 0 } mfaAmr
+                ? new Optional<List<string>?>(mfaAmr) : default,
             AuthoritativeForProfile = p.AuthoritativeForProfile,
             AllowedEmailDomains = p.AllowedEmailDomains is { Count: > 0 } domains
                 ? new Optional<List<string>?>(domains) : default,

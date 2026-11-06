@@ -129,7 +129,7 @@ on access.
    (claims) => ({
      firstname: claims.given_name?.trim(),
      lastname:  claims.family_name?.trim(),
-     email:     claims.email ?? claims.preferred_username,
+     email:     claims.email,
      acronym:   (claims.given_name?.[0] ?? '') + (claims.family_name?.[0] ?? ''),
    })
    ```
@@ -186,6 +186,23 @@ If you want to **disable JIT** (only pre-existing users may sign in via SSO),
 toggle the **Auto-create unknown users** flag in the **Linking &
 Policies** tab. Unknown users get a 403 with a message explaining how to
 request access.
+
+### Verified e-mail addresses
+
+The domain allowlist, automatic user creation, the profile e-mail update and
+auto-linking by e-mail all rely on an address the identity provider
+**verified**. For OIDC that is the raw `email` claim with `email_verified=true`
+(and only if the user-update script passes that same address on); SAML
+assertions count as verified, since the configured IdP signs them. An unverified
+address is refused with `Idp.EmailNotVerified`, and a profile update skips the
+e-mail while still applying the other fields.
+
+Some IdPs verify every address themselves but send no `email_verified` — Entra
+ID is one. Tick **E-Mails gelten als verifiziert** on such a provider in the
+Linking & Policies tab, and only when that provider really controls every
+address it issues (for Entra: a single-tenant registration with managed
+domains). The default Entra script uses `claims.email` only; a
+`preferred_username` (UPN) is a sign-in name, not a verified mailbox.
 
 ### Linking external identities to existing users
 

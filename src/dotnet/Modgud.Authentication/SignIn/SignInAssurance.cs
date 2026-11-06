@@ -60,9 +60,41 @@ public static class SignInAssurance
 
     private const string DeclaredItem = "modgud.signin.declared";
 
-    /// <summary>RFC 8176 <c>amr</c> values a federated provider uses to assert MFA.</summary>
-    public static readonly IReadOnlySet<string> FederatedMfaAmrValues =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "mfa", "otp", "fido", "hwk", "swk", "mca", "pop" };
+    /// <summary>
+    /// B6-OIDC-04 — the one place that decides whether a federated provider's RFC 8176
+    /// <c>amr</c> proves multi-factor authentication: the explicit <c>mfa</c> marker, or
+    /// factors from at least two different classes (knowledge, possession, inherence).
+    /// A single factor — <c>otp</c>, <c>hwk</c>, <c>swk</c>, <c>pop</c>, <c>fido</c> — or
+    /// two factors of one class do not. <paramref name="providerMfaAmrValues"/> is the
+    /// provider's admin-configured exception: values that this provider only issues for an
+    /// MFA sign-in.
+    /// </summary>
+    public static bool IsFederatedMfa(IEnumerable<string> amr, IEnumerable<string>? providerMfaAmrValues = null)
+    {
+        var values = amr.Where(v => !string.IsNullOrWhiteSpace(v))
+            .Select(v => v.Trim().ToLowerInvariant()).ToHashSet(StringComparer.Ordinal);
+        if (values.Contains("mfa")) return true;
+        if (providerMfaAmrValues is not null
+            && providerMfaAmrValues.Any(v => !string.IsNullOrWhiteSpace(v) && values.Contains(v.Trim().ToLowerInvariant())))
+            return true;
+
+        var classes = 0;
+        if (values.Overlaps(KnowledgeFactors)) classes++;
+        if (values.Overlaps(PossessionFactors)) classes++;
+        if (values.Overlaps(InherenceFactors)) classes++;
+        return classes >= 2;
+    }
+
+    /// <summary>Claim stamped at federated sign-in when <see cref="IsFederatedMfa"/> held for
+    /// that provider (its exception list included); survives the security-stamp refresh with
+    /// the other <c>modgud.external.*</c> claims.</summary>
+    public const string FederatedMfaClaimType = "modgud.external.mfa";
+
+    private static readonly HashSet<string> KnowledgeFactors = new(StringComparer.Ordinal) { "pwd", "pin", "kba" };
+    private static readonly HashSet<string> PossessionFactors = new(StringComparer.Ordinal)
+        { "otp", "sms", "tel", "hwk", "swk", "sc", "pop", "fido" };
+    private static readonly HashSet<string> InherenceFactors = new(StringComparer.Ordinal)
+        { "fpt", "face", "iris", "retina", "vbm" };
 
     private static readonly HashSet<string> SingleFactorKinds = new(StringComparer.Ordinal)
     {
@@ -169,8 +201,8 @@ public static class SignInAssurance
 
     /// <summary>The factors a federated sign-in proved: always <see cref="SignInMethods.External"/>,
     /// plus <see cref="SignInMethods.ExternalMfa"/> when the provider asserted MFA.</summary>
-    public static string[] ExternalMethods(IEnumerable<string> providerAmr) =>
-        providerAmr.Any(FederatedMfaAmrValues.Contains)
+    public static string[] ExternalMethods(IEnumerable<string> providerAmr, IEnumerable<string>? providerMfaAmrValues = null) =>
+        IsFederatedMfa(providerAmr, providerMfaAmrValues)
             ? [SignInMethods.External, SignInMethods.ExternalMfa]
             : [SignInMethods.External];
 

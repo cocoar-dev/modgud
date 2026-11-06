@@ -151,19 +151,14 @@ public class TwoFactorEnforcementMiddleware(RequestDelegate next)
         return false;
     }
 
-    internal static readonly string[] FederatedMfaAmrValues = ["mfa", "otp", "fido", "hwk", "swk", "mca", "pop"];
-
+    /// <summary>B6-OIDC-04 — the verdict stamped at sign-in (which knew the provider's
+    /// exception list), else the strict RFC 8176 rule over the preserved <c>amr</c>.</summary>
     internal static bool HasFederatedMfa(System.Security.Claims.ClaimsPrincipal? principal)
     {
         if (principal is null) return false;
-        foreach (var claim in principal.FindAll("modgud.external.amr"))
-        {
-            foreach (var accepted in FederatedMfaAmrValues)
-            {
-                if (string.Equals(claim.Value, accepted, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-        }
-        return false;
+        if (principal.HasClaim(Modgud.Authentication.SignIn.SignInAssurance.FederatedMfaClaimType, "true"))
+            return true;
+        return Modgud.Authentication.SignIn.SignInAssurance.IsFederatedMfa(
+            principal.FindAll("modgud.external.amr").Select(c => c.Value));
     }
 }

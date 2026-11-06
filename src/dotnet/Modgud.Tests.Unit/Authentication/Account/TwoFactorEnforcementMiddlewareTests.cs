@@ -103,23 +103,37 @@ public class TwoFactorEnforcementMiddlewareTests
             Assert.False(TwoFactorEnforcementMiddleware.HasFederatedMfa(principal));
         }
 
+        // B6-OIDC-04 — RFC 8176: "mfa" is the explicit marker; otp/hwk/swk/pop/fido are
+        // single factors. Two factors of different classes (knowledge, possession,
+        // inherence) also count; one factor alone, or two of the same class, do not.
         [Theory]
         [InlineData("mfa")]
-        [InlineData("otp")]
-        [InlineData("fido")]
-        [InlineData("hwk")]
-        [InlineData("swk")]
-        [InlineData("mca")]
-        [InlineData("pop")]
-        public void Recognized_amr_value_is_federated_mfa(string amr)
+        [InlineData("pwd", "otp")]
+        [InlineData("pwd", "hwk")]
+        [InlineData("swk", "fpt")]
+        [InlineData("pin", "fido")]
+        public void Mfa_or_two_factor_classes_are_federated_mfa(params string[] amr)
         {
             Assert.True(TwoFactorEnforcementMiddleware.HasFederatedMfa(WithExternalAmr(amr)));
         }
 
         [Theory]
+        [InlineData("otp")]
+        [InlineData("hwk")]
+        [InlineData("swk")]
+        [InlineData("pop")]
+        [InlineData("fido")]
+        [InlineData("mca")]
+        [InlineData("otp", "sms")]
+        [InlineData("pwd", "kba")]
+        public void A_single_factor_or_one_factor_class_is_not_federated_mfa(params string[] amr)
+        {
+            Assert.False(TwoFactorEnforcementMiddleware.HasFederatedMfa(WithExternalAmr(amr)));
+        }
+
+        [Theory]
         [InlineData("MFA")]
-        [InlineData("Otp")]
-        [InlineData("Fido")]
+        [InlineData("Mfa")]
         public void Match_is_case_insensitive(string amr)
         {
             Assert.True(TwoFactorEnforcementMiddleware.HasFederatedMfa(WithExternalAmr(amr)));
@@ -127,7 +141,7 @@ public class TwoFactorEnforcementMiddlewareTests
 
         [Theory]
         [InlineData("pwd")]
-        [InlineData("face")] // not in the accepted set even though arguably MFA
+        [InlineData("face")]
         [InlineData("")]
         [InlineData("magic-link")]
         public void Unrecognized_amr_value_is_not_federated_mfa(string amr)

@@ -193,6 +193,8 @@ public class FederationV1Phase1Tests : IntegrationTestBase
         identity.AddClaim(new Claim("iss", Issuer));
         identity.AddClaim(new Claim("sub", subject));
         identity.AddClaim(new Claim("email", email));
+        // B6-OIDC-05 — JIT only builds on a verified address; this test IdP verifies.
+        identity.AddClaim(new Claim("email_verified", "true"));
         foreach (var g in groups)
             identity.AddClaim(new Claim("groups", g));
         return new ClaimsPrincipal(identity);

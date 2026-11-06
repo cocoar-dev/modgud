@@ -29,12 +29,16 @@ public class EntraIdFlavor : ILoginProviderFlavor
         //
         // Notes on Entra's claim shape:
         //   - 'given_name' / 'family_name' are standard OIDC name fields.
-        //   - 'email' is preferred; fallback to 'preferred_username' (UPN).
+        //   - 'email' only. 'preferred_username' (UPN) is a sign-in name, not a
+        //     verified mailbox, and Entra sends no email_verified: enable
+        //     "E-Mails gelten als verifiziert" on this provider only when your
+        //     tenant controls every address it issues (single-tenant, managed
+        //     domains). Otherwise allowlist, JIT and profile e-mail refuse it.
         //   - Custom attributes arrive as 'extension_<appId>_<attrName>'.
         (claims) => ({
           firstname: claims.given_name?.trim(),
           lastname: claims.family_name?.trim(),
-          email: claims.email ?? claims.preferred_username,
+          email: claims.email,
           acronym: (claims.given_name?.[0] ?? '') + (claims.family_name?.[0] ?? '')
         })
         """;

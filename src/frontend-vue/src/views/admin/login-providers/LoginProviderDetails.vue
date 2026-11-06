@@ -68,8 +68,10 @@ interface FormState {
   AllowLinking: boolean
   TrustForEmailLink: boolean
   TrustForAuthorization: boolean
+  TrustEmailsAsVerified: boolean
   AuthoritativeForProfile: boolean
   AllowedEmailDomains: string[]
+  MfaAmrValues: string[]
   IconName: string
   ButtonColorHex: string
   FlavorData: Record<string, unknown>
@@ -91,8 +93,10 @@ function emptyForm(): FormState {
     AllowLinking: true,
     TrustForEmailLink: false,
     TrustForAuthorization: false,
+    TrustEmailsAsVerified: false,
     AuthoritativeForProfile: false,
     AllowedEmailDomains: [],
+    MfaAmrValues: [],
     IconName: '',
     ButtonColorHex: '',
     FlavorData: {},
@@ -122,8 +126,10 @@ function fromStagedInto(e: ManifestEntity) {
     AllowLinking: e.AllowLinking !== false,
     TrustForEmailLink: e.TrustForEmailLink === true,
     TrustForAuthorization: e.TrustForAuthorization === true,
+    TrustEmailsAsVerified: e.TrustEmailsAsVerified === true,
     AuthoritativeForProfile: e.AuthoritativeForProfile === true,
     AllowedEmailDomains: arr(e.AllowedEmailDomains),
+    MfaAmrValues: arr(e.MfaAmrValues),
     IconName: str(e.IconName),
     ButtonColorHex: str(e.ButtonColorHex),
     FlavorData: normalizeFlavorData((e.FlavorData as Record<string, unknown> | undefined) ?? {}, f?.ConfigSchema),
@@ -149,6 +155,7 @@ function toStaged(): ManifestEntity {
   entity.AllowLinking = form.value.AllowLinking
   entity.TrustForEmailLink = form.value.TrustForEmailLink
   entity.TrustForAuthorization = form.value.TrustForAuthorization
+  entity.TrustEmailsAsVerified = form.value.TrustEmailsAsVerified
   entity.AuthoritativeForProfile = form.value.AuthoritativeForProfile
   // v2 merge-patch: explicit null stages the clear (absent would keep live).
   entity.Description = form.value.Description.trim() || null
@@ -157,6 +164,8 @@ function toStaged(): ManifestEntity {
   entity.ButtonColorHex = form.value.ButtonColorHex || null
   entity.AllowedEmailDomains =
     form.value.AllowedEmailDomains.length > 0 ? [...form.value.AllowedEmailDomains] : null
+  entity.MfaAmrValues =
+    form.value.MfaAmrValues.length > 0 ? [...form.value.MfaAmrValues] : null
   // ClientId is plain-patch in the manifest (null = unchanged, never cleared) —
   // only stage a non-empty value.
   if (form.value.ClientId.trim()) entity.ClientId = form.value.ClientId.trim()
@@ -378,8 +387,10 @@ async function load() {
       AllowLinking: existing.AllowLinking,
       TrustForEmailLink: existing.TrustForEmailLink,
       TrustForAuthorization: existing.TrustForAuthorization,
+      TrustEmailsAsVerified: existing.TrustEmailsAsVerified,
       AuthoritativeForProfile: existing.AuthoritativeForProfile,
       AllowedEmailDomains: existing.AllowedEmailDomains ? [...existing.AllowedEmailDomains] : [],
+      MfaAmrValues: existing.MfaAmrValues ? [...existing.MfaAmrValues] : [],
       IconName: existing.IconName ?? '',
       ButtonColorHex: existing.ButtonColorHex ?? '',
       FlavorData: normalizeFlavorData(existing.FlavorData, loadedFlavor?.ConfigSchema),
@@ -583,8 +594,10 @@ async function createProvider() {
     AllowLinking: form.value.AllowLinking,
     TrustForEmailLink: form.value.TrustForEmailLink,
     TrustForAuthorization: form.value.TrustForAuthorization,
+    TrustEmailsAsVerified: form.value.TrustEmailsAsVerified,
     AuthoritativeForProfile: form.value.AuthoritativeForProfile,
     AllowedEmailDomains: form.value.AllowedEmailDomains.length > 0 ? form.value.AllowedEmailDomains : null,
+    MfaAmrValues: form.value.MfaAmrValues.length > 0 ? form.value.MfaAmrValues : null,
     IconName: form.value.IconName || null,
     ButtonColorHex: form.value.ButtonColorHex || null,
   })
@@ -613,8 +626,10 @@ async function updateProvider() {
     AllowLinking: form.value.AllowLinking,
     TrustForEmailLink: form.value.TrustForEmailLink,
     TrustForAuthorization: form.value.TrustForAuthorization,
+    TrustEmailsAsVerified: form.value.TrustEmailsAsVerified,
     AuthoritativeForProfile: form.value.AuthoritativeForProfile,
     AllowedEmailDomains: form.value.AllowedEmailDomains.length > 0 ? form.value.AllowedEmailDomains : null,
+    MfaAmrValues: form.value.MfaAmrValues.length > 0 ? form.value.MfaAmrValues : null,
     IconName: form.value.IconName || null,
     ButtonColorHex: form.value.ButtonColorHex || null,
     FlavorData: form.value.FlavorData,
@@ -1206,6 +1221,16 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
                     clearable
                     @update:model-value="(v: string) => form.AllowedEmailDomains = parseList(v)" />
                 </CoarFormField>
+                <CoarFormField
+                  :label="t('admin.loginProviders.mfaAmrValues', {}, 'Zusätzliche MFA-amr-Werte')"
+                  :hint="t('admin.loginProviders.mfaAmrValues.hint', {}, 'Nur nötig, wenn dieser IdP nach einer Mehrfaktor-Anmeldung weder „mfa“ noch zwei Faktorklassen sendet. Jeder hier eingetragene Wert gilt allein als MFA. Leer bedeutet: Regel nach RFC 8176.')">
+                  <CoarTextInput
+                    :model-value="form.MfaAmrValues.join(', ')"
+                    :disabled="isBuiltIn"
+                    placeholder="otp"
+                    clearable
+                    @update:model-value="(v: string) => form.MfaAmrValues = parseList(v)" />
+                </CoarFormField>
               </div>
             </section>
 
@@ -1222,6 +1247,13 @@ const showOidcConnectionFields = computed(() => !isSaml.value)
                   layout="inline"
                   label-position="after">
                   <CoarCheckbox v-model="form.TrustForAuthorization" :disabled="isBuiltIn" />
+                </CoarFormField>
+                <CoarFormField
+                  :label="t('admin.loginProviders.trustEmailsAsVerified', {}, 'E-Mails gelten als verifiziert')"
+                  :hint="t('admin.loginProviders.trustEmailsAsVerified.hint', {}, 'Nur einschalten, wenn dieser IdP jede ausgegebene E-Mail-Adresse selbst verifiziert, aber kein email_verified sendet. Sonst zählen für Domain-Allowlist, automatische Kontoanlage und Profil-E-Mail nur Adressen mit email_verified=true.')"
+                  layout="inline"
+                  label-position="after">
+                  <CoarCheckbox v-model="form.TrustEmailsAsVerified" :disabled="isBuiltIn" />
                 </CoarFormField>
                 <CoarFormField
                   :label="t('admin.loginProviders.authoritativeForProfile', {}, 'Profil-autoritativ')"

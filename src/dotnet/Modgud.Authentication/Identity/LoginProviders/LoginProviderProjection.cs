@@ -34,6 +34,8 @@ public partial class LoginProviderProjection : SingleStreamProjection<LoginProvi
         AllowLinking = @event.AllowLinking,
         TrustForEmailLink = @event.TrustForEmailLink,
         TrustForAuthorization = @event.TrustForAuthorization,
+        TrustEmailsAsVerified = @event.TrustEmailsAsVerified,
+        MfaAmrValues = @event.MfaAmrValues,
         AuthoritativeForProfile = @event.AuthoritativeForProfile,
         AllowedEmailDomains = @event.AllowedEmailDomains,
         IconName = @event.IconName,
@@ -57,6 +59,8 @@ public partial class LoginProviderProjection : SingleStreamProjection<LoginProvi
         current.AllowLinking = @event.AllowLinking;
         current.TrustForEmailLink = @event.TrustForEmailLink;
         current.TrustForAuthorization = @event.TrustForAuthorization;
+        current.TrustEmailsAsVerified = @event.TrustEmailsAsVerified;
+        current.MfaAmrValues = @event.MfaAmrValues;
         current.AuthoritativeForProfile = @event.AuthoritativeForProfile;
         current.AllowedEmailDomains = @event.AllowedEmailDomains;
         current.IconName = @event.IconName;

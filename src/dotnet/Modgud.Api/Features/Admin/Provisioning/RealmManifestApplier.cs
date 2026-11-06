@@ -484,6 +484,10 @@ public sealed partial class RealmManifestApplier(
                     ? new Optional<JsonDocument>(JsonDocument.Parse(lp.FlavorData.Value.GetRawText())) : default,
                 Enabled: OptBool(lp.Enabled),
                 TrustForAuthorization: OptBool(lp.TrustForAuthorization),
+                TrustEmailsAsVerified: OptBool(lp.TrustEmailsAsVerified),
+                MfaAmrValues: lp.MfaAmrValues.HasValue
+                    ? new Optional<List<string>?>(lp.MfaAmrValues.Value is { Count: > 0 } amr ? amr : null)
+                    : default,
                 AuthoritativeForProfile: OptBool(lp.AuthoritativeForProfile)), ct), ctx);
 
             // A manifest secret on an EXISTING provider ROTATES it (mirrors the user
@@ -1135,6 +1139,8 @@ public sealed partial class RealmManifestApplier(
             IconName: OrNull(lp.IconName),
             ButtonColorHex: OrNull(lp.ButtonColorHex),
             TrustForAuthorization: lp.TrustForAuthorization,
+            TrustEmailsAsVerified: lp.TrustEmailsAsVerified,
+            MfaAmrValues: lp.MfaAmrValues.HasValue && lp.MfaAmrValues.Value is { Count: > 0 } mfaAmr ? mfaAmr : null,
             AuthoritativeForProfile: lp.AuthoritativeForProfile,
             InitialClientSecret: lp.ClientSecret,
             Id: pinned.Id,

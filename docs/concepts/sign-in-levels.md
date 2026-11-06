@@ -11,7 +11,7 @@ A sign-in reaches one of two ordered levels, recorded on the session:
 | Level | Reached by |
 |---|---|
 | `single` | One factor: password, e-mail code, magic link |
-| `multi` | Two different factors (password + TOTP, e-mail code + TOTP, password + e-mail code), or one factor that is multi-factor on its own: a passkey with user verification, or a federated sign-in whose IdP asserted MFA |
+| `multi` | Two different factors (password + TOTP, e-mail code + TOTP, password + e-mail code), or one factor that is multi-factor on its own: a passkey with user verification, or a federated sign-in whose IdP asserted MFA (see below) |
 
 A factor is a *kind* of proof, not a step:
 
@@ -130,6 +130,16 @@ Account-change endpoints answer `403 { "RequiresReauthentication": true, "Method
 ## Setup grace and exemption
 
 When a target requires `multi` and a user has no second factor yet, the user may keep signing in at `single` for the **setup grace** days, starting at their first such sign-in. After that, the target is blocked until a second factor is set up — the portal's factor setup, sign-out and account deletion stay reachable. Admins can reset the grace clock, force enforcement, or exempt a user entirely (`TwoFactorExempt`) in the [user editor](/admin/users).
+
+## When a federated sign-in counts as multi-factor
+
+Modgud reads the external provider's `amr` (RFC 8176). The sign-in is `multi` when
+it carries `mfa`, or factors from two different classes — knowledge (`pwd`,
+`pin`, `kba`), possession (`otp`, `sms`, `tel`, `hwk`, `swk`, `sc`, `pop`, `fido`),
+inherence (`fpt`, `face`, `iris`, `retina`, `vbm`). A single factor such as `otp` or
+`hwk`, or two factors of one class, is `single`. For an IdP that marks its MFA
+sign-ins differently, list those values under **Zusätzliche MFA-amr-Werte** on the
+provider; each listed value then counts as MFA on its own.
 
 ## Tokens: `acr` and `amr`
 
