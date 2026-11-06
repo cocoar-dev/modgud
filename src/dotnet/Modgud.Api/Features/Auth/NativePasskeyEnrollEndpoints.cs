@@ -140,6 +140,8 @@ public static class NativePasskeyEnrollEndpoints
             IApplicationSettingsResolver settingsResolver,
             UserManager<ApplicationUser> userManager,
             RealmScopedFido2Factory fido2Factory,
+            Modgud.Authentication.Api.Account.IAccountChangeGuard accountChanges,
+            ILoggerFactory loggers,
             JsonElement body,
             CancellationToken ct) =>
         {
@@ -270,6 +272,7 @@ public static class NativePasskeyEnrollEndpoints
                 RpId = ceremony.RpId,
                 CreatedAt = DateTimeOffset.UtcNow,
             };
+            var hadStrongFactor = await NativeAccountChange.HasStrongFactorAsync(session, user, ct);
             session.Store(stored);
             try
             {
@@ -281,6 +284,9 @@ public static class NativePasskeyEnrollEndpoints
                 return Results.BadRequest(new { Message = "Passkey enrollment failed." });
             }
 
+            // RV-0001 stage 1 — the same notice as the browser; a warning where it would need a fresh sign-in.
+            await NativeAccountChange.RecordAsync(context, accountChanges, loggers.CreateLogger("Modgud.Api.Features.Auth.NativePasskey"),
+                user, clientId, Modgud.Authentication.Api.Account.AccountChange.PasskeyAdded, hadStrongFactor, ct);
             return Results.Ok(new { Message = "Passkey enrolled successfully." });
         })
         .WithName("NativePasskey_Enroll")

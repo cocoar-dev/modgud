@@ -73,19 +73,25 @@ public static class NativePasskeyManagementEndpoints
             IApplicationSettingsResolver settingsResolver,
             UserManager<ApplicationUser> userManager,
             Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker,
+            Modgud.Authentication.Api.Account.IAccountChangeGuard accountChanges,
+            ILoggerFactory loggers,
             CancellationToken ct) =>
         {
             if (await NativeBearerEndpointSupport.GateDisabledAsync(settingsResolver, context, ct) is { } gate) return gate;
 
-            var (user, _, unauthorized) = await NativeBearerEndpointSupport.ResolvePrincipalAsync(context, userManager);
+            var (user, clientId, unauthorized) = await NativeBearerEndpointSupport.ResolvePrincipalAsync(context, userManager);
             if (unauthorized is not null) return unauthorized;
 
             var credential = await session.LoadAsync<StoredPasskeyCredential>(id, ct);
             if (credential is null || credential.UserId != user!.Id)
                 return Results.NotFound();
 
+            var hadStrongFactor = await NativeAccountChange.HasStrongFactorAsync(session, user, ct);
             session.Delete(credential);
             await session.SaveChangesAsync(ct);
+            // RV-0001 stage 1 — the same notice as the browser; a warning where it would need a fresh sign-in.
+            await NativeAccountChange.RecordAsync(context, accountChanges, loggers.CreateLogger("Modgud.Api.Features.Auth.NativePasskey"),
+                user, clientId, Modgud.Authentication.Api.Account.AccountChange.PasskeyRemoved, hadStrongFactor, ct);
 
             // MG-FT-07 §15.4 — staffing sessions opened with THIS credential
             // end with it: the shift's trust anchor (the tap) is gone.

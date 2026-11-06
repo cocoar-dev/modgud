@@ -329,6 +329,8 @@ Authorization: Bearer <access_token>
 
 Returns `204 No Content`. A deleted passkey can no longer satisfy a `urn:cocoar:passkey` assertion. An id that doesn't exist **or** belongs to another user is a `404` (never a `403`) — the endpoint is not a cross-user credential-existence oracle.
 
+**Account-change notice.** Adding a passkey (`POST /connect/passkey/enroll`) and removing one (`DELETE /connect/passkey/{id}`) mail the user the same "a change to your account" notice as the browser does. When the account already has a strong factor (TOTP or a passkey) and the token's `auth_time` is older than 15 minutes, Modgud also logs a warning, because the browser would ask for a fresh sign-in before such a change. Today this is a log entry only: the request still succeeds. A later release may refuse it with `insufficient_user_authentication` and `max_age` (RFC 9470), so the app signs the user in again and repeats the call; plan for that response.
+
 ### Second factor
 
 Whether a sign-in needs a second factor is decided by the **target App's** sign-in policy and the user's own second factor — see [Sign-in levels](../concepts/sign-in-levels). The App lists the methods it implements under *App → Sign-in*; the grants only accept what is listed (`urn:cocoar:otp` is refused with `unsupported_grant_type` when the target's e-mail code is off).
