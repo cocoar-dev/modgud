@@ -146,8 +146,9 @@ public sealed class StaffingRevoker : IStaffingRevoker
         // G-B4-02 — the revoke is owed from the moment Ended is committed: write it in the same
         // commit, so a failure after the commit cannot lose it (an ended session is never
         // selected again by a repeated end, the sweep or the per-subject cascades).
+        // A safety net for the immediate revoke after the commit, delivered once that finished.
         if (!string.IsNullOrEmpty(staffing.OAuthAuthorizationId))
-            await _followUps.PublishAsync(session,
+            await _followUps.PublishSafetyNetAsync(session,
                 new RevokeStaffingAuthorization(staffing.Id, staffing.OAuthAuthorizationId));
 
         try

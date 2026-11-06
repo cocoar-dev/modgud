@@ -68,6 +68,40 @@ public partial class AccountLifecycleTests
         Assert.Equal(0, Factory.UserAccessRevokerFaults.FailRevokes);
     }
 
+    /// <summary>The follow-up is the safety net of the immediate revoke: scheduled after it, not run
+    /// next to it (both appended to the user's stream at once, and one failed on the version).</summary>
+    [Fact]
+    public async Task The_access_revoke_follow_up_of_an_email_change_runs_after_the_immediate_revoke()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Safety", lastname: "Net", acronym: $"sn{Guid.NewGuid():N}"[..10], email: $"so{Guid.NewGuid():N}"[..14] + "@test.com");
+        var committedBefore = DateTimeOffset.UtcNow;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var result = await GetTenantedMessageBus(scope).InvokeAsync<ErrorOr<UserDto>>(new UpdateUserCommand(
+                user.Id, default, default, default, new Optional<string>($"sn{Guid.NewGuid():N}"[..14] + "@test.com"), default), ct);
+            Assert.False(result.IsError);
+        }
+
+        // Two revokes: the immediate one, then the follow-up once it is due — never at the same time.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+        List<(Guid UserId, DateTimeOffset Started, DateTimeOffset Ended)> calls;
+        while ((calls = Factory.UserAccessRevokerFaults.Calls.Where(c => c.UserId == user.Id).OrderBy(c => c.Started).ToList()).Count < 2)
+        {
+            Assert.True(DateTime.UtcNow < deadline, $"The access revoke follow-up did not run ({calls.Count} revoke(s)).");
+            await Task.Delay(100, ct);
+        }
+        Assert.Equal(2, calls.Count);
+        Assert.True(calls[1].Started >= calls[0].Ended, "The follow-up ran next to the immediate revoke.");
+        Assert.True(calls[1].Started >= committedBefore + Modgud.Api.Tests.Infrastructure.ModgudWebApplicationFactory.SafetyNetDelay,
+            $"The follow-up ran at {calls[1].Started:O}, before it was due.");
+        await using var query = GetTenantedSession();
+        Assert.Empty(await query.QueryAsync<string>(
+            "select id::text from wolverine_dead_letters where message_type like '%RevokeUserAccess%' and position(convert_to(?, 'UTF8') in body) > 0",
+            ct, user.Id.ToString()));
+    }
+
     [Fact]
     public async Task An_update_that_applies_an_outdated_change_request_changes_nothing()
     {

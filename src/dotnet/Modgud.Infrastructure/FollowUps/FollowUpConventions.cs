@@ -37,8 +37,11 @@ public static class FollowUpConventions
         opts.CodeGeneration.AlwaysUseServiceLocationFor<IFollowUpOutbox>();
     }
 
-    public static IServiceCollection AddFollowUpOutbox(this IServiceCollection services) =>
-        services.AddScoped<IFollowUpOutbox, FollowUpOutbox>();
+    public static IServiceCollection AddFollowUpOutbox(this IServiceCollection services)
+    {
+        services.AddSingleton(new FollowUpOptions());
+        return services.AddScoped<IFollowUpOutbox, FollowUpOutbox>();
+    }
 
     private sealed class FollowUpFailurePolicy : IHandlerPolicy
     {
@@ -55,4 +58,16 @@ public static class FollowUpConventions
             }
         }
     }
+}
+
+/// <summary>Timing of follow-ups.</summary>
+public sealed class FollowUpOptions
+{
+    /// <summary>
+    /// How long a safety net (<see cref="IFollowUpOutbox.PublishSafetyNetAsync{T}"/>) waits before
+    /// it runs: longer than the immediate attempt it backs up takes, so the two never run at once
+    /// on the same data (they did — a revoke and its follow-up appended to the same event stream
+    /// and one failed on the stream version). Short enough that a failed attempt is completed soon.
+    /// </summary>
+    public TimeSpan SafetyNetDelay { get; set; } = TimeSpan.FromSeconds(10);
 }

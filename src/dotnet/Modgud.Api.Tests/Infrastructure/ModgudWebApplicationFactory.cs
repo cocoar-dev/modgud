@@ -62,6 +62,9 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     public UserAccessRevokerFaults UserAccessRevokerFaults => _userAccessRevokerFaults;
     public EmailFaults EmailFaults => _emailFaults;
 
+    /// <summary>The <see cref="Modgud.Infrastructure.FollowUps.FollowUpOptions.SafetyNetDelay"/> of the test host.</summary>
+    public static readonly TimeSpan SafetyNetDelay = TimeSpan.FromSeconds(1);
+
     public ModgudWebApplicationFactory(SharedPostgresFixture fixture)
     {
         _enableDirectScopeTenantFallback = true;
@@ -150,6 +153,11 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
             services.AddScoped<Modgud.Authentication.Sessions.IUserAccessRevoker>(sp => new FaultInjectingUserAccessRevoker(
                 ActivatorUtilities.CreateInstance<Modgud.Authentication.Sessions.DeferringUserAccessRevoker>(sp),
                 _userAccessRevokerFaults));
+
+            // Safety nets wait 1 s here instead of 10 s: long enough to run after the immediate
+            // attempt they back up, short enough for tests and for the reset wait.
+            services.RemoveAll<Modgud.Infrastructure.FollowUps.FollowUpOptions>();
+            services.AddSingleton(new Modgud.Infrastructure.FollowUps.FollowUpOptions { SafetyNetDelay = SafetyNetDelay });
 
             // Follow-up outbox probe (test-only handler): proves commit/rollback/realm/retry.
             services.AddSingleton<FollowUpProbeRecorder>();
@@ -690,8 +698,9 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     /// </summary>
     /// <summary>
     /// Waits until the system realm has no durable message waiting for or in its handler
-    /// (status <c>Incoming</c>; handled ones turn <c>Handled</c>, rescheduled retries
-    /// <c>Scheduled</c>). Throws after a minute rather than reset under running work.
+    /// (status <c>Incoming</c>, also while a safety net waits until it is due; handled ones turn
+    /// <c>Handled</c>, rescheduled retries <c>Scheduled</c>). Throws after a minute rather than
+    /// reset under running work.
     /// </summary>
     private static async Task WaitForFollowUpsAsync(IDocumentStore store, CancellationToken ct)
     {

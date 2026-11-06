@@ -23,6 +23,8 @@ public static class RevokeStaffingAuthorizationHandler
             throw new FollowUpPermanentException(
                 $"Authorization revoke for staffing session '{message.StaffingSessionId}' arrived without a realm.");
 
+        // A safety net of the immediate revoke: never next to it on the same authorization.
+        await FollowUpTiming.WaitUntilDueAsync(envelope, ct);
         using var realm = TenantContext.Enter(envelope.TenantId);
         await using var scope = scopes.CreateAsyncScope();
 

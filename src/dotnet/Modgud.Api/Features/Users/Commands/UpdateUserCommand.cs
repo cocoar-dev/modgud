@@ -180,8 +180,10 @@ public class UpdateUserHandler(IDocumentSession session)
         // repeated update sees the new email as unchanged and would revoke nothing).
         // Inside a manifest apply SaveChanges does not commit (the shared transaction does,
         // later): there the revoke below is deferred until after that commit instead.
+        // A safety net for the immediate revoke below: delivered once that has finished, so the
+        // two do not end the same user's access at the same moment.
         if (emailChanged && TenantApplyTransaction.Current is null)
-            await followUps.PublishAsync(session,
+            await followUps.PublishSafetyNetAsync(session,
                 new RevokeUserAccess(command.UserId, AccessRevocationReason.ForceSignOut));
 
         await session.SaveChangesAsync(ct);

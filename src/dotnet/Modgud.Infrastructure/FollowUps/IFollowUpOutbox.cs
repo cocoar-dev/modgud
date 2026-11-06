@@ -1,5 +1,6 @@
 using Marten;
 using Modgud.Infrastructure.Persistence.Tenancy;
+using Wolverine;
 using Wolverine.Marten;
 using Wolverine.Runtime;
 
@@ -16,6 +17,15 @@ public interface IFollowUpOutbox
     /// <summary>Queues <paramref name="message"/> on <paramref name="session"/>; it is written
     /// by that session's next <c>SaveChangesAsync</c>.</summary>
     ValueTask PublishAsync<T>(IDocumentSession session, T message) where T : IFollowUpMessage;
+
+    /// <summary>
+    /// Queues <paramref name="message"/> like <see cref="PublishAsync{T}"/> as the safety net of an
+    /// effect the caller also attempts at once after the commit: it is handed to its handler only
+    /// after <see cref="FollowUpOptions.SafetyNetDelay"/>, so it does not run concurrently with that
+    /// attempt. It repeats the effect (the handler must be idempotent) and completes it when the
+    /// immediate attempt failed. Its handler must start with <see cref="FollowUpTiming.WaitUntilDueAsync"/>.
+    /// </summary>
+    ValueTask PublishSafetyNetAsync<T>(IDocumentSession session, T message) where T : IFollowUpMessage;
 }
 
 /// <summary>
@@ -23,11 +33,18 @@ public interface IFollowUpOutbox
 /// endpoint's bus gets its tenant from <c>TenantContextMiddleware</c>, but an outbox is a bus of
 /// its own, and without the tenant the handler could not open the realm's session later.
 /// </summary>
-internal sealed class FollowUpOutbox(IWolverineRuntime runtime) : IFollowUpOutbox
+internal sealed class FollowUpOutbox(IWolverineRuntime runtime, FollowUpOptions options) : IFollowUpOutbox
 {
     private readonly Dictionary<IDocumentSession, MartenOutbox> _outboxes = new(ReferenceEqualityComparer.Instance);
 
-    public ValueTask PublishAsync<T>(IDocumentSession session, T message) where T : IFollowUpMessage
+    public ValueTask PublishAsync<T>(IDocumentSession session, T message) where T : IFollowUpMessage =>
+        Publish(session, message, null);
+
+    public ValueTask PublishSafetyNetAsync<T>(IDocumentSession session, T message) where T : IFollowUpMessage =>
+        Publish(session, message, new DeliveryOptions()
+            .WithHeader(FollowUpTiming.NotBeforeHeader, FollowUpTiming.NotBefore(options.SafetyNetDelay)));
+
+    private ValueTask Publish<T>(IDocumentSession session, T message, DeliveryOptions? delivery) where T : IFollowUpMessage
     {
         ArgumentNullException.ThrowIfNull(session);
         if (string.IsNullOrEmpty(session.TenantId))
@@ -45,6 +62,6 @@ internal sealed class FollowUpOutbox(IWolverineRuntime runtime) : IFollowUpOutbo
             _outboxes[session] = outbox;
         }
 
-        return outbox.PublishAsync(message);
+        return outbox.PublishAsync(message, delivery);
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Modgud.Authentication.Sessions;
 
 namespace Modgud.Api.Tests.Infrastructure;
@@ -27,13 +28,24 @@ public sealed class UserAccessRevokerFaults
         }
     }
 
-    public void Reset() => FailRevokes = 0;
+    /// <summary>Every revoke that got past the fault, with when it ran.</summary>
+    public ConcurrentQueue<(Guid UserId, DateTimeOffset Started, DateTimeOffset Ended)> Calls { get; } = new();
+
+    public void Reset()
+    {
+        FailRevokes = 0;
+        Calls.Clear();
+    }
 }
 
 internal sealed class FaultInjectingUserAccessRevoker(IUserAccessRevoker inner, UserAccessRevokerFaults faults) : IUserAccessRevoker
 {
-    public Task RevokeAllAccessAsync(Guid userId, AccessRevocationReason reason, CancellationToken ct = default) =>
-        faults.TryConsume()
-            ? throw new InvalidOperationException("Injected failure of the user access revoke.")
-            : inner.RevokeAllAccessAsync(userId, reason, ct);
+    public async Task RevokeAllAccessAsync(Guid userId, AccessRevocationReason reason, CancellationToken ct = default)
+    {
+        if (faults.TryConsume())
+            throw new InvalidOperationException("Injected failure of the user access revoke.");
+        var started = DateTimeOffset.UtcNow;
+        await inner.RevokeAllAccessAsync(userId, reason, ct);
+        faults.Calls.Enqueue((userId, started, DateTimeOffset.UtcNow));
+    }
 }

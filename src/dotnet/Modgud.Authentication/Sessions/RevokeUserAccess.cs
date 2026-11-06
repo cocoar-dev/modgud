@@ -27,6 +27,8 @@ public static class RevokeUserAccessHandler
         if (string.IsNullOrEmpty(envelope.TenantId))
             throw new FollowUpPermanentException($"Access revoke for user '{message.UserId}' arrived without a realm.");
 
+        // A safety net of the immediate revoke: never next to it on the same user's stream.
+        await FollowUpTiming.WaitUntilDueAsync(envelope, ct);
         using var realm = TenantContext.Enter(envelope.TenantId);
         await using var scope = scopes.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<IUserAccessRevoker>()
