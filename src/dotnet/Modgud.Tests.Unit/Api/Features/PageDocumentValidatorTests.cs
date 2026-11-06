@@ -106,17 +106,23 @@ public class PageDocumentValidatorTests
         Assert.Contains("disallowed action", error);
     }
 
+    /// <summary>
+    /// B10-PA03 — the unverified-client warning is rendered by the consent host above every
+    /// custom page; a document can neither provide nor hide it, so the validator no longer
+    /// asks for a document element (whose text and visibility it could not lock anyway).
+    /// </summary>
     [Fact]
-    public void Consent_RequiresSecurityWarningInsideCard()
+    public void Consent_does_not_need_a_document_owned_client_warning()
     {
-        const string missingWarning = """
+        const string withoutWarning = """
         {"id":"p","type":"page","schemaVersion":4,"children":[
-          {"id":"consent-card","type":"card","props":{},"children":[]}
+          {"id":"consent-card","type":"card","props":{},"children":[
+            {"id":"allow","type":"button","props":{"action":"auth:consent-allow"}}
+          ]}
         ]}
         """;
 
-        Assert.False(PageDocumentValidator.Validate("consent", missingWarning, out var error));
-        Assert.Contains("unverified-client warning", error);
+        Assert.True(PageDocumentValidator.Validate("consent", withoutWarning, out var error), error);
     }
 
     [Fact]

@@ -27,7 +27,7 @@ Four slugs. Adding more is a code change (per-slot action list + tile entry).
 | `login` | Username + password + provider buttons. Hosts MFA-prompt actions too. |
 | `logout` | `/logged-out` confirmation after local or federated sign-out. |
 | `password-forgot` | Email-address entry for the password-reset flow. |
-| `consent` | The OAuth consent screen. |
+| `consent` | The OAuth consent screen. For a self-registered (DCR) or URL-identified (CIMD) client, Modgud shows its own warning banner above the page; a custom page cannot change or hide it. |
 
 ## What the editor lets you compose
 
