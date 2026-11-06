@@ -205,10 +205,13 @@ public static class ActivationTokenEndpoints
             token.Status = status;
             session.Store(token);
             await session.SaveChangesAsync(ct);
-            if (status is ActivationTokenStatus.Disabled or ActivationTokenStatus.Revoked)
-                await revoker.EndAllForActivationTokenAsync(
-                    token.Id, StaffingSessionEndReason.ActivationTokenRevoked, ct);
         }
+        // G-B4-02 — the cascade runs on every disable/revoke, not only on a status change: when it
+        // failed after the status was saved, repeating the call finishes it. It only ends sessions
+        // still Active, so a repeat is a no-op otherwise.
+        if (status is ActivationTokenStatus.Disabled or ActivationTokenStatus.Revoked)
+            await revoker.EndAllForActivationTokenAsync(
+                token.Id, StaffingSessionEndReason.ActivationTokenRevoked, ct);
         return Results.Ok((await ToDtosAsync([token], session, ct))[0]);
     }
 

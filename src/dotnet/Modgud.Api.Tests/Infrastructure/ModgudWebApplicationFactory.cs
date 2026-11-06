@@ -49,12 +49,14 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     private IHost? _host;
     private readonly bool _enableDirectScopeTenantFallback;
     private readonly TokenPipelineFaultInjector _tokenPipelineFaults = new();
+    private readonly GrantRevokerFaults _grantRevokerFaults = new();
     private readonly TestFailureCorrelation? _failureCorrelation =
         Environment.GetEnvironmentVariable(TestFailureCorrelation.DirectoryVariable) is { } directory
             ? new TestFailureCorrelation(directory) : null;
     protected virtual bool ProvisionLegacySystemRealm => true;
 
     public TokenPipelineFaultInjector TokenPipelineFaults => _tokenPipelineFaults;
+    public GrantRevokerFaults GrantRevokerFaults => _grantRevokerFaults;
 
     public ModgudWebApplicationFactory(SharedPostgresFixture fixture)
     {
@@ -130,6 +132,13 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
                 services.AddSingleton<IStartupFilter>(_failureCorrelation);
 
             services.AddSingleton(_tokenPipelineFaults);
+
+            // G-B4-02 seam — the grant revoker can be told to fail its next authorization revokes.
+            services.AddSingleton(_grantRevokerFaults);
+            services.RemoveAll<Modgud.Infrastructure.OpenIddict.IOAuthGrantRevoker>();
+            services.AddScoped<Modgud.Infrastructure.OpenIddict.IOAuthGrantRevoker>(sp => new FaultInjectingGrantRevoker(
+                ActivatorUtilities.CreateInstance<Modgud.Infrastructure.OpenIddict.DeferringOAuthGrantRevoker>(sp),
+                _grantRevokerFaults));
 
             // Follow-up outbox probe (test-only handler): proves commit/rollback/realm/retry.
             services.AddSingleton<FollowUpProbeRecorder>();
@@ -612,6 +621,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         }
 
         _tokenPipelineFaults.Reset();
+        _grantRevokerFaults.Reset();
 
         var cancellation = TestContext.Current.CancellationToken;
         var store = Services.GetRequiredService<IDocumentStore>();
