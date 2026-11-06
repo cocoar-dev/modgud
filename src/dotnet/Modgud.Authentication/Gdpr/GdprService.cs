@@ -360,6 +360,8 @@ public class GdprService(
             progress.InboxItemIds = await FindInboxItemIdsAsync(userId, ct);
             foreach (var itemId in progress.InboxItemIds)
                 session.Delete<Modgud.Infrastructure.Persistence.Marten.Projections.Inbox.InboxItemView>(itemId);
+            // B3-EI-06 — the per-source pointers to this user's open items name the user too.
+            session.DeleteWhere<Modgud.Infrastructure.Inbox.InboxSourceSlot>(s => s.RecipientUserId == userId);
             await ClearPublisherSnapshotsAsync(userId, user?.UserName, ct);
 
             if (user is not null)

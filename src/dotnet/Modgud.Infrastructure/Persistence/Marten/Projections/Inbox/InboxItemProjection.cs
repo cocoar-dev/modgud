@@ -60,7 +60,8 @@ public partial class InboxItemProjection : SingleStreamProjection<InboxItemView,
 
     public InboxItemView Apply(InboxItemDismissedEvent @event, InboxItemView current)
     {
-        return current with { DismissedAt = @event.DismissedAt };
+        // A replace may dismiss an item the user dismissed already; keep the first time.
+        return current.DismissedAt is not null ? current : current with { DismissedAt = @event.DismissedAt };
     }
 
     public InboxItemView Apply(InboxItemSnoozedEvent @event, InboxItemView current)

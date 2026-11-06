@@ -118,6 +118,13 @@ public static class MartenConfiguration
         options.Schema.For<Modgud.Application.Inbox.InboxRetentionSettings>()
             .Identity(x => x.Id);
 
+        // B3-EI-06 — the open item of a ReplaceBySource (recipient, source); versioned so
+        // two concurrent notifications cannot both claim it.
+        options.Schema.For<Modgud.Infrastructure.Inbox.InboxSourceSlot>()
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Index(x => x.RecipientUserId);
+
         // Dashboard arrangements — the realm default (fixed id) and one per user
         // ("user:<id>"). Plain documents; the widget catalog itself lives in the
         // frontend.
