@@ -121,7 +121,12 @@ async function login() {
 
 // ── helpers ───────────────────────────────────────────────────────────────
 
+// B10-07 — every failed step is counted; a seed with failures must not end as a plain
+// "Done." with exit code 0.
+let failures = 0
+
 function fail(msg, res) {
+  failures++
   const detail = typeof res.body === 'string' ? res.body : JSON.stringify(res.body)
   console.warn(`  ! ${msg}: HTTP ${res.status} — ${detail}`)
 }
@@ -241,6 +246,9 @@ async function seedRoles(spec) {
   for (const r of spec) {
     if (!r.name) continue                                    // skip comment entries
     if (idsByKey.roles.has(r.name)) {
+      // B10-08 — a resumed partial seed must still resolve this role by its seed key,
+      // or a group created in this run silently loses the role.
+      if (r.key) idsByKey.roles.set(r.key, idsByKey.roles.get(r.name))
       console.log(`  — Role '${r.name}' exists — skipping`)
       continue
     }
@@ -324,7 +332,7 @@ function resolveRoles(keys) {
   for (const k of keys ?? []) {
     const id = idsByKey.roles.get(k)
     if (id) out.push(id)
-    else console.warn(`  ! Unknown role key '${k}' — skipping`)
+    else { failures++; console.warn(`  ! Unknown role key '${k}' — skipping`) }
   }
   return out
 }
@@ -562,7 +570,7 @@ async function main() {
   const providersCreated = await seedLoginProviders(data.loginProviders ?? [])
 
   console.log('\n──────────────────────────────────────────')
-  console.log('Done.')
+  console.log(failures === 0 ? 'Done.' : `Done with ${failures} failure(s) — the seed is incomplete (see the "!" lines above).`)
   console.log(`  Apps:            ${appsCreated}`)
   console.log(`  Roles:           ${rolesCreated}`)
   console.log(`  Users:           ${usersCreated}  (password: ${data.password})`)
@@ -579,6 +587,8 @@ async function main() {
     for (const [id, sec] of Object.entries(clientSecrets))
       console.log(`  client ${id}: ${sec}`)
   }
+  // After the secrets: they are shown once and must not be lost to an early exit.
+  if (failures > 0) process.exitCode = 1
 }
 
 main().catch(err => {
