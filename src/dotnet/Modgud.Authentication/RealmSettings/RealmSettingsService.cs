@@ -69,6 +69,11 @@ public sealed class RealmSettingsService(
     public async Task<ErrorOr<RealmSettingsDto>> PatchAsync(UpdateRealmSettingsDto dto, CancellationToken ct = default)
     {
         var existing = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        // F7-05 — refuse a patch made on a copy that is no longer current (a stale tab, a
+        // second admin); the concurrent-request race is caught by the version check on save.
+        if (dto.ExpectedVersion is { } expected && existing is not null && existing.Version != expected)
+            return Error.Conflict("RealmSettings.Changed",
+                "The realm settings were changed since you loaded them. Reload and apply your change again.");
         var isCreate = existing is null;
         var doc = existing ?? new RealmSettingsDoc
         {
@@ -318,6 +323,7 @@ public sealed class RealmSettingsService(
 
     internal static RealmSettingsDto ToDto(RealmSettingsDoc doc) => new()
     {
+        Version = doc.Version == Guid.Empty ? null : doc.Version,
         SelfRegistration = MapSelfRegistrationToDto(doc.SelfRegistration),
         Dcr = MapDcrToDto(doc.Dcr),
         Cimd = MapCimdToDto(doc.Cimd),

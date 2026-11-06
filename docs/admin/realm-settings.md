@@ -44,6 +44,16 @@ Platform — see [Customization → Branding](../platform/branding).
 Permissions: `realm-settings:read` / `realm-settings:write`. The
 realm-admin role grants both via the `realm:admin` bypass.
 
+**Two admins at once.** The realm settings are one record. When another
+admin saved them after you opened the page, your save is refused with
+"changed by someone else" instead of overwriting their change: reload
+the page and apply your change again. Over the API, `GET` returns the
+record's `Version` and a `PATCH` sends it back as `ExpectedVersion`; a
+different stored version answers `409 RealmSettings.Changed`. A `PATCH`
+without `ExpectedVersion` is not checked. The same holds for an app's
+settings (`ExpectedSettingsVersion` on `PUT /api/app/{id}`, `409
+App.SettingsChanged`).
+
 ## Self-Registration
 
 Public sign-up: visitors can create an account themselves at `/register`. Opt-in per realm, **disabled by default** — anonymous probes to `/api/account/self-registration-info` return the all-defaults shape so disabled realms can't be enumerated.

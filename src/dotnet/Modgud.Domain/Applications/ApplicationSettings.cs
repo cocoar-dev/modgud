@@ -23,6 +23,9 @@ namespace Modgud.Domain.Applications;
 /// </summary>
 public class ApplicationSettings
 {
+    /// <summary>F7-05 — the stored document's version (Marten optimistic concurrency).</summary>
+    public Guid Version { get; set; }
+
     /// <summary>The owning <see cref="Modgud.Authorization.Apps.App.Id"/>.
     /// One <c>ApplicationSettings</c> doc per App.</summary>
     public Guid Id { get; set; }

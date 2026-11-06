@@ -25,6 +25,9 @@ export interface RealmSettingsDto {
   /** Page-builder schemas keyed by slug. Read-only here — writes use
    * the dedicated /api/admin/customization/pages/{slug} endpoints. */
   Pages: Record<string, string>
+  /** F7-05 — the stored version (null while the realm never saved its settings). Sent back
+   * as `ExpectedVersion` so a save on an outdated copy is refused with 409. */
+  Version?: string | null
 }
 
 export interface UpdateRealmSettingsDto {
@@ -43,6 +46,9 @@ export interface UpdateRealmSettingsDto {
   RegistrationFields?: UpdateRegistrationFieldsSettingsDto | null
   Deletion?: UpdateDeletionSettingsDto | null
   Audit?: UpdateAuditSettingsDto | null
+  /** F7-05 — the `Version` the edit was made on; a different stored version → 409
+   * `RealmSettings.Changed`. */
+  ExpectedVersion?: string | null
 }
 
 export type ProofCapability = 'IdentifiedActor' | 'PhishingResistant' | 'IndividuallyRevocable'

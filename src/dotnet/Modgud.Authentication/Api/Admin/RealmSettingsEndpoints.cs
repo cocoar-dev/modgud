@@ -50,9 +50,12 @@ public static class RealmSettingsEndpoints
             return result.Match(
                 ok => Results.Ok(ok),
                 errors => Results.Problem(
-                    statusCode: errors.First().Type == ErrorOr.ErrorType.Validation
-                        ? StatusCodes.Status400BadRequest
-                        : StatusCodes.Status500InternalServerError,
+                    statusCode: errors.First().Type switch
+                    {
+                        ErrorOr.ErrorType.Validation => StatusCodes.Status400BadRequest,
+                        ErrorOr.ErrorType.Conflict => StatusCodes.Status409Conflict,
+                        _ => StatusCodes.Status500InternalServerError,
+                    },
                     title: errors.First().Code,
                     detail: errors.First().Description));
         })

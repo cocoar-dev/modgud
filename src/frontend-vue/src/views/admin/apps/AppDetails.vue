@@ -404,6 +404,7 @@ async function save() {
         Description: form.value.Description.trim() || null,
         Permissions: buildPermissionsPayload(),
         Settings: settings,
+        ExpectedSettingsVersion: settings ? (dto.value?.Settings?.Version ?? null) : null,
       })
     }
     props.close()
@@ -414,6 +415,8 @@ async function save() {
     if (body?.Error === 'App.CatalogEntriesReferenced' && Array.isArray(body.Blockers)) {
       catalogBlockers.value = body.Blockers as CatalogBlocker[]
       error.value = body.Message ?? t('admin.apps.catalogBlocked', {}, 'Some catalog entries are still in use.')
+    } else if (body?.Error === 'App.SettingsChanged') {
+      error.value = t('admin.apps.settingsChanged', {}, 'The settings of this app were changed by someone else since you opened it. Close and reopen the app, then apply your change again.')
     } else {
       error.value = body?.Message ?? e?.message ?? String(e)
     }

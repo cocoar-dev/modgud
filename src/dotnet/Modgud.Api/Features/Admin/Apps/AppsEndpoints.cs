@@ -43,7 +43,10 @@ public record UpdateAppDto(
     string DisplayName,
     string? Description,
     List<AppPermissionDto> Permissions,
-    ApplicationSettingsDto? Settings = null);
+    ApplicationSettingsDto? Settings = null,
+    // F7-05 — the settings version the client edited; a newer stored one refuses the
+    // update with App.SettingsChanged (409). Omit to update unconditionally.
+    Guid? ExpectedSettingsVersion = null);
 
 /// <summary>
 /// Admin surface for managing <see cref="App"/> records — the per-realm list

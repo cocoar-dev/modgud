@@ -597,6 +597,7 @@ public sealed class RealmManifestExporter(
     /// </summary>
     private static ApplicationSettingsDto WithoutDerivedUrls(ApplicationSettingsDto s) => s with
     {
+        Version = null, // F7-05 — a stored row version means nothing in another realm or later apply
         Branding = s.Branding is null ? null : s.Branding with { LogoUrl = null, FaviconUrl = null },
     };
 

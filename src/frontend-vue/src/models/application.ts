@@ -58,6 +58,9 @@ export interface UpdateApplicationDto {
   Description?: string | null
   Permissions: ApplicationPermissionInputDto[]
   Settings?: ApplicationSettingsDto | null
+  /** F7-05 — `Settings.Version` as loaded; a different stored version → 409
+   * `App.SettingsChanged` instead of overwriting a change made meanwhile. */
+  ExpectedSettingsVersion?: string | null
 }
 
 // ── ADR-0011: per-Application settings overrides ────────────────────────────
@@ -172,6 +175,8 @@ export interface ApplicationChangeFeedDto {
 }
 
 export interface ApplicationSettingsDto {
+  /** F7-05 — the stored version (read only; null while the app has no override). */
+  Version?: string | null
   Origin?: ApplicationOriginDto | null
   Branding?: ApplicationBrandingSettingsDto | null
   PageTheme?: ApplicationPageThemeDto | null

@@ -745,6 +745,7 @@ public sealed class ApplicationSettingsService(
         if (doc is null) return new ApplicationSettingsDto();
         return new ApplicationSettingsDto
         {
+            Version = doc.Version == Guid.Empty ? null : doc.Version,
             Origin = doc.Origin is null ? null : new ApplicationOriginDto { Subdomain = doc.Origin.Subdomain },
             Branding = doc.Branding is null ? null : new ApplicationBrandingDto
             {

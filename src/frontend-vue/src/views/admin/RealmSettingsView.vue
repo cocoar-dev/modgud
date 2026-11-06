@@ -24,7 +24,7 @@ import {
   diffRateLimitOverrides, overridesFromUpdate, SIGN_IN_POLICY_DEFAULTS,
   type PolicyLimitsDto, type RateLimitEnforcementMode, type RateLimitOverrides,
 } from '@/models/realmSettings'
-import { useRealmSettingsStore } from '@/stores/realmSettings.store'
+import { useRealmSettingsStore, isRealmSettingsConflict } from '@/stores/realmSettings.store'
 import { useDraftStaging } from '@/composables/useDraftStaging'
 import type { ManifestEntity } from '@/stores/realmDraft.store'
 import { useGroupStore } from '@/stores/group.store'
@@ -933,6 +933,10 @@ async function save(tab: SavableTabId) {
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1500)
   } catch (e: any) {
+    if (isRealmSettingsConflict(e)) {
+      error.value = t('admin.realmSettings.changedElsewhere', {}, 'The realm settings were changed by someone else since you loaded them. Reload the page and apply your change again.')
+      return
+    }
     error.value = e?.body?.detail ?? e?.body?.error ?? e?.message ?? String(e)
   } finally {
     saving.value = false

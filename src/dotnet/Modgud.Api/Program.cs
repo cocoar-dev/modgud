@@ -267,10 +267,13 @@ try
             var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
             var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
 
+            // F7-05 — a lost-update race on an optimistically versioned document is a
+            // conflict the client can resolve by reloading, not a server error.
+            var isConcurrency = exception is JasperFx.ConcurrencyException;
             var problemDetails = new ProblemDetails
             {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "An error occurred!",
+                Status = isConcurrency ? StatusCodes.Status409Conflict : StatusCodes.Status500InternalServerError,
+                Title = isConcurrency ? "Concurrency.Conflict" : "An error occurred!",
                 Detail = env.IsProduction() ? null : exception?.Message,
                 Instance = context.Request.Path
             };

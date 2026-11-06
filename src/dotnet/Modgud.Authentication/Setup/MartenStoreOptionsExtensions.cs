@@ -286,8 +286,12 @@ public static class MartenStoreOptionsExtensions
         // Tenant-scoped singleton config doc. One row per tenant DB,
         // addressed by the fixed `RealmSettings.SingletonId`. Owned by
         // the realm-admin via /api/admin/realm-settings.
+        // F7-05 — written as a whole by ~20 paths; optimistic concurrency turns a lost
+        // update between two concurrent writers into a conflict (409) instead.
         options.Schema.For<RealmSettingsDoc>()
-            .Identity(x => x.Id);
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Metadata(m => m.Version.MapTo(x => x.Version));
 
         // ADR-0011 — per-Application config overrides. Tenant-scoped, one row
         // per App that has any override, keyed by App.Id. Lazy-created on first
@@ -295,7 +299,9 @@ public static class MartenStoreOptionsExtensions
         // migration for existing realms). Merged over RealmSettings by
         // EffectiveSettings/IApplicationSettingsResolver.
         options.Schema.For<Modgud.Domain.Applications.ApplicationSettings>()
-            .Identity(x => x.Id);
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Metadata(m => m.Version.MapTo(x => x.Version));
 
         options.Events.MapEventType<ApplicationChangeFeedConfiguredEvent>("application_change_feed_configured");
 

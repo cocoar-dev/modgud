@@ -10,6 +10,11 @@ namespace Modgud.Application.DTOs.Applications;
 /// </summary>
 public record ApplicationSettingsDto
 {
+    /// <summary>F7-05 — read only: the version this copy was read at (null before the App
+    /// has an override). Never applied from a PATCH or manifest; send it back as
+    /// <c>UpdateAppDto.ExpectedSettingsVersion</c> to be told about a change in between.</summary>
+    public Guid? Version { get; init; }
+
     public ApplicationOriginDto? Origin { get; init; }
     public ApplicationBrandingDto? Branding { get; init; }
     public ApplicationPageThemeDto? PageTheme { get; init; }
