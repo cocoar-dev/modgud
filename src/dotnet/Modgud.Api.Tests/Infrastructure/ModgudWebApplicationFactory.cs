@@ -50,6 +50,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     private readonly bool _enableDirectScopeTenantFallback;
     private readonly TokenPipelineFaultInjector _tokenPipelineFaults = new();
     private readonly GrantRevokerFaults _grantRevokerFaults = new();
+    private readonly UserAccessRevokerFaults _userAccessRevokerFaults = new();
     private readonly TestFailureCorrelation? _failureCorrelation =
         Environment.GetEnvironmentVariable(TestFailureCorrelation.DirectoryVariable) is { } directory
             ? new TestFailureCorrelation(directory) : null;
@@ -57,6 +58,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 
     public TokenPipelineFaultInjector TokenPipelineFaults => _tokenPipelineFaults;
     public GrantRevokerFaults GrantRevokerFaults => _grantRevokerFaults;
+    public UserAccessRevokerFaults UserAccessRevokerFaults => _userAccessRevokerFaults;
 
     public ModgudWebApplicationFactory(SharedPostgresFixture fixture)
     {
@@ -139,6 +141,13 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
             services.AddScoped<Modgud.Infrastructure.OpenIddict.IOAuthGrantRevoker>(sp => new FaultInjectingGrantRevoker(
                 ActivatorUtilities.CreateInstance<Modgud.Infrastructure.OpenIddict.DeferringOAuthGrantRevoker>(sp),
                 _grantRevokerFaults));
+
+            // B4-AP-01 seam — the user access revoker can be told to fail its next revokes.
+            services.AddSingleton(_userAccessRevokerFaults);
+            services.RemoveAll<Modgud.Authentication.Sessions.IUserAccessRevoker>();
+            services.AddScoped<Modgud.Authentication.Sessions.IUserAccessRevoker>(sp => new FaultInjectingUserAccessRevoker(
+                ActivatorUtilities.CreateInstance<Modgud.Authentication.Sessions.DeferringUserAccessRevoker>(sp),
+                _userAccessRevokerFaults));
 
             // Follow-up outbox probe (test-only handler): proves commit/rollback/realm/retry.
             services.AddSingleton<FollowUpProbeRecorder>();
@@ -622,6 +631,7 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
 
         _tokenPipelineFaults.Reset();
         _grantRevokerFaults.Reset();
+        _userAccessRevokerFaults.Reset();
 
         var cancellation = TestContext.Current.CancellationToken;
         var store = Services.GetRequiredService<IDocumentStore>();

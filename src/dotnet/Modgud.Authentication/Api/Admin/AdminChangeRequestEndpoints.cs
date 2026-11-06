@@ -102,18 +102,17 @@ public static class AdminChangeRequestEndpoints
             var user = await session.LoadAsync<ApplicationUser>(cr.UserId);
             if (user is null) return Results.Problem("Target user no longer exists", statusCode: 409);
 
+            // B4-AP-01 — the apply marks the request Approved in the commit of the user change
+            // (and of a follow-up access revoke), so there is no state where the change is in
+            // effect but the request still waits, or the other way round.
+            var approval = new ChangeRequestApproval(cr.Id, cr.UpdatedAt, context.GetUserId());
             var applyError = cr.Type switch
             {
-                ChangeRequestType.Profile => await ApplyProfileAsync(cr.Payload, user, bus),
+                ChangeRequestType.Profile => await ApplyProfileAsync(cr.Payload, user, approval, bus),
                 _ => Results.BadRequest(new { Message = $"Unknown request type: {cr.Type}" }),
             };
             if (applyError is not null) return applyError;
-
             cr.Status = ChangeRequestStatus.Approved;
-            cr.ReviewedAt = DateTimeOffset.UtcNow;
-            cr.ReviewedByUserId = context.GetUserId();
-            session.Store(cr);
-            await session.SaveChangesAsync();
 
             if (request?.NotifyUser == true && !string.IsNullOrWhiteSpace(user.Email))
             {
@@ -224,7 +223,7 @@ public static class AdminChangeRequestEndpoints
     /// admin grid stays stale and denormalized references never learn the new name.
     /// </summary>
     private static async Task<IResult?> ApplyProfileAsync(
-        string payloadJson, ApplicationUser user, IMessageBus bus)
+        string payloadJson, ApplicationUser user, ChangeRequestApproval approval, IMessageBus bus)
     {
         var p = ProfileEndpoints.DeserializeProfile(payloadJson);
 
@@ -234,11 +233,13 @@ public static class AdminChangeRequestEndpoints
             Lastname: p.Lastname,
             Acronym: p.Acronym.HasValue ? new Modgud.Domain.Common.Optional<string>(p.Acronym.Value ?? "") : default,
             Email: p.Email.HasValue ? new Modgud.Domain.Common.Optional<string>(p.Email.Value ?? "") : default,
-            UserName: default);
+            UserName: default,
+            Approval: approval);
 
         var result = await bus.InvokeAsync<ErrorOr.ErrorOr<UserDto>>(command);
-        return result.IsError
-            ? Results.BadRequest(new { Errors = result.Errors.Select(e => e.Description) })
-            : null;
+        if (!result.IsError) return null;
+        if (result.FirstError is { Type: ErrorOr.ErrorType.Conflict, Code: "ChangeRequest.NotPending" or "ChangeRequest.Changed" } conflict)
+            return Results.Conflict(new { Error = conflict.Code, Message = conflict.Description });
+        return Results.BadRequest(new { Errors = result.Errors.Select(e => e.Description) });
     }
 }

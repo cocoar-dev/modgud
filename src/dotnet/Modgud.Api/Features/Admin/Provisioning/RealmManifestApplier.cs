@@ -618,7 +618,9 @@ public sealed partial class RealmManifestApplier(
                 var updateHandler = new UpdateUserHandler(session);
                 var updated = await updateHandler.Handle(updateCmd,
                     sp.GetRequiredService<IUserAccessRevoker>(),
-                    sp.GetRequiredService<IApplicationSettingsResolver>(), ct);
+                    sp.GetRequiredService<IApplicationSettingsResolver>(),
+                    sp.GetRequiredService<Modgud.Infrastructure.FollowUps.IFollowUpOutbox>(),
+                    sp.GetRequiredService<ILogger<UpdateUserHandler>>(), ct);
                 EnsureOk(updated, ctx);
                 uid = existing.Id;
 

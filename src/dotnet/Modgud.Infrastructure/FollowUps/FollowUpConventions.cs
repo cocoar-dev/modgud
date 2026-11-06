@@ -32,6 +32,9 @@ public static class FollowUpConventions
         });
         opts.LocalQueue(QueueName).UseDurableInbox();
         opts.Policies.Add(new FollowUpFailurePolicy());
+        // A handler that publishes follow-ups gets the request scope's outbox (one per session);
+        // the implementation is internal, so Wolverine must not try to construct it itself.
+        opts.CodeGeneration.AlwaysUseServiceLocationFor<IFollowUpOutbox>();
     }
 
     public static IServiceCollection AddFollowUpOutbox(this IServiceCollection services) =>

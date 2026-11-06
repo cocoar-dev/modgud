@@ -1,4 +1,5 @@
 using Marten;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using Wolverine.Marten;
 using Wolverine.Runtime;
 
@@ -31,6 +32,12 @@ internal sealed class FollowUpOutbox(IWolverineRuntime runtime) : IFollowUpOutbo
         ArgumentNullException.ThrowIfNull(session);
         if (string.IsNullOrEmpty(session.TenantId))
             throw new InvalidOperationException("A follow-up needs a realm session.");
+        // In a manifest apply, SaveChanges only flushes into the shared transaction: the outbox
+        // would hand the message to its handler before the real commit, or for a change that is
+        // rolled back. Consequences of an apply go through TenantApplyTransaction.Defer.
+        if (TenantApplyTransaction.Current is not null)
+            throw new InvalidOperationException(
+                "A follow-up cannot be published inside a manifest apply; defer the consequence with TenantApplyTransaction.Defer.");
 
         if (!_outboxes.TryGetValue(session, out var outbox))
         {
