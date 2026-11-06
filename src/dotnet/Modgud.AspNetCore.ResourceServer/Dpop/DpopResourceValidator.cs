@@ -41,8 +41,9 @@ internal static class DpopResourceValidator
 
         // The request URL as this server sees it. Behind a reverse proxy the host
         // must be forwarded correctly (UseForwardedHeaders) for htu to match what
-        // the client signed.
-        var htu = $"{request.Scheme}://{request.Host}{request.Path}";
+        // the client signed. SDK-B5-03 — PathBase is part of that URL: under a mount
+        // (UsePathBase, a proxy prefix) the client signs /api/data, not /data.
+        var htu = $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path}";
 
         var result = DpopProofValidator.Validate(
             header.ToString(), request.Method, htu, now, accessToken: accessToken);

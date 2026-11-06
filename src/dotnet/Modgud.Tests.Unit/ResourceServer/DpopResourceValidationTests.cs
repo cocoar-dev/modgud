@@ -112,6 +112,35 @@ public class DpopResourceValidationTests
             DpopResourceValidator.Validate(request, Token, boundKey.Jkt, Now));
     }
 
+    /// <summary>
+    /// SDK-B5-03 — behind a mount (UsePathBase, a proxy prefix) the client signs the full
+    /// external URI. The expected htu must include the request's PathBase, or a legitimate
+    /// proof for /api/data fails as if it were bound to another URL.
+    /// </summary>
+    [Fact]
+    public void Validate_accepts_a_proof_for_the_full_uri_under_a_path_base()
+    {
+        using var key = DpopKey.CreateEc();
+        var request = RequestWithProof(key.CreateProof(
+            Now, "GET", "https://rs.example.test/api/data", ath: DpopKey.ComputeAth(Token)));
+        request.PathBase = "/api";
+
+        Assert.Equal(DpopResourceResult.Valid,
+            DpopResourceValidator.Validate(request, Token, key.Jkt, Now));
+    }
+
+    [Fact]
+    public void Validate_rejects_a_proof_that_omits_the_path_base()
+    {
+        using var key = DpopKey.CreateEc();
+        var request = RequestWithProof(key.CreateProof(
+            Now, "GET", ResourceUrl, ath: DpopKey.ComputeAth(Token)));
+        request.PathBase = "/api";
+
+        Assert.Equal(DpopResourceResult.InvalidProof,
+            DpopResourceValidator.Validate(request, Token, key.Jkt, Now));
+    }
+
     private static HttpRequest RequestWithProof(string proof)
     {
         var request = new DefaultHttpContext().Request;

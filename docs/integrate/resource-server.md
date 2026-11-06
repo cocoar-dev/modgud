@@ -215,7 +215,9 @@ valid proof whose key and access-token hash match. Replaying it as plain
 `Bearer` is rejected. Unbound bearer tokens continue to work normally.
 
 Behind a reverse proxy, configure forwarded headers so the externally visible
-scheme and host match the proof's signed `htu`.
+scheme and host match the proof's signed `htu`. A path prefix the app is mounted
+under (`UsePathBase`, or a proxy that strips `/api` and sets `PathBase`) is part
+of the expected `htu` too: the client signs the full external URL.
 
 ## Session revocation (JWT mode)
 
