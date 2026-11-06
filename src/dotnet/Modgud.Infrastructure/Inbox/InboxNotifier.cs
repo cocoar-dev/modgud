@@ -158,6 +158,20 @@ public class InboxNotifier(IDocumentSession session) : IInboxNotifier
         return false;
     }
 
+    /// <summary>Whether an item is open (and of <paramref name="onlyKind"/>): from the view when it
+    /// has caught up, otherwise from the item's own event stream.</summary>
+    private async Task<bool> IsOpenAsync(Guid itemId, InboxKind? onlyKind, CancellationToken ct)
+    {
+        var view = await session.LoadAsync<InboxItemView>(itemId, ct);
+        if (view is not null)
+            return view.DismissedAt is null && (onlyKind is null || view.Kind == onlyKind);
+
+        var events = await session.Events.FetchStreamAsync(itemId, token: ct);
+        if (events.Any(e => e.Data is InboxItemDismissedEvent)) return false;
+        var created = events.Select(e => e.Data).OfType<InboxItemCreatedEvent>().FirstOrDefault();
+        return created is not null && (onlyKind is null || created.Kind == onlyKind);
+    }
+
     public async Task DismissByIdsAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken ct = default)
     {
         var distinct = itemIds.Distinct().Where(id => id != Guid.Empty).ToList();
@@ -182,7 +196,18 @@ public class InboxNotifier(IDocumentSession session) : IInboxNotifier
                      && i.DismissedAt == null);
         if (onlyKind is InboxKind kind) query = query.Where(i => i.Kind == kind);
 
-        var ids = await query.Select(i => i.Id).ToListAsync(ct);
+        var ids = new HashSet<Guid>(await query.Select(i => i.Id).ToListAsync(ct));
+
+        // B3-EI-04 — the view lags behind; the source slots of ReplaceBySource kinds are written in
+        // the commit of their item, so an item created a moment ago is dismissed as well.
+        var slots = await session.Query<InboxSourceSlot>()
+            .Where(s => s.SourceType == sourceType && s.SourceId == sourceId)
+            .ToListAsync(ct);
+        foreach (var slot in slots)
+        {
+            if (!ids.Contains(slot.OpenItemId) && await IsOpenAsync(slot.OpenItemId, onlyKind, ct))
+                ids.Add(slot.OpenItemId);
+        }
         if (ids.Count == 0) return;
 
         var now = DateTime.UtcNow;

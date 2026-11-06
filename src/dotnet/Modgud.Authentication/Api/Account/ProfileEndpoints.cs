@@ -13,6 +13,8 @@ using Modgud.Authentication;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Infrastructure.Email;
+using Modgud.Infrastructure.FollowUps;
+using Modgud.Authentication.Notifications;
 using Modgud.Infrastructure.Realms;
 using Modgud.Authentication.Identity;
 
@@ -63,8 +65,7 @@ public static class ProfileEndpoints
             IRealmProvisioningService realmSvc,
             IEmailService emailService,
             Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
-            IAdminNotifier adminNotifier,
-            IInboxNotifier inboxNotifier,
+            IFollowUpOutbox followUps,
             IWebHostEnvironment env,
             HttpContext context,
             CancellationToken ct) =>
@@ -192,9 +193,18 @@ public static class ProfileEndpoints
                 ? ChangeRequestStatus.EmailVerificationPending
                 : ChangeRequestStatus.AdminApprovalPending;
 
+            // Inbox notification: fires only when this submit *transitions* the request
+            // into AdminApprovalPending. Repeated edits of an already-pending request are
+            // silently merged so admins don't get spammed. B3-EI-04 — owed from this commit on,
+            // so it is written with it (the handler records the item ids on the request).
+            if (!wasInAdminPending && request.Status == ChangeRequestStatus.AdminApprovalPending)
+                await followUps.PublishAsync(session, new NotifyAdminsOfChangeRequest(request.Id));
+
             session.Store(request);
             await session.SaveChangesAsync();
 
+            // The verification mail stays synchronous: it carries the raw token, which must not
+            // be stored in a durable message.
             var realm = await context.ResolveCurrentRealmAsync(realmSvc, ct);
             if (realm is not null && rawToken is not null && pending.Email.HasValue && !string.IsNullOrEmpty(pending.Email.Value))
             {
@@ -209,21 +219,6 @@ public static class ProfileEndpoints
                     }, ct: ct), ct);
             }
 
-            // Inbox notification: fires only when this submit *transitions* the request
-            // into AdminApprovalPending. Repeated edits of an already-pending request are
-            // silently merged so admins don't get spammed. Record the created item-ids on
-            // the request so approve/reject/withdraw can dismiss them deterministically.
-            if (!wasInAdminPending && request.Status == ChangeRequestStatus.AdminApprovalPending)
-            {
-                var ids = await NotifyAdminsInboxAsync(adminNotifier, inboxNotifier, request, user);
-                if (ids.Count > 0)
-                {
-                    request.AdminInboxItemIds = ids.ToList();
-                    session.Store(request);
-                    await session.SaveChangesAsync();
-                }
-            }
-
             Log.Information("Profile: Change request upserted. UserId={UserId} Status={Status}",
                 user.Id, request.Status);
 
@@ -233,10 +228,9 @@ public static class ProfileEndpoints
         group.MapPost("request/verify-email", async (
             VerifyEmailChangeDto body,
             IDocumentSession session,
-            IEmailService emailService,
             Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
             IAdminNotifier adminNotifier,
-            IInboxNotifier inboxNotifier,
+            IFollowUpOutbox followUps,
             IRealmProvisioningService realmSvc,
             IWebHostEnvironment env,
             HttpContext context,
@@ -261,8 +255,10 @@ public static class ProfileEndpoints
             cr.UpdatedAt = DateTimeOffset.UtcNow;
             cr.VerificationTokenHash = null; // single-use
             session.Store(cr);
-            await session.SaveChangesAsync();
 
+            // B3-EI-04 — the admins' mail and "needs review" item are owed from this commit on:
+            // written with it and retried on their own, so a failing transport neither fails the
+            // verification (whose token is spent by now) nor skips the inbox item.
             var user = await session.LoadAsync<ApplicationUser>(cr.UserId);
             var recipients = await adminNotifier.GetAdminRecipientsAsync();
             var realm = await context.ResolveCurrentRealmAsync(realmSvc, ct);
@@ -270,7 +266,7 @@ public static class ProfileEndpoints
             {
                 var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm);
                 var changes = EnumerateProfileChanges(cr.Payload, user).ToList();
-                await emailService.SendTemplatedEmailAsync(recipients,
+                await followUps.PublishAsync(session, new SendTemplatedEmail([.. recipients],
                     EmailTemplate.AdminChangeRequestNotification,
                     await emailBranding.ApplyAsync(new Dictionary<string, string>
                     {
@@ -279,24 +275,16 @@ public static class ProfileEndpoints
                         ["OldValue"] = string.Join(" · ", changes.Select(c => $"{c.Field}: {c.OldValue ?? "—"}")),
                         ["NewValue"] = string.Join(" · ", changes.Select(c => $"{c.Field}: {c.NewValue ?? "—"}")),
                         ["ActionUrl"] = $"{appUrl}/admin/change-requests",
-                    }, ct: ct), ct);
+                    }, ct: ct)));
             }
 
-            // Inbox: notify admins that this request is now ready for review. The
-            // submit path may have already notified (covered the verified-from-start
-            // case); this one covers the email-verify-then-pending path. Same dedup
-            // by sourceId means a duplicate fire would coalesce — but we still record
-            // the ids so withdraw/approve/reject can dismiss across recipients.
+            // Inbox: notify admins that this request is now ready for review (the email-verify-
+            // then-pending path; the submit path covers the verified-from-start case). The
+            // handler records the item ids so withdraw/approve/reject can dismiss them.
             if (user is not null)
-            {
-                var ids = await NotifyAdminsInboxAsync(adminNotifier, inboxNotifier, cr, user);
-                if (ids.Count > 0)
-                {
-                    cr.AdminInboxItemIds = ids.ToList();
-                    session.Store(cr);
-                    await session.SaveChangesAsync();
-                }
-            }
+                await followUps.PublishAsync(session, new NotifyAdminsOfChangeRequest(cr.Id));
+
+            await session.SaveChangesAsync();
 
             Log.Information("Profile: Email verified, awaiting admin approval. RequestId={RequestId}", cr.Id);
             return Results.Ok(new { Status = cr.Status.ToString() });
@@ -306,7 +294,7 @@ public static class ProfileEndpoints
         group.MapDelete("request", [Authorize] async (
             UserManager<ApplicationUser> userManager,
             IDocumentSession session,
-            IInboxNotifier inboxNotifier,
+            IFollowUpOutbox followUps,
             HttpContext context) =>
         {
             var user = await userManager.GetUserAsync(context.User);
@@ -323,11 +311,12 @@ public static class ProfileEndpoints
             // to dismiss every admin's bell entry after the cr itself is gone.
             var adminItemIds = existing.AdminInboxItemIds.ToList();
 
+            // B3-EI-04 — dismissed in the commit of the withdrawal: the recorded ids, plus any
+            // item a still-running admin notification creates (found through the source).
             session.Delete(existing);
+            await followUps.PublishAsync(session, new DismissInboxItems(
+                [.. adminItemIds], ChangeRequestInboxSource, existing.Id, InboxKind.AdminChangeRequestSubmitted));
             await session.SaveChangesAsync();
-
-            if (adminItemIds.Count > 0)
-                await inboxNotifier.DismissByIdsAsync(adminItemIds);
 
             Log.Information("Profile: Change request cancelled. UserId={UserId}", user.Id);
             return Results.NoContent();

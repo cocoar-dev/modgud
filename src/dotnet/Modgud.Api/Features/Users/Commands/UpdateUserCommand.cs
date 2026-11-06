@@ -123,6 +123,8 @@ public class UpdateUserHandler(IDocumentSession session)
             request.ReviewedAt = DateTimeOffset.UtcNow;
             request.ReviewedByUserId = approval.ReviewedByUserId;
             session.Store(request);
+            foreach (var followUp in approval.FollowUps ?? [])
+                await followUps.PublishAsync(session, followUp);
         }
 
         var @event = new UserUpdatedEvent(

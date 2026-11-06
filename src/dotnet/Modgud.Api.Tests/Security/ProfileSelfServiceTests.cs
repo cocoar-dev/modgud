@@ -17,7 +17,7 @@ namespace Modgud.Api.Tests.Security;
 /// Approval applies the entire payload atomically.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class ProfileSelfServiceTests : IntegrationTestBase
+public partial class ProfileSelfServiceTests : IntegrationTestBase
 {
     public ProfileSelfServiceTests(SharedPostgresFixture fixture) : base(fixture) { }
 

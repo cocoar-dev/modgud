@@ -15,6 +15,44 @@ namespace Modgud.Api.Tests.Inbox;
 [Collection(IntegrationTestCollection.Name)]
 public class InboxReplaceBySourceTests(SharedPostgresFixture fixture) : IntegrationTestBase(fixture)
 {
+    /// <summary>B3-EI-04 — dismissing by source read the same lagging view: an item created a
+    /// moment before (an admin notification still in flight when the request was decided) stayed
+    /// open. The source slot is written with the item, so it is found at once; the kind filter
+    /// still applies.</summary>
+    [Fact]
+    public async Task Dismissing_by_source_before_the_view_catches_up_dismisses_the_new_item_of_that_kind_only()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var sourceId = Guid.NewGuid();
+        Guid itemId;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var inbox = scope.ServiceProvider.GetRequiredService<IInboxNotifier>();
+            itemId = (await inbox.NotifyAsync(InboxKind.AdminChangeRequestSubmitted, [DefaultUser!.Id],
+                "inbox.kinds.adminChangeRequestSubmitted.title",
+                parameters: new { UserLabel = "Fresh", FieldList = "Lastname", ChangeCount = 1 },
+                sourceType: "change-request", sourceId: sourceId, ct: ct)).Single();
+            await inbox.DismissBySourceAsync("change-request", sourceId, InboxKind.ChangeRequestApproved, ct);
+        }
+        await Factory.WaitForProjectionsAsync();
+        using (var read = Factory.Services.CreateScope())
+            Assert.Null((await read.ServiceProvider.GetRequiredService<IQuerySession>().LoadAsync<InboxItemView>(itemId, ct))!.DismissedAt);
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var inbox = scope.ServiceProvider.GetRequiredService<IInboxNotifier>();
+            var replaced = (await inbox.NotifyAsync(InboxKind.AdminChangeRequestSubmitted, [DefaultUser!.Id],
+                "inbox.kinds.adminChangeRequestSubmitted.title",
+                parameters: new { UserLabel = "Fresher", FieldList = "Lastname", ChangeCount = 1 },
+                sourceType: "change-request", sourceId: sourceId, ct: ct)).Single();
+            await inbox.DismissBySourceAsync("change-request", sourceId, InboxKind.AdminChangeRequestSubmitted, ct);
+            itemId = replaced;
+        }
+        await Factory.WaitForProjectionsAsync();
+        using var after = Factory.Services.CreateScope();
+        Assert.NotNull((await after.ServiceProvider.GetRequiredService<IQuerySession>().LoadAsync<InboxItemView>(itemId, ct))!.DismissedAt);
+    }
+
     [Fact]
     public async Task Two_notifications_before_the_view_catches_up_leave_one_open_item()
     {
