@@ -7,9 +7,9 @@ namespace Modgud.Api.Tests.Infrastructure;
 /// <summary>
 /// Test-only follow-up: proves the outbox foundation (commit, rollback, realm, retry) without
 /// a production effect. <paramref name="FailTimes"/> is the fault seam — the handler throws on
-/// that many attempts before it succeeds.
+/// that many attempts before it succeeds; <paramref name="Permanent"/> fails it for good.
 /// </summary>
-public sealed record FollowUpProbe(Guid Id, int FailTimes = 0) : IFollowUpMessage;
+public sealed record FollowUpProbe(Guid Id, int FailTimes = 0, bool Permanent = false) : IFollowUpMessage;
 
 /// <summary>Records every attempt and every success of <see cref="FollowUpProbe"/>, with the
 /// realm of the session the handler got.</summary>
@@ -31,7 +31,10 @@ public static class FollowUpProbeHandler
 {
     public static void Handle(FollowUpProbe message, IDocumentSession session, FollowUpProbeRecorder recorder)
     {
-        if (recorder.Attempt(message.Id) <= message.FailTimes)
+        recorder.Attempt(message.Id);
+        if (message.Permanent)
+            throw new FollowUpPermanentException("Injected permanent failure of a follow-up probe.");
+        if (recorder.Attempts(message.Id) <= message.FailTimes)
             throw new InvalidOperationException("Injected failure of a follow-up probe.");
         recorder.Handled(message.Id, session.TenantId);
     }

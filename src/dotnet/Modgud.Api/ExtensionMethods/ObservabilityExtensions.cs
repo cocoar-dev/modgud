@@ -150,6 +150,12 @@ internal static class ObservabilityExtensions
         healthBuilder.AddCheck<ClusterHealthCheck>(
             name: "cluster",
             tags: new[] { "ready" });
+        // Messages that failed for good (follow-up revocations, mails). Degraded only — from the
+        // background snapshot of DeadLetterMonitor (registered with the persistence in
+        // Program.cs), so readiness stays independent of the number of realms.
+        healthBuilder.AddCheck<DeadLetterHealthCheck>(
+            name: "dead-letters",
+            tags: new[] { "ready" });
 
         return services;
     }

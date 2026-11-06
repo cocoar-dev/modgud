@@ -43,6 +43,8 @@ public static class FollowUpConventions
         {
             foreach (var chain in chains.Where(c => typeof(IFollowUpMessage).IsAssignableFrom(c.MessageType)))
             {
+                // First matching rule wins: a declared permanent failure skips the retries.
+                chain.OnException<FollowUpPermanentException>().MoveToErrorQueue();
                 chain.OnAnyException()
                     .RetryWithCooldown(Cooldowns)
                     .Then.ScheduleRetry(Reschedules)

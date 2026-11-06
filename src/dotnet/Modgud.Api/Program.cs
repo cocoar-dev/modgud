@@ -1138,6 +1138,9 @@ try
         });
 
     Modgud.Infrastructure.FollowUps.FollowUpConventions.AddFollowUpOutbox(builder.Services);
+    // Samples every realm's dead letters for the "dead-letters" readiness check.
+    builder.Services.AddSingleton<Modgud.Api.HealthChecks.DeadLetterMonitor>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<Modgud.Api.HealthChecks.DeadLetterMonitor>());
 
     // Structured best-effort security-event sink. Realm events are routed to the
     // owning physical realm DB; PII-free deployment events go to the Global Store.
