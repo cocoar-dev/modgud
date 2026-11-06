@@ -106,6 +106,8 @@ public sealed class InstallationCompletionService(
             tokenResult = await challenges.ValidateAsync(request.Token, ct);
             if (tokenResult.IsError) return tokenResult.Errors;
 
+            await ClearAbandonedInitialRealmAsync(ct);
+
             var dto = new CreateRealmDto
             {
                 Slug = request.Realm.Slug.Trim(),
@@ -192,6 +194,39 @@ public sealed class InstallationCompletionService(
             unlockCommand.Parameters.AddWithValue("lockId", InstallationLockId);
             await unlockCommand.ExecuteNonQueryAsync(CancellationToken.None);
         }
+    }
+
+    /// <summary>
+    /// F.inst-I1 (crash case) — a process that died between committing the initial realm
+    /// document and creating its administrator leaves an inactive initial realm. Without a
+    /// user in its database there is nothing to keep, so it is rolled back and the
+    /// installation starts over. A shell that already has a user stays for forensics (the
+    /// create below then refuses). Runs under the installation lock.
+    /// </summary>
+    private async Task ClearAbandonedInitialRealmAsync(CancellationToken ct)
+    {
+        var all = await realms.GetAllRealmsAsync(ct);
+        if (all.Count != 1 || all[0] is not { IsActive: false, IsControlPlane: true } shell)
+            return;
+
+        bool hasUsers;
+        try
+        {
+            using (TenantContext.Enter(shell.Slug))
+            await using (var scope = services.CreateAsyncScope())
+            {
+                var session = scope.ServiceProvider.GetRequiredService<Marten.IQuerySession>();
+                hasUsers = await Marten.QueryableExtensions.AnyAsync(
+                    session.Query<Modgud.Authorization.Principals.Person>(), ct);
+            }
+        }
+        catch (JasperFx.MultiTenancy.UnknownTenantIdException)
+        {
+            hasUsers = false; // the shell never got its tenant registered
+        }
+
+        if (!hasUsers)
+            await realms.RollbackProvisionedRealmAsync(shell.Slug, CancellationToken.None);
     }
 }
 

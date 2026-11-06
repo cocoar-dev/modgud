@@ -71,7 +71,10 @@ public sealed class InstallationChallengeService(
         }
 
         await using var session = globalStore.LightweightSession();
-        if (await session.Query<Realm>().AnyAsync(ct))
+        // F.inst-I1 — an inactive initial (control-plane) realm is the shell of an installation
+        // that died half-way; it does not count as installed. The installation itself decides
+        // under its lock whether that shell can be cleaned up.
+        if (await session.Query<Realm>().AnyAsync(r => r.IsActive || !r.IsControlPlane, ct))
         {
             return Error.Conflict(
                 "Installation.AlreadyInitialized",
