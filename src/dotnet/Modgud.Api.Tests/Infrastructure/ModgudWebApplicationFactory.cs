@@ -33,6 +33,7 @@ using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.Persistence.Marten;
 using Marten.Storage;
 using Npgsql;
+using Wolverine;
 using OpenIddict.Abstractions;
 using OpenIddict.Server;
 
@@ -129,6 +130,17 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
                 services.AddSingleton<IStartupFilter>(_failureCorrelation);
 
             services.AddSingleton(_tokenPipelineFaults);
+
+            // Follow-up outbox probe (test-only handler): proves commit/rollback/realm/retry.
+            services.AddSingleton<FollowUpProbeRecorder>();
+            services.ConfigureWolverine(opts =>
+            {
+                opts.Discovery.IncludeType(typeof(FollowUpProbeHandler));
+                // Handlers that are not pre-generated in Modgud.Api (the test-only probe) are
+                // compiled in memory: Auto mode would write their source into
+                // Modgud.Api/Internal/Generated, where it breaks the next API build.
+                opts.CodeGeneration.SourceCodeWritingEnabled = false;
+            });
 
             // ADR 0021 — every relying party's back-channel logout endpoint is this
             // recording sink; the delivery worker's named client posts into it.

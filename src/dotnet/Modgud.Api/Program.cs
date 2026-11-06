@@ -1119,6 +1119,10 @@ try
         // Auto-register Event Forwarding subscriptions for all ReferenceSyncHandler<TEvent> implementations
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
 
+        // Follow-up effects of a committed state change (revoke, mail, inbox) — written in the
+        // same commit through IFollowUpOutbox, handled from a durable queue with retries.
+        Modgud.Infrastructure.FollowUps.FollowUpConventions.AddFollowUps(opts);
+
     });
 
     // ADR 0021 — the fan-out reads the end markers from the event store itself (a
@@ -1132,6 +1136,8 @@ try
             subscription.IncludeType<Modgud.Authentication.Events.UserAccessEndedEvent>();
             subscription.Options.SubscribeFromPresent();
         });
+
+    Modgud.Infrastructure.FollowUps.FollowUpConventions.AddFollowUpOutbox(builder.Services);
 
     // Structured best-effort security-event sink. Realm events are routed to the
     // owning physical realm DB; PII-free deployment events go to the Global Store.
