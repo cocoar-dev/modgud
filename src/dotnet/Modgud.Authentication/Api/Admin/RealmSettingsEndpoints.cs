@@ -94,16 +94,25 @@ public static class RealmSettingsEndpoints
         // FK-01 — `?revokePrevious=true` is the response to a suspected compromise: the key
         // active until now is revoked instead of retired, so it verifies nothing from this
         // moment on (every token it signed stops working).
+        // FK-03 — an ordinary rotation is SCHEDULED: the new key is published at once and
+        // signs after the pre-publication delay (ActivatesAt in the response). `?immediate=true`
+        // switches at once (single instance, no external resource servers); `revokePrevious`
+        // always switches at once.
         group.MapPost("rotate-signing-key", async (
             IRealmKeyStore keyStore,
             bool? revokePrevious,
+            bool? immediate,
             CancellationToken ct) =>
         {
             var slug = TenantContext.Current;
-            var creds = await keyStore.RotateAsync(slug, revokePrevious == true, ct);
-            var kid = creds.Key.KeyId;
+            if (revokePrevious == true || immediate == true)
+            {
+                var creds = await keyStore.RotateAsync(slug, revokePrevious == true, ct);
+                return Results.Ok(new RotateSigningKeyResponseDto(creds.Key.KeyId, ActivatesAt: null));
+            }
 
-            return Results.Ok(new RotateSigningKeyResponseDto(kid));
+            var scheduled = await keyStore.ScheduleRotationAsync(slug, ct);
+            return Results.Ok(new RotateSigningKeyResponseDto(scheduled.KeyId, scheduled.ActivatesAt));
         })
         .WithName("RealmSettings_RotateSigningKey")
         .RequiresPermission("realm-settings:write");
@@ -125,7 +134,8 @@ public static class RealmSettingsEndpoints
 }
 
 /// <summary>Response of <c>POST /admin/realm-settings/rotate-signing-key</c> — the new active key id.</summary>
-public sealed record RotateSigningKeyResponseDto(string Kid);
+/// <param name="ActivatesAt">FK-03 — when a scheduled key starts signing; null when it is already active.</param>
+public sealed record RotateSigningKeyResponseDto(string Kid, DateTimeOffset? ActivatesAt = null);
 
 /// <summary>Response of <c>POST /admin/realm-settings/signing-keys/revoke-retired</c> — how many keys were revoked.</summary>
 public sealed record RevokeRetiredSigningKeysResponseDto(int Revoked);

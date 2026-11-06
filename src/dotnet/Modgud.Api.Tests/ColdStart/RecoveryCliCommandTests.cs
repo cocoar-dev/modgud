@@ -219,14 +219,19 @@ public class RecoveryCliCommandTests(ColdStartFixture fixture) : ColdStartTestBa
     // ── rotate-signing-key ─────────────────────────────────────────────────
 
     [Fact]
-    public async Task Rotate_signing_key_reports_a_new_kid()
+    public async Task Rotate_signing_key_publishes_a_new_kid_first_and_immediate_switches_at_once()
     {
+        // FK-03 — a planned rotation publishes the key and names when it starts signing.
         await using var host = await Fixture.CreateIsolatedHostAsync();
 
-        var result = await CliHarness.RunAsync(host.Services, "rotate-signing-key");
+        var scheduled = await CliHarness.RunAsync(host.Services, "rotate-signing-key");
+        Assert.Equal(0, scheduled.ExitCode);
+        Assert.Contains("new kid published", scheduled.StdOut);
+        Assert.Contains("starts signing at", scheduled.StdOut);
 
-        Assert.Equal(0, result.ExitCode);
-        Assert.Contains("new active kid", result.StdOut);
+        var immediate = await CliHarness.RunAsync(host.Services, "rotate-signing-key", "--immediate");
+        Assert.Equal(0, immediate.ExitCode);
+        Assert.Contains("new active kid", immediate.StdOut);
     }
 
     [Fact]
@@ -239,7 +244,7 @@ public class RecoveryCliCommandTests(ColdStartFixture fixture) : ColdStartTestBa
         Assert.Equal(0, revokePrevious.ExitCode);
         Assert.Contains("Previous key REVOKED", revokePrevious.StdOut);
 
-        Assert.Equal(0, (await CliHarness.RunAsync(host.Services, "rotate-signing-key")).ExitCode);
+        Assert.Equal(0, (await CliHarness.RunAsync(host.Services, "rotate-signing-key", "--immediate")).ExitCode);
         var revokeRetired = await CliHarness.RunAsync(host.Services, "revoke-retired-signing-keys");
         Assert.Equal(0, revokeRetired.ExitCode);
         Assert.Contains("revoked 1 retired key(s)", revokeRetired.StdOut);

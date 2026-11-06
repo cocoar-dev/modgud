@@ -40,7 +40,8 @@ public partial class UserInfoPerAudienceTests
     public async Task Revoking_retired_keys_invalidates_tokens_signed_before_an_earlier_rotation()
     {
         var token = await IssueReferenceTokenAsync("kr4");
-        await RotateAsync(query: "");
+        // FK-03 — an ordinary rotation is scheduled now; this case needs the key retired at once.
+        await RotateAsync(query: "?immediate=true");
         Assert.Equal(HttpStatusCode.OK, await UserInfoStatusAsync(token));
 
         var revoke = await Client.PostAsync("/api/admin/realm-settings/signing-keys/revoke-retired", null, TestContext.Current.CancellationToken);

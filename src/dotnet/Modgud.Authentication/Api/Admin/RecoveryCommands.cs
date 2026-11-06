@@ -1074,9 +1074,22 @@ internal sealed class RotateSigningKeyCommand : IRecoveryCommand
 
         // FK-01 — --revoke-previous: the key active until now is revoked, not retired.
         var revokePrevious = ctx.Args.Any(a => a.Equals("--revoke-previous", StringComparison.OrdinalIgnoreCase));
-        ctx.WriteLine($"Rotating signing key for realm '{ctx.RealmSlug}'{(revokePrevious ? " and revoking the previous key" : "")}...");
-        var creds = await keyStore.RotateAsync(ctx.RealmSlug, revokePrevious);
-        var kid = creds.Key.KeyId;
+        // FK-03 — a planned rotation is scheduled (published first, signs after the delay);
+        // --immediate or --revoke-previous switch at once.
+        var immediate = revokePrevious || ctx.Args.Any(a => a.Equals("--immediate", StringComparison.OrdinalIgnoreCase));
+        ctx.WriteLine($"Rotating signing key for realm '{ctx.RealmSlug}'{(revokePrevious ? " and revoking the previous key" : immediate ? " immediately" : "")}...");
+        string kid;
+        DateTimeOffset? activatesAt = null;
+        if (immediate)
+        {
+            kid = (await keyStore.RotateAsync(ctx.RealmSlug, revokePrevious)).Key.KeyId;
+        }
+        else
+        {
+            var scheduled = await keyStore.ScheduleRotationAsync(ctx.RealmSlug);
+            kid = scheduled.KeyId;
+            activatesAt = scheduled.ActivatesAt;
+        }
 
         await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordRequiredAsync(new SecurityAuditRecord
         {
@@ -1088,11 +1101,19 @@ internal sealed class RotateSigningKeyCommand : IRecoveryCommand
             OperationCode = revokePrevious ? "rotate-signing-key-revoke" : "rotate-signing-key",
             KeyId = kid,
         });
-        ctx.WriteLine($"  OK new active kid: {kid}");
-        ctx.WriteLine(revokePrevious
-            ? "  Previous key REVOKED: tokens it signed are no longer valid; users and clients sign in again."
-            : "  Previous key retired into the 30-day verification overlap window.");
-        ctx.WriteLine("  Running API instances pick up the change within ~60 seconds.");
+        if (activatesAt is { } at)
+        {
+            ctx.WriteLine($"  OK new kid published: {kid}");
+            ctx.WriteLine($"  It starts signing at {at:u}; the previous key then retires into the 30-day overlap.");
+        }
+        else
+        {
+            ctx.WriteLine($"  OK new active kid: {kid}");
+            ctx.WriteLine(revokePrevious
+                ? "  Previous key REVOKED: tokens it signed are no longer valid; users and clients sign in again."
+                : "  Previous key retired into the 30-day verification overlap window.");
+            ctx.WriteLine("  Running API instances pick up the change within ~60 seconds.");
+        }
         return 0;
     }
 }

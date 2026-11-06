@@ -80,4 +80,10 @@ public class RealmSigningKey
     /// JWKS, whatever its overlap window says, and the janitor deletes it on its next run.
     /// </summary>
     public DateTimeOffset? RevokedAt { get; set; }
+
+    /// <summary>
+    /// FK-03 — a scheduled key: published (JWKS + verification set) but not yet signing.
+    /// Becomes the active key once this time has passed; null for every other state.
+    /// </summary>
+    public DateTimeOffset? ActivatesAt { get; set; }
 }

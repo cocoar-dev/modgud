@@ -948,11 +948,13 @@ async function rotateSigningKey(revokePrevious = false) {
   try {
     rotating.value = true
     error.value = null
-    const kid = await settingsStore.rotateSigningKey(revokePrevious)
+    const { kid, activatesAt } = await settingsStore.rotateSigningKey(revokePrevious)
     const shortKid = kid ? kid.slice(0, 12) + '…' : ''
     toast.success(revokePrevious
       ? t('admin.realmSettings.signingKeys.rotatedRevoked', { kid: shortKid }, 'Signing key rotated (new kid {kid}). The previous key was revoked: tokens it signed are no longer valid.')
-      : t('admin.realmSettings.signingKeys.rotated', { kid: shortKid }, 'Signing key rotated (new kid {kid}). The previous key stays valid for in-flight tokens during the overlap window.'))
+      : activatesAt
+        ? t('admin.realmSettings.signingKeys.scheduled', { kid: shortKid, at: new Date(activatesAt).toLocaleString() }, 'New signing key {kid} is published and starts signing at {at}. The previous key then stays valid for in-flight tokens during the overlap window.')
+        : t('admin.realmSettings.signingKeys.rotated', { kid: shortKid }, 'Signing key rotated (new kid {kid}). The previous key stays valid for in-flight tokens during the overlap window.'))
   } catch (e: any) {
     const msg = e?.body?.detail ?? e?.body?.error ?? e?.message ?? String(e)
     error.value = msg

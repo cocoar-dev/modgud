@@ -65,6 +65,13 @@ public sealed class RealmKeyStore : IRealmKeyStore
     /// </summary>
     public static readonly TimeSpan CacheRevalidateInterval = TimeSpan.FromSeconds(60);
 
+    /// <summary>
+    /// FK-03 — how long a scheduled key is published before it signs: well beyond this
+    /// store's own <see cref="CacheRevalidateInterval"/> on peer instances, and beyond the
+    /// 5-minute throttle with which common JWKS clients refresh on an unknown kid.
+    /// </summary>
+    public static readonly TimeSpan PrePublicationDelay = TimeSpan.FromMinutes(10);
+
     private readonly IDocumentStore _store;
     private readonly TimeProvider _clock;
     private readonly ISecurityAuditLog _securityAudit;
@@ -139,6 +146,7 @@ public sealed class RealmKeyStore : IRealmKeyStore
 
             // Cold OR past the freshness deadline — reconcile against the DB so
             // an out-of-band rotation (peer instance / CLI process) is picked up.
+            await PromoteDueScheduledKeyAsync(realmSlug, now, ct);
             var active = await LoadActiveAsync(realmSlug, ct)
                          ?? await CreateAndPersistAsync(realmSlug, ct);
 
@@ -266,6 +274,18 @@ public sealed class RealmKeyStore : IRealmKeyStore
                 session.Store(current);
             }
 
+            // FK-03 — an immediate rotation supersedes a scheduled one; the scheduled key never
+            // signed, it just ages out of the verification set like a retired key.
+            var scheduled = await session.Query<RealmSigningKey>()
+                .Where(k => !k.IsActive && k.ActivatesAt != null)
+                .ToListAsync(ct);
+            foreach (var pending in scheduled)
+            {
+                pending.ActivatesAt = null;
+                pending.RetiredAt = now;
+                session.Store(pending);
+            }
+
             // Generate fresh key and persist.
             var fresh = CreateNewKeyDocument(realmSlug);
             session.Store(fresh);
@@ -298,6 +318,78 @@ public sealed class RealmKeyStore : IRealmKeyStore
         {
             sem.Release();
         }
+    }
+
+    public async Task<ScheduledSigningKey> ScheduleRotationAsync(string realmSlug, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(realmSlug);
+
+        var sem = _slugLocks.GetOrAdd(realmSlug, _ => new SemaphoreSlim(1, 1));
+        await sem.WaitAsync(ct);
+        try
+        {
+            var now = _clock.GetUtcNow();
+            await using var session = _store.LightweightSession(realmSlug);
+
+            var pending = await session.Query<RealmSigningKey>()
+                .Where(k => !k.IsActive && k.ActivatesAt != null && k.RevokedAt == null)
+                .OrderByDescending(k => k.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+            if (pending is not null)
+                return new ScheduledSigningKey(pending.KeyId, pending.ActivatesAt!.Value);
+
+            var fresh = CreateNewKeyDocument(realmSlug);
+            fresh.IsActive = false;
+            fresh.ActivatesAt = now + PrePublicationDelay;
+            session.Store(fresh);
+            _securityAudit.StoreRequired(session, new SecurityAuditRecord
+            {
+                EventType = AuditEvents.SigningKeyRotated,
+                RealmSlug = realmSlug,
+                Severity = AuditSeverity.Warning,
+                OutcomeCode = AuditOutcomes.Succeeded,
+                OperationCode = "rotate-scheduled",
+                KeyId = fresh.KeyId,
+            });
+            await session.SaveChangesAsync(ct);
+
+            // Publish at once on this instance; peers pick it up on their next re-read.
+            InvalidateVerificationCache(realmSlug);
+            return new ScheduledSigningKey(fresh.KeyId, fresh.ActivatesAt.Value);
+        }
+        finally
+        {
+            sem.Release();
+        }
+    }
+
+    /// <summary>
+    /// FK-03 — turns a scheduled key whose time has come into the active key and retires the
+    /// previous one into the overlap. Runs inside the per-realm lock of the active-key
+    /// reconcile; a peer doing the same at the same moment writes the same state.
+    /// </summary>
+    private async Task PromoteDueScheduledKeyAsync(string realmSlug, DateTimeOffset now, CancellationToken ct)
+    {
+        await using var session = _store.LightweightSession(realmSlug);
+        var due = await session.Query<RealmSigningKey>()
+            .Where(k => !k.IsActive && k.ActivatesAt != null && k.ActivatesAt <= now && k.RevokedAt == null)
+            .OrderByDescending(k => k.ActivatesAt)
+            .FirstOrDefaultAsync(ct);
+        if (due is null) return;
+
+        var activatedAt = due.ActivatesAt!.Value;
+        var actives = await session.Query<RealmSigningKey>().Where(k => k.IsActive).ToListAsync(ct);
+        foreach (var current in actives)
+        {
+            current.IsActive = false;
+            current.RetiredAt = activatedAt;
+            session.Store(current);
+        }
+        due.IsActive = true;
+        due.ActivatesAt = null;
+        session.Store(due);
+        await session.SaveChangesAsync(ct);
+        InvalidateVerificationCache(realmSlug);
     }
 
     public async Task<int> RevokeRetiredKeysAsync(string realmSlug, CancellationToken ct = default)
@@ -461,8 +553,9 @@ public sealed class RealmKeyStore : IRealmKeyStore
             // FK-01 — revoked keys verify nothing, whatever their overlap window says.
             if (k.RevokedAt is not null)
                 continue;
-            if (k.IsActive)
+            if (k.IsActive || k.ActivatesAt is not null)
             {
+                // FK-03 — a scheduled key is published before it signs.
                 byKid.TryAdd(k.KeyId, BuildPublicKey(k));
             }
             else if (k.RetiredAt is { } retiredAt)

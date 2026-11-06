@@ -26,6 +26,7 @@ public class LogoutTokenMinterTests
             Task.FromResult<IReadOnlyList<SecurityKey>>([Key]);
 
         public Task<SigningCredentials> RotateAsync(string realmSlug, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ScheduledSigningKey> ScheduleRotationAsync(string realmSlug, CancellationToken ct = default) => throw new NotSupportedException();
 
         public Task<SigningCredentials> RotateAsync(string realmSlug, bool revokePrevious, CancellationToken ct = default) => throw new NotSupportedException();
 

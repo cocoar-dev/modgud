@@ -46,9 +46,17 @@ CLI:
 dotnet Modgud.Api.dll recover rotate-signing-key --realm acme
 ```
 
-A rotation generates a fresh keypair and immediately makes it the
-active signing key, but the **previous** key isn't deleted — it's
-retired and kept in the JWKS for a 30-day verification-overlap window,
+A rotation generates a fresh keypair and **publishes it first**: it is
+in the JWKS and the verification set at once, but starts signing only
+after 10 minutes. Other instances re-read the active key every 60
+seconds, and resource servers usually refresh their JWKS cache on an
+unknown `kid` at most every few minutes; the delay lets all of them know
+the new key before the first token carries it. The admin UI and the CLI
+report when it takes over. `rotate-signing-key --immediate` (or
+`?immediate=true` on the endpoint) switches at once, for a single
+instance without external resource servers. Once the new key signs, the
+**previous** key isn't deleted — it's retired and kept in the JWKS for a
+30-day verification-overlap window,
 so access/ID tokens issued just before the rotation stay validatable
 until they naturally expire. A daily janitor job hard-deletes retired
 keys once their overlap window has elapsed, so retired private key
