@@ -3,21 +3,26 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Yarp.ReverseProxy.Transforms;
 
 // Modgud.TestApps.Bff — Backend-for-Frontend test rig.
 //
-// The browser holds a single httpOnly cookie. All tokens (access /
-// refresh / id) live server-side in the auth ticket. A YARP reverse
-// proxy under /api/* forwards calls to the ResourceApi and attaches
-// the cached access token as a bearer header — the SPA never sees it.
+// The browser holds a single httpOnly cookie that carries only a session
+// key. The auth ticket with all tokens (access / refresh / id) lives in the
+// BFF's in-memory session store (B10-01); a restart ends every session. A
+// YARP reverse proxy under /api/* forwards calls of a signed-in session to
+// the ResourceApi and attaches its access token as a bearer header — the
+// SPA never sees it, and a bearer the caller brings along is dropped (B10-02).
 //
 // Endpoints:
 //   GET  /bff/user      — current user (JSON) or 401
-//   GET  /bff/login     — start OIDC challenge (top-level redirect)
+//   GET  /bff/login     — start OIDC challenge (top-level redirect);
+//                         returnUrl must be a local path (B10-03)
 //   GET  /bff/logout    — sign out locally + at the IdP
-//   /api/{**catch-all}  — proxied to ResourceApi with bearer token
+//   /api/{**catch-all}  — proxied to ResourceApi with bearer token; 401
+//                         without a BFF session
 //
 // CSRF: same-site Lax cookie + a required X-Requested-With header on
 //       /bff/user and /api/*. Login/logout are top-level navigations
@@ -86,6 +91,12 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
+// B10-01 — keep the ticket (and with it the saved tokens) on the server; the
+// cookie only names it. SaveTokens alone would put them, encrypted, into the cookie.
+builder.Services.AddMemoryCache();
+builder.Services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
+    .Configure<IMemoryCache>((options, cache) => options.SessionStore = new MemoryCacheTicketStore(cache));
+
 builder.Services.AddReverseProxy()
     .LoadFromMemory(
         new[]
@@ -119,6 +130,9 @@ builder.Services.AddReverseProxy()
         // leaves the BFF process.
         ctx.AddRequestTransform(async transform =>
         {
+            // B10-02 — never forward a bearer the caller brought along; only
+            // the session's own token may reach the resource server.
+            transform.ProxyRequest.Headers.Authorization = null;
             var token = await transform.HttpContext.GetTokenAsync("access_token");
             if (!string.IsNullOrEmpty(token))
             {
@@ -151,6 +165,12 @@ app.Use(async (ctx, next) =>
         await ctx.Response.WriteAsync("Missing X-Requested-With header.");
         return;
     }
+    // B10-02 — the proxy is a session channel: no BFF session, no upstream call.
+    if (path.StartsWithSegments("/api") && ctx.User.Identity?.IsAuthenticated != true)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return;
+    }
     await next();
 });
 
@@ -170,9 +190,13 @@ app.MapGet("/bff/user", (HttpContext ctx) =>
 });
 
 app.MapGet("/bff/login", (string? returnUrl) =>
-    Results.Challenge(
-        new AuthenticationProperties { RedirectUri = returnUrl ?? "/" },
-        new[] { OpenIdConnectDefaults.AuthenticationScheme }));
+    // B10-03 — only a local path: no absolute URL, no protocol-relative "//host"
+    // or "/\host" that a browser would follow to another origin.
+    returnUrl is not null && !IsLocalPath(returnUrl)
+        ? Results.BadRequest("returnUrl must be a local path.")
+        : Results.Challenge(
+            new AuthenticationProperties { RedirectUri = returnUrl ?? "/" },
+            new[] { OpenIdConnectDefaults.AuthenticationScheme }));
 
 app.MapGet("/bff/logout", () =>
     Results.SignOut(
@@ -191,3 +215,44 @@ app.MapGet("/health", () => Results.Ok(new { ok = true }));
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+static bool IsLocalPath(string url) =>
+    url.Length > 0 && url[0] == '/' &&
+    (url.Length == 1 || (url[1] != '/' && url[1] != '\\')) &&
+    !url.Contains("://", StringComparison.Ordinal);
+
+/// <summary>B10-01 — server-side store for the cookie handler's auth tickets.</summary>
+sealed class MemoryCacheTicketStore(IMemoryCache cache) : ITicketStore
+{
+    private const string Prefix = "bff-ticket-";
+
+    public Task<string> StoreAsync(AuthenticationTicket ticket)
+    {
+        var key = Prefix + Guid.NewGuid().ToString("N");
+        Put(key, ticket);
+        return Task.FromResult(key);
+    }
+
+    public Task RenewAsync(string key, AuthenticationTicket ticket)
+    {
+        Put(key, ticket);
+        return Task.CompletedTask;
+    }
+
+    public Task<AuthenticationTicket?> RetrieveAsync(string key) =>
+        Task.FromResult(cache.TryGetValue(key, out AuthenticationTicket? ticket) ? ticket : null);
+
+    public Task RemoveAsync(string key)
+    {
+        cache.Remove(key);
+        return Task.CompletedTask;
+    }
+
+    private void Put(string key, AuthenticationTicket ticket)
+    {
+        var entry = new MemoryCacheEntryOptions();
+        if (ticket.Properties.ExpiresUtc is { } expires) entry.SetAbsoluteExpiration(expires);
+        else entry.SetSlidingExpiration(TimeSpan.FromHours(8));
+        cache.Set(key, ticket, entry);
+    }
+}

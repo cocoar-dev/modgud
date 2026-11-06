@@ -13,8 +13,16 @@ test.describe('BFF — anonymous', () => {
     expect(res.status()).toBe(401)
   })
 
-  test('GET /api/me without session → 401 (proxied to ResourceApi w/o token)', async ({ request }) => {
+  test('GET /api/me without session → 401 at the BFF', async ({ request }) => {
     const res = await request.get(`${BFF_URL}/api/me`)
+    expect(res.status()).toBe(401)
+  })
+
+  // B10-02 — a bearer the caller brings along is not a BFF session.
+  test('GET /api/me with a caller-supplied bearer but no session → 401', async ({ request }) => {
+    const res = await request.get(`${BFF_URL}/api/me`, {
+      headers: { Authorization: 'Bearer not-a-bff-session' },
+    })
     expect(res.status()).toBe(401)
   })
 
@@ -43,6 +51,16 @@ test.describe('BFF — anonymous', () => {
     expect(location).toMatch(/code_challenge=/)
     expect(location).toMatch(/scope=/)
   })
+
+  // B10-03 — the post-login target must stay on the BFF origin.
+  for (const returnUrl of ['https://evil.example/', '//evil.example', '/\\evil.example']) {
+    test(`GET /bff/login refuses returnUrl ${returnUrl}`, async ({ request }) => {
+      const res = await request.get(`${BFF_URL}/bff/login?returnUrl=${encodeURIComponent(returnUrl)}`, {
+        maxRedirects: 0,
+      })
+      expect(res.status()).toBe(400)
+    })
+  }
 
   test('Resource API never sees a request without going through the BFF guard', async ({ request }) => {
     // Sanity: hitting ResourceApi directly with a cookie-only "session"
