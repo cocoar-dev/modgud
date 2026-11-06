@@ -556,6 +556,9 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         return true;
     }
 
+    /// <summary>How long the hard delete waits for <c>DROP DATABASE</c>.</summary>
+    internal static readonly TimeSpan DropDatabaseTimeout = TimeSpan.FromMinutes(5);
+
     public async Task<ErrorOr<bool>> HardDeleteRealmAsync(string slug, CancellationToken ct = default)
     {
         await using var session = _globalStore.LightweightSession();
@@ -617,7 +620,23 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             await using var dropCmd = new NpgsqlCommand(
                 $"DROP DATABASE IF EXISTS {quotedName} WITH (FORCE)", bootstrapConn);
 #pragma warning restore CA2100
-            await dropCmd.ExecuteNonQueryAsync(ct);
+            // DROP DATABASE waits for a checkpoint, which takes longer than Npgsql's default
+            // 30 s on a busy server: the drop failed with a timeout although nothing was wrong.
+            dropCmd.CommandTimeout = (int)DropDatabaseTimeout.TotalSeconds;
+            try
+            {
+                await dropCmd.ExecuteNonQueryAsync(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The tenant is already released from Marten (step 1) while the Realm record
+                // and the database remain. Both steps are idempotent: repeating the hard delete
+                // completes it.
+                _logger.LogError(ex,
+                    "Hard delete of realm {Slug} stopped at dropping {DbName}; the realm no longer resolves. " +
+                    "Repeat the hard delete to complete it.", slug, tenantDbName);
+                throw;
+            }
         }
 
         // 3. Remove the global Realm record and invalidate the cache so middleware
