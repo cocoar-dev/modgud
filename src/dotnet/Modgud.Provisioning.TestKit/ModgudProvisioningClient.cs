@@ -40,10 +40,12 @@ public sealed class ModgudProvisioningClient
     /// server calls, one method: the kit keeps the convenience without the file having to
     /// know where it will land.</para>
     ///
-    /// <para>If the manifest step fails, the just-created realm is torn down before the
-    /// exception propagates, so a failed provision leaves no orphan behind for the next
-    /// test run. (The server itself no longer does this — driving the API directly keeps
-    /// the realm so a corrected manifest can simply be re-applied.)</para>
+    /// <para>If the manifest step fails, the kit tries to tear the just-created realm down
+    /// before the exception propagates — also when <paramref name="ct"/> was what cancelled
+    /// it (the cleanup runs on its own 30-second budget). A cleanup that fails anyway is
+    /// swallowed so it cannot mask the real error, and may leave the realm behind. (The
+    /// server itself no longer does this — driving the API directly keeps the realm so a
+    /// corrected manifest can simply be re-applied.)</para>
     /// </summary>
     public async Task<ProvisionedRealm> ImportRealmAsync(
         RealmSpec realm, RealmManifest manifest, CancellationToken ct = default)
@@ -63,8 +65,10 @@ public sealed class ModgudProvisioningClient
         }
         catch
         {
-            // Best-effort teardown: never let a cleanup failure mask the real error.
-            try { await HardDeleteAsync(realm.Slug, ct); } catch { /* ignored */ }
+            // Best-effort teardown: never let a cleanup failure mask the real error. B10-10 —
+            // not on the caller's token: a cancellation that aborted the apply must not also
+            // abort the cleanup of what it left behind.
+            try { await HardDeleteForCleanupAsync(realm.Slug); } catch { /* ignored */ }
             throw;
         }
     }
@@ -76,6 +80,13 @@ public sealed class ModgudProvisioningClient
         using var response = await _http.PostAsJsonAsync(
             $"api/admin/realms/{slug}/apply", ManifestHandles.ForWire(manifest), JsonOptions, ct);
         return await ReadResultOrThrowAsync(response, "apply", slug, ct);
+    }
+
+    /// <summary>Hard-delete for cleanup paths: independent of any caller token, bounded.</summary>
+    internal async Task HardDeleteForCleanupAsync(string slug)
+    {
+        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await HardDeleteAsync(slug, budget.Token);
     }
 
     internal async Task HardDeleteAsync(string slug, CancellationToken ct)

@@ -72,12 +72,19 @@ public sealed class ProvisionedRealm : IAsyncDisposable
         _deleted = true;
     }
 
-    /// <summary>Tears the realm down via <see cref="DeleteAsync"/>. Deliberately swallows
-    /// teardown failures so a cleanup error can't mask the actual test result — call
-    /// <see cref="DeleteAsync"/> explicitly when you want to assert the teardown.</summary>
+    /// <summary>Tears the realm down like <see cref="DeleteAsync"/>, on its own bounded
+    /// budget. Deliberately swallows every teardown failure — server rejections, transport
+    /// errors and timeouts alike (B10-10) — so a cleanup error can't mask the actual test
+    /// result; call <see cref="DeleteAsync"/> explicitly when you want to assert the
+    /// teardown.</summary>
     public async ValueTask DisposeAsync()
     {
-        try { await DeleteAsync(); }
-        catch (ModgudProvisioningException) { /* best-effort teardown */ }
+        if (_deleted) return;
+        try
+        {
+            await _client.HardDeleteForCleanupAsync(Slug);
+            _deleted = true;
+        }
+        catch (Exception) { /* best-effort teardown */ }
     }
 }
