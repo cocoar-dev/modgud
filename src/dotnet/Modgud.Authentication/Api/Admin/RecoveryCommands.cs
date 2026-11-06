@@ -756,6 +756,11 @@ internal sealed class RealmAddDomainCommand : IRecoveryCommand
             return 0;
         }
 
+        // RV-0002 — the same cross-realm rule as the provisioning path: a host already routed to
+        // another active realm (domain or Application subdomain) is refused, not silently shared.
+        if (await Modgud.Infrastructure.Realms.RealmHostClaims.FindConflictAsync(session, [domain], realm.Id, default) is { } conflict)
+            return ctx.Fail(conflict.Description);
+
         realm.Domains = [.. realm.Domains, domain];
         realm.UpdatedAt = DateTimeOffset.UtcNow;
         session.Store(realm);

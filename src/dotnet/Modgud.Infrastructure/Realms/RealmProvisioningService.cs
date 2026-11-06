@@ -408,22 +408,11 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
     /// only they are routed. <paramref name="selfId"/> excludes the realm being
     /// updated from clashing with itself.
     /// </summary>
-    private static async Task<Error?> CheckDomainUniquenessAsync(
+    /// <para>F.routing-F-R1 — also against other realms' Application subdomains (see
+    /// <see cref="RealmHostClaims"/>).</para>
+    private static Task<Error?> CheckDomainUniquenessAsync(
         IQuerySession session, IReadOnlyCollection<string> domains, Guid? selfId, CancellationToken ct)
-    {
-        var wanted = domains.Select(d => d.ToLowerInvariant()).ToHashSet();
-        var activeRealms = await session.Query<Realm>().Where(r => r.IsActive).ToListAsync(ct);
-
-        foreach (var other in activeRealms)
-        {
-            if (selfId is { } id && other.Id == id) continue;
-            var clash = other.Domains.FirstOrDefault(d => wanted.Contains(d.ToLowerInvariant()));
-            if (clash is not null)
-                return Error.Conflict("Realm.DomainTaken",
-                    $"The domain '{clash}' is already claimed by the active realm '{other.Slug}'. Each domain must map to exactly one active realm.");
-        }
-        return null;
-    }
+        => RealmHostClaims.FindConflictAsync(session, domains, selfId, ct);
 
     public async Task<ErrorOr<Realm>> UpdateRealmAsync(
         string slug,
