@@ -34,10 +34,13 @@ public record NativeGrantSettings
     public TimeSpan AccessTokenLifetime { get; init; } = TimeSpan.FromMinutes(15);
 
     /// <summary>
-    /// Refresh-token lifetime for native-grant tokens. The refresh token is
-    /// always a revocable reference token (server default); revoking it plus a
-    /// security-stamp rotation is the kill-switch. Default 14 days, matching the
-    /// server default.
+    /// Refresh-token lifetime for native-grant tokens — <b>not applied</b> (review EG-08,
+    /// 2026-11-06). The native refresh token gets the client-session idle lifetime
+    /// (<c>ClientSessionPolicy.IdleLifetime</c>, default 30 days), at issuance and on every
+    /// rotation; this value is validated and stored, but nothing reads it at token time.
+    /// Applying it now would shorten existing native sessions without notice, so it stays inert
+    /// until it is removed or wired on purpose. The refresh token is always a revocable reference
+    /// token; revoking it plus a security-stamp rotation is the kill-switch.
     /// </summary>
     public TimeSpan RefreshTokenLifetime { get; init; } = TimeSpan.FromDays(14);
 }
