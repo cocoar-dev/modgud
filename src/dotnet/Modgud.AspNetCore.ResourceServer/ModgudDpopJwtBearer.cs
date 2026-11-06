@@ -112,6 +112,8 @@ internal static class ModgudDpopJwtBearer
         ProofInvalid,
         /// <summary>The DPoP scheme was used against a token that is not bound.</summary>
         DpopSchemeButUnbound,
+        /// <summary>SDK-B5-02 — a valid proof that was already presented once.</summary>
+        ProofReplayed,
     }
 
     /// <summary>
@@ -137,8 +139,14 @@ internal static class ModgudDpopJwtBearer
             // Re-parse to get the token parameter for the ath check. isDpop above
             // guarantees a well-formed DPoP header with a non-empty parameter.
             AuthenticationHeaderValue.TryParse(raw, out var dpopHeader);
-            var outcome = DpopResourceValidator.Validate(request, dpopHeader!.Parameter!, boundJkt, now);
-            return outcome == DpopResourceResult.Valid ? BindingResult.Ok : BindingResult.ProofInvalid;
+            var replayCache = request.HttpContext.RequestServices?.GetService(typeof(IDpopReplayCache)) as IDpopReplayCache;
+            var outcome = DpopResourceValidator.Validate(request, dpopHeader!.Parameter!, boundJkt, now, replayCache);
+            return outcome switch
+            {
+                DpopResourceResult.Valid => BindingResult.Ok,
+                DpopResourceResult.Replayed => BindingResult.ProofReplayed,
+                _ => BindingResult.ProofInvalid,
+            };
         }
 
         // Unbound token: honour it as an ordinary bearer token, but reject a
@@ -162,6 +170,9 @@ internal static class ModgudDpopJwtBearer
                 break;
             case BindingResult.ProofInvalid:
                 context.Fail("The DPoP proof presented with this access token did not validate.");
+                break;
+            case BindingResult.ProofReplayed:
+                context.Fail("The DPoP proof presented with this access token was already used.");
                 break;
             case BindingResult.DpopSchemeButUnbound:
                 context.Fail("The DPoP scheme was used but the access token is not DPoP-bound.");

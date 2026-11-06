@@ -58,7 +58,8 @@ internal sealed class ModgudIntrospectionHandler : AuthenticationHandler<ModgudI
                 Request,
                 header.Parameter,
                 boundJkt,
-                DateTimeOffset.UtcNow);
+                DateTimeOffset.UtcNow,
+                Context.RequestServices?.GetService(typeof(Dpop.IDpopReplayCache)) as Dpop.IDpopReplayCache);
             if (outcome != Dpop.DpopResourceResult.Valid)
                 return AuthenticateResult.Fail($"The DPoP proof did not validate ({outcome}).");
         }

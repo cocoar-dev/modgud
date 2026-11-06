@@ -55,6 +55,14 @@ public sealed class ModgudResourceServerOptions
     public bool RequireHttpsMetadata { get; set; } = true;
 
     /// <summary>
+    /// Reject a DPoP proof presented a second time (RFC 9449 §11.1). On by default with a
+    /// per-process in-memory record; register your own <see cref="Dpop.IDpopReplayCache"/>
+    /// before <c>AddModgudResourceServer</c> to share it across instances. Turn off only for a
+    /// client that cannot send a fresh proof per request.
+    /// </summary>
+    public bool DpopReplayProtection { get; set; } = true;
+
+    /// <summary>
     /// Rejects JWT access tokens of sessions that ended before the token expired,
     /// fed by the Modgud Application change feed. Off by default; see
     /// <see cref="ModgudSessionRevocationOptions"/>. Used only by modes that accept JWTs

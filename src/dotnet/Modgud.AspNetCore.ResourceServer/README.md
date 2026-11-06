@@ -180,6 +180,7 @@ options.SessionRevocation = new ModgudSessionRevocationOptions
 | `IntrospectionClientSecret` | Required when the mode accepts reference tokens. |
 | `RequireHttpsMetadata` | Requires an HTTPS authority; defaults to `true`. |
 | `ConfigureJwtBearer` | Optional advanced JWT bearer configuration in JWT-capable modes. |
+| `DpopReplayProtection` | Accepts each DPoP proof once (RFC 9449 §11.1); defaults to `true` with a per-process in-memory record. Register your own `IDpopReplayCache` before `AddModgudResourceServer` to share it across instances. |
 | `SessionRevocation` | Reject JWTs of sessions that ended before `exp`, learned from the Modgud Application change feed (`Enabled`, `AppId`, `ClientId`, `ClientSecret`, `AccessTokenLifetime`). Off by default; JWT-capable modes only. |
 
 The valid option combination is checked immediately during registration.

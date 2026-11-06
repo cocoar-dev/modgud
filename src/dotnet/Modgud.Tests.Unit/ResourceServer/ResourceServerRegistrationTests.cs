@@ -196,6 +196,50 @@ public class ResourceServerRegistrationTests
         return services;
     }
 
+    // SDK-B5-02 — DPoP replay protection is on by default, can be turned off, and an
+    // app-registered (e.g. distributed) cache takes precedence over the in-memory default.
+    [Fact]
+    public void Dpop_replay_protection_registers_the_in_memory_cache_by_default()
+    {
+        var services = Services();
+        services.AddModgudResourceServer(ValidJwt);
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsType<Modgud.AspNetCore.ResourceServer.Dpop.InMemoryDpopReplayCache>(
+            provider.GetService<Modgud.AspNetCore.ResourceServer.Dpop.IDpopReplayCache>());
+    }
+
+    [Fact]
+    public void Dpop_replay_protection_can_be_turned_off()
+    {
+        var services = Services();
+        services.AddModgudResourceServer(options =>
+        {
+            ValidJwt(options);
+            options.DpopReplayProtection = false;
+        });
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Null(provider.GetService<Modgud.AspNetCore.ResourceServer.Dpop.IDpopReplayCache>());
+    }
+
+    [Fact]
+    public void An_app_registered_dpop_replay_cache_wins()
+    {
+        var services = Services();
+        var custom = new SharedReplayCache();
+        services.AddSingleton<Modgud.AspNetCore.ResourceServer.Dpop.IDpopReplayCache>(custom);
+        services.AddModgudResourceServer(ValidJwt);
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Same(custom, provider.GetService<Modgud.AspNetCore.ResourceServer.Dpop.IDpopReplayCache>());
+    }
+
+    private sealed class SharedReplayCache : Modgud.AspNetCore.ResourceServer.Dpop.IDpopReplayCache
+    {
+        public bool TryUse(string jkt, string jti, DateTimeOffset notAfter, DateTimeOffset now) => true;
+    }
+
     private static void ValidJwt(ModgudResourceServerOptions options)
     {
         options.Authority = "https://id.example.com";

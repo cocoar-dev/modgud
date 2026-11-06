@@ -35,6 +35,9 @@ public static class ServiceCollectionExtensions
         Validate(options);
 
         services.AddSingleton<ModgudResourceServerRegistrationMarker>();
+        // SDK-B5-02 — DPoP proofs are single-use by default; an app-registered cache wins.
+        if (options.DpopReplayProtection)
+            services.TryAddSingleton<Dpop.IDpopReplayCache, Dpop.InMemoryDpopReplayCache>();
         services.AddAuthorization();
         if (options.SessionRevocation.Enabled)
             AddSessionRevocation(services, options);
