@@ -483,7 +483,7 @@ The window is `DbSettings__StartupTimeoutSeconds` (default `90`; `0` = a single 
 
 Modgud can run as **two (or more) containers against one PostgreSQL**, both serving traffic all the time. That is what makes an image update a non-event: replace one container while the other keeps serving, then the other. It also means a single crashed container no longer takes the login page down. It is *not* a claim of failover across machines or regions.
 
-There is no "cluster mode" to switch on. A Production container always runs the cluster-capable code path, with one instance as well as with two:
+There is no "cluster mode" to switch on. A Production or Staging container always runs the cluster-capable code path, with one instance as well as with two (Staging included, so that trying several instances there exercises the same coordination and safeguards as Production; Development and Testing stay single-process):
 
 | Concern | How it is coordinated |
 |---|---|

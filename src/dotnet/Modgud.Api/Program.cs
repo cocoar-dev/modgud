@@ -184,7 +184,7 @@ try
     // app boots far and dies with a cryptic database error far from the cause.
     StartupValidation.ValidateRequiredConfig(conf);
 
-    // ADR 0022 (D2) — one code path. Production always runs cluster-capable:
+    // ADR 0022 (D2) — one code path. Production and Staging always run cluster-capable:
     // Wolverine Balanced with managed projection distribution and a clustered
     // Quartz store, whether one container is running or two. Development and
     // Testing keep the single-process shape (Marten Solo daemon, in-memory
@@ -193,9 +193,10 @@ try
     // no instance-count switch: how many nodes are alive is read from
     // Wolverine's node table at runtime (IClusterNodes).
     var clusterSettings = configManager.GetConfig<ClusterSettings>();
+    var clusterCapable = ClusterHostingOptions.IsClusterCapableEnvironment(builder.Environment.EnvironmentName);
     var clusterHosting = new ClusterHostingOptions
     {
-        Coordination = builder.Environment.IsProduction()
+        Coordination = clusterCapable
             ? ClusterCoordination.WolverineManaged
             : ClusterCoordination.SingleProcess,
         // The behavioural integration suite owns projection progress explicitly:
@@ -211,9 +212,9 @@ try
             : clusterSettings.NodeName.Trim(),
         // ADR 0022 (D5) — Production always runs the backplane on the master DB
         // and relays data events over it. Single-process hosts keep them in-process.
-        CrossNodeRelay = builder.Environment.IsProduction(),
+        CrossNodeRelay = clusterCapable,
     };
-    var drainDelay = builder.Environment.IsProduction() && clusterSettings.DrainDelaySeconds > 0
+    var drainDelay = clusterCapable && clusterSettings.DrainDelaySeconds > 0
         ? TimeSpan.FromSeconds(clusterSettings.DrainDelaySeconds)
         : TimeSpan.Zero;
 

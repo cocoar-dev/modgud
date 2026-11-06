@@ -105,7 +105,7 @@ var result = await _messageBus.InvokeAsync<ErrorOr<UserDto>>(
 ```
 
 Handlers are auto-discovered. No external message broker is required:
-Production runs `DurabilityMode.Balanced` with Wolverine's node table in
+Production and Staging run `DurabilityMode.Balanced` with Wolverine's node table in
 the master DB as the coordination point (leader election, outbox agents
 and Marten projection shards assigned across live nodes — see
 [Running two instances](./deployment#running-two-instances));

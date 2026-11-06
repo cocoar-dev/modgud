@@ -57,4 +57,16 @@ public sealed record ClusterHostingOptions
     public bool CrossNodeRelay { get; init; }
 
     public bool IsWolverineManaged => Coordination == ClusterCoordination.WolverineManaged;
+
+    /// <summary>
+    /// ADR 0022 + B9-CL01 — which environments run the cluster-capable code path (Wolverine
+    /// node table, clustered Quartz, cross-node relay, drain). Production AND Staging: Staging
+    /// is where several instances are tried before Production, so the safeguards that read
+    /// the node table (projection rebuild gate, CLI rebuild check, readiness) must work
+    /// there too. Development and Testing stay single-process (constant restarts, test-driven
+    /// projection daemons). One instance on the cluster path is fine — Production does it.
+    /// </summary>
+    public static bool IsClusterCapableEnvironment(string environmentName) =>
+        string.Equals(environmentName, "Production", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(environmentName, "Staging", StringComparison.OrdinalIgnoreCase);
 }
