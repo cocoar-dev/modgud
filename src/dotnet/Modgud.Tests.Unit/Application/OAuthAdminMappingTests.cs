@@ -1344,6 +1344,32 @@ public class OAuthAdminMappingTests
             Assert.Empty(OAuthAdminMapping.GetStringListProp(merged, OAuthApplicationPropertyKeys.Roles));
         }
 
+        /// <summary>E.clients-B1 — keys the update DTO does not manage (dynamic client registration,
+        /// resolved client metadata) were dropped by every update, even an Enabled toggle: the client
+        /// then left the DCR audience containment and the last-used tracking.</summary>
+        [Fact]
+        public void Keys_the_update_does_not_manage_survive_a_patch()
+        {
+            var current = OAuthAdminMapping.BuildClientProperties(
+                enabled: true, allowBrowser: false, requireSecret: true, enableLocal: true,
+                requireConsent: false, allowRemember: true, corsOrigins: Array.Empty<string>(),
+                alwaysSend: false, updateClaims: false,
+                claims: Array.Empty<OAuthClientClaimDto>(), roles: Array.Empty<string>());
+            current[OAuthApplicationPropertyKeys.DcrIsDynamicallyRegistered] = JsonSerializer.SerializeToElement(true);
+            current[OAuthApplicationPropertyKeys.DcrRegisteredAt] = JsonSerializer.SerializeToElement("2026-11-06T10:00:00Z");
+            current[OAuthApplicationPropertyKeys.DcrRegisteredFromIp] = JsonSerializer.SerializeToElement("203.0.113.7");
+            current[OAuthApplicationPropertyKeys.DcrLastUsedAt] = JsonSerializer.SerializeToElement("2026-11-06T11:00:00Z");
+            current[OAuthApplicationPropertyKeys.CimdIsResolvedClient] = JsonSerializer.SerializeToElement(true);
+
+            var merged = OAuthAdminMapping.MergeClientProperties(current, new UpdateOAuthClientDto { Enabled = false });
+
+            Assert.False(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.Enabled, true));
+            Assert.True(OAuthAdminMapping.GetBoolProp(merged, OAuthApplicationPropertyKeys.DcrIsDynamicallyRegistered, false));
+            foreach (var key in new[] { OAuthApplicationPropertyKeys.DcrRegisteredAt, OAuthApplicationPropertyKeys.DcrRegisteredFromIp,
+                         OAuthApplicationPropertyKeys.DcrLastUsedAt, OAuthApplicationPropertyKeys.CimdIsResolvedClient })
+                Assert.Equal(JsonSerializer.Serialize(current[key]), JsonSerializer.Serialize(merged[key]));
+        }
+
         [Fact]
         public void Empty_dto_preserves_every_value_from_current_through_round_trip()
         {
