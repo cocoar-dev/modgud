@@ -7,10 +7,13 @@ import { fileURLToPath } from 'node:url'
 /**
  * Playwright global setup for Modgud E2E.
  *
- * Runs against a **bit-for-bit production image** of the auth API. Nothing
- * is wired in `Development` mode — every timing-sensitive code path the test
- * exercises behaves the way it does in deployed prod. Outbound email is
- * inspected via a real SMTP capture server (Mailpit), not a dev-only
+ * Runs against a **Release image built from the current working tree**, in the
+ * `Staging` environment (production build and behaviour, not Development). It is
+ * NOT a production-equivalent deployment (B10-06): the rig uses ephemeral
+ * OpenIddict signing keys (`OPENIDDICT__DEVELOPMENTMODE=true`), a localhost
+ * issuer, and switches the magic-link / e-mail-OTP rate limits off, so the
+ * production-only start guards and real rate limits are not exercised. Outbound
+ * email is inspected via a real SMTP capture server (Mailpit), not a dev-only
  * inspection endpoint, so the SmtpEmailService path is tested too.
  *
  * Topology:
@@ -32,9 +35,17 @@ import { fileURLToPath } from 'node:url'
  *   - E2E_BASE_URL set  → use external instance (skip docker management).
  *   - E2E_BASE_URL unset → bring up the rig via raw `docker run` commands.
  *
- * Image build:
- *   The script auto-builds `modgud:e2e` if it's missing. To force a rebuild
- *   (e.g. after editing backend code), `docker rmi modgud:e2e` between runs.
+ * Image build (B10-06):
+ *   `modgud:e2e` carries the git commit it was built from. It is rebuilt when
+ *   that commit differs from HEAD or the working tree has changes, and the
+ *   frontend `dist` is rebuilt too. Set E2E_REUSE_IMAGE=1 / E2E_REUSE_DIST=1 to
+ *   reuse an existing image / dist anyway while iterating on specs only.
+ *
+ * Ownership (B10-05):
+ *   Every container and the network carry the label `modgud.e2e.run=<run id>`.
+ *   The state file is written BEFORE anything starts and names the run and its
+ *   process; another live run's rig is never removed, and a container with one
+ *   of the rig's names but without the label is never touched.
  */
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -59,6 +70,21 @@ const E2E_ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'ABC12abc!'
 // Project root: walk up from src/frontend-vue/e2e/ to repo root.
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..')
 
+export const RUN_LABEL = 'modgud.e2e.run'
+const SOURCE_LABEL = 'modgud.e2e.source'
+
+/** True when a process with this id is alive (signal 0 only probes). */
+export function processAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM' }
+}
+
+/** The tree the image would be built from: HEAD plus a marker for local changes. */
+function sourceStamp(): string {
+  const head = execSync('git rev-parse HEAD', { cwd: REPO_ROOT, encoding: 'utf-8' }).trim()
+  const dirty = execSync('git status --porcelain --untracked-files=no', { cwd: REPO_ROOT, encoding: 'utf-8' }).trim()
+  return dirty.length > 0 ? `${head}-dirty` : head
+}
+
 function docker(cmd: string): string {
   return execSync(`docker ${cmd}`, { encoding: 'utf-8' }).trim()
 }
@@ -76,21 +102,31 @@ function imageExists(tag: string): boolean {
   }
 }
 
+/** B10-06 — reuse an image only when it was built from exactly this clean commit. */
+function imageMatchesSource(tag: string, stamp: string): boolean {
+  if (stamp.endsWith('-dirty')) return false
+  try {
+    return dockerSilent(`image inspect ${tag} --format "{{ index .Config.Labels \"${SOURCE_LABEL}\" }}"`) === stamp
+  } catch {
+    return false
+  }
+}
+
 /**
  * Build the publish output and the docker image. Idempotent — the docker layer
  * cache makes the second run nearly free. Mirrors the manual-smoke recipe:
  *   pnpm build → copy dist to wwwroot → dotnet publish → docker build.
  */
-function buildImage(): void {
+function buildImage(stamp: string): void {
   console.log('[e2e] Building modgud:e2e image (first run, ~30s)...')
   const frontendDir = path.join(REPO_ROOT, 'src', 'frontend-vue')
   const dotnetDir = path.join(REPO_ROOT, 'src', 'dotnet')
   const wwwroot = path.join(dotnetDir, 'Modgud.Api', 'wwwroot')
   const publishOut = path.join(dotnetDir, 'output', 'Modgud')
 
-  // Frontend (skip if dist already exists — dev iteration wins)
+  // Frontend — always rebuilt from the tree, unless E2E_REUSE_DIST=1 asks to reuse dist.
   const distDir = path.join(frontendDir, 'dist')
-  if (!fs.existsSync(distDir)) {
+  if (process.env.E2E_REUSE_DIST !== '1' || !fs.existsSync(distDir)) {
     execSync('pnpm build', { cwd: frontendDir, stdio: 'inherit' })
   }
 
@@ -108,7 +144,7 @@ function buildImage(): void {
   )
 
   // Docker
-  execSync(`docker build -t ${APP_IMAGE} "${dotnetDir}"`, { stdio: 'inherit' })
+  execSync(`docker build -t ${APP_IMAGE} --label ${SOURCE_LABEL}=${stamp} "${dotnetDir}"`, { stdio: 'inherit' })
   console.log(`[e2e] Image ${APP_IMAGE} built.`)
 }
 
@@ -120,20 +156,53 @@ export default async function globalSetup(_config: FullConfig) {
     return
   }
 
-  if (!imageExists(APP_IMAGE)) {
-    buildImage()
+  // B10-05 — never take over a rig another live run still owns.
+  if (fs.existsSync(STATE_FILE)) {
+    const previous = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')) as { runId?: string, pid?: number }
+    if (previous.pid && previous.pid !== process.pid && processAlive(previous.pid)) {
+      throw new Error(`[e2e] Another e2e run (pid ${previous.pid}, run ${previous.runId}) owns the rig. ` +
+        'Wait for it to finish; two runs cannot share the fixed container names and ports.')
+    }
+  }
+
+  const stamp = sourceStamp()
+  if (process.env.E2E_REUSE_IMAGE === '1' && imageExists(APP_IMAGE)) {
+    console.log(`[e2e] E2E_REUSE_IMAGE=1 — reusing ${APP_IMAGE} without checking its source`)
+  } else if (!imageMatchesSource(APP_IMAGE, stamp)) {
+    buildImage(stamp)
   }
 
   console.log('[e2e] Starting containers...')
 
-  // Cleanup previous run if still around.
-  try { docker(`rm -f ${APP_NAME} ${PG_NAME} ${MAILPIT_NAME}`) } catch { /* ignore */ }
-  try { docker(`network rm ${NETWORK}`) } catch { /* ignore */ }
+  // Leftovers of an earlier, finished run: only what carries the rig label.
+  for (const name of [APP_NAME, PG_NAME, MAILPIT_NAME]) {
+    let label: string
+    try { label = dockerSilent(`inspect ${name} --format "{{ index .Config.Labels \"${RUN_LABEL}\" }}"`) } catch { continue }
+    if (!label) throw new Error(`[e2e] A container named ${name} exists but was not created by this rig; refusing to remove it.`)
+    docker(`rm -f ${name}`)
+  }
+  let netLabel: string | null = null
+  try { netLabel = dockerSilent(`network inspect ${NETWORK} --format "{{ index .Labels \"${RUN_LABEL}\" }}"`) } catch { /* no such network */ }
+  if (netLabel !== null) {
+    if (!netLabel) throw new Error(`[e2e] A network named ${NETWORK} exists but was not created by this rig; refusing to remove it.`)
+    docker(`network rm ${NETWORK}`)
+  }
 
-  docker(`network create ${NETWORK}`)
+  // Ownership first: the state file exists before any resource does, so a failed
+  // setup still leaves teardown the run id to clean up by.
+  const runId = `${process.pid}-${Date.now()}`
+  const runLabel = `--label ${RUN_LABEL}=${runId}`
+  const state: Record<string, unknown> = {
+    runId, pid: process.pid, ready: false,
+    network: NETWORK,
+    containers: { app: APP_NAME, pg: PG_NAME, mailpit: MAILPIT_NAME },
+  }
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state))
+
+  docker(`network create ${runLabel} ${NETWORK}`)
 
   // PostgreSQL
-  docker(`run -d --name ${PG_NAME} --network ${NETWORK} --network-alias postgres ` +
+  docker(`run -d --name ${PG_NAME} ${runLabel} --network ${NETWORK} --network-alias postgres ` +
     `-e POSTGRES_DB=modgud_e2e -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres ` +
     `postgres:17-alpine`)
   console.log('[e2e] PostgreSQL starting...')
@@ -144,7 +213,7 @@ export default async function globalSetup(_config: FullConfig) {
 
   // Mailpit — captures every outbound mail; read via its HTTP API on 8025.
   // axllent/mailpit defaults: SMTP on 1025, HTTP on 8025, no auth.
-  docker(`run -d --name ${MAILPIT_NAME} --network ${NETWORK} --network-alias mailpit ` +
+  docker(`run -d --name ${MAILPIT_NAME} ${runLabel} --network ${NETWORK} --network-alias mailpit ` +
     `-p ${MAILPIT_HTTP_PORT}:8025 ` +
     `axllent/mailpit:latest`)
   console.log('[e2e] Mailpit starting...')
@@ -182,7 +251,7 @@ export default async function globalSetup(_config: FullConfig) {
   // compiled-in default. A previously-tagged stand-in
   // image happened to bake AppUrl=:8081, which masked this — a fresh build does
   // not, and binds :80.
-  docker(`run -d --name ${APP_NAME} --network ${NETWORK} -p ${APP_HOST_PORT}:8081 ` +
+  docker(`run -d --name ${APP_NAME} ${runLabel} --network ${NETWORK} -p ${APP_HOST_PORT}:8081 ` +
     `-e ASPNETCORE_ENVIRONMENT=Staging ` +
     `-e AppUrl=http://0.0.0.0:8081 ` +
     `-e PUBLICURL=${publicUrl} ` +
@@ -253,10 +322,10 @@ export default async function globalSetup(_config: FullConfig) {
 
   // Persist state so specs and teardown can find the rig.
   fs.writeFileSync(STATE_FILE, JSON.stringify({
+    ...state,
+    ready: true,
     baseURL,
     mailpitUrl: `http://localhost:${MAILPIT_HTTP_PORT}`,
-    network: NETWORK,
-    containers: { app: APP_NAME, pg: PG_NAME, mailpit: MAILPIT_NAME },
   }))
   process.env.E2E_BASE_URL = baseURL
   process.env.E2E_MAILPIT_URL = `http://localhost:${MAILPIT_HTTP_PORT}`
