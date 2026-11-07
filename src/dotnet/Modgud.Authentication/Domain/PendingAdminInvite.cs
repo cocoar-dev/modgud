@@ -48,6 +48,16 @@ public class PendingAdminInvite
     public DateTimeOffset? UsedAt { get; set; }
 
     /// <summary>
+    /// IS-INV-01 — <see cref="OpenSlotValue"/> while the invite is open, null once used
+    /// or revoked. A unique index on it lets the database hold at most one open invite
+    /// per realm, whatever two issuers do concurrently. Invites stored before the field
+    /// existed carry null; the next issue revokes them anyway.
+    /// </summary>
+    public string? OpenSlot { get; set; }
+
+    public const string OpenSlotValue = "open";
+
+    /// <summary>
     /// Optional: who issued the invite. <c>null</c> for self-service
     /// CLI bootstrap; the issuing CP-admin's username when issued via
     /// <c>POST /api/admin/realms</c>. For audit only.

@@ -225,14 +225,24 @@ public static class RealmsEndpoints
                 }
 
                 var inviteService = inviteScope.ServiceProvider.GetRequiredService<IPendingAdminInviteService>();
-                issued = await inviteService.IssueAsync(
-                    dto.UserName,
-                    dto.Email,
-                    dto.Firstname,
-                    dto.Lastname,
-                    issuedBy,
-                    realm,
-                    ct);
+                try
+                {
+                    issued = await inviteService.IssueAsync(
+                        dto.UserName,
+                        dto.Email,
+                        dto.Firstname,
+                        dto.Lastname,
+                        issuedBy,
+                        realm,
+                        ct);
+                }
+                catch (AdminInviteConflictException ex)
+                {
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status409Conflict,
+                        title: "Realm.AdminInvite.Concurrent",
+                        detail: ex.Message);
+                }
             }
 
             await RecordControlPlaneRealmOperationAsync(

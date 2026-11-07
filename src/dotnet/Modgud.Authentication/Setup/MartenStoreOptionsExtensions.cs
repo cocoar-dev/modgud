@@ -118,10 +118,15 @@ public static class MartenStoreOptionsExtensions
         // C15 — bootstrap-invite for first-admin creation in a realm.
         // Stored per-tenant (one realm = one tenant DB) and indexed by
         // TokenHash for the hot lookup the bootstrap endpoint runs.
+        // IS-INV-01 — version-checked so a consume and a reissue of the same invite
+        // cannot both win, and a unique open slot so two issuers cannot both leave one
+        // open (NULLs are distinct: used invites never collide).
         options.Schema.For<PendingAdminInvite>()
             .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
             .Index(x => x.TokenHash)
-            .Index(x => x.Email);
+            .Index(x => x.Email)
+            .UniqueIndex(x => x.OpenSlot);
 
         // ADR-0012 — single-use registration invite codes. Indexed by CodeHash
         // (the hot redeem lookup) and AppId (per-app list/prune). Optimistic
