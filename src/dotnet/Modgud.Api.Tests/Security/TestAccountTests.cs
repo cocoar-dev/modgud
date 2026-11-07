@@ -170,6 +170,7 @@ public class TestAccountTests : IntegrationTestBase
     [InlineData("12345")]
     [InlineData("1234567")]
     [InlineData("12a456")]
+    [InlineData("123456\n")] // B8-AJ-06: '$' matched before a trailing newline; the stored code could never verify
     public async Task The_fixed_code_is_exactly_six_digits(string code)
     {
         var target = await CreateTestAccountUserAsync();
