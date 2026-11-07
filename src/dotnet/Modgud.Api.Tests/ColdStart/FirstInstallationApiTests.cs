@@ -17,6 +17,26 @@ namespace Modgud.Api.Tests.ColdStart;
 /// </summary>
 public class FirstInstallationApiTests(ColdStartFixture fixture) : ColdStartTestBase(fixture)
 {
+    /// <summary>IC-CO-01 — /health runs in the realm-independent terminal branch, so the
+    /// drain short-circuit registered later never saw it: during a drain readiness went
+    /// through the health-check pipeline (logged at Error) instead of a plain 503.</summary>
+    [Fact]
+    public async Task Readiness_answers_the_drain_503_while_the_node_is_stopping()
+    {
+        await using var host = await Fixture.CreateUninitializedHostAsync();
+        using var client = host.Factory.CreateClient();
+        host.Services.GetRequiredService<Modgud.Api.Cluster.ShutdownState>().MarkStopping();
+
+        var response = await client.GetAsync("/health/ready", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        // The short-circuit answers with the cluster entry only; the health-check
+        // pipeline (whose cluster check says the same as a backstop) runs every check.
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var check = Assert.Single(body.RootElement.GetProperty("checks").EnumerateArray());
+        Assert.Equal("cluster", check.GetProperty("name").GetString());
+    }
+
     [Fact]
     public async Task Recovery_token_can_complete_zero_realm_installation_over_http()
     {

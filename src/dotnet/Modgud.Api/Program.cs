@@ -1425,12 +1425,17 @@ try
     // exist. Give it a terminal branch that only runs endpoint routing and the
     // endpoint rate limiter. Normal realm/auth middleware can never be resolved
     // from this branch.
+    var shutdownState = app.Services.GetRequiredService<Modgud.Api.Cluster.ShutdownState>();
     app.MapWhen(
         context => RealmIndependentPathPolicy.Matches(context.Request.Path),
         realmIndependentBranch =>
         {
             realmIndependentBranch.Run(async context =>
             {
+                // IC-CO-01 — /health is served here, before the drain middleware of
+                // MapModgudObservability: a draining node answers readiness the same way.
+                if (await ObservabilityExtensions.AnswerIfDrainingAsync(context, shutdownState)) return;
+
                 var endpoint = context.GetEndpoint();
                 if (!RealmIndependentPathPolicy.CanExecute(endpoint, context.Request.Path))
                 {
