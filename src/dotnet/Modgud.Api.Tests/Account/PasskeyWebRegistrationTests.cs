@@ -54,7 +54,10 @@ public class PasskeyWebRegistrationTests : IntegrationTestBase
         await using (var session = GetTenantedSession())
         {
             var all = await session.Query<StoredPasskeyCredential>().ToListAsync(ct);
-            Assert.Contains(all, c => c.CredentialId.SequenceEqual(authenticator.CredentialId) && c.UserId == DefaultUser.Id);
+            var stored = Assert.Single(all, c => c.CredentialId.SequenceEqual(authenticator.CredentialId) && c.UserId == DefaultUser.Id);
+            // RV-0003 — the RP ID the ceremony was pinned to is stored, not left to be read later as
+            // whatever the primary domain is by then.
+            Assert.Equal(rpId, stored.RpId);
             // Consumed by a version-checked marker, not deleted (B8-P1); reaped by expiry.
             var consumed = Assert.Single(await session.Query<PasskeyEnrollCeremony>().Where(c => c.UserId == DefaultUser.Id).ToListAsync(ct));
             Assert.NotNull(consumed.ConsumedAt);

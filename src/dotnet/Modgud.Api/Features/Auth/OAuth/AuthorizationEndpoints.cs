@@ -146,10 +146,16 @@ public static class AuthorizationEndpoints
         var authResult = await httpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
         var needsLogin = !authResult.Succeeded;
 
-        if (authResult.Succeeded && request.MaxAge != null && authResult.Properties?.IssuedUtc != null)
+        // EG-07 — max_age is measured from when the user last authenticated: the latest proven
+        // factor, the same time the tokens carry as auth_time. The cookie's IssuedUtc moves with every
+        // sliding renewal and security-stamp refresh, so a sign-in proven long ago passed it. A cookie
+        // without recorded factors (from before they were recorded) keeps the old measure.
+        if (authResult.Succeeded && request.MaxAge != null)
         {
-            var sessionAge = DateTimeOffset.UtcNow - authResult.Properties.IssuedUtc.Value;
-            if (sessionAge > TimeSpan.FromSeconds(request.MaxAge.Value)) needsLogin = true;
+            var factors = SignInAssurance.ReadFactors(authResult.Principal);
+            DateTimeOffset? authenticatedAt = factors.Count > 0 ? factors.Values.Max() : authResult.Properties?.IssuedUtc;
+            if (authenticatedAt is { } at && DateTimeOffset.UtcNow - at > TimeSpan.FromSeconds(request.MaxAge.Value))
+                needsLogin = true;
         }
 
         // EG-02 — prompt=login asks for a fresh sign-in, once. The return URL used to repeat
