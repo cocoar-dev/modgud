@@ -4,6 +4,17 @@ namespace Modgud.Tests.Unit.Api.Features;
 
 public class PageDocumentValidatorTests
 {
+    /// <summary>B10-PA05 — a non-number schemaVersion or maxItems made TryGetInt32 throw
+    /// InvalidOperationException (a 500) instead of a validation error.</summary>
+    [Theory]
+    [InlineData("""{"id":"p","type":"page","schemaVersion":"4","children":[]}""")]
+    [InlineData("""{"id":"p","type":"page","schemaVersion":4,"children":[{"id":"r","type":"repeat","props":{"contextPath":"auth.externalProviders","maxItems":"5"}}]}""")]
+    public void Login_RejectsNonNumberIntegersWithoutThrowing(string schema)
+    {
+        Assert.False(PageDocumentValidator.Validate("login", schema, out var error));
+        Assert.False(string.IsNullOrEmpty(error));
+    }
+
     [Fact]
     public void Login_AcceptsBoundedSchemaV4Document()
     {

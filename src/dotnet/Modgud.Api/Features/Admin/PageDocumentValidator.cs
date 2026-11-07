@@ -83,7 +83,9 @@ public static class PageDocumentValidator
                 error = "Root node must be an object with type 'page'.";
                 return false;
             }
+            // B10-PA05 — TryGetInt32 throws on a non-number value instead of returning false.
             if (!root.TryGetProperty("schemaVersion", out var version)
+                || version.ValueKind != JsonValueKind.Number
                 || !version.TryGetInt32(out var schemaVersion)
                 || schemaVersion is < MinimumSchemaVersion or > CurrentSchemaVersion)
             {
@@ -143,7 +145,8 @@ public static class PageDocumentValidator
                             || (slug is not "login" and not "consent"))
                         { validationError = $"Node '{id}' references a disallowed repeat source."; return false; }
                         if (props.TryGetProperty("maxItems", out var maxItems)
-                            && (!maxItems.TryGetInt32(out var max) || max is < 1 or > 100))
+                            && (maxItems.ValueKind != JsonValueKind.Number
+                                || !maxItems.TryGetInt32(out var max) || max is < 1 or > 100))
                         { validationError = $"Node '{id}' repeat maxItems must be between 1 and 100."; return false; }
                     }
                     if (type == "visual-markup")
