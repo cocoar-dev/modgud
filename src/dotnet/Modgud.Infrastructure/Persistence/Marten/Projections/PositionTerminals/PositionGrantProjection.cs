@@ -42,10 +42,15 @@ public partial class PositionGrantProjection : SingleStreamProjection<PositionGr
         grant.RevokedByUserId = e.RevokedByUserId;
     }
 
+    /// <summary>G-B4-06 — the writer computes <c>LockedUntil</c> from the failure count it read, so a
+    /// failure recorded from an older count carries no lock. A failure therefore never shortens or
+    /// clears a lock (the later end wins); only a success does.</summary>
     public void Apply(PositionGrantActivationFailed e, PositionGrant grant)
     {
         grant.ActivationFailedCount++;
-        grant.ActivationLockoutEnd = e.LockedUntil;
+        if (e.LockedUntil is { } lockedUntil
+            && (grant.ActivationLockoutEnd is not { } current || lockedUntil > current))
+            grant.ActivationLockoutEnd = lockedUntil;
     }
 
     public void Apply(PositionGrantActivationSucceeded e, PositionGrant grant)
