@@ -411,6 +411,10 @@ public static class OpenIddictExtensions
         // instance on the realm DB.
         services.AddScoped<Dpop.IDpopNonceStore, Dpop.MartenDpopNonceStore>();
 
+        // G-B4-03 — the token request's DPoP decision, made once per request: by an endpoint that
+        // stores state before it signs in, else by DpopProofValidationHandler.
+        services.AddScoped<Dpop.IDpopTokenRequestGate, Dpop.DpopTokenRequestGate>();
+
         return services;
     }
 

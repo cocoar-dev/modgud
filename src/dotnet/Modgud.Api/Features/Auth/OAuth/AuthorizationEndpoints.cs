@@ -1027,6 +1027,10 @@ public static class AuthorizationEndpoints
             return Refuse("The device code is not DPoP-bound; terminal enrollment requires a device key.");
         if (!string.Equals(jkt, binding.Jkt, StringComparison.Ordinal))
             return Refuse("The DPoP proof key does not match the key this device code is bound to.");
+        // G-B4-03 — everything the pipeline would still refuse (replay, nonce, client policy) is
+        // decided now, before the Enrolled event below is committed.
+        if (await DpopGateRefusalAsync(httpContext, request, htu, ct) is { } enrollDpopRefusal)
+            return enrollDpopRefusal;
         }
 
         var principal = isControlV2
@@ -1110,6 +1114,9 @@ public static class AuthorizationEndpoints
                 header.ToString(), httpContext.Request.Method, htu, DateTimeOffset.UtcNow);
             if (!proof.IsValid || !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
                 return Refuse("The DPoP proof key does not match this terminal.");
+            // G-B4-03 — decided before the ceremony is consumed below.
+            if (await DpopGateRefusalAsync(httpContext, request, htu, ct) is { } stepUpDpopRefusal)
+                return stepUpDpopRefusal;
         }
 
         if (!Guid.TryParse((string?)request.GetParameter("ceremony_id"), out var ceremonyId))
@@ -1259,6 +1266,10 @@ public static class AuthorizationEndpoints
             proofHeader.ToString(), httpContext.Request.Method, htu, DateTimeOffset.UtcNow);
         if (!proof.IsValid || !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
             return Refuse("The DPoP proof key is not this terminal's enrolled key.");
+        // G-B4-03 — decided before the new session, the pointer move and the end of the previous
+        // session are committed below (that end, and its revoke, cannot be undone).
+        if (await DpopGateRefusalAsync(httpContext, request, htu, ct) is { } staffingDpopRefusal)
+            return staffingDpopRefusal;
         }
 
         // §13.3 steps 4–5 — load + pin-check the ceremony.
@@ -1444,6 +1455,12 @@ public static class AuthorizationEndpoints
         principal.SetScopes(scopes);
         var resources = await scopeManager.ListResourcesAsync(principal.GetScopes(), ct).ToListAsync(ct);
         principal.SetResources(resources);
+        // G-B4-03 — ResourceIndicatorHandler would refuse an unauthorised `resource` only after the
+        // commit below; the same rule, decided first.
+        var unauthorisedResource = request.GetResources().FirstOrDefault(r => !resources.Contains(r, StringComparer.Ordinal));
+        if (unauthorisedResource is not null)
+            return ForbidNativeGrant(Errors.InvalidTarget,
+                $"The resource '{unauthorisedResource}' is not authorised for the requested scopes or client.");
 
         var resourceAccess = await BuildResourceAccessAsync(
             positionId, resources, wantsRoles: true, wantsPermissions: true, session, permissionService);
@@ -1760,6 +1777,20 @@ public static class AuthorizationEndpoints
     /// <summary>Uniform OAuth error for the native grants — mirrors the local
     /// <c>ForbidInvalidGrant</c> but takes the error code too (factor failures
     /// use <c>invalid_grant</c>; a disabled realm uses <c>unsupported_grant_type</c>).</summary>
+    /// <summary>
+    /// G-B4-03 — the token request's DPoP decision (proof, nonce, replay, client policy), made now
+    /// instead of in the sign-in pipeline after the endpoint has committed its state. The pipeline
+    /// handler later reuses the same decision for this request.
+    /// </summary>
+    private static async Task<IResult?> DpopGateRefusalAsync(
+        HttpContext httpContext, OpenIddictRequest request, string htu, CancellationToken ct)
+    {
+        var outcome = await httpContext.RequestServices
+            .GetRequiredService<Modgud.Infrastructure.OpenIddict.Dpop.IDpopTokenRequestGate>()
+            .EvaluateAsync(httpContext, request.ClientId, htu, ct);
+        return outcome.Rejected ? ForbidNativeGrant(outcome.Error!, outcome.Description!) : null;
+    }
+
     private static IResult ForbidNativeGrant(string error, string description) =>
         Results.Forbid(
             new AuthenticationProperties(new Dictionary<string, string?>
