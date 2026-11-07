@@ -36,6 +36,7 @@ public class RealmSlugRulesTests
         [InlineData("acme.thing")]                   // dot not allowed
         [InlineData("acme thing")]                   // space not allowed
         [InlineData("acme/thing")]                   // slash not allowed
+        [InlineData("acme\n")]                       // F.routing-F-R6: '$' matched before a trailing newline
         [InlineData("a234567890123456789012345678901234567890123456789012345678901234")] // 64 chars (over)
         public void Rejects_malformed_slugs(string? slug) =>
             Assert.False(RealmSlugRules.IsValidFormat(slug));

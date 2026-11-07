@@ -38,7 +38,9 @@ public static partial class RealmSlugRules
             SystemSlug, "health", "swagger", "openapi", "_framework",
         };
 
-    [GeneratedRegex(@"^[a-z][a-z0-9-]{1,61}[a-z0-9]$", RegexOptions.Compiled)]
+    // \A … \z, not ^ … $: in .NET '$' also matches before a trailing newline, and the slug
+    // becomes part of the realm's database name (F.routing-F-R6).
+    [GeneratedRegex(@"\A[a-z][a-z0-9-]{1,61}[a-z0-9]\z", RegexOptions.Compiled)]
     private static partial Regex SlugFormatRegex();
 
     /// <summary>True if <paramref name="slug"/> matches the format rules. Whitespace and null fail.</summary>
