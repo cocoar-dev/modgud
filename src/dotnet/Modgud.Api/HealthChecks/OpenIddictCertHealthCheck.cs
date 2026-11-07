@@ -53,7 +53,8 @@ public sealed class OpenIddictCertHealthCheck(OpenIddictSettings settings) : IHe
                 $"Signing certificate at {signingFull} failed to load.", ex));
         }
 
-        // Encryption cert is optional — falls back to signing when unset.
+        // The startup bootstrap always sets the encryption path outside DevelopmentMode;
+        // an unset one here means options built without it (FK-06).
         if (!string.IsNullOrEmpty(settings.EncryptionCertificatePath))
         {
             var encFull = PathHelper.GetFullPath(settings.EncryptionCertificatePath);

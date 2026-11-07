@@ -305,11 +305,11 @@ public static class OpenIddictExtensions
                         }
                     }
 
-                    // Separate encryption cert when configured; falls back
-                    // to the signing cert (legacy behaviour) otherwise. A
-                    // production-grade deployment SHOULD provide a distinct
-                    // path so a key compromise on one axis doesn't compromise
-                    // the other.
+                    // Separate encryption cert. The server's startup bootstrap
+                    // always resolves the path outside DevelopmentMode (an unset
+                    // one becomes data/keys/encryption.pfx), so the fallback to
+                    // the signing cert only serves callers that build the options
+                    // without that bootstrap (FK-06).
                     var encryptionCert = !string.IsNullOrEmpty(settings.EncryptionCertificatePath)
                         ? LoadCertificate(settings.EncryptionCertificatePath)
                         : signingCert;

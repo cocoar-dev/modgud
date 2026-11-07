@@ -15,7 +15,7 @@ how it rotates, and what breaks if it's lost.
 |---|---|---|---|---|
 | Per-realm RSA signing key | Access & ID tokens (that realm only) | That realm's tenant DB | Manual, 30-day overlap | Fresh key auto-bootstraps; that realm's outstanding access/ID tokens die |
 | OpenIddict signing certificate (`signing.pfx`) | Authorization codes, device codes, refresh tokens (all realms) | Disk volume `data/keys/` | Manual file swap, overlap via `PreviousSigningCertificatePaths` | Auto-regenerates; **every** realm's outstanding codes and refresh tokens fail at once |
-| OpenIddict encryption certificate (`encryption.pfx`) | Same artifacts, wrapped as JWE (access tokens excluded) | Disk volume `data/keys/` (falls back to the signing cert if unset) | Manual file swap, overlap via `PreviousEncryptionCertificatePaths` | Auto-regenerates; **every** realm's outstanding codes and refresh tokens fail at once |
+| OpenIddict encryption certificate (`encryption.pfx`) | Same artifacts, wrapped as JWE (access tokens excluded) | Disk volume `data/keys/` (`EncryptionCertificatePath` unset → generated at `data/keys/encryption.pfx`) | Manual file swap, overlap via `PreviousEncryptionCertificatePaths` | Auto-regenerates; **every** realm's outstanding codes and refresh tokens fail at once |
 | Per-tenant DataProtection key ring | Auth cookies, antiforgery tokens, stored login-provider client secrets | That realm's tenant DB | Automatic, ~90-day framework default | Silent logout + that realm's stored provider secrets become undecryptable |
 | WebAuthn passkey key pairs | Passkey login ceremonies | That realm's tenant DB (public key only — the private key never leaves the authenticator) | None — re-enrolment only | Affected user re-enrols a passkey |
 

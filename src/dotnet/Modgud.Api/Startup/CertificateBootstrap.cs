@@ -40,10 +40,9 @@ public static class CertificateBootstrap
     /// <summary>
     /// Resolve <c>EncryptionCertificatePath</c> (or its default
     /// <c>data/keys/encryption.pfx</c>) and ensure the file exists. Same
-    /// auto-generation behaviour as the signing cert. Falls back to the
-    /// signing cert at use-site when the path stays unresolved (legacy
-    /// behaviour) — kept so an operator who deliberately leaves
-    /// EncryptionCertificatePath unset still gets a working server.
+    /// auto-generation behaviour as the signing cert. The server always calls
+    /// this outside DevelopmentMode, so an unset path ends up as the generated
+    /// default — the server never encrypts with the signing cert (FK-06).
     /// </summary>
     public static void EnsureEncryptionCertificateExists(OpenIddictSettings settings)
         => EnsureCertificateExists(
