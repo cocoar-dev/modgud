@@ -37,13 +37,20 @@ internal static class ClientAssertionValidator
         if (keys is null || keys.Keys.Count == 0) return false;
 
         var origin = $"{request.Scheme}://{request.Host}{request.PathBase}";
+        // B8-AJ-02 — the audience is the issuer identifier or an endpoint of this server
+        // (RFC 7523 §3): exactly the request's origin, its token endpoint or the endpoint being
+        // called. A prefix match let https://idp.example.com.evil/… and any path pass.
+        var accepted = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            origin,
+            origin + "/connect/token",
+            origin + request.Path,
+        };
         var result = await Handler.ValidateTokenAsync(assertion, new TokenValidationParameters
         {
             ValidIssuer = clientId,
             ValidateAudience = true,
-            // The audience is the issuer identifier or the token endpoint (RFC 7523 §3);
-            // both live under this request's origin.
-            AudienceValidator = (audiences, _, _) => audiences.Any(a => a.StartsWith(origin, StringComparison.OrdinalIgnoreCase)),
+            AudienceValidator = (audiences, _, _) => audiences.Any(a => accepted.Contains(a.TrimEnd('/'))),
             IssuerSigningKeys = keys.Keys,
             ValidateLifetime = true,
             RequireExpirationTime = true,
