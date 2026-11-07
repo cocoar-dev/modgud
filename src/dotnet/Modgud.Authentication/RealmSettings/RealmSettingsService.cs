@@ -620,6 +620,9 @@ public sealed class RealmSettingsService(
         };
     }
 
+    /// <summary>Ten years — far beyond any sensible grace or retention period.</summary>
+    internal const int MaxDeletionPeriodDays = 3650;
+
     private static ErrorOr<DeletionSettings> ApplyDeletionPatch(DeletionSettings? current, UpdateDeletionSettingsDto patch)
     {
         var s = current ?? new DeletionSettings();
@@ -640,6 +643,11 @@ public sealed class RealmSettingsService(
                 "ReminderLeadDays must be less than GraceDays, otherwise the reminder can never fire.");
         if (merged.AdminRetentionDays < 0)
             return Error.Validation("Deletion.InvalidAdminRetentionDays", "AdminRetentionDays cannot be negative.");
+        // A.gdpr-C006 — the periods feed AddDays (deadlines, purge cut-offs); an unbounded
+        // value stored fine and threw there later.
+        if (merged.GraceDays > MaxDeletionPeriodDays || merged.AdminRetentionDays > MaxDeletionPeriodDays)
+            return Error.Validation("Deletion.PeriodTooLong",
+                $"GraceDays and AdminRetentionDays cannot exceed {MaxDeletionPeriodDays} days.");
 
         return merged;
     }
