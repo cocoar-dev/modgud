@@ -33,6 +33,7 @@ public class RealmsEndpointsTests
                 Description = "Tenant A",
                 Domains = new[] { "acme.localhost", "auth.acme.com" },
                 PrimaryDomain = "auth.acme.com",
+                PublicBaseUrl = "https://auth.acme.com:8443",
                 IsActive = true,
                 CreatedAt = created,
             };
@@ -45,6 +46,8 @@ public class RealmsEndpointsTests
             Assert.Equal("Tenant A", dto.Description);
             Assert.Equal(new[] { "acme.localhost", "auth.acme.com" }, dto.Domains);
             Assert.Equal("auth.acme.com", dto.PrimaryDomain);
+            // F.prov-P1 — a stored public origin is returned, not dropped as null.
+            Assert.Equal("https://auth.acme.com:8443", dto.PublicBaseUrl);
             Assert.False(dto.IsControlPlane);
             Assert.True(dto.IsActive);
             Assert.Equal(created, dto.CreatedAt);

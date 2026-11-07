@@ -146,12 +146,16 @@ Content-Type: application/json
   "Description": "Updated",
   "Domains": ["acme.example.com", "auth.acme.com"],
   "PrimaryDomain": "auth.acme.com",
+  "PublicBaseUrl": "https://auth.acme.com",
   "IsActive": true
 }
 ```
 
-`Slug` is immutable. The patchable fields are exactly the five shown
-above — `IsControlPlane` is not accepted in PATCH either. `PrimaryDomain`
+`Slug` is immutable. The patchable fields are exactly the six shown
+above — `IsControlPlane` is not accepted in PATCH either. `PublicBaseUrl`
+is the realm's public origin (ADR 0023): absent leaves it unchanged, `null`
+or a blank string clears it back to `https://{PrimaryDomain}`. Every realm
+response (`GET`, `POST`, `PATCH`) returns it; `null` means the default. `PrimaryDomain`
 must be one of the resulting `Domains` set; it is the realm's canonical
 public host and doubles as the WebAuthn relying-party ID, so changing it
 invalidates every passkey already registered in the realm (a passkey is
@@ -222,6 +226,7 @@ public class Realm
     public string[] Domains { get; set; }         // Host-header matches
     public Dictionary<string, Guid> ApplicationDomains { get; set; }  // host → App.Id (ADR-0011)
     public string PrimaryDomain { get; set; }     // canonical public host + WebAuthn RP ID
+    public string? PublicBaseUrl { get; set; }    // declared public origin; null = https://{PrimaryDomain}
     public bool IsControlPlane { get; set; }      // stored, transferable; exactly one holder
     public bool IsActive { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

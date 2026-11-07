@@ -508,6 +508,7 @@ public static class RealmsEndpoints
         Description = realm.Description,
         Domains = realm.Domains,
         PrimaryDomain = realm.PrimaryDomain,
+        PublicBaseUrl = realm.PublicBaseUrl,
         IsControlPlane = realm.IsControlPlane,
         IsActive = realm.IsActive,
         CreatedAt = realm.CreatedAt,
