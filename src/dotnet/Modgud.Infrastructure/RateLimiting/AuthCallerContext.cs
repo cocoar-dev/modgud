@@ -31,6 +31,9 @@ public sealed record AuthCallerContext
     public const string ForwardedForHeader = "Modgud-Forwarded-For";
 
     public string? RealmSlug { get; init; }
+
+    /// <summary>The Host-pinned App, else the single App of the client that authenticated
+    /// this request; null = realm-wide. Keys the App bucket.</summary>
     public Guid? ApplicationId { get; init; }
 
     /// <summary>The OAuth client that authenticated THIS request (client_secret_basic);
