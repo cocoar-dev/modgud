@@ -221,7 +221,9 @@ public static class MagicLinkEndpoints
             // read a stale ApplicationUser mirror; FindByIdAsync also filters
             // IsDeleted (the explicit gate stays as defense-in-depth).
             var user = await userManager.FindByIdAsync(request.UserId.ToString());
-            if (user is null || user.IsDeleted || !user.IsActive)
+            // B5-06 — Identity's lockout (LockoutEnd, the administrative lock) is honoured here as
+            // on the password sign-in; the same uniform refusal, so it is no lock-state oracle.
+            if (user is null || user.IsDeleted || !user.IsActive || await userManager.IsLockedOutAsync(user))
             {
                 securityAudit.RecordAbuse(new SecurityAuditRecord
                 {
