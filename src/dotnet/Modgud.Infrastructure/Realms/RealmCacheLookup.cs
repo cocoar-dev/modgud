@@ -22,7 +22,17 @@ public static class RealmCacheLookup
             "127.0.0.1",
             "0.0.0.0",
             "::1",
+            "[::1]", // the Host header brackets an IPv6 literal
         };
+
+    /// <summary>
+    /// F.routing-F-R3 — the single-realm localhost fallback is a development convenience.
+    /// A deployed node (Staging, Production) fails closed on an unmatched host, as the
+    /// concepts and admin docs promise; Development and the test host keep it.
+    /// </summary>
+    public static bool AllowsLocalhostFallback(Microsoft.Extensions.Hosting.IHostEnvironment environment) =>
+        Microsoft.Extensions.Hosting.HostEnvironmentEnvExtensions.IsDevelopment(environment)
+        || Microsoft.Extensions.Hosting.HostEnvironmentEnvExtensions.IsEnvironment(environment, "Testing");
 
     /// <summary>
     /// Returns the realm whose configured domains contain <paramref name="hostname"/>,
