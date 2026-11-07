@@ -87,9 +87,13 @@ public static class ProfileEndpoints
             if (emailSubmitted)
             {
                 var trimmed = body.Email!.Trim();
-                if (!string.IsNullOrWhiteSpace(trimmed) && !trimmed.Contains('@'))
+                // B4-AP-03 — an empty address can never be verified (no link can reach it),
+                // so the request would be parked for good: refuse it like an invalid one.
+                if (string.IsNullOrWhiteSpace(trimmed))
+                    return Results.BadRequest(new { Message = "An email address is required" });
+                if (!trimmed.Contains('@'))
                     return Results.BadRequest(new { Message = "Invalid email address" });
-                desiredEmail = string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+                desiredEmail = trimmed;
             }
 
             if (emailSubmitted && !string.IsNullOrEmpty(desiredEmail))
@@ -173,21 +177,25 @@ public static class ProfileEndpoints
             // Re-read the cleaned payload once to drive status + email-verify logic.
             var pending = DeserializeProfile(cleanedPayload);
 
-            // Token regen logic — triggers when email is pending but differs from the last
-            // value we sent a link to (or no token exists yet).
+            // Token regen logic — triggers when email is pending and the address it was sent
+            // to is not verified and has no usable link: a new address, no token yet, a mail
+            // that never left (the transport failed after the commit), or an expired link.
+            // B4-AP-03 — a verified address stays verified when another field is edited.
             string? rawToken = null;
+            var sameAddress = previousPendingEmail.HasValue && pending.Email.HasValue
+                && previousPendingEmail.Value == pending.Email.Value;
+            var alreadyVerified = sameAddress && existing?.VerifiedAt is not null;
+            var linkUsable = sameAddress
+                && existingTokenHash is not null
+                && existing?.VerificationMailSentAt is not null
+                && existing.VerificationExpiresAt > DateTimeOffset.UtcNow;
             if (!pending.Email.HasValue)
             {
                 request.VerificationTokenHash = null;
                 request.VerificationExpiresAt = null;
                 request.VerifiedAt = null;
             }
-            else if (!previousPendingEmail.HasValue
-                  || previousPendingEmail.Value != pending.Email.Value
-                  || existingTokenHash is null
-                  // The mail for the current token never left (the transport failed after the
-                  // commit): issue a new token and send again instead of leaving the user without a link.
-                  || existing?.VerificationMailSentAt is null)
+            else if (!alreadyVerified && !linkUsable)
             {
                 rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(VerificationTokenBytes))
                     .TrimEnd('=').Replace('+', '-').Replace('/', '_');
