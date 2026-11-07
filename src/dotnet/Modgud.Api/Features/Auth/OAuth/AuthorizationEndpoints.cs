@@ -2745,7 +2745,8 @@ public static class AuthorizationEndpoints
         SignInManager<ApplicationUser> signInManager,
         IOpenIddictApplicationManager applicationManager,
         IOpenIddictAuthorizationManager authorizationManager,
-        IOpenIddictTokenManager tokenManager)
+        IOpenIddictTokenManager tokenManager,
+        IClientSessionService clientSessions)
     {
         var request = httpContext.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("The OpenID Connect end-session request cannot be retrieved.");
@@ -2856,11 +2857,19 @@ public static class AuthorizationEndpoints
                 {
                     await tokenManager.TryRevokeAsync(token);
                 }
+                var revokedAuthorizations = new List<string>();
                 await foreach (var auth in authorizationManager.FindAsync(
                     subject: hintSubject, client: clientPrimaryKey, status: null, type: null, scopes: default))
                 {
                     await authorizationManager.TryRevokeAsync(auth);
+                    if (await authorizationManager.GetIdAsync(auth) is { Length: > 0 } authorizationId)
+                        revokedAuthorizations.Add(authorizationId);
                 }
+
+                // EG-06 — the native client sessions built on those authorizations end
+                // with them, instead of staying listed until a later refresh fails.
+                foreach (var authorizationId in revokedAuthorizations)
+                    await clientSessions.EndByRpLogoutAsync(authorizationId, hintClientId!, httpContext.RequestAborted);
             }
         }
 

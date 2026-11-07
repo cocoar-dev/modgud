@@ -35,4 +35,11 @@ public interface IClientSessionService
     /// in step.
     /// </summary>
     Task EndByAuthorizationAsync(string authorizationId, CancellationToken ct = default);
+
+    /// <summary>
+    /// EG-06 — the same for an RP-initiated logout: the session end is a
+    /// <c>logout</c> and names the relying party that asked for it, so it gets
+    /// no back-channel logout token for its own request.
+    /// </summary>
+    Task EndByRpLogoutAsync(string authorizationId, string initiatingClientId, CancellationToken ct = default);
 }
