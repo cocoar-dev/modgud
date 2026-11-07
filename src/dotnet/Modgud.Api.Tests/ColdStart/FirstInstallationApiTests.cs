@@ -93,7 +93,10 @@ public class FirstInstallationApiTests(ColdStartFixture fixture) : ColdStartTest
         Assert.NotNull(after);
         Assert.True(after.IsInitialized);
         Assert.True(after.HasRealms);
-        Assert.Equal("first", after.RealmSlug);
+        // F.prov-P2 — the anonymous, realm-independent status names no realm and no time
+        // once installed; the completion response told the installer its slug.
+        Assert.Null(after.RealmSlug);
+        Assert.Null(after.CompletedAt);
 
         var realms = host.Services.GetRequiredService<IRealmProvisioningService>();
         var first = await realms.GetRealmBySlugAsync("first", ct);

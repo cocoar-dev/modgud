@@ -243,7 +243,9 @@ public static class InstallationEndpoints
             CancellationToken ct) =>
         {
             var status = await service.GetStatusAsync(ct);
-            return Results.Ok(status);
+            // F.prov-P2 — anonymous and answered on every host: say whether the deployment is
+            // installed, not which realm became the control plane or when.
+            return Results.Ok(status with { RealmSlug = null, CompletedAt = null });
         }).WithName("Installation_Status");
 
         group.MapPost("validate", async (
