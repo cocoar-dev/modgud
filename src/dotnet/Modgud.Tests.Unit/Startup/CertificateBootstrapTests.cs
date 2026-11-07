@@ -85,6 +85,10 @@ public class CertificateBootstrapTests : IDisposable
         // and writes the resolved absolute path back onto the settings — so the
         // later OpenIddict AddSigningCertificate(path) call has a concrete file.
         var settings = new OpenIddictSettings { SigningCertificatePath = null };
+        // FK-12 — the default lives under the working directory: a certificate already
+        // there (a developer's own data/keys) is reused by the bootstrap and must survive.
+        var defaultPath = Modgud.Api.Helper.PathHelper.GetFullPath("data/keys/signing.pfx");
+        var existedBefore = File.Exists(defaultPath);
 
         CertificateBootstrap.EnsureSigningCertificateExists(settings);
 
@@ -92,7 +96,37 @@ public class CertificateBootstrapTests : IDisposable
         Assert.Contains("signing.pfx", settings.SigningCertificatePath!);
         Assert.True(File.Exists(settings.SigningCertificatePath));
 
-        // Clean up the cert generated under the working directory's data/keys.
-        try { File.Delete(settings.SigningCertificatePath!); } catch { /* best-effort */ }
+        // Clean up only what this test generated.
+        if (!existedBefore)
+            try { File.Delete(settings.SigningCertificatePath!); } catch { /* best-effort */ }
+    }
+
+    /// <summary>FK-07 — a second node that lost the race on an empty shared volume
+    /// must not overwrite the certificate the first one wrote (tokens are already
+    /// signed with it).</summary>
+    [Fact]
+    public void Generating_onto_an_existing_file_keeps_that_file()
+    {
+        var path = Path.Combine(_dir, "taken.pfx");
+        File.WriteAllBytes(path, [1, 2, 3]);
+
+        CertificateBootstrap.GenerateSelfSignedPfx(path, "CN=Late", X509KeyUsageFlags.DigitalSignature, validYears: 1, keySize: 2048);
+
+        Assert.Equal([1, 2, 3], File.ReadAllBytes(path));
+        Assert.Single(Directory.GetFiles(_dir)); // no temp file left behind
+    }
+
+    /// <summary>FK-07 — the keys directory holds private keys: owner only.</summary>
+    [Fact]
+    public void The_keys_directory_is_created_owner_only()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var path = Path.Combine(_dir, "fresh", "keys", "signing.pfx");
+
+        CertificateBootstrap.EnsureSigningCertificateExists(new OpenIddictSettings { SigningCertificatePath = path });
+
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute,
+            File.GetUnixFileMode(Path.GetDirectoryName(path)!));
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
     }
 }
