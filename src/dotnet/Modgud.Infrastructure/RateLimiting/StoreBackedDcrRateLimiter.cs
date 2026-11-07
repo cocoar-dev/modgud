@@ -1,3 +1,4 @@
+using System.Net;
 using Modgud.Application.Dcr;
 using Modgud.Domain.Realms;
 
@@ -12,7 +13,9 @@ public sealed class StoreBackedDcrRateLimiter(IRateLimitStore store) : IDcrRateL
         var now = DateTimeOffset.UtcNow;
         var scope = new RateLimitScope(realmSlug);
 
-        var perIp = await store.HitAsync(scope, $"dcr-register|source|{realmSlug}|{sourceIp}",
+        // The same source key as every other auth limit: an IPv6 /64 is one source (B8-AJ-05).
+        var sourceKey = IPAddress.TryParse(sourceIp, out var address) ? AuthCallerContext.SourceKeyFor(address) : sourceIp;
+        var perIp = await store.HitAsync(scope, $"dcr-register|source|{realmSlug}|{sourceKey}",
             RateLimitRule.Fixed(Math.Max(1, perIpLimit), 60), now, ct);
         if (!perIp.Allowed) return DcrRateLimitVerdict.PerIpExceeded;
 
