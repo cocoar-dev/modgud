@@ -353,7 +353,10 @@ internal sealed class MagicLinkCommand : IRecoveryCommand
         ctx.WriteLine();
         ctx.WriteLine($"  {url}");
         ctx.WriteLine();
-        ctx.WriteLine("Open in a browser — single use, 2FA bypassed.");
+        // RV-0005 — the link is an ordinary magic-link sign-in: it replaces the first factor only,
+        // and the sign-in policy still applies (a required second factor, an administrative lock).
+        ctx.WriteLine("Open in a browser — single use. It replaces the password only: a second factor the");
+        ctx.WriteLine("sign-in policy requires is still asked for (run reset-2fa first if the user lost it).");
         return 0;
     }
 }

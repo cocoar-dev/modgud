@@ -123,6 +123,9 @@ dotnet Modgud.Api.dll recover set-email alice alice@example.com
 ### `magic-link <username>`
 Issue a one-time magic-link URL and print it to stdout. Useful for
 nudging a locked-out user back in without resetting their password.
+The link replaces the password only: a second factor the sign-in policy
+requires is still asked for (run `reset-2fa` first when the user lost it),
+and an account under an administrative lock is not signed in.
 
 ```bash
 dotnet Modgud.Api.dll recover magic-link alice

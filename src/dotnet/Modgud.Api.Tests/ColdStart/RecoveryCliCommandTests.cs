@@ -121,6 +121,9 @@ public class RecoveryCliCommandTests(ColdStartFixture fixture) : ColdStartTestBa
 
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("/magic-login?userId=", result.StdOut);
+        // RV-0005 — the link replaces the first factor only; it never promised to skip the second.
+        Assert.DoesNotContain("2FA bypassed", result.StdOut);
+        Assert.Contains("second factor", result.StdOut);
     }
 
     // ── realm-list ─────────────────────────────────────────────────────────
