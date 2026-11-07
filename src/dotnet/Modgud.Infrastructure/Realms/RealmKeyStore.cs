@@ -195,12 +195,22 @@ public sealed class RealmKeyStore : IRealmKeyStore
             // invalidates the cache while we build, the generation moves and we
             // discard our (now possibly pre-rotation) set so the next read
             // rebuilds — closing the rebuild-vs-rotate lost-update race.
-            var gen = _verGen.TryGetValue(realmSlug, out var g) ? g : 0L;
-            var set = await BuildVerificationSetAsync(realmSlug, now, ct);
-            _verificationCache[realmSlug] = set;
-            if ((_verGen.TryGetValue(realmSlug, out var g2) ? g2 : 0L) != gen)
-                _verificationCache.TryRemove(realmSlug, out _); // stale build raced a rotation — drop it
-            return set.Keys;
+            // FK-09 — a build that raced a rotation is not returned either: build again
+            // until the generation held still (rotations are rare, this loops once).
+            while (true)
+            {
+                var gen = _verGen.TryGetValue(realmSlug, out var g) ? g : 0L;
+                var set = await BuildVerificationSetAsync(realmSlug, now, ct);
+                if ((_verGen.TryGetValue(realmSlug, out var g2) ? g2 : 0L) != gen)
+                {
+                    now = _clock.GetUtcNow();
+                    continue;
+                }
+                _verificationCache[realmSlug] = set;
+                if ((_verGen.TryGetValue(realmSlug, out var g3) ? g3 : 0L) != gen)
+                    _verificationCache.TryRemove(realmSlug, out _); // a rotation landed right after the store
+                return set.Keys;
+            }
         }
         finally
         {
