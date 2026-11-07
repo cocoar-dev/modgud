@@ -40,7 +40,7 @@ interface TestUser {
 async function createUserWithPassword(api: APIRequestContext, userName: string): Promise<TestUser> {
   const created = await (await api.post('/api/user', {
     data: {
-      Firstname: 'Gate', Lastname: 'Test', Acronym: userName,
+      Firstname: 'Gate', Lastname: 'Test', Acronym: userName, UserName: userName,
       Email: `${userName}@modgud.test`,
     },
   })).json()

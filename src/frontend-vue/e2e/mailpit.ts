@@ -80,8 +80,9 @@ export function extractTokenFromHtml(html: string): string {
  * ids straight out of the email the user would have clicked.
  */
 export function extractQueryParam(html: string, name: string): string {
+  // The HTML templates escape the separator in href attributes (`&amp;token=`).
   const re = new RegExp(`[?&]${name}=([^"&]+)`)
-  const match = html.match(re)
+  const match = html.replace(/&amp;/g, '&').match(re)
   if (!match) throw new Error(`No ${name}=... in HTML body. Body excerpt: ${html.slice(0, 200)}`)
   return decodeURIComponent(match[1])
 }

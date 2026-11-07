@@ -1,4 +1,4 @@
-import { type Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 import { randomBytes } from 'node:crypto'
 
 /**
@@ -46,6 +46,26 @@ export async function apiLogin(page: Page, userName: string, password: string) {
   if (!res.ok()) {
     throw new Error(`Login failed for ${userName}: ${res.status()} ${await res.text()}`)
   }
+}
+
+/** The footer verb of an admin modal or settings area for a realm admin: changes are
+ * staged into the realm's configuration draft (ADR 0017), not saved directly. */
+export const STAGE_INTO_DRAFT = /in den draft übernehmen|stage into draft/i
+
+/**
+ * Apply the realm-configuration draft the way an admin does: the global staging bar
+ * (footer, shown once something is staged) carries the Apply verb with the number of
+ * staged changes, and asks once more before the changes go live. Waits until the
+ * apply went through — the success toast.
+ */
+export async function applyStagedDraft(page: Page) {
+  const apply = page.getByTestId('staging-bar-apply')
+  await expect(apply).toBeEnabled({ timeout: 15_000 })
+  await apply.click()
+  const confirm = page.getByRole('alertdialog', { name: /live schalten|go live/i })
+  await expect(confirm).toBeVisible()
+  await confirm.getByRole('button', { name: /^(anwenden|apply)$/i }).click()
+  await expect(page.getByText(/draft angewendet|draft applied/i).first()).toBeVisible({ timeout: 15_000 })
 }
 
 /**

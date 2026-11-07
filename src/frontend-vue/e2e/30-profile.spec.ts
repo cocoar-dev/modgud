@@ -49,7 +49,7 @@ test.beforeAll(async ({ request }) => {
   // users start unverified, so confirm at creation to model a settled account.
   const created = await (await request.post('/api/user', {
     data: {
-      Firstname: 'Old', Lastname: 'Name', Acronym: userName,
+      Firstname: 'Old', Lastname: 'Name', Acronym: userName, UserName: userName,
       Email: initialEmail, EmailConfirmed: true,
     },
   })).json()

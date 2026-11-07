@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { apiLogin, uniqueSuffix } from './helpers'
+import { applyStagedDraft, apiLogin, STAGE_INTO_DRAFT, uniqueSuffix } from './helpers'
 
 /**
  * Stage 7 (OAuth / OIDC) — the operator door, tested like a human.
@@ -26,11 +26,11 @@ test.describe('Stage 7 — admin registers an OAuth client through the real UI',
     // ── 1. As the admin, open the OAuth-Clients grid ──
     await apiLogin(page, ADMIN_USER, ADMIN_PASSWORD)
     await page.goto('/admin/oauth/clients')
-    await expect(page.getByRole('button', { name: /erstellen|create/i }).first())
+    await expect(page.getByRole('button', { name: /^(erstellen|create)$/i }).filter({ visible: true }).first())
       .toBeVisible({ timeout: 15_000 })
 
     // ── 2. Click Create → the routed create-client modal opens ──
-    await page.getByRole('button', { name: /erstellen|create/i }).first().click()
+    await page.getByRole('button', { name: /^(erstellen|create)$/i }).filter({ visible: true }).first().click()
     const modal = page.locator('.modal-container')
     await expect(modal).toBeVisible({ timeout: 10_000 })
 
@@ -40,21 +40,28 @@ test.describe('Stage 7 — admin registers an OAuth client through the real UI',
     await modal.getByRole('textbox', { name: /client id/i }).fill(clientId)
     await modal.getByRole('textbox', { name: /anzeigename|display name/i }).fill('E2E Smoke Client')
 
-    const saveButton = page.locator('.modal-footer').getByRole('button', { name: /erstellen|create/i })
+    // A client needs at least one flow. device_code needs nothing else (authorization_code
+    // would also need a redirect URI); double-click moves it to the selected list.
+    await modal.getByRole('tab', { name: /^flows\b/i }).click()
+    await modal.getByRole('option', { name: /^device_code/i }).dblclick()
+
+    // A realm admin stages the client into the realm's configuration draft.
+    const saveButton = modal.getByRole('button', { name: STAGE_INTO_DRAFT })
     await expect(saveButton).toBeEnabled()
     await page.screenshot({ path: testInfo.outputPath('01-create-form.png'), fullPage: true })
     await saveButton.click()
+    await expect(modal).toBeHidden({ timeout: 10_000 })
 
-    // ── 4. The one-time secret reveal — the human moment ──
-    // A confidential client's generated secret is shown once; the modal stays
-    // open so the admin can copy it before it's gone for good.
-    await expect(page.getByText(/client secret jetzt kopieren|nicht wieder angezeigt|copy.*client secret|not be shown again/i))
-      .toBeVisible({ timeout: 10_000 })
+    // ── 4. Apply the draft; the one-time secret reveal — the human moment ──
+    // Applying a draft that minted a confidential client's secret leads to the draft
+    // workspace, which shows each new secret exactly once.
+    await applyStagedDraft(page)
+    await expect(page.getByText(/werden nur einmal angezeigt|shown only once/i)).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('.secret-client', { hasText: clientId })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('02-secret-once.png'), fullPage: true })
 
-    // ── 5. Close the modal; the new client is in the grid — visibly ──
-    await page.locator('.modal-close').click()
-    await expect(modal).toBeHidden({ timeout: 10_000 })
+    // ── 5. The new client is in the grid — visibly ──
+    await page.goto('/admin/oauth/clients')
     await expect(page.getByRole('gridcell', { name: clientId }).first())
       .toBeVisible({ timeout: 15_000 })
     await page.screenshot({ path: testInfo.outputPath('03-client-in-grid.png'), fullPage: true })

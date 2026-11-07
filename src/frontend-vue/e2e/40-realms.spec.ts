@@ -29,12 +29,13 @@ test.describe('§14 Realms', () => {
     await apiLogin(page, ADMIN_USER, ADMIN_PASSWORD)
   })
 
-  test('system realm exists with IsControlPlane=true', async ({ page }) => {
+  test('the installed first realm is the control plane', async ({ page }) => {
+    // The first installation creates the control-plane realm under the slug the
+    // operator chose (the rig installs 'e2e'); there is no fixed 'system' slug.
     const list = await (await page.request.get('/api/admin/realms')).json() as { Items: { Slug: string; IsControlPlane: boolean; IsActive: boolean }[] }
-    const sys = list.Items.find(r => r.Slug === 'system')
-    expect(sys, 'system realm must exist').toBeDefined()
-    expect(sys!.IsControlPlane).toBe(true)
-    expect(sys!.IsActive).toBe(true)
+    const controlPlanes = list.Items.filter(r => r.IsControlPlane)
+    expect(controlPlanes.map(r => r.Slug)).toEqual([process.env.E2E_REALM_SLUG ?? 'e2e'])
+    expect(controlPlanes[0].IsActive).toBe(true)
   })
 
   test('POST /api/admin/realms provisions a new realm with bootstrap-invite', async ({ page }) => {

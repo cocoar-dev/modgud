@@ -57,7 +57,8 @@ async function userContext(baseURL: string, userName: string, password: string):
 interface TestUser { id: string; userName: string; email: string }
 
 /**
- * Create a test user (username == acronym, mirroring 50-2fa) with a password.
+ * Create a test user with an explicit user name (the realm's default field policy
+ * lets the admin choose one; without it the user name falls back to the e-mail).
  * `emailConfirmed` is the admin opt-in (UserCreateDto.EmailConfirmed) — needed
  * for Email-OTP, whose enable endpoint refuses an unverified address by design.
  */
@@ -66,7 +67,7 @@ async function createUser(admin: APIRequestContext, opts: { emailConfirmed?: boo
   const email = `${userName}@modgud.test`
   const createRes = await admin.post('/api/user', {
     data: {
-      Firstname: 'PW', Lastname: 'User', Acronym: userName, Email: email,
+      Firstname: 'PW', Lastname: 'User', Acronym: userName, UserName: userName, Email: email,
       EmailConfirmed: opts.emailConfirmed ?? false,
     },
   })
