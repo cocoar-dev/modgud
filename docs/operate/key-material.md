@@ -75,7 +75,16 @@ rest of a realm's data does: restore the tenant DB dump and the key
 the tenant DB is lost outright and rebuilt from scratch instead of
 restored, a fresh key bootstraps automatically — but every access and
 ID token outstanding for that realm at the time is now unverifiable
-and the affected users simply have to sign in again.
+and the affected users simply have to sign in again. Such a bootstrap
+is recorded in the security audit log (`ops.signing_key_bootstrapped`),
+so an unexpected fresh key is visible.
+
+> [!WARNING]
+> A restore brings back the keys **as they were at backup time**. A
+> backup taken before a compromise-driven *rotate and revoke* or
+> *revoke retired keys* restores the compromised key as active (or as
+> trusted retired key). After such a restore, revoke again at once:
+> *Rotate and revoke current key*, then *Revoke retired keys*.
 
 ## Global OpenIddict signing certificate
 

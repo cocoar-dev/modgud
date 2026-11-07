@@ -490,6 +490,17 @@ public sealed class RealmKeyStore : IRealmKeyStore
         var doc = CreateNewKeyDocument(realmSlug);
         await using var session = _store.LightweightSession(realmSlug);
         session.Store(doc);
+        // FK-08 — a fresh key (first use, or a lost tenant DB) leaves every token the
+        // realm issued before unverifiable: make it as visible as a rotation.
+        _securityAudit.StoreRequired(session, new SecurityAuditRecord
+        {
+            EventType = AuditEvents.SigningKeyBootstrapped,
+            RealmSlug = realmSlug,
+            Severity = AuditSeverity.Warning,
+            OutcomeCode = AuditOutcomes.Succeeded,
+            OperationCode = "bootstrap",
+            KeyId = doc.KeyId,
+        });
         await session.SaveChangesAsync(ct);
         return doc;
     }

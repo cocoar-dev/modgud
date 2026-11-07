@@ -12,6 +12,7 @@ public class AuditDurabilityTests
         { AuditEvents.SecurityRetentionChanged, AuditDurabilityClass.Required },
         { AuditEvents.SigningKeyRotated, AuditDurabilityClass.Required },
         { AuditEvents.SigningKeyRevoked, AuditDurabilityClass.Required },
+        { AuditEvents.SigningKeyBootstrapped, AuditDurabilityClass.Required },
         { AuditEvents.SamlCertRotated, AuditDurabilityClass.Required },
         { AuditEvents.SamlSigningCertificatesChanged, AuditDurabilityClass.Required },
         { AuditEvents.RecoveryCliInvoked, AuditDurabilityClass.Required },
