@@ -102,6 +102,7 @@ public static class ProjectionEndpoints
                 // maintenance operation; inline projections keep working, while async
                 // projections in all realms catch up after ResumeAsync. Rebuild side
                 // effects remain suppressed only for the target tenant.
+                IReadOnlyList<string> rebuilt = [];
                 await coordinatorControl.RunPausedAsync(async rebuildCancellation =>
                 {
                     ProjectionSideEffects.SuppressRebuildFor(tenantId);
@@ -119,16 +120,11 @@ public static class ProjectionEndpoints
                         using var daemon = await store.BuildProjectionDaemonAsync(tenantId);
                         var timeout = TimeSpan.FromMinutes(10);
 
-                        await daemon.RebuildProjectionAsync(
-                            "ViewProjections", timeout, rebuildCancellation);
-
-                        // Person, Group, and ServiceAccount share mt_doc_principal. The
-                        // coordinated rebuild deletes only the two event-sourced subtypes;
-                        // Marten's normal per-projection teardown would truncate the whole
-                        // table and destroy the other subtype on each sequential rebuild.
-                        await PrincipalProjectionRebuilder.RebuildAsync(
+                        // B4-02 — every registered projection, the same set as the CLI
+                        // (the shared Principal table is handled inside, see
+                        // PrincipalProjectionRebuilder).
+                        rebuilt = await ProjectionRebuildSet.RebuildAsync(
                             store, daemon, tenantId, timeout, ct: rebuildCancellation);
-                        await daemon.RebuildProjectionAsync<PermissionRoleProjection>(timeout, rebuildCancellation);
                     }
                     finally
                     {
@@ -136,8 +132,8 @@ public static class ProjectionEndpoints
                     }
                 }, ct);
 
-                Serilog.Log.Information("Admin: Full projection rebuild completed");
-                return Results.Ok(new { Message = "All projections rebuilt successfully" });
+                Serilog.Log.Information("Admin: Full projection rebuild completed ({Count} projections)", rebuilt.Count);
+                return Results.Ok(new { Message = "All projections rebuilt successfully", Rebuilt = rebuilt });
             }
             catch (Exception ex)
             {

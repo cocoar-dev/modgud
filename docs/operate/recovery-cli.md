@@ -136,6 +136,14 @@ Rebuild all Marten projections (inline + async). Bootstrap path for
 the first migration after a breaking schema change — runs without any
 admin authentication.
 
+The set is the same as the admin rebuild endpoint's, and both print or return
+it: the views (`UserView`, inbox items), the Principal subtypes, roles, Apps,
+OAuth clients, scopes and APIs, login providers, external identity links,
+position grants, terminal enrollments, staffing sessions and the audit view
+(which replays archived events too, so erased users' de-identified audit rows
+survive). Earlier releases rebuilt only the views, the Principal
+subtypes and the roles, although it said "all".
+
 Rebuilding empties the read models and replays them from the events. A running
 Modgud instance keeps writing the same projections and their progress meanwhile,
 so stop every instance and take a database backup first, then run the command in

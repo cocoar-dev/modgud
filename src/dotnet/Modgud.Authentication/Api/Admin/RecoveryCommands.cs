@@ -416,19 +416,14 @@ internal sealed class RebuildProjectionsCommand : IRecoveryCommand
         // overload throws DefaultTenantUsageDisabledException — build the daemon
         // for the resolved realm's DB explicitly (honors --realm; default system).
         using var daemon = await store.BuildProjectionDaemonAsync(ctx.RealmSlug);
-        await daemon.RebuildProjectionAsync("ViewProjections", timeout, CancellationToken.None);
-        ctx.WriteLine("  OK ViewProjections");
-
-        await PrincipalProjectionRebuilder.RebuildAsync(
+        // B4-02 — every registered projection, the same set as the admin endpoint.
+        await ProjectionRebuildSet.RebuildAsync(
             store,
             daemon,
             ctx.RealmSlug,
             timeout,
             message => ctx.WriteLine($"  {message}"),
             CancellationToken.None);
-
-        await daemon.RebuildProjectionAsync<PermissionRoleProjection>(timeout, CancellationToken.None);
-        ctx.WriteLine("  OK PermissionRoleProjection (mt_doc_permissionrole)");
 
         await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
