@@ -102,14 +102,23 @@ function imageExists(tag: string): boolean {
   }
 }
 
+/**
+ * A docker object's labels, or null when it does not exist. Read as JSON: an
+ * `index .Labels "name"` template needs quotes inside the shell's quotes, and sh
+ * ended the string there, so every lookup failed as "does not exist" — leftovers
+ * were never removed and the image was always rebuilt.
+ */
+function labelsOf(kind: 'image' | 'container' | 'network', name: string): Record<string, string> | null {
+  const field = kind === 'network' ? '.Labels' : '.Config.Labels'
+  let raw: string
+  try { raw = dockerSilent(`${kind} inspect ${name} --format "{{json ${field}}}"`) } catch { return null }
+  return (JSON.parse(raw) as Record<string, string> | null) ?? {}
+}
+
 /** B10-06 — reuse an image only when it was built from exactly this clean commit. */
 function imageMatchesSource(tag: string, stamp: string): boolean {
   if (stamp.endsWith('-dirty')) return false
-  try {
-    return dockerSilent(`image inspect ${tag} --format "{{ index .Config.Labels \"${SOURCE_LABEL}\" }}"`) === stamp
-  } catch {
-    return false
-  }
+  return labelsOf('image', tag)?.[SOURCE_LABEL] === stamp
 }
 
 /**
@@ -176,15 +185,14 @@ export default async function globalSetup(_config: FullConfig) {
 
   // Leftovers of an earlier, finished run: only what carries the rig label.
   for (const name of [APP_NAME, PG_NAME, MAILPIT_NAME]) {
-    let label: string
-    try { label = dockerSilent(`inspect ${name} --format "{{ index .Config.Labels \"${RUN_LABEL}\" }}"`) } catch { continue }
-    if (!label) throw new Error(`[e2e] A container named ${name} exists but was not created by this rig; refusing to remove it.`)
+    const labels = labelsOf('container', name)
+    if (labels === null) continue
+    if (!labels[RUN_LABEL]) throw new Error(`[e2e] A container named ${name} exists but was not created by this rig; refusing to remove it.`)
     docker(`rm -f ${name}`)
   }
-  let netLabel: string | null = null
-  try { netLabel = dockerSilent(`network inspect ${NETWORK} --format "{{ index .Labels \"${RUN_LABEL}\" }}"`) } catch { /* no such network */ }
-  if (netLabel !== null) {
-    if (!netLabel) throw new Error(`[e2e] A network named ${NETWORK} exists but was not created by this rig; refusing to remove it.`)
+  const netLabels = labelsOf('network', NETWORK)
+  if (netLabels !== null) {
+    if (!netLabels[RUN_LABEL]) throw new Error(`[e2e] A network named ${NETWORK} exists but was not created by this rig; refusing to remove it.`)
     docker(`network rm ${NETWORK}`)
   }
 
