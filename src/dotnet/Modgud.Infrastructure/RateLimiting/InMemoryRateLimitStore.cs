@@ -27,7 +27,7 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore
                 var (capacity, rate) = RateLimitMath.Bucket(rule);
                 var elapsed = Math.Max(0, (now - bucket.UpdatedAt).TotalSeconds);
                 var refilled = Math.Min(capacity, (bucket.Tokens ?? capacity) + elapsed * rate);
-                bucket.UpdatedAt = now;
+                if (now > bucket.UpdatedAt) bucket.UpdatedAt = now;
                 if (refilled >= 1)
                 {
                     bucket.Tokens = refilled - 1;
@@ -38,9 +38,9 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore
             }
 
             var ws = RateLimitMath.WindowStart(now, rule);
-            if (bucket.WindowStart != ws) { bucket.WindowStart = ws; bucket.Hits = 0; }
+            if (bucket.WindowStart is not { } current || ws > current) { bucket.WindowStart = ws; bucket.Hits = 0; }
             bucket.Hits++;
-            bucket.UpdatedAt = now;
+            if (now > bucket.UpdatedAt) bucket.UpdatedAt = now;
             return Task.FromResult(bucket.Hits <= Math.Max(1, rule.PermitLimit)
                 ? new RateLimitHit(true, 0)
                 : new RateLimitHit(false, RateLimitMath.RetryAfterForWindow(now, rule)));

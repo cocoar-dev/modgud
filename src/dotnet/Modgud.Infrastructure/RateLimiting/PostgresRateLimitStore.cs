@@ -33,21 +33,26 @@ public sealed class PostgresRateLimitStore(IRateLimitConnectionSource connection
         """;
 
     // Fixed window: the row carries the window it was last counted in; a new window resets.
+    // Time only moves forward (B8-AJ-04): a hit whose request time lies in an older window
+    // than the row's (captured before a slower concurrent hit) counts in the row's window
+    // instead of resetting it, and never moves window_start or updated_at back.
     private const string FixedWindowSql = $"""
         INSERT INTO {TableName} AS t (key, window_start, hits, tokens, denied, updated_at)
         VALUES (@key, @ws, 1, NULL, false, @now)
         ON CONFLICT (key) DO UPDATE SET
-            hits = CASE WHEN t.window_start = EXCLUDED.window_start THEN t.hits + 1 ELSE 1 END,
-            window_start = EXCLUDED.window_start,
+            hits = CASE WHEN t.window_start >= EXCLUDED.window_start THEN t.hits + 1 ELSE 1 END,
+            window_start = GREATEST(t.window_start, EXCLUDED.window_start),
             tokens = NULL,
             denied = false,
-            updated_at = EXCLUDED.updated_at
+            updated_at = GREATEST(t.updated_at, EXCLUDED.updated_at)
         RETURNING hits;
         """;
 
     // Token bucket: refill since the last hit, then take one token if a whole one is
     // there. The refilled value is computed from the LOCKED row (t.*), so concurrent
-    // hits serialise correctly; "denied" records whether this hit consumed nothing.
+    // hits serialise correctly; "denied" records whether this hit consumed nothing. An
+    // older request time refills nothing and keeps updated_at, so no interval is
+    // refilled twice (B8-AJ-04).
     private const string TokenBucketSql = $"""
         INSERT INTO {TableName} AS t (key, window_start, hits, tokens, denied, updated_at)
         VALUES (@key, NULL, 0, @cap - 1, false, @now)
@@ -59,7 +64,7 @@ public sealed class PostgresRateLimitStore(IRateLimitConnectionSource connection
             END,
             denied = LEAST(@cap, COALESCE(t.tokens, @cap) + GREATEST(0, EXTRACT(EPOCH FROM (EXCLUDED.updated_at - t.updated_at))) * @rate) < 1,
             window_start = NULL,
-            updated_at = EXCLUDED.updated_at
+            updated_at = GREATEST(t.updated_at, EXCLUDED.updated_at)
         RETURNING tokens, denied;
         """;
 
