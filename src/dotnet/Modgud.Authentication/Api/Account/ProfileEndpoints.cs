@@ -406,17 +406,19 @@ public static class ProfileEndpoints
             : JsonSerializer.Deserialize<ProfileUpdateDto>(payloadJson, PayloadJsonOptions) ?? new ProfileUpdateDto();
 
     /// <summary>Emits (Field, OldValue, NewValue) entries for every Optional that
-    /// <see cref="Optional{T}.HasValue"/> = true. OldValue is the caller-supplied user
-    /// value. The payload is expected to have been cleaned of no-op entries at submission
+    /// <see cref="Optional{T}.HasValue"/> = true. OldValue is the value <paramref name="previous"/>
+    /// recorded for the field when the request was approved (B4-AP-05), else the caller-supplied
+    /// user value. The payload is expected to have been cleaned of no-op entries at submission
     /// time; we don't double-filter here.</summary>
     internal static IEnumerable<(string Field, string? OldValue, string? NewValue)> EnumerateProfileChanges(
-        string payloadJson, ApplicationUser? user)
+        string payloadJson, ApplicationUser? user, IReadOnlyDictionary<string, string?>? previous = null)
     {
         var p = DeserializeProfile(payloadJson);
-        if (p.Firstname.HasValue) yield return ("Firstname", user?.Firstname, p.Firstname.Value);
-        if (p.Lastname.HasValue)  yield return ("Lastname",  user?.Lastname,  p.Lastname.Value);
-        if (p.Acronym.HasValue)   yield return ("Acronym",   user?.Acronym,   p.Acronym.Value);
-        if (p.Email.HasValue)     yield return ("Email",     user?.Email,     p.Email.Value);
+        string? Old(string field, string? current) => previous is not null && previous.TryGetValue(field, out var v) ? v : current;
+        if (p.Firstname.HasValue) yield return ("Firstname", Old("Firstname", user?.Firstname), p.Firstname.Value);
+        if (p.Lastname.HasValue)  yield return ("Lastname",  Old("Lastname", user?.Lastname),   p.Lastname.Value);
+        if (p.Acronym.HasValue)   yield return ("Acronym",   Old("Acronym", user?.Acronym),     p.Acronym.Value);
+        if (p.Email.HasValue)     yield return ("Email",     Old("Email", user?.Email),         p.Email.Value);
     }
 
     /// <summary>Drops payload entries whose value matches the user's current profile —
@@ -457,7 +459,7 @@ public static class ProfileEndpoints
         r.ReviewedAt,
         r.ReviewerNote,
         Changes = r.Type == ChangeRequestType.Profile
-            ? EnumerateProfileChanges(r.Payload, user).Select(c => new { c.Field, c.OldValue, c.NewValue })
+            ? EnumerateProfileChanges(r.Payload, user, r.PreviousValues).Select(c => new { c.Field, c.OldValue, c.NewValue })
             : Enumerable.Empty<object>().Cast<dynamic>(),
     };
 

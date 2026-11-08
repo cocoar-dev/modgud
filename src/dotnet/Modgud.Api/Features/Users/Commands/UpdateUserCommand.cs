@@ -122,6 +122,8 @@ public class UpdateUserHandler(IDocumentSession session)
             request.Status = ChangeRequestStatus.Approved;
             request.ReviewedAt = DateTimeOffset.UtcNow;
             request.ReviewedByUserId = approval.ReviewedByUserId;
+            if (approval.PreviousValues is { } previous)
+                request.PreviousValues = new Dictionary<string, string?>(previous);
             session.Store(request);
             foreach (var followUp in approval.FollowUps ?? [])
                 await followUps.PublishAsync(session, followUp);

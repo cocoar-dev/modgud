@@ -71,7 +71,7 @@ public static class AdminChangeRequestEndpoints
                     r.ReviewedAt,
                     r.ReviewerNote,
                     Changes = r.Type == ChangeRequestType.Profile
-                        ? ProfileEndpoints.EnumerateProfileChanges(r.Payload, u)
+                        ? ProfileEndpoints.EnumerateProfileChanges(r.Payload, u, r.PreviousValues)
                             .Select(c => new { c.Field, c.OldValue, c.NewValue })
                         : System.Linq.Enumerable.Empty<object>().Cast<dynamic>(),
                 };
@@ -107,9 +107,11 @@ public static class AdminChangeRequestEndpoints
             // effect but the request still waits, or the other way round.
             // B3-EI-04 — the requester's mail and inbox item and the dismissal of the admins'
             // items go into that same commit; each is retried on its own.
+            // B4-AP-05 — the user still holds the values the approval replaces: kept on the request.
             var approval = new ChangeRequestApproval(cr.Id, cr.UpdatedAt, context.GetUserId(),
                 await DecisionFollowUpsAsync(cr, user, approved: true, request?.NotifyUser == true,
-                    emailBranding, context.RequestAborted));
+                    emailBranding, context.RequestAborted),
+                ProfileEndpoints.EnumerateProfileChanges(cr.Payload, user).ToDictionary(c => c.Field, c => c.OldValue));
             var applyError = cr.Type switch
             {
                 ChangeRequestType.Profile => await ApplyProfileAsync(cr.Payload, user, approval, bus),

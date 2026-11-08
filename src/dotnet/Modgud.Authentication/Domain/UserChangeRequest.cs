@@ -50,6 +50,14 @@ public class UserChangeRequest
     /// "needs review" bell entry without an eventually-consistent projection roundtrip.
     /// </summary>
     public List<Guid> AdminInboxItemIds { get; set; } = new();
+
+    /// <summary>
+    /// B4-AP-05 — the values an approval replaced, by field name (<c>Firstname</c>, …), taken
+    /// in the commit that applied the request. Without it the history read the "old" value from
+    /// the user at display time — after approval that is the new value. Null until approved,
+    /// and for requests approved before it existed.
+    /// </summary>
+    public Dictionary<string, string?>? PreviousValues { get; set; }
 }
 
 public enum ChangeRequestType

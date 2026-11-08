@@ -11,4 +11,5 @@ public record UpdateUserCommand(Guid UserId, Optional<string> Firstname, Optiona
 /// <summary>The change request an <see cref="UpdateUserCommand"/> applies, as its caller loaded it.
 /// <paramref name="FollowUps"/> (B3-EI-04) are published in the commit that approves it: the
 /// requester's mail and inbox item and the dismissal of the admins' items.</summary>
-public record ChangeRequestApproval(Guid RequestId, DateTimeOffset SeenUpdatedAt, Guid? ReviewedByUserId, IReadOnlyList<IFollowUpMessage>? FollowUps = null);
+public record ChangeRequestApproval(Guid RequestId, DateTimeOffset SeenUpdatedAt, Guid? ReviewedByUserId, IReadOnlyList<IFollowUpMessage>? FollowUps = null,
+    IReadOnlyDictionary<string, string?>? PreviousValues = null);
