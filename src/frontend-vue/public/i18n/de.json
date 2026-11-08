@@ -811,6 +811,7 @@
     },
     "roleDetails": {
       "createTitle": "Rolle erstellen",
+      "loadError": "Ein Teil des Rolleneditors konnte nicht geladen werden (Apps erfordern app:read). Speichern kann unvollständig sein.",
       "general": "Allgemein",
       "name": "Name",
       "description": "Beschreibung",

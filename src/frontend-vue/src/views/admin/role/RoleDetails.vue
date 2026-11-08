@@ -91,6 +91,9 @@ function toStaged(): ManifestEntity {
 
 const loading = ref(false)
 const saveError = ref('')
+// D.roles-F04 — a lookup the editor needs (apps need app:read) can fail; say so instead
+// of leaving an empty form that looks loaded.
+const loadError = ref('')
 const activeTab = ref<'general' | 'permissions'>('general')
 type RoleType = 'application' | 'realmAdmin'
 
@@ -220,7 +223,9 @@ const footerButton = computed(() => ({
 onMounted(async () => {
   // Apps supply the slug half of the role key; the roster is what the name-uniqueness
   // check runs against — both are needed on every path, create included.
-  await Promise.all([applicationsStore.initialize(), roleStore.initialize()])
+  const lookups = await Promise.allSettled([applicationsStore.initialize(), roleStore.initialize()])
+  if (lookups.some((r) => r.status === 'rejected'))
+    loadError.value = t('admin.roleDetails.loadError', {}, 'Part of the role editor could not be loaded (Apps need app:read). Saving may be incomplete.')
   if (isDraftRow.value) {
     // Draft-created role: the staged manifest entity IS the state.
     const entity = staging.findStaged(staging.draftKeyOf(props.id))
@@ -423,6 +428,7 @@ async function save() {
             </div>
           </section>
         </div>
+        <CoarNotice v-if="loadError" variant="error">{{ loadError }}</CoarNotice>
         <CoarNotice v-if="saveError" variant="error">{{ saveError }}</CoarNotice>
       </div>
 
