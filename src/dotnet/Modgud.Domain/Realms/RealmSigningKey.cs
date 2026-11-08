@@ -18,7 +18,7 @@ namespace Modgud.Domain.Realms;
 /// Lifecycle:
 /// </para>
 /// <list type="bullet">
-///   <item><description>Each realm has exactly one <see cref="IsActive"/>=true key at any time — the active signing key.</description></item>
+///   <item><description>Each realm has one <see cref="IsActive"/>=true key — the active signing key. The key store keeps it to one (a per-realm lock in the process); no database constraint enforces it.</description></item>
 ///   <item><description>On rotation, the previous active key flips to <see cref="IsActive"/>=false and stays in the JWKS for an overlap window so already-issued tokens remain validatable.</description></item>
 ///   <item><description>After <see cref="RetiredAt"/>+overlap, retired keys are hard-deleted by the <c>SigningKeyJanitorJob</c> (via <c>IRealmKeyStore.PurgeExpiredRetiredKeysAsync</c>).</description></item>
 /// </list>
@@ -29,13 +29,15 @@ public class RealmSigningKey
 
     /// <summary>
     /// The realm this key belongs to (matches <see cref="Realm.Slug"/>).
-    /// Indexed for fast lookup by realm.
+    /// Not indexed: a tenant DB holds only its own realm's keys, so the
+    /// database itself is the realm filter.
     /// </summary>
     public string RealmSlug { get; set; } = string.Empty;
 
     /// <summary>
     /// Stable key identifier surfaced in the JWT <c>kid</c> header and
-    /// JWKS document. The pair (RealmSlug, KeyId) is unique.
+    /// JWKS document. Derived from the public key, so every fresh key pair
+    /// gets its own; no database constraint enforces uniqueness.
     /// </summary>
     public string KeyId { get; set; } = string.Empty;
 
@@ -47,7 +49,7 @@ public class RealmSigningKey
     /// <summary>
     /// PKCS#8 PEM encoding of the RSA private key. Format chosen so an
     /// operator can extract and inspect the key with standard tooling
-    /// (<c>openssl</c>) when debugging. Must NEVER leave the master DB.
+    /// (<c>openssl</c>) when debugging. Must NEVER leave the realm's tenant DB.
     /// </summary>
     public string PrivateKeyPem { get; set; } = string.Empty;
 
@@ -59,9 +61,10 @@ public class RealmSigningKey
     public string PublicKeyPem { get; set; } = string.Empty;
 
     /// <summary>
-    /// Whether this is the realm's currently-active signing key. Exactly
-    /// one record per realm carries <c>true</c>; previous keys remain at
-    /// <c>false</c> until the overlap window expires.
+    /// Whether this is the realm's currently-active signing key. One record
+    /// per realm carries <c>true</c> (kept so by the key store, not by a
+    /// constraint); previous keys remain at <c>false</c> until the overlap
+    /// window expires.
     /// </summary>
     public bool IsActive { get; set; }
 

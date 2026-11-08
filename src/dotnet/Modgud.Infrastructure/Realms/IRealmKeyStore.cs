@@ -4,7 +4,7 @@ namespace Modgud.Infrastructure.Realms;
 
 /// <summary>
 /// Per-realm RSA key management for OpenIddict token signing and validation.
-/// Backed by Marten documents in the master DB; results are cached in-memory
+/// Backed by Marten documents in each realm's own tenant DB; results are cached in-memory
 /// keyed by realm slug. Cache is invalidated automatically on rotation.
 ///
 /// <para>

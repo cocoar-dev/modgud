@@ -23,14 +23,16 @@ The rest of this page walks through each row.
 
 ## Per-realm RSA signing key
 
-Every realm has its own RSA keypair, generated on first boot and
-stored as a `RealmSigningKey` document in that realm's own tenant
-database. This key signs **access tokens and ID tokens** — the tokens
+Every realm has its own RSA keypair, generated the first time the realm
+needs one (its first token or JWKS request, recorded as the audit event
+`ops.signing_key_bootstrapped`) and stored as a `RealmSigningKey`
+document in that realm's own tenant database. This key signs **access tokens and ID tokens** — the tokens
 that leave the IdP and cross the trust boundary to a resource server
 or client application.
 
-It's also the only key material published in that realm's
-`/.well-known/openid-configuration` JWKS document. Each realm's JWKS
+It's also the only key material published in that realm's JWKS
+document (the `jwks_uri` that `/.well-known/openid-configuration`
+points to). Each realm's JWKS
 contains exclusively its own key(s), never another realm's — which is
 what makes the isolation structural rather than a matter of
 convention: a resource server validating against realm B's JWKS has no

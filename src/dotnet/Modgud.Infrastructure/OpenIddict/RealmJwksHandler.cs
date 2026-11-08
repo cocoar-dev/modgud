@@ -9,10 +9,10 @@ namespace Modgud.Infrastructure.OpenIddict;
 
 /// <summary>
 /// Replaces the JWKS document with the calling realm's keys only. Runs in
-/// place of the stock <see cref="Discovery.AttachSigningKeys"/> handler:
-/// we register first, populate <see cref="HandleJsonWebKeySetRequestContext.Keys"/>
-/// from <see cref="IRealmKeyStore"/>, and let the default handler observe
-/// the already-populated list and add nothing.
+/// place of the stock <see cref="Discovery.AttachSigningKeys"/> handler's output:
+/// it runs after that handler, clears what it appended to
+/// <see cref="HandleJsonWebKeySetRequestContext.Keys"/> and fills the list from
+/// <see cref="IRealmKeyStore"/>.
 ///
 /// <para>
 /// Why this matters: a resource server fetching realm A's discovery doc
