@@ -184,7 +184,6 @@ public static class ProjectionEndpoints
                 .Where(g => !g.IsDeleted)
                 .ToListAsync(ct)).ToList();
             var groupById = groups.ToDictionary(g => g.Id);
-            var groupIds = groupById.Keys.ToHashSet();
 
             var principals = await session.Query<Principal>()
                 .Where(p => !p.IsDeleted)
@@ -217,36 +216,29 @@ public static class ProjectionEndpoints
 
             // ─── Check 1: Principal-Sync ─────────────────────────────────
             var checkWatch = Stopwatch.StartNew();
-            var missingPerson = appUserIds.Where(id => !principalIds.Contains(id)).Select(LabelFor).ToList();
+            // B4-03 — a user's principal must be a Person; another subtype under the same id
+            // is not one. (Group documents ARE the Group principals — one polymorphic table —
+            // so a group-side "missing/orphan principal" check could never fire and is gone.)
+            var personIds = principals.OfType<Person>().Select(p => p.Id).ToHashSet();
+            var missingPerson = appUserIds.Where(id => !personIds.Contains(id)).Select(LabelFor).ToList();
             var orphanPerson = principals
                 .Where(p => p is Person && !appUserIds.Contains(p.Id))
                 .Select(p => new IdName(p.Id, !string.IsNullOrWhiteSpace(p.DisplayName) ? p.DisplayName : "<no display name>"))
                 .ToList();
-            var missingGroup = groupIds.Where(id => !principalIds.Contains(id))
-                .Select(id => new IdName(id, groupById[id].Name))
-                .ToList();
-            var orphanGroup = principals
-                .Where(p => p is Group && !groupIds.Contains(p.Id))
-                .Select(p => new IdName(p.Id, !string.IsNullOrWhiteSpace(p.DisplayName) ? p.DisplayName : "<no display name>"))
-                .ToList();
-
-            var principalSyncOk = missingPerson.Count == 0 && orphanPerson.Count == 0
-                               && missingGroup.Count == 0 && orphanGroup.Count == 0;
+            var principalSyncOk = missingPerson.Count == 0 && orphanPerson.Count == 0;
             checkResults.Add(new CheckResult(
                 Id: "principal-sync",
                 Title: "Principal projection sync",
-                Description: "Every ApplicationUser must have a matching Person Principal; every Group must have a matching Group Principal. Drift here means the inline Principal projection diverged from its source documents — usually a stale projection that a rebuild can fix.",
+                Description: "Every ApplicationUser must have a matching Person Principal, and every Person Principal an ApplicationUser. Drift here means the inline Principal projection diverged from its source documents — usually a stale projection that a rebuild can fix.",
                 Status: principalSyncOk ? "OK" : "ISSUES_FOUND",
                 DurationMs: Math.Round(checkWatch.Elapsed.TotalMilliseconds, 2),
                 Summary: principalSyncOk
-                    ? $"{appUserIds.Count}/{appUserIds.Count} ApplicationUsers ↔ Person principals, {groupIds.Count}/{groupIds.Count} Groups ↔ Group principals"
-                    : $"{missingPerson.Count + orphanPerson.Count} person drift, {missingGroup.Count + orphanGroup.Count} group drift",
+                    ? $"{appUserIds.Count}/{appUserIds.Count} ApplicationUsers ↔ Person principals"
+                    : $"{missingPerson.Count + orphanPerson.Count} person drift",
                 Issues: new
                 {
                     MissingPerson = missingPerson,
                     OrphanPerson = orphanPerson,
-                    MissingGroup = missingGroup,
-                    OrphanGroup = orphanGroup,
                 }));
 
             // ─── Check 2: Dangling member references ─────────────────────

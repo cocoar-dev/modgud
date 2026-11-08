@@ -1039,9 +1039,7 @@
       "autoDriftOk": "Jede Auto-Gruppe passt zu ihrem Predicate.",
       "principalSync": {
         "missingPerson": "ApplicationUsers ohne Person-Principal",
-        "orphanPerson": "Person-Principals ohne ApplicationUser-Quelle",
-        "missingGroup": "Gruppen ohne Group-Principal",
-        "orphanGroup": "Group-Principals ohne Gruppen-Quelle"
+        "orphanPerson": "Person-Principals ohne ApplicationUser-Quelle"
       },
       "autoDrift": {
         "scriptError": "Predicate konnte nicht kompiliert werden — bitte das Membership-Skript der Gruppe prüfen.",
