@@ -156,9 +156,10 @@ keeps the **same** Redirect URI — no need to re-edit the Entra app.
 
 #### 4. Enable + test
 
-1. Back in Modgud's provider modal, click the **Disabled** badge to
-   flip it to **Enabled**. Modgud verifies Client ID + Client Secret
-   are set before enabling.
+1. Back in Modgud's provider list, select the provider and choose
+   **Enable (immediate)** from its context menu (the **Active** checkbox
+   in the modal exists only while creating a provider). Modgud verifies
+   Client ID + Client Secret are set before enabling.
 2. Open Modgud's login page in incognito.
 3. The new SSO button should appear.
 4. Click → redirect to Microsoft → sign in → redirect back.
@@ -178,14 +179,13 @@ If your IdP isn't Entra, pick **Generic OIDC** instead:
 
 ### Just-in-Time provisioning
 
-By default Modgud provisions a new local user the first time someone
-signs in via the external IdP — no admin action needed. The user-update
-script populates the master data from claims.
-
-If you want to **disable JIT** (only pre-existing users may sign in via SSO),
-toggle the **Auto-create unknown users** flag in the **Linking &
-Policies** tab. Unknown users get a 403 with a message explaining how to
-request access.
+JIT is **off by default**: only users who already exist (or are linked)
+may sign in through a new provider. To let Modgud provision a new local user
+the first time someone signs in via the external IdP, switch on
+**Auto-create unknown users** in the **Linking & Policies** tab; the
+user-update script then populates the master data from claims. With it off,
+an unknown user's sign-in fails (`Idp.NoUserAndAutoCreateOff`) and is
+recorded in the security audit.
 
 ### Verified e-mail addresses
 
