@@ -233,7 +233,13 @@ internal sealed class MicrosoftDependencyInjectionJobFactory(IServiceProvider ro
     {
         public async Task Execute(IJobExecutionContext context)
         {
-            using var tenant = TenantContext.Enter(tenantSlug);
+            var jobScope = context.JobDetail.JobDataMap.TryGetValue(RealmJobScheduler.JobScopeDataKey, out var rawScope)
+                        && rawScope is string scopeName && Enum.TryParse<JobScope>(scopeName, out var parsed)
+                ? parsed
+                : JobScope.Realm;
+            var runTenant = await JobRunTenant.ResolveAsync(
+                tenantSlug, jobScope, provider.GetRequiredService<Modgud.Infrastructure.Realms.IRealmCache>());
+            using var tenant = TenantContext.Enter(runTenant);
             using var scope = provider.CreateScope();
             var inner = (IJob)scope.ServiceProvider.GetRequiredService(jobType);
             await inner.Execute(context);

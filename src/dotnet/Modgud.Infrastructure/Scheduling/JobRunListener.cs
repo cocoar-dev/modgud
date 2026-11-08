@@ -96,7 +96,12 @@ public class JobRunListener(
             TriggeredByUserId = triggeredBy,
         };
 
-        using var tenant = TenantContext.Enter(tenantSlug);
+        // B9-JS-02 — the same realm the run executed in (see JobRunTenant).
+        string runTenant;
+        using (var probe = scopeFactory.CreateScope())
+            runTenant = await JobRunTenant.ResolveAsync(
+                tenantSlug, jobScope, probe.ServiceProvider.GetRequiredService<Modgud.Infrastructure.Realms.IRealmCache>());
+        using var tenant = TenantContext.Enter(runTenant);
         using var scope = scopeFactory.CreateScope();
         try
         {
