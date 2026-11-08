@@ -12,8 +12,9 @@ namespace Modgud.Authentication.Audit;
 ///
 /// <para><b>Metadata only — no payloads.</b> The row records who/when/what-kind/realm,
 /// never the changed values. Personal data stays on the source streams (masked on
-/// erase); a permanent-erase deletes a user's rows here (Phase-2 scrub —
-/// <c>DeleteWhere&lt;AuthAuditView&gt;(x =&gt; x.UserId == userId)</c>).</para>
+/// erase). A permanent erase keeps a user's rows here de-identified (mask-and-keep,
+/// Art. 17(3)): <c>GdprService</c> nulls <see cref="Ip"/> on the live rows, and a
+/// rebuild regenerates them from the masked, archived events.</para>
 ///
 /// <para>Lives per-realm in each tenant DB (physical isolation — a realm cannot read
 /// another realm's audit). <see cref="Realm"/> is carried for the control-plane
@@ -49,7 +50,7 @@ public record AuthAuditView
     public string? UserName { get; init; }
 
     /// <summary>Source IP where the event carries one (e.g. a login). PII — inherits
-    /// the source event's GDPR masking, and the row is deleted on permanent erase.</summary>
+    /// the source event's GDPR masking; a permanent erase nulls it and keeps the row.</summary>
     public string? Ip { get; init; }
 
     /// <summary>Login method code for login events ("password" | "magic_link" |
