@@ -38,7 +38,14 @@ const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site) : undefin
     <meta name="twitter:image" content="/social-preview.png" />
 
     <script is:inline>
+      // B10-LAND-01 — 'js' hides the [data-reveal] sections until the reveal module shows
+      // them. If that module never runs (blocked, failed to load), drop 'js' again so the
+      // page stays readable instead of keeping those sections invisible.
       document.documentElement.classList.add('js');
+      window.setTimeout(function () {
+        if (!document.documentElement.classList.contains('reveal-ready'))
+          document.documentElement.classList.remove('js');
+      }, 2500);
     </script>
     <title>{title}</title>
   </head>
