@@ -429,9 +429,11 @@ function stageTerminal() {
     AllowedPositionIds: [...newTerminal.value.AllowedPositionIds],
   })
   // Keep the RP ID — every terminal of one consuming app shares it.
+  // B3-P5 — the first binding the position allows, not 'dpop' regardless; the watcher
+  // only corrects the binding when the options themselves change.
   newTerminal.value = {
     DisplayName: '', Location: '', WebAuthnRpId: newTerminal.value.WebAuthnRpId,
-    Binding: 'dpop', AllowedPositionIds: isCreate.value ? [] : [props.id],
+    Binding: terminalBindingSelectOptions.value[0]?.value ?? '', AllowedPositionIds: isCreate.value ? [] : [props.id],
   }
 }
 
@@ -478,7 +480,7 @@ async function createTerminal() {
     revealedTerminalSecret.value = created.ClientSecret ?? null
     newTerminal.value = {
       DisplayName: '', Location: '', WebAuthnRpId: newTerminal.value.WebAuthnRpId,
-      Binding: 'dpop', AllowedPositionIds: [props.id],
+      Binding: terminalBindingSelectOptions.value[0]?.value ?? '', AllowedPositionIds: [props.id],
     }
     await loadTerminals()
   } catch (e: unknown) {
