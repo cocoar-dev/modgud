@@ -57,16 +57,23 @@ public class JobRunHistoryRetentionJob(
             : $"Deleted {total} entries (age: {result.DeletedByAge}, count: {result.DeletedByCount})";
     }
 
+    /// <summary>B9-JS-03 — a job never configured uses the default age; a configured but
+    /// cleared age means "no age sweep", as the field promises.</summary>
+    internal static JobRunHistoryRetentionConfig FromParameters(IReadOnlyDictionary<string, object?>? raw)
+    {
+        raw ??= new Dictionary<string, object?>();
+        return new JobRunHistoryRetentionConfig(
+            MaxAgeDays: raw.ContainsKey(MaxAgeDaysKey) ? ReadInt(raw, MaxAgeDaysKey) : DefaultMaxAgeDays,
+            MaxEntriesPerJob: ReadInt(raw, MaxEntriesPerJobKey));
+    }
+
     internal static async Task<JobRunHistoryRetentionConfig> BuildConfigAsync(
         IQuerySession session,
         string configKey,
         CancellationToken ct)
     {
         var cfg = await session.LoadAsync<JobConfig>(configKey, ct);
-        var raw = cfg?.Parameters ?? new Dictionary<string, object?>();
-        return new JobRunHistoryRetentionConfig(
-            MaxAgeDays: ReadInt(raw, MaxAgeDaysKey) ?? DefaultMaxAgeDays,
-            MaxEntriesPerJob: ReadInt(raw, MaxEntriesPerJobKey));
+        return FromParameters(cfg?.Parameters);
     }
 
     private static int? ReadInt(IReadOnlyDictionary<string, object?> raw, string key)
