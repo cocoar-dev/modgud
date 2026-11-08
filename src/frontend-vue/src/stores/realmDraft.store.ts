@@ -324,12 +324,14 @@ export const useRealmDraftStore = defineStore('realmDraft', () => {
     await replan()
   }
 
-  /** Parking: clears the checkout, keeps the branch. */
+  /** Parking: clears the checkout, keeps the branch. FD-06 — only once the server parked
+   *  it: a failed park leaves the draft checked out here too, as it is on the server. */
   async function closeDraft() {
     try {
       await draftsHttp.addPath('active', 'park').post<void>({})
     } catch (e) {
       error.value = draftErrorMessage(e)
+      return
     }
     current.value = null
     plan.value = null
