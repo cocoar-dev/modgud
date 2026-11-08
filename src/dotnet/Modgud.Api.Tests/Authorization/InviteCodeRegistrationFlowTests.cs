@@ -95,25 +95,39 @@ public class InviteCodeRegistrationFlowTests : IntegrationTestBase
     [Fact]
     public async Task InviteCode_FailurePaths_Are_ByteIdentical_To_NoAccount()
     {
-        await SetUpInviteAppAsync("adr12-antienum");
+        var app = await SetUpInviteAppAsync("adr12-antienum");
+        var now = DateTimeOffset.UtcNow;
+        // AREG-10 — the stored failure shapes too, not only codes that never existed.
+        var usedCode = await StoreCodeAsync(app.Id, expiresAt: now.AddDays(7), usedAt: now.AddMinutes(-5));
+        var expiredCode = await StoreCodeAsync(app.Id, expiresAt: now.AddDays(-1), usedAt: null);
+        var boundCode = await MintCodeAsync(app.Id, boundEmail: "adr12-ae-owner@example.test");
 
-        // Three failure shapes that must NOT be distinguishable from one another:
-        // no code, a wrong code, and (implicitly) "no account". All return the same
-        // status + body so the endpoint is not an existence/validity oracle.
-        var noCode = await RequestNativeOtpAsync(Host, "adr12-ae-a@example.test", inviteCode: null);
-        var badCode = await RequestNativeOtpAsync(Host, "adr12-ae-b@example.test", inviteCode: "totally-bogus-code");
-        var expiredShape = await RequestNativeOtpAsync(Host, "adr12-ae-c@example.test", inviteCode: "another-bogus");
+        var emailService = Factory.Services.GetRequiredService<InMemoryEmailService>();
+        emailService.Clear();
+
+        // Failure shapes that must NOT be distinguishable from one another or from
+        // "no account": no code, an unknown code, a used one, an expired one and one
+        // bound to another email. All return the same status + body so the endpoint
+        // is not an existence/validity oracle, and none opens the pipeline.
+        var attempts = new (string Email, string? Code)[]
+        {
+            ("adr12-ae-a@example.test", null),
+            ("adr12-ae-b@example.test", "totally-bogus-code"),
+            ("adr12-ae-c@example.test", usedCode),
+            ("adr12-ae-d@example.test", expiredCode),
+            ("adr12-ae-e@example.test", boundCode),
+        };
 
         var ct = TestContext.Current.CancellationToken;
-        Assert.Equal(HttpStatusCode.OK, noCode.StatusCode);
-        Assert.Equal(noCode.StatusCode, badCode.StatusCode);
-        Assert.Equal(noCode.StatusCode, expiredShape.StatusCode);
-
-        var b1 = await noCode.Content.ReadAsStringAsync(ct);
-        var b2 = await badCode.Content.ReadAsStringAsync(ct);
-        var b3 = await expiredShape.Content.ReadAsStringAsync(ct);
-        Assert.Equal(b1, b2);
-        Assert.Equal(b1, b3);
+        var bodies = new List<string>();
+        foreach (var (email, code) in attempts)
+        {
+            var resp = await RequestNativeOtpAsync(Host, email, code);
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+            bodies.Add(await resp.Content.ReadAsStringAsync(ct));
+            Assert.Null(emailService.GetLastEmailTo(email));
+        }
+        Assert.Single(bodies.Distinct());
     }
 
     [Fact]
@@ -247,7 +261,7 @@ public class InviteCodeRegistrationFlowTests : IntegrationTestBase
         var ct = TestContext.Current.CancellationToken;
         var app = await CreateAppAsync("adr12-prune");
 
-        // One open code (should survive) + one already-expired code (should go).
+        // One open code (should survive), one already-expired and one used code (should go).
         using (var scope = Factory.Services.CreateScope())
         {
             scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>()
@@ -265,11 +279,18 @@ public class InviteCodeRegistrationFlowTests : IntegrationTestBase
                 ExpiresAt = DateTimeOffset.UtcNow.AddDays(-1), CreatedAt = DateTimeOffset.UtcNow.AddDays(-15),
                 CreatedBySubject = "test",
             });
+            // AREG-10 — a used code that has not expired yet goes too.
+            session.Store(new RegistrationInviteCode
+            {
+                Id = Guid.NewGuid(), AppId = app.Id, CodeHash = "used-hash",
+                ExpiresAt = DateTimeOffset.UtcNow.AddDays(7), CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+                CreatedBySubject = "test", UsedAt = DateTimeOffset.UtcNow.AddHours(-1), UsedByUserId = Guid.NewGuid(),
+            });
             await session.SaveChangesAsync(ct);
 
             var svc = scope.ServiceProvider.GetRequiredService<IRegistrationInviteService>();
             var pruned = await svc.PruneAsync(ct);
-            Assert.Equal(1, pruned); // only the expired one
+            Assert.Equal(2, pruned); // the expired and the used one
 
             var remaining = await svc.ListAsync(app.Id, ct);
             Assert.Single(remaining);
@@ -414,6 +435,26 @@ public class InviteCodeRegistrationFlowTests : IntegrationTestBase
         var codes = await svc.MintAsync(appId, boundEmail, expiresInDays: null,
             createdBySubject: "test", count: 1, TestContext.Current.CancellationToken);
         return codes[0];
+    }
+
+    /// <summary>Stores a code in a given state and returns its plaintext.</summary>
+    private async Task<string> StoreCodeAsync(Guid appId, DateTimeOffset expiresAt, DateTimeOffset? usedAt)
+    {
+        var plaintext = $"adr12-stored-{Guid.NewGuid():N}";
+        var hash = Convert.ToHexStringLower(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(plaintext)));
+        using var scope = Factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>()
+            .HttpContext = new DefaultHttpContext { Items = { ["TenantId"] = "system" } };
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+        session.Store(new RegistrationInviteCode
+        {
+            Id = Guid.NewGuid(), AppId = appId, CodeHash = hash, ExpiresAt = expiresAt,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-2), CreatedBySubject = "test",
+            UsedAt = usedAt, UsedByUserId = usedAt is null ? null : Guid.NewGuid(),
+        });
+        await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return plaintext;
     }
 
     private async Task<RegistrationInviteCode?> LoadCodeByPlaintextAsync(Guid appId, string plaintext)

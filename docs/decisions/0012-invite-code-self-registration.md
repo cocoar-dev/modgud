@@ -111,14 +111,16 @@ The **M2M leg** authorizes with the app-bound `invite:write` OAuth scope (a Serv
 
 ## Gate to "Accepted" — all met (PR #96)
 
-1. ☑ `InviteCode` posture round-trips through the settings cascade; absence inherits realm (test: `InviteCode_Posture_RoundTrips_Through_Settings_Endpoint`).
-2. ☑ `RegistrationInviteCode` doc + service: validate + **atomic single-use** consume, proven under a concurrent-redeem test (`InviteCode_BearerCode_Is_SingleUse_Under_Concurrent_Redeem`) — bearer code can't create two accounts.
-3. ☑ Native request routes via the extended `Decide(...)`; unknown + valid code → passwordless user; redeem confirms the mailbox; existing confirmed user + code → plain login, code untouched (tests: `..._WithValidCode_CreatesUser_And_Confirms_On_Redeem`, `..._ConfirmedUser_With_Code_Is_Plain_Login_Code_Untouched`).
-4. ☑ **Anti-enumeration**: every code-failure path is byte-identical to "no account" (`InviteCode_FailurePaths_Are_ByteIdentical_To_NoAccount`).
-5. ☑ `invite:write` scope (app-bound) + mint/list/revoke endpoints, dual-auth; cross-app/cross-tenant M2M caller rejected; `{appId}` must match (`MintEndpoint_M2M_Scope_Mints_For_Bound_App_And_Rejects_CrossApp`, `MintEndpoint_AdminCookie_Mints_Codes`).
-6. ☑ Pruning job for used/expired codes (`Prune_Removes_Used_And_Expired_Codes_Keeps_Open`).
+Test names as of today; since ADR 0018 the account is created when the OTP is proved, not at the request.
 
-35 tests green (incl. #95's native registration/required-field tests). Plus `NativeOtpDecisionTests` pins the pure `Decide()` matrix.
+1. ☑ `InviteCode` posture round-trips through the app resource; absence inherits realm (test: `InviteCode_Posture_RoundTrips_Through_App_Resource`).
+2. ☑ `RegistrationInviteCode` doc + service: validate + **atomic single-use** consume, proven under a concurrent-redeem test (`InviteCode_BearerCode_Is_SingleUse_Under_Concurrent_Redeem`) — bearer code can't create two accounts.
+3. ☑ Native request routes via the extended `Decide(...)`; unknown + valid code → pending registration and code mail, the passwordless user is created and its mailbox confirmed when the code is proved; existing confirmed user + code → plain login, code untouched (tests: `InviteCode_UnknownEmail_WithValidCode_Opens_The_Pipeline_And_Creates_The_User_On_Redeem`, `InviteCode_ConfirmedUser_With_Code_Is_Plain_Login_Code_Untouched`).
+4. ☑ **Anti-enumeration**: no code, an unknown, a used, an expired and an email-mismatched code all answer byte-identically and send no mail (`InviteCode_FailurePaths_Are_ByteIdentical_To_NoAccount`). The lost-race path is covered by the concurrent-redeem test (one code mail), not by a body comparison.
+5. ☑ `invite:write` scope (app-bound) + mint/list/revoke endpoints, dual-auth; cross-app M2M caller rejected; `{appId}` must match (`MintEndpoint_M2M_Scope_Mints_For_Bound_App_And_Rejects_CrossApp`, `MintEndpoint_AdminCookie_Mints_Codes`). A caller from another realm is not covered by a test of its own.
+6. ☑ Pruning job for used/expired codes (`Prune_Removes_Used_And_Expired_Codes_Keeps_Open`: one open, one expired, one used code).
+
+35 tests green at acceptance (incl. #95's native registration/required-field tests). Plus `NativeOtpDecisionTests` pins the pure `Decide()` matrix.
 
 ---
 
