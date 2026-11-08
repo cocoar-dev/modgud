@@ -2690,6 +2690,7 @@
       "passkeyHint": "Jetzt einrichten",
       "statusOk": "OK",
       "statusMissing": "fehlt",
+      "statusUnknown": "unbekannt",
       "statusExpired": "abgelaufen",
       "cta": "Zum Profil →"
     },

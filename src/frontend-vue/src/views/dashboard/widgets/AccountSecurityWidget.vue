@@ -14,30 +14,33 @@ const authStore = useAuthStore()
 // Has2FA on the signed-in user covers TOTP / e-mail / passkey-as-second-factor;
 // the checklist shows a registered passkey as its own, passwordless capability.
 const passkeyCount = ref<number | null>(null)
+// B10-D01 — a failed lookup is "unknown", not "missing".
+const passkeyUnknown = ref(false)
 onMounted(async () => {
   try {
     passkeyCount.value = (await useHttpClient('/api/account/passkey').get<unknown[]>()).length
   } catch {
-    passkeyCount.value = 0
+    passkeyUnknown.value = true
   }
 })
 
 const items = computed(() => {
   const ok = t('dashboard.security.statusOk', {}, 'OK')
   const missing = t('dashboard.security.statusMissing', {}, 'missing')
-  const row = (key: string, label: string, done: boolean, pending = false) => ({
+  const unknown = t('dashboard.security.statusUnknown', {}, 'unknown')
+  const row = (key: string, label: string, done: boolean, pending = false, isUnknown = false) => ({
     key,
     label,
     pending,
-    strong: !done && !pending,
-    variant: done ? 'success' as const : 'warning' as const,
-    tag: done ? ok : missing,
+    strong: !done && !pending && !isUnknown,
+    variant: done ? 'success' as const : isUnknown ? 'neutral' as const : 'warning' as const,
+    tag: done ? ok : isUnknown ? unknown : missing,
   })
   return [
     row('email', t('dashboard.security.emailLabel', {}, 'E-mail address on file'), !!authStore.user?.Email),
     row('mfa', t('dashboard.security.mfaLabel', {}, 'Two-factor authentication'), authStore.user?.Has2FA === true),
     row('passkey', t('dashboard.security.passkeyLabel', {}, 'Passkey registered'),
-      (passkeyCount.value ?? 0) > 0, passkeyCount.value === null),
+      (passkeyCount.value ?? 0) > 0, passkeyCount.value === null && !passkeyUnknown.value, passkeyUnknown.value),
   ]
 })
 </script>
