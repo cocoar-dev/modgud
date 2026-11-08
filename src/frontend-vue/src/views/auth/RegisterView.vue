@@ -44,6 +44,9 @@ const showUsername = computed(() => fieldPolicy.value.Username !== 'Off')
 const usernameRequired = computed(() => fieldPolicy.value.Username === 'Required')
 const firstnameRequired = computed(() => fieldPolicy.value.Firstname === 'Required')
 const lastnameRequired = computed(() => fieldPolicy.value.Lastname === 'Required')
+// AREG-09 — a field that is Off is not captured: no input, nothing sent.
+const showFirstname = computed(() => fieldPolicy.value.Firstname !== 'Off')
+const showLastname = computed(() => fieldPolicy.value.Lastname !== 'Off')
 
 async function toggleLanguage() {
   const next = language.value === 'de' ? 'en' : 'de'
@@ -178,8 +181,8 @@ async function handleSubmit() {
       UserName: form.value.UserName.trim(),
       Email: form.value.Email.trim(),
       Password: form.value.Password,
-      Firstname: form.value.Firstname.trim() || null,
-      Lastname: form.value.Lastname.trim() || null,
+      Firstname: showFirstname.value ? form.value.Firstname.trim() || null : null,
+      Lastname: showLastname.value ? form.value.Lastname.trim() || null : null,
       AcceptedTerms: form.value.AcceptedTerms,
       CaptchaToken: form.value.CaptchaToken || null,
       Honeypot: form.value.Honeypot || null,
@@ -249,13 +252,13 @@ async function handleSubmit() {
             <CoarPasswordInput v-model="form.Password" autocomplete="new-password" required />
           </CoarFormField>
 
-          <div class="grid grid-cols-2 gap-3">
-            <CoarFormField :label="firstnameRequired
+          <div v-if="showFirstname || showLastname" class="grid grid-cols-2 gap-3">
+            <CoarFormField v-if="showFirstname" :label="firstnameRequired
               ? t('auth.register.firstnameRequired', {}, 'First name')
               : t('auth.register.firstname', {}, 'First name (optional)')">
               <CoarTextInput v-model="form.Firstname" autocomplete="given-name" :required="firstnameRequired" />
             </CoarFormField>
-            <CoarFormField :label="lastnameRequired
+            <CoarFormField v-if="showLastname" :label="lastnameRequired
               ? t('auth.register.lastnameRequired', {}, 'Last name')
               : t('auth.register.lastname', {}, 'Last name (optional)')">
               <CoarTextInput v-model="form.Lastname" autocomplete="family-name" :required="lastnameRequired" />

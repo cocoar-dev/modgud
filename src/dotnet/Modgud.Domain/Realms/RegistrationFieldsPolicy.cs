@@ -19,6 +19,11 @@ public enum RegistrationField { Username, Firstname, Lastname }
 /// </summary>
 public static class RegistrationFieldsPolicy
 {
+    /// <summary>AREG-09 — <see cref="FieldRequirement.Off"/> means the field is never
+    /// captured: a value sent anyway is dropped instead of being stored.</summary>
+    public static string? Captured(FieldRequirement requirement, string? value) =>
+        requirement == FieldRequirement.Off ? null : value;
+
     /// <summary>The first required field that is missing (empty/whitespace), or
     /// <c>null</c> when every required field is satisfied. Pass <c>null</c> for a
     /// field a given path never collects (e.g. native passwordless has no separate

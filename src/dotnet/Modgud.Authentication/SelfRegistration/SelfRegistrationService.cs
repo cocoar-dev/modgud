@@ -209,8 +209,9 @@ public sealed class SelfRegistrationService(
         var request = new Modgud.Authentication.Registration.RegistrationRequest(
             Email: normalizedEmail,
             UserName: normalizedUserName,
-            Firstname: dto.Firstname,
-            Lastname: dto.Lastname,
+            // AREG-09 — a name field that is Off is never captured.
+            Firstname: RegistrationFieldsPolicy.Captured(registrationFields.Firstname, dto.Firstname),
+            Lastname: RegistrationFieldsPolicy.Captured(registrationFields.Lastname, dto.Lastname),
             PasswordHash: passwordHash,
             ProofKind: Modgud.Authentication.Registration.RegistrationProofKind.Link,
             Source: Modgud.Authentication.Registration.RegistrationSources.Web,
