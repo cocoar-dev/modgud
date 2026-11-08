@@ -125,7 +125,7 @@ A password that was just reset by e-mail does not count: for the realm's **wait*
 
 **Account deletion is always reachable.** No minimum level and no setup grace ever block it; it needs the same proof as every other account change.
 
-Account-change endpoints answer `403 { "RequiresReauthentication": true, "Methods": [...] }` when the proof is missing or too old; the SPA asks for it and retries.
+Account-change endpoints answer `403 { "RequiresReauthentication": true, "Methods": [...] }` when the proof is missing or too old. The SPA then sends the user to the login page for the proof and back to the page they were on; the change itself is not repeated automatically — the user submits it again.
 
 ## Setup grace and exemption
 

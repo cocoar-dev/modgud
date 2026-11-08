@@ -84,8 +84,9 @@ POST /api/account/mfa/verify
 → `UserManager.VerifyTwoFactorTokenAsync()` checks the code; on
 success `TwoFactorEnabled = true` is set, the acting session is
 re-issued with the fresh security stamp, and outstanding OAuth
-reference tokens for the user are revoked so the change takes effect
-across every channel immediately.
+reference tokens for the user are revoked. Other browser sessions fail
+their next security-stamp check; JWT access tokens already issued stay
+valid until they expire.
 
 ### Deactivate
 
