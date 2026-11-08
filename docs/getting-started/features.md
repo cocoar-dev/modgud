@@ -148,7 +148,8 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 
 ### Resource server libraries
 - **`Modgud.AspNetCore.ResourceServer`** — explicit JWT and introspection handlers that validate tokens and project the configured audience block onto the principal
-- JWT validation is local; reference-token validation uses RFC 7662 introspection for immediate revocation
+- JWT validation is local; reference-token validation calls RFC 7662 introspection on every request, so a revoked reference token fails at once
+- Opt-in session revocation for JWTs: the library follows ended sessions on the change feed (polled every few seconds, fail-open) and refuses their tokens before `exp`
 
 ### UserInfo as the permission delivery channel
 - JWT access tokens, UserInfo and authorized introspection responses can expose the same audience-keyed `resource_access` claim
