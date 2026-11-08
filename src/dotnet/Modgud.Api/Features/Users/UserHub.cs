@@ -4,6 +4,7 @@ using Cocoar.SignalARRR.Server;
 using Microsoft.AspNetCore.SignalR;
 using BuildingBlocks.EventDispatcher;
 using Modgud.Api.Realtime;
+using Modgud.Authentication.ExtensionMethods;
 using Modgud.Infrastructure.Persistence.Marten.Mappers;
 using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
 
@@ -41,5 +42,33 @@ public class UserHub(DataEventDispatcher eventDispatcher)
         // (email, names). Require user:read — the same gate as the REST list
         // endpoint — instead of relying on UIHub's bare [Authorize].
         return HubAuthorization.AuthorizedRealmStream(http, realm, "user:read", source);
+    }
+
+    /// <summary>
+    /// B4-AP-06 — the caller's own user events, for the profile page: a user without
+    /// <c>user:read</c> still sees an approval or an admin edit of their profile live.
+    /// Needs no permission beyond being signed in, because it only ever carries the
+    /// caller's own record.
+    /// </summary>
+    public IObservable<DataEvent> SubscribeSelf()
+    {
+        var http = Context.GetHttpContext();
+        return SelfEvents(eventDispatcher.Notifications, HubAuthorization.CallerRealm(http), http?.GetUserId());
+    }
+
+    /// <summary>
+    /// User events of <paramref name="realm"/> reduced to the record of <paramref name="userId"/>;
+    /// an event that does not touch it is dropped. No realm or no caller: nothing passes.
+    /// </summary>
+    internal static IObservable<DataEvent> SelfEvents(IObservable<DataEvent> notifications, string? realm, Guid? userId)
+    {
+        if (string.IsNullOrEmpty(realm) || userId is not { } me)
+            return Observable.Empty<DataEvent>();
+
+        return notifications
+            .Where(ev => ev.Subject == "User" && ev.Tenant == realm)
+            .Select(ev => (ev, own: ev.Payload.OfType<UserView>().Where(v => v.Id == me).ToList()))
+            .Where(x => x.own.Count > 0)
+            .Select(x => new DataEvent(x.ev.Action, x.ev.Subject, x.own.Select(v => (object)v.ToDto()).ToList()));
     }
 }

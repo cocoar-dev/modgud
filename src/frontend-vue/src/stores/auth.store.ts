@@ -34,7 +34,9 @@ export const useAuthStore = defineStore('auth', () => {
   function ensureUserUpdateSubscription() {
     if (signalrSubscribed) return
     signalrSubscribed = true
-    signalr.stream<UserHubEvent>('UserActions.Subscribe').subscribe({
+    // B4-AP-06 — the self stream: only this user's own events, no user:read needed, so a
+    // plain user sees an approval or an admin edit of their profile live.
+    signalr.stream<UserHubEvent>('UserActions.SubscribeSelf').subscribe({
       next: (ev) => {
         if (ev.Action !== 'Updated' && ev.Action !== 'Created') return
         const myId = user.value?.Id

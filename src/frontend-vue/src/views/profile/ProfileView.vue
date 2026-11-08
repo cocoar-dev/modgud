@@ -410,6 +410,10 @@ function onLocaleChange(locale: string | null) {
   if (locale) setLocale(locale)
 }
 
+// B4-AP-06 — an approval or an admin edit updates the user on the server; the self stream
+// refreshes authStore.user, and the change-request state follows it here.
+watch(() => authStore.user, () => { void loadRequest() })
+
 onMounted(() => {
   // authStore.user stays fresh via SignalR UserActions subscription
   // (see auth.store.ts) — no explicit fetch needed here.
