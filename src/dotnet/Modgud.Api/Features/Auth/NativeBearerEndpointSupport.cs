@@ -22,16 +22,22 @@ internal static class NativeBearerEndpointSupport
     /// problem result when disabled, <c>null</c> when the caller may proceed.
     /// </summary>
     public static async Task<IResult?> GateDisabledAsync(
+        IApplicationSettingsResolver settingsResolver, HttpContext context, CancellationToken ct) =>
+        (await GateAsync(settingsResolver, context, ct)).Refusal;
+
+    /// <summary>As <see cref="GateDisabledAsync"/>, and hands back the effective native-grant
+    /// settings the caller may go on with (RV-0001 stage 2 reads the recent-sign-in switch).</summary>
+    public static async Task<(Modgud.Domain.Realms.NativeGrantSettings? Settings, IResult? Refusal)> GateAsync(
         IApplicationSettingsResolver settingsResolver, HttpContext context, CancellationToken ct)
     {
         var clientId = context.User.GetClaim(Claims.ClientId) ?? context.User.GetClaim(Claims.AuthorizedParty);
         var settings = await settingsResolver.ResolveForRequestAsync(context, clientId, ct);
         if (settings.NativeGrants is null || !settings.NativeGrants.Enabled)
-            return Results.Problem(
+            return (null, Results.Problem(
                 statusCode: StatusCodes.Status400BadRequest,
                 title: "NativeGrants.Disabled",
-                detail: "Native passwordless features are not enabled for this realm.");
-        return null;
+                detail: "Native passwordless features are not enabled for this realm."));
+        return (settings.NativeGrants, null);
     }
 
     /// <summary>

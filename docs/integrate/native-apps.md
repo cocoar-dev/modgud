@@ -329,7 +329,22 @@ Authorization: Bearer <access_token>
 
 Returns `204 No Content`. A deleted passkey can no longer satisfy a `urn:cocoar:passkey` assertion. An id that doesn't exist **or** belongs to another user is a `404` (never a `403`) — the endpoint is not a cross-user credential-existence oracle.
 
-**Account-change notice.** Adding a passkey (`POST /connect/passkey/enroll`) and removing one (`DELETE /connect/passkey/{id}`) mail the user the same "a change to your account" notice as the browser does. When the account already has a strong factor (TOTP or a passkey) and the token's `auth_time` is older than 15 minutes, Modgud also logs a warning, because the browser would ask for a fresh sign-in before such a change. Today this is a log entry only: the request still succeeds. A later release may refuse it with `insufficient_user_authentication` and `max_age` (RFC 9470), so the app signs the user in again and repeats the call; plan for that response.
+**Account-change notice.** Adding a passkey (`POST /connect/passkey/enroll`) and removing one (`DELETE /connect/passkey/{id}`) mail the user the same "a change to your account" notice as the browser does.
+
+**Recent sign-in for passkey changes.** With *Passkey changes require a recent sign-in* on (Realm Settings → Native Passwordless Grants, or per App), adding or removing a passkey needs a sign-in from the last 15 minutes — the token's `auth_time`, which a refresh does not renew. An older token is refused (RFC 9470) on `POST /connect/passkey/enroll/begin`, `POST /connect/passkey/enroll` and `DELETE /connect/passkey/{id}`:
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer error="insufficient_user_authentication", error_description="A more recent sign-in is required to change this account's passkeys.", max_age="900"
+
+{ "error": "insufficient_user_authentication", "error_description": "…", "max_age": 900 }
+```
+
+The app then signs the user in again with any grant it uses — e-mail code, magic link or passkey — and repeats the call with the new access token. This protects the account against a stolen refresh token: it mints fresh access tokens, but not a fresh sign-in.
+
+The e-mail address is the way back: a user whose passkey device is lost or broken signs in on the new device with an e-mail code or magic link, removes the lost passkey and enrolls a new one within the 15 minutes. If the target App's sign-in policy requires two factors and the user has none left, only the operator can help ([recovery CLI](../operate/recovery-cli)).
+
+The switch is off by default, so existing apps keep working. While it is off, the change goes ahead and Modgud logs a warning where it would have refused; switch it on once the app handles the `401`.
 
 ### Second factor
 

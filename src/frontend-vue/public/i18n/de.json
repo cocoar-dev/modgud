@@ -2290,6 +2290,8 @@
         "hint": "Wenn aktiviert, können native Apps einen passwortlosen Nachweis direkt unter POST /connect/token gegen Tokens eintauschen — ohne Browser-Redirect, ohne Cookie. Drei Grants: urn:cocoar:otp (Einmalcode per E-Mail), urn:cocoar:magic (Magic-Link-Token), urn:cocoar:passkey (WebAuthn-Assertion). Standardmäßig aus.",
         "enabled": "Native passwortlose Grants aktivieren",
         "accessTokenMinutes": "Access-Token-Lebensdauer (Minuten)",
+        "requireRecentSignIn": "Passkey-Änderungen verlangen eine frische Anmeldung",
+        "requireRecentSignInHint": "Ein Passkey lässt sich in einer nativen App nur hinzufügen oder entfernen, wenn die Anmeldung höchstens 15 Minuten zurückliegt; sonst erhält die App insufficient_user_authentication (RFC 9470) und meldet den Benutzer neu an. Ein E-Mail-Code oder Magic Link zählt, so kommt ein Benutzer, dessen Passkey-Gerät verloren ist, über sein Postfach wieder herein. Erst einschalten, wenn die App diese Antwort behandelt; bis dahin werden solche Änderungen nur protokolliert.",
         "optInWarning": "Pro-Client-Opt-in weiterhin nötig: Ein Client kann einen nativen Grant erst nutzen, wenn er die passende Grant-Type-Permission trägt (gt:urn:cocoar:otp / :magic / :passkey), aktiviert im Grants-Tab des Clients. Dieser Realm-Schalter ist notwendig, aber nicht hinreichend. Nur Katalog-Clients kommen infrage — DCR-/CIMD-Clients sind ausgeschlossen."
       },
       "authRateLimits": {
@@ -2830,6 +2832,7 @@
   "admin.appSettings.regFields.override": "Eigene Pflichtfelder bei Registrierung",
   "admin.appSettings.grants.enabled": "Native Grants aktiv",
   "admin.appSettings.grants.override": "Eigene Native-Grant-Settings",
+  "admin.appSettings.grants.requireRecentSignIn": "Passkey-Änderungen verlangen eine frische Anmeldung (15 min)",
   "admin.appSettings.dcr.enabled": "Dynamic Client Registration aktiv",
   "admin.appSettings.dcr.override": "Eigene DCR-Settings",
   "admin.appSettings.cimd.enabled": "CIMD aktiv",

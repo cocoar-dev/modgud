@@ -513,6 +513,7 @@ public sealed class RealmManifestExporter(
         {
             Enabled = s.NativeGrants.Enabled,
             AccessTokenLifetimeMinutes = s.NativeGrants.AccessTokenLifetimeMinutes,
+            RequireRecentSignInForPasskeyChanges = s.NativeGrants.RequireRecentSignInForPasskeyChanges,
         },
         // ADR 0025 — a realm that never configured the section exports none, so applying the
         // manifest does not pin the legacy-derived policy as if an admin had chosen it.

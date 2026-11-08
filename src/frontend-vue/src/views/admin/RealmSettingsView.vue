@@ -345,10 +345,11 @@ function cimdFromDto(d: CimdSettingsDto): CimdFormState {
 interface NativeGrantFormState {
   Enabled: boolean
   AccessTokenLifetimeMinutes: number
+  RequireRecentSignInForPasskeyChanges: boolean
 }
 
 function emptyNativeGrants(): NativeGrantFormState {
-  return { Enabled: false, AccessTokenLifetimeMinutes: 15 }
+  return { Enabled: false, AccessTokenLifetimeMinutes: 15, RequireRecentSignInForPasskeyChanges: false }
 }
 
 const nativeGrantsForm = ref<NativeGrantFormState>(emptyNativeGrants())
@@ -358,6 +359,7 @@ function nativeGrantsFromDto(d: NativeGrantSettingsDto): NativeGrantFormState {
   return {
     Enabled: d.Enabled,
     AccessTokenLifetimeMinutes: d.AccessTokenLifetimeMinutes,
+    RequireRecentSignInForPasskeyChanges: d.RequireRecentSignInForPasskeyChanges,
   }
 }
 
@@ -650,6 +652,8 @@ function buildNativeGrantsPatch(): UpdateNativeGrantSettingsDto | undefined {
   if (cur.Enabled !== orig.Enabled) patch.Enabled = cur.Enabled
   if (cur.AccessTokenLifetimeMinutes !== orig.AccessTokenLifetimeMinutes)
     patch.AccessTokenLifetimeMinutes = cur.AccessTokenLifetimeMinutes
+  if (cur.RequireRecentSignInForPasskeyChanges !== orig.RequireRecentSignInForPasskeyChanges)
+    patch.RequireRecentSignInForPasskeyChanges = cur.RequireRecentSignInForPasskeyChanges
 
   return Object.keys(patch).length === 0 ? undefined : patch
 }
@@ -1269,6 +1273,12 @@ async function revokeRetiredSigningKeys() {
               <CoarFormField :label="t('admin.realmSettings.nativeGrants.accessTokenMinutes', {}, 'Access-token lifetime (minutes)')">
                 <CoarTextInput :model-value="String(nativeGrantsForm.AccessTokenLifetimeMinutes)" @update:model-value="(v) => (nativeGrantsForm.AccessTokenLifetimeMinutes = Math.max(1, parseInt(v) || 15))" />
               </CoarFormField>
+            </div>
+            <!-- RV-0001 stage 2 — off until the native app handles insufficient_user_authentication. -->
+            <div v-if="nativeGrantsForm.Enabled" class="section-body">
+              <CoarCheckbox v-model="nativeGrantsForm.RequireRecentSignInForPasskeyChanges"
+                :label="t('admin.realmSettings.nativeGrants.requireRecentSignIn', {}, 'Passkey changes require a recent sign-in')" />
+              <p class="text-xs text-surface-500 mt-1">{{ t('admin.realmSettings.nativeGrants.requireRecentSignInHint', {}, 'Adding or removing a passkey in a native app needs a sign-in from the last 15 minutes; otherwise the app gets insufficient_user_authentication (RFC 9470) and signs the user in again. An e-mail code or magic link counts, so a user whose passkey device is gone gets back in through the mailbox. Switch on only once the app handles this response; until then such changes are only logged.') }}</p>
             </div>
           </section>
         </template>

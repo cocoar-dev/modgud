@@ -99,7 +99,7 @@ const f = reactive({
     appOrigins: '',
   },
   clientSessions: { override: false, idle: '', absolute: '' },
-  nativeGrants: { override: false, enabled: false, access: '' },
+  nativeGrants: { override: false, enabled: false, access: '', recentSignIn: false },
   rateLimits: {
     override: false,
     overrides: emptyRateLimitOverrides() as RateLimitOverrides,
@@ -257,6 +257,7 @@ const inh = computed(() => {
     nativeGrants: {
       enabled: r?.NativeGrants?.Enabled ?? false,
       access: numStr(r?.NativeGrants?.AccessTokenLifetimeMinutes),
+      recentSignIn: r?.NativeGrants?.RequireRecentSignInForPasskeyChanges ?? false,
     },
     dcr: {
       enabled: r?.Dcr?.Enabled ?? false,
@@ -310,7 +311,7 @@ function resetForm() {
   f.registrationFields.firstname = ''; f.registrationFields.lastname = ''
   f.signIn.override = false; f.signIn.values = {}; f.signIn.passkeyRpId = ''; f.signIn.relatedOrigins = false; f.signIn.appOrigins = ''
   f.clientSessions.override = false; f.clientSessions.idle = ''; f.clientSessions.absolute = ''
-  f.nativeGrants.override = false; f.nativeGrants.enabled = false; f.nativeGrants.access = ''
+  f.nativeGrants.override = false; f.nativeGrants.enabled = false; f.nativeGrants.access = ''; f.nativeGrants.recentSignIn = false
   f.rateLimits.override = false; f.rateLimits.overrides = emptyRateLimitOverrides()
   f.rateLimits.allowlistOverride = false; f.rateLimits.allowlist = []; f.rateLimits.mode = 'inherit'
   f.dcr.override = false; f.dcr.enabled = false; f.dcr.access = ''; f.dcr.refresh = ''
@@ -410,6 +411,7 @@ function populateForm(s?: ApplicationSettingsDto | null) {
     f.nativeGrants.override = true
     f.nativeGrants.enabled = s.NativeGrants.Enabled ?? false
     f.nativeGrants.access = numStr(s.NativeGrants.AccessTokenLifetimeMinutes)
+    f.nativeGrants.recentSignIn = s.NativeGrants.RequireRecentSignInForPasskeyChanges ?? false
   }
   if (s.AuthRateLimits) {
     f.rateLimits.override = true
@@ -610,7 +612,7 @@ function build(): ApplicationSettingsDto {
         }
       : null,
     NativeGrants: f.nativeGrants.override
-      ? { Enabled: keep('NativeGrants', 'Enabled', (x) => x.nativeGrants.enabled, f.nativeGrants.enabled), AccessTokenLifetimeMinutes: parseNum(f.nativeGrants.access) }
+      ? { Enabled: keep('NativeGrants', 'Enabled', (x) => x.nativeGrants.enabled, f.nativeGrants.enabled), AccessTokenLifetimeMinutes: parseNum(f.nativeGrants.access), RequireRecentSignInForPasskeyChanges: keep('NativeGrants', 'RequireRecentSignInForPasskeyChanges', (x) => x.nativeGrants.recentSignIn, f.nativeGrants.recentSignIn) }
       : null,
     AuthRateLimits: f.rateLimits.override
       ? {
@@ -1140,6 +1142,7 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
           <CoarTextInput v-bind="fieldBind('nativeGrants', 'access')" clearable placeholder="15" />
         </CoarFormField>
       </div>
+      <CoarCheckbox v-bind="fieldBind('nativeGrants', 'recentSignIn')" :label="t('admin.appSettings.grants.requireRecentSignIn', {}, 'Passkey changes require a recent sign-in (15 min)')" />
     </div>
 
     <!-- Rate limits (ADR 0019) -->

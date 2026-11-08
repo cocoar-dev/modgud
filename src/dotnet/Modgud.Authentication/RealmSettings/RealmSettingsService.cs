@@ -956,6 +956,7 @@ public sealed class RealmSettingsService(
             AccessTokenLifetime = patch.AccessTokenLifetimeMinutes is { } atm
                 ? TimeSpan.FromMinutes(atm)
                 : s.AccessTokenLifetime,
+            RequireRecentSignInForPasskeyChanges = patch.RequireRecentSignInForPasskeyChanges ?? s.RequireRecentSignInForPasskeyChanges,
         };
 
         // ADR-0010 — bounds-check the access lifetime (shared with DCR/CIMD): the short
@@ -1030,6 +1031,7 @@ public sealed class RealmSettingsService(
         {
             Enabled = s.Enabled,
             AccessTokenLifetimeMinutes = (int)s.AccessTokenLifetime.TotalMinutes,
+            RequireRecentSignInForPasskeyChanges = s.RequireRecentSignInForPasskeyChanges,
         };
     }
 

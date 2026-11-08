@@ -124,9 +124,12 @@ export interface ApplicationSelfRegistrationOverrideDto {
 export interface ApplicationNativeGrantsOverrideDto {
   Enabled?: boolean | null
   AccessTokenLifetimeMinutes?: number | null
+  RequireRecentSignInForPasskeyChanges?: boolean | null
 }
 
-export interface ApplicationGrantOverrideDto extends ApplicationNativeGrantsOverrideDto {
+export interface ApplicationGrantOverrideDto {
+  Enabled?: boolean | null
+  AccessTokenLifetimeMinutes?: number | null
   RefreshTokenLifetimeDays?: number | null
 }
 

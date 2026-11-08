@@ -105,6 +105,7 @@ public record ApplicationNativeGrantsDto
 {
     public bool? Enabled { get; init; }
     public int? AccessTokenLifetimeMinutes { get; init; }
+    public bool? RequireRecentSignInForPasskeyChanges { get; init; }
 }
 
 /// <summary>Sparse override of the realm sign-in policy (ADR 0025). Levels are

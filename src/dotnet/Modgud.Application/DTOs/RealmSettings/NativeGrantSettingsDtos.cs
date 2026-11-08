@@ -8,6 +8,7 @@ public record NativeGrantSettingsDto
 {
     public bool Enabled { get; init; }
     public int AccessTokenLifetimeMinutes { get; init; } = 15;
+    public bool RequireRecentSignInForPasskeyChanges { get; init; }
 }
 
 /// <summary>Patch payload for the native-grants sub-section. Each property is
@@ -19,4 +20,5 @@ public record UpdateNativeGrantSettingsDto
 {
     public bool? Enabled { get; init; }
     public int? AccessTokenLifetimeMinutes { get; init; }
+    public bool? RequireRecentSignInForPasskeyChanges { get; init; }
 }

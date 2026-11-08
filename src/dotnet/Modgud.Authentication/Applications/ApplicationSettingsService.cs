@@ -397,6 +397,7 @@ public sealed class ApplicationSettingsService(
         {
             Enabled = d.Enabled,
             AccessTokenLifetime = Minutes(d.AccessTokenLifetimeMinutes),
+            RequireRecentSignInForPasskeyChanges = d.RequireRecentSignInForPasskeyChanges,
         };
     }
 
@@ -798,6 +799,7 @@ public sealed class ApplicationSettingsService(
             {
                 Enabled = doc.NativeGrants.Enabled,
                 AccessTokenLifetimeMinutes = doc.NativeGrants.AccessTokenLifetime is { } na ? (int)na.TotalMinutes : null,
+                RequireRecentSignInForPasskeyChanges = doc.NativeGrants.RequireRecentSignInForPasskeyChanges,
             },
             SignIn = doc.SignIn is null ? null : new ApplicationSignInDto
             {

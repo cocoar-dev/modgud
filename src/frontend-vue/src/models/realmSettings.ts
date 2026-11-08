@@ -265,11 +265,14 @@ export interface UpdateCimdSettingsDto {
 export interface NativeGrantSettingsDto {
   Enabled: boolean
   AccessTokenLifetimeMinutes: number
+  /** RV-0001 stage 2 — passkey changes need a sign-in from the last 15 minutes. */
+  RequireRecentSignInForPasskeyChanges: boolean
 }
 
 export interface UpdateNativeGrantSettingsDto {
   Enabled?: boolean
   AccessTokenLifetimeMinutes?: number
+  RequireRecentSignInForPasskeyChanges?: boolean
 }
 
 // ADR 0025 — the realm's sign-in policy, the default every App inherits (an App
