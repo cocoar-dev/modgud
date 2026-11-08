@@ -155,7 +155,7 @@ See [Declarative realm provisioning](../../admin/realm-provisioning) for the man
 - [ ] `recover magic-link <username>`
 - [ ] `recover rebuild-projections`
 
-Run these against a running container with `docker exec modgud dotnet Modgud.Api.dll recover ...`.
+Run these as the [recovery CLI](../../operate/recovery-cli) describes: `docker exec <container> dotnet Modgud.Api.dll recover ...` for the read-only and per-user commands, but `rebuild-projections` in a one-off container with the server stopped (`docker compose run --rm modgud recover rebuild-projections`).
 
 ## 18. OAuth flows (real relying party)
 

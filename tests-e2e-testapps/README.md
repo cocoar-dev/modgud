@@ -22,8 +22,11 @@ instance — it never mocks the IdP.
 
 1. **Modgud running** at `http://localhost:9099` (override with
    `TESTAPPS_AUTHORITY`).
-2. **Demo seed loaded** — run the `/setup` wizard and tick "load demo
-   data", or POST `LoadDemoData=true`. The seed provides:
+2. **Demo seed loaded** — there is no `/setup` wizard: create the first
+   admin with the recovery CLI (`recover bootstrap-admin`, see
+   [first-time setup](../docs/getting-started/first-time-setup.md)), then run
+   `node scripts/seed-demo.mjs` (see [scripts/README.md](../scripts/README.md)).
+   The seed provides:
    - `demo-bff` confidential client (the BFF uses it).
    - `demo-backend` client-credentials client (ConfidentialClient + spec 01).
    - `demo-api` resource server with `demo.read` / `demo.write` / `demo.admin`.
@@ -51,7 +54,7 @@ TESTAPPS_AUTHORITY=http://localhost:14200 pnpm test  # against the integration r
   (`reuseExistingServer: !process.env.CI`), so iterating on a single
   spec doesn't pay the dotnet-startup cost every time.
 - The suite never seeds or resets the auth DB. If a test fails because
-  `demo.admin` is missing, run the demo-seed import manually in the
-  setup wizard before re-running.
+  `demo.admin` is missing, run `node scripts/seed-demo.mjs` before
+  re-running.
 - Specs run sequentially (`workers: 1`) because `demo.admin` is
   shared and the cookie state isn't worth parallelising.

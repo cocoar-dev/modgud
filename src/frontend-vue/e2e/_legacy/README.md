@@ -2,26 +2,27 @@
 
 These specs predate the post-cutover Phase-1+ rewrites and were the
 original E2E suite from the pre-rebuild codebase. They aren't run by
-Playwright today — `playwright.config.ts` only picks up `*.spec.ts`
-directly under `e2e/`, not under `_legacy/`.
+Playwright today — `playwright.config.ts` excludes this folder with
+`testIgnore: ['**/_legacy/**']`.
 
 They're kept here as **patterns for the porting effort**: when a new
 spec under `e2e/` covers the same area (login, MFA, magic-link,
 admin grids, OIDC, passkey, auth-enforcement), grab the relevant
 shape from the file in this folder and adapt it to the new test rig
-(production-mode container + Mailpit for outbound email + the
-3-segment permission model).
+(Release image in the Staging environment + Mailpit for outbound email +
+`<resource>:<action>` permissions whose App context comes from the role).
 
 ## Why they don't run as-is
 
 - Container names + image tags are still from the pre-rebuild era.
 - They depend on `/api/dev/emails` and `/api/dev/reset-mfa` (gone —
   inspection now lives in Mailpit).
-- They use the legacy 2-segment permission strings (`user:read`)
-  rather than the post-Phase-1 `<app>:<resource>:<action>` form.
+- They assume the permission model of their time; today a role is tied to
+  an App and grants `<resource>:<action>` strings (see
+  `docs/concepts/permissions.md`).
 - They wire the runtime in `ASPNETCORE_ENVIRONMENT=Development` —
-  the new rig runs Production mode against the same image we ship,
-  so timing-sensitive paths get tested for real.
+  the new rig runs a Release image in Staging (production build and
+  behaviour, without the deploy-only start guards).
 
 ## Status of each file
 
