@@ -576,6 +576,7 @@ public sealed partial class RealmManifestApplier(
 
             Guid? uid;
             var readOnly = false;
+            var createdNow = false;
             if (existing is null)
             {
                 var createCmd = new CreateUserCommand(OrNull(u.Firstname), OrNull(u.Lastname), OrNull(u.Acronym),
@@ -583,10 +584,14 @@ public sealed partial class RealmManifestApplier(
                     IsActive: u.IsActive ?? true,
                     GracePeriodDaysOverride: u.GracePeriodDaysOverride.HasValue ? u.GracePeriodDaysOverride.Value : null,
                     TwoFactorExempt: u.TwoFactorExempt ?? false,
-                    Id: await ResolvePinnedUserAsync(session, ManifestHandle.AsPinnedId(u.Id), ctx, ct));
+                    Id: await ResolvePinnedUserAsync(session, ManifestHandle.AsPinnedId(u.Id), ctx, ct),
+                    // ADR 0026 — a new test account is created marked (no group membership
+                    // exists yet to conflict with it); groups apply later and check it there.
+                    IsTestAccount: u.IsTestAccount ?? false);
                 var created = await createUser.Handle(createCmd, ct);
                 EnsureOk(created, ctx);
                 uid = ShortGuid.TryParse(created.Value.Id, out Guid cid) ? cid : null;
+                createdNow = true;
             }
             // A user with a pending deletion (admin recycle bin OR self-service grace) is
             // READ-ONLY: UpdateUserHandler rejects every edit until the user is restored.
@@ -651,7 +656,7 @@ public sealed partial class RealmManifestApplier(
                     await SetUserTwoFactorPolicyAsync(session, existing.Id,
                         u.GracePeriodDaysOverride, u.TwoFactorExempt, ct);
             }
-            if (u.IsTestAccount is { } wantTestAccount && uid is { } markedId && !readOnly)
+            if (u.IsTestAccount is { } wantTestAccount && uid is { } markedId && !readOnly && !createdNow)
                 testAccountMarkers.Add((markedId, wantTestAccount, ctx));
             if (uid is { } codeUserId && !readOnly
                 && (!string.IsNullOrWhiteSpace(u.FixedEmailCode) || u.RemoveFixedEmailCode == true))
