@@ -239,9 +239,24 @@ export const useAuthStore = defineStore('auth', () => {
     window.location.assign(target)
   }
 
+  // D.roles-F05 — permissions come from /me. No server event says that a role or a group
+  // assignment changed, so refresh /me when it is older than this on admin navigation and
+  // when the tab becomes visible again (the server gates every request regardless).
+  const ME_MAX_AGE_MS = 60_000
+  let meFetchedAt = 0
+  async function refreshMeIfStale(): Promise<void> {
+    if (user.value && Date.now() - meFetchedAt > ME_MAX_AGE_MS) await fetchMe()
+  }
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void refreshMeIfStale()
+    })
+  }
+
   async function fetchMe(): Promise<boolean> {
     try {
       user.value = await http.addPath('me').get<AuthUser>()
+      meFetchedAt = Date.now()
       // Bring SignalR up *after* we know the session cookie is valid. The
       // connection hub requires auth; starting it before login just earns a
       // 401 on /negotiate and leaves the indicator stuck in red.
@@ -260,6 +275,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     permissions,
     hasPermission,
+    refreshMeIfStale,
     login,
     mfaLogin,
     requestEmailOtp,
