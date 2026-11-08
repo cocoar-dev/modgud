@@ -750,6 +750,7 @@
         "sourceDirect": "Direkt",
         "sourceInherited": "Vererbt über {via}",
         "sourceAuto": "Auto-Skript",
+        "sourceAutoStored": "Auto (gespeichert, Skript greift nicht)",
         "driftBadge": "Drift — neu berechnen?",
         "diagnosticsHeading": "Skripte mit Fehlern",
         "diagnosticLine": "Skript für Gruppe {group} konnte nicht ausgewertet werden: {error}",

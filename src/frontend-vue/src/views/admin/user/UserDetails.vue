@@ -315,12 +315,16 @@ function effectiveSourceLabel(g: EffectiveGroupDto): string {
     const via = g.Via?.[0]?.Name ?? ''
     return t('admin.userDetails.effectiveGroups.sourceInherited', { via }, `Inherited via ${via}`)
   }
+  if (g.Source === 'AutoStored') {
+    return t('admin.userDetails.effectiveGroups.sourceAutoStored', {}, 'Auto (stored, script does not match)')
+  }
   return t('admin.userDetails.effectiveGroups.sourceAuto', {}, 'Auto-Skript')
 }
 
 function effectiveSourceVariant(g: EffectiveGroupDto): 'neutral' | 'success' | 'info' | 'warning' {
   if (g.Source === 'DirectManual') return 'success'
   if (g.Source === 'InheritedManual') return 'info'
+  if (g.Source === 'AutoStored') return 'warning'
   return 'neutral'
 }
 
