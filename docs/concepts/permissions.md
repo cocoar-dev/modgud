@@ -180,17 +180,22 @@ app.MapPost("/api/user", async (...) => { ... })
    .RequiresPermission("user:write");
 
 app.MapPost("/api/admin/realms", async (...) => { ... })
-   .RequiresPermission("realm:write");      // control-plane app context
+   .RequiresPermission("realm:write", AppSlugs.ControlPlane);  // app context named explicitly
 ```
+
+Without a second argument the app context is the IdP's own app (`modgud`); the
+realm-management endpoints name the control-plane app.
 
 The filter (`PermissionEndpointFilter`):
 
 1. Reads `ClaimTypes.NameIdentifier` from `HttpContext.User`
-2. Resolves the user's effective permissions via
+2. Resolves the user's permissions via
    `IPermissionService.GetUserPermissionsAsync(userId, appSlug)`
-   (BFS through groups, BoundTo-filtered, role-filtered by AppSlug,
-   already bypass-pre-expanded)
-3. Calls `PermissionEvaluator.Evaluate(grants, "user:read")`
+   (BFS through groups, BoundTo-filtered, role-filtered by AppSlug). The
+   result holds the granted catalog strings plus a synthetic `realm:admin`
+   for a realm-admin role; it is **not** pre-expanded.
+3. Calls `PermissionEvaluator.Evaluate(grants, "user:read")`, which applies
+   the two bypass tiers (`realm:admin`, `<resource>:admin`)
 
 ## Frontend gating: sidebar + buttons
 
@@ -316,9 +321,8 @@ IPermissionService.GetUserPermissionsAsync(userId, appSlug)
   ├── for each group: load PermissionRole refs
   ├── filter to roles whose AppId == this app (or IsRealmAdmin = true)
   ├── for each role: resolve PermissionIds → catalog strings
-  ├── bypass-pre-expand: realm:admin → all reachable catalog strings;
-  │                     <r>:admin → all <r>:* in this app's catalog
-  └── Set<string> of fully-expanded permissions
+  ├── a realm-admin role adds the synthetic "realm:admin"
+  └── Set<string> of granted permissions (no pre-expansion)
   ↓
 PermissionEvaluator.Evaluate(grants, "<resource>:<action>"):
   has "realm:admin"? → ✓

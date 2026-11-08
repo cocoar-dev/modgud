@@ -442,8 +442,10 @@ Response:
 
 ## Real-time updates
 
-After every mutation the backend fires a SignalR event over the
-`UIHub`. The frontend (`useEntityService` composable) listens and
-automatically refreshes the affected lists — no manual polling needed.
+Entities with a change stream fire a SignalR event over the `UIHub` after a
+mutation: users, service accounts, apps, positions, OAuth clients, OAuth
+scopes, invite codes and inbox items. The frontend (`useEntityService`
+composable) listens and refreshes those lists. Roles, groups and the other
+admin lists have no stream: they show another admin's change after a reload.
 
 Hub endpoint: `/signalr/ui` (with auth cookie + WebSocket upgrade).
