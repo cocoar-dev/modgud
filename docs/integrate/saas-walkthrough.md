@@ -13,8 +13,9 @@ authorized introspection response.
 
 Modgud models the world in three layers:
 
-- **Realm** — a tenant. Own database, own users, own apps. Setup
-  automatically creates the `system` realm.
+- **Realm** — a tenant. Own database, own users, own apps. First
+  installation creates the first realm under the slug you choose and
+  gives it the Control-Plane flag.
 - **App** — a SaaS application within a realm (e.g. `modgud`, `acme`,
   `billing`). Each app owns its permission catalog and links to zero
   or more OAuth clients and resource servers.

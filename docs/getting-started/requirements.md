@@ -100,7 +100,7 @@ For deployments with **>50 active realms**, look at:
 The realm domain must reach the browser end-to-end via HTTPS. Common pitfalls:
 
 - **Mixed-content blocking** — admin SPA on HTTPS, API on HTTP behind a misconfigured proxy
-- **Cookie SameSite policies** — Modgud uses `SameSite=Strict` by default; cross-domain integrations may need to relax this via configuration
+- **Cookie SameSite policies** — the session cookie and the external-login cookie use `SameSite=Lax`, so the browser keeps them on the top-level redirect of an OIDC flow started by another site; the two short-lived 2FA cookies (between password and second factor, "remember this device") use `Strict`. A request that needs the session inside a cross-site iframe or a cross-site POST does not get it
 - **CORS** — per-client **Allowed CORS Origins** are enforced on the OIDC endpoints. A browser-only SPA (Authorization Code + PKCE in the browser, no BFF) completes the flow as long as its exact origin is registered on its OAuth client. Omit the origin and the browser's preflight is rejected
 
 ### Server-to-server endpoints

@@ -57,7 +57,7 @@ This starts PostgreSQL + Modgud in the background. First boot takes about
 Global Store. No realm or user exists yet.
 
 ::: tip Why `ASPNETCORE_ENVIRONMENT: Development`
-The published image runs as **Production** by default, which fail-closes on a dev-shaped config: it refuses to boot with an `http`/`localhost` issuer, with `OpenIddict__DevelopmentMode=true`, or with Prometheus enabled but no bearer token. Those guards are exactly what you want in production and exactly what gets in the way of a 10-minute local eval. Setting `Development` legitimately allows the `http://localhost` issuer and ephemeral signing keys used here. Do **not** ship this compose to production — see [Deployment](../operate/deployment).
+The published image runs as **Production** by default, which fail-closes on a dev-shaped config: it refuses to boot with `OpenIddict__DevelopmentMode=true` or with Prometheus enabled but no bearer token. Those guards are exactly what you want in production and exactly what gets in the way of a 10-minute local eval. Setting `Development` legitimately allows the ephemeral signing keys used here. (There is no issuer check: the issuer is derived per realm from the request host, so an `http://localhost` issuer comes from how you reach the server, not from a setting.) Do **not** ship this compose to production — see [Deployment](../operate/deployment).
 :::
 
 ## 2. Complete first installation

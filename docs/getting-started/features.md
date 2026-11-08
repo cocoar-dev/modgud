@@ -16,7 +16,7 @@ A point-by-point list of what Modgud delivers out of the box.
 - **TOTP** (Google Authenticator, 1Password, Authy, …)
 - **Email OTP** (six-digit code sent to verified address)
 - **WebAuthn / FIDO2 Passkeys** (Touch ID, Windows Hello, YubiKey, etc.)
-- **Recovery codes** (one-time backup codes for self-service recovery)
+- **No recovery codes** — the safety net is a second enrolled method, the e-mail code after a password, or the operator's [recovery CLI](../operate/recovery-cli)
 - **Per-App sign-in policy** — single or multi-factor minimum per App, step-up with only the missing factor, setup grace period and per-user exemption ([Sign-in levels](../concepts/sign-in-levels))
 
 ### External Identity Providers (SSO)
