@@ -516,12 +516,12 @@ public sealed class RealmSettingsService(
     // is the only bound on a leaked token — reject degenerate / over-long values
     // rather than let an admin configure an effectively-permanent token that no
     // logout or security-stamp rotation can recall.
-    private static Error? ValidateTokenLifetimes(string section, TimeSpan access, TimeSpan refresh)
+    private static Error? ValidateTokenLifetimes(string section, TimeSpan access, TimeSpan? refresh)
     {
         if (access.TotalMinutes < 1 || access.TotalMinutes > 60)
             return Error.Validation($"{section}.InvalidAccessTokenLifetime",
                 "AccessTokenLifetimeMinutes must be between 1 and 60.");
-        if (refresh.TotalDays < 1 || refresh.TotalDays > 30)
+        if (refresh is { } r && (r.TotalDays < 1 || r.TotalDays > 30))
             return Error.Validation($"{section}.InvalidRefreshTokenLifetime",
                 "RefreshTokenLifetimeDays must be between 1 and 30.");
         return null;
@@ -956,14 +956,12 @@ public sealed class RealmSettingsService(
             AccessTokenLifetime = patch.AccessTokenLifetimeMinutes is { } atm
                 ? TimeSpan.FromMinutes(atm)
                 : s.AccessTokenLifetime,
-            RefreshTokenLifetime = patch.RefreshTokenLifetimeDays is { } rtd
-                ? TimeSpan.FromDays(rtd)
-                : s.RefreshTokenLifetime,
         };
 
-        // ADR-0010 — bounds-check the lifetimes (shared with DCR/CIMD): the short
-        // access TTL is the only bound on a non-revocable JWT access token.
-        if (ValidateTokenLifetimes("NativeGrants", merged.AccessTokenLifetime, merged.RefreshTokenLifetime) is { } error)
+        // ADR-0010 — bounds-check the access lifetime (shared with DCR/CIMD): the short
+        // access TTL is the only bound on a non-revocable JWT access token. A native refresh
+        // token follows the client-session idle lifetime, so there is none to check here.
+        if (ValidateTokenLifetimes("NativeGrants", merged.AccessTokenLifetime, refresh: null) is { } error)
             return error;
         return merged;
     }
@@ -1032,7 +1030,6 @@ public sealed class RealmSettingsService(
         {
             Enabled = s.Enabled,
             AccessTokenLifetimeMinutes = (int)s.AccessTokenLifetime.TotalMinutes,
-            RefreshTokenLifetimeDays = (int)s.RefreshTokenLifetime.TotalDays,
         };
     }
 

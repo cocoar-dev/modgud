@@ -207,7 +207,6 @@ public record ApplicationNativeGrantOverrides
 {
     public bool? Enabled { get; init; }
     public TimeSpan? AccessTokenLifetime { get; init; }
-    public TimeSpan? RefreshTokenLifetime { get; init; }
 }
 
 /// <summary>Nullable-field mirror of <see cref="SignInPolicy"/> (ADR 0025), plus the

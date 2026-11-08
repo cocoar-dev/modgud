@@ -260,16 +260,16 @@ export interface UpdateCimdSettingsDto {
 // master toggle, off by default. Necessary but not sufficient: a client
 // also needs the matching gt:urn:cocoar:* grant-type permission before it
 // can use these grants — flipping this toggle just unlocks the seam.
+// No refresh-token lifetime: a native refresh token follows the client-session
+// idle lifetime (Sessions settings).
 export interface NativeGrantSettingsDto {
   Enabled: boolean
   AccessTokenLifetimeMinutes: number
-  RefreshTokenLifetimeDays: number
 }
 
 export interface UpdateNativeGrantSettingsDto {
   Enabled?: boolean
   AccessTokenLifetimeMinutes?: number
-  RefreshTokenLifetimeDays?: number
 }
 
 // ADR 0025 — the realm's sign-in policy, the default every App inherits (an App

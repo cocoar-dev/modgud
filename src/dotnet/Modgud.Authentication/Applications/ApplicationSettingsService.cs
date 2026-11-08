@@ -392,12 +392,11 @@ public sealed class ApplicationSettingsService(
 
     private static ErrorOr<ApplicationNativeGrantOverrides> MapNativeGrants(ApplicationNativeGrantsDto d)
     {
-        if (LifetimeError("NativeGrants", d.AccessTokenLifetimeMinutes, d.RefreshTokenLifetimeDays) is { } e) return e;
+        if (LifetimeError("NativeGrants", d.AccessTokenLifetimeMinutes, refreshDays: null) is { } e) return e;
         return new ApplicationNativeGrantOverrides
         {
             Enabled = d.Enabled,
             AccessTokenLifetime = Minutes(d.AccessTokenLifetimeMinutes),
-            RefreshTokenLifetime = Days(d.RefreshTokenLifetimeDays),
         };
     }
 
@@ -799,7 +798,6 @@ public sealed class ApplicationSettingsService(
             {
                 Enabled = doc.NativeGrants.Enabled,
                 AccessTokenLifetimeMinutes = doc.NativeGrants.AccessTokenLifetime is { } na ? (int)na.TotalMinutes : null,
-                RefreshTokenLifetimeDays = doc.NativeGrants.RefreshTokenLifetime is { } nr ? (int)nr.TotalDays : null,
             },
             SignIn = doc.SignIn is null ? null : new ApplicationSignInDto
             {

@@ -405,12 +405,6 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
         }, TestContext.Current.CancellationToken);
         Assert.True(zero.IsError);
 
-        var badRefresh = await settings.PatchAsync(new UpdateRealmSettingsDto
-        {
-            NativeGrants = new UpdateNativeGrantSettingsDto { Enabled = true, RefreshTokenLifetimeDays = 9_999 },
-        }, TestContext.Current.CancellationToken);
-        Assert.True(badRefresh.IsError);
-
         // The sane defaults (Enabled only) must still patch cleanly.
         var ok = await settings.PatchAsync(new UpdateRealmSettingsDto
         {

@@ -28,7 +28,7 @@ What a realm administrator must configure in Modgud before the app can connect.
 
 ### 1. Enable native grants for the realm
 
-**Realm Settings → Native Passwordless Grants → enable.** Optionally adjust the access-token lifetime (default 15 min) and refresh-token lifetime (default 14 days). This is the master gate; while it's off, `/connect/device`-style native endpoints return disabled and the grants are rejected.
+**Realm Settings → Native Passwordless Grants → enable.** Optionally adjust the access-token lifetime (default 15 min). The refresh token has no native setting of its own: it lives as long as the client session — the idle lifetime of the realm's, App's or client's client-session policy (default 30 days), renewed on every refresh within the session's absolute lifetime. This is the master gate; while it's off, `/connect/device`-style native endpoints return disabled and the grants are rejected.
 
 ### 2. Create the OAuth client
 

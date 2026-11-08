@@ -2290,7 +2290,6 @@
         "hint": "Wenn aktiviert, können native Apps einen passwortlosen Nachweis direkt unter POST /connect/token gegen Tokens eintauschen — ohne Browser-Redirect, ohne Cookie. Drei Grants: urn:cocoar:otp (Einmalcode per E-Mail), urn:cocoar:magic (Magic-Link-Token), urn:cocoar:passkey (WebAuthn-Assertion). Standardmäßig aus.",
         "enabled": "Native passwortlose Grants aktivieren",
         "accessTokenMinutes": "Access-Token-Lebensdauer (Minuten)",
-        "refreshTokenDays": "Refresh-Token-Lebensdauer (Tage)",
         "optInWarning": "Pro-Client-Opt-in weiterhin nötig: Ein Client kann einen nativen Grant erst nutzen, wenn er die passende Grant-Type-Permission trägt (gt:urn:cocoar:otp / :magic / :passkey), aktiviert im Grants-Tab des Clients. Dieser Realm-Schalter ist notwendig, aber nicht hinreichend. Nur Katalog-Clients kommen infrage — DCR-/CIMD-Clients sind ausgeschlossen."
       },
       "authRateLimits": {

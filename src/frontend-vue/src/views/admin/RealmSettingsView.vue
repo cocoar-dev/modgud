@@ -345,11 +345,10 @@ function cimdFromDto(d: CimdSettingsDto): CimdFormState {
 interface NativeGrantFormState {
   Enabled: boolean
   AccessTokenLifetimeMinutes: number
-  RefreshTokenLifetimeDays: number
 }
 
 function emptyNativeGrants(): NativeGrantFormState {
-  return { Enabled: false, AccessTokenLifetimeMinutes: 15, RefreshTokenLifetimeDays: 14 }
+  return { Enabled: false, AccessTokenLifetimeMinutes: 15 }
 }
 
 const nativeGrantsForm = ref<NativeGrantFormState>(emptyNativeGrants())
@@ -359,7 +358,6 @@ function nativeGrantsFromDto(d: NativeGrantSettingsDto): NativeGrantFormState {
   return {
     Enabled: d.Enabled,
     AccessTokenLifetimeMinutes: d.AccessTokenLifetimeMinutes,
-    RefreshTokenLifetimeDays: d.RefreshTokenLifetimeDays,
   }
 }
 
@@ -652,8 +650,6 @@ function buildNativeGrantsPatch(): UpdateNativeGrantSettingsDto | undefined {
   if (cur.Enabled !== orig.Enabled) patch.Enabled = cur.Enabled
   if (cur.AccessTokenLifetimeMinutes !== orig.AccessTokenLifetimeMinutes)
     patch.AccessTokenLifetimeMinutes = cur.AccessTokenLifetimeMinutes
-  if (cur.RefreshTokenLifetimeDays !== orig.RefreshTokenLifetimeDays)
-    patch.RefreshTokenLifetimeDays = cur.RefreshTokenLifetimeDays
 
   return Object.keys(patch).length === 0 ? undefined : patch
 }
@@ -1272,9 +1268,6 @@ async function revokeRetiredSigningKeys() {
             <div v-if="nativeGrantsForm.Enabled" class="form-grid-2 section-body">
               <CoarFormField :label="t('admin.realmSettings.nativeGrants.accessTokenMinutes', {}, 'Access-token lifetime (minutes)')">
                 <CoarTextInput :model-value="String(nativeGrantsForm.AccessTokenLifetimeMinutes)" @update:model-value="(v) => (nativeGrantsForm.AccessTokenLifetimeMinutes = Math.max(1, parseInt(v) || 15))" />
-              </CoarFormField>
-              <CoarFormField :label="t('admin.realmSettings.nativeGrants.refreshTokenDays', {}, 'Refresh-token lifetime (days)')">
-                <CoarTextInput :model-value="String(nativeGrantsForm.RefreshTokenLifetimeDays)" @update:model-value="(v) => (nativeGrantsForm.RefreshTokenLifetimeDays = Math.max(1, parseInt(v) || 14))" />
               </CoarFormField>
             </div>
           </section>

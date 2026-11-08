@@ -99,7 +99,7 @@ const f = reactive({
     appOrigins: '',
   },
   clientSessions: { override: false, idle: '', absolute: '' },
-  nativeGrants: { override: false, enabled: false, access: '', refresh: '' },
+  nativeGrants: { override: false, enabled: false, access: '' },
   rateLimits: {
     override: false,
     overrides: emptyRateLimitOverrides() as RateLimitOverrides,
@@ -257,7 +257,6 @@ const inh = computed(() => {
     nativeGrants: {
       enabled: r?.NativeGrants?.Enabled ?? false,
       access: numStr(r?.NativeGrants?.AccessTokenLifetimeMinutes),
-      refresh: numStr(r?.NativeGrants?.RefreshTokenLifetimeDays),
     },
     dcr: {
       enabled: r?.Dcr?.Enabled ?? false,
@@ -311,7 +310,7 @@ function resetForm() {
   f.registrationFields.firstname = ''; f.registrationFields.lastname = ''
   f.signIn.override = false; f.signIn.values = {}; f.signIn.passkeyRpId = ''; f.signIn.relatedOrigins = false; f.signIn.appOrigins = ''
   f.clientSessions.override = false; f.clientSessions.idle = ''; f.clientSessions.absolute = ''
-  f.nativeGrants.override = false; f.nativeGrants.enabled = false; f.nativeGrants.access = ''; f.nativeGrants.refresh = ''
+  f.nativeGrants.override = false; f.nativeGrants.enabled = false; f.nativeGrants.access = ''
   f.rateLimits.override = false; f.rateLimits.overrides = emptyRateLimitOverrides()
   f.rateLimits.allowlistOverride = false; f.rateLimits.allowlist = []; f.rateLimits.mode = 'inherit'
   f.dcr.override = false; f.dcr.enabled = false; f.dcr.access = ''; f.dcr.refresh = ''
@@ -411,7 +410,6 @@ function populateForm(s?: ApplicationSettingsDto | null) {
     f.nativeGrants.override = true
     f.nativeGrants.enabled = s.NativeGrants.Enabled ?? false
     f.nativeGrants.access = numStr(s.NativeGrants.AccessTokenLifetimeMinutes)
-    f.nativeGrants.refresh = numStr(s.NativeGrants.RefreshTokenLifetimeDays)
   }
   if (s.AuthRateLimits) {
     f.rateLimits.override = true
@@ -612,7 +610,7 @@ function build(): ApplicationSettingsDto {
         }
       : null,
     NativeGrants: f.nativeGrants.override
-      ? { Enabled: keep('NativeGrants', 'Enabled', (x) => x.nativeGrants.enabled, f.nativeGrants.enabled), AccessTokenLifetimeMinutes: parseNum(f.nativeGrants.access), RefreshTokenLifetimeDays: parseNum(f.nativeGrants.refresh) }
+      ? { Enabled: keep('NativeGrants', 'Enabled', (x) => x.nativeGrants.enabled, f.nativeGrants.enabled), AccessTokenLifetimeMinutes: parseNum(f.nativeGrants.access) }
       : null,
     AuthRateLimits: f.rateLimits.override
       ? {
@@ -1140,9 +1138,6 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
       <div class="grid grid-cols-2 gap-3">
         <CoarFormField :label="t('admin.appSettings.access', {}, 'Access-Token (Min, 1–60)')">
           <CoarTextInput v-bind="fieldBind('nativeGrants', 'access')" clearable placeholder="15" />
-        </CoarFormField>
-        <CoarFormField :label="t('admin.appSettings.refresh', {}, 'Refresh-Token (Tage, 1–30)')">
-          <CoarTextInput v-bind="fieldBind('nativeGrants', 'refresh')" clearable placeholder="14" />
         </CoarFormField>
       </div>
     </div>

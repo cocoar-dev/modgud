@@ -121,9 +121,12 @@ export interface ApplicationSelfRegistrationOverrideDto {
   PrivacyPolicyUrl?: string | null
 }
 
-export interface ApplicationGrantOverrideDto {
+export interface ApplicationNativeGrantsOverrideDto {
   Enabled?: boolean | null
   AccessTokenLifetimeMinutes?: number | null
+}
+
+export interface ApplicationGrantOverrideDto extends ApplicationNativeGrantsOverrideDto {
   RefreshTokenLifetimeDays?: number | null
 }
 
@@ -183,7 +186,7 @@ export interface ApplicationSettingsDto {
   EmailBranding?: ApplicationEmailBrandingDto | null
   LoginExperience?: ApplicationLoginExperienceDto | null
   SelfRegistration?: ApplicationSelfRegistrationOverrideDto | null
-  NativeGrants?: ApplicationGrantOverrideDto | null
+  NativeGrants?: ApplicationNativeGrantsOverrideDto | null
   SignIn?: ApplicationSignInDto | null
   /** ADR 0019 — sparse rate-limit overrides for this App (null = inherit the realm). */
   AuthRateLimits?: UpdateAuthRateLimitsDto | null
