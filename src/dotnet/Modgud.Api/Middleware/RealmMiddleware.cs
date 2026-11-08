@@ -12,10 +12,11 @@ namespace Modgud.Api.Middleware;
 /// sessions inside the request scope.
 ///
 /// <para>
-/// Skip-paths bypass realm resolution (used by health probes, OpenAPI, etc.).
-/// Anything else without a matching realm falls through to the system tenant
-/// when only one realm exists (single-tenant boot) or returns 404 when the host
-/// is genuinely unknown.
+/// Realm-independent paths (<see cref="RealmIndependentPathPolicy"/>: health probes,
+/// OpenAPI, installation, static assets) bypass realm resolution. Any other host
+/// without a matching realm gets 404; in Development and Testing a localhost host
+/// resolves to the only active realm (<c>RealmCacheLookup</c>).
+/// There is no fallback to a system tenant.
 /// </para>
 /// </summary>
 public sealed class RealmMiddleware

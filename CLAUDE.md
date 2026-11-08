@@ -44,8 +44,10 @@ Cocoar.JsEval (TS → LINQ for membership scripts), Cocoar.SignalARRR.
 **Tenancy:** every `IDocumentSession` injection is automatically
 tenant-scoped via a custom Marten `ISessionFactory`
 (`TenantedSessionFactory`) that reads `HttpContext.Items["TenantId"]`
-set by `RealmMiddleware`. Background services fall back to the `system`
-tenant. Adding a realm provisions a fresh DB and seeds default
+set by `RealmMiddleware`. There is no fallback tenant: with no resolved
+realm the factory throws. Background work enters its realm with
+`TenantContext.Enter(...)`; deployment-wide state goes through
+`IGlobalStore`. Adding a realm provisions a fresh DB and seeds default
 OAuth scopes + Internal login provider.
 
 **Permissions:** `<resource>:<action>` style (e.g. `user:read`, `oauth-client:write`) — the app context is implicit, because a role is FK'd to an App (the IdP itself for in-process gates, the authenticated resource server for distribution-API calls). Two bypass tiers around an exact match: `realm:admin` (realm-wide emergency exit, the System Admin role) and `<resource>:admin` (resource-wide). Evaluation order is `realm:admin` → exact match → `<resource>:admin` (see `PermissionEvaluator` in `Modgud.Permissions.Abstractions`). Endpoints gate via `.RequiresPermission("...")` (extension on `RouteHandlerBuilder`).

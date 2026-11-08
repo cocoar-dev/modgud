@@ -6,9 +6,10 @@ public static class TenantConstants
     /// Tenant ID of the bootstrap/system realm. It has its OWN physical
     /// database <c>{master}_system</c> (registered at boot in Program.cs) —
     /// the master DB itself is pure control-plane infrastructure (tenant
-    /// registry + global Realm store) and is never a tenant. Used as the
-    /// fallback tenant when no <c>HttpContext</c> is available (background
-    /// services, hosted services, CLI, tests without a request scope).
+    /// registry + global Realm store) and is never a tenant. It is NOT a
+    /// fallback: <c>TenantedSessionFactory</c> fails closed when no realm is
+    /// resolved, and background work enters its realm explicitly with
+    /// <c>TenantContext.Enter</c>.
     /// </summary>
     public const string SystemTenantId = "system";
 

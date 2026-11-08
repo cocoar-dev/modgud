@@ -151,9 +151,17 @@ private string ResolveTenantId(bool forWrite)
         ?? _httpContextAccessor.HttpContext?
              .Items[TenantConstants.HttpContextTenantIdKey] as string;
 
-    return explicitTenant ?? FallbackTenantId(forWrite);
+    if (explicitTenant is not null)
+        return explicitTenant;
+
+    // No realm resolved: never guess one.
+    throw new InvalidOperationException("No realm/tenant resolved; refusing to open a tenant-scoped session.");
 }
 ```
+
+There is no fallback tenant. Background work enters its realm explicitly
+(`TenantContext.Enter(slug)`); deployment-wide state goes through
+`IGlobalStore`.
 
 An ambient `TenantContext.CurrentOrNull` (set by `RealmMiddleware`, or
 explicitly via `TenantContext.Enter(...)` for a deliberate cross-realm
