@@ -512,7 +512,7 @@ public static class AccountEndpoints
                     .CheckAsync(context, user, ct);
                 if (check.Allowed)
                     return Results.Ok(new { Message = "Session already meets the requirement" });
-                if (check.HasAccountFactor)
+                if (check.HasAccountFactor && !check.ConfirmBySignIn)
                 {
                     // The second step proves the account factor again; its sign-in unions the
                     // fresh time back into this session. The protected purpose also lets
@@ -520,8 +520,9 @@ public static class AccountEndpoints
                     await SignInAssurance.SignInPartialAsync(context, user.Id, factors, accountReauthentication: true);
                     return Results.Ok(new { RequiresMfa = true, MfaMethods = check.Methods });
                 }
-                // No account factor: sign in again with what the user has (e-mail code,
-                // password); that sign-in unions into this session.
+                // No account factor, or a user without a password whose way back is the mailbox:
+                // sign in again with what the user has (e-mail code, magic link, password, a
+                // passkey); that sign-in unions into this session.
                 return Results.Ok(new { RequiresFirstFactor = true, Methods = check.Methods, user.Email });
             }
 

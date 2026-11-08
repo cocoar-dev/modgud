@@ -24,8 +24,10 @@ public enum AccountChange
     ExternalIdentityLinked,
 }
 
-/// <summary>The result of checking an account change: allowed, or which proof is missing.</summary>
-public sealed record AccountChangeCheck(bool Allowed, bool HasAccountFactor, IReadOnlyList<string> Methods);
+/// <summary>The result of checking an account change: allowed, or which proof is missing.
+/// <paramref name="ConfirmBySignIn"/>: the missing proof is a fresh sign-in (an e-mail code or
+/// magic link for a user without a password), not a second step after the current one.</summary>
+public sealed record AccountChangeCheck(bool Allowed, bool HasAccountFactor, IReadOnlyList<string> Methods, bool ConfirmBySignIn = false);
 
 /// <summary>
 /// ADR 0025 amendment C — changing what protects an account needs a recent proof of the
@@ -79,6 +81,16 @@ public sealed class AccountChangeGuard(
                 allowed = allowed || (proven.TryGetValue(SignInMethods.Email, out var mailboxAt) && mailboxAt >= since);
                 accountFactors.Add(SignInMethods.Email);
             }
+            // A user without a password signs in through the mailbox, and it is the binding way
+            // back (user decision 2026-11-08): a fresh e-mail code or magic link confirms the
+            // change, so a lost passkey can be removed and replaced. Not a second step after the
+            // current sign-in — the user signs in again.
+            else if (await signInRequirements.MailboxRecoveryAvailableAsync(user, ct))
+            {
+                allowed = allowed || (proven.TryGetValue(SignInMethods.Email, out var mailboxAt) && mailboxAt >= since);
+                accountFactors.Add(SignInMethods.Email);
+                return new AccountChangeCheck(allowed, HasAccountFactor: true, accountFactors, ConfirmBySignIn: true);
+            }
             return new AccountChangeCheck(allowed, HasAccountFactor: true, accountFactors);
         }
 
@@ -94,7 +106,7 @@ public sealed class AccountChangeGuard(
         if (check.Allowed) return null;
         return Results.Json(new
         {
-            Message = check.HasAccountFactor
+            Message = check.HasAccountFactor && !check.ConfirmBySignIn
                 ? "Confirm this change with your second factor."
                 : "Confirm this change by signing in again.",
             RequiresReauthentication = true,
