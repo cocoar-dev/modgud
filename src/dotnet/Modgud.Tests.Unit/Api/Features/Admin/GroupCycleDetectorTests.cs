@@ -11,6 +11,22 @@ namespace Modgud.Tests.Unit.Api.Features.Admin;
 /// </summary>
 public class GroupCycleDetectorTests
 {
+    /// <summary>B4-04 — the consistency modal reads every group of a cycle as
+    /// <c>{ Id, Label }</c> like all other lists; the report sent <c>Name</c>, so the
+    /// cycle view showed empty names.</summary>
+    [Fact]
+    public void A_cycle_reports_its_groups_with_the_label_the_ui_reads()
+    {
+        var aId = Guid.NewGuid();
+        var bId = Guid.NewGuid();
+        var a = new Group { Id = aId, Name = "Alpha", MemberIds = [bId] };
+        var b = new Group { Id = bId, Name = "Beta", MemberIds = [aId] };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(GroupCycleDetector.DetectCycles([a, b])[0]);
+
+        Assert.Contains("\"Label\":\"Alpha\"", json);
+    }
+
     private static Group MakeGroup(string name, params Guid[] memberIds)
         => new()
         {
@@ -135,7 +151,7 @@ public class GroupCycleDetectorTests
             var cycles = GroupCycleDetector.DetectCycles(new() { a, b });
 
             Assert.Single(cycles);
-            var names = cycles[0].Groups.Select(g => g.Name).OrderBy(n => n).ToArray();
+            var names = cycles[0].Groups.Select(g => g.Label).OrderBy(n => n).ToArray();
             Assert.Equal(new[] { "Engineers", "Leads" }, names);
         }
 

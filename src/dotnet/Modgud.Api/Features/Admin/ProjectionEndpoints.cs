@@ -370,12 +370,6 @@ public static class ProjectionEndpoints
 }
 
 /// <summary>
-/// Identifier + display-name pair surfaced in the cycle-detection report so the
-/// admin UI can render "<c>Eng</c> → <c>Leads</c> → <c>Eng</c>" without a follow-up lookup.
-/// </summary>
-internal record GroupRef(Guid Id, string Name);
-
-/// <summary>
 /// Resolved id+label pair surfaced in every consistency-check issue so the
 /// admin UI never has to fall back to bare GUIDs. <see cref="Label"/> is the
 /// best-effort display string we can derive from whichever store knows the id —
@@ -426,7 +420,9 @@ internal record CheckResult(
 /// One detected cycle in the nested-group graph, deduplicated across rotations
 /// (A→B→A and B→A→B report once).
 /// </summary>
-internal record CycleReport(List<GroupRef> Groups);
+/// <para>B4-04 — the groups carry the same <see cref="IdName"/> shape as every other
+/// list the consistency modal renders (it reads <c>Label</c>).</para>
+internal record CycleReport(List<IdName> Groups);
 
 /// <summary>
 /// Pure cycle detection over the group-membership graph. Extracted from
@@ -458,7 +454,7 @@ internal static class GroupCycleDetector
                 if (seenSignatures.Add(signature))
                 {
                     cycles.Add(new CycleReport(
-                        cyclePath.Select(id => new GroupRef(id, byId[id].Name)).ToList()));
+                        cyclePath.Select(id => new IdName(id, byId[id].Name)).ToList()));
                 }
             }
         }
