@@ -870,6 +870,8 @@
     },
     "groupDetails": {
       "createTitle": "Gruppe erstellen",
+      "loadError": "Ein Teil des Gruppeneditors konnte nicht geladen werden (Rollen, Personen oder Apps). Speichern kann unvollständig sein.",
+      "readOnly": "Nur lesen – Gruppen ändern erfordert authorization-group:write.",
       "unresolvedRefs": "Diese vorgemerkte Gruppe referenziert außerdem Entitäten, die in diesem Realm nicht existieren: {refs}. Sie werden in den Auswahllisten nicht angezeigt und beim Speichern unverändert übernommen.",
       "groupsLabel": "Gruppen",
       "usersLabel": "Benutzer",
