@@ -51,4 +51,19 @@ public static class RealmPublicOrigin
         if (uri.AbsolutePath.Trim('/').Length > 0) return null;
         return uri.GetLeftPart(UriPartial.Authority);
     }
+
+    /// <summary>
+    /// F.routing-F-R7 — the write-time rule: a valid origin (see <see cref="Normalize"/>)
+    /// whose host is one of the realm's <paramref name="domains"/> and that carries no user
+    /// info. Magic, reset and invite links point there and it is an accepted WebAuthn
+    /// origin, so a foreign host would send them elsewhere. Null when it fails.
+    /// </summary>
+    public static string? NormalizeOnDomains(string? candidate, IEnumerable<string> domains)
+    {
+        var normalized = Normalize(candidate);
+        if (normalized is null) return null;
+        var uri = new Uri(normalized);
+        if (!string.IsNullOrEmpty(uri.UserInfo)) return null;
+        return domains.Any(d => string.Equals(d.Trim(), uri.Host, StringComparison.OrdinalIgnoreCase)) ? normalized : null;
+    }
 }

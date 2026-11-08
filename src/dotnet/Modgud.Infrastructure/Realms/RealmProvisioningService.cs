@@ -208,6 +208,12 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             if (publicBaseUrl is null)
                 return Error.Validation("Realm.InvalidPublicBaseUrl",
                     $"PublicBaseUrl '{dto.PublicBaseUrl}' must be an absolute http(s) origin without a path, query or fragment.");
+            // F.routing-F-R7 — admin input must stay on the realm's own domains. The first
+            // installation is exempt: its origin is the install link the operator (with
+            // shell access) opened, i.e. where the deployment is actually reached.
+            if (!isInitialControlPlane && RealmPublicOrigin.NormalizeOnDomains(publicBaseUrl, dto.Domains) is null)
+                return Error.Validation("Realm.PublicBaseUrlNotOnRealmDomain",
+                    $"PublicBaseUrl '{dto.PublicBaseUrl}' must be on one of the realm's domains, without user info.");
         }
 
         await using var session = _globalStore.LightweightSession();
@@ -475,6 +481,9 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             }
             else if (RealmPublicOrigin.Normalize(dto.PublicBaseUrl.Value) is { } normalized)
             {
+                if (RealmPublicOrigin.NormalizeOnDomains(normalized, resultingDomains) is null)
+                    return Error.Validation("Realm.PublicBaseUrlNotOnRealmDomain",
+                        $"PublicBaseUrl '{dto.PublicBaseUrl.Value}' must be on one of the realm's domains, without user info.");
                 realm.PublicBaseUrl = normalized;
             }
             else
