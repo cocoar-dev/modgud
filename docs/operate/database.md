@@ -186,16 +186,26 @@ options.Events.AddMaskingRuleForProtectedInformation<UserLoggedInEvent>(e =>
     new UserLoggedInEvent(e.UserId, IpAddress: null, e.Method));
 ```
 
-Only takes effect when the stream is **archived** (`ArchiveStream`) —
-live events are not touched.
+The rules do nothing on their own: permanent erasure (`GdprService`, at the end of a
+self-service deletion's grace window or when an admin erases a user) applies them to
+the user's stream, the external identity-link streams and the user's inbox-item
+streams. That rewrites the stored event data in place; archiving alone would only
+flag the rows.
 
 ### Stream archival
 
-In the GDPR confirm-delete flow:
+After masking, the same erasure archives those streams:
 
 ```csharp
-session.Events.ArchiveStream(userId);
-await session.SaveChangesAsync();
+await store.Advanced.ApplyEventDataMasking(x =>
+{
+    x.ForTenant(tenantId);
+    x.IncludeStream(userId);
+    // … identity-link and inbox-item streams, plus gdpr_masked / masked_at headers
+}, ct);
+
+archiveSession.Events.ArchiveStream(userId);
+await archiveSession.SaveChangesAsync(ct);
 // Archived events are gone from normal read-model queries.
 // Compliance queries (Events.QueryAllRawEvents()) still see them — masked.
 ```

@@ -113,7 +113,7 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 
 ### Self-service
 - **Article 20 export** — the user downloads their full profile, sessions, login history, and OAuth-consent history as JSON
-- **Account deletion** — user-initiated, with email-confirmed cooldown period; user can cancel before grace expires
+- **Account deletion** — user-initiated after a recent sign-in, with a grace period announced by e-mail (no confirmation link); the user can cancel before it expires
 - **Email change** — with double-opt-in to the new address
 
 ### Admin-side

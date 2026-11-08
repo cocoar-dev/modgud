@@ -160,7 +160,7 @@ surface) because they're identity-lifecycle operations:
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/auth/export-data` | Data export (Article 20) — ZIP |
+| `GET` | `/api/auth/export-data` | Data export (Article 20) — one JSON document |
 | `GET` | `/api/auth/deletion-status` | Status of the delete workflow |
 | `POST` | `/api/auth/delete-account` | Schedule the account's deletion; it is erased at the grace deadline unless cancelled. Body `{ Reason? }` (a `Password` sent along is checked) |
 | `POST` | `/api/auth/cancel-deletion` | Cancel a pending delete request |

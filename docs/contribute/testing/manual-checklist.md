@@ -45,7 +45,7 @@ See [Two-factor authentication](../../integrate/two-factor) for the supported me
 - [ ] Edit a non-email field → goes to `AdminApprovalPending` **(automated)**
 - [ ] Change email → verification link → admin approval → `/me` reflects both changes atomically **(automated)**
 - [ ] GDPR export
-- [ ] GDPR delete request → confirmation token → deletion → masking
+- [ ] GDPR delete request (needs a recent sign-in) → notification mail, no confirmation link → cancel within the grace window, or erasure by the sweep after it → masking
 
 ## 5. Sessions
 
