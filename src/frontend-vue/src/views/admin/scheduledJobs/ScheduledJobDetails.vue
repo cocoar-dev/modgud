@@ -20,6 +20,7 @@ import type {
   ScheduledJobHistoryDto,
   JobParameterField,
 } from '@/models/ScheduledJob'
+import { seedParams } from './jobParameters'
 
 const { t, language } = useI18n()
 const store = useScheduledJobStore()
@@ -83,23 +84,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-}
-
-/** Seed form.params from persisted Parameters + schema defaults. */
-function seedParams(j: ScheduledJobDto): Record<string, string | number | boolean | null> {
-  const out: Record<string, string | number | boolean | null> = {}
-  for (const field of j.ParameterSchema) {
-    const v = j.Parameters[field.Key]
-    if (field.Type === 'Boolean') {
-      out[field.Key] = typeof v === 'boolean' ? v : Boolean(field.Default)
-    } else if (field.Type === 'Number') {
-      const numberValue = v == null || v === '' ? field.Default : v
-      out[field.Key] = numberValue == null || numberValue === '' ? null : Number(numberValue)
-    } else {
-      out[field.Key] = v == null || v === '' ? '' : String(v)
-    }
-  }
-  return out
 }
 
 /** Build the Parameters payload — coerce strings to numbers per schema. */

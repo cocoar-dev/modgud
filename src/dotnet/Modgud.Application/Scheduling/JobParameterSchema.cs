@@ -24,6 +24,13 @@ public sealed record JobParameterField
     /// <summary>Default applied when the user clears the field. Typed per <see cref="Type"/>.</summary>
     public object? Default { get; init; }
 
+    /// <summary>
+    /// The job reads a saved empty value as "none" (e.g. no age sweep): <see cref="Default"/>
+    /// applies only while the field was never configured, and the UI keeps a saved empty
+    /// value empty instead of showing the default.
+    /// </summary>
+    public bool EmptyMeansNone { get; init; }
+
     /// <summary>Optional help text shown under the input.</summary>
     public string? Description { get; init; }
 

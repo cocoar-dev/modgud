@@ -8,8 +8,10 @@ export interface JobParameterField {
   Label: string
   /** Discriminator for the input widget: "Number" | "String" | "Boolean". */
   Type: 'Number' | 'String' | 'Boolean'
-  /** Default applied when the value is cleared. Typed per `Type`. */
+  /** Default applied when the value is cleared (or, with `EmptyMeansNone`, never configured). Typed per `Type`. */
   Default?: unknown
+  /** A saved empty value means "none" to the job; only a never-configured field gets `Default`. */
+  EmptyMeansNone?: boolean
   Description?: string
   /** Optional fieldset heading — fields sharing a section render together. */
   Section?: string

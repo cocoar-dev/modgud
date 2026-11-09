@@ -34,6 +34,8 @@ public class JobRunHistoryRetentionJob(
             Label = "Max. age in days",
             Type = JobParameterType.Number,
             Default = DefaultMaxAgeDays,
+            EmptyMeansNone = true,
+            Placeholder = "no age sweep",
             Description = "Runs older than this are deleted. Empty = no age sweep.",
         },
         new() {
