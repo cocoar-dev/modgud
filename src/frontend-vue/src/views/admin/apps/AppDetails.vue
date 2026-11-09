@@ -9,6 +9,7 @@ import AppSettingsSections from './AppSettingsSections.vue'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useClone, APP_CLONE } from '@/composables/useClone'
 import { useDraftStaging } from '@/composables/useDraftStaging'
+import { adoptOwnVersion } from '@/composables/adoptOwnVersion'
 import type { ManifestEntity } from '@/stores/realmDraft.store'
 import type {
   ApplicationDto,
@@ -26,6 +27,13 @@ const props = defineProps<{
 
 const id = computed(() => props.id)
 const store = useApplicationsStore()
+
+/** R1 — a page selection in the settings' Pages tab stores the App's settings document; keep
+ *  the version this view saves with current across it (see adoptOwnVersion). */
+function keepSettingsVersion<T>(write: () => Promise<T>): Promise<T> {
+  return adoptOwnVersion(dto.value?.Settings?.Version, async () => (await store.loadOne(id.value))?.Settings?.Version,
+    write, (version) => { if (dto.value?.Settings) dto.value.Settings.Version = version })
+}
 const { consume } = useClone()
 const isCreate = computed(() => id.value === 'create')
 const loading = ref(false)
@@ -567,6 +575,7 @@ async function save() {
           :model-value="clonePrefillSettings ?? dto?.Settings"
           :application-id="isCreate || isDraftRow ? undefined : id"
           :application-name="form.DisplayName || form.Slug"
+          :keep-settings-version="keepSettingsVersion"
         />
       </div>
 
