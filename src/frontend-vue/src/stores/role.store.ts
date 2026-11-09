@@ -19,6 +19,17 @@ export const useRoleStore = defineStore('role', () => {
     }
   }
 
+  /** D.roles-F02 — the current server state of one role, refreshing the cached entry.
+   * The editor must start from it: the list cache is loaded once per SPA session and
+   * never refreshed, and saving a stale permission set restores grants revoked since. */
+  async function fetchRole(id: string): Promise<RoleDto> {
+    const role = await http.addPath(id).get<RoleDto>()
+    roles.value = roles.value.some(r => r.Id === role.Id)
+      ? roles.value.map(r => r.Id === role.Id ? role : r)
+      : [...roles.value, role]
+    return role
+  }
+
   async function createRole(dto: RolePayload): Promise<RoleDto> {
     const role = await http.post<RoleDto>(dto)
     roles.value = [...roles.value, role]
@@ -41,6 +52,7 @@ export const useRoleStore = defineStore('role', () => {
     loaded,
     loadAll,
     initialize,
+    fetchRole,
     createRole,
     updateRole,
     deleteRole,

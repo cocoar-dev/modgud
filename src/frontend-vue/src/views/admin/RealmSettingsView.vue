@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { mergeRateLimitPatch } from './rateLimitStaging'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import {
@@ -23,7 +24,7 @@ import {
   diffRateLimitOverrides, overridesFromUpdate, SIGN_IN_POLICY_DEFAULTS,
   type PolicyLimitsDto, type RateLimitEnforcementMode, type RateLimitOverrides,
 } from '@/models/realmSettings'
-import { useRealmSettingsStore } from '@/stores/realmSettings.store'
+import { useRealmSettingsStore, isRealmSettingsConflict } from '@/stores/realmSettings.store'
 import { useDraftStaging } from '@/composables/useDraftStaging'
 import type { ManifestEntity } from '@/stores/realmDraft.store'
 import { useGroupStore } from '@/stores/group.store'
@@ -129,7 +130,18 @@ function applyStagedSettings(e: ManifestEntity) {
     signInForm.value = { ...originalSignIn.value }
     signInAdopt.value = false
   }
-  if (foldInto(originalAuthRateLimits, s.AuthRateLimits)) authRateLimitsForm.value = authRateLimitsFromDto(originalAuthRateLimits.value!)
+  // F7-06 — the staged rate-limit patch belongs in Overrides (what the editor reads), not in
+  // the effective read fields; fold it nested so the form shows the staged state.
+  if (s.AuthRateLimits && originalAuthRateLimits.value) {
+    const o = originalAuthRateLimits.value
+    const staged = s.AuthRateLimits as UpdateAuthRateLimitsDto
+    originalAuthRateLimits.value = {
+      ...o,
+      Overrides: mergeRateLimitPatch(o.Overrides, staged),
+      SourceAllowlist: staged.SourceAllowlist !== undefined ? [...(staged.SourceAllowlist ?? [])] : o.SourceAllowlist,
+    }
+    authRateLimitsForm.value = authRateLimitsFromDto(originalAuthRateLimits.value)
+  }
   if (foldInto(originalPositionSecurity, s.PositionSecurity)) {
     positionSecurityForm.value = {
       RequiredProofCapabilities: [...(originalPositionSecurity.value!.RequiredProofCapabilities ?? [])],
@@ -333,11 +345,11 @@ function cimdFromDto(d: CimdSettingsDto): CimdFormState {
 interface NativeGrantFormState {
   Enabled: boolean
   AccessTokenLifetimeMinutes: number
-  RefreshTokenLifetimeDays: number
+  RequireRecentSignInForPasskeyChanges: boolean
 }
 
 function emptyNativeGrants(): NativeGrantFormState {
-  return { Enabled: false, AccessTokenLifetimeMinutes: 15, RefreshTokenLifetimeDays: 14 }
+  return { Enabled: false, AccessTokenLifetimeMinutes: 15, RequireRecentSignInForPasskeyChanges: false }
 }
 
 const nativeGrantsForm = ref<NativeGrantFormState>(emptyNativeGrants())
@@ -347,7 +359,7 @@ function nativeGrantsFromDto(d: NativeGrantSettingsDto): NativeGrantFormState {
   return {
     Enabled: d.Enabled,
     AccessTokenLifetimeMinutes: d.AccessTokenLifetimeMinutes,
-    RefreshTokenLifetimeDays: d.RefreshTokenLifetimeDays,
+    RequireRecentSignInForPasskeyChanges: d.RequireRecentSignInForPasskeyChanges,
   }
 }
 
@@ -609,7 +621,9 @@ function buildDcrPatch(): UpdateDcrSettingsDto | undefined {
   if (cur.PerRealmRateLimitPerDay !== orig.PerRealmRateLimitPerDay)
     patch.PerRealmRateLimitPerDay = cur.PerRealmRateLimitPerDay
   if (!arrayEqual(cur.ReservedNames, orig.ReservedNames ?? []))
-    patch.ReservedNames = cur.ReservedNames.length ? cur.ReservedNames : null
+    // F7-02 — an emptied list is an explicit empty list: null in the patch means "keep",
+    // so clearing every name used to save successfully and keep the old list.
+    patch.ReservedNames = [...cur.ReservedNames]
 
   return Object.keys(patch).length === 0 ? undefined : patch
 }
@@ -638,8 +652,8 @@ function buildNativeGrantsPatch(): UpdateNativeGrantSettingsDto | undefined {
   if (cur.Enabled !== orig.Enabled) patch.Enabled = cur.Enabled
   if (cur.AccessTokenLifetimeMinutes !== orig.AccessTokenLifetimeMinutes)
     patch.AccessTokenLifetimeMinutes = cur.AccessTokenLifetimeMinutes
-  if (cur.RefreshTokenLifetimeDays !== orig.RefreshTokenLifetimeDays)
-    patch.RefreshTokenLifetimeDays = cur.RefreshTokenLifetimeDays
+  if (cur.RequireRecentSignInForPasskeyChanges !== orig.RequireRecentSignInForPasskeyChanges)
+    patch.RequireRecentSignInForPasskeyChanges = cur.RequireRecentSignInForPasskeyChanges
 
   return Object.keys(patch).length === 0 ? undefined : patch
 }
@@ -883,9 +897,12 @@ async function save(tab: SavableTabId) {
       for (const [section, patch] of Object.entries(payload)) {
         if (patch === undefined) continue
         const prev = (merged[section] ?? {}) as Record<string, unknown>
-        merged[section] = (typeof patch === 'object' && patch !== null && !Array.isArray(patch))
-          ? { ...prev, ...patch }
-          : patch
+        merged[section] = section === 'AuthRateLimits'
+          // F7-06 — nested merge: a second staged change keeps the first one's policies.
+          ? mergeRateLimitPatch(prev as UpdateAuthRateLimitsDto, patch as UpdateAuthRateLimitsDto)
+          : (typeof patch === 'object' && patch !== null && !Array.isArray(patch))
+            ? { ...prev, ...patch }
+            : patch
       }
       await staging.stage('settings', merged)
       applyStagedSettings(payload as ManifestEntity)
@@ -916,6 +933,10 @@ async function save(tab: SavableTabId) {
     savedFlash.value = true
     setTimeout(() => { savedFlash.value = false }, 1500)
   } catch (e: any) {
+    if (isRealmSettingsConflict(e)) {
+      error.value = t('admin.realmSettings.changedElsewhere', {}, 'The realm settings were changed by someone else since you loaded them. Reload the page and apply your change again.')
+      return
+    }
     error.value = e?.body?.detail ?? e?.body?.error ?? e?.message ?? String(e)
   } finally {
     saving.value = false
@@ -931,11 +952,13 @@ async function rotateSigningKey(revokePrevious = false) {
   try {
     rotating.value = true
     error.value = null
-    const kid = await settingsStore.rotateSigningKey(revokePrevious)
+    const { kid, activatesAt } = await settingsStore.rotateSigningKey(revokePrevious)
     const shortKid = kid ? kid.slice(0, 12) + '…' : ''
     toast.success(revokePrevious
       ? t('admin.realmSettings.signingKeys.rotatedRevoked', { kid: shortKid }, 'Signing key rotated (new kid {kid}). The previous key was revoked: tokens it signed are no longer valid.')
-      : t('admin.realmSettings.signingKeys.rotated', { kid: shortKid }, 'Signing key rotated (new kid {kid}). The previous key stays valid for in-flight tokens during the overlap window.'))
+      : activatesAt
+        ? t('admin.realmSettings.signingKeys.scheduled', { kid: shortKid, at: new Date(activatesAt).toLocaleString() }, 'New signing key {kid} is published and starts signing at {at}. The previous key then stays valid for in-flight tokens during the overlap window.')
+        : t('admin.realmSettings.signingKeys.rotated', { kid: shortKid }, 'Signing key rotated (new kid {kid}). The previous key stays valid for in-flight tokens during the overlap window.'))
   } catch (e: any) {
     const msg = e?.body?.detail ?? e?.body?.error ?? e?.message ?? String(e)
     error.value = msg
@@ -1250,9 +1273,12 @@ async function revokeRetiredSigningKeys() {
               <CoarFormField :label="t('admin.realmSettings.nativeGrants.accessTokenMinutes', {}, 'Access-token lifetime (minutes)')">
                 <CoarTextInput :model-value="String(nativeGrantsForm.AccessTokenLifetimeMinutes)" @update:model-value="(v) => (nativeGrantsForm.AccessTokenLifetimeMinutes = Math.max(1, parseInt(v) || 15))" />
               </CoarFormField>
-              <CoarFormField :label="t('admin.realmSettings.nativeGrants.refreshTokenDays', {}, 'Refresh-token lifetime (days)')">
-                <CoarTextInput :model-value="String(nativeGrantsForm.RefreshTokenLifetimeDays)" @update:model-value="(v) => (nativeGrantsForm.RefreshTokenLifetimeDays = Math.max(1, parseInt(v) || 14))" />
-              </CoarFormField>
+            </div>
+            <!-- RV-0001 stage 2 — off until the native app handles insufficient_user_authentication. -->
+            <div v-if="nativeGrantsForm.Enabled" class="section-body">
+              <CoarCheckbox v-model="nativeGrantsForm.RequireRecentSignInForPasskeyChanges"
+                :label="t('admin.realmSettings.nativeGrants.requireRecentSignIn', {}, 'Passkey changes require a recent sign-in')" />
+              <p class="text-xs text-surface-500 mt-1">{{ t('admin.realmSettings.nativeGrants.requireRecentSignInHint', {}, 'Adding or removing a passkey in a native app needs a sign-in from the last 15 minutes; otherwise the app gets insufficient_user_authentication (RFC 9470) and signs the user in again. An e-mail code or magic link counts, so a user whose passkey device is gone gets back in through the mailbox. Switch on only once the app handles this response; until then such changes are only logged.') }}</p>
             </div>
           </section>
         </template>

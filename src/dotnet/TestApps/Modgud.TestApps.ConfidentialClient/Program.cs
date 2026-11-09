@@ -54,4 +54,12 @@ Console.WriteLine($"→ GET  {ResourceApi}/admin (expected 403 — demo-backend 
 var admin = await http.GetAsync($"{ResourceApi}/admin");
 Console.WriteLine($"   {(int)admin.StatusCode}");
 
-return scoped.IsSuccessStatusCode ? 0 : 2;
+// B10-07 — the negative check is part of the result: a 200 on /admin means the
+// client got a scope it must not have, and the run must fail on it.
+if (!scoped.IsSuccessStatusCode) return 2;
+if (admin.StatusCode != System.Net.HttpStatusCode.Forbidden)
+{
+    Console.Error.WriteLine($"   /admin answered {(int)admin.StatusCode}, expected 403.");
+    return 3;
+}
+return 0;

@@ -19,6 +19,7 @@ using Marten;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using Modgud.Authentication.Domain;
+using Modgud.Authentication.Sessions;
 using Modgud.Domain.Users.Events;
 using Modgud.Authentication.Identity;
 using Modgud.Authentication.Projections;
@@ -179,6 +180,16 @@ internal sealed class Reset2FaCommand : IRecoveryCommand
 
         await session.SaveChangesAsync();
 
+        // RV-0004 — a factor reset is a recovery action: end every existing access of
+        // the account, as the self-service paths do for the factor they remove (TOTP
+        // disable revokes tokens, passkey delete ends staffing). Sessions, cookies and
+        // tokens go (security stamp rotated); consent grants stay. The account signs in
+        // afresh and sets up a second factor in the reset grace window.
+        await ctx.Services.GetRequiredService<IUserAccessRevoker>()
+            .RevokeAllAccessAsync(user.Id, AccessRevocationReason.ForceSignOut);
+        var staffingEnded = await ctx.Services.GetRequiredService<Modgud.Infrastructure.PositionTerminals.IStaffingRevoker>()
+            .EndAllForUserAsync(user.Id, Modgud.Domain.PositionTerminals.StaffingSessionEndReason.ActivationCredentialInvalidated);
+
         await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
             EventType = AuditEvents.RecoveryCliInvoked,
@@ -197,6 +208,7 @@ internal sealed class Reset2FaCommand : IRecoveryCommand
         ctx.WriteLine($"  Email-OTP off:    {(wasEmailOtpEnabled ? "yes" : "was already off")}");
         ctx.WriteLine($"  Passkeys deleted: {passkeys.Count}");
         ctx.WriteLine($"  Grace period:    reset (fresh window on next login)");
+        ctx.WriteLine($"  Access revoked:  sessions and tokens ended; {staffingEnded} staffing session(s) ended");
         return 0;
     }
 }
@@ -341,7 +353,10 @@ internal sealed class MagicLinkCommand : IRecoveryCommand
         ctx.WriteLine();
         ctx.WriteLine($"  {url}");
         ctx.WriteLine();
-        ctx.WriteLine("Open in a browser — single use, 2FA bypassed.");
+        // RV-0005 — the link is an ordinary magic-link sign-in: it replaces the first factor only,
+        // and the sign-in policy still applies (a required second factor, an administrative lock).
+        ctx.WriteLine("Open in a browser — single use. It replaces the password only: a second factor the");
+        ctx.WriteLine("sign-in policy requires is still asked for (run reset-2fa first if the user lost it).");
         return 0;
     }
 }
@@ -362,6 +377,26 @@ internal sealed class RebuildProjectionsCommand : IRecoveryCommand
 
     public async Task<int> ExecuteAsync(RecoveryCliContext ctx)
     {
+        // FR-CO-01 — the HTTP rebuild pauses its own projection processing and refuses
+        // with more than one node. This process cannot pause another running API, which
+        // keeps writing the same projections and their progress while they are replayed.
+        var force = ctx.Flag("--force") is not null;
+        var otherInstances = await CheckOtherInstancesAsync(ctx);
+        if (otherInstances is { Count: > 0 })
+        {
+            var names = string.Join(", ", otherInstances);
+            if (!force)
+            {
+                return ctx.Fail(
+                    $"Other Modgud instances are running against this database: {names}. " +
+                    "Stop them first and run the rebuild in a one-off container " +
+                    "(e.g. 'docker compose stop modgud', 'docker compose run --rm modgud recover rebuild-projections', " +
+                    "'docker compose start modgud'), or use the admin rebuild endpoint while an admin can still sign in. " +
+                    "Pass --force to rebuild anyway.");
+            }
+            ctx.WriteLine($"warning: --force — rebuilding while other instances are running: {names}.");
+        }
+
         var store = ctx.Services.GetRequiredService<IDocumentStore>();
         var timeout = TimeSpan.FromMinutes(10);
 
@@ -381,19 +416,14 @@ internal sealed class RebuildProjectionsCommand : IRecoveryCommand
         // overload throws DefaultTenantUsageDisabledException — build the daemon
         // for the resolved realm's DB explicitly (honors --realm; default system).
         using var daemon = await store.BuildProjectionDaemonAsync(ctx.RealmSlug);
-        await daemon.RebuildProjectionAsync("ViewProjections", timeout, CancellationToken.None);
-        ctx.WriteLine("  OK ViewProjections");
-
-        await PrincipalProjectionRebuilder.RebuildAsync(
+        // B4-02 — every registered projection, the same set as the admin endpoint.
+        await ProjectionRebuildSet.RebuildAsync(
             store,
             daemon,
             ctx.RealmSlug,
             timeout,
             message => ctx.WriteLine($"  {message}"),
             CancellationToken.None);
-
-        await daemon.RebuildProjectionAsync<PermissionRoleProjection>(timeout, CancellationToken.None);
-        ctx.WriteLine("  OK PermissionRoleProjection (mt_doc_permissionrole)");
 
         await securityAudit.RecordRequiredAsync(new SecurityAuditRecord
         {
@@ -405,6 +435,36 @@ internal sealed class RebuildProjectionsCommand : IRecoveryCommand
             OperationCode = "rebuild-projections",
         });
         return 0;
+    }
+
+    /// <summary>
+    /// The names of the OTHER live instances, or null when the topology cannot be read —
+    /// a CLI process never starts the host, so the node table may be unavailable here; that
+    /// only warns, so the break-glass rebuild is never blocked by an unknown.
+    /// </summary>
+    private static async Task<IReadOnlyList<string>?> CheckOtherInstancesAsync(RecoveryCliContext ctx)
+    {
+        IReadOnlyList<Modgud.Infrastructure.Cluster.ClusterNodeInfo>? live = null;
+        try
+        {
+            if (ctx.Services.GetService<Modgud.Infrastructure.Cluster.IClusterNodes>() is { } nodes)
+                live = await nodes.TryGetLiveNodesAsync();
+        }
+        catch (Exception)
+        {
+            live = null;
+        }
+
+        if (live is null)
+        {
+            ctx.WriteLine("warning: could not read the cluster node table. Make sure no other Modgud instance " +
+                          "is running against this database while the projections are rebuilt.");
+            return null;
+        }
+
+        return live.Where(n => !n.IsSelf)
+            .Select(n => string.IsNullOrWhiteSpace(n.Description) ? n.NodeId.ToString() : n.Description)
+            .ToList();
     }
 }
 
@@ -693,6 +753,11 @@ internal sealed class RealmAddDomainCommand : IRecoveryCommand
             ctx.WriteLine($"Realm '{slug}' already has domain '{domain}'. No change.");
             return 0;
         }
+
+        // RV-0002 — the same cross-realm rule as the provisioning path: a host already routed to
+        // another active realm (domain or Application subdomain) is refused, not silently shared.
+        if (await Modgud.Infrastructure.Realms.RealmHostClaims.FindConflictAsync(session, [domain], realm.Id, default) is { } conflict)
+            return ctx.Fail(conflict.Description);
 
         realm.Domains = [.. realm.Domains, domain];
         realm.UpdatedAt = DateTimeOffset.UtcNow;
@@ -1012,9 +1077,22 @@ internal sealed class RotateSigningKeyCommand : IRecoveryCommand
 
         // FK-01 — --revoke-previous: the key active until now is revoked, not retired.
         var revokePrevious = ctx.Args.Any(a => a.Equals("--revoke-previous", StringComparison.OrdinalIgnoreCase));
-        ctx.WriteLine($"Rotating signing key for realm '{ctx.RealmSlug}'{(revokePrevious ? " and revoking the previous key" : "")}...");
-        var creds = await keyStore.RotateAsync(ctx.RealmSlug, revokePrevious);
-        var kid = creds.Key.KeyId;
+        // FK-03 — a planned rotation is scheduled (published first, signs after the delay);
+        // --immediate or --revoke-previous switch at once.
+        var immediate = revokePrevious || ctx.Args.Any(a => a.Equals("--immediate", StringComparison.OrdinalIgnoreCase));
+        ctx.WriteLine($"Rotating signing key for realm '{ctx.RealmSlug}'{(revokePrevious ? " and revoking the previous key" : immediate ? " immediately" : "")}...");
+        string kid;
+        DateTimeOffset? activatesAt = null;
+        if (immediate)
+        {
+            kid = (await keyStore.RotateAsync(ctx.RealmSlug, revokePrevious)).Key.KeyId;
+        }
+        else
+        {
+            var scheduled = await keyStore.ScheduleRotationAsync(ctx.RealmSlug);
+            kid = scheduled.KeyId;
+            activatesAt = scheduled.ActivatesAt;
+        }
 
         await ctx.Services.GetRequiredService<ISecurityAuditLog>().RecordRequiredAsync(new SecurityAuditRecord
         {
@@ -1026,11 +1104,19 @@ internal sealed class RotateSigningKeyCommand : IRecoveryCommand
             OperationCode = revokePrevious ? "rotate-signing-key-revoke" : "rotate-signing-key",
             KeyId = kid,
         });
-        ctx.WriteLine($"  OK new active kid: {kid}");
-        ctx.WriteLine(revokePrevious
-            ? "  Previous key REVOKED: tokens it signed are no longer valid; users and clients sign in again."
-            : "  Previous key retired into the 30-day verification overlap window.");
-        ctx.WriteLine("  Running API instances pick up the change within ~60 seconds.");
+        if (activatesAt is { } at)
+        {
+            ctx.WriteLine($"  OK new kid published: {kid}");
+            ctx.WriteLine($"  It starts signing at {at:u}; the previous key then retires into the 30-day overlap.");
+        }
+        else
+        {
+            ctx.WriteLine($"  OK new active kid: {kid}");
+            ctx.WriteLine(revokePrevious
+                ? "  Previous key REVOKED: tokens it signed are no longer valid; users and clients sign in again."
+                : "  Previous key retired into the 30-day verification overlap window.");
+            ctx.WriteLine("  Running API instances pick up the change within ~60 seconds.");
+        }
         return 0;
     }
 }

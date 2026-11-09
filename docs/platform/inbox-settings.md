@@ -29,10 +29,10 @@ Covers `AdminChangeRequestSubmitted`. These items are **not** time-bounded while
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `HardDeleteDaysAfterDismissed` | `30` days | Once dismissed, the item (and its event stream) is wiped after this many days. `null` = never wipe. |
+| `HardDeleteDaysAfterDismissed` | `30` days | Once dismissed, the item is removed after this many days: its parameters are masked in the event stream, the stream is archived and the inbox row is deleted. `null` = never remove. |
 
-::: warning "Hard-delete" really wipes the stream
-For this kind only, retention archives the event stream and deletes the projection doc. The dismissed-audit row is gone after the cutoff — there is no recovery without restoring from a Marten backup. Other kinds are only *soft-dismissed* (a `Dismissed` event is appended; the stream stays).
+::: warning "Hard-delete" removes the item for good
+For this kind only, retention masks the item's parameters (such as the requester's name) in its event stream, archives the stream and deletes the projection doc. The event rows themselves stay, archived and without the parameters: the event store has no per-stream physical delete. The dismissed-audit row is gone after the cutoff — there is no recovery without restoring from a Marten backup. Other kinds are only *soft-dismissed* (a `Dismissed` event is appended; the stream stays).
 :::
 
 ### 2. Change-request feedback (user inbox) — time-based

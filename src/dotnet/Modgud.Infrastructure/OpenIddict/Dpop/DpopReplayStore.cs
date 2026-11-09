@@ -1,4 +1,5 @@
 using Marten;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Domain.OAuth.Storage;
 
 namespace Modgud.Infrastructure.OpenIddict.Dpop;
@@ -20,14 +21,16 @@ public interface IDpopReplayStore
     Task<bool> TryRecordAsync(string jti, DateTimeOffset expiresAt, DateTimeOffset now, CancellationToken ct);
 }
 
-internal sealed class MartenDpopReplayStore : IDpopReplayStore
+/// <summary>
+/// Records proofs in the realm's database, each call in a session of its own (G-B4-03): it is asked
+/// from the middle of token endpoints that have staged — not yet committed — changes on the request's
+/// session, and its commit must never commit (or detach) that work.
+/// </summary>
+internal sealed class MartenDpopReplayStore(ITenantSessionFactory sessionFactory) : IDpopReplayStore
 {
-    private readonly IDocumentSession _session;
-
-    public MartenDpopReplayStore(IDocumentSession session) => _session = session;
-
     public async Task<bool> TryRecordAsync(string jti, DateTimeOffset expiresAt, DateTimeOffset now, CancellationToken ct)
     {
+        await using var _session = sessionFactory.OpenSession();
         // Fast path: already recorded in this realm's DB → replay.
         var existing = await _session.LoadAsync<DpopReplayEntry>(jti, ct);
         if (existing is not null)

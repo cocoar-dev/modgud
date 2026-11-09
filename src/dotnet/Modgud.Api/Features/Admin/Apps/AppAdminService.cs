@@ -135,6 +135,14 @@ public sealed class AppAdminService(IDocumentSession session, IApplicationSettin
         // App + its settings override commit together (atomic) — see class summary.
         if (dto.Settings is not null)
         {
+            // F7-05 — refuse settings edited on a copy that is no longer current.
+            if (dto.ExpectedSettingsVersion is { } expected
+                && await session.LoadAsync<Modgud.Domain.Applications.ApplicationSettings>(id, ct) is { } stored
+                && stored.Version != expected)
+            {
+                return Error.Conflict("App.SettingsChanged",
+                    "The app settings were changed since you loaded them. Reload and apply your change again.");
+            }
             var staged = await StageSettingsAsync(id, dto.Settings, ct);
             if (staged.IsError) return staged.Errors;
         }
@@ -281,6 +289,7 @@ public sealed class AppAdminService(IDocumentSession session, IApplicationSettin
         var input = payload ?? [];
         var normalised = new List<AppPermission>(input.Count);
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seenIds = new HashSet<Guid>();
 
         foreach (var entry in input)
         {
@@ -311,6 +320,13 @@ public sealed class AppAdminService(IDocumentSession session, IApplicationSettin
             var id = Guid.NewGuid();
             if (!string.IsNullOrEmpty(entry.Id) && BuildingBlocks.Helper.ShortGuid.TryParse(entry.Id, out Guid parsed))
                 id = parsed;
+            // F7-03 / B7-SC03 — every catalog entry has its own identity: the next update and
+            // permission resolution key the catalog by id, so two entries sharing one break it.
+            if (!seenIds.Add(id))
+            {
+                return Error.Validation("App.DuplicatePermissionId",
+                    $"Permission id '{entry.Id}' is used by more than one catalog entry — each entry needs its own id.");
+            }
 
             var description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description.Trim();
             normalised.Add(new AppPermission(id, resource, action, description));

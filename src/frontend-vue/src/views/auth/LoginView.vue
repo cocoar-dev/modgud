@@ -836,7 +836,9 @@ function bufferToBase64Url(buffer: ArrayBuffer): string {
             {{ t('auth.login.passwordlessMode', {}, 'This application uses passwordless login.') }}
           </CoarNotice>
 
-          <CoarNotice v-if="appConfig.config.InternalLoginEnabled && isPasswordless() && error" variant="error">{{ error }}</CoarNotice>
+          <!-- EOIDC-CO-01 — an error back from an external sign-in (?error=) must show even
+               when the password form is not shown at all (internal login off). -->
+          <CoarNotice v-if="error && !(appConfig.config.InternalLoginEnabled && !isPasswordless())" variant="error">{{ error }}</CoarNotice>
 
           <!-- Divider -->
           <div class="flex items-center gap-3 text-surface-400 text-xs">

@@ -106,6 +106,8 @@ public sealed class InstallationCompletionService(
             tokenResult = await challenges.ValidateAsync(request.Token, ct);
             if (tokenResult.IsError) return tokenResult.Errors;
 
+            await ClearAbandonedInitialRealmAsync(ct);
+
             var dto = new CreateRealmDto
             {
                 Slug = request.Realm.Slug.Trim(),
@@ -131,7 +133,21 @@ public sealed class InstallationCompletionService(
                 },
             };
 
-            var realmResult = await realms.CreateInitialRealmAsync(dto, ct);
+            ErrorOr<Realm> realmResult;
+            try
+            {
+                realmResult = await realms.CreateInitialRealmAsync(dto, ct);
+            }
+            catch
+            {
+                // F.inst-I1 — CreateInitialRealmAsync commits the inactive realm document
+                // before it seeds the tenant. A failure or abort in that window would
+                // otherwise leave a realm shell that blocks every further installation
+                // attempt. Nothing else existed when we entered under the lock, so the
+                // shell (if any) is ours to compensate; the rollback is a no-op without it.
+                realmCreated = true;
+                throw;
+            }
             if (realmResult.IsError) return realmResult.Errors;
             realmCreated = true;
 
@@ -152,10 +168,12 @@ public sealed class InstallationCompletionService(
                 adminCreated = true;
             }
 
-            var activation = await realms.ActivateInitialRealmAsync(dto.Slug, ct);
+            // Once the administrator exists the realm is kept on failure (see finally), so a
+            // client or proxy abort must not stop half-way: finish activation and completion.
+            var activation = await realms.ActivateInitialRealmAsync(dto.Slug, CancellationToken.None);
             if (activation.IsError) return activation.Errors;
 
-            var completion = await challenges.CompleteAsync(request.Token, dto.Slug, ct);
+            var completion = await challenges.CompleteAsync(request.Token, dto.Slug, CancellationToken.None);
             if (completion.IsError) return completion.Errors;
 
             return new CompleteInstallationResponse(
@@ -177,6 +195,39 @@ public sealed class InstallationCompletionService(
             await unlockCommand.ExecuteNonQueryAsync(CancellationToken.None);
         }
     }
+
+    /// <summary>
+    /// F.inst-I1 (crash case) — a process that died between committing the initial realm
+    /// document and creating its administrator leaves an inactive initial realm. Without a
+    /// user in its database there is nothing to keep, so it is rolled back and the
+    /// installation starts over. A shell that already has a user stays for forensics (the
+    /// create below then refuses). Runs under the installation lock.
+    /// </summary>
+    private async Task ClearAbandonedInitialRealmAsync(CancellationToken ct)
+    {
+        var all = await realms.GetAllRealmsAsync(ct);
+        if (all.Count != 1 || all[0] is not { IsActive: false, IsControlPlane: true } shell)
+            return;
+
+        bool hasUsers;
+        try
+        {
+            using (TenantContext.Enter(shell.Slug))
+            await using (var scope = services.CreateAsyncScope())
+            {
+                var session = scope.ServiceProvider.GetRequiredService<Marten.IQuerySession>();
+                hasUsers = await Marten.QueryableExtensions.AnyAsync(
+                    session.Query<Modgud.Authorization.Principals.Person>(), ct);
+            }
+        }
+        catch (JasperFx.MultiTenancy.UnknownTenantIdException)
+        {
+            hasUsers = false; // the shell never got its tenant registered
+        }
+
+        if (!hasUsers)
+            await realms.RollbackProvisionedRealmAsync(shell.Slug, CancellationToken.None);
+    }
 }
 
 public static class InstallationEndpoints
@@ -192,7 +243,9 @@ public static class InstallationEndpoints
             CancellationToken ct) =>
         {
             var status = await service.GetStatusAsync(ct);
-            return Results.Ok(status);
+            // F.prov-P2 — anonymous and answered on every host: say whether the deployment is
+            // installed, not which realm became the control plane or when.
+            return Results.Ok(status with { RealmSlug = null, CompletedAt = null });
         }).WithName("Installation_Status");
 
         group.MapPost("validate", async (

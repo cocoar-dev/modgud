@@ -4,7 +4,7 @@ namespace Modgud.Infrastructure.Realms;
 
 /// <summary>
 /// Per-realm RSA key management for OpenIddict token signing and validation.
-/// Backed by Marten documents in the master DB; results are cached in-memory
+/// Backed by Marten documents in each realm's own tenant DB; results are cached in-memory
 /// keyed by realm slug. Cache is invalidated automatically on rotation.
 ///
 /// <para>
@@ -13,8 +13,20 @@ namespace Modgud.Infrastructure.Realms;
 /// realm B's JWKS. Rotating one realm's key has zero blast radius on others.
 /// </para>
 /// </summary>
+/// <summary>FK-03 — a scheduled rotation: the published key and when it starts signing.</summary>
+public sealed record ScheduledSigningKey(string KeyId, DateTimeOffset ActivatesAt);
+
 public interface IRealmKeyStore
 {
+    /// <summary>
+    /// FK-03 — the planned rotation. Creates the next key and publishes it at once (JWKS,
+    /// verification set) but lets it sign only after <c>RealmKeyStore.PrePublicationDelay</c>,
+    /// so peer instances and external resource servers know it before the first token
+    /// carries its kid. Then the previous key retires into the normal overlap. A rotation
+    /// already pending is returned as is.
+    /// </summary>
+    Task<ScheduledSigningKey> ScheduleRotationAsync(string realmSlug, CancellationToken ct = default);
+
     /// <summary>
     /// Active <see cref="SigningCredentials"/> the OpenIddict server uses
     /// to sign newly issued tokens for the given realm. Generates and

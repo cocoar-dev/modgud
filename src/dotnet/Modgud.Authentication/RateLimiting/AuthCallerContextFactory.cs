@@ -129,6 +129,11 @@ public sealed class AuthCallerContextFactory(IHostEnvironment env) : IAuthCaller
         else
             sourceKey = remote is null ? "anon" : AuthCallerContext.SourceKeyFor(remote);
 
+        // B8-AJ-03 — without a Host pin the limits come from the authenticated client's
+        // App, so its App bucket must be that App's too, not the realm's shared one.
+        if (applicationId is null && clientId is not null)
+            applicationId = await TryResolveClientApplicationAsync(http, clientId, ct);
+
         var allowlisted = false;
         if (effective is not null && realmSlug is not null)
         {
@@ -160,6 +165,20 @@ public sealed class AuthCallerContextFactory(IHostEnvironment env) : IAuthCaller
         }
         catch
         {
+            return null;
+        }
+    }
+
+    private static async Task<Guid?> TryResolveClientApplicationAsync(HttpContext http, string clientId, CancellationToken ct)
+    {
+        try
+        {
+            var settingsResolver = http.RequestServices.GetRequiredService<IApplicationSettingsResolver>();
+            return await settingsResolver.ResolveApplicationIdForRequestAsync(http, clientId, ct);
+        }
+        catch
+        {
+            // Same stance as the settings: a resolution hiccup falls back to the realm.
             return null;
         }
     }

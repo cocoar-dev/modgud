@@ -59,6 +59,20 @@ public class UserSession
 
     public bool IsActive(DateTimeOffset now) => ExpiresAt > now && AbsoluteExpiresAt > now;
 
+    /// <summary>
+    /// Whether a request at <paramref name="now"/> should slide the idle expiry. Normally
+    /// at most once per <paramref name="throttle"/>; CS03 — also once half of the current
+    /// idle window has passed, so an idle lifetime as short as the throttle can still be
+    /// extended by activity. Never when the expiry already sits at the absolute end.
+    /// </summary>
+    public bool IsDueForTouch(DateTimeOffset now, TimeSpan throttle)
+    {
+        var elapsed = now - LastActiveAt;
+        if (elapsed >= throttle) return true;
+        if (ExpiresAt >= AbsoluteExpiresAt) return false;
+        return elapsed >= (ExpiresAt - LastActiveAt) / 2;
+    }
+
     public void Touch(DateTimeOffset now, TimeSpan idleLifetime)
     {
         LastActiveAt = now;

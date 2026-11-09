@@ -270,6 +270,9 @@ function pushblock(label, obj) {
   pushln()
 }
 
+// B10-07 — failed scenarios are counted and fail the run; the report alone is not a result.
+const scenarioFailures = []
+
 async function runScenario(s, idx) {
   pushln(`## ${idx}. ${s.name}`)
   pushln(`> ${s.note}`)
@@ -311,6 +314,8 @@ async function runScenario(s, idx) {
     if (userinfo.ok) {
       pushblock(`**/connect/userinfo (${userinfo.status}):**`, userinfo.body)
     } else {
+      // M2M tokens carry no openid scope; their UserInfo rejection is the expected outcome.
+      if (!s.m2m) scenarioFailures.push(`${s.name}: /connect/userinfo HTTP ${userinfo.status}`)
       pushln(`**/connect/userinfo:** HTTP ${userinfo.status}`)
       pushln('```')
       pushln(typeof userinfo.body === 'string' ? userinfo.body : JSON.stringify(userinfo.body, null, 2))
@@ -329,10 +334,12 @@ async function runScenario(s, idx) {
           permissions: me.body?.permissions,
           groups: me.body?.groups,
         } : me.body
+        if (!me.ok) scenarioFailures.push(`${s.name}: ResourceApi /me HTTP ${me.status}`)
         pushblock(`**TestApps.ResourceApi /me (${me.status}):**`, summary)
       }
     }
   } catch (e) {
+    scenarioFailures.push(`${s.name}: ${e.message}`)
     pushln(`**ERROR:** ${e.message}`)
     pushln()
   }
@@ -367,6 +374,11 @@ async function main() {
   console.log()
   console.log(`────────────────────────────────────────────────────`)
   console.log(`Report written to: ${REPORT_PATH}`)
+  if (scenarioFailures.length > 0) {
+    console.error(`${scenarioFailures.length} scenario failure(s):`)
+    for (const f of scenarioFailures) console.error(`  - ${f}`)
+    process.exitCode = 1
+  }
 }
 
 main().catch(err => {

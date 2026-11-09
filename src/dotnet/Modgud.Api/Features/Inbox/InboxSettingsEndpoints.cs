@@ -33,6 +33,8 @@ public static class InboxSettingsEndpoints
             // Force the singleton id regardless of what the client sent —
             // guards against accidental multi-row writes.
             body.Id = InboxRetentionSettings.SingletonId;
+            if (body.Validate() is { } problem)
+                return Results.BadRequest(new { Error = "InboxSettings.Invalid", Message = problem });
             body.UpdatedAt = DateTime.UtcNow;
             session.Store(body);
             await session.SaveChangesAsync(ct);

@@ -217,6 +217,15 @@ public static class PositionTerminalsEndpoints
                 }
                 if (ids.Count == 0)
                     return Results.BadRequest(new { Error = "Terminal.PositionRequired", Message = "A terminal must allow at least one position." });
+                // B3-P4 — the owner always serves its own slot: the slot's OAuth client, its
+                // name and the terminal policy it runs under are the owner's. A slot that should
+                // not serve the owner is a new slot under another position.
+                if (!ids.Contains(terminal.PositionPrincipalId))
+                    return Results.BadRequest(new
+                    {
+                        Error = "Terminal.OwnerRequired",
+                        Message = "The owner position always serves its own terminal slot; create the slot under another position instead.",
+                    });
 
                 var realm = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
                 var requiredBinding = realm?.PositionSecurity?.RequiredBindingCapabilities ?? BindingCapability.None;

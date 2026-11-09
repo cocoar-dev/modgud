@@ -33,8 +33,8 @@ the order below — each one builds on the ones above it.
 
 - [Authorization (RBAC)](./groups-and-authorization) — the
   Principal → Group → Role → Permission chain.
-- [Permissions & gating](./permissions) — the three-segment
-  permission grammar and the bypass tiers.
+- [Permissions & gating](./permissions) — the two-segment
+  `<resource>:<action>` grammar, the app context and the bypass tiers.
 - [Auto-Membership](./auto-membership) — JsEval-scripted group
   membership predicates.
 - [ABAC and the IAM boundary](./abac) — why row-level access stays

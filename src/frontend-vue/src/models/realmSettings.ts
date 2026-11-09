@@ -25,6 +25,9 @@ export interface RealmSettingsDto {
   /** Page-builder schemas keyed by slug. Read-only here — writes use
    * the dedicated /api/admin/customization/pages/{slug} endpoints. */
   Pages: Record<string, string>
+  /** F7-05 — the stored version (null while the realm never saved its settings). Sent back
+   * as `ExpectedVersion` so a save on an outdated copy is refused with 409. */
+  Version?: string | null
 }
 
 export interface UpdateRealmSettingsDto {
@@ -43,6 +46,9 @@ export interface UpdateRealmSettingsDto {
   RegistrationFields?: UpdateRegistrationFieldsSettingsDto | null
   Deletion?: UpdateDeletionSettingsDto | null
   Audit?: UpdateAuditSettingsDto | null
+  /** F7-05 — the `Version` the edit was made on; a different stored version → 409
+   * `RealmSettings.Changed`. */
+  ExpectedVersion?: string | null
 }
 
 export type ProofCapability = 'IdentifiedActor' | 'PhishingResistant' | 'IndividuallyRevocable'
@@ -254,16 +260,19 @@ export interface UpdateCimdSettingsDto {
 // master toggle, off by default. Necessary but not sufficient: a client
 // also needs the matching gt:urn:cocoar:* grant-type permission before it
 // can use these grants — flipping this toggle just unlocks the seam.
+// No refresh-token lifetime: a native refresh token follows the client-session
+// idle lifetime (Sessions settings).
 export interface NativeGrantSettingsDto {
   Enabled: boolean
   AccessTokenLifetimeMinutes: number
-  RefreshTokenLifetimeDays: number
+  /** RV-0001 stage 2 — passkey changes need a sign-in from the last 15 minutes. */
+  RequireRecentSignInForPasskeyChanges: boolean
 }
 
 export interface UpdateNativeGrantSettingsDto {
   Enabled?: boolean
   AccessTokenLifetimeMinutes?: number
-  RefreshTokenLifetimeDays?: number
+  RequireRecentSignInForPasskeyChanges?: boolean
 }
 
 // ADR 0025 — the realm's sign-in policy, the default every App inherits (an App

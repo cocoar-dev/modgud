@@ -128,6 +128,22 @@ public class LoginProvider
     public bool TrustForAuthorization { get; set; }
 
     /// <summary>
+    /// B6-OIDC-05: treat every e-mail address this provider issues as verified, even
+    /// without an <c>email_verified</c> claim. Without it, the domain allowlist, JIT
+    /// account creation, the profile e-mail and auto-linking accept only an address the
+    /// provider marked <c>email_verified=true</c> (SAML: the signed assertion vouches).
+    /// Default <c>false</c>.
+    /// </summary>
+    public bool TrustEmailsAsVerified { get; set; }
+
+    /// <summary>
+    /// B6-OIDC-04: <c>amr</c> values this provider only issues for a multi-factor sign-in
+    /// (exception to the RFC 8176 rule: <c>mfa</c> or two factor classes). Null/empty =
+    /// no exception. Example: a provider that sends only <c>["otp"]</c> after password+OTP.
+    /// </summary>
+    public List<string>? MfaAmrValues { get; set; }
+
+    /// <summary>
     /// Federation v1 (decision A): only providers flagged authoritative write the
     /// four profile fields (Firstname/Lastname/Email/Acronym) on login, ending
     /// today's every-provider-patches-every-login flapping. Default <c>false</c>;

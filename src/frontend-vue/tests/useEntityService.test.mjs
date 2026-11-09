@@ -224,3 +224,50 @@ test('a mutation rollback can partially refill an invalidated list but does not 
   assert.equal(sut.loadFailed.value, true)
   assert.equal(sut.allLoaded.value, false)
 })
+
+// B10-UI02 — a REST snapshot that started before a live change must not undo it, and a
+// failed optimistic PUT must not roll back a state the server pushed meanwhile.
+test('a snapshot that started before a live change does not undo it', async t => {
+  const get = deferred()
+  t.mock.method(globalThis, 'fetch', async () => get.promise)
+  const sut = service()
+  await sut.initialize()
+  const loading = sut.loadAll()
+  hub.subscriptions[0].observer.next({ Action: 'Updated', Payload: [{ Id: 'a', Name: 'new' }] })
+  hub.subscriptions[0].observer.next({ Action: 'Deleted', Payload: ['b'] })
+  hub.subscriptions[0].observer.next({ Action: 'Created', Payload: [{ Id: 'c', Name: 'created' }] })
+  get.resolve(response(200, [{ Id: 'a', Name: 'old' }, { Id: 'b', Name: 'gone' }]))
+  await loading
+  assert.deepEqual(sut.getFromStore('a'), { Id: 'a', Name: 'new' })
+  assert.equal(sut.getFromStore('b'), undefined)
+  assert.deepEqual(sut.getFromStore('c'), { Id: 'c', Name: 'created' })
+})
+
+test('a failed update does not roll back a state pushed meanwhile', async t => {
+  const put = deferred()
+  t.mock.method(globalThis, 'fetch', async () => put.promise)
+  const sut = service()
+  await sut.initialize()
+  sut.setAllStoreEntities([{ Id: 'a', Name: 'v1' }])
+  const updating = sut.updateEntity('a', { Name: 'mine' })
+  hub.subscriptions[0].observer.next({ Action: 'Updated', Payload: [{ Id: 'a', Name: 'v2' }] })
+  put.resolve(response(500, { Message: 'boom' }))
+  await assert.rejects(updating, HttpClientError)
+  assert.deepEqual(sut.getFromStore('a'), { Id: 'a', Name: 'v2' })
+})
+
+// B10-UI03 — an entity stream the server completed (e.g. refused for a missing read right)
+// or that failed must be subscribed again by a later initialize, not stay dead.
+for (const end of ['complete', 'error']) {
+  test(`an entity stream that ended with ${end} is subscribed again on the next initialize`, async t => {
+    t.mock.method(globalThis, 'fetch', async () => response(200, []))
+    const sut = service()
+    await sut.initialize()
+    assert.equal(hub.subscriptions.length, 1)
+    if (end === 'complete') hub.subscriptions[0].observer.complete()
+    else hub.subscriptions[0].observer.error(new Error('stream failed'))
+    await sut.initialize()
+    assert.equal(hub.subscriptions.length, 2)
+    assert.equal(hub.reconnects.length, 1)
+  })
+}

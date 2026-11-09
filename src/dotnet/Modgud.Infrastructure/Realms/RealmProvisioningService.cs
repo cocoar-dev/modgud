@@ -208,6 +208,12 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             if (publicBaseUrl is null)
                 return Error.Validation("Realm.InvalidPublicBaseUrl",
                     $"PublicBaseUrl '{dto.PublicBaseUrl}' must be an absolute http(s) origin without a path, query or fragment.");
+            // F.routing-F-R7 — admin input must stay on the realm's own domains. The first
+            // installation is exempt: its origin is the install link the operator (with
+            // shell access) opened, i.e. where the deployment is actually reached.
+            if (!isInitialControlPlane && RealmPublicOrigin.NormalizeOnDomains(publicBaseUrl, dto.Domains) is null)
+                return Error.Validation("Realm.PublicBaseUrlNotOnRealmDomain",
+                    $"PublicBaseUrl '{dto.PublicBaseUrl}' must be on one of the realm's domains, without user info.");
         }
 
         await using var session = _globalStore.LightweightSession();
@@ -408,22 +414,11 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
     /// only they are routed. <paramref name="selfId"/> excludes the realm being
     /// updated from clashing with itself.
     /// </summary>
-    private static async Task<Error?> CheckDomainUniquenessAsync(
+    /// <para>F.routing-F-R1 — also against other realms' Application subdomains (see
+    /// <see cref="RealmHostClaims"/>).</para>
+    private static Task<Error?> CheckDomainUniquenessAsync(
         IQuerySession session, IReadOnlyCollection<string> domains, Guid? selfId, CancellationToken ct)
-    {
-        var wanted = domains.Select(d => d.ToLowerInvariant()).ToHashSet();
-        var activeRealms = await session.Query<Realm>().Where(r => r.IsActive).ToListAsync(ct);
-
-        foreach (var other in activeRealms)
-        {
-            if (selfId is { } id && other.Id == id) continue;
-            var clash = other.Domains.FirstOrDefault(d => wanted.Contains(d.ToLowerInvariant()));
-            if (clash is not null)
-                return Error.Conflict("Realm.DomainTaken",
-                    $"The domain '{clash}' is already claimed by the active realm '{other.Slug}'. Each domain must map to exactly one active realm.");
-        }
-        return null;
-    }
+        => RealmHostClaims.FindConflictAsync(session, domains, selfId, ct);
 
     public async Task<ErrorOr<Realm>> UpdateRealmAsync(
         string slug,
@@ -486,6 +481,9 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             }
             else if (RealmPublicOrigin.Normalize(dto.PublicBaseUrl.Value) is { } normalized)
             {
+                if (RealmPublicOrigin.NormalizeOnDomains(normalized, resultingDomains) is null)
+                    return Error.Validation("Realm.PublicBaseUrlNotOnRealmDomain",
+                        $"PublicBaseUrl '{dto.PublicBaseUrl.Value}' must be on one of the realm's domains, without user info.");
                 realm.PublicBaseUrl = normalized;
             }
             else
@@ -556,6 +554,9 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
         return true;
     }
 
+    /// <summary>How long the hard delete waits for <c>DROP DATABASE</c>.</summary>
+    internal static readonly TimeSpan DropDatabaseTimeout = TimeSpan.FromMinutes(5);
+
     public async Task<ErrorOr<bool>> HardDeleteRealmAsync(string slug, CancellationToken ct = default)
     {
         await using var session = _globalStore.LightweightSession();
@@ -617,7 +618,23 @@ public sealed class RealmProvisioningService : IRealmProvisioningService
             await using var dropCmd = new NpgsqlCommand(
                 $"DROP DATABASE IF EXISTS {quotedName} WITH (FORCE)", bootstrapConn);
 #pragma warning restore CA2100
-            await dropCmd.ExecuteNonQueryAsync(ct);
+            // DROP DATABASE waits for a checkpoint, which takes longer than Npgsql's default
+            // 30 s on a busy server: the drop failed with a timeout although nothing was wrong.
+            dropCmd.CommandTimeout = (int)DropDatabaseTimeout.TotalSeconds;
+            try
+            {
+                await dropCmd.ExecuteNonQueryAsync(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The tenant is already released from Marten (step 1) while the Realm record
+                // and the database remain. Both steps are idempotent: repeating the hard delete
+                // completes it.
+                _logger.LogError(ex,
+                    "Hard delete of realm {Slug} stopped at dropping {DbName}; the realm no longer resolves. " +
+                    "Repeat the hard delete to complete it.", slug, tenantDbName);
+                throw;
+            }
         }
 
         // 3. Remove the global Realm record and invalidate the cache so middleware

@@ -53,5 +53,8 @@ public sealed class ActivationTokenRegistrationCeremony
     public string OptionsJson { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
+
+    /// <summary>Set by the one finish that consumed the ceremony (version-checked).</summary>
+    public DateTimeOffset? ConsumedAt { get; set; }
     public bool IsExpired => DateTimeOffset.UtcNow >= ExpiresAt;
 }

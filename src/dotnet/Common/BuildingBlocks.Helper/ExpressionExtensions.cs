@@ -17,17 +17,17 @@ public static class ExpressionExtensions
     )
     {
         var parameter = Expression.Parameter(typeof(T), "p");
-        var leftBody = new ParameterReplacer(parameter).Visit(left.Body);
-        var rightBody = new ParameterReplacer(parameter).Visit(right.Body);
+        var leftBody = new ParameterReplacer(left.Parameters[0], parameter).Visit(left.Body);
+        var rightBody = new ParameterReplacer(right.Parameters[0], parameter).Visit(right.Body);
 
         var combinedBody = combiner(leftBody, rightBody);
         return Expression.Lambda<Func<T, bool>>(combinedBody, parameter);
     }
 }
 
-internal class ParameterReplacer : ExpressionVisitor
+/// <summary>Replaces exactly one parameter. Replacing every parameter also rebound the
+/// parameters of inner lambdas, which changed the predicate (HELP-B9-02).</summary>
+internal class ParameterReplacer(ParameterExpression from, ParameterExpression to) : ExpressionVisitor
 {
-    private readonly ParameterExpression _parameter;
-    public ParameterReplacer(ParameterExpression parameter) => _parameter = parameter;
-    protected override Expression VisitParameter(ParameterExpression node) => _parameter;
+    protected override Expression VisitParameter(ParameterExpression node) => node == from ? to : node;
 }

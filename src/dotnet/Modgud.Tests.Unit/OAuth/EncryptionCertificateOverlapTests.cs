@@ -110,6 +110,47 @@ public class EncryptionCertificateOverlapTests : IDisposable
         Assert.Single(options.EncryptionCredentials);
     }
 
+    /// <summary>
+    /// FK-05 — OpenIddict sorts each credential list by X.509 expiration and signs/encrypts
+    /// with the first entry. A managed replacement certificate that expires BEFORE the
+    /// self-signed one it replaces (listed under Previous*) must still be the one in use:
+    /// the configured active path wins, the previous ones stay verification/decryption-only.
+    /// </summary>
+    [Fact]
+    public void The_configured_active_certificates_stay_active_when_a_previous_one_expires_later()
+    {
+        var signingPath = Path.Combine(_dir, "signing-active.pfx");
+        var previousSigningPath = Path.Combine(_dir, "signing-previous.pfx");
+        var encryptionPath = Path.Combine(_dir, "encryption-active.pfx");
+        var previousEncryptionPath = Path.Combine(_dir, "encryption-previous.pfx");
+
+        CertificateBootstrap.GenerateSelfSignedPfx(signingPath, "CN=Managed Signing",
+            X509KeyUsageFlags.DigitalSignature, validYears: 1, keySize: 2048);
+        CertificateBootstrap.GenerateSelfSignedPfx(previousSigningPath, "CN=Old Signing",
+            X509KeyUsageFlags.DigitalSignature, validYears: 2, keySize: 2048);
+        CertificateBootstrap.GenerateSelfSignedPfx(encryptionPath, "CN=Managed Encryption",
+            X509KeyUsageFlags.KeyEncipherment | X509KeyUsageFlags.DataEncipherment, validYears: 1, keySize: 2048);
+        CertificateBootstrap.GenerateSelfSignedPfx(previousEncryptionPath, "CN=Old Encryption",
+            X509KeyUsageFlags.KeyEncipherment | X509KeyUsageFlags.DataEncipherment, validYears: 2, keySize: 2048);
+
+        var options = BuildServerOptions(new OpenIddictSettings
+        {
+            DevelopmentMode = false,
+            SigningCertificatePath = signingPath,
+            PreviousSigningCertificatePaths = [previousSigningPath],
+            EncryptionCertificatePath = encryptionPath,
+            PreviousEncryptionCertificatePaths = [previousEncryptionPath],
+        });
+
+        using var signing = X509CertificateLoader.LoadPkcs12FromFile(signingPath, password: null);
+        using var encryption = X509CertificateLoader.LoadPkcs12FromFile(encryptionPath, password: null);
+
+        Assert.Equal(2, options.SigningCredentials.Count);
+        Assert.Equal(2, options.EncryptionCredentials.Count);
+        Assert.Equal(signing.Thumbprint, ((X509SecurityKey)options.SigningCredentials[0].Key).Certificate.Thumbprint);
+        Assert.Equal(encryption.Thumbprint, ((X509SecurityKey)options.EncryptionCredentials[0].Key).Certificate.Thumbprint);
+    }
+
     private static OpenIddictServerOptions BuildServerOptions(OpenIddictSettings settings)
     {
         var services = new ServiceCollection();

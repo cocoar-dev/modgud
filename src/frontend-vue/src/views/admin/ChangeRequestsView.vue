@@ -83,7 +83,8 @@ async function approve() {
   busy.value = true
   actionError.value = ''
   try {
-    await http.addPath(selected.value.Id, 'approve').post({ NotifyUser: notifyUser.value })
+    // B4-AP-02 — approve exactly the state shown; the server refuses a request changed since.
+    await http.addPath(selected.value.Id, 'approve').post({ NotifyUser: notifyUser.value, ExpectedUpdatedAt: selected.value.UpdatedAt })
     await loadRequests()
     selected.value = null
   } catch (e: any) {

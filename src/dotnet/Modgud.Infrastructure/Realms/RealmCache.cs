@@ -84,9 +84,12 @@ public sealed class RealmCache : IRealmCache
         TenantInfo? SingleActiveRealm,
         DateTimeOffset LoadedAt);
 
-    public RealmCache(IGlobalStore globalStore)
+    private readonly bool _allowLocalhostFallback;
+
+    public RealmCache(IGlobalStore globalStore, Microsoft.Extensions.Hosting.IHostEnvironment environment)
     {
         _globalStore = globalStore;
+        _allowLocalhostFallback = RealmCacheLookup.AllowsLocalhostFallback(environment);
     }
 
     public async Task<TenantInfo?> ResolveDomainAsync(string hostname) =>
@@ -99,10 +102,11 @@ public sealed class RealmCache : IRealmCache
             return null;
 
         // App-subdomain match (more specific) takes precedence; otherwise the
-        // plain tenant resolution incl. the dev-friendly localhost fallback
+        // plain tenant resolution incl. the dev-only localhost fallback
         // (localhost-style host with exactly one active realm → that realm).
         return RealmCacheLookup.Resolve(
-            hostname, snapshot.ByApplicationDomain, snapshot.ByDomain, snapshot.SingleActiveRealm);
+            hostname, snapshot.ByApplicationDomain, snapshot.ByDomain,
+            _allowLocalhostFallback ? snapshot.SingleActiveRealm : null);
     }
 
     public async Task<IReadOnlyList<TenantInfo>> GetAllActiveAsync()

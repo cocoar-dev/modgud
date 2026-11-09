@@ -1,5 +1,7 @@
 <script>
   const reveal = () => {
+    // Tells the inline fallback in BaseLayout that the reveal took over.
+    document.documentElement.classList.add('reveal-ready');
     const elements = document.querySelectorAll<HTMLElement>('[data-reveal]');
 
     if (!('IntersectionObserver' in window)) {

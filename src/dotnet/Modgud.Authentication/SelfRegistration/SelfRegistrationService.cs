@@ -63,6 +63,7 @@ public sealed class SelfRegistrationService(
     IHostEnvironment env,
     Modgud.Authentication.Applications.IApplicationSettingsResolver settingsResolver,
     Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor,
+    Modgud.Authorization.Services.IPermissionService permissionService,
     ILogger<SelfRegistrationService> logger) : ISelfRegistrationService
 {
     // Single response shape — anti-enumeration. Don't leak whether an
@@ -208,8 +209,9 @@ public sealed class SelfRegistrationService(
         var request = new Modgud.Authentication.Registration.RegistrationRequest(
             Email: normalizedEmail,
             UserName: normalizedUserName,
-            Firstname: dto.Firstname,
-            Lastname: dto.Lastname,
+            // AREG-09 — a name field that is Off is never captured.
+            Firstname: RegistrationFieldsPolicy.Captured(registrationFields.Firstname, dto.Firstname),
+            Lastname: RegistrationFieldsPolicy.Captured(registrationFields.Lastname, dto.Lastname),
             PasswordHash: passwordHash,
             ProofKind: Modgud.Authentication.Registration.RegistrationProofKind.Link,
             Source: Modgud.Authentication.Registration.RegistrationSources.Web,
@@ -314,17 +316,8 @@ public sealed class SelfRegistrationService(
         // changes between register and verify don't change the contract).
         if (pending.DefaultGroupIds is { Length: > 0 })
         {
-            foreach (var gidStr in pending.DefaultGroupIds)
-            {
-                if (!Guid.TryParse(gidStr, out var gid)) continue;
-                var group = await session.LoadAsync<Group>(gid, ct);
-                if (group is null || group.IsDeleted) continue;
-                if (!group.MemberIds.Contains(pending.UserId))
-                {
-                    group.MemberIds.Add(pending.UserId);
-                    session.Store(group);
-                }
-            }
+            await Modgud.Authentication.Registration.RegistrationDefaultGroups.JoinAsync(
+                session, permissionService, logger, pending.UserId, pending.DefaultGroupIds, "legacy-self-registration", ct);
         }
 
         pending.UsedAt = DateTimeOffset.UtcNow;

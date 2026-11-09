@@ -12,7 +12,7 @@ namespace Modgud.Infrastructure.Persistence.Tenancy;
 /// Population strategy:
 /// </para>
 /// <list type="bullet">
-///   <item><description><c>RealmMiddleware</c> sets <see cref="Set"/> at request entry.</description></item>
+///   <item><description><c>RealmMiddleware</c> enters the request's realm with <see cref="Enter"/> at request entry.</description></item>
 ///   <item><description>Background / hosted services enter explicitly via <see cref="Enter"/>.</description></item>
 ///   <item><description>Wolverine bus-dispatch propagates <see cref="Current"/> onto the message envelope.</description></item>
 ///   <item><description><c>TenantedSessionFactory</c> falls back to <see cref="Current"/> if <c>HttpContext.Items</c> is empty.</description></item>

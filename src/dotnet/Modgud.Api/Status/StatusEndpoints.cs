@@ -1,6 +1,6 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Cocoar.Reflectensions;
-using Modgud.Authentication.ExtensionMethods;
+using Modgud.Authorization.AspNetCore;
 
 namespace Modgud.Api;
 
@@ -16,11 +16,16 @@ public static class StatusEndpoints
             {
                 ServiceName = typeof(Program).Assembly.GetName().Name!,
                 CurrentDateTime = DateTime.Now,
-                ClientIp = request.FindSourceIp().FirstOrDefault()?.ToString(),
+                // HTTP-B9-03 — the connection's address, as the forwarded-headers policy
+                // resolved it from trusted proxies; X-Forwarded-For itself is client input.
+                ClientIp = context.Connection.RemoteIpAddress?.ToString(),
                 Version = typeof(Program).Assembly.GetName().Version!.ToString(),
                 UserAgent = request.Headers["User-Agent"].ToString(),
 
-                ProxyServers = request.FindSourceIp().Skip(1).Select(ip => ip.ToString()).ToArray(),
+                // Shown as sent, unverified: whatever the client or a proxy put there.
+                ProxyServers = request.Headers["X-Forwarded-For"]
+                    .SelectMany(v => (v ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    .ToArray(),
                 User = isAuthenticated ? context.User.Identity!.Name! : "Anonymous",
                 Client = context.User.Claims.GetFirstClaimValueByType("client_id"),
                 Authenticated = isAuthenticated,
@@ -30,7 +35,10 @@ public static class StatusEndpoints
                 ContentRoot = environment.ContentRootPath,
                 WebRoot = environment.WebRootPath
             };
-        }).RequireAuthorization();
+        })
+        // B9-J04 — host name, content paths, uptime, version and the proxy chain are
+        // diagnostics for a realm admin, not for every signed-in user.
+        .RequiresPermission("realm:admin");
 
         // Anonymous health check (for Docker HEALTHCHECK / Testcontainers)
         application.MapGet("api/health", () => Results.Ok(new { Status = "Healthy" }))

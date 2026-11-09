@@ -60,20 +60,25 @@ public interface IPendingAdminInviteService
     /// <see cref="Error"/> describing why (expired / used / unknown
     /// token / weak password).
     ///
-    /// <para>Consistency (Audit #31): the user-create commits first (through the
-    /// UserManager's own store session), then the role/group seed, then the invite
-    /// is marked used — these are SEPARATE commits, not one transaction. A weak
-    /// password is rejected before any commit, so the invite stays unused and can be
-    /// retried. A crash after the admin exists but before the invite is marked used
-    /// leaves a benign INERT token: the admin already exists, so the unique
-    /// username/email indexes block a second admin, and a later replay is detected
-    /// (the target admin exists) and the invite marked used then.</para>
+    /// <para>Consistency (Audit #31, IS-INV-01): the invite is claimed first
+    /// (version-checked), then the user-create commits (through the UserManager's own
+    /// store session), then the role/group seed — SEPARATE commits, not one
+    /// transaction. A weak password is rejected before the user exists, so the claim
+    /// is re-armed and the invite can be retried (unless a newer invite was issued
+    /// meanwhile). A crash after the claim leaves the invite used; the operator issues
+    /// a new one.</para>
     /// </summary>
     Task<ErrorOr<BootstrappedAdmin>> ConsumeAsync(
         string plaintextToken,
         string password,
         CancellationToken ct = default);
 }
+
+/// <summary>IS-INV-01 — another issue or consume of this realm's admin invite committed
+/// between the read and the write; nothing was stored. Issue again.</summary>
+public sealed class AdminInviteConflictException(Exception inner)
+    : InvalidOperationException(
+        "Another admin invite for this realm was issued or consumed at the same moment; issue it again.", inner);
 
 public sealed record IssuedInvite(
     Guid InviteId,
@@ -111,6 +116,7 @@ public sealed class PendingAdminInviteService(
         foreach (var open in openInvites)
         {
             open.UsedAt = DateTimeOffset.UtcNow;
+            open.OpenSlot = null;
             session.Store(open);
         }
 
@@ -129,6 +135,7 @@ public sealed class PendingAdminInviteService(
             ExpiresAt = DateTimeOffset.UtcNow.AddHours(PendingAdminInvite.DefaultExpirationHours),
             CreatedAt = DateTimeOffset.UtcNow,
             IssuedBy = issuedBy,
+            OpenSlot = PendingAdminInvite.OpenSlotValue,
         };
         session.Store(invite);
         securityAudit.StoreRequired(session, new SecurityAuditRecord
@@ -142,7 +149,16 @@ public sealed class PendingAdminInviteService(
             OperationCode = "issue",
             EffectiveAt = invite.ExpiresAt,
         });
-        await session.SaveChangesAsync(ct);
+        try
+        {
+            await session.SaveChangesAsync(ct);
+        }
+        catch (Exception ex) when (IsLostRace(ex))
+        {
+            // IS-INV-01 — another issue or a consume changed the open invite since it
+            // was read; nothing was stored, the caller issues again.
+            throw new AdminInviteConflictException(ex);
+        }
 
         var url = BuildMagicLinkUrl(realm, token);
 
@@ -200,6 +216,21 @@ public sealed class PendingAdminInviteService(
         if (invite.IsExpired)
             return Error.Validation("BootstrapInvite.TokenExpired", "Invite has expired.");
 
+        // IS-INV-01 — claim the invite before the admin is created, version-checked: a
+        // reissue that revoked it after it was loaded wins, and a reissue after the claim
+        // no longer sees it as open.
+        invite.UsedAt = DateTimeOffset.UtcNow;
+        invite.OpenSlot = null;
+        session.Store(invite);
+        try
+        {
+            await session.SaveChangesAsync(ct);
+        }
+        catch (JasperFx.ConcurrencyException)
+        {
+            return Error.Validation("BootstrapInvite.TokenUsed", "Invite has already been used.");
+        }
+
         var bootstrapResult = await bootstrapper.BootstrapDirectAsync(
             invite.UserName, password, invite.Email,
             invite.Firstname, invite.Lastname, ct);
@@ -207,27 +238,30 @@ public sealed class PendingAdminInviteService(
         if (bootstrapResult.IsError)
         {
             // Audit #31 — distinguish a retryable failure from a spent invite.
-            // A weak password is rejected before the user is created, so keep the
-            // invite armed for a retry. But if the target admin ALREADY exists, a
-            // prior consume succeeded (possibly crashing before it marked the invite
-            // used) — the invite is spent, so mark it used now instead of leaving it
-            // armed indefinitely. (Replays can't create a second admin anyway: the
-            // unique username/email indexes reject them — this just stops the stale
-            // armed token + the misleading audit trail.)
+            // A weak password is rejected before the user is created, so re-arm the
+            // invite for a retry. But if the target admin ALREADY exists, the invite
+            // is spent and stays claimed. (Replays can't create a second admin anyway:
+            // the unique username/email indexes reject them.)
             var adminAlreadyExists = await session.Query<ApplicationUser>()
                 .AnyAsync(u => !u.IsDeleted && u.NormalizedEmail == invite.Email.ToUpperInvariant(), ct);
-            if (adminAlreadyExists)
+            if (!adminAlreadyExists)
             {
-                invite.UsedAt = DateTimeOffset.UtcNow;
+                // Retryable: re-arm the claim, unless a reissue took the open slot meanwhile
+                // (then the newer invite is the one that counts).
+                invite.UsedAt = null;
+                invite.OpenSlot = PendingAdminInvite.OpenSlotValue;
                 session.Store(invite);
-                await session.SaveChangesAsync(ct);
+                try
+                {
+                    await session.SaveChangesAsync(ct);
+                }
+                catch (Exception ex) when (IsLostRace(ex))
+                {
+                    logger.LogInformation("Bootstrap-invite not re-armed: a newer invite was issued meanwhile.");
+                }
             }
             return bootstrapResult.Errors;
         }
-
-        invite.UsedAt = DateTimeOffset.UtcNow;
-        session.Store(invite);
-        await session.SaveChangesAsync(ct);
 
         logger.LogInformation(
             "Bootstrap-invite consumed. UserId={UserId} Email={MaskedEmail}",
@@ -235,6 +269,15 @@ public sealed class PendingAdminInviteService(
 
         return bootstrapResult.Value;
     }
+
+    private static bool IsLostRace(Exception ex) => ex switch
+    {
+        JasperFx.ConcurrencyException => true,
+        JasperFx.DocumentAlreadyExistsException => true, // Marten's shape of the open-slot 23505
+        Marten.Exceptions.MartenCommandException { InnerException: Npgsql.PostgresException { SqlState: "23505" } } => true,
+        Npgsql.PostgresException { SqlState: "23505" } => true,
+        _ => false,
+    };
 
     private string BuildMagicLinkUrl(Realm realm, string plaintextToken)
     {

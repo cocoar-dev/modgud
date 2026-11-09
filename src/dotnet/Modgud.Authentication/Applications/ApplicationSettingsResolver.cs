@@ -37,6 +37,12 @@ public interface IApplicationSettingsResolver
     Task<EffectiveSettings> ResolveForRequestAsync(
         HttpContext httpContext, string? clientId = null, CancellationToken ct = default);
 
+    /// <summary>The Application <see cref="ResolveForRequestAsync"/> picks for this request,
+    /// by the same signal order; <c>null</c> = realm-wide. The rate limiter keys its App
+    /// bucket on it, so the counter and the limits it is compared with belong to one App.</summary>
+    Task<Guid?> ResolveApplicationIdForRequestAsync(
+        HttpContext httpContext, string? clientId = null, CancellationToken ct = default);
+
     /// <summary>
     /// The Application a sign-in page presents, read from its return URL by the same rule
     /// that picks the sign-in's target (ADR 0025): the Host-pinned App leads; else the
@@ -107,19 +113,19 @@ public sealed class ApplicationSettingsResolver(
 
     public async Task<EffectiveSettings> ResolveForRequestAsync(
         HttpContext httpContext, string? clientId = null, CancellationToken ct = default)
+        => await ResolveAsync(await ResolveApplicationIdForRequestAsync(httpContext, clientId, ct), ct);
+
+    public async Task<Guid?> ResolveApplicationIdForRequestAsync(
+        HttpContext httpContext, string? clientId = null, CancellationToken ct = default)
     {
         // Host pin leads (Phase 1). Otherwise fall back to the client's App when
         // it is bound to exactly one — zero (realm-wide) or several (ambiguous)
         // both mean "no Application override".
-        var applicationId = httpContext.GetApplicationId();
-        if (applicationId is null && !string.IsNullOrEmpty(clientId))
-        {
-            var client = await session.Query<OAuthApplicationState>()
-                .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted, ct);
-            if (client is { AppIds.Count: 1 }) applicationId = client.AppIds[0];
-        }
-
-        return await ResolveAsync(applicationId, ct);
+        if (httpContext.GetApplicationId() is { } pinned) return pinned;
+        if (string.IsNullOrEmpty(clientId)) return null;
+        var client = await session.Query<OAuthApplicationState>()
+            .FirstOrDefaultAsync(c => c.ClientId == clientId && !c.IsDeleted, ct);
+        return client is { AppIds.Count: 1 } ? client.AppIds[0] : null;
     }
 
     public async Task<Guid?> ResolveApplicationIdForReturnUrlAsync(

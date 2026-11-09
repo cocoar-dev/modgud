@@ -150,6 +150,12 @@ internal static class ObservabilityExtensions
         healthBuilder.AddCheck<ClusterHealthCheck>(
             name: "cluster",
             tags: new[] { "ready" });
+        // Messages that failed for good (follow-up revocations, mails). Degraded only — from the
+        // background snapshot of DeadLetterMonitor (registered with the persistence in
+        // Program.cs), so readiness stays independent of the number of realms.
+        healthBuilder.AddCheck<DeadLetterHealthCheck>(
+            name: "dead-letters",
+            tags: new[] { "ready" });
 
         return services;
     }
@@ -201,14 +207,7 @@ internal static class ObservabilityExtensions
         var shutdown = app.Services.GetRequiredService<Modgud.Api.Cluster.ShutdownState>();
         app.Use(async (context, next) =>
         {
-            if (shutdown.IsStopping && context.Request.Path.Equals("/health/ready", StringComparison.OrdinalIgnoreCase))
-            {
-                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                context.Response.ContentType = "application/json; charset=utf-8";
-                await context.Response.WriteAsync(
-                    """{"status":"Unhealthy","checks":[{"name":"cluster","status":"Unhealthy","description":"Draining — this node is shutting down."}]}""");
-                return;
-            }
+            if (await AnswerIfDrainingAsync(context, shutdown)) return;
             await next(context);
         });
 
@@ -225,6 +224,22 @@ internal static class ObservabilityExtensions
         }).AllowAnonymous();
 
         return app;
+    }
+
+    /// <summary>
+    /// ADR 0022 (D7) — the drain answer for <c>/health/ready</c>. Also called from the
+    /// realm-independent terminal branch in Program.cs, which serves <c>/health</c> before
+    /// this middleware is reached (IC-CO-01). Returns true when it answered.
+    /// </summary>
+    internal static async Task<bool> AnswerIfDrainingAsync(HttpContext context, Modgud.Api.Cluster.ShutdownState shutdown)
+    {
+        if (!shutdown.IsStopping || !context.Request.Path.Equals("/health/ready", StringComparison.OrdinalIgnoreCase))
+            return false;
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        context.Response.ContentType = "application/json; charset=utf-8";
+        await context.Response.WriteAsync(
+            """{"status":"Unhealthy","checks":[{"name":"cluster","status":"Unhealthy","description":"Draining — this node is shutting down."}]}""");
+        return true;
     }
 
     /// <summary>

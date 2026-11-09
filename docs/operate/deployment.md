@@ -461,7 +461,7 @@ curl http://localhost:8081/health/ready   # readiness — DB connection + OpenId
 ```
 
 - **`/health/live`** runs no dependency checks; it returns `200` as long as the process is up. Use it as the liveness probe.
-- **`/health/ready`** returns `200` only when the master DB connection and the OpenIddict signing/encryption certificate are both ready and the node is **not draining** after SIGTERM. Use it as the readiness probe (gate traffic on it). The JSON body names the failing check (`postgres`, `marten-schema`, `openiddict-cert`, `cluster`).
+- **`/health/ready`** returns `200` only when the master DB connection and the OpenIddict signing/encryption certificate are both ready and the node is **not draining** after SIGTERM. Use it as the readiness probe (gate traffic on it). The JSON body names the failing check (`postgres`, `marten-schema`, `openiddict-cert`, `cluster`). A signing or encryption certificate within 30 days of expiry (or past it) turns `openiddict-cert` to `Degraded`: the probe stays `200`, but the JSON body and a warning log name the certificate to replace. The `dead-letters` check turns `Degraded` (probe still `200`) while a realm has messages that failed for good, such as a follow-up revocation or mail after its whole retry schedule. The JSON body names the realms and counts, and a warning log repeats them. The count is sampled in the background every 5 minutes, so the probe does not grow with the number of realms. The messages are in that realm database's `wolverine_dead_letters` table.
 
 The image also declares a Docker `HEALTHCHECK` on `/health/ready` (every 15 s, 120 s start period), so `docker ps` shows `healthy` / `unhealthy` and other services can wait with `depends_on: condition: service_healthy`. If you change `AppUrl`, point the probe at the new address with `HEALTHCHECK_URL`.
 
@@ -483,13 +483,13 @@ The window is `DbSettings__StartupTimeoutSeconds` (default `90`; `0` = a single 
 
 Modgud can run as **two (or more) containers against one PostgreSQL**, both serving traffic all the time. That is what makes an image update a non-event: replace one container while the other keeps serving, then the other. It also means a single crashed container no longer takes the login page down. It is *not* a claim of failover across machines or regions.
 
-There is no "cluster mode" to switch on. A Production container always runs the cluster-capable code path, with one instance as well as with two:
+There is no "cluster mode" to switch on. A Production or Staging container always runs the cluster-capable code path, with one instance as well as with two (Staging included, so that trying several instances there exercises the same coordination and safeguards as Production; Development and Testing stay single-process):
 
 | Concern | How it is coordinated |
 |---|---|
 | Outbox, scheduled messages, event forwarding | Wolverine in `Balanced` mode — leader election over its node table in the master DB, work reassigned when a node's heartbeat goes stale |
 | Async projections and event subscriptions (audit view, application change feed, back-channel logout) | Wolverine-managed distribution: every realm database's projections run on exactly one live node; a dead node's databases are picked up by a survivor |
-| Scheduled jobs | Quartz.NET clustered on a Postgres job store (schema `quartz` in the master DB): a trigger fires on one node, `RequestRecovery` jobs interrupted by a crash re-run on a survivor |
+| Scheduled jobs | Quartz.NET clustered on a Postgres job store (schema `quartz` in the master DB): a trigger fires on one node, `RequestRecovery` jobs interrupted by a crash re-run on a survivor. Every 5 minutes each node compares every job's schedule with its saved configuration and repairs a deviation (a warning in the log; until then *Scheduled Jobs* shows it in the *Schedule* column) |
 | Live updates over SignalR | The SignalARRR Postgres backplane on the master database (`LISTEN`/`NOTIFY`) carrying a cluster subject with Modgud's data events: an event raised on one node is replayed into the hub streams of the other, so every browser sees it exactly once, from the node it is pinned to. A listener drop is caught up from the backplane's message table, not lost |
 | Login providers (OIDC/SAML), passkey ceremonies, sessions, rate limits, DataProtection keys | Resolved from the database by whichever node serves the request — nothing lives only in one process |
 

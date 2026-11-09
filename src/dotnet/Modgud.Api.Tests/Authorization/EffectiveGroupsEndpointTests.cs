@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using BuildingBlocks.Helper;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Authorization.Apps;
+using Modgud.Authorization.Events;
 using Modgud.Authorization.Membership;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
@@ -188,6 +189,66 @@ public class EffectiveGroupsEndpointTests : IntegrationTestBase
         var diag = Assert.Single(result.Diagnostics, d => d.GroupId == new ShortGuid(autoGroup.Id).ToString());
         Assert.True(diag.Kind is "EvalFailed" or "CompileFailed");
         Assert.False(string.IsNullOrWhiteSpace(diag.Error));
+    }
+
+    /// <summary>B3-F06 — an Auto group that lists the principal in MemberIds while its
+    /// predicate does not match now disappeared from the view (only live matches showed).
+    /// The stored membership is shown, marked as stored.</summary>
+    [Fact]
+    public async Task Stored_Auto_Membership_Without_A_Live_Match_Is_Shown_As_Stored()
+    {
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Stale", lastname: "Member", acronym: "sm",
+            email: "stale.member@elsewhere.local", password: "TestPass1234", isRealmAdmin: true);
+        var group = await StartAutoGroupAsync(
+            "(p) => Type.Is(p, 'person') && p.Email != null && p.Email.endsWith('@nowhere.local')",
+            memberIds: [user.Id], excludeTestAccounts: false);
+
+        var result = await EffectiveAsync(user.Id);
+
+        var row = Assert.Single(result.Groups, g => g.Id == new ShortGuid(group).ToString());
+        Assert.Equal("AutoStored", row.Source);
+        Assert.True(row.MaterializedMatches);
+    }
+
+    /// <summary>B3-F06 — the live pass ignored the test-account rule every other
+    /// membership path applies: a closed group never counts a test account.</summary>
+    [Fact]
+    public async Task A_Test_Account_Is_Not_Shown_In_A_Group_Closed_To_Test_Accounts()
+    {
+        var user = await Factory.CreateTestUserWithIdentityAsync(
+            firstname: "Test", lastname: "Account", acronym: "ta",
+            email: "closed.member@demo.local", password: "TestPass1234", isRealmAdmin: false);
+        var mark = await Client.PutAsJsonAsync($"/api/admin/users/{new ShortGuid(user.Id)}/test-account",
+            new { IsTestAccount = true }, TestContext.Current.CancellationToken);
+        mark.EnsureSuccessStatusCode();
+        var group = await StartAutoGroupAsync(
+            "(p) => Type.Is(p, 'person') && p.Email != null && p.Email.endsWith('@demo.local')",
+            memberIds: [], excludeTestAccounts: true);
+
+        var result = await EffectiveAsync(user.Id);
+
+        Assert.DoesNotContain(result.Groups, g => g.Id == new ShortGuid(group).ToString());
+    }
+
+    private async Task<Guid> StartAutoGroupAsync(string script, List<Guid> memberIds, bool excludeTestAccounts)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var compiled = scope.ServiceProvider.GetRequiredService<IMembershipEvaluator>().TranspileMembershipScript(script);
+        var id = Guid.CreateVersion7();
+        var session = scope.ServiceProvider.GetRequiredService<IDocumentSession>();
+        session.Events.StartStream(id, new GroupCreatedEvent(
+            id, $"Auto_{Guid.NewGuid():N}", null, memberIds, [], MembershipMode.Auto, script, compiled,
+            BoundTo: [AppSlugs.Modgud], ExcludeTestAccounts: excludeTestAccounts));
+        await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return id;
+    }
+
+    private async Task<EffectiveGroupsTestResponse> EffectiveAsync(Guid userId)
+    {
+        var resp = await Client.GetAsync($"/api/user/{new ShortGuid(userId)}/effective-groups", TestContext.Current.CancellationToken);
+        resp.EnsureSuccessStatusCode();
+        return (await resp.Content.ReadFromJsonAsync<EffectiveGroupsTestResponse>(JsonOptions, TestContext.Current.CancellationToken))!;
     }
 
     // ── DTOs (test-local; pinning only the wire shape we care about) ─────────

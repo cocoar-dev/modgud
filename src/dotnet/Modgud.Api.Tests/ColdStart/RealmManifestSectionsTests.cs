@@ -575,6 +575,69 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
         Assert.Equal("Terminal.TerminalPolicyDisabled", noPolicy.FirstError.Code);
     }
 
+    /// <summary>
+    /// GP-CO-01 — a position is a principal that can be a group member (it inherits the
+    /// group's roles while staffed). The applier resolved users, groups and service
+    /// accounts only, so a mixed manual group lost its position on apply — including the
+    /// export → apply round trip of the very same realm, since the exporter writes it.
+    /// </summary>
+    [Fact]
+    public async Task A_position_member_survives_apply_and_the_export_round_trip()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        var exporter = factory.Services.GetRequiredService<RealmManifestExporter>();
+        factory.Services.GetRequiredService<AppSettings>().Features.PositionTerminals = true;
+
+        const string slug = "posgroup";
+        var aliceKey = new ShortGuid(Guid.NewGuid()).ToString();
+        var positionKey = new ShortGuid(Guid.NewGuid()).ToString();
+        var groupKey = new ShortGuid(Guid.NewGuid()).ToString();
+
+        var import = await ProvisionRealmAsync(factory, Shell(slug), new RealmManifest
+        {
+            Users = [new RealmManifestUser { Key = "alice", Id = aliceKey, Email = $"alice@{slug}.test", UserName = "alice", Password = "Passw0rd!23" }],
+            Positions = [new RealmManifestPosition { AccountName = "desk.front", Id = positionKey }],
+        }, ct);
+        Assert.False(import.IsError, import.IsError ? import.FirstError.Description : string.Empty);
+
+        var withGroup = await applier.UpdateRealmAsync(slug, new RealmManifest
+        {
+            Groups =
+            [
+                new RealmManifestGroup
+                {
+                    Name = "Front office", Id = groupKey,
+                    Members =
+                    [
+                        new ManifestRef { Key = "alice", Id = aliceKey },
+                        new ManifestRef { Key = "desk.front", Id = positionKey },
+                    ],
+                },
+            ],
+        }, ct: ct);
+        Assert.False(withGroup.IsError, withGroup.IsError ? withGroup.FirstError.Description : string.Empty);
+
+        var expected = new[] { new ShortGuid(aliceKey).Guid, new ShortGuid(positionKey).Guid }.Order().ToArray();
+        async Task AssertMembersAsync(string stage) => await InTenantAsync(factory, slug, async sp =>
+        {
+            var session = sp.GetRequiredService<IDocumentSession>();
+            var group = await session.LoadAsync<Group>(new ShortGuid(groupKey).Guid, ct);
+            Assert.NotNull(group);
+            Assert.True(expected.SequenceEqual(group.MemberIds.Order()),
+                $"{stage}: members {string.Join(",", group.MemberIds)}");
+        });
+        await AssertMembersAsync("after apply");
+
+        var exported = await exporter.ExportRealmAsync(slug, ct);
+        Assert.False(exported.IsError);
+        var reapplied = await applier.UpdateRealmAsync(slug, exported.Value, ct: ct);
+        Assert.False(reapplied.IsError, reapplied.IsError ? reapplied.FirstError.Description : string.Empty);
+        await AssertMembersAsync("after export round trip");
+    }
+
     private static async Task InTenantAsync(
         ColdStartWebApplicationFactory factory, string slug, Func<IServiceProvider, Task> body)
     {

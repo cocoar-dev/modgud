@@ -30,6 +30,7 @@ const TEST_PASSWORD = 'TestPass1234!'
 
 const SUFFIX = uniqueSuffix()
 const userName = `profile-${SUFFIX}`
+let userId: string
 const initialEmail = `${userName}-old@modgud.test`
 const newEmail = `${userName}-new@modgud.test`
 
@@ -49,11 +50,12 @@ test.beforeAll(async ({ request }) => {
   // users start unverified, so confirm at creation to model a settled account.
   const created = await (await request.post('/api/user', {
     data: {
-      Firstname: 'Old', Lastname: 'Name', Acronym: userName,
+      Firstname: 'Old', Lastname: 'Name', Acronym: userName, UserName: userName,
       Email: initialEmail, EmailConfirmed: true,
     },
   })).json()
 
+  userId = created.Id
   const passRes = await request.put(`/api/user/${created.Id}/password`, {
     data: { Password: TEST_PASSWORD },
   })
@@ -113,7 +115,8 @@ test('admin approves the pending request and the changes apply to the user', asy
 
   // Find the pending request for our user.
   const list = await (await page.request.get('/api/admin/change-requests')).json() as { Id: string; UserId: string; Status: string }[]
-  const ours = list.find(r => r.Status === 'AdminApprovalPending')
+  // B4-AP-08 — this spec's own request, not the first pending one of any user.
+  const ours = list.find(r => r.UserId === userId && r.Status === 'AdminApprovalPending')
   expect(ours, `expected an AdminApprovalPending request for ${userName}`).toBeDefined()
 
   const approve = await page.request.post(`/api/admin/change-requests/${ours!.Id}/approve`, {

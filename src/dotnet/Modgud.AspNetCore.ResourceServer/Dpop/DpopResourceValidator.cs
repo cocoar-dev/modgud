@@ -13,6 +13,8 @@ internal enum DpopResourceResult
     InvalidProof,
     /// <summary>The proof verified, but its key thumbprint ≠ the token's <c>cnf.jkt</c>.</summary>
     ThumbprintMismatch,
+    /// <summary>SDK-B5-02 — the proof is valid but was already presented once.</summary>
+    Replayed,
 }
 
 /// <summary>
@@ -22,16 +24,15 @@ internal enum DpopResourceResult
 /// the access token's hash (<c>ath</c>), then checks the proof key's RFC 7638
 /// thumbprint equals the token's <c>cnf.jkt</c>.
 ///
-/// <para>Pure and stateless (clock injected). <c>jti</c> replay tracking at the
-/// RS is intentionally out of scope for now — the AS already rejects replayed
-/// proofs at issuance, and the <c>ath</c> + <c>htu</c> + <c>iat</c> binding
-/// confines any RS-side reuse to a single endpoint within the short freshness
-/// window. An opt-in RS replay cache can be layered on later.</para>
+/// <para>Clock injected. SDK-B5-02 — with an <see cref="IDpopReplayCache"/> (registered by
+/// default) a proof is accepted once: its <c>jti</c> is remembered for the freshness window,
+/// and the same proof presented again is <see cref="DpopResourceResult.Replayed"/>.</para>
 /// </summary>
 internal static class DpopResourceValidator
 {
     public static DpopResourceResult Validate(
-        HttpRequest request, string accessToken, string expectedJkt, DateTimeOffset now)
+        HttpRequest request, string accessToken, string expectedJkt, DateTimeOffset now,
+        IDpopReplayCache? replayCache = null)
     {
         var header = request.Headers["DPoP"];
         if (header.Count == 0)
@@ -41,17 +42,29 @@ internal static class DpopResourceValidator
 
         // The request URL as this server sees it. Behind a reverse proxy the host
         // must be forwarded correctly (UseForwardedHeaders) for htu to match what
-        // the client signed.
-        var htu = $"{request.Scheme}://{request.Host}{request.Path}";
+        // the client signed. SDK-B5-03 — PathBase is part of that URL: under a mount
+        // (UsePathBase, a proxy prefix) the client signs /api/data, not /data.
+        var htu = $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path}";
 
         var result = DpopProofValidator.Validate(
             header.ToString(), request.Method, htu, now, accessToken: accessToken);
         if (!result.IsValid)
             return DpopResourceResult.InvalidProof;
 
-        return string.Equals(result.Jkt, expectedJkt, StringComparison.Ordinal)
-            ? DpopResourceResult.Valid
-            : DpopResourceResult.ThumbprintMismatch;
+        if (!string.Equals(result.Jkt, expectedJkt, StringComparison.Ordinal))
+            return DpopResourceResult.ThumbprintMismatch;
+
+        // Record only a proof that passed every other check, so a forged or foreign proof
+        // can never burn a legitimate client's jti. The window ends when the validator would
+        // reject the proof as stale anyway.
+        if (replayCache is not null && result.Jti is { Length: > 0 } jti && result.IssuedAt is { } issuedAt)
+        {
+            var notAfter = issuedAt + DpopProofValidator.DefaultMaxAge + DpopProofValidator.DefaultClockSkew;
+            if (!replayCache.TryUse(expectedJkt, jti, notAfter, now))
+                return DpopResourceResult.Replayed;
+        }
+
+        return DpopResourceResult.Valid;
     }
 }
 

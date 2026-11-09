@@ -17,6 +17,26 @@ namespace Modgud.Api.Tests.ColdStart;
 /// </summary>
 public class FirstInstallationApiTests(ColdStartFixture fixture) : ColdStartTestBase(fixture)
 {
+    /// <summary>IC-CO-01 — /health runs in the realm-independent terminal branch, so the
+    /// drain short-circuit registered later never saw it: during a drain readiness went
+    /// through the health-check pipeline (logged at Error) instead of a plain 503.</summary>
+    [Fact]
+    public async Task Readiness_answers_the_drain_503_while_the_node_is_stopping()
+    {
+        await using var host = await Fixture.CreateUninitializedHostAsync();
+        using var client = host.Factory.CreateClient();
+        host.Services.GetRequiredService<Modgud.Api.Cluster.ShutdownState>().MarkStopping();
+
+        var response = await client.GetAsync("/health/ready", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        // The short-circuit answers with the cluster entry only; the health-check
+        // pipeline (whose cluster check says the same as a backstop) runs every check.
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var check = Assert.Single(body.RootElement.GetProperty("checks").EnumerateArray());
+        Assert.Equal("cluster", check.GetProperty("name").GetString());
+    }
+
     [Fact]
     public async Task Recovery_token_can_complete_zero_realm_installation_over_http()
     {
@@ -73,7 +93,10 @@ public class FirstInstallationApiTests(ColdStartFixture fixture) : ColdStartTest
         Assert.NotNull(after);
         Assert.True(after.IsInitialized);
         Assert.True(after.HasRealms);
-        Assert.Equal("first", after.RealmSlug);
+        // F.prov-P2 — the anonymous, realm-independent status names no realm and no time
+        // once installed; the completion response told the installer its slug.
+        Assert.Null(after.RealmSlug);
+        Assert.Null(after.CompletedAt);
 
         var realms = host.Services.GetRequiredService<IRealmProvisioningService>();
         var first = await realms.GetRealmBySlugAsync("first", ct);
@@ -119,6 +142,98 @@ public class FirstInstallationApiTests(ColdStartFixture fixture) : ColdStartTest
             },
             ct);
         Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
+    }
+
+    /// <summary>
+    /// F.inst-I1 — a failure after the initial realm document is committed but before the
+    /// realm is seeded must not strand the deployment: the half-created realm is rolled
+    /// back, and the operator can retry with the same link.
+    /// </summary>
+    [Fact]
+    public async Task A_seeding_failure_during_installation_leaves_a_retryable_deployment()
+    {
+        await using var host = await Fixture.CreateUninitializedHostAsync();
+        using var client = host.Factory.CreateClient();
+        var ct = TestContext.Current.CancellationToken;
+
+        var cli = await CliHarness.RunAsync(
+            host.Services, "install-link", "--base-url", "http://localhost", "--minutes", "10", "--json");
+        Assert.Equal(0, cli.ExitCode);
+        using var issuedJson = JsonDocument.Parse(cli.StdOut.Trim());
+        var token = issuedJson.RootElement.GetProperty("token").GetString();
+
+        object Payload() => new
+        {
+            Token = token,
+            Realm = new
+            {
+                Slug = "first",
+                DisplayName = "First Realm",
+                Domains = new[] { "localhost" },
+                PrimaryDomain = "localhost",
+            },
+            Admin = new
+            {
+                UserName = "first-admin",
+                Email = "first-admin@localhost",
+                Password = "TestPass1234",
+            },
+        };
+
+        host.Factory.SeedingFault.ArmOnce();
+        var failed = await client.PostAsJsonAsync("/api/install/complete", Payload(), ct);
+        Assert.False(failed.IsSuccessStatusCode);
+
+        var realms = host.Services.GetRequiredService<IRealmProvisioningService>();
+        Assert.Null(await realms.GetRealmBySlugAsync("first", ct));
+
+        var retry = await client.PostAsJsonAsync("/api/install/complete", Payload(), ct);
+        Assert.True(retry.StatusCode == HttpStatusCode.OK,
+            $"retry {(int)retry.StatusCode}: {await retry.Content.ReadAsStringAsync(ct)}");
+
+        var status = await client.GetFromJsonAsync<InstallationStatusResponse>("/api/install/status", ct);
+        Assert.NotNull(status);
+        Assert.True(status.IsInitialized);
+    }
+
+    /// <summary>
+    /// F.inst-I1 (crash case) — a process that died right after the initial realm document
+    /// was committed leaves an inactive realm shell without users. A new installation link
+    /// and a new installation must still work: the shell is cleaned up, not a dead end.
+    /// </summary>
+    [Fact]
+    public async Task An_abandoned_initial_realm_shell_does_not_block_a_new_installation()
+    {
+        await using var host = await Fixture.CreateUninitializedHostAsync();
+        using var client = host.Factory.CreateClient();
+        var ct = TestContext.Current.CancellationToken;
+
+        // The state a crash between "realm document committed" and "admin created" leaves.
+        var realms = host.Services.GetRequiredService<IRealmProvisioningService>();
+        var shell = await realms.CreateInitialRealmAsync(new Modgud.Application.DTOs.Realms.CreateRealmDto
+        {
+            Slug = "first", DisplayName = "First Realm", Domains = ["localhost"], PrimaryDomain = "localhost",
+        }, ct);
+        Assert.False(shell.IsError, shell.IsError ? shell.FirstError.Description : string.Empty);
+
+        var cli = await CliHarness.RunAsync(host.Services,
+            "install-link", "--base-url", "http://localhost", "--minutes", "10", "--json");
+        Assert.True(cli.ExitCode == 0, $"install-link refused: {cli.StdErr}");
+        using var issuedJson = JsonDocument.Parse(cli.StdOut.Trim());
+        var token = issuedJson.RootElement.GetProperty("token").GetString();
+
+        var complete = await client.PostAsJsonAsync("/api/install/complete", new
+        {
+            Token = token,
+            Realm = new { Slug = "first", DisplayName = "First Realm", Domains = new[] { "localhost" }, PrimaryDomain = "localhost" },
+            Admin = new { UserName = "first-admin", Email = "first-admin@localhost", Password = "TestPass1234" },
+        }, ct);
+        Assert.True(complete.StatusCode == HttpStatusCode.OK,
+            $"complete {(int)complete.StatusCode}: {await complete.Content.ReadAsStringAsync(ct)}");
+
+        var first = await realms.GetRealmBySlugAsync("first", ct);
+        Assert.NotNull(first);
+        Assert.True(first.IsActive);
     }
 
     [Fact]

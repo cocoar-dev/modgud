@@ -287,37 +287,6 @@
               "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = \"\"; // @locked @quick:props.text @value:%22%22\n    element.style.alignSelf = \"center\"; // @locked @quick:style.alignSelf @value:%22center%22\n    element.style.fontSize = \"small\"; // @locked @quick:style.fontSize @value:%22small%22\n    element.style.fontWeight = \"semibold\"; // @locked @quick:style.fontWeight @value:%22semibold%22\n    element.style.textAlign = \"center\"; // @locked @quick:style.textAlign @value:%22center%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
             },
             {
-              "id": "unverified-client-warning",
-              "type": "note",
-              "props": {
-                "variant": "warning",
-                "text": ""
-              },
-              "bindings": {
-                "text": {
-                  "template": {
-                    "source": "translation",
-                    "key": "page.unverifiedClientWarning.text",
-                    "fallback": "This app is identified by the domain {hostname}. Only authorise it if you trust this domain."
-                  },
-                  "placeholders": {
-                    "hostname": {
-                      "source": "context",
-                      "path": "consent.clientHostname"
-                    }
-                  }
-                }
-              },
-              "visibleWhen": {
-                "source": "context",
-                "path": "consent.isDynamicallyRegistered",
-                "operator": "equals",
-                "value": true
-              },
-              "name": "unverifiedClientWarning",
-              "elementCode": "defineElement({ // @locked\n  compute(element, page) { // @locked\n    // Properties Panel values // @locked @quick:start\n    element.props.text = \"\"; // @locked @quick:props.text @value:%22%22\n    element.props.variant = \"warning\"; // @locked @quick:props.variant @value:%22warning%22\n    // Custom code (overrides values above) // @locked @quick:end @slot:compute\n    // Configure this element. Page inputs live on page.*.\n  }, // @locked\n  actions: { // @locked\n    async click(element, page, action) { // @locked @slot:click\n\n    }, // @locked\n  }, // @locked\n}) // @locked"
-            },
-            {
               "id": "consent-scopes",
               "type": "repeat",
               "props": {
@@ -525,7 +494,6 @@
       "page.consentTitle.text": "„{client}“ autorisieren",
       "page.consentSubtitle.text": "Prüfen Sie, auf welche Daten diese Anwendung zugreifen möchte.",
       "page.consentIdentity.text": "App-Identität: {hostname}",
-      "page.unverifiedClientWarning.text": "Diese App wird durch die Domain {hostname} identifiziert. Autorisieren Sie sie nur, wenn Sie dieser Domain vertrauen.",
       "page.scopeRequired.text": "Erforderlich",
       "page.consentDeny.label": "Ablehnen",
       "page.consentAllow.label": "Zulassen"
@@ -538,7 +506,6 @@
       "page.consentTitle.text": "Authorise “{client}”",
       "page.consentSubtitle.text": "Review the access this app is asking for.",
       "page.consentIdentity.text": "App identity: {hostname}",
-      "page.unverifiedClientWarning.text": "This app is identified by the domain {hostname}. Only authorise it if you trust this domain.",
       "page.scopeRequired.text": "Required",
       "page.consentDeny.label": "Deny",
       "page.consentAllow.label": "Allow"

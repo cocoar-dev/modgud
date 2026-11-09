@@ -63,6 +63,7 @@ public class RealmCacheLookupTests
         [InlineData("127.0.0.1")]
         [InlineData("0.0.0.0")]
         [InlineData("::1")]
+        [InlineData("[::1]")] // the Host header brackets an IPv6 literal
         public void Returns_single_realm_for_localhost_variants(string host)
         {
             var cache = Cache();

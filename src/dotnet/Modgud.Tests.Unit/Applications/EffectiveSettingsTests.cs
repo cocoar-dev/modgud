@@ -22,7 +22,6 @@ public class EffectiveSettingsTests
         {
             Enabled = false,
             AccessTokenLifetime = TimeSpan.FromMinutes(15),
-            RefreshTokenLifetime = TimeSpan.FromDays(14),
         },
         ClientSessions = new ClientSessionPolicy
         {
@@ -154,7 +153,6 @@ public class EffectiveSettingsTests
 
             Assert.True(eff.NativeGrants!.Enabled);
             Assert.Equal(TimeSpan.FromMinutes(15), eff.NativeGrants.AccessTokenLifetime);
-            Assert.Equal(TimeSpan.FromDays(14), eff.NativeGrants.RefreshTokenLifetime);
         }
 
         [Fact]
@@ -221,7 +219,6 @@ public class EffectiveSettingsTests
             Assert.True(eff.NativeGrants!.Enabled);
             // Inherited from the NativeGrantSettings record defaults, not realm config.
             Assert.Equal(TimeSpan.FromMinutes(15), eff.NativeGrants.AccessTokenLifetime);
-            Assert.Equal(TimeSpan.FromDays(14), eff.NativeGrants.RefreshTokenLifetime);
         }
 
         [Fact]

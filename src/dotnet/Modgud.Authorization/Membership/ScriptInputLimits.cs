@@ -104,7 +104,12 @@ public static class ScriptInputLimits
 
         var inLineComment = false;
         var inBlockComment = false;
-        var stringDelim = '\0'; // '\0' = not in string; otherwise the delimiter
+        var stringDelim = '\0'; // '\0' = not in a quoted string; otherwise ' or "
+        // B3-F07 — template literals nest: each frame is either the literal text of a
+        // template (-1) or an open ${ … } interpolation (the depth before it opened).
+        // Code inside an interpolation counts; the literal text around it does not.
+        var frames = new Stack<int>();
+        const int TemplateText = -1;
 
         for (var i = 0; i < source.Length; i++)
         {
@@ -125,7 +130,7 @@ public static class ScriptInputLimits
                 continue;
             }
 
-            // Inside a string literal — skip until matching delimiter,
+            // Inside a quoted string literal — skip until the matching delimiter,
             // honouring backslash escapes.
             if (stringDelim != '\0')
             {
@@ -134,12 +139,28 @@ public static class ScriptInputLimits
                 continue;
             }
 
+            // Literal text of a template: skip until its end or an interpolation.
+            if (frames.Count > 0 && frames.Peek() == TemplateText)
+            {
+                if (c == '\\') { i++; continue; }
+                if (c == '`') { frames.Pop(); continue; }
+                if (c == '$' && next == '{')
+                {
+                    frames.Push(depth);
+                    depth++;
+                    if (depth > maxDepth) maxDepth = depth;
+                    i++;
+                }
+                continue;
+            }
+
             // Comment starts?
             if (c == '/' && next == '/') { inLineComment = true; i++; continue; }
             if (c == '/' && next == '*') { inBlockComment = true; i++; continue; }
 
-            // String starts?
-            if (c is '\'' or '"' or '`') { stringDelim = c; continue; }
+            // String or template starts?
+            if (c is '\'' or '"') { stringDelim = c; continue; }
+            if (c == '`') { frames.Push(TemplateText); continue; }
 
             // Brackets.
             if (c is '(' or '[' or '{')
@@ -149,6 +170,13 @@ public static class ScriptInputLimits
             }
             else if (c is ')' or ']' or '}')
             {
+                // The brace that closes an interpolation returns to the template text.
+                if (c == '}' && frames.Count > 0 && frames.Peek() == depth - 1)
+                {
+                    frames.Pop();
+                    depth--;
+                    continue;
+                }
                 if (depth > 0) depth--;
                 // Unmatched closes are a syntax error the parser will
                 // catch; we don't care to flag them here.

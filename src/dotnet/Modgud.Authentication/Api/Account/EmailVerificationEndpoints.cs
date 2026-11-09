@@ -101,6 +101,8 @@ public static class EmailVerificationEndpoints
                 Id = Guid.NewGuid(),
                 UserId = user.Id,
                 TokenHash = tokenHash,
+                EmailHash = EmailVerificationChallenge.HashEmail(
+                    user.NormalizedEmail ?? user.Email.ToUpperInvariant()),
                 ExpiresAt = DateTimeOffset.UtcNow.AddHours(EmailVerificationChallenge.ExpirationHours),
                 CreatedAt = DateTimeOffset.UtcNow,
             };
@@ -151,7 +153,12 @@ public static class EmailVerificationEndpoints
             }
 
             var user = await session.LoadAsync<ApplicationUser>(challenge.UserId);
-            if (user is null || user.IsDeleted)
+            // AREG-06 — the link proves control of the address it was sent to, nothing
+            // else: if the account's address changed since, it confirms nothing.
+            var currentEmail = user?.NormalizedEmail ?? user?.Email?.ToUpperInvariant();
+            if (user is null || user.IsDeleted
+                || challenge.EmailHash is null || string.IsNullOrEmpty(currentEmail)
+                || !string.Equals(challenge.EmailHash, EmailVerificationChallenge.HashEmail(currentEmail), StringComparison.Ordinal))
             {
                 session.Delete(challenge);
                 await session.SaveChangesAsync();

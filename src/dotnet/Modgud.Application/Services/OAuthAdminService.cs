@@ -612,6 +612,12 @@ public partial class OAuthAdminService
         if (state.LinkedServiceAccountId.HasValue)
             return OAuthErrors.CannotMutateServiceAccountManagedClient(state.ClientId);
 
+        // E.clients-B2 — same rule as Update/Delete: a terminal-managed client is
+        // changed only through the terminal endpoints (position rights), never by
+        // oauth-client:write alone, which would hand out the terminal's secret.
+        if (state.ManagedTerminalEnrollmentId.HasValue)
+            return OAuthErrors.CannotMutateTerminalManagedClient(state.ClientId);
+
         return await RegenerateClientSecretInternalAsync(guid, ct);
     }
 

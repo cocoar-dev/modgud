@@ -47,7 +47,7 @@ namespace Modgud.Api.Tests.Security;
 /// by the current release; the refresh check skips tokens without factors).
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class SignInScenarioTests : IntegrationTestBase
+public partial class SignInScenarioTests : IntegrationTestBase
 {
     public SignInScenarioTests(SharedPostgresFixture fixture) : base(fixture) { }
 
@@ -600,7 +600,12 @@ public class SignInScenarioTests : IntegrationTestBase
     /// <summary>A browser session as a sign-in with exactly these factors, proven that long
     /// ago, would have left it; <paramref name="recorded"/> false forges one from a release
     /// that did not record factors.</summary>
-    private async Task<HttpClient> SessionAsync(bool recorded, params (string Method, TimeSpan Ago)[] factors)
+    private Task<HttpClient> SessionAsync(bool recorded, params (string Method, TimeSpan Ago)[] factors) =>
+        SessionAsync(recorded, TimeSpan.FromHours(2), factors);
+
+    /// <param name="issuedAgo">How long ago the cookie was issued (a sliding renewal re-issues it
+    /// without a new factor).</param>
+    private async Task<HttpClient> SessionAsync(bool recorded, TimeSpan issuedAgo, params (string Method, TimeSpan Ago)[] factors)
     {
         using var scope = TenantScope();
         var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
@@ -621,7 +626,7 @@ public class SignInScenarioTests : IntegrationTestBase
         var ticket = new AuthenticationTicket(principal, new AuthenticationProperties
         {
             IsPersistent = true,
-            IssuedUtc = DateTimeOffset.UtcNow.AddHours(-2),
+            IssuedUtc = DateTimeOffset.UtcNow - issuedAgo,
             ExpiresUtc = DateTimeOffset.UtcNow.AddDays(6),
         }, IdentityConstants.ApplicationScheme);
         string cookie;
@@ -641,7 +646,7 @@ public class SignInScenarioTests : IntegrationTestBase
         return await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
     }
 
-    private static async Task<string?> AuthorizeLocationAsync(HttpClient browser, string clientId)
+    private static async Task<string?> AuthorizeLocationAsync(HttpClient browser, string clientId, string? extraQuery = null)
     {
         var verifier = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
         var challenge = Convert.ToBase64String(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)))
@@ -654,6 +659,7 @@ public class SignInScenarioTests : IntegrationTestBase
             $"state={Guid.NewGuid():N}",
             $"code_challenge={challenge}",
             "code_challenge_method=S256");
+        if (!string.IsNullOrEmpty(extraQuery)) uri += "&" + extraQuery;
         var response = await browser.GetAsync(uri, Ct);
         return response.Headers.Location?.ToString();
     }

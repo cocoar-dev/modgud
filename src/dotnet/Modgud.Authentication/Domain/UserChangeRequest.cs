@@ -35,6 +35,10 @@ public class UserChangeRequest
     public DateTimeOffset? VerificationExpiresAt { get; set; }
     public DateTimeOffset? VerifiedAt { get; set; }
 
+    /// <summary>When the verification mail for the current token was handed to the mail transport;
+    /// null while it was not (yet) sent — then the next submit issues a new token and sends again.</summary>
+    public DateTimeOffset? VerificationMailSentAt { get; set; }
+
     public DateTimeOffset? ReviewedAt { get; set; }
     public Guid? ReviewedByUserId { get; set; }
     public string? ReviewerNote { get; set; }
@@ -46,6 +50,14 @@ public class UserChangeRequest
     /// "needs review" bell entry without an eventually-consistent projection roundtrip.
     /// </summary>
     public List<Guid> AdminInboxItemIds { get; set; } = new();
+
+    /// <summary>
+    /// B4-AP-05 — the values an approval replaced, by field name (<c>Firstname</c>, …), taken
+    /// in the commit that applied the request. Without it the history read the "old" value from
+    /// the user at display time — after approval that is the new value. Null until approved,
+    /// and for requests approved before it existed.
+    /// </summary>
+    public Dictionary<string, string?>? PreviousValues { get; set; }
 }
 
 public enum ChangeRequestType

@@ -107,6 +107,14 @@ public interface ISignInRequirementService
     /// that was not just reset through the same mailbox.</summary>
     Task<bool> EmailFallbackAvailableAsync(ApplicationUser user, CancellationToken ct = default);
 
+    /// <summary>
+    /// The mailbox as the way back for a user WITHOUT a password (user decision 2026-11-08):
+    /// they sign in with an e-mail code or magic link, so a fresh one confirms an account change
+    /// when their passkey device is gone. Same realm switch as the e-mail code after a password
+    /// (<c>SignInPolicy.EmailAfterPassword</c>); needs a confirmed address.
+    /// </summary>
+    Task<bool> MailboxRecoveryAvailableAsync(ApplicationUser user, CancellationToken ct = default);
+
     /// <summary>Evaluate <paramref name="factors"/> for <paramref name="user"/> against
     /// <paramref name="target"/>. With <paramref name="startSetupGrace"/> a user who owes a
     /// second factor and has none gets their grace started (persisted).</summary>
@@ -290,6 +298,16 @@ public sealed class SignInRequirementService(
             || await session.Query<StoredPasskeyCredential>().AnyAsync(c => c.UserId == user.Id, ct);
         var security = await session.LoadAsync<UserSecurityData>(user.Id, ct);
         return EmailFallbackAllowed(user, security, hasOwnFactor, realm.EmailFallbackWaitHours, DateTimeOffset.UtcNow);
+    }
+
+    public async Task<bool> MailboxRecoveryAvailableAsync(ApplicationUser user, CancellationToken ct = default)
+    {
+        var realm = (await settingsResolver.ResolveAsync(null, ct)).SignIn ?? SignInPolicy.Defaults;
+        if (!realm.EmailAfterPassword || !user.EmailConfirmed || string.IsNullOrEmpty(user.Email)) return false;
+        // The hash lives in the security document; the user carries it only when the store loaded it.
+        if (!string.IsNullOrEmpty(user.PasswordHash)) return false;
+        var security = await session.LoadAsync<UserSecurityData>(user.Id, ct);
+        return string.IsNullOrEmpty(security?.PasswordHash);
     }
 
     /// <summary>The user-side conditions of the e-mail fallback; whether the target offers

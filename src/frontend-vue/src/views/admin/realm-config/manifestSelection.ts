@@ -74,6 +74,13 @@ function findEntity(manifest: DraftManifest, section: SelectableSection, key: st
   return entities.find((e) => meta.key(e) === key) ?? null
 }
 
+/** The object entries of a nested list (credentials, terminal slots). */
+function objectList(value: unknown): ManifestEntity[] {
+  return Array.isArray(value)
+    ? value.filter((v): v is ManifestEntity => typeof v === 'object' && v !== null && !Array.isArray(v))
+    : []
+}
+
 /** Reference entries ({ Key, Id } or a bare key) → forward references. */
 function refsOf(section: SelectableSection, value: unknown): EntityRef[] {
   return refList(value)
@@ -109,8 +116,22 @@ export function referencesOf(section: SelectableSection, e: ManifestEntity, opts
       for (const slug of strList(e.BoundTo)) app(slug)
       if (opts.includeUsers) refs.push(...refsOf('users', e.Members))
       break
+    case 'serviceAccounts':
+      // FD-05 — a credential is a client of its own: its apps and scopes are dependencies.
+      for (const credential of objectList(e.Credentials)) {
+        for (const slug of strList(credential.Apps)) app(slug)
+        for (const name of strList(credential.Scopes)) refs.push({ section: 'scopes', key: name })
+      }
+      break
     case 'positions':
       if (opts.includeUsers) refs.push(...refsOf('users', e.Grants))
+      // FD-05 — terminal slots carry their client's apps and scopes and the further
+      // positions they serve; without them the bundle does not apply on a fresh target.
+      for (const terminal of objectList(e.Terminals)) {
+        for (const slug of strList(terminal.Apps)) app(slug)
+        for (const name of strList(terminal.Scopes)) refs.push({ section: 'scopes', key: name })
+        refs.push(...refsOf('positions', terminal.AllowedPositions))
+      }
       break
   }
   return refs

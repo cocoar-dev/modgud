@@ -114,11 +114,17 @@ public sealed class TenantApplyTransaction : IAsyncDisposable
     }
 
     /// <summary>Runs the recorded consequences, each in its own DI scope. Failures
-    /// are logged and do not fail the (already committed) apply — the actions are
-    /// idempotent/retryable, same failure class as any single admin operation.</summary>
+    /// are logged and do not fail the (already committed) apply.
+    /// <para>FM-01 — the consequences are kill switches (token, session and staffing
+    /// revocation) for changes that are already committed, and a re-apply does not
+    /// repeat them (they are bound to the state transition). They therefore always run
+    /// to completion: <paramref name="requestAborted"/> is deliberately NOT passed on, so
+    /// an aborted request cannot leave a committed deactivation with live access.</para></summary>
     public async Task RunDeferredAsync(
-        IServiceScopeFactory scopeFactory, ILogger logger, CancellationToken ct = default)
+        IServiceScopeFactory scopeFactory, ILogger logger, CancellationToken requestAborted = default)
     {
+        _ = requestAborted; // see summary: never cancel a committed change's consequences
+        var ct = CancellationToken.None;
         if (!_committed)
             throw new InvalidOperationException("Deferred apply consequences must not run before the transaction committed.");
         if (Ambient.Value is not null)
@@ -134,7 +140,7 @@ public sealed class TenantApplyTransaction : IAsyncDisposable
             catch (Exception ex)
             {
                 logger.LogError(ex,
-                    "Deferred apply consequence '{What}' failed after commit; the configuration change itself is persisted. The action is idempotent — re-applying or the next admin operation on the entity retries it.",
+                    "Deferred apply consequence '{What}' failed after commit; the configuration change itself is persisted but its revocation did not complete. A re-apply does NOT repeat it — revoke the entity's access manually (e.g. force sign-out, end its sessions).",
                     what);
             }
         }

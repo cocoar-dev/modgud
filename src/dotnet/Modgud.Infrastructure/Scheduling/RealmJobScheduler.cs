@@ -18,6 +18,17 @@ public interface IRealmJobScheduleObserver
 }
 
 /// <summary>
+/// B9-JS-01 — compares every job's saved configuration with its Quartz job and trigger and
+/// repairs only what deviates (an apply that failed half-way, a schedule change rolled back after
+/// Quartz already took it). Run periodically by <see cref="JobScheduleDriftMonitor"/>.
+/// </summary>
+public interface IJobScheduleReconciler
+{
+    /// <summary>Returns the number of jobs whose schedule was repaired.</summary>
+    Task<int> RepairDriftAsync(CancellationToken ct = default);
+}
+
+/// <summary>
 /// Owns the mapping from Modgud's realm/system job model to Quartz identities.
 /// Realm jobs use one Quartz group per realm. System jobs share one reserved
 /// group and carry the current Control-Plane realm as their tenant context.
@@ -28,7 +39,7 @@ internal sealed class RealmJobScheduler(
     IGlobalStore globalStore,
     IDocumentStore tenantStore,
     IClusterLock clusterLock,
-    ILogger<RealmJobScheduler> logger) : IRealmJobScheduleObserver
+    ILogger<RealmJobScheduler> logger) : IRealmJobScheduleObserver, IJobScheduleReconciler
 {
     internal const string TenantSlugDataKey = "__modgudTenantSlug";
     internal const string JobScopeDataKey = "__modgudJobScope";
@@ -41,7 +52,13 @@ internal sealed class RealmJobScheduler(
     // AddJob/ScheduleJob and one of them would fail with "already exists".
     private readonly SemaphoreSlim _mutationLock = new(1, 1);
 
-    public async Task ReconcileAsync(CancellationToken ct = default)
+    /// <summary>Writes every job and trigger anew (startup, realm lifecycle): also picks up a
+    /// changed job type or description of a new build.</summary>
+    public Task ReconcileAsync(CancellationToken ct = default) => ReconcileAllAsync(onlyDrifted: false, ct);
+
+    public Task<int> RepairDriftAsync(CancellationToken ct = default) => ReconcileAllAsync(onlyDrifted: true, ct);
+
+    private async Task<int> ReconcileAllAsync(bool onlyDrifted, CancellationToken ct)
     {
         await _mutationLock.WaitAsync(ct);
         try
@@ -55,12 +72,14 @@ internal sealed class RealmJobScheduler(
             var scheduler = await schedulerFactory.GetScheduler(ct);
             await RemoveDeletedRealmGroupsAsync(scheduler, realms, ct);
 
+            var repaired = 0;
             foreach (var realm in realms)
             {
-                await ReconcileRealmJobsAsync(scheduler, realm, ct);
+                repaired += await ReconcileRealmJobsAsync(scheduler, realm, onlyDrifted, ct);
             }
 
-            await ReconcileSystemJobsAsync(scheduler, realms, ct);
+            repaired += await ReconcileSystemJobsAsync(scheduler, realms, onlyDrifted, ct);
+            return repaired;
         }
         finally
         {
@@ -68,16 +87,31 @@ internal sealed class RealmJobScheduler(
         }
     }
 
+    /// <summary>
+    /// Applies the job's configuration as it is saved NOW, read inside the lock: of two updates
+    /// that race, the one applied last applies the latest saved state, so Quartz cannot keep an
+    /// older one (B9-JS-01). Call it after the configuration was committed.
+    /// </summary>
     public async Task ApplyAsync(
         JobRegistration registration,
         string realmSlug,
-        JobConfig? config,
         CancellationToken ct = default)
     {
         await _mutationLock.WaitAsync(ct);
         try
         {
             await using var _ = await clusterLock.AcquireAsync(ClusterLockKeys.QuartzSchedules, ct);
+            JobConfig? config;
+            if (registration.Scope == JobScope.System)
+            {
+                await using var session = globalStore.QuerySession();
+                config = await session.LoadAsync<JobConfig>(registration.Key, ct);
+            }
+            else
+            {
+                await using var session = tenantStore.QuerySession(realmSlug);
+                config = await session.LoadAsync<JobConfig>(registration.Key, ct);
+            }
             var scheduler = await schedulerFactory.GetScheduler(ct);
             await ApplyCoreAsync(scheduler, registration, realmSlug, config, ct);
         }
@@ -85,6 +119,61 @@ internal sealed class RealmJobScheduler(
         {
             _mutationLock.Release();
         }
+    }
+
+    /// <summary>
+    /// How the Quartz state of a job deviates from its saved configuration, or null when it
+    /// matches: <c>JobMissing</c>, <c>TriggerMissing</c> (enabled, no schedule),
+    /// <c>UnexpectedTrigger</c> (manual-only, still scheduled) or <c>CronMismatch</c>.
+    /// A one-off trigger of a manual run is not part of the comparison.
+    /// </summary>
+    internal static async Task<string?> DescribeDriftAsync(
+        IScheduler scheduler,
+        JobRegistration registration,
+        string realmSlug,
+        JobConfig? config,
+        CancellationToken ct)
+    {
+        var jobKey = GetJobKey(registration, realmSlug);
+        if (!await scheduler.CheckExists(jobKey, ct)) return "JobMissing";
+
+        var triggerKey = GetTriggerKey(registration, realmSlug);
+        var trigger = await scheduler.GetTrigger(triggerKey, ct);
+        if (config is not null && !config.Enabled)
+            return trigger is null ? null : "UnexpectedTrigger";
+        if (trigger is null) return "TriggerMissing";
+
+        var cron = config?.CronOverride ?? registration.DefaultCron;
+        return trigger is ICronTrigger cronTrigger
+               && string.Equals(cronTrigger.CronExpressionString, cron, StringComparison.Ordinal)
+               && cronTrigger.JobKey.Equals(jobKey)
+            ? null
+            : "CronMismatch";
+    }
+
+    /// <summary>Applies one job: always, or only when its Quartz state deviates. Returns whether
+    /// it repaired a deviation.</summary>
+    private async Task<bool> ReconcileJobAsync(
+        IScheduler scheduler,
+        JobRegistration registration,
+        string realmSlug,
+        JobConfig? config,
+        bool onlyDrifted,
+        CancellationToken ct)
+    {
+        if (!onlyDrifted)
+        {
+            await ApplyCoreAsync(scheduler, registration, realmSlug, config, ct);
+            return false;
+        }
+
+        var drift = await DescribeDriftAsync(scheduler, registration, realmSlug, config, ct);
+        if (drift is null) return false;
+        await ApplyCoreAsync(scheduler, registration, realmSlug, config, ct);
+        logger.LogWarning(
+            "[Jobs] Repaired the schedule of {Key} for realm {Realm}: {Drift}",
+            registration.Key, realmSlug, drift);
+        return true;
     }
 
     internal static JobKey GetJobKey(JobRegistration registration, string realmSlug) =>
@@ -98,9 +187,10 @@ internal sealed class RealmJobScheduler(
             ? SystemGroup
             : $"{RealmGroupPrefix}{realmSlug}";
 
-    private async Task ReconcileRealmJobsAsync(
+    private async Task<int> ReconcileRealmJobsAsync(
         IScheduler scheduler,
         Realm realm,
+        bool onlyDrifted,
         CancellationToken ct)
     {
         var registrations = registry.All
@@ -120,7 +210,7 @@ internal sealed class RealmJobScheduler(
             await scheduler.DeleteJobs(obsoleteKeys, ct);
 
         if (registrations.Count == 0)
-            return;
+            return 0;
 
         Dictionary<string, JobConfig> configByKey;
         try
@@ -134,15 +224,17 @@ internal sealed class RealmJobScheduler(
             logger.LogError(ex,
                 "[Jobs] Could not load job configuration for realm {Realm}; its schedules were not reconciled",
                 realm.Slug);
-            return;
+            return 0;
         }
 
+        var repaired = 0;
         foreach (var registration in registrations)
         {
             configByKey.TryGetValue(registration.Key, out var config);
             try
             {
-                await ApplyCoreAsync(scheduler, registration, realm.Slug, config, ct);
+                if (await ReconcileJobAsync(scheduler, registration, realm.Slug, config, onlyDrifted, ct))
+                    repaired++;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -151,11 +243,13 @@ internal sealed class RealmJobScheduler(
                     registration.Key, realm.Slug);
             }
         }
+        return repaired;
     }
 
-    private async Task ReconcileSystemJobsAsync(
+    private async Task<int> ReconcileSystemJobsAsync(
         IScheduler scheduler,
         IReadOnlyList<Realm> realms,
+        bool onlyDrifted,
         CancellationToken ct)
     {
         var registrations = registry.All.Where(r => r.Scope == JobScope.System).ToList();
@@ -179,7 +273,7 @@ internal sealed class RealmJobScheduler(
                     "[Jobs] Expected exactly one active Control-Plane realm but found {Count}; system jobs are unscheduled",
                     controlPlanes.Count);
             }
-            return;
+            return 0;
         }
 
         var controlPlane = controlPlanes[0];
@@ -198,7 +292,7 @@ internal sealed class RealmJobScheduler(
             logger.LogError(ex,
                 "[Jobs] Could not load system-job configuration from Control-Plane realm {Realm}",
                 controlPlane.Slug);
-            return;
+            return 0;
         }
 
         var expectedKeys = registrations
@@ -210,12 +304,14 @@ internal sealed class RealmJobScheduler(
         if (obsoleteKeys.Count > 0)
             await scheduler.DeleteJobs(obsoleteKeys, ct);
 
+        var repaired = 0;
         foreach (var registration in registrations)
         {
             configByKey.TryGetValue(registration.Key, out var config);
             try
             {
-                await ApplyCoreAsync(scheduler, registration, controlPlane.Slug, config, ct);
+                if (await ReconcileJobAsync(scheduler, registration, controlPlane.Slug, config, onlyDrifted, ct))
+                    repaired++;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -224,6 +320,7 @@ internal sealed class RealmJobScheduler(
                     registration.Key, controlPlane.Slug);
             }
         }
+        return repaired;
     }
 
     private async Task ApplyCoreAsync(

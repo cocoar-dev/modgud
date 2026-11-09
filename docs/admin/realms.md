@@ -45,7 +45,7 @@ There is exactly one CP after installation, and no slug has special meaning.
 | Domains | List of hostnames that route to this realm |
 | Primary Domain | The realm's canonical public host — one of `Domains`. Used for every outbound link (magic-links, bootstrap-invites) and as the WebAuthn relying-party ID for passkeys. Changing it invalidates existing passkeys. |
 | IsControlPlane | Stored flag — exactly one realm holds it. Moved via the transfer action, not edited inline. |
-| IsActive | Disabled realms reject login attempts |
+| IsActive | A disabled realm is not routed: every request to its domains answers 404 — sign-in, OIDC endpoints and API alike |
 
 ## Permissions
 

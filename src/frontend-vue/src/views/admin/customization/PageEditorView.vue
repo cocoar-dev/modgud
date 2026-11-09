@@ -30,6 +30,7 @@ import {
   type VariantPayload,
 } from '@/composables/usePagesApi'
 import { usePageCompositionsApi } from '@/composables/usePageCompositionsApi'
+import { loginPageMissingMethods, type LoginMethod } from '@/page-builder/loginPageMethods'
 
 const { t, language } = useI18n()
 const ui = useUI()
@@ -95,6 +96,16 @@ watch([language, slug], () => ui.set((ctx) => {
 
 const name = ref('')
 const schema = ref<PageNode>(createDefaultAuthPageSchema(slot.value))
+
+// B10-PA02 — a login page that lacks a sign-in method leaves apps that allow only that
+// method without a way in; warn while editing and publishing.
+const missingLoginMethods = computed(() => slot.value === 'login' ? loginPageMissingMethods(schema.value) : [])
+const loginMethodLabel = (method: LoginMethod) => ({
+  password: t('admin.customization.pages.method.password', {}, 'password'),
+  emailCode: t('admin.customization.pages.method.emailCode', {}, 'e-mail code'),
+  passkey: t('admin.customization.pages.method.passkey', {}, 'passkey'),
+  magicLink: t('admin.customization.pages.method.magicLink', {}, 'magic link'),
+})[method]
 const loading = ref(true)
 const saving = ref(false)
 const savedFlash = ref(false)
@@ -270,6 +281,11 @@ watch([slot, variantId], load, { immediate: true })
     </div>
 
     <CoarNotice v-if="error" variant="error">{{ error }}</CoarNotice>
+    <CoarNotice v-if="missingLoginMethods.length > 0" variant="warning" data-testid="login-methods-warning">
+      {{ t('admin.customization.pages.missingMethods',
+        { methods: missingLoginMethods.map(loginMethodLabel).join(', ') },
+        'This page offers no {methods} sign-in. An app that allows only those methods leaves its users without a way to sign in here (they can still use ?safemode=1).') }}
+    </CoarNotice>
     <CoarNotice v-if="resetHint" variant="info">
       {{ t('admin.customization.pages.resetHint', {}, 'Loaded the built-in template into the editor. Nothing is saved until you click Save.') }}
     </CoarNotice>

@@ -12,9 +12,9 @@ drift between the runtime and what the docs claim.
 | **Integration tests** | `src/dotnet/Modgud.Api.Tests/` | **485 / 485 green** (~6-7 min, Docker required) | `dotnet test Modgud.Api.Tests` |
 | **OWASP Top 10 (subset)** | `src/dotnet/Modgud.Api.Tests/Security/OwaspTop10Tests.cs` | **12 / 12 green** (part of integration suite, runs in <30 s) | `dotnet test Modgud.Api.Tests --filter "OWASP=Top10"` |
 | **Manual smoke checklist** | [`testing/manual-checklist`](./manual-checklist) | Operator-driven, walk before a release | walk the page |
-| **E2E (Playwright)** | `src/frontend-vue/e2e/` | 12 spec files, runs against the **bit-for-bit production image** with Mailpit catching outbound SMTP | `cd src/frontend-vue && pnpm test:e2e` |
+| **E2E (Playwright)** | `src/frontend-vue/e2e/` | 14 spec files, runs against a Release image built from the current tree (Staging environment, ephemeral signing keys, rate limits off — not a production-equivalent deployment) with Mailpit catching outbound SMTP | `cd src/frontend-vue && pnpm test:e2e` |
 
-The security-testing story includes an explicit OWASP Top 10 (2021) suite under the `OWASP=Top10` xUnit trait, plus a full Playwright pass against a production-mode container (not a dev-only shortcut) that exercises real outbound email via Mailpit instead of an in-process email inspector.
+The security-testing story includes an explicit OWASP Top 10 (2021) suite under the `OWASP=Top10` xUnit trait, plus a full Playwright pass against a Release image in the Staging environment (production build and behaviour, not a dev-only shortcut) that exercises real outbound email via Mailpit instead of an in-process email inspector.
 
 ## What's here
 
@@ -47,7 +47,8 @@ The security-testing story includes an explicit OWASP Top 10 (2021) suite under 
   Needs Docker for Testcontainers Postgres.
 - **Before a release:**
   - Run the Playwright suite: `cd src/frontend-vue && pnpm test:e2e`.
-    On first run it builds the `modgud:e2e` Docker image (~60 s).
+    It rebuilds the `modgud:e2e` Docker image (~60 s) whenever HEAD moved or the tree has
+    local changes; `E2E_REUSE_IMAGE=1` reuses an existing image while you only iterate on specs.
     Re-runs reuse the image. The rig is torn down between runs.
   - Walk the [manual smoke checklist](./manual-checklist) end to end
     for the parts Playwright can't reach.

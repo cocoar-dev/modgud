@@ -188,7 +188,10 @@ public sealed partial class RealmManifestApplier(
         using (applyTx.Activate())
         {
             await ApplyTenantUpdateSectionsAsync(manifest, deletions, secrets, skips, identity, ct);
-            await applyTx.CommitAsync(ct);
+            // FM-01 — once every section is staged, commit and its consequences run to
+            // completion: a request aborted mid-commit must not leave a committed change
+            // whose revocations never ran.
+            await applyTx.CommitAsync(CancellationToken.None);
         }
 
         // Consequences (token revocation, staffing-session termination) run only now,
@@ -481,6 +484,10 @@ public sealed partial class RealmManifestApplier(
                     ? new Optional<JsonDocument>(JsonDocument.Parse(lp.FlavorData.Value.GetRawText())) : default,
                 Enabled: OptBool(lp.Enabled),
                 TrustForAuthorization: OptBool(lp.TrustForAuthorization),
+                TrustEmailsAsVerified: OptBool(lp.TrustEmailsAsVerified),
+                MfaAmrValues: lp.MfaAmrValues.HasValue
+                    ? new Optional<List<string>?>(lp.MfaAmrValues.Value is { Count: > 0 } amr ? amr : null)
+                    : default,
                 AuthoritativeForProfile: OptBool(lp.AuthoritativeForProfile)), ct), ctx);
 
             // A manifest secret on an EXISTING provider ROTATES it (mirrors the user
@@ -569,6 +576,7 @@ public sealed partial class RealmManifestApplier(
 
             Guid? uid;
             var readOnly = false;
+            var createdNow = false;
             if (existing is null)
             {
                 var createCmd = new CreateUserCommand(OrNull(u.Firstname), OrNull(u.Lastname), OrNull(u.Acronym),
@@ -576,10 +584,14 @@ public sealed partial class RealmManifestApplier(
                     IsActive: u.IsActive ?? true,
                     GracePeriodDaysOverride: u.GracePeriodDaysOverride.HasValue ? u.GracePeriodDaysOverride.Value : null,
                     TwoFactorExempt: u.TwoFactorExempt ?? false,
-                    Id: await ResolvePinnedUserAsync(session, ManifestHandle.AsPinnedId(u.Id), ctx, ct));
+                    Id: await ResolvePinnedUserAsync(session, ManifestHandle.AsPinnedId(u.Id), ctx, ct),
+                    // ADR 0026 — a new test account is created marked (no group membership
+                    // exists yet to conflict with it); groups apply later and check it there.
+                    IsTestAccount: u.IsTestAccount ?? false);
                 var created = await createUser.Handle(createCmd, ct);
                 EnsureOk(created, ctx);
                 uid = ShortGuid.TryParse(created.Value.Id, out Guid cid) ? cid : null;
+                createdNow = true;
             }
             // A user with a pending deletion (admin recycle bin OR self-service grace) is
             // READ-ONLY: UpdateUserHandler rejects every edit until the user is restored.
@@ -611,7 +623,9 @@ public sealed partial class RealmManifestApplier(
                 var updateHandler = new UpdateUserHandler(session);
                 var updated = await updateHandler.Handle(updateCmd,
                     sp.GetRequiredService<IUserAccessRevoker>(),
-                    sp.GetRequiredService<IApplicationSettingsResolver>(), ct);
+                    sp.GetRequiredService<IApplicationSettingsResolver>(),
+                    sp.GetRequiredService<Modgud.Infrastructure.FollowUps.IFollowUpOutbox>(),
+                    sp.GetRequiredService<ILogger<UpdateUserHandler>>(), ct);
                 EnsureOk(updated, ctx);
                 uid = existing.Id;
 
@@ -642,7 +656,7 @@ public sealed partial class RealmManifestApplier(
                     await SetUserTwoFactorPolicyAsync(session, existing.Id,
                         u.GracePeriodDaysOverride, u.TwoFactorExempt, ct);
             }
-            if (u.IsTestAccount is { } wantTestAccount && uid is { } markedId && !readOnly)
+            if (u.IsTestAccount is { } wantTestAccount && uid is { } markedId && !readOnly && !createdNow)
                 testAccountMarkers.Add((markedId, wantTestAccount, ctx));
             if (uid is { } codeUserId && !readOnly
                 && (!string.IsNullOrWhiteSpace(u.FixedEmailCode) || u.RemoveFixedEmailCode == true))
@@ -967,7 +981,7 @@ public sealed partial class RealmManifestApplier(
                 !r.IsRealmAdmin && r.AppId is { } aid ? roleAppSlugById.GetValueOrDefault(aid) : null, r.Name);
             if (Keep(ManifestIdentity.Sections.Roles, r.Id) || r.IsRealmAdmin
                 || !Wants("roles", roleKey)) continue;
-            EnsureOk(await roleAdmin.DeleteRoleAsync(r.Id, ct), $"delete role '{roleKey}'");
+            EnsureOk(await roleAdmin.DeleteRoleAsync(r.Id, callerIsRealmAdmin: true, ct), $"delete role '{roleKey}'");
         }
 
         // ── Apps — keep the system app; a still-referenced app errors. ───────────────────────
@@ -1132,6 +1146,8 @@ public sealed partial class RealmManifestApplier(
             IconName: OrNull(lp.IconName),
             ButtonColorHex: OrNull(lp.ButtonColorHex),
             TrustForAuthorization: lp.TrustForAuthorization,
+            TrustEmailsAsVerified: lp.TrustEmailsAsVerified,
+            MfaAmrValues: lp.MfaAmrValues.HasValue && lp.MfaAmrValues.Value is { Count: > 0 } mfaAmr ? mfaAmr : null,
             AuthoritativeForProfile: lp.AuthoritativeForProfile,
             InitialClientSecret: lp.ClientSecret,
             Id: pinned.Id,
@@ -1175,8 +1191,8 @@ public sealed partial class RealmManifestApplier(
     /// <summary>
     /// Resolves a reference to a PRINCIPAL. A group's members may be users, nested groups
     /// (the domain really expands them — permissions via ApplicationScopeResolver, mail via
-    /// Group.GetEmailsAsync) or service accounts, so the manifest has to be able to name all
-    /// three; filtering the others out is what made export → apply DELETE them, Members
+    /// Group.GetEmailsAsync), service accounts or positions, so the manifest has to be able
+    /// to name all four; filtering the others out is what made export → apply DELETE them, Members
     /// being a replace-list. A position grant is narrower — only a person can staff a shift —
     /// so <paramref name="membersOnly"/> keeps that distinction where it belongs.
     ///
@@ -1223,8 +1239,16 @@ public sealed partial class RealmManifestApplier(
             VerifyHint(reference, context, "service account", skips, sa.AccountName);
             return sa.Id;
         }
+        // GP-CO-01 — a position is a group member too (it carries the group's roles while
+        // staffed), and the exporter writes it. Positions apply AFTER groups, so only an
+        // existing one resolves here; one this same file creates is a reported skip.
+        if (await session.LoadAsync<PositionPrincipal>(byId, ct) is { IsDeleted: false } position)
+        {
+            VerifyHint(reference, context, "position", skips, position.AccountName);
+            return position.Id;
+        }
         skips.Skip(context, $"member '{reference.Display}'",
-            "no user, group or service account with that id in this realm");
+            "no user, group, service account or position with that id in this realm");
         return null;
     }
 
@@ -1339,6 +1363,9 @@ public sealed partial class RealmManifestApplier(
         if (wanted.ScheduledJobFeedback is { } sjf)
             doc.ScheduledJobFeedback = new() { MaxUnreadDays = sjf.MaxUnreadDays, AutoExpireDaysAfterRead = sjf.AutoExpireDaysAfterRead };
         doc.Id = Modgud.Application.Inbox.InboxRetentionSettings.SingletonId;
+        // B3-EI-07 — same rule as the endpoint.
+        if (doc.Validate() is { } problem)
+            throw new ManifestApplyException("inbox settings", [Error.Validation("InboxSettings.Invalid", problem)]);
         doc.UpdatedAt = DateTime.UtcNow;
         session.Store(doc);
         await session.SaveChangesAsync(ct);

@@ -104,8 +104,12 @@ public static class NativeOtpEndpoints
                 // discards results. With the JIT posture an unknown email gets a
                 // registration code too, so "code sent" leaks nothing about
                 // existence (ADR-0011 OQ3 — JIT is anti-enumeration-safe).
+                // AREG-09 — a name field that is Off is never captured.
+                var fields = settings.RegistrationFields ?? RegistrationFieldsSettings.Defaults;
                 await IssueOtpForRequestAsync(
-                    request.Email, request.FirstName, request.LastName,
+                    request.Email,
+                    RegistrationFieldsPolicy.Captured(fields.Firstname, request.FirstName),
+                    RegistrationFieldsPolicy.Captured(fields.Lastname, request.LastName),
                     request.InviteCode, httpContext.GetApplicationId(),
                     settings.SelfRegPosture, session, userManager,
                     emailOtpService, registrationPipeline, inviteService, testAccounts, ct);

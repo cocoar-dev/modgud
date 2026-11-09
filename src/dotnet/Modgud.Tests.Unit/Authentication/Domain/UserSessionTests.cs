@@ -83,4 +83,26 @@ public class UserSessionTests
         Assert.False(session.IsActive(session.ExpiresAt));
         Assert.False(session.IsActive(session.AbsoluteExpiresAt));
     }
+
+    // CS03 — a five-minute idle window equals the five-minute touch throttle.
+    [Theory]
+    [InlineData(5, 1, false)]   // idle 5 min, 1 min in: not yet due
+    [InlineData(5, 3, true)]    // idle 5 min, past half the window: due before it expires
+    [InlineData(60, 4, false)]  // idle 1 h, 4 min in: throttled
+    [InlineData(60, 5, true)]   // idle 1 h, 5 min in: due by throttle
+    public void Touch_is_due_by_throttle_or_after_half_the_idle_window(int idleMinutes, int elapsedMinutes, bool due)
+    {
+        var session = CreateSession(idleLifetime: TimeSpan.FromMinutes(idleMinutes));
+        var now = session.LastActiveAt.AddMinutes(elapsedMinutes);
+
+        Assert.Equal(due, session.IsDueForTouch(now, TimeSpan.FromMinutes(5)));
+    }
+
+    [Fact]
+    public void Touch_is_not_due_early_when_the_expiry_already_sits_at_the_absolute_end()
+    {
+        var session = CreateSession(idleLifetime: TimeSpan.FromMinutes(5), absoluteLifetime: TimeSpan.FromMinutes(5));
+
+        Assert.False(session.IsDueForTouch(session.LastActiveAt.AddMinutes(3), TimeSpan.FromMinutes(5)));
+    }
 }

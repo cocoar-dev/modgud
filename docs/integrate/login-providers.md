@@ -86,9 +86,12 @@ Marten document in the tenant store. Selected fields:
 | `Enabled` | bool — disabled providers show no login button |
 | `IsDeleted` | bool — soft delete (Internal entries cannot be deleted) |
 
-The OIDC **client secret** is not stored on the document but in a separate
-`LoginProviderSecretStore` (Marten document, separate table). This keeps the
-secret out of event streams and audit logs. SAML trust is established through
+The OIDC **client secret** is stored encrypted: `LoginProviderSecretStore`
+protects it with the realm's DataProtection keys, and only those encrypted
+bytes travel in the provider's events and sit on the projected document
+(`ClientSecretEncrypted`). The plaintext never reaches an event, a log or an
+API response; losing the realm's DataProtection key ring makes the stored
+secret undecryptable (see [Key material](../operate/key-material)). SAML trust is established through
 IdP metadata and its signing certificates rather than an OIDC client secret.
 
 ## Runtime provider registration
@@ -136,19 +139,19 @@ Every IdP delivers different claim structures. OIDC claims and validated
 SAML attributes are normalized into the same claim dictionary and mapped by
 a JavaScript snippet executed in `Jint`.
 
-The script gets the normalized external claims and returns a partial user
-record:
+The script evaluates to a function. Modgud calls it with the normalized
+external claims, and it returns a partial user record:
 
 ```javascript
-// claims: Dictionary<string, string[]> — validated OIDC claims or SAML attributes
+// claims: validated OIDC claims or SAML attributes. A single-valued claim is a
+// string (or number/boolean); a multi-valued one (e.g. groups) is an array.
 
-return {
-  firstname: claims['given_name']?.[0],
-  lastname:  claims['family_name']?.[0],
-  email:     claims['email']?.[0],
-  acronym:   (claims['given_name']?.[0]?.[0] ?? '') +
-             (claims['family_name']?.[0]?.[0] ?? '')
-};
+(claims) => ({
+  firstname: claims.given_name,
+  lastname:  claims.family_name,
+  email:     claims.email,
+  acronym:   (claims.given_name?.[0] ?? '') + (claims.family_name?.[0] ?? ''),
+})
 ```
 
 The returned patch is applied to the user (only the fields that come

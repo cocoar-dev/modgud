@@ -84,7 +84,14 @@ export const useInviteCodeStore = defineStore('invite-code', () => {
 
   async function mint(appId: string, dto: MintInviteCodesDto): Promise<MintInviteCodesResultDto> {
     const result = await appHttp.addPath(appId, 'invite-codes').post<MintInviteCodesResultDto>(dto)
-    await loadAll()
+    // AREG-07 — the codes are minted and their plaintext exists only in this response.
+    // A failed list refresh (e.g. no invite-code:read) must not lose them; loadAll
+    // already marks the list as failed.
+    try {
+      await loadAll()
+    } catch {
+      /* the list shows its failure state; the minted codes still go back to the caller */
+    }
     return result
   }
 

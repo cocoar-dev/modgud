@@ -202,7 +202,8 @@ public static class EmailOtpEndpoints
             // cookie was issued) could otherwise complete OTP and obtain a durable,
             // kill-switch-surviving session. Reject + clear the partial scheme.
             // (FindByIdAsync already filters IsDeleted; IsActive is the live vector.)
-            if (!user.IsActive || user.IsDeleted)
+            // B5-06 — and the lockout (the administrative lock) set after the password step.
+            if (!user.IsActive || user.IsDeleted || await signInManager.UserManager.IsLockedOutAsync(user))
             {
                 await context.SignOutAsync(IdentityConstants.TwoFactorUserIdScheme);
                 ModgudMeters.RecordLogin(ModgudMeters.LoginMethod.EmailOtp, ModgudMeters.LoginOutcome.Failure);

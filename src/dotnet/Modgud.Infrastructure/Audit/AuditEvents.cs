@@ -187,6 +187,10 @@ public static class AuditEvents
     /// <summary>The owning realm's signing-key janitor purged expired retired keys.</summary>
     public const string SigningKeyPurged = "ops.signing_key_purged";
 
+    /// <summary>FK-08 — a realm had no active signing key and a fresh one was created (first
+    /// use, or a lost tenant DB): every token the realm issued before is unverifiable.</summary>
+    public const string SigningKeyBootstrapped = "ops.signing_key_bootstrapped";
+
     /// <summary>A realm's SAML SP certificate was rotated or first generated
     /// (tenant-visible — a realm-relevant trust change).</summary>
     public const string SamlCertRotated = "ops.saml_cert_rotated";

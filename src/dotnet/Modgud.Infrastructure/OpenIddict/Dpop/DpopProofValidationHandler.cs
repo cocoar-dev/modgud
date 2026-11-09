@@ -25,6 +25,10 @@ namespace Modgud.Infrastructure.OpenIddict.Dpop;
 /// default for itself: a tokenless request is then rejected with the same error.
 /// </para>
 ///
+/// <para>The checks themselves live in <see cref="IDpopTokenRequestGate"/>, decided once per
+/// request: an endpoint that stores state before it signs in has already asked (G-B4-03), and this
+/// handler then gets the same answer instead of recording the jti twice.</para>
+///
 /// <para>Scoped because it depends on the tenant-scoped replay store + query
 /// session. Runs just before the access token is generated, mirroring
 /// <c>ResourceIndicatorHandler</c>.</para>
@@ -46,17 +50,9 @@ public sealed class DpopProofValidationHandler : IOpenIddictServerHandler<Proces
             .SetType(OpenIddictServerHandlerType.Custom)
             .Build();
 
-    private readonly IDpopReplayStore _replayStore;
-    private readonly IDpopNonceStore _nonceStore;
-    private readonly IQuerySession _querySession;
+    private readonly IDpopTokenRequestGate _gate;
 
-    public DpopProofValidationHandler(
-        IDpopReplayStore replayStore, IDpopNonceStore nonceStore, IQuerySession querySession)
-    {
-        _replayStore = replayStore;
-        _nonceStore = nonceStore;
-        _querySession = querySession;
-    }
+    public DpopProofValidationHandler(IDpopTokenRequestGate gate) => _gate = gate;
 
     public async ValueTask HandleAsync(ProcessSignInContext context)
     {
@@ -75,126 +71,10 @@ public sealed class DpopProofValidationHandler : IOpenIddictServerHandler<Proces
         if (httpRequest is null)
             return;
 
-        var header = httpRequest.Headers[DpopConstants.HeaderName];
-        if (header.Count == 0)
-        {
-            // No proof. Offered-not-required by default → ordinary bearer token.
-            // But a client flagged RequireDpop must present one (RFC 9449 §5): a
-            // tokenless request is rejected rather than silently downgraded.
-            var noProofPolicy = await GetClientDpopPolicyAsync(context.ClientId, context.CancellationToken);
-            if (noProofPolicy.RequireDpop)
-                context.Reject(DpopConstants.InvalidProofError,
-                    "This client requires a DPoP proof on the token request.");
-            return;
-        }
-
-        if (header.Count > 1)
-        {
-            context.Reject(DpopConstants.InvalidProofError, "Multiple DPoP proofs are not allowed.");
-            return;
-        }
-
-        var now = DateTimeOffset.UtcNow;
         var htu = context.Transaction.RequestUri?.ToString()
             ?? $"{httpRequest.Scheme}://{httpRequest.Host}{httpRequest.Path}";
-
-        var result = DpopProofValidator.Validate(header.ToString(), httpRequest.Method, htu, now);
-        if (!result.IsValid)
-        {
-            context.Reject(DpopConstants.InvalidProofError, $"The DPoP proof is not valid ({result.Error}).");
-            return;
-        }
-
-        // Server nonce (RFC 9449 §8-9): a client flagged RequireDpopNonce must carry
-        // a valid, server-issued nonce in its proof. The first proof carries none —
-        // answer with a fresh DPoP-Nonce header + use_dpop_nonce so the client
-        // retries. Checked before the replay ledger so a nonce-less first proof
-        // doesn't burn a jti. (Structurally invalid proofs are already rejected
-        // above, so we never mint a nonce for garbage.)
-        var proofPolicy = await GetClientDpopPolicyAsync(context.ClientId, context.CancellationToken);
-        if (proofPolicy.RequireDpopNonce)
-        {
-            var presentedNonce = ReadProofNonce(header.ToString());
-            if (presentedNonce is null ||
-                !await _nonceStore.IsValidAsync(presentedNonce, now, context.CancellationToken))
-            {
-                var freshNonce = await _nonceStore.IssueAsync(now, context.CancellationToken);
-                httpRequest.HttpContext.Response.Headers[DpopConstants.NonceHeaderName] = freshNonce;
-                context.Reject(DpopConstants.UseNonceError,
-                    "A DPoP nonce is required; retry the proof with the nonce from the DPoP-Nonce header.");
-                return;
-            }
-        }
-
-        // Replay: the jti must be first-seen within its acceptance window.
-        var expiresAt = (result.IssuedAt ?? now)
-            + DpopProofValidator.DefaultMaxAge + DpopProofValidator.DefaultClockSkew;
-        var firstUse = await _replayStore.TryRecordAsync(result.Jti!, expiresAt, now, context.CancellationToken);
-        if (!firstUse)
-        {
-            context.Reject(DpopConstants.InvalidProofError, "The DPoP proof has already been used.");
-            return;
-        }
-
-        // Hand the binding to the downstream handlers via HttpContext.Items
-        // (shared across every event for this one request). At the token
-        // endpoint the claim-stamping/token-type handlers read it; at the
-        // device-authorization endpoint DpopDeviceCodeBindingCaptureHandler
-        // persists it against the minted device code.
-        httpRequest.HttpContext.Items[DpopConstants.HttpContextJktKey] = result.Jkt;
-    }
-
-    /// <summary>
-    /// Reads the presenting client's admin-set <see cref="OAuthApplicationPropertyKeys.RequireDpop"/>
-    /// flag. Mirrors <c>AccessTokenTypeHandler</c>'s per-client query. CIMD clients
-    /// are non-persisted and never carry the flag, so a query miss ⇒ not required.
-    /// </summary>
-    private async ValueTask<(bool RequireDpop, bool RequireDpopNonce)> GetClientDpopPolicyAsync(
-        string? clientId, CancellationToken ct)
-    {
-        if (string.IsNullOrEmpty(clientId)) return (false, false);
-
-        var app = await _querySession.Query<OAuthApplicationState>()
-            .FirstOrDefaultAsync(a => a.ClientId == clientId && !a.IsDeleted, ct);
-        if (app is null) return (false, false);
-
-        return (
-            ReadBool(app.Properties, OAuthApplicationPropertyKeys.RequireDpop),
-            ReadBool(app.Properties, OAuthApplicationPropertyKeys.RequireDpopNonce));
-    }
-
-    /// <summary>Reads the <c>nonce</c> claim out of a proof's payload without
-    /// re-validating it (the proof's signature/claims were already checked).</summary>
-    private static string? ReadProofNonce(string proof)
-    {
-        var parts = proof.Split('.');
-        if (parts.Length != 3 || parts[1].Length == 0) return null;
-        try
-        {
-            using var doc = JsonDocument.Parse(Base64Url.DecodeFromChars(parts[1]));
-            return doc.RootElement.ValueKind == JsonValueKind.Object &&
-                   doc.RootElement.TryGetProperty("nonce", out var n) && n.ValueKind == JsonValueKind.String
-                ? n.GetString()
-                : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    // Local decode of a persisted boolean property. Marten may hand the value back
-    // as a boxed bool (Newtonsoft) or a JsonElement (STJ) depending on the
-    // configured serializer, so accept both — mirrors OAuthAdminMapping.GetBoolProp
-    // (kept local to avoid an Application-layer coupling for a 6-line read).
-    private static bool ReadBool(IDictionary<string, object?> props, string key)
-    {
-        if (!props.TryGetValue(key, out var raw) || raw is null) return false;
-        return raw switch
-        {
-            bool b => b,
-            JsonElement e when e.ValueKind is JsonValueKind.True => true,
-            _ => false,
-        };
+        var outcome = await _gate.EvaluateAsync(httpRequest.HttpContext, context.ClientId, htu, context.CancellationToken);
+        if (outcome.Rejected)
+            context.Reject(outcome.Error!, outcome.Description);
     }
 }

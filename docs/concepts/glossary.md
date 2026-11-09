@@ -176,14 +176,20 @@ Configurable per client:
 
 | Format | How it works | Best for |
 |---|---|---|
-| **Reference** (default) | Opaque string. APIs validate via the introspection endpoint. | SPAs, mobile, public clients — instant revocation. |
+| **Reference** (default) | Opaque string. APIs validate via the introspection endpoint. | SPAs, mobile, public clients — a revoked token fails at the next introspection. |
 | **JWT** | Self-contained, signed token. APIs verify locally. | Trusted backend services — no introspection roundtrip. |
 
 ::: tip Which one when?
 **Reference tokens** are the safe default. Revoke a reference token
-and it is dead immediately. JWTs cannot be revoked — they are valid
-until they expire. Use JWT only for trusted services where the
-introspection roundtrip gets in the way.
+and the next introspection answers *inactive* — immediate for a
+resource server that introspects every request, as Modgud's library
+does; one that caches introspection answers is only as fresh as its
+cache, and an unreachable IdP rejects the request. A JWT stays valid
+until it expires; the IdP cannot recall it. A resource server using
+Modgud's library can opt in to [session revocation](../integrate/resource-server#session-revocation-jwt-mode):
+it follows ended sessions on the change feed (polled every few seconds,
+fail-open) and refuses their JWTs before `exp`. Use JWT only for
+trusted services where the introspection roundtrip gets in the way.
 :::
 
 ---

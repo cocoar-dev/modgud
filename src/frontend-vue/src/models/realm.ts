@@ -13,6 +13,9 @@ export interface RealmDto {
   /** The realm's canonical public host — always one of `Domains`. Drives all
    * outbound links and is the WebAuthn RP ID for this realm's passkeys. */
   PrimaryDomain: string
+  /** The realm's declared public origin (scheme + host + optional port) that
+   * outbound links are built against. `null` = `https://{PrimaryDomain}`. */
+  PublicBaseUrl?: string | null
   IsControlPlane: boolean
   IsActive: boolean
   CreatedAt: string
@@ -42,6 +45,8 @@ export interface CreateRealmDto {
   /** Optional. Canonical public host for outbound links + WebAuthn RP. When set
    * it must be one of `Domains`; when omitted the first `Domains` entry is used. */
   PrimaryDomain?: string | null
+  /** Optional public origin, e.g. `http://localhost:4300`. Omitted = `https://{PrimaryDomain}`. */
+  PublicBaseUrl?: string | null
   /** Initial activation state. Defaults to true. */
   IsActive?: boolean | null
 }
@@ -58,6 +63,8 @@ export interface UpdateRealmDto {
   /** Optional. When set it must be one of the resulting domain set. Changing it
    * invalidates the realm's existing passkeys (they're bound to the old host). */
   PrimaryDomain?: string | null
+  /** Absent = unchanged, `null` or blank = back to `https://{PrimaryDomain}`. */
+  PublicBaseUrl?: string | null
   IsActive?: boolean | null
 }
 

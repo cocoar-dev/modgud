@@ -9,6 +9,17 @@ namespace Modgud.Tests.Unit.Applications;
 /// </summary>
 public class RegistrationFieldsPolicyTests
 {
+    /// <summary>AREG-09 — Off means "never captured": a name sent anyway is dropped.</summary>
+    public class Captured
+    {
+        [Theory]
+        [InlineData(FieldRequirement.Off, null)]
+        [InlineData(FieldRequirement.Optional, "Ada")]
+        [InlineData(FieldRequirement.Required, "Ada")]
+        public void Keeps_a_name_only_when_the_field_is_not_off(FieldRequirement requirement, string? expected) =>
+            Assert.Equal(expected, RegistrationFieldsPolicy.Captured(requirement, "Ada"));
+    }
+
     public class FirstMissingRequired
     {
         [Fact]

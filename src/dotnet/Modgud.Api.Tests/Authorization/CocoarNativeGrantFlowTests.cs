@@ -114,6 +114,62 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
             await rejectedRefresh.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
+    /// <summary>EG-08 — the short native access-token lifetime was applied only to the first
+    /// issuance; a refresh fell back to the client's or the server's default (60 min).</summary>
+    [Fact]
+    public async Task Otp_Grant_Refresh_Keeps_The_Short_Native_Access_Token_Lifetime()
+    {
+        await EnableNativeGrantsAsync();
+        // A distinct native lifetime, so no other 15-minute default can make the test pass.
+        using (var scope = NewSystemTenantScope())
+            await scope.ServiceProvider.GetRequiredService<IRealmSettingsService>().PatchAsync(new UpdateRealmSettingsDto
+            {
+                NativeGrants = new UpdateNativeGrantSettingsDto { Enabled = true, AccessTokenLifetimeMinutes = 20 },
+            }, TestContext.Current.CancellationToken);
+        await SeedNativeClientAsync("native-refresh-app");
+        var code = await RequestNativeOtpCodeAsync();
+        var first = await PostTokenAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = CocoarGrantTypes.Otp,
+            ["client_id"] = "native-refresh-app",
+            ["client_secret"] = "native-refresh-app-secret",
+            ["username"] = TestEmail,
+            ["otp_code"] = code,
+            ["scope"] = "openid email profile offline_access",
+        });
+        var firstBody = await first.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(first.IsSuccessStatusCode, firstBody);
+        using var firstJson = JsonDocument.Parse(firstBody);
+
+        var refreshed = await PostTokenAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["client_id"] = "native-refresh-app",
+            ["client_secret"] = "native-refresh-app-secret",
+            ["refresh_token"] = firstJson.RootElement.GetProperty("refresh_token").GetString()!,
+        });
+        var body = await refreshed.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(refreshed.IsSuccessStatusCode, $"refresh failed ({(int)refreshed.StatusCode}): {body}");
+        using var json = JsonDocument.Parse(body);
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(json.RootElement.GetProperty("access_token").GetString()!);
+        var lifetimeMinutes = (long.Parse(jwt.Payload["exp"].ToString()!) - long.Parse(jwt.Payload["iat"].ToString()!)) / 60.0;
+        Assert.InRange(lifetimeMinutes, 19, 21);
+
+        // And again after the rotated refresh token: the marker travels with the token family.
+        var again = await PostTokenAsync(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["client_id"] = "native-refresh-app",
+            ["client_secret"] = "native-refresh-app-secret",
+            ["refresh_token"] = json.RootElement.GetProperty("refresh_token").GetString()!,
+        });
+        var againBody = await again.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(again.IsSuccessStatusCode, againBody);
+        using var againJson = JsonDocument.Parse(againBody);
+        var againJwt = new JwtSecurityTokenHandler().ReadJwtToken(againJson.RootElement.GetProperty("access_token").GetString()!);
+        Assert.InRange((long.Parse(againJwt.Payload["exp"].ToString()!) - long.Parse(againJwt.Payload["iat"].ToString()!)) / 60.0, 19, 21);
+    }
+
     [Fact]
     public async Task Otp_Grant_RealmFlagOff_Rejected()
     {
@@ -348,12 +404,6 @@ public partial class CocoarNativeGrantFlowTests : IntegrationTestBase
             NativeGrants = new UpdateNativeGrantSettingsDto { Enabled = true, AccessTokenLifetimeMinutes = 0 },
         }, TestContext.Current.CancellationToken);
         Assert.True(zero.IsError);
-
-        var badRefresh = await settings.PatchAsync(new UpdateRealmSettingsDto
-        {
-            NativeGrants = new UpdateNativeGrantSettingsDto { Enabled = true, RefreshTokenLifetimeDays = 9_999 },
-        }, TestContext.Current.CancellationToken);
-        Assert.True(badRefresh.IsError);
 
         // The sane defaults (Enabled only) must still patch cleanly.
         var ok = await settings.PatchAsync(new UpdateRealmSettingsDto

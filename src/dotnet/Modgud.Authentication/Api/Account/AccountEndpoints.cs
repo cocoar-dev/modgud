@@ -71,8 +71,8 @@ public static class AccountEndpoints
         bool TwoFactorExempt,
         /// <summary>
         /// True when the current session was established via an external IdP
-        /// that asserted multi-factor authentication (amr contains "mfa", "otp",
-        /// "fido", etc.). Used by the frontend to suppress the SecureSetupModal
+        /// that asserted multi-factor authentication (amr "mfa", two factor classes, or a
+        /// value the provider is configured to issue only for MFA). Used by the frontend to suppress the SecureSetupModal
         /// for federated sessions — the enforcement middleware already treats
         /// these as meeting the 2FA requirement.
         /// </summary>
@@ -512,7 +512,7 @@ public static class AccountEndpoints
                     .CheckAsync(context, user, ct);
                 if (check.Allowed)
                     return Results.Ok(new { Message = "Session already meets the requirement" });
-                if (check.HasAccountFactor)
+                if (check.HasAccountFactor && !check.ConfirmBySignIn)
                 {
                     // The second step proves the account factor again; its sign-in unions the
                     // fresh time back into this session. The protected purpose also lets
@@ -520,8 +520,9 @@ public static class AccountEndpoints
                     await SignInAssurance.SignInPartialAsync(context, user.Id, factors, accountReauthentication: true);
                     return Results.Ok(new { RequiresMfa = true, MfaMethods = check.Methods });
                 }
-                // No account factor: sign in again with what the user has (e-mail code,
-                // password); that sign-in unions into this session.
+                // No account factor, or a user without a password whose way back is the mailbox:
+                // sign in again with what the user has (e-mail code, magic link, password, a
+                // passkey); that sign-in unions into this session.
                 return Results.Ok(new { RequiresFirstFactor = true, Methods = check.Methods, user.Email });
             }
 
@@ -619,14 +620,8 @@ public static class AccountEndpoints
             var twoFactorMethods = await TwoFactorHelper.GetMethodsAsync(user, session);
             var securityData = await session.LoadAsync<UserSecurityData>(user.Id);
 
-            var isFederatedMfa = context.User.FindAll("modgud.external.amr")
-                .Any(c => c.Value.Equals("mfa", StringComparison.OrdinalIgnoreCase)
-                       || c.Value.Equals("otp", StringComparison.OrdinalIgnoreCase)
-                       || c.Value.Equals("fido", StringComparison.OrdinalIgnoreCase)
-                       || c.Value.Equals("hwk", StringComparison.OrdinalIgnoreCase)
-                       || c.Value.Equals("swk", StringComparison.OrdinalIgnoreCase)
-                       || c.Value.Equals("mca", StringComparison.OrdinalIgnoreCase)
-                       || c.Value.Equals("pop", StringComparison.OrdinalIgnoreCase));
+            // B6-OIDC-04 — the same verdict the 2FA enforcement uses.
+            var isFederatedMfa = TwoFactorEnforcementMiddleware.HasFederatedMfa(context.User);
 
             var externalLoginProviderIdRaw = context.User.FindFirst("modgud.external.loginProviderId")?.Value;
             var isFederated = !string.IsNullOrWhiteSpace(externalLoginProviderIdRaw);

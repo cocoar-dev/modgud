@@ -103,7 +103,8 @@ The modal has two tabs:
 
 **General**
 
-- **Name** (unique per realm)
+- **Name** (unique within its application; realm-admin roles are unique among
+  themselves — two applications may each have an "Author")
 - **Description** (optional)
 - **Application** — which app does this role belong to? Pick "— None
   (realm-admin role)" only for a pure bypass role; otherwise a role

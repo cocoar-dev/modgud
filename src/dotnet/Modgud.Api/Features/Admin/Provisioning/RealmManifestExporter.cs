@@ -213,6 +213,9 @@ public sealed class RealmManifestExporter(
             AllowLinking = p.AllowLinking,
             TrustForEmailLink = p.TrustForEmailLink,
             TrustForAuthorization = p.TrustForAuthorization,
+            TrustEmailsAsVerified = p.TrustEmailsAsVerified,
+            MfaAmrValues = p.MfaAmrValues is { Count: > 0 } mfaAmr
+                ? new Optional<List<string>?>(mfaAmr) : default,
             AuthoritativeForProfile = p.AuthoritativeForProfile,
             AllowedEmailDomains = p.AllowedEmailDomains is { Count: > 0 } domains
                 ? new Optional<List<string>?>(domains) : default,
@@ -510,7 +513,7 @@ public sealed class RealmManifestExporter(
         {
             Enabled = s.NativeGrants.Enabled,
             AccessTokenLifetimeMinutes = s.NativeGrants.AccessTokenLifetimeMinutes,
-            RefreshTokenLifetimeDays = s.NativeGrants.RefreshTokenLifetimeDays,
+            RequireRecentSignInForPasskeyChanges = s.NativeGrants.RequireRecentSignInForPasskeyChanges,
         },
         // ADR 0025 — a realm that never configured the section exports none, so applying the
         // manifest does not pin the legacy-derived policy as if an admin had chosen it.
@@ -594,6 +597,7 @@ public sealed class RealmManifestExporter(
     /// </summary>
     private static ApplicationSettingsDto WithoutDerivedUrls(ApplicationSettingsDto s) => s with
     {
+        Version = null, // F7-05 — a stored row version means nothing in another realm or later apply
         Branding = s.Branding is null ? null : s.Branding with { LogoUrl = null, FaviconUrl = null },
     };
 

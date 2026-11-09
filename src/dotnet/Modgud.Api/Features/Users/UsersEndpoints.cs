@@ -253,6 +253,16 @@ public static class UsersEndpoints
                 if (person is null || person.IsDeleted)
                     return Results.NotFound(new { Message = "User not found" });
 
+                // AID-03 — the account is read-only while a deletion is pending (recycle
+                // bin or self-service grace), like every other edit: restore first.
+                var deletionState = await session.LoadAsync<Modgud.Authentication.Gdpr.UserDeletionState>(id.Guid);
+                if (deletionState?.IsDeletionPending == true)
+                    return Results.Conflict(new
+                    {
+                        Error = "User.DeletionPending",
+                        Message = "This user has a pending deletion and is read-only. Restore the user before editing.",
+                    });
+
                 var appUser = await session.LoadAsync<ApplicationUser>(id.Guid);
                 var wasActive = appUser?.IsActive ?? true;
                 if (appUser is not null)

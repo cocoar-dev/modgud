@@ -392,12 +392,12 @@ public sealed class ApplicationSettingsService(
 
     private static ErrorOr<ApplicationNativeGrantOverrides> MapNativeGrants(ApplicationNativeGrantsDto d)
     {
-        if (LifetimeError("NativeGrants", d.AccessTokenLifetimeMinutes, d.RefreshTokenLifetimeDays) is { } e) return e;
+        if (LifetimeError("NativeGrants", d.AccessTokenLifetimeMinutes, refreshDays: null) is { } e) return e;
         return new ApplicationNativeGrantOverrides
         {
             Enabled = d.Enabled,
             AccessTokenLifetime = Minutes(d.AccessTokenLifetimeMinutes),
-            RefreshTokenLifetime = Days(d.RefreshTokenLifetimeDays),
+            RequireRecentSignInForPasskeyChanges = d.RequireRecentSignInForPasskeyChanges,
         };
     }
 
@@ -745,6 +745,7 @@ public sealed class ApplicationSettingsService(
         if (doc is null) return new ApplicationSettingsDto();
         return new ApplicationSettingsDto
         {
+            Version = doc.Version == Guid.Empty ? null : doc.Version,
             Origin = doc.Origin is null ? null : new ApplicationOriginDto { Subdomain = doc.Origin.Subdomain },
             Branding = doc.Branding is null ? null : new ApplicationBrandingDto
             {
@@ -798,7 +799,7 @@ public sealed class ApplicationSettingsService(
             {
                 Enabled = doc.NativeGrants.Enabled,
                 AccessTokenLifetimeMinutes = doc.NativeGrants.AccessTokenLifetime is { } na ? (int)na.TotalMinutes : null,
-                RefreshTokenLifetimeDays = doc.NativeGrants.RefreshTokenLifetime is { } nr ? (int)nr.TotalDays : null,
+                RequireRecentSignInForPasskeyChanges = doc.NativeGrants.RequireRecentSignInForPasskeyChanges,
             },
             SignIn = doc.SignIn is null ? null : new ApplicationSignInDto
             {

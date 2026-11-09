@@ -99,6 +99,36 @@ public class FederationV1Phase0Tests : IntegrationTestBase
         Assert.Contains(result.Errors, e => e.Code == "Group.ExternallyDrivableRealmAdmin");
     }
 
+    /// <summary>
+    /// B3-F02 — an externally driven group's membership is session-only: the batch engine
+    /// never writes its durable MemberIds. Switching a group with stored members to
+    /// Auto + ExternallyDrivable must drop them, or the old local members keep the group's
+    /// roles without ever satisfying the new external script.
+    /// </summary>
+    [Fact]
+    public async Task UpdateGroup_To_ExternallyDrivable_Drops_The_Stored_Members()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var user = await Factory.CreateTestUserAsync(email: $"b3f02-{Guid.NewGuid():N}@test.local");
+        var group = await Factory.CreateTestGroupAsync(
+            name: $"Local_{Guid.NewGuid():N}", memberIds: [user.Id], roleIds: []);
+
+        using var scope = Factory.Services.CreateScope();
+        var handler = NewUpdateGroupHandler(scope.ServiceProvider);
+
+        var result = await handler.Handle(new UpdateGroupCommand(
+            Id: group.Id, Name: group.Name, Description: null,
+            MemberIds: [user.Id], RoleIds: [],
+            MembershipMode: MembershipMode.Auto,
+            MembershipScript: "(p) => Type.Is(p, 'person') && p.ExternalGroups.includes('entra-staff')",
+            ExternallyDrivable: true,
+            CallerIsRealmAdmin: true), ct);
+
+        Assert.False(result.IsError, result.IsError ? result.FirstError.Description : string.Empty);
+        Assert.True(result.Value.ExternallyDrivable);
+        Assert.Empty(result.Value.MemberIds);
+    }
+
     [Fact]
     public async Task LoginProvider_Federation_Flags_RoundTrip_Through_Events()
     {

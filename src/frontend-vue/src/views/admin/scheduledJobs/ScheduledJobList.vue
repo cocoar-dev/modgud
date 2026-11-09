@@ -59,6 +59,14 @@ const builder = applyListGridDefaults(CoarGridBuilder.create<ScheduledJobDto>(),
       .option('valueGetter', (p: any) => p.data?.Enabled ? 'true' : 'false'),
     (col) => col.date('NextFireAt', { includeTime: true })
       .header('Next run', 'admin.scheduledJobs.nextRun').width(170),
+    // B9-JS-01 — the scheduler's state can deviate from the saved configuration until the
+    // periodic reconcile repairs it; an "Enabled" job may then not run at all.
+    (col) => col.tag('ScheduleDrift', {
+      variantMap: { inSync: 'neutral', deviates: 'warning' },
+      i18nPrefix: 'admin.scheduledJobs.scheduleTag.',
+    })
+      .header('Schedule', 'admin.scheduledJobs.schedule').width(120)
+      .option('valueGetter', (p: any) => p.data?.ScheduleDrift ? 'deviates' : 'inSync'),
     (col) => col.date('LastRunStartedAt', { includeTime: true })
       .header('Last run', 'admin.scheduledJobs.lastRun').width(170)
       .option('valueGetter', (p: any) => p.data?.LastRun?.StartedAt ?? null),

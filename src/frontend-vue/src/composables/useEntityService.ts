@@ -144,6 +144,17 @@ export function useEntityService<
   const httpClient = useHttpClient(resolvedConfig.apiPath);
   const signalr = useSignalR();
   let signalrSubscribed = false;
+  let unsubscribeEntityStream: (() => void) | undefined;
+  let reconnectRegistered = false;
+
+  // B10-UI02 — ordering between REST and live pushes. Every pushed change gets a
+  // sequence number; the entities it touched remember theirs. A snapshot replays the
+  // changes pushed after it started, and a failed PUT only rolls back an entity no
+  // push has changed since.
+  let changeSeq = 0;
+  const entityChangeSeq = new Map<string, number>();
+  let loadsInFlight = 0;
+  let pushedDuringLoads: { seq: number; ev: DataEvent }[] = [];
 
   // ---------------------------------------------------------------------------
   // Store mutations
@@ -183,9 +194,16 @@ export function useEntityService<
 
   async function loadAll(): Promise<TDto[]> {
     const revision = ++snapshotRevision;
+    const startSeq = changeSeq;
+    loadsInFlight++;
     try {
       const data = await httpClient.get<TDto[]>({ redirectOnStepUp: resolvedConfig.redirectOnLoadStepUp });
-      if (revision === snapshotRevision) setAllStoreEntities(data);
+      if (revision === snapshotRevision) {
+        setAllStoreEntities(data);
+        // The snapshot was read before these pushes arrived; it must not undo them.
+        for (const pushed of pushedDuringLoads)
+          if (pushed.seq > startSeq) applyDelta(pushed.ev);
+      }
       return data;
     } catch (error) {
       // A refused/failed snapshot must not leave the old list looking current.
@@ -197,6 +215,8 @@ export function useEntityService<
         loadFailed.value = true;
       }
       throw error; // explicit callers still own normal HTTP/CRUD error handling
+    } finally {
+      if (--loadsInFlight === 0) pushedDuringLoads = [];
     }
   }
 
@@ -228,6 +248,7 @@ export function useEntityService<
   async function updateEntity(id: string, dto: Partial<TDto>): Promise<TDto> {
     // 1. Snapshot current entity for rollback
     const snapshot = store.value.get(id);
+    const seqAtStart = entityChangeSeq.get(id);
 
     // 2. Optimistic update with pending status
     const pending = snapshot
@@ -241,11 +262,13 @@ export function useEntityService<
       // 5. SignalR will deliver the confirmed state
       return pending;
     } catch (error) {
-      // 4. Rollback on error
-      if (snapshot) {
-        setStoreEntities([snapshot]);
-      } else {
-        deleteStoreEntities([id]);
+      // 4. Rollback on error — unless a push delivered a newer server state meanwhile.
+      if (entityChangeSeq.get(id) === seqAtStart) {
+        if (snapshot) {
+          setStoreEntities([snapshot]);
+        } else {
+          deleteStoreEntities([id]);
+        }
       }
       throw error;
     }
@@ -271,33 +294,58 @@ export function useEntityService<
   // SignalR integration
   // ---------------------------------------------------------------------------
 
+  function applyDelta(ev: DataEvent): void {
+    switch (ev.Action) {
+      case 'Created':
+      case 'Updated':
+        setStoreEntities(ev.Payload as unknown as TDto[]);
+        break;
+      case 'Deleted':
+        deleteStoreEntities(ev.Payload as unknown as string[]);
+        break;
+    }
+  }
+
+  function changedIds(ev: DataEvent): string[] {
+    return ev.Action === 'Deleted'
+      ? (ev.Payload as unknown as string[])
+      : (ev.Payload as unknown as TDto[]).map((dto) => dto.Id);
+  }
+
+  function handlePush(ev: DataEvent): void {
+    if (ev.Action === 'FullSync') {
+      if (resolvedConfig.handleFullSync) {
+        // An authoritative snapshot: nothing pushed before it needs replaying.
+        pushedDuringLoads = [];
+        setAllStoreEntities(ev.Payload as unknown as TDto[]);
+      }
+      return;
+    }
+    if (ev.Action !== 'Created' && ev.Action !== 'Updated' && ev.Action !== 'Deleted') return;
+
+    const seq = ++changeSeq;
+    for (const id of changedIds(ev)) entityChangeSeq.set(id, seq);
+    if (loadsInFlight > 0) pushedDuringLoads.push({ seq, ev });
+    applyDelta(ev);
+  }
+
+  /** B10-UI03 — a stream the server completed (e.g. refused for a missing read right)
+   *  or that failed is released, so the next initialize() subscribes again instead of
+   *  leaving the live channel dead while the connection itself stays up. */
+  function releaseEntityStream(): void {
+    unsubscribeEntityStream?.();
+    unsubscribeEntityStream = undefined;
+    signalrSubscribed = false;
+  }
+
   function subscribeToSignalR(): void {
-    signalr.stream<DataEvent>(`${resolvedConfig.entityName}Actions.Subscribe`).subscribe({
-      next: (ev) => {
-        switch (ev.Action) {
-          case 'Created':
-          case 'Updated': {
-            const dtos = ev.Payload as unknown as TDto[];
-            setStoreEntities(dtos);
-            break;
-          }
-          case 'Deleted': {
-            const ids = ev.Payload as unknown as string[];
-            deleteStoreEntities(ids);
-            break;
-          }
-          case 'FullSync': {
-            if (resolvedConfig.handleFullSync) {
-              const dtos = ev.Payload as unknown as TDto[];
-              setAllStoreEntities(dtos);
-            }
-            break;
-          }
-        }
-      },
+    unsubscribeEntityStream = signalr.stream<DataEvent>(`${resolvedConfig.entityName}Actions.Subscribe`).subscribe({
+      next: handlePush,
       error: (err) => {
         console.error(`[EntityService:${resolvedConfig.entityName}] SignalR stream error:`, err);
+        releaseEntityStream();
       },
+      complete: () => releaseEntityStream(),
     });
   }
 
@@ -313,7 +361,8 @@ export function useEntityService<
       // useSignalR restores active streams itself. Only the REST drift correction
       // belongs in the reconnect callback; subscribing here again would multiply
       // identical streams after every transient disconnect.
-      if (!resolvedConfig.handleFullSync) {
+      if (!resolvedConfig.handleFullSync && !reconnectRegistered) {
+        reconnectRegistered = true;
         signalr.runOnReconnect(
           // This is a background callback, not an awaited caller. loadAll has
           // already invalidated its snapshot and exposed the failure state.

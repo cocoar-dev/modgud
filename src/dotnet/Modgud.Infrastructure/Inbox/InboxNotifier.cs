@@ -8,6 +8,10 @@ namespace Modgud.Infrastructure.Inbox;
 
 public class InboxNotifier(IDocumentSession session) : IInboxNotifier
 {
+    /// <summary>Each conflict means another notification for the same source committed, so
+    /// a handful of attempts covers any realistic burst.</summary>
+    private const int MaxAttempts = 5;
+
     public async Task<IReadOnlyList<Guid>> NotifyAsync(
         InboxKind kind,
         IReadOnlyCollection<Guid> recipients,
@@ -36,18 +40,68 @@ public class InboxNotifier(IDocumentSession session) : IInboxNotifier
             ? null
             : JsonSerializer.SerializeToDocument(parameters);
 
-        var now = DateTime.UtcNow;
-        var createdIds = new List<Guid>(distinctRecipients.Count);
+        var replaceBySource = descriptor.Dedup == InboxDedupPolicy.ReplaceBySource
+            && sourceType is not null && sourceId is not null;
 
-        foreach (var recipientId in distinctRecipients)
+        // B3-EI-06 — a concurrent notification for the same (recipient, source) makes this
+        // save fail on the slot or on the item both tried to dismiss; start over on a clean
+        // session, which then sees the winner's slot.
+        for (var attempt = 1; ; attempt++)
         {
-            // Dedup: replace any existing open item for the same (Recipient,
-            // SourceType, SourceId). "Open" = not dismissed. We mark the existing
-            // one dismissed so the new one becomes the active surface — audit
-            // trail stays intact.
-            if (descriptor.Dedup == InboxDedupPolicy.ReplaceBySource &&
-                sourceType is not null && sourceId is not null)
+            var createdIds = await StageAsync(
+                kind, descriptor, distinctRecipients, titleKey, bodyKey, paramsDoc, link,
+                sourceType, sourceId, replaceBySource, ct);
+            try
             {
+                await session.SaveChangesAsync(ct);
+                return createdIds;
+            }
+            catch (Exception ex) when (attempt < MaxAttempts && replaceBySource && IsSlotConflict(ex))
+            {
+                session.EjectAllPendingChanges();
+            }
+        }
+    }
+
+    private async Task<List<Guid>> StageAsync(
+        InboxKind kind,
+        InboxKindDescriptor descriptor,
+        List<Guid> recipients,
+        string titleKey,
+        string? bodyKey,
+        JsonDocument? paramsDoc,
+        string? link,
+        string? sourceType,
+        Guid? sourceId,
+        bool replaceBySource,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var createdIds = new List<Guid>(recipients.Count);
+
+        foreach (var recipientId in recipients)
+        {
+            var itemId = Guid.NewGuid();
+
+            // Dedup: replace the open item for the same (Recipient, SourceType, SourceId).
+            // The existing one is marked dismissed so the new one becomes the active
+            // surface — audit trail stays intact.
+            if (replaceBySource)
+            {
+                var toDismiss = new HashSet<Guid>();
+
+                // The slot is written in the same transaction as the item, so it is current
+                // even while the asynchronous view lags behind.
+                var slotId = InboxSourceSlot.IdFor(recipientId, sourceType!, sourceId!.Value);
+                var slot = await session.LoadAsync<InboxSourceSlot>(slotId, ct);
+                if (slot is not null)
+                {
+                    var view = await session.LoadAsync<InboxItemView>(slot.OpenItemId, ct);
+                    // Skip an item that is already dismissed (and possibly archived since).
+                    if (view?.DismissedAt is null) toDismiss.Add(slot.OpenItemId);
+                }
+
+                // Items from before the slot existed are still found through the view.
                 var existing = await session.Query<InboxItemView>()
                     .Where(i => i.RecipientUserId == recipientId
                              && i.SourceType == sourceType
@@ -55,14 +109,26 @@ public class InboxNotifier(IDocumentSession session) : IInboxNotifier
                              && i.DismissedAt == null)
                     .Select(i => i.Id)
                     .ToListAsync(ct);
+                toDismiss.UnionWith(existing);
 
-                foreach (var existingId in existing)
-                {
+                foreach (var existingId in toDismiss)
                     session.Events.Append(existingId, new InboxItemDismissedEvent(existingId, now));
+
+                if (slot is null)
+                {
+                    session.Insert(new InboxSourceSlot
+                    {
+                        Id = slotId, RecipientUserId = recipientId,
+                        SourceType = sourceType!, SourceId = sourceId.Value, OpenItemId = itemId,
+                    });
+                }
+                else
+                {
+                    slot.OpenItemId = itemId;
+                    session.Store(slot);
                 }
             }
 
-            var itemId = Guid.NewGuid();
             session.Events.StartStream<InboxItemView>(itemId, new InboxItemCreatedEvent(
                 Id: itemId,
                 RecipientUserId: recipientId,
@@ -78,8 +144,32 @@ public class InboxNotifier(IDocumentSession session) : IInboxNotifier
             createdIds.Add(itemId);
         }
 
-        await session.SaveChangesAsync(ct);
         return createdIds;
+    }
+
+    private static bool IsSlotConflict(Exception ex)
+    {
+        for (var e = ex; e is not null; e = e.InnerException)
+            if (e is JasperFx.ConcurrencyException
+                || e is JasperFx.Events.EventStreamUnexpectedMaxEventIdException
+                || e is JasperFx.DocumentAlreadyExistsException
+                || e is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation })
+                return true;
+        return false;
+    }
+
+    /// <summary>Whether an item is open (and of <paramref name="onlyKind"/>): from the view when it
+    /// has caught up, otherwise from the item's own event stream.</summary>
+    private async Task<bool> IsOpenAsync(Guid itemId, InboxKind? onlyKind, CancellationToken ct)
+    {
+        var view = await session.LoadAsync<InboxItemView>(itemId, ct);
+        if (view is not null)
+            return view.DismissedAt is null && (onlyKind is null || view.Kind == onlyKind);
+
+        var events = await session.Events.FetchStreamAsync(itemId, token: ct);
+        if (events.Any(e => e.Data is InboxItemDismissedEvent)) return false;
+        var created = events.Select(e => e.Data).OfType<InboxItemCreatedEvent>().FirstOrDefault();
+        return created is not null && (onlyKind is null || created.Kind == onlyKind);
     }
 
     public async Task DismissByIdsAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken ct = default)
@@ -106,7 +196,18 @@ public class InboxNotifier(IDocumentSession session) : IInboxNotifier
                      && i.DismissedAt == null);
         if (onlyKind is InboxKind kind) query = query.Where(i => i.Kind == kind);
 
-        var ids = await query.Select(i => i.Id).ToListAsync(ct);
+        var ids = new HashSet<Guid>(await query.Select(i => i.Id).ToListAsync(ct));
+
+        // B3-EI-04 — the view lags behind; the source slots of ReplaceBySource kinds are written in
+        // the commit of their item, so an item created a moment ago is dismissed as well.
+        var slots = await session.Query<InboxSourceSlot>()
+            .Where(s => s.SourceType == sourceType && s.SourceId == sourceId)
+            .ToListAsync(ct);
+        foreach (var slot in slots)
+        {
+            if (!ids.Contains(slot.OpenItemId) && await IsOpenAsync(slot.OpenItemId, onlyKind, ct))
+                ids.Add(slot.OpenItemId);
+        }
         if (ids.Count == 0) return;
 
         var now = DateTime.UtcNow;

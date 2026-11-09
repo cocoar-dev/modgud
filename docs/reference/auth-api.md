@@ -84,7 +84,7 @@ There are no recovery codes — losing the authenticator device means falling ba
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/account/magic-link/request` | Request a magic link (self-service, only when enabled) |
-| `GET` | `/api/account/magic-link/login?token=…&user=…` | Magic-link login |
+| `POST` | `/api/account/magic-link/login` | Magic-link login — body `{ UserId, Token, ReturnUrl? }`; the link in the mail opens the SPA, which posts it |
 
 ## Native cookieless grants
 
@@ -160,7 +160,7 @@ surface) because they're identity-lifecycle operations:
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/auth/export-data` | Data export (Article 20) — ZIP |
+| `GET` | `/api/auth/export-data` | Data export (Article 20) — one JSON document |
 | `GET` | `/api/auth/deletion-status` | Status of the delete workflow |
 | `POST` | `/api/auth/delete-account` | Schedule the account's deletion; it is erased at the grace deadline unless cancelled. Body `{ Reason? }` (a `Password` sent along is checked) |
 | `POST` | `/api/auth/cancel-deletion` | Cancel a pending delete request |
@@ -213,10 +213,11 @@ email-OTP family.
 
 | Status | Meaning |
 |---|---|
-| `200 { authenticated: true, ... }` | Success (cookie set) |
-| `200 { requiresTwoFactor: true, mfaMethods: [...] }` | Step-2 MFA needed |
-| `200 { requiresSecureSetup: true, gracePeriod: true, secureSetupDueAt }` | User still has to set up 2FA, time remaining |
-| `200 { requiresSecureSetup: true, gracePeriod: false }` | Grace period over, blocking |
+| `200 { Message: "Login successful" }` | Success (cookie set) |
+| `200 { RequiresMfa: true, MfaMethods: [...] }` | Step-2 MFA needed |
+| `200 { RequiresSecureSetup: true, GracePeriod: true, SecureSetupDueAt }` | User still has to set up 2FA, time remaining |
+| `200 { RequiresSecureSetup: true, GracePeriod: false, SecureSetupDueAt }` | Grace period over, blocking (at sign-in) |
+| `403 { RequiresSecureSetup: true, GracePeriod: false }` | Grace period over — a later request to Modgud's own UI is blocked |
 | `403 { RequiresStepUp: true }` | The session is below the target App's sign-in level — complete the missing factor via `POST /api/account/step-up` |
 | `403 { RequiresReauthentication: true, Methods }` | An account change needs a recent proof — `POST /api/account/step-up` with `{ Reauthenticate: true }` answers `RequiresMfa` (prove the account factor) or `RequiresFirstFactor` (sign in again with one of `Methods`); the proof joins the current session |
 | `401` | Not authenticated or wrong credentials |

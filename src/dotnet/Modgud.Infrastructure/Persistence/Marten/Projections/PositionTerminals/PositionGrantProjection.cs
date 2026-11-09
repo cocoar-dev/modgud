@@ -20,11 +20,20 @@ public partial class PositionGrantProjection : SingleStreamProjection<PositionGr
         CreatedByUserId = e.IssuedByUserId,
     };
 
+    // B3-P1 — Revoked is terminal. A suspend or resume that read the grant before an
+    // overlapping revoke committed can still land after it in the stream; it must not
+    // revive the grant (the re-grant path is a fresh issue).
     public void Apply(PositionGrantSuspended e, PositionGrant grant)
-        => grant.Status = PositionGrantStatus.Suspended;
+    {
+        if (grant.Status != PositionGrantStatus.Revoked)
+            grant.Status = PositionGrantStatus.Suspended;
+    }
 
     public void Apply(PositionGrantResumed e, PositionGrant grant)
-        => grant.Status = PositionGrantStatus.Active;
+    {
+        if (grant.Status != PositionGrantStatus.Revoked)
+            grant.Status = PositionGrantStatus.Active;
+    }
 
     public void Apply(PositionGrantRevoked e, PositionGrant grant)
     {
@@ -33,10 +42,15 @@ public partial class PositionGrantProjection : SingleStreamProjection<PositionGr
         grant.RevokedByUserId = e.RevokedByUserId;
     }
 
+    /// <summary>G-B4-06 — the writer computes <c>LockedUntil</c> from the failure count it read, so a
+    /// failure recorded from an older count carries no lock. A failure therefore never shortens or
+    /// clears a lock (the later end wins); only a success does.</summary>
     public void Apply(PositionGrantActivationFailed e, PositionGrant grant)
     {
         grant.ActivationFailedCount++;
-        grant.ActivationLockoutEnd = e.LockedUntil;
+        if (e.LockedUntil is { } lockedUntil
+            && (grant.ActivationLockoutEnd is not { } current || lockedUntil > current))
+            grant.ActivationLockoutEnd = lockedUntil;
     }
 
     public void Apply(PositionGrantActivationSucceeded e, PositionGrant grant)

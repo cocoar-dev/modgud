@@ -33,7 +33,7 @@ cosign verify ghcr.io/cocoar-dev/modgud:<version> \
 gh attestation verify oci://ghcr.io/cocoar-dev/modgud:<version> -R cocoar-dev/modgud
 ```
 
-Both checks operate on the image digest, and every release tag (`:<version>`, `:latest`, `:production`, …) points at the same multi-arch manifest — verifying one tag covers them all. For deployments, pin the digest the verification printed rather than a mutable tag.
+Both checks operate on the image digest, and every release tag (`:<version>`, `:latest`, `:production`, …) points at the same multi-arch manifest — verifying one tag covers them all. `:latest` and `:production` move only for stable releases; a prerelease or a version with a suffix gets its version tag alone. For deployments, pin the digest the verification printed rather than a mutable tag.
 
 ## Verify the NuGet package
 
@@ -59,4 +59,4 @@ docker buildx imagetools inspect ghcr.io/cocoar-dev/modgud:<version> --format '{
 
 ## How the release gate works
 
-The release pipeline builds each architecture on its own native runner and scans each one with Trivy before anything publishes. A fixable CRITICAL or HIGH finding fails the build job, which fails the release gate, which blocks the NuGet push, the Docker tag promotion, and the docs deploy alike — a release is all-or-nothing. Unfixable findings (no patched package available upstream) are reported in the job log but don't block, since there is nothing to ship for them; deliberate waivers live in `.trivyignore` at the repository root, each with a justification comment.
+The release pipeline builds each architecture on its own native runner and scans each one with Trivy before anything publishes. A fixable CRITICAL or HIGH finding fails the build job, which fails the release gate, which blocks the NuGet push, the Docker tag promotion, and the docs deploy alike. The NuGet push also waits for the multi-arch image candidate, and the docs deploy waits until the image is signed and attested. Past the gate the publishing steps run in order without a rollback: if signing or attestation fails after the tags were promoted, the tags stay visible and the release is re-run once the cause is fixed. Unfixable findings (no patched package available upstream) are reported in the job log but don't block, since there is nothing to ship for them; deliberate waivers live in `.trivyignore` at the repository root, each with a justification comment.

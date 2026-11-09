@@ -30,6 +30,7 @@ import {
 } from '@/page-builder/authPageConfig'
 import { createAuthRuntimeContext } from '@/page-builder/authPageContext'
 import AuthRuntimePageRenderer from '@/page-builder/AuthRuntimePageRenderer.vue'
+import { consentClientWarning } from './consentClientWarning'
 import { LOGIN_PAGE_RUNTIME_KEY } from '@/page-builder/loginPageRuntime'
 
 const { t, language } = useI18n()
@@ -89,6 +90,8 @@ const consentPageConfig = computed(() => createAuthPageConfig(
 ))
 const consentFallbackSchema = computed(() => createDefaultAuthPageSchema('consent'))
 const customConsentSchema = ref<PageNode | null>(null)
+// B10-PA03 — host-owned; a custom page document cannot hide or reword it.
+const clientWarning = computed(() => consentClientWarning(model.value))
 const consentViewState = computed(() => submitting.value ? 'submitting' : phase.value)
 const consentRuntimeContext = computed(() => createAuthRuntimeContext({
   config: appConfig.config,
@@ -304,6 +307,19 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
     >
       {{ language === 'de' ? 'EN' : 'DE' }}
     </button>
+    <div
+      v-if="customConsentSchema && clientWarning"
+      class="fixed top-0 inset-x-0 z-50 flex justify-center p-3 pointer-events-none"
+      data-testid="consent-client-warning">
+      <CoarNotice variant="warning" class="w-full max-w-md pointer-events-auto">
+        <template v-if="clientWarning.kind === 'cimd'">
+          {{ t('consent.cimdWarning', { host: clientWarning.host }, 'This app is identified by the domain {host}. Make sure you trust this domain before continuing — only authorise it if you intended to sign in to an app at {host}.') }}
+        </template>
+        <template v-else>
+          {{ t('consent.dcrWarning', {}, 'This app registered itself with the identity provider — its name has not been verified by an administrator. Make sure the name above matches the app you actually intended to authorise before continuing.') }}
+        </template>
+      </CoarNotice>
+    </div>
     <AuthRuntimePageRenderer
       v-if="customConsentSchema"
       page-id="auth-consent"
@@ -377,13 +393,13 @@ function scopeDescription(name: string, fallback: string | null | undefined): st
             </p>
           </div>
 
-          <CoarNotice truncate v-if="model!.ClientIdHostname" variant="warning">
+          <CoarNotice truncate v-if="clientWarning?.kind === 'cimd'" variant="warning">
             {{ t('consent.cimdWarningShort', { host: model!.ClientIdHostname }, 'This app is identified by the domain {host} — make sure you trust it.') }}
             <template #details>
               {{ t('consent.cimdWarning', { host: model!.ClientIdHostname }, 'This app is identified by the domain {host}. Make sure you trust this domain before continuing — only authorise it if you intended to sign in to an app at {host}.') }}
             </template>
           </CoarNotice>
-          <CoarNotice truncate v-else-if="model!.IsDynamicallyRegistered" variant="warning">
+          <CoarNotice truncate v-else-if="clientWarning?.kind === 'dcr'" variant="warning">
             {{ t('consent.dcrWarningShort', {}, 'This app self-registered and its name is unverified.') }}
             <template #details>
               {{ t('consent.dcrWarning', {}, 'This app registered itself with the identity provider — its name has not been verified by an administrator. Make sure the name above matches the app you actually intended to authorise before continuing.') }}

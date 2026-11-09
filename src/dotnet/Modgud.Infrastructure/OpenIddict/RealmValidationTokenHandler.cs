@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Infrastructure.Realms;
 using OpenIddict.Validation;
@@ -36,8 +37,13 @@ public sealed class RealmValidationTokenHandler : IOpenIddictValidationHandler<V
             .Build();
 
     private readonly IRealmKeyStore _keyStore;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public RealmValidationTokenHandler(IRealmKeyStore keyStore) => _keyStore = keyStore;
+    public RealmValidationTokenHandler(IRealmKeyStore keyStore, IHttpContextAccessor httpContextAccessor)
+    {
+        _keyStore = keyStore;
+        _httpContextAccessor = httpContextAccessor;
+    }
 
     public async ValueTask HandleAsync(ValidateTokenContext context)
     {
@@ -49,11 +55,15 @@ public sealed class RealmValidationTokenHandler : IOpenIddictValidationHandler<V
         var keys = await _keyStore.GetVerificationKeysAsync(slug);
         context.TokenValidationParameters.IssuerSigningKeys = keys;
 
-        // Accept the realm-specific issuer (request BaseUri) the token was issued
-        // with — the stock validator would compare against the global Options.Issuer.
+        // Accept the realm-specific issuer the token was issued with — the stock validator
+        // would compare against the global Options.Issuer. F.routing-F-R2: the same rule as
+        // the server handler (ADR-0011): on an Application subdomain tokens carry the tenant
+        // CANONICAL issuer, and AbsoluteUri normalises the host's letter case like the minting side.
         if (context.BaseUri is not null)
         {
-            var realmIssuer = context.BaseUri.OriginalString.TrimEnd('/');
+            var issuerUri = CanonicalIssuer.Resolve(context.BaseUri, _httpContextAccessor.HttpContext)
+                            ?? context.BaseUri;
+            var realmIssuer = issuerUri.AbsoluteUri.TrimEnd('/');
             context.TokenValidationParameters.ValidIssuer = realmIssuer;
             context.TokenValidationParameters.ValidIssuers = new[]
             {

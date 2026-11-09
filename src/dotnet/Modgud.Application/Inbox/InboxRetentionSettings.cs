@@ -27,6 +27,34 @@ public class InboxRetentionSettings
     public ScheduledJobFeedbackRetention ScheduledJobFeedback { get; set; } = new();
 
     public DateTime? UpdatedAt { get; set; }
+
+    /// <summary>Largest day value accepted (ten years) — larger values cannot form a cutoff.</summary>
+    public const int MaxDays = 3650;
+
+    /// <summary>
+    /// B3-EI-07 — the retention job dereferences every section and subtracts the day values
+    /// from today: a missing section or an unbounded number breaks the next run, and 0 or a
+    /// negative value silently disabled a rule that is documented as "null = never".
+    /// Returns the first problem, or null when the settings are usable.
+    /// </summary>
+    public string? Validate()
+    {
+        if (AdminChangeRequest is null || ChangeRequestFeedback is null || ScheduledJobFeedback is null)
+            return "Every retention section (AdminChangeRequest, ChangeRequestFeedback, ScheduledJobFeedback) is required.";
+        foreach (var (name, value) in new (string, int?)[]
+                 {
+                     ("AdminChangeRequest.HardDeleteDaysAfterDismissed", AdminChangeRequest.HardDeleteDaysAfterDismissed),
+                     ("ChangeRequestFeedback.MaxUnreadDays", ChangeRequestFeedback.MaxUnreadDays),
+                     ("ChangeRequestFeedback.AutoExpireDaysAfterRead", ChangeRequestFeedback.AutoExpireDaysAfterRead),
+                     ("ScheduledJobFeedback.MaxUnreadDays", ScheduledJobFeedback.MaxUnreadDays),
+                     ("ScheduledJobFeedback.AutoExpireDaysAfterRead", ScheduledJobFeedback.AutoExpireDaysAfterRead),
+                 })
+        {
+            if (value is int days && (days < 1 || days > MaxDays))
+                return $"{name} must be between 1 and {MaxDays} days, or null for never.";
+        }
+        return null;
+    }
 }
 
 /// <summary>

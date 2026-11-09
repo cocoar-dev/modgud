@@ -494,7 +494,7 @@ public sealed record RealmManifestGroup
     [Description("Optional description. Absent = unchanged; explicit null clears.")]
     public Optional<string?> Description { get; init; }
 
-    [Description("Members for MembershipMode=Manual — a user, a NESTED GROUP, or a service account. Each entry names one by IDENTITY (ADR 0024): { \"Key\": \"alice\", \"Id\": \"<id>\" } for one that exists here (missing = reported skip), or \"#alice\" for one this same manifest creates (undeclared = error). A bare name is an error. Users and service accounts apply before groups, so either may be a handle; a nested group's handle resolves only when that group is listed earlier. Absent = unchanged; [] clears the member list.")]
+    [Description("Members for MembershipMode=Manual — a user, a NESTED GROUP, a service account or a position. Each entry names one by IDENTITY (ADR 0024): { \"Key\": \"alice\", \"Id\": \"<id>\" } for one that exists here (missing = reported skip), or \"#alice\" for one this same manifest creates (undeclared = error). A bare name is an error. Users and service accounts apply before groups, so either may be a handle; a nested group's handle resolves only when that group is listed earlier; positions apply after groups, so a position is referenced by its real id. Absent = unchanged; [] clears the member list.")]
     public List<ManifestRef>? Members { get; init; }
 
     [Description("Roles this group grants to its members. Each entry names a role by IDENTITY (ADR 0024): { \"Key\": \"acme/Author\", \"Id\": \"<role id>\" } for a role that exists here (missing = reported skip), or \"#author\" for a role this same manifest creates (undeclared = error). A bare name is an error. Absent = unchanged; [] clears.")]
@@ -579,11 +579,17 @@ public sealed record RealmManifestLoginProvider
     [Description("Optional. Federation: this provider's claims may drive externally-drivable group membership at login. Omit = no change / default false.")]
     public bool? TrustForAuthorization { get; init; }
 
+    [Description("Optional. B6-OIDC-05: treat every e-mail this provider issues as verified even without an email_verified claim. Only for IdPs that verify addresses themselves. Omit = no change / default false.")]
+    public bool? TrustEmailsAsVerified { get; init; }
+
     [Description("Optional. Federation: this provider is authoritative for the four profile fields. Omit = no change / default false.")]
     public bool? AuthoritativeForProfile { get; init; }
 
     [Description("Optional email-domain allowlist (e.g. ['acme.com']). Absent = unchanged / no filter on create; explicit null or [] clears the filter.")]
     public Optional<List<string>?> AllowedEmailDomains { get; init; }
+
+    [Description("Optional. B6-OIDC-04: amr values this provider only issues for a multi-factor sign-in (beyond 'mfa' or two factor classes). Absent = unchanged; explicit null or [] clears.")]
+    public Optional<List<string>?> MfaAmrValues { get; init; }
 
     [Description("Optional login-button icon name. Absent = unchanged; explicit null clears.")]
     public Optional<string?> IconName { get; init; }

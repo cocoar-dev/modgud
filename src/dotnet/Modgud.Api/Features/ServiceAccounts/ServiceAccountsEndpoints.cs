@@ -10,6 +10,7 @@ using Modgud.Authorization.Principals;
 using Modgud.Authorization.Events;
 using Modgud.Domain.ValueObjects;
 using Modgud.Domain.OAuth.Common;
+using Modgud.Infrastructure.FollowUps;
 using Modgud.Infrastructure.OpenIddict;
 using Marten;
 
@@ -139,7 +140,7 @@ public static class ServiceAccountsEndpoints
             .WithName("V2_ServiceAccount_Create")
             .RequiresPermission("service-account:write");
 
-        group.MapPut("{id}", async (ShortGuid id, ServiceAccountUpdateDto dto, IDocumentSession session, DataEventDispatcher dispatcher, IOAuthGrantRevoker revoker, CancellationToken ct) =>
+        group.MapPut("{id}", async (ShortGuid id, ServiceAccountUpdateDto dto, IDocumentSession session, DataEventDispatcher dispatcher, IOAuthGrantRevoker revoker, IFollowUpOutbox followUps, ILoggerFactory loggers, CancellationToken ct) =>
             {
                 var sa = await session.LoadAsync<ServiceAccount>(id.Guid, ct);
                 if (sa is null || sa.IsDeleted) return Results.NotFound();
@@ -206,6 +207,11 @@ public static class ServiceAccountsEndpoints
                     session.Events.Append(sa.Id, new ServiceAccountUpdatedEvent(
                         sa.Id, sa.AccountName, sa.Purpose, sa.IsActive));
                 }
+                // B7-SC05 — the revoke below is owed from this commit on: a safety net is written
+                // with it, so a failure after the commit is completed instead of lost (a repeated
+                // PUT no longer sees an active→inactive transition).
+                if (wasActive && !sa.IsActive)
+                    await followUps.PublishSafetyNetAsync(session, new RevokeServiceAccountAccess(sa.Id));
                 await session.SaveChangesAsync(ct);
 
                 // Audit #6 — deactivating an SA must cut off its live M2M access, not
@@ -220,11 +226,7 @@ public static class ServiceAccountsEndpoints
                 {
                     var persisted = await session.LoadAsync<ServiceAccount>(id.Guid, ct);
                     if (persisted is { IsActive: false })
-                    {
-                        var subject = persisted.Id.ToString();
-                        await revoker.RevokeTokensBySubjectAsync(subject, ct);
-                        await revoker.RevokeAuthorizationsBySubjectAsync(subject, ct);
-                    }
+                        await RevokeNowAsync(revoker, persisted.Id, loggers, ct);
                 }
 
                 var updated = ToDto(sa);
@@ -240,6 +242,8 @@ public static class ServiceAccountsEndpoints
                 OAuthAdminService oauth,
                 DataEventDispatcher dispatcher,
                 IOAuthGrantRevoker revoker,
+                IFollowUpOutbox followUps,
+                ILoggerFactory loggers,
                 CancellationToken ct) =>
             {
                 var sa = await session.LoadAsync<ServiceAccount>(id.Guid, ct);
@@ -263,6 +267,9 @@ public static class ServiceAccountsEndpoints
                 {
                     session.Events.Append(sa.Id, new ServiceAccountDeletedEvent(sa.Id));
                 }
+                // B7-SC05 — as on deactivation: the revoke is written with the deletion, so a
+                // failure afterwards is completed (a repeated DELETE answers 404).
+                await followUps.PublishSafetyNetAsync(session, new RevokeServiceAccountAccess(sa.Id));
                 await session.SaveChangesAsync(ct);
 
                 sa.IsDeleted = true;
@@ -272,9 +279,7 @@ public static class ServiceAccountsEndpoints
                 // but a deleted client document does NOT invalidate already-issued
                 // M2M tokens. Revoke them by subject (sub = sa.Id) so outstanding
                 // reference tokens stop validating immediately.
-                var subject = sa.Id.ToString();
-                await revoker.RevokeTokensBySubjectAsync(subject, ct);
-                await revoker.RevokeAuthorizationsBySubjectAsync(subject, ct);
+                await RevokeNowAsync(revoker, sa.Id, loggers, ct);
 
                 dispatcher.DispatchDeletedEvent("ServiceAccount", new ShortGuid(sa.Id).ToString(), session.TenantId);
                 return Results.Ok(new { DeletedCredentialCount = deletedCredentialCount });
@@ -423,4 +428,21 @@ public static class ServiceAccountsEndpoints
         IsActive = sa.IsActive,
         Status = EntityStatus.Active,
     };
+
+    /// <summary>B7-SC05 — revokes a deactivated or deleted account's tokens at once. A failure no
+    /// longer fails the committed change: the safety net written with it completes the revoke.</summary>
+    private static async Task RevokeNowAsync(IOAuthGrantRevoker revoker, Guid serviceAccountId, ILoggerFactory loggers, CancellationToken ct)
+    {
+        var subject = serviceAccountId.ToString();
+        try
+        {
+            await revoker.RevokeTokensBySubjectAsync(subject, ct);
+            await revoker.RevokeAuthorizationsBySubjectAsync(subject, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            loggers.CreateLogger("Modgud.Api.Features.ServiceAccounts").LogWarning(ex,
+                "Revoking the tokens of service account {ServiceAccountId} failed; the follow-up retries it", serviceAccountId);
+        }
+    }
 }

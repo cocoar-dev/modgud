@@ -20,7 +20,7 @@ audiences and capabilities.
 | `sub` | terminal id | selected position id | same position id as the staffing session |
 | Purpose | candidate selection, proof begin, local lock | ordinary business calls | fresh proof for a sensitive business call |
 | Audience | `modgud-terminal-control` only | resources resolved from staffing scopes | same resource set, no refresh/offline scope |
-| Lifetime | refreshable while the terminal remains Active | 10-minute access tokens under the session ceiling | reference access token, at most 60 seconds |
+| Lifetime | refreshable while the terminal remains Active | access tokens of at most 10 minutes, never past the shift's end | reference access token, at most 60 seconds |
 
 Staffing and step-up tokens also carry `terminal_id`, `staffing_session_id`,
 `auth_time`, `activation_proof`, `terminal_binding`, and method-dependent
@@ -252,10 +252,13 @@ prevent multiple uses inside the window.
 | Missing/invalid/replayed DPoP proof on a DPoP terminal | `invalid_dpop_proof` / forbidden | create one fresh proof; never reuse `jti` |
 | Adding a position to an enrolled slot | `Terminal.ReenrollmentRequired` (409) | create and enroll a replacement slot |
 
-Refresh revalidates the current position policy, realm floor, terminal
+Refresh revalidates the current position policy (including whether the
+position is active, and a staffing lifetime shortened since the tap: the shift
+then ends at its start plus the current lifetime), realm floor, terminal
 assignment, and method-specific evidence. Immediate cascades revoke the
 authorization for enumerated lifecycle events; the refresh backstop bounds any
-missed cascade by the 10-minute access-token lifetime.
+missed cascade by the access-token lifetime, at most 10 minutes and never past
+the shift's end.
 
 ## Integration events (V1)
 

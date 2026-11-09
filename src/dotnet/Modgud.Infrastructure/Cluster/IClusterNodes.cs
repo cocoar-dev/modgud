@@ -34,6 +34,15 @@ public interface IClusterNodes
     /// the answer is exactly the local node without touching the database.
     /// </summary>
     Task<IReadOnlyList<ClusterNodeInfo>> GetLiveNodesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// B9-CL01 — like <see cref="GetLiveNodesAsync"/>, but <c>null</c> when the node table
+    /// could not be read. A guard that needs proof of "only this instance" (projection
+    /// rebuild) must not treat an unknown topology as a single node; readiness keeps the
+    /// "just me" fallback of <see cref="GetLiveNodesAsync"/>.
+    /// </summary>
+    async Task<IReadOnlyList<ClusterNodeInfo>?> TryGetLiveNodesAsync(CancellationToken ct = default)
+        => await GetLiveNodesAsync(ct);
 }
 
 internal sealed class WolverineClusterNodes(
@@ -47,6 +56,12 @@ internal sealed class WolverineClusterNodes(
     public string LocalNodeName => hosting.NodeName;
 
     public async Task<IReadOnlyList<ClusterNodeInfo>> GetLiveNodesAsync(CancellationToken ct = default)
+        => await LoadAsync(fallBackToSelf: true, ct) ?? [];
+
+    public Task<IReadOnlyList<ClusterNodeInfo>?> TryGetLiveNodesAsync(CancellationToken ct = default)
+        => LoadAsync(fallBackToSelf: false, ct);
+
+    private async Task<IReadOnlyList<ClusterNodeInfo>?> LoadAsync(bool fallBackToSelf, CancellationToken ct)
     {
         var self = new ClusterNodeInfo(
             LocalNodeId,
@@ -90,6 +105,11 @@ internal sealed class WolverineClusterNodes(
         {
             // A failing node query must not take readiness down by itself — the
             // Postgres probe reports the database. Fall back to "just me" and say so.
+            if (!fallBackToSelf)
+            {
+                logger.LogWarning(ex, "Could not read the Wolverine node table; the cluster topology is unknown");
+                return null;
+            }
             logger.LogWarning(ex, "Could not read the Wolverine node table; assuming this is the only live node");
             return [self];
         }

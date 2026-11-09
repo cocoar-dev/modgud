@@ -395,7 +395,18 @@ public partial class EmailTemplateStore
 
     public static string ToPlainText(string html)
     {
-        var text = BlockEndRegex().Replace(html, "\n");
+        // B3-EI-03 — a link keeps its URL: action mails (magic link, reset, verification,
+        // bootstrap) carry the URL only in href, which stripping the tag used to drop.
+        var text = AnchorRegex().Replace(html, match =>
+        {
+            var href = match.Groups["href"].Value.Trim();
+            var label = TagRegex().Replace(match.Groups["label"].Value, string.Empty).Trim();
+            if (href.Length == 0 || href.StartsWith('#')) return label;
+            if (label.Length == 0 || string.Equals(WebUtility.HtmlDecode(label), WebUtility.HtmlDecode(href), StringComparison.Ordinal))
+                return href;
+            return $"{label}: {href}";
+        });
+        text = BlockEndRegex().Replace(text, "\n");
         text = BreakRegex().Replace(text, "\n");
         text = TagRegex().Replace(text, string.Empty);
         text = WebUtility.HtmlDecode(text);
@@ -417,6 +428,9 @@ public partial class EmailTemplateStore
 
     [GeneratedRegex(@"<[^>]+>")]
     private static partial Regex TagRegex();
+
+    [GeneratedRegex(@"<a\b[^>]*?\bhref\s*=\s*[""'](?<href>[^""']*)[""'][^>]*>(?<label>.*?)</a\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex AnchorRegex();
 
     [GeneratedRegex(@"\n\s*\n(?:\s*\n)+")]
     private static partial Regex ExcessBlankLinesRegex();

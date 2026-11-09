@@ -40,7 +40,11 @@ public record LoginProviderAddedEvent(
     // non-authoritative). Marten serializes by property name, so placement
     // after CreatedAt is irrelevant for replay.
     bool TrustForAuthorization = false,
-    bool AuthoritativeForProfile = false);
+    bool AuthoritativeForProfile = false,
+    // B6-OIDC-05 — same trailing-default rule: old streams replay to false (strict).
+    bool TrustEmailsAsVerified = false,
+    // B6-OIDC-04 — provider-specific amr values that count as MFA; null = none.
+    List<string>? MfaAmrValues = null);
 
 /// <summary>
 /// Admin updates a login provider. Does NOT carry secret bytes — rotations
@@ -69,7 +73,11 @@ public record LoginProviderUpdatedEvent(
     // producer (UpdateLoginProviderCommand) passes the merged values; trailing
     // defaults keep test/other callers compiling and replay fail-closed to false.
     bool TrustForAuthorization = false,
-    bool AuthoritativeForProfile = false);
+    bool AuthoritativeForProfile = false,
+    // B6-OIDC-05 — same trailing-default rule: old streams replay to false (strict).
+    bool TrustEmailsAsVerified = false,
+    // B6-OIDC-04 — provider-specific amr values that count as MFA; null = none.
+    List<string>? MfaAmrValues = null);
 
 /// <summary>
 /// Client-secret rotation. Encrypted bytes ride the event only because the

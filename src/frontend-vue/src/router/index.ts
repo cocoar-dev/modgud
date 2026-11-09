@@ -554,6 +554,9 @@ router.beforeEach(async (to) => {
   // Try to fetch current user if not authenticated
   if (!authStore.isAuthenticated) {
     await authStore.fetchMe()
+  } else if (to.path.startsWith('/admin')) {
+    // D.roles-F05 — admin gates read the permissions from /me: don't decide on a stale set.
+    await authStore.refreshMeIfStale()
   }
 
   // Setup-status probe + /setup redirect were removed in C15d. The

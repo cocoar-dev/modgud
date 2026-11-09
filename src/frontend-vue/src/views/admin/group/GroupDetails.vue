@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth.store'
 import { useGroupStore } from '@/stores/group.store'
 import { useRoleStore } from '@/stores/role.store'
 import { useUserStore } from '@/stores/user.store'
@@ -61,6 +62,11 @@ const isCreate = computed(() => props.id === 'create')
 const staging = useDraftStaging('groups')
 const isDraftRow = computed(() => staging.isDraftId(props.id))
 const stagedSave = computed(() => staging.stagingActive.value)
+// B3-F05 — the editor mirrors the server gates: without authorization-group:write it is
+// read-only, and a failed lookup is reported instead of leaving an empty form.
+const authStore = useAuthStore()
+const canWrite = computed(() => authStore.hasPermission('authorization-group:write'))
+const loadError = ref<string | null>(null)
 
 const initialLoad = ref(false)
 const saving = ref(false)
@@ -304,7 +310,7 @@ const footerButton = computed(() => ({
   text: stagedSave.value
     ? t('admin.realmConfig.entry.save', {}, 'Stage into draft')
     : isCreate.value ? t('common.create', {}, 'Create') : t('common.save', {}, 'Save'),
-  disabled: generalIssues.value.length > 0 || scriptIssues.value.length > 0 || saving.value,
+  disabled: !canWrite.value || generalIssues.value.length > 0 || scriptIssues.value.length > 0 || saving.value,
   loading: saving.value,
   onClick: save,
 }))
@@ -443,13 +449,15 @@ const roleOptions = computed<CoarListboxOption<string>[]>(() =>
 onMounted(async () => {
   initialLoad.value = true
   try {
-    await Promise.all([
+    const lookups = await Promise.allSettled([
       roleStore.initialize(),
       userStore.loadLookup(),
       principalStore.loadLookup(),
       // BoundTo MultiSelect needs the App list for its options.
       applicationsStore.initialize(),
     ])
+    if (lookups.some((r) => r.status === 'rejected'))
+      loadError.value = t('admin.groupDetails.loadError', {}, 'Part of the group editor could not be loaded (roles, people or apps). Saving may be incomplete.')
 
     if (isDraftRow.value) {
       // Draft-created group: the staged manifest entity IS the state.
@@ -480,7 +488,8 @@ onMounted(async () => {
       }
     } else {
       await groupStore.initialize()
-      const group = groupStore.groups.find(g => g.Id === props.id)
+      // B3-F04 — edit the group as it is NOW, not as the once-loaded list cached it.
+      const group = await groupStore.fetchGroup(props.id).catch(() => groupStore.groups.find(g => g.Id === props.id))
       if (group) {
         form.value = {
           Name: group.Name,
@@ -618,6 +627,10 @@ async function save() {
         <CoarTab id="access">{{ t('admin.groupDetails.tabs.access', {}, 'Access') }}</CoarTab>
       </CoarTabGroup>
 
+      <CoarNotice v-if="loadError" variant="error">{{ loadError }}</CoarNotice>
+      <CoarNotice v-if="!canWrite" variant="info">
+        {{ t('admin.groupDetails.readOnly', {}, 'Read only — changing groups needs authorization-group:write.') }}
+      </CoarNotice>
       <CoarNotice v-if="saveError" variant="error">
         <strong>{{ t('admin.groupDetails.saveError', {}, 'Save failed') }}</strong>
         <pre class="notice-message">{{ saveError }}</pre>

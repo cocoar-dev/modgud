@@ -115,6 +115,40 @@ public class PositionTerminalTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task The_generic_secret_rotation_refuses_a_client_secret_terminal_client()
+    {
+        // E.clients-B2: oauth-client:write alone (no position right) could rotate a
+        // client-secret terminal's secret through the generic admin surface, reading
+        // the new secret or knocking the terminal out. Update/Delete already refuse.
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var position = await Client.PostAsJsonAsync("/api/position", new
+        {
+            AccountName = "fn-secret",
+            TerminalPolicy = new { Enabled = true, AllowedDeviceBindings = new[] { "dpop", "client-secret" } },
+        }, JsonOptions, ct);
+        Assert.True(position.IsSuccessStatusCode, await position.Content.ReadAsStringAsync(ct));
+        var fn = (await position.Content.ReadFromJsonAsync<PositionPrincipalDto>(JsonOptions, ct))!.Id;
+        var created = await Client.PostAsJsonAsync($"/api/position/{fn}/terminals",
+            new { DisplayName = "Secret", Location = "Tor 4", WebAuthnRpId = RpId, Binding = "client-secret" },
+            JsonOptions, ct);
+        var createdBody = await created.Content.ReadAsStringAsync(ct);
+        Assert.True(created.IsSuccessStatusCode, $"terminal create failed ({(int)created.StatusCode}): {createdBody}");
+        var terminal = JsonSerializer.Deserialize<TerminalDto>(createdBody, JsonOptions)!;
+        Assert.False(string.IsNullOrEmpty(terminal.ClientSecret));
+
+        using var scope = Factory.Services.CreateScope();
+        var session = scope.ServiceProvider.GetRequiredService<IQuerySession>();
+        var appId = (await session.Query<OAuthApplicationState>()
+            .Where(c => c.ClientId == terminal.ClientId).ToListAsync(ct)).Single().Id;
+
+        var regenerate = await Client.PostAsync($"/api/admin/oauth/clients/{appId}/regenerate-secret", null, ct);
+        var body = await regenerate.Content.ReadAsStringAsync(ct);
+        Assert.False(regenerate.IsSuccessStatusCode, $"rotation must be refused, got {(int)regenerate.StatusCode}: {body}");
+        Assert.Contains("owned by a position terminal", body);
+    }
+
+    [Fact]
     public async Task The_lifecycle_is_idempotent_and_revoked_is_terminal()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -222,6 +256,35 @@ public class PositionTerminalTests : IntegrationTestBase
             new { AllowedPositionIds = new[] { first, second, third } }, JsonOptions, ct);
         Assert.Equal(HttpStatusCode.Conflict, widen.StatusCode);
         Assert.Contains("Terminal.ReenrollmentRequired", await widen.Content.ReadAsStringAsync(ct));
+    }
+
+    /// <summary>
+    /// B3-P4 — the owner position always serves its own slot (the slot's client, name and
+    /// terminal policy are the owner's). Removing it is refused, also from a shared view.
+    /// </summary>
+    [Fact]
+    public async Task The_owner_position_cannot_be_removed_from_its_own_slot()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var owner = await CreatePositionAsync("fn-owner-a", terminalEnabled: true, ct);
+        var other = await CreatePositionAsync("fn-owner-b", terminalEnabled: true, ct);
+        var create = await Client.PostAsJsonAsync($"/api/position/{owner}/terminals", new
+        {
+            DisplayName = "Owned",
+            Location = "Desk",
+            WebAuthnRpId = RpId,
+            AllowedPositionIds = new[] { owner, other },
+        }, JsonOptions, ct);
+        Assert.True(create.IsSuccessStatusCode, await create.Content.ReadAsStringAsync(ct));
+        var terminal = (await create.Content.ReadFromJsonAsync<TerminalDto>(JsonOptions, ct))!;
+
+        var dropOwner = await Client.PutAsJsonAsync(
+            $"/api/position/{other}/terminals/{terminal.Id}/positions",
+            new { AllowedPositionIds = new[] { other } }, JsonOptions, ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, dropOwner.StatusCode);
+        Assert.Contains("Terminal.OwnerRequired", await dropOwner.Content.ReadAsStringAsync(ct));
     }
 
     [Fact]

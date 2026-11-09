@@ -3,8 +3,10 @@ using Marten;
 using Modgud.Domain.PositionTerminals;
 using Modgud.Domain.PositionTerminals.Contracts.V1;
 using Modgud.Infrastructure.Audit;
+using Modgud.Infrastructure.FollowUps;
 using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.Persistence.Tenancy;
+using Microsoft.Extensions.Logging;
 using Wolverine;
 
 namespace Modgud.Infrastructure.PositionTerminals;
@@ -15,7 +17,9 @@ namespace Modgud.Infrastructure.PositionTerminals;
 /// revoker is safe to call from the middle of an endpoint that has staged
 /// (uncommitted) changes — it never commits somebody else's work. The end
 /// shape mirrors the lazy-expiry path in the staffing refresh: Ended event +
-/// terminal-pointer clear in ONE commit, authorization revoke right after.
+/// terminal-pointer clear + the <see cref="RevokeStaffingAuthorization"/> follow-up in ONE commit
+/// (G-B4-02); the authorization is revoked right after as well, and the follow-up repeats that
+/// until it held, so a failing revoke can no longer leave an ended session with a live grant.
 /// A stream-version conflict (racing tap on the same terminal) is retried
 /// once on a fresh session; idempotency comes from re-checking the session
 /// status inside each attempt.
@@ -27,19 +31,25 @@ public sealed class StaffingRevoker : IStaffingRevoker
     private readonly ISecurityAuditLog _securityAudit;
     private readonly DataEventDispatcher _dispatcher;
     private readonly IMessageBus _bus;
+    private readonly IFollowUpOutbox _followUps;
+    private readonly ILogger<StaffingRevoker> _logger;
 
     public StaffingRevoker(
         ITenantSessionFactory sessionFactory,
         IOAuthGrantRevoker grantRevoker,
         ISecurityAuditLog securityAudit,
         DataEventDispatcher dispatcher,
-        IMessageBus bus)
+        IMessageBus bus,
+        IFollowUpOutbox followUps,
+        ILogger<StaffingRevoker> logger)
     {
         _sessionFactory = sessionFactory;
         _grantRevoker = grantRevoker;
         _securityAudit = securityAudit;
         _dispatcher = dispatcher;
         _bus = bus;
+        _followUps = followUps;
+        _logger = logger;
     }
 
     public Task<int> EndSessionAsync(Guid sessionId, StaffingSessionEndReason reason, CancellationToken ct = default) =>
@@ -133,6 +143,14 @@ public sealed class StaffingRevoker : IStaffingRevoker
                 staffing.TerminalEnrollmentId, staffing.Id, now));
         }
 
+        // G-B4-02 — the revoke is owed from the moment Ended is committed: write it in the same
+        // commit, so a failure after the commit cannot lose it (an ended session is never
+        // selected again by a repeated end, the sweep or the per-subject cascades).
+        // A safety net for the immediate revoke after the commit, delivered once that finished.
+        if (!string.IsNullOrEmpty(staffing.OAuthAuthorizationId))
+            await _followUps.PublishSafetyNetAsync(session,
+                new RevokeStaffingAuthorization(staffing.Id, staffing.OAuthAuthorizationId));
+
         try
         {
             await session.SaveChangesAsync(ct);
@@ -144,9 +162,24 @@ public sealed class StaffingRevoker : IStaffingRevoker
             return await EndOneAsync(sessionId, reason, retryOnConflict: false, ct);
         }
 
-        // The session's tokens die NOW (reference tokens + revoked
-        // authorization), not at the next refresh.
-        await _grantRevoker.RevokeAuthorizationByIdAsync(staffing.OAuthAuthorizationId, CancellationToken.None);
+        // The session's tokens die NOW (reference tokens + revoked authorization), not at the
+        // next refresh. A failure here no longer fails the end: the committed follow-up repeats
+        // the revoke until it held.
+        try
+        {
+            // false also when the follow-up won the race on the same authorization (OpenIddict
+            // reports the concurrency conflict as false) — not a warning on its own.
+            if (!await _grantRevoker.RevokeAuthorizationByIdAsync(staffing.OAuthAuthorizationId, CancellationToken.None))
+                _logger.LogInformation(
+                    "Authorization {AuthorizationId} of ended staffing session {StaffingSessionId} was not revoked at once; the follow-up retries it",
+                    staffing.OAuthAuthorizationId, staffing.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Revoking authorization {AuthorizationId} of ended staffing session {StaffingSessionId} failed; the follow-up retries it",
+                staffing.OAuthAuthorizationId, staffing.Id);
+        }
 
         _dispatcher.DispatchUpdatedEvent("StaffingSession", new
         {

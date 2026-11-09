@@ -21,7 +21,9 @@ export interface UserGroupsDto {
   Inherited: InheritedUserGroupDto[]
 }
 
-export type EffectiveGroupSource = 'DirectManual' | 'InheritedManual' | 'AutoMatched'
+/** AutoStored: an Auto group that lists the user in MemberIds while its script does
+ *  not match now (or failed) — a stale membership the next recalculation removes. */
+export type EffectiveGroupSource = 'DirectManual' | 'InheritedManual' | 'AutoMatched' | 'AutoStored'
 
 export interface EffectiveGroupRoleDto {
   Id: string

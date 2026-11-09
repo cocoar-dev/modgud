@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test'
-import { apiLogin, uniqueSuffix } from './helpers'
+import { applyStagedDraft, apiLogin, STAGE_INTO_DRAFT, uniqueSuffix } from './helpers'
 
 /**
  * Stage 5 (user & account management) — the human door, tested like a human.
@@ -47,7 +47,7 @@ test.describe('Stage 5 — admin onboards a user through the real UI', () => {
       .toBeVisible({ timeout: 15_000 })
 
     // ── 2. Click Create → the routed create-user modal opens ──
-    await page.getByRole('button', { name: /erstellen|create/i }).first().click()
+    await page.getByRole('button', { name: /^(erstellen|create)$/i }).filter({ visible: true }).first().click()
     const modal = page.locator('.modal-container')
     await expect(modal).toBeVisible({ timeout: 10_000 })
 
@@ -57,16 +57,17 @@ test.describe('Stage 5 — admin onboards a user through the real UI', () => {
     await modal.getByRole('textbox', { name: /e-mail|email/i }).fill(`${newUserName}@modgud.test`)
     await modal.getByRole('textbox', { name: /benutzername|username/i }).fill(newUserName)
 
-    // The footer Create button is form-gated: enabled only once the required
-    // fields are filled. Target it inside the modal footer so it isn't confused
-    // with the grid toolbar's Create button.
-    const saveButton = page.locator('.modal-footer').getByRole('button', { name: /erstellen|create/i })
+    // A realm admin stages the new user into the realm's configuration draft; the
+    // footer verb is form-gated (enabled once the required fields are filled).
+    const saveButton = modal.getByRole('button', { name: STAGE_INTO_DRAFT })
     await expect(saveButton).toBeEnabled()
     await page.screenshot({ path: testInfo.outputPath('01-create-form.png'), fullPage: true })
     await saveButton.click()
-
-    // ── 4. Modal closes and the new user is in the grid — visibly ──
     await expect(modal).toBeHidden({ timeout: 10_000 })
+
+    // ── 4. Apply the draft from the staging bar; the user is then live in the grid ──
+    await applyStagedDraft(page)
+    await page.goto('/admin/users')
     // The user-grid is fed by an async projection + SignalR; allow it to land.
     await expect(page.getByRole('gridcell', { name: newUserName }).first())
       .toBeVisible({ timeout: 15_000 })

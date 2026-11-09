@@ -101,13 +101,29 @@ public class EffectiveGroupsResolver(
         }
 
         // ── 2. AutoMatched: live-evaluate every Auto group's predicate ──────
+        // B3-F06 — the same test-account rule every membership path applies: a group
+        // closed to test accounts never counts one, stored or live.
+        var administrationRoleIds = principal is Person { IsTestAccount: true }
+            ? await TestAccountGroupPolicy.AdministrationRoleIdsAsync(session, ct)
+            : null;
         var diagnostics = new List<GroupDiagnostic>();
         foreach (var group in allGroups)
         {
             if (group.MembershipMode != MembershipMode.Auto) continue;
-            if (string.IsNullOrWhiteSpace(group.CompiledMembershipScript)) continue;
             // A group never lists itself — matches AutoMembershipRecalculator's filter.
             if (group.Id == principalId) continue;
+            if (administrationRoleIds is not null && TestAccountGroupPolicy.IsClosed(group, administrationRoleIds)) continue;
+
+            // B3-F06 — a stored membership (MemberIds) without a live match now is still a
+            // membership the permission checks read: show it, marked as stored.
+            var stored = group.MemberIds.Contains(principalId);
+            void AddStoredIfMember()
+            {
+                if (stored && !rows.ContainsKey(group.Id))
+                    rows[group.Id] = BuildRow(group, EffectiveGroupSource.AutoStored, via: null, materializedMatches: true, rolesById);
+            }
+
+            if (string.IsNullOrWhiteSpace(group.CompiledMembershipScript)) { AddStoredIfMember(); continue; }
 
             bool matches;
             try
@@ -127,6 +143,7 @@ public class EffectiveGroupsResolver(
                         principalId, group.Id);
                     diagnostics.Add(new GroupDiagnostic(
                         group.Id, group.Name, GroupDiagnosticKind.EvalFailed, msg));
+                    AddStoredIfMember();
                     continue;
                 }
             }
@@ -140,10 +157,11 @@ public class EffectiveGroupsResolver(
                     group.Id);
                 diagnostics.Add(new GroupDiagnostic(
                     group.Id, group.Name, GroupDiagnosticKind.CompileFailed, msg));
+                AddStoredIfMember();
                 continue;
             }
 
-            if (!matches) continue;
+            if (!matches) { AddStoredIfMember(); continue; }
 
             // The script matches. Stamp materialization-drift signal:
             // MaterializedMatches=false means "predicate says yes, but the

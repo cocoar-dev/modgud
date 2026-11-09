@@ -24,22 +24,31 @@ export const useRealmSettingsStore = defineStore('realmSettings', () => {
     return dto
   }
 
+  /**
+   * F7-05 — every patch carries the version it was made on (from the last load or save),
+   * so a save over a change made meanwhile by someone else is refused (409
+   * `RealmSettings.Changed`, see {@link isRealmSettingsConflict}) instead of overwriting it.
+   */
   async function patch(dto: UpdateRealmSettingsDto): Promise<RealmSettingsDto> {
-    const updated = await http.patch<RealmSettingsDto>(dto)
+    const updated = await http.patch<RealmSettingsDto>({
+      ...dto,
+      ExpectedVersion: dto.ExpectedVersion ?? settings.value?.Version ?? null,
+    })
     settings.value = updated
     return updated
   }
 
   /**
-   * Rotate the realm's OpenIddict signing key. The previous active key is
-   * retired into a ~30-day verification overlap window so in-flight tokens
-   * stay valid. Requires `realm-settings:write`. Returns the new active key id.
+   * Rotate the realm's OpenIddict signing key. An ordinary rotation is scheduled (FK-03):
+   * the new key is published at once and signs from `ActivatesAt`; the previous key then
+   * retires into the ~30-day overlap. With `revokePrevious` it switches at once and revokes
+   * the previous key. Requires `realm-settings:write`.
    */
-  async function rotateSigningKey(revokePrevious = false): Promise<string> {
+  async function rotateSigningKey(revokePrevious = false): Promise<{ kid: string, activatesAt: string | null }> {
     const res = await http.addPath('rotate-signing-key')
       .setOptionalQueryParameter('revokePrevious', revokePrevious ? 'true' : undefined)
-      .post<{ Kid: string }>()
-    return res?.Kid ?? ''
+      .post<{ Kid: string, ActivatesAt?: string | null }>()
+    return { kid: res?.Kid ?? '', activatesAt: res?.ActivatesAt ?? null }
   }
 
   /**
@@ -70,6 +79,13 @@ export const useRealmSettingsStore = defineStore('realmSettings', () => {
 
   return { settings, loaded, load, patch, previewPositionSecurity, rotateSigningKey, revokeRetiredSigningKeys, previewEmail }
 })
+
+/** F7-05 — the realm settings were changed since they were loaded (409). */
+export function isRealmSettingsConflict(e: unknown): boolean {
+  const err = e as { status?: number, body?: { title?: string } } | null
+  return err?.body?.title === 'RealmSettings.Changed'
+    || (err?.status === 409 && err?.body?.title === 'Concurrency.Conflict')
+}
 
 /** Unsaved form values overlaid on the effective branding for the preview. */
 export interface EmailPreviewOverlay {

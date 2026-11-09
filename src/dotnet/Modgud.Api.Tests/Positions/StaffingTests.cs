@@ -45,7 +45,7 @@ namespace Modgud.Api.Tests.Positions;
 /// ceremony, flag off.
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
-public class StaffingTests : IntegrationTestBase
+public partial class StaffingTests : IntegrationTestBase
 {
     public StaffingTests(SharedPostgresFixture fixture) : base(fixture) { }
 

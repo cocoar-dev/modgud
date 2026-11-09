@@ -6,7 +6,7 @@ namespace Modgud.Authentication.AuthLog;
 
 /// <summary>
 /// Serilog enricher that stamps every log event with the ambient realm slug
-/// (<see cref="TenantContext.Current"/>) as a <c>Realm</c> property.
+/// (<see cref="TenantContext.CurrentOrNull"/>) as a <c>Realm</c> property.
 ///
 /// <para><b>Kept after the "Auth:" audit sink was retired</b> (logging/audit
 /// redesign Phase 3): the tenant audit no longer flows through Serilog, but the
@@ -19,16 +19,16 @@ namespace Modgud.Authentication.AuthLog;
 /// <see cref="LogEvent"/> to every sink — including ones that run out-of-band with
 /// no <c>TenantContext</c>.</para>
 ///
-/// <para>Uses <see cref="TenantContext.Current"/> (which falls back to the
-/// <c>system</c> tenant) rather than the nullable variant, so background / no-
-/// tenant work is attributed to <c>system</c> — the deployment-level realm —
-/// instead of being orphaned with no realm at all.</para>
+/// <para>Uses <see cref="TenantContext.CurrentOrNull"/>: an event logged with no realm
+/// context (deployment-wide or background work outside a realm) gets no <c>Realm</c>
+/// property at all. There is no <c>system</c> fallback — guessing a realm would
+/// attribute such work to whichever realm holds the control plane.</para>
 ///
 /// <para><b>Attribution is dual-sourced.</b> <see cref="LogEvent.AddPropertyIfAbsent"/>
 /// does not overwrite — so a log call that binds its own <c>{Realm}</c> placeholder
 /// wins, and the enricher's ambient value is the fallback for sites that don't. A
-/// realm-iterating background job running in a single <c>system</c> session can thus
-/// bind the iterated <c>realm.Slug</c> for correct per-realm attribution.</para>
+/// realm-iterating background job can thus bind the iterated <c>realm.Slug</c> for
+/// correct per-realm attribution.</para>
 /// </summary>
 public sealed class RealmLogEnricher : ILogEventEnricher
 {

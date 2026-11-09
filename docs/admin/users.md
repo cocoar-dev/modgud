@@ -106,7 +106,7 @@ Effect:
 - The account is **deactivated** — it can no longer sign in.
 - It is scheduled for permanent erasure at the end of the realm's admin-retention window.
 - Live access is revoked (sessions end, tokens stop working). The record, its email, **and its external identity links are kept** so a clean restore is possible — the deactivation alone blocks any login (including through a linked IdP). No PII is masked at this stage; that happens only at permanent erase.
-- Its profile is **frozen** (read-only) while pending — restore it first to edit again.
+- Its profile is **frozen** (read-only) while pending — restore it first to edit again. This includes the active switch: a pending account cannot be reactivated except by **Restore**.
 - The email address stays reserved (no one else can register it) until the account is permanently erased.
 
 Reveal pending users with the **Show recycle bin** toggle on the list. Their **Lifecycle** badge reads *Recycle bin* (admin-initiated) or *Self-deletion* (the user requested it), with the deadline.
@@ -138,6 +138,7 @@ What happens technically:
 - All PII fields (name, email, phone, profile name) are replaced by markers (`***ERASED***`) in events — Marten's built-in GDPR mechanism.
 - The event stream is archived so derived views no longer see the user.
 - **External identity links are scrubbed too** — both links the user still has connected and any they had disconnected (their PII is found via the user's own stream and masked), so no IdP-linkage data survives the erase.
+- **Copies of the name elsewhere go too:** the admin inbox items about the user's change requests (which name the requester) and the inbox items addressed to the user are removed from the inbox, their parameters masked and their streams archived; the uploader name on the user's assets and the publisher name on page and composition revisions they published are cleared.
 - The user record is flagged deleted and its email is nulled — which **releases the email** for reuse.
 - The auth log keeps the user ID for correlation but no cleartext PII.
 

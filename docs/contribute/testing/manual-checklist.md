@@ -45,7 +45,7 @@ See [Two-factor authentication](../../integrate/two-factor) for the supported me
 - [ ] Edit a non-email field → goes to `AdminApprovalPending` **(automated)**
 - [ ] Change email → verification link → admin approval → `/me` reflects both changes atomically **(automated)**
 - [ ] GDPR export
-- [ ] GDPR delete request → confirmation token → deletion → masking
+- [ ] GDPR delete request (needs a recent sign-in) → notification mail, no confirmation link → cancel within the grace window, or erasure by the sweep after it → masking
 
 ## 5. Sessions
 
@@ -155,7 +155,7 @@ See [Declarative realm provisioning](../../admin/realm-provisioning) for the man
 - [ ] `recover magic-link <username>`
 - [ ] `recover rebuild-projections`
 
-Run these against a running container with `docker exec modgud dotnet Modgud.Api.dll recover ...`.
+Run these as the [recovery CLI](../../operate/recovery-cli) describes: `docker exec <container> dotnet Modgud.Api.dll recover ...` for the read-only and per-user commands, but `rebuild-projections` in a one-off container with the server stopped (`docker compose run --rm modgud recover rebuild-projections`).
 
 ## 18. OAuth flows (real relying party)
 

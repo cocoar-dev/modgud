@@ -224,7 +224,7 @@ public sealed record EffectiveSettings
         {
             Enabled = app.Enabled ?? n.Enabled,
             AccessTokenLifetime = app.AccessTokenLifetime ?? n.AccessTokenLifetime,
-            RefreshTokenLifetime = app.RefreshTokenLifetime ?? n.RefreshTokenLifetime,
+            RequireRecentSignInForPasskeyChanges = app.RequireRecentSignInForPasskeyChanges ?? n.RequireRecentSignInForPasskeyChanges,
         };
     }
 

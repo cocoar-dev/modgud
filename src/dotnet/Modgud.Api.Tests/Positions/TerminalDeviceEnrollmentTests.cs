@@ -111,6 +111,41 @@ public class TerminalDeviceEnrollmentTests : IntegrationTestBase
         Assert.False(string.IsNullOrEmpty(refreshed.RootElement.GetProperty("access_token").GetString()));
     }
 
+    /// <summary>
+    /// B3-P3 — the admin approves the slot as shown. Until the first exchange the slot's
+    /// served positions can still be extended; that extension must not ride on the earlier
+    /// approval. The exchange refuses when the slot now serves a position the approval did
+    /// not cover, and a fresh approval is needed.
+    /// </summary>
+    [Fact]
+    public async Task An_approval_does_not_cover_positions_added_before_the_exchange()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var front = await CreatePositionAsync("fn-approved", terminalEnabled: true, ct);
+        var extra = await CreatePositionAsync("fn-added-later", terminalEnabled: true, ct);
+        var terminal = await CreateTerminalAsync(front, "Tor mitte", ct);
+
+        using var deviceKey = new DpopProofBuilder();
+        var (deviceCode, userCode) = await RequestDeviceCodeAsync(
+            terminal.ClientId, deviceKey.CreateProof("POST", DeviceEndpoint, DateTimeOffset.UtcNow));
+        var admin = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
+        await OpenVerificationAsync(admin, userCode);
+        var approve = await SubmitDecisionAsync(admin, userCode, approve: true);
+        Assert.True((int)approve.StatusCode < 400, await approve.Content.ReadAsStringAsync(ct));
+
+        var widened = await Client.PutAsJsonAsync($"/api/position/{front}/terminals/{terminal.Id}/positions",
+            new { AllowedPositionIds = new[] { front, extra } }, JsonOptions, ct);
+        Assert.True(widened.IsSuccessStatusCode, await widened.Content.ReadAsStringAsync(ct));
+
+        var poll = await PollTokenAsync(terminal.ClientId, deviceCode,
+            deviceKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow));
+        Assert.False(poll.IsSuccessStatusCode, "the exchange enrolled a position set the admin never approved");
+
+        var slot = await LoadSlotAsync(terminal.Id, ct);
+        Assert.Equal(TerminalEnrollmentStatus.Pending, slot.Status);
+    }
+
     [Theory]
     [InlineData(DeviceBindingIds.ClientSecret)]
     [InlineData(DeviceBindingIds.None)]
@@ -263,6 +298,49 @@ public class TerminalDeviceEnrollmentTests : IntegrationTestBase
         Assert.Equal(TerminalEnrollmentStatus.Active, slot.Status);
         Assert.Equal(deviceKey.Jkt, slot.DpopJkt);
     }
+
+    /// <summary>G-B4-03 — the endpoint pinned the key and committed Enrolled before the token pipeline
+    /// ran its DPoP checks; a proof the pipeline then refused (here: a jti already used) left the slot
+    /// Active without tokens, and a fresh poll found it no longer Pending.</summary>
+    [Fact]
+    public async Task A_poll_the_dpop_pipeline_refuses_does_not_enroll_and_a_fresh_proof_still_can()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var fn = await CreatePositionAsync("fn-replay", terminalEnabled: true, ct);
+        var terminal = await CreateTerminalAsync(fn, "Replay", ct);
+        using var deviceKey = new DpopProofBuilder();
+        var (deviceCode, userCode) = await RequestDeviceCodeAsync(
+            terminal.ClientId, deviceKey.CreateProof("POST", DeviceEndpoint, DateTimeOffset.UtcNow));
+        var admin = await CreateAuthenticatedClientAsync("tu", "TestPass1234");
+        await OpenVerificationAsync(admin, userCode);
+        Assert.True((int)(await SubmitDecisionAsync(admin, userCode, approve: true)).StatusCode < 400);
+
+        var used = deviceKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow);
+        await MarkProofUsedAsync(used, ct);
+        var replay = await PollTokenAsync(terminal.ClientId, deviceCode, used);
+        Assert.False(replay.IsSuccessStatusCode);
+        Assert.Contains("already been used", await replay.Content.ReadAsStringAsync(ct));
+        Assert.Equal(TerminalEnrollmentStatus.Pending, (await LoadSlotAsync(terminal.Id, ct)).Status);
+
+        var legit = await PollTokenAsync(terminal.ClientId, deviceCode,
+            deviceKey.CreateProof("POST", TokenEndpoint, DateTimeOffset.UtcNow));
+        Assert.True(legit.IsSuccessStatusCode, await legit.Content.ReadAsStringAsync(ct));
+        Assert.Equal(TerminalEnrollmentStatus.Active, (await LoadSlotAsync(terminal.Id, ct)).Status);
+    }
+
+    /// <summary>Records a proof's jti in the replay ledger, as a request that used it would have.</summary>
+    internal static async Task MarkProofUsedAsync(IServiceProvider services, string proof, CancellationToken ct)
+    {
+        using var payload = JsonDocument.Parse(Base64Url.DecodeFromChars(proof.Split('.')[1]));
+        var jti = payload.RootElement.GetProperty("jti").GetString()!;
+        using var scope = services.CreateScope();
+        var now = DateTimeOffset.UtcNow;
+        Assert.True(await scope.ServiceProvider.GetRequiredService<IDpopReplayStore>()
+            .TryRecordAsync(jti, now.AddMinutes(10), now, ct));
+    }
+
+    private Task MarkProofUsedAsync(string proof, CancellationToken ct) => MarkProofUsedAsync(Factory.Services, proof, ct);
 
     [Fact]
     public async Task An_enrolled_slot_cannot_be_enrolled_again()

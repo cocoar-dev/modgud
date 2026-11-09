@@ -174,7 +174,8 @@ public class ExternalLoginProcessor(
                 // profile isn't frozen. Email-conflict is a hard reject.
                 if (await ShouldPatchProfileAsync(config, link, ct))
                 {
-                    var applyResult = await ApplyUserUpdatesAsync(linkedUser, scriptResult, ct);
+                    var applyResult = await ApplyUserUpdatesAsync(linkedUser, scriptResult,
+                        IsEmailVerified(config, rawClaims, ScriptEmail(scriptResult)), ct);
                     if (applyResult is not null)
                         return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
                 }
@@ -223,7 +224,8 @@ public class ExternalLoginProcessor(
             // user, so it patches the profile only if explicitly authoritative.
             if (await ShouldPatchProfileAsync(config, link: null, ct))
             {
-                var applyResult = await ApplyUserUpdatesAsync(existing, scriptResult, ct);
+                var applyResult = await ApplyUserUpdatesAsync(existing, scriptResult,
+                    IsEmailVerified(config, rawClaims, ScriptEmail(scriptResult)), ct);
                 if (applyResult is not null)
                     return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
             }
@@ -239,7 +241,11 @@ public class ExternalLoginProcessor(
         }
 
         // 2. No link — domain allowlist gate (use email from script output)
-        var email = scriptResult.Email.Presence == FieldPresence.Value ? scriptResult.Email.Value : null;
+        var email = ScriptEmail(scriptResult);
+        // B6-OIDC-05 — the allowlist is an access decision: an address the provider did
+        // not verify cannot pass it (it may be freely chosen at a permissive IdP).
+        if (config.AllowedEmailDomains is { Count: > 0 } && !IsEmailVerified(config, rawClaims, email))
+            return RejectUnverifiedEmail(config, loginProviderId, email, "email-not-verified-for-allowlist");
         if (!IsEmailAllowed(config, email))
         {
             securityAudit.RecordAbuse(new SecurityAuditRecord
@@ -298,7 +304,8 @@ public class ExternalLoginProcessor(
                     // creator, so patch the profile only if explicitly authoritative.
                     if (await ShouldPatchProfileAsync(config, link: null, ct))
                     {
-                        var applyResult = await ApplyUserUpdatesAsync(user, scriptResult, ct);
+                        var applyResult = await ApplyUserUpdatesAsync(user, scriptResult,
+                            IsEmailVerified(config, rawClaims, ScriptEmail(scriptResult)), ct);
                         if (applyResult is not null)
                             return ExternalLoginResult.Failed(applyResult.ErrorCode, applyResult.ErrorMessage);
                     }
@@ -332,6 +339,11 @@ public class ExternalLoginProcessor(
         if (string.IsNullOrWhiteSpace(email))
             return ExternalLoginResult.Failed("Idp.EmailRequired",
                 "Cannot create a new user without an email claim from the identity provider.");
+
+        // B6-OIDC-05 — a new account (and every e-mail based group or policy that follows
+        // it) is only built on an address the provider verified.
+        if (!IsEmailVerified(config, rawClaims, email))
+            return RejectUnverifiedEmail(config, loginProviderId, email, "email-not-verified-for-jit");
 
         // Email-uniqueness on JIT: another user already owns this email → reject.
         var emailUpper = email.ToUpperInvariant();
@@ -374,9 +386,19 @@ public class ExternalLoginProcessor(
     private async Task<ApplyUpdatesError?> ApplyUserUpdatesAsync(
         ApplicationUser user,
         UserUpdateResult script,
+        bool emailVerified,
         CancellationToken ct)
     {
         if (!script.Succeeded) return null;  // script failed → no patches to apply
+
+        // B6-OIDC-05 — the profile e-mail only follows an address the provider verified;
+        // the other fields still update.
+        if (script.Email.IsSet && !emailVerified)
+        {
+            logger.LogInformation(
+                "External profile update for user {UserId}: e-mail not applied, the provider did not verify it", user.Id);
+            script = script with { Email = FieldPatch.NotSet };
+        }
 
         Optional<string> firstnamePatch = default;
         Optional<string> lastnamePatch = default;
@@ -534,10 +556,14 @@ public class ExternalLoginProcessor(
             identity.AddClaim(new Claim("modgud.external.amr", amr.Value));
 
         // ADR 0025 — what this sign-in proved: a federated sign-in, multi-factor when the
-        // provider asserted it. The cookie events union it with the user's current session.
+        // provider asserted it (B6-OIDC-04: RFC 8176 rule plus the provider's exception list).
+        // The cookie events union it with the user's current session.
+        var providerAmr = external.FindAll("amr").Select(c => c.Value).ToList();
+        if (Modgud.Authentication.SignIn.SignInAssurance.IsFederatedMfa(providerAmr, config.MfaAmrValues))
+            identity.AddClaim(new Claim(Modgud.Authentication.SignIn.SignInAssurance.FederatedMfaClaimType, "true"));
         var signedInAt = DateTimeOffset.UtcNow;
         Modgud.Authentication.SignIn.SignInAssurance.Stamp(identity,
-            Modgud.Authentication.SignIn.SignInAssurance.ExternalMethods(external.FindAll("amr").Select(c => c.Value))
+            Modgud.Authentication.SignIn.SignInAssurance.ExternalMethods(providerAmr, config.MfaAmrValues)
                 .ToDictionary(m => m, _ => signedInAt, StringComparer.Ordinal));
 
         // Federation v1: derive ExternallyDrivable group membership in-memory from
@@ -634,8 +660,20 @@ public class ExternalLoginProcessor(
     /// </summary>
     private static bool IsEmailLinkTrustworthy(
         LoginProvider config, IReadOnlyDictionary<string, object?> rawClaims, string? matchEmail)
+        => IsEmailVerified(config, rawClaims, matchEmail);
+
+    /// <summary>
+    /// B6-OIDC-05 — is <paramref name="email"/> an address the provider vouches for? SAML:
+    /// the signed assertion of the configured IdP. A provider the admin marked
+    /// <see cref="LoginProvider.TrustEmailsAsVerified"/>: yes. OIDC otherwise: only the raw
+    /// <c>email</c> claim with <c>email_verified=true</c>, and only when the script-chosen
+    /// address IS that claim (see <see cref="IsEmailLinkTrustworthy"/>).
+    /// </summary>
+    private static bool IsEmailVerified(
+        LoginProvider config, IReadOnlyDictionary<string, object?> rawClaims, string? matchEmail)
     {
         if (config.Type == LoginProviderType.Saml) return true;
+        if (config.TrustEmailsAsVerified) return !string.IsNullOrWhiteSpace(matchEmail);
 
         var verified = rawClaims.TryGetValue("email_verified", out var v)
             && v is string s
@@ -649,6 +687,27 @@ public class ExternalLoginProcessor(
         return !string.IsNullOrWhiteSpace(rawEmail)
             && !string.IsNullOrWhiteSpace(matchEmail)
             && string.Equals(rawEmail, matchEmail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ScriptEmail(UserUpdateResult script) =>
+        script.Email.Presence == FieldPresence.Value ? script.Email.Value : null;
+
+    private ExternalLoginResult RejectUnverifiedEmail(
+        LoginProvider config, Guid loginProviderId, string? email, string reason)
+    {
+        securityAudit.RecordAbuse(new SecurityAuditRecord
+        {
+            EventType = AuditEvents.ExternalLoginPolicyRejected,
+            Severity = AuditSeverity.Warning,
+            ActorKind = AuditActorKind.AnonymousIdentifier,
+            UnknownIdentifier = email,
+            LoginProviderId = loginProviderId,
+            AuthenticationMethod = config.Type.ToString().ToLowerInvariant(),
+            OutcomeCode = AuditOutcomes.Rejected,
+            ReasonCode = reason,
+        });
+        return ExternalLoginResult.Failed("Idp.EmailNotVerified",
+            "The identity provider did not verify this email address.");
     }
 
     private static bool IsEmailAllowed(LoginProvider config, string? email)

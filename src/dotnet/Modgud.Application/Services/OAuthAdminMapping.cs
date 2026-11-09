@@ -569,8 +569,21 @@ internal static class OAuthAdminMapping
     /// empty list).
     /// </para>
     /// Pure: returns a fresh dictionary; never mutates <paramref name="current"/>.
+    /// <para>E.clients-B1 — keys the DTO does not manage are kept as they are: the markers of
+    /// dynamic client registration (<c>modgud:dcr:*</c>, which put the client under DCR audience
+    /// containment and last-used tracking) and of resolved client metadata (<c>modgud:cimd:*</c>).
+    /// Rebuilding only the managed keys dropped them on every update, even an Enabled toggle.</para>
     /// </summary>
     internal static Dictionary<string, object?> MergeClientProperties(
+        IDictionary<string, object?> current, UpdateOAuthClientDto dto)
+    {
+        var merged = BuildManagedClientProperties(current, dto);
+        foreach (var (key, value) in current)
+            merged.TryAdd(key, value);
+        return merged;
+    }
+
+    private static Dictionary<string, object?> BuildManagedClientProperties(
         IDictionary<string, object?> current, UpdateOAuthClientDto dto)
         => BuildClientProperties(
             enabled: dto.Enabled ?? GetBoolProp(current, OAuthApplicationPropertyKeys.Enabled, true),

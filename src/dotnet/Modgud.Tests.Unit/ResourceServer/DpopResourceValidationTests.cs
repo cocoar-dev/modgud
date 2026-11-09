@@ -112,6 +112,78 @@ public class DpopResourceValidationTests
             DpopResourceValidator.Validate(request, Token, boundKey.Jkt, Now));
     }
 
+    /// <summary>
+    /// SDK-B5-03 — behind a mount (UsePathBase, a proxy prefix) the client signs the full
+    /// external URI. The expected htu must include the request's PathBase, or a legitimate
+    /// proof for /api/data fails as if it were bound to another URL.
+    /// </summary>
+    [Fact]
+    public void Validate_accepts_a_proof_for_the_full_uri_under_a_path_base()
+    {
+        using var key = DpopKey.CreateEc();
+        var request = RequestWithProof(key.CreateProof(
+            Now, "GET", "https://rs.example.test/api/data", ath: DpopKey.ComputeAth(Token)));
+        request.PathBase = "/api";
+
+        Assert.Equal(DpopResourceResult.Valid,
+            DpopResourceValidator.Validate(request, Token, key.Jkt, Now));
+    }
+
+    [Fact]
+    public void Validate_rejects_a_proof_that_omits_the_path_base()
+    {
+        using var key = DpopKey.CreateEc();
+        var request = RequestWithProof(key.CreateProof(
+            Now, "GET", ResourceUrl, ath: DpopKey.ComputeAth(Token)));
+        request.PathBase = "/api";
+
+        Assert.Equal(DpopResourceResult.InvalidProof,
+            DpopResourceValidator.Validate(request, Token, key.Jkt, Now));
+    }
+
+    /// <summary>
+    /// SDK-B5-02 — a recorded request (token + proof) must not validate a second time: the
+    /// resource server remembers each proof's jti for its freshness window (RFC 9449 §11.1).
+    /// </summary>
+    [Fact]
+    public void Validate_rejects_the_same_proof_a_second_time_with_a_replay_cache()
+    {
+        using var key = DpopKey.CreateEc();
+        var proof = key.CreateProof(Now, "GET", ResourceUrl, ath: DpopKey.ComputeAth(Token));
+        var cache = new InMemoryDpopReplayCache();
+
+        Assert.Equal(DpopResourceResult.Valid,
+            DpopResourceValidator.Validate(RequestWithProof(proof), Token, key.Jkt, Now, cache));
+        Assert.Equal(DpopResourceResult.Replayed,
+            DpopResourceValidator.Validate(RequestWithProof(proof), Token, key.Jkt, Now.AddSeconds(1), cache));
+    }
+
+    [Fact]
+    public void Validate_accepts_fresh_proofs_one_after_another_with_a_replay_cache()
+    {
+        using var key = DpopKey.CreateEc();
+        var cache = new InMemoryDpopReplayCache();
+
+        for (var i = 0; i < 3; i++)
+        {
+            var proof = key.CreateProof(Now, "GET", ResourceUrl, ath: DpopKey.ComputeAth(Token));
+            Assert.Equal(DpopResourceResult.Valid,
+                DpopResourceValidator.Validate(RequestWithProof(proof), Token, key.Jkt, Now, cache));
+        }
+    }
+
+    [Fact]
+    public void The_in_memory_replay_cache_forgets_an_entry_after_its_window()
+    {
+        var cache = new InMemoryDpopReplayCache();
+        var notAfter = Now.AddSeconds(65);
+
+        Assert.True(cache.TryUse("jkt", "jti-1", notAfter, Now));
+        Assert.False(cache.TryUse("jkt", "jti-1", notAfter, Now.AddSeconds(30)));
+        Assert.True(cache.TryUse("other-jkt", "jti-1", notAfter, Now));
+        Assert.True(cache.TryUse("jkt", "jti-1", Now.AddSeconds(200), Now.AddSeconds(66)));
+    }
+
     private static HttpRequest RequestWithProof(string proof)
     {
         var request = new DefaultHttpContext().Request;

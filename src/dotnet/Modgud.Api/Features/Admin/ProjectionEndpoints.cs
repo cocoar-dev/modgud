@@ -16,6 +16,34 @@ namespace Modgud.Api.Features.Admin;
 
 public static class ProjectionEndpoints
 {
+    /// <summary>
+    /// ADR 0022 (D8) — a rebuild needs proof that this is the only running instance.
+    /// B9-CL01 — an unreadable node table is no such proof: it used to be read as "just me".
+    /// Returns the refusal, or null when exactly this instance is live.
+    /// </summary>
+    internal static IResult? RefuseUnlessSingleInstance(IReadOnlyList<Modgud.Infrastructure.Cluster.ClusterNodeInfo>? liveNodes)
+    {
+        if (liveNodes is null)
+        {
+            Serilog.Log.Warning("Admin: Projection rebuild rejected — the cluster topology could not be read");
+            return Results.Conflict(new
+            {
+                Message = "A projection rebuild requires proof of a single running instance, but the node table " +
+                          "could not be read. Check the database and retry.",
+            });
+        }
+        if (liveNodes.Count > 1)
+        {
+            Serilog.Log.Warning("Admin: Projection rebuild rejected — {Count} nodes are live", liveNodes.Count);
+            return Results.Conflict(new
+            {
+                Message = $"A projection rebuild requires a single running instance; {liveNodes.Count} are live. " +
+                          "Scale the deployment down to one instance, rebuild, then scale back up.",
+            });
+        }
+        return null;
+    }
+
     // Serialises the rebuild endpoint. Concurrent rebuilds would race on the
     // process-wide ProjectionSideEffects.Enabled flag — the second caller can
     // capture the first's interim `false` and permanently disable side effects
@@ -41,16 +69,8 @@ public static class ProjectionEndpoints
             // realm's shards may be running there and would keep writing
             // progression rows the rebuild is about to reset. Scale to one
             // instance, rebuild, scale back — the docs say so.
-            var liveNodes = await clusterNodes.GetLiveNodesAsync(ct);
-            if (liveNodes.Count > 1)
-            {
-                Serilog.Log.Warning("Admin: Projection rebuild rejected — {Count} nodes are live", liveNodes.Count);
-                return Results.Conflict(new
-                {
-                    Message = $"A projection rebuild requires a single running instance; {liveNodes.Count} are live. " +
-                              "Scale the deployment down to one instance, rebuild, then scale back up.",
-                });
-            }
+            if (RefuseUnlessSingleInstance(await clusterNodes.TryGetLiveNodesAsync(ct)) is { } refused)
+                return refused;
 
             if (!await _rebuildGate.WaitAsync(0, ct))
             {
@@ -82,6 +102,7 @@ public static class ProjectionEndpoints
                 // maintenance operation; inline projections keep working, while async
                 // projections in all realms catch up after ResumeAsync. Rebuild side
                 // effects remain suppressed only for the target tenant.
+                IReadOnlyList<string> rebuilt = [];
                 await coordinatorControl.RunPausedAsync(async rebuildCancellation =>
                 {
                     ProjectionSideEffects.SuppressRebuildFor(tenantId);
@@ -99,16 +120,11 @@ public static class ProjectionEndpoints
                         using var daemon = await store.BuildProjectionDaemonAsync(tenantId);
                         var timeout = TimeSpan.FromMinutes(10);
 
-                        await daemon.RebuildProjectionAsync(
-                            "ViewProjections", timeout, rebuildCancellation);
-
-                        // Person, Group, and ServiceAccount share mt_doc_principal. The
-                        // coordinated rebuild deletes only the two event-sourced subtypes;
-                        // Marten's normal per-projection teardown would truncate the whole
-                        // table and destroy the other subtype on each sequential rebuild.
-                        await PrincipalProjectionRebuilder.RebuildAsync(
+                        // B4-02 — every registered projection, the same set as the CLI
+                        // (the shared Principal table is handled inside, see
+                        // PrincipalProjectionRebuilder).
+                        rebuilt = await ProjectionRebuildSet.RebuildAsync(
                             store, daemon, tenantId, timeout, ct: rebuildCancellation);
-                        await daemon.RebuildProjectionAsync<PermissionRoleProjection>(timeout, rebuildCancellation);
                     }
                     finally
                     {
@@ -116,8 +132,8 @@ public static class ProjectionEndpoints
                     }
                 }, ct);
 
-                Serilog.Log.Information("Admin: Full projection rebuild completed");
-                return Results.Ok(new { Message = "All projections rebuilt successfully" });
+                Serilog.Log.Information("Admin: Full projection rebuild completed ({Count} projections)", rebuilt.Count);
+                return Results.Ok(new { Message = "All projections rebuilt successfully", Rebuilt = rebuilt });
             }
             catch (Exception ex)
             {
@@ -168,7 +184,6 @@ public static class ProjectionEndpoints
                 .Where(g => !g.IsDeleted)
                 .ToListAsync(ct)).ToList();
             var groupById = groups.ToDictionary(g => g.Id);
-            var groupIds = groupById.Keys.ToHashSet();
 
             var principals = await session.Query<Principal>()
                 .Where(p => !p.IsDeleted)
@@ -201,36 +216,29 @@ public static class ProjectionEndpoints
 
             // ─── Check 1: Principal-Sync ─────────────────────────────────
             var checkWatch = Stopwatch.StartNew();
-            var missingPerson = appUserIds.Where(id => !principalIds.Contains(id)).Select(LabelFor).ToList();
+            // B4-03 — a user's principal must be a Person; another subtype under the same id
+            // is not one. (Group documents ARE the Group principals — one polymorphic table —
+            // so a group-side "missing/orphan principal" check could never fire and is gone.)
+            var personIds = principals.OfType<Person>().Select(p => p.Id).ToHashSet();
+            var missingPerson = appUserIds.Where(id => !personIds.Contains(id)).Select(LabelFor).ToList();
             var orphanPerson = principals
                 .Where(p => p is Person && !appUserIds.Contains(p.Id))
                 .Select(p => new IdName(p.Id, !string.IsNullOrWhiteSpace(p.DisplayName) ? p.DisplayName : "<no display name>"))
                 .ToList();
-            var missingGroup = groupIds.Where(id => !principalIds.Contains(id))
-                .Select(id => new IdName(id, groupById[id].Name))
-                .ToList();
-            var orphanGroup = principals
-                .Where(p => p is Group && !groupIds.Contains(p.Id))
-                .Select(p => new IdName(p.Id, !string.IsNullOrWhiteSpace(p.DisplayName) ? p.DisplayName : "<no display name>"))
-                .ToList();
-
-            var principalSyncOk = missingPerson.Count == 0 && orphanPerson.Count == 0
-                               && missingGroup.Count == 0 && orphanGroup.Count == 0;
+            var principalSyncOk = missingPerson.Count == 0 && orphanPerson.Count == 0;
             checkResults.Add(new CheckResult(
                 Id: "principal-sync",
                 Title: "Principal projection sync",
-                Description: "Every ApplicationUser must have a matching Person Principal; every Group must have a matching Group Principal. Drift here means the inline Principal projection diverged from its source documents — usually a stale projection that a rebuild can fix.",
+                Description: "Every ApplicationUser must have a matching Person Principal, and every Person Principal an ApplicationUser. Drift here means the inline Principal projection diverged from its source documents — usually a stale projection that a rebuild can fix.",
                 Status: principalSyncOk ? "OK" : "ISSUES_FOUND",
                 DurationMs: Math.Round(checkWatch.Elapsed.TotalMilliseconds, 2),
                 Summary: principalSyncOk
-                    ? $"{appUserIds.Count}/{appUserIds.Count} ApplicationUsers ↔ Person principals, {groupIds.Count}/{groupIds.Count} Groups ↔ Group principals"
-                    : $"{missingPerson.Count + orphanPerson.Count} person drift, {missingGroup.Count + orphanGroup.Count} group drift",
+                    ? $"{appUserIds.Count}/{appUserIds.Count} ApplicationUsers ↔ Person principals"
+                    : $"{missingPerson.Count + orphanPerson.Count} person drift",
                 Issues: new
                 {
                     MissingPerson = missingPerson,
                     OrphanPerson = orphanPerson,
-                    MissingGroup = missingGroup,
-                    OrphanGroup = orphanGroup,
                 }));
 
             // ─── Check 2: Dangling member references ─────────────────────
@@ -362,12 +370,6 @@ public static class ProjectionEndpoints
 }
 
 /// <summary>
-/// Identifier + display-name pair surfaced in the cycle-detection report so the
-/// admin UI can render "<c>Eng</c> → <c>Leads</c> → <c>Eng</c>" without a follow-up lookup.
-/// </summary>
-internal record GroupRef(Guid Id, string Name);
-
-/// <summary>
 /// Resolved id+label pair surfaced in every consistency-check issue so the
 /// admin UI never has to fall back to bare GUIDs. <see cref="Label"/> is the
 /// best-effort display string we can derive from whichever store knows the id —
@@ -418,7 +420,9 @@ internal record CheckResult(
 /// One detected cycle in the nested-group graph, deduplicated across rotations
 /// (A→B→A and B→A→B report once).
 /// </summary>
-internal record CycleReport(List<GroupRef> Groups);
+/// <para>B4-04 — the groups carry the same <see cref="IdName"/> shape as every other
+/// list the consistency modal renders (it reads <c>Label</c>).</para>
+internal record CycleReport(List<IdName> Groups);
 
 /// <summary>
 /// Pure cycle detection over the group-membership graph. Extracted from
@@ -450,7 +454,7 @@ internal static class GroupCycleDetector
                 if (seenSignatures.Add(signature))
                 {
                     cycles.Add(new CycleReport(
-                        cyclePath.Select(id => new GroupRef(id, byId[id].Name)).ToList()));
+                        cyclePath.Select(id => new IdName(id, byId[id].Name)).ToList()));
                 }
             }
         }

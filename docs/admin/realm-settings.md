@@ -33,7 +33,8 @@ The page currently has these tabs:
   [Client ID Metadata Documents](./client-id-metadata-documents)).
   Off by default.
 - **Native Passwordless Grants** — the per-realm master toggle for the
-  cookieless `urn:cocoar:*` grants (see [Native app integration](../integrate/native-apps))
+  cookieless `urn:cocoar:*` grants, the access-token lifetime, and *Passkey changes require a
+  recent sign-in* (off by default; see [Native app integration](../integrate/native-apps#manage-passkeys-list-revoke))
 - [Rate Limits](#rate-limits) — request ceilings per source, target, client, app and device for the realm's auth endpoints
 - [Account Deletion](#account-deletion) — grace period and recycle-bin retention policy
 - [Signing Keys](#signing-keys) — rotate the realm's OAuth/OIDC token-signing key
@@ -43,6 +44,16 @@ Platform — see [Customization → Branding](../platform/branding).
 
 Permissions: `realm-settings:read` / `realm-settings:write`. The
 realm-admin role grants both via the `realm:admin` bypass.
+
+**Two admins at once.** The realm settings are one record. When another
+admin saved them after you opened the page, your save is refused with
+"changed by someone else" instead of overwriting their change: reload
+the page and apply your change again. Over the API, `GET` returns the
+record's `Version` and a `PATCH` sends it back as `ExpectedVersion`; a
+different stored version answers `409 RealmSettings.Changed`. A `PATCH`
+without `ExpectedVersion` is not checked. The same holds for an app's
+settings (`ExpectedSettingsVersion` on `PUT /api/app/{id}`, `409
+App.SettingsChanged`).
 
 ## Self-Registration
 
@@ -186,7 +197,7 @@ The realm's sign-in policy (ADR 0025; concept: [Sign-in levels](../concepts/sign
 | **Administration minimum level** (`AdministrationMinimumLevel`) | The level a session needs for `/api/admin/*` (default `Multi`). Realm only; kept separate so end users of a code-only App are not pushed into 2FA by opening their profile. `Single` is meant for test and development realms; the UI warns about it |
 | **Setup grace days** (`SetupGraceDays`) | How long a user without a second factor may keep signing in at `Single` to something that requires `Multi`. `0` = set up immediately |
 | **First factors** | `Password`, `EmailCode`, `Passkey` — what the realm offers at all; an App can only offer a subset |
-| **Second factors** | `Totp`, `EmailAfterPassword`. With `EmailAfterPassword` on, the e-mail code also stands in for a user's own second factor that is gone (see [When the second factor is gone](../concepts/sign-in-levels#when-the-second-factor-is-gone)) |
+| **Second factors** | `Totp`, `EmailAfterPassword`. With `EmailAfterPassword` on, the e-mail code also stands in for a user's own second factor that is gone, and a user without a password confirms account changes — such as replacing a lost passkey — with a fresh e-mail sign-in (see [When the second factor is gone](../concepts/sign-in-levels#when-the-second-factor-is-gone)) |
 | **E-mail fallback wait** (`EmailFallbackWaitHours`) | Hours after a password reset by e-mail during which the e-mail code does not stand in for a user's own second factor (default `24`, `0` = no wait, at most `720`). Realm only |
 | **User's own factor not offered** (`OwnFactorNotOffered`) | `Ignore` or `RequireViaBrowser` — what happens when a user switched on a second factor that the App does not offer |
 

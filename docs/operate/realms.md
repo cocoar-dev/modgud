@@ -24,13 +24,15 @@ realm has one or more configured domains:
 | `auth.localhost` (dev) | Local development realm |
 
 `RealmMiddleware` (`src/dotnet/Modgud.Api/Middleware/RealmMiddleware.cs`)
-runs as the very first middleware:
+runs after forwarded headers, the SPA's static files, routing, the
+installation gate and the realm-independent branch (see below), and before
+CORS, the Control-Plane gate and authentication — so every Marten session
+opened during sign-in already sees the realm:
 
 ```csharp
 public async Task InvokeAsync(HttpContext context)
 {
-    var path = context.Request.Path.Value;
-    if (SkipPaths.Any(p => path.StartsWith(p))) { await _next(context); return; }
+    if (RealmIndependentPathPolicy.Matches(context.Request.Path)) { await _next(context); return; }
 
     var hostname = context.Request.Host.Host;
     var resolution = await _realmCache.ResolveAsync(hostname);
@@ -59,22 +61,45 @@ public async Task InvokeAsync(HttpContext context)
 }
 ```
 
-Skip paths: `/health`, `/swagger`, `/openapi`, `/_framework` — these
-run without realm context. `/signalr` is deliberately **not** skipped:
+Realm-independent paths (`RealmIndependentPathPolicy`): `/health`,
+`/swagger`, `/openapi`, `/_framework`, `/api/install`, `/install`,
+`/assets` and `/favicon` (prefixes). A terminal branch in `Program.cs`
+serves them before `RealmMiddleware` runs, so they never reach
+realm-scoped sessions, cookies or DataProtection; an unknown path under
+them is a 404, not the SPA shell. `/signalr` is deliberately **not** on the list:
 SignalR connections still need a resolved realm so the auth cookie
 (encrypted with that realm's own keys) can be decrypted on
 `/signalr/*/negotiate`.
 
 ### Single-tenant fallback in dev
 
-If only **one** realm is active AND the host is a localhost variant
-(`localhost`, `127.0.0.1`, `::1`, `0.0.0.0`), the cache returns that
-realm — even if it doesn't list the localhost domain. This way a
-single-realm dev boot works without a hosts-file entry.
+In the Development and Testing environments only: if exactly **one** realm
+is active AND the host is a localhost variant (`localhost`, `127.0.0.1`,
+`::1`, `[::1]`, `0.0.0.0`), the cache returns that realm — even if it
+doesn't list the localhost domain. This way a single-realm dev boot works
+without a hosts-file entry. In every other environment a host must be one
+of a realm's domains.
 
 ### Primary domain
 
 While a realm may route from several domains, exactly one of them is its **PrimaryDomain** — the canonical public host. Any host in `Domains` resolves the realm for *inbound* requests, but the PrimaryDomain is what Modgud uses whenever it has to *emit* a host: magic-link and bootstrap-invite URLs, and the **WebAuthn relying-party ID** that binds passkeys. A realm always has a PrimaryDomain (it defaults to the first domain at creation) and it must be one of `Domains`. Re-point it from the admin UI's domain picker or via the [Recovery CLI](recovery-cli) `realm-set-primary-domain`; because it is the passkey RP ID, changing it invalidates every passkey in the realm.
+
+### Public base URL
+
+`PublicBaseUrl` is the absolute origin users actually reach the realm at
+(`https://auth.example.com`, `http://localhost:4300`), without a trailing
+slash ([ADR 0023](../decisions/0023-public-origin-is-declared)). Every
+outbound link — magic link, password reset, e-mail verification, invite —
+is built against it, and it is an accepted WebAuthn origin. It is separate
+from `PrimaryDomain`, which stays a bare host (RP ID and cookie domain).
+When it is unset, links use `https://{PrimaryDomain}`.
+
+First installation records the origin of its installation link. Afterwards
+the admin API accepts only an http(s) origin whose host is one of the
+realm's domains and that carries no user name or password
+(`Realm.PublicBaseUrlNotOnRealmDomain` otherwise); the
+[Recovery CLI](recovery-cli) `realm-set-public-url` changes it from the
+shell.
 
 ### Applications and domain routing
 
@@ -151,9 +176,17 @@ private string ResolveTenantId(bool forWrite)
         ?? _httpContextAccessor.HttpContext?
              .Items[TenantConstants.HttpContextTenantIdKey] as string;
 
-    return explicitTenant ?? FallbackTenantId(forWrite);
+    if (explicitTenant is not null)
+        return explicitTenant;
+
+    // No realm resolved: never guess one.
+    throw new InvalidOperationException("No realm/tenant resolved; refusing to open a tenant-scoped session.");
 }
 ```
+
+There is no fallback tenant. Background work enters its realm explicitly
+(`TenantContext.Enter(slug)`); deployment-wide state goes through
+`IGlobalStore`.
 
 An ambient `TenantContext.CurrentOrNull` (set by `RealmMiddleware`, or
 explicitly via `TenantContext.Enter(...)` for a deliberate cross-realm

@@ -77,6 +77,8 @@ see the ephemeral federation surface, which isn't stored).
 
 An `Auto` group can additionally be marked **`ExternallyDrivable`**. Such a group is **skipped by the batch engine** (it never writes durable `MemberIds`) and is instead evaluated **in memory, at login time**, by the federation deriver — but only when the login arrives through a provider the realm admin marked `TrustForAuthorization`. The match is **session-scoped**: it lives on the sign-in only, is unioned into the access decision while the session/grant is valid, and disappears when the session ends. The session is the lease — nothing is persisted, and the upstream group names never leave Modgud (they are expanded into Modgud roles/permissions before any token or UserInfo response, the hub boundary).
 
+Marking an existing group `ExternallyDrivable` clears its stored members: from then on only the session-scoped match counts, so former local members keep the group's roles only if their federated login matches the script.
+
 On top of the durable `Person` fields, an `ExternallyDrivable` script may read the ephemeral federation surface:
 
 | Field | Type | Notes |

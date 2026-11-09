@@ -100,7 +100,10 @@ public sealed class OAuthCorsMiddleware
             return new CorsPolicyBuilder()
                 .WithOrigins(origin)
                 .WithMethods("GET", "POST")
-                .WithHeaders(HeaderNames.Authorization, HeaderNames.ContentType)
+                // HTTP-B9-02 — a browser client using DPoP sends the DPoP proof header and
+                // must read the DPoP-Nonce challenge (and WWW-Authenticate for its error).
+                .WithHeaders(HeaderNames.Authorization, HeaderNames.ContentType, "DPoP")
+                .WithExposedHeaders("DPoP-Nonce", HeaderNames.WWWAuthenticate)
                 .SetPreflightMaxAge(TimeSpan.FromMinutes(10))
                 .Build();
         }

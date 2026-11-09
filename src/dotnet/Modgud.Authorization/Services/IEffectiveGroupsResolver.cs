@@ -44,6 +44,11 @@ public enum EffectiveGroupSource
     /// <summary>The group is Auto-mode and its predicate currently evaluates to true for this principal,
     /// regardless of what MemberIds reports.</summary>
     AutoMatched,
+
+    /// <summary>B3-F06 — the group is Auto-mode and lists the principal in MemberIds (what the
+    /// permission checks read), but its predicate does not match now or failed: a stored,
+    /// stale membership the next recalculation removes.</summary>
+    AutoStored,
 }
 
 public sealed record GroupDiagnostic(

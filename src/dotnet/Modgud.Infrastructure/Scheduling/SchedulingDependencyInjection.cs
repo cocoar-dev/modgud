@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Quartz;
 using Quartz.Spi;
@@ -67,6 +68,9 @@ public static class SchedulingDependencyInjection
         services.AddSingleton<RealmJobScheduler>();
         services.AddSingleton<IRealmJobScheduleObserver>(
             sp => sp.GetRequiredService<RealmJobScheduler>());
+        services.AddSingleton<IJobScheduleReconciler>(
+            sp => sp.GetRequiredService<RealmJobScheduler>());
+        services.TryAddSingleton(new JobScheduleReconcileOptions());
 
         services.AddQuartz(q =>
         {
@@ -120,6 +124,7 @@ public static class SchedulingDependencyInjection
         // Boot step: after the host has started, reconcile every realm's
         // independent schedule and the single Control-Plane system schedule.
         services.AddHostedService<SchedulingBootstrap>();
+        services.AddHostedService<JobScheduleDriftMonitor>();
 
         return services;
     }
@@ -228,7 +233,13 @@ internal sealed class MicrosoftDependencyInjectionJobFactory(IServiceProvider ro
     {
         public async Task Execute(IJobExecutionContext context)
         {
-            using var tenant = TenantContext.Enter(tenantSlug);
+            var jobScope = context.JobDetail.JobDataMap.TryGetValue(RealmJobScheduler.JobScopeDataKey, out var rawScope)
+                        && rawScope is string scopeName && Enum.TryParse<JobScope>(scopeName, out var parsed)
+                ? parsed
+                : JobScope.Realm;
+            var runTenant = await JobRunTenant.ResolveAsync(
+                tenantSlug, jobScope, provider.GetRequiredService<Modgud.Infrastructure.Realms.IRealmCache>());
+            using var tenant = TenantContext.Enter(runTenant);
             using var scope = provider.CreateScope();
             var inner = (IJob)scope.ServiceProvider.GetRequiredService(jobType);
             await inner.Execute(context);

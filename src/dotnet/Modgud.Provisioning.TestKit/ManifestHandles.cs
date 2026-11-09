@@ -73,9 +73,12 @@ internal static class ManifestHandles
     }
 
     /// <summary>Rewrites an authored reference to the form the server accepts, leaving one
-    /// it does not recognise untouched so the server can name the problem.</summary>
+    /// it does not recognise untouched so the server can name the problem. An explicit id is
+    /// the author's identity (B10-09): it goes out as written, its key only a hint the server
+    /// verifies — never swapped for whatever entity happens to share the alias.</summary>
     private static ManifestRef Resolve(IReadOnlyDictionary<string, ManifestRef> map, ManifestRef authored)
-        => authored.Key is { Length: > 0 } key && map.TryGetValue(key, out var wire) ? wire : authored;
+        => authored.Id is not { Length: > 0 }
+           && authored.Key is { Length: > 0 } key && map.TryGetValue(key, out var wire) ? wire : authored;
 
     /// <summary>Records every alias a reference may use for one entity. First declaration
     /// wins: with two entities sharing an alias the ambiguous spelling stays pointing at

@@ -117,10 +117,10 @@ Three independent 2FA methods, freely combinable:
 | **Email OTP** | One-time code by email to the verified address |
 | **WebAuthn/Passkey** | Hardware keys (YubiKey) or platform authenticators (TouchID, Windows Hello) |
 
-Plus **recovery codes** as a last-resort backup.
+There are **no recovery codes**. A user who loses a factor falls back to another enrolled method — after a password the login page also offers the e-mail code (see [Sign-in levels](./sign-in-levels)) — or the operator resets the factor with the [recovery CLI](/operate/recovery-cli).
 
-::: warning Passkeys are bound to the realm's primary domain
-A passkey is registered against a WebAuthn relying-party ID, and Modgud uses the realm's **PrimaryDomain** as that ID. A passkey therefore only works when the user reaches the realm on its primary domain — not via a secondary domain in the realm's `Domains` list — and changing the realm's PrimaryDomain invalidates every existing passkey (affected users must re-register). See [Realms — primary domain](/operate/realms#primary-domain).
+::: warning Passkeys are bound to their relying-party ID
+A passkey is registered against a WebAuthn relying-party ID. On the web, Modgud uses the realm's **PrimaryDomain** as that ID: such a passkey only works when the user reaches the realm on its primary domain — not via a secondary domain in the realm's `Domains` list — and changing the realm's PrimaryDomain invalidates those passkeys (affected users must re-register). A native app can carry its own RP ID ([ADR 0009](/decisions/0009-per-client-webauthn-rp-id)); its passkeys are bound to that ID instead. See [Realms — primary domain](/operate/realms#primary-domain).
 :::
 
 ## External login (OIDC and SAML)

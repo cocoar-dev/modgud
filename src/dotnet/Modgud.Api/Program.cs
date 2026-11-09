@@ -184,7 +184,7 @@ try
     // app boots far and dies with a cryptic database error far from the cause.
     StartupValidation.ValidateRequiredConfig(conf);
 
-    // ADR 0022 (D2) — one code path. Production always runs cluster-capable:
+    // ADR 0022 (D2) — one code path. Production and Staging always run cluster-capable:
     // Wolverine Balanced with managed projection distribution and a clustered
     // Quartz store, whether one container is running or two. Development and
     // Testing keep the single-process shape (Marten Solo daemon, in-memory
@@ -193,9 +193,10 @@ try
     // no instance-count switch: how many nodes are alive is read from
     // Wolverine's node table at runtime (IClusterNodes).
     var clusterSettings = configManager.GetConfig<ClusterSettings>();
+    var clusterCapable = ClusterHostingOptions.IsClusterCapableEnvironment(builder.Environment.EnvironmentName);
     var clusterHosting = new ClusterHostingOptions
     {
-        Coordination = builder.Environment.IsProduction()
+        Coordination = clusterCapable
             ? ClusterCoordination.WolverineManaged
             : ClusterCoordination.SingleProcess,
         // The behavioural integration suite owns projection progress explicitly:
@@ -211,9 +212,9 @@ try
             : clusterSettings.NodeName.Trim(),
         // ADR 0022 (D5) — Production always runs the backplane on the master DB
         // and relays data events over it. Single-process hosts keep them in-process.
-        CrossNodeRelay = builder.Environment.IsProduction(),
+        CrossNodeRelay = clusterCapable,
     };
-    var drainDelay = builder.Environment.IsProduction() && clusterSettings.DrainDelaySeconds > 0
+    var drainDelay = clusterCapable && clusterSettings.DrainDelaySeconds > 0
         ? TimeSpan.FromSeconds(clusterSettings.DrainDelaySeconds)
         : TimeSpan.Zero;
 
@@ -266,10 +267,13 @@ try
             var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
             var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
 
+            // F7-05 — a lost-update race on an optimistically versioned document is a
+            // conflict the client can resolve by reloading, not a server error.
+            var isConcurrency = exception is JasperFx.ConcurrencyException;
             var problemDetails = new ProblemDetails
             {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "An error occurred!",
+                Status = isConcurrency ? StatusCodes.Status409Conflict : StatusCodes.Status500InternalServerError,
+                Title = isConcurrency ? "Concurrency.Conflict" : "An error occurred!",
                 Detail = env.IsProduction() ? null : exception?.Message,
                 Instance = context.Request.Path
             };
@@ -1115,6 +1119,10 @@ try
         // Auto-register Event Forwarding subscriptions for all ReferenceSyncHandler<TEvent> implementations
         ReferenceSyncRegistration.RegisterAll(opts, typeof(Program).Assembly);
 
+        // Follow-up effects of a committed state change (revoke, mail, inbox) — written in the
+        // same commit through IFollowUpOutbox, handled from a durable queue with retries.
+        Modgud.Infrastructure.FollowUps.FollowUpConventions.AddFollowUps(opts);
+
     });
 
     // ADR 0021 — the fan-out reads the end markers from the event store itself (a
@@ -1128,6 +1136,11 @@ try
             subscription.IncludeType<Modgud.Authentication.Events.UserAccessEndedEvent>();
             subscription.Options.SubscribeFromPresent();
         });
+
+    Modgud.Infrastructure.FollowUps.FollowUpConventions.AddFollowUpOutbox(builder.Services);
+    // Samples every realm's dead letters for the "dead-letters" readiness check.
+    builder.Services.AddSingleton<Modgud.Api.HealthChecks.DeadLetterMonitor>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<Modgud.Api.HealthChecks.DeadLetterMonitor>());
 
     // Structured best-effort security-event sink. Realm events are routed to the
     // owning physical realm DB; PII-free deployment events go to the Global Store.
@@ -1412,12 +1425,17 @@ try
     // exist. Give it a terminal branch that only runs endpoint routing and the
     // endpoint rate limiter. Normal realm/auth middleware can never be resolved
     // from this branch.
+    var shutdownState = app.Services.GetRequiredService<Modgud.Api.Cluster.ShutdownState>();
     app.MapWhen(
         context => RealmIndependentPathPolicy.Matches(context.Request.Path),
         realmIndependentBranch =>
         {
             realmIndependentBranch.Run(async context =>
             {
+                // IC-CO-01 — /health is served here, before the drain middleware of
+                // MapModgudObservability: a draining node answers readiness the same way.
+                if (await ObservabilityExtensions.AnswerIfDrainingAsync(context, shutdownState)) return;
+
                 var endpoint = context.GetEndpoint();
                 if (!RealmIndependentPathPolicy.CanExecute(endpoint, context.Request.Path))
                 {
@@ -1603,19 +1621,9 @@ try
         {
             await using var bootstrapConn = new NpgsqlConnection(bootstrapBuilder.ConnectionString);
             await bootstrapConn.OpenAsync(ct);
-            await using var checkCmd = new NpgsqlCommand(
-                "SELECT 1 FROM pg_database WHERE datname = @dbName", bootstrapConn);
-            checkCmd.Parameters.AddWithValue("@dbName", baseDbName);
-            if (await checkCmd.ExecuteScalarAsync(ct) is null)
-            {
-                var quotedName = "\"" + baseDbName.Replace("\"", "\"\"") + "\"";
-#pragma warning disable CA2100
-                await using var createCmd = new NpgsqlCommand(
-                    $"CREATE DATABASE {quotedName}", bootstrapConn);
-#pragma warning restore CA2100
-                await createCmd.ExecuteNonQueryAsync(ct);
+            // B9-ST-01 — race-safe against a second instance starting at the same time.
+            if (await Modgud.Api.Startup.MasterDatabaseBootstrap.EnsureExistsAsync(bootstrapConn, baseDbName, ct))
                 Log.Information("Created master database {DbName}", baseDbName);
-            }
         },
         startupWindow,
         onRetry: (attempt, wait, ex) => Log.Warning(

@@ -214,8 +214,11 @@ public sealed partial class RealmManifestApplier
     {
         // Cross-Principal uniqueness — Person, ServiceAccount and Position share
         // the account-name namespace (any of them can end up as `sub`).
+        // SA-CO-01 — including a live service account of that name, like the REST create:
+        // an entry without its id must not become a second principal under the same name.
         if (await session.Query<Person>().AnyAsync(p => !p.IsDeleted && p.AccountName == normalised, ct)
-            || await session.Query<PositionPrincipal>().AnyAsync(f => !f.IsDeleted && f.AccountName == normalised, ct))
+            || await session.Query<PositionPrincipal>().AnyAsync(f => !f.IsDeleted && f.AccountName == normalised, ct)
+            || await session.Query<ServiceAccount>().AnyAsync(s => !s.IsDeleted && s.AccountName == normalised, ct))
             throw new ManifestApplyException(ctx, [Error.Conflict(
                 "ServiceAccount.AccountNameTaken",
                 $"{ctx}: account name '{normalised}' is already used by another principal.")]);

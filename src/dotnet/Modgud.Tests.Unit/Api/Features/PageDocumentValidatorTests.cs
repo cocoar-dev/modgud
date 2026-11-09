@@ -4,6 +4,17 @@ namespace Modgud.Tests.Unit.Api.Features;
 
 public class PageDocumentValidatorTests
 {
+    /// <summary>B10-PA05 — a non-number schemaVersion or maxItems made TryGetInt32 throw
+    /// InvalidOperationException (a 500) instead of a validation error.</summary>
+    [Theory]
+    [InlineData("""{"id":"p","type":"page","schemaVersion":"4","children":[]}""")]
+    [InlineData("""{"id":"p","type":"page","schemaVersion":4,"children":[{"id":"r","type":"repeat","props":{"contextPath":"auth.externalProviders","maxItems":"5"}}]}""")]
+    public void Login_RejectsNonNumberIntegersWithoutThrowing(string schema)
+    {
+        Assert.False(PageDocumentValidator.Validate("login", schema, out var error));
+        Assert.False(string.IsNullOrEmpty(error));
+    }
+
     [Fact]
     public void Login_AcceptsBoundedSchemaV4Document()
     {
@@ -106,17 +117,23 @@ public class PageDocumentValidatorTests
         Assert.Contains("disallowed action", error);
     }
 
+    /// <summary>
+    /// B10-PA03 — the unverified-client warning is rendered by the consent host above every
+    /// custom page; a document can neither provide nor hide it, so the validator no longer
+    /// asks for a document element (whose text and visibility it could not lock anyway).
+    /// </summary>
     [Fact]
-    public void Consent_RequiresSecurityWarningInsideCard()
+    public void Consent_does_not_need_a_document_owned_client_warning()
     {
-        const string missingWarning = """
+        const string withoutWarning = """
         {"id":"p","type":"page","schemaVersion":4,"children":[
-          {"id":"consent-card","type":"card","props":{},"children":[]}
+          {"id":"consent-card","type":"card","props":{},"children":[
+            {"id":"allow","type":"button","props":{"action":"auth:consent-allow"}}
+          ]}
         ]}
         """;
 
-        Assert.False(PageDocumentValidator.Validate("consent", missingWarning, out var error));
-        Assert.Contains("unverified-client warning", error);
+        Assert.True(PageDocumentValidator.Validate("consent", withoutWarning, out var error), error);
     }
 
     [Fact]
@@ -201,5 +218,26 @@ public class PageDocumentValidatorTests
 
         Assert.False(PageDocumentValidator.Validate("login", schema, out var error));
         Assert.Contains("schemaVersion", error, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// B10-PA02 — the templates the page builder ships (login now including the e-mail code
+    /// steps) must pass the same validator that gates publishing, or a page created from them
+    /// could not go live.
+    /// </summary>
+    [Theory]
+    [InlineData("login")]
+    [InlineData("consent")]
+    [InlineData("logout")]
+    [InlineData("password-forgot")]
+    public void The_shipped_page_templates_pass_the_publish_validator(string slug)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "src", "frontend-vue")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        var schema = File.ReadAllText(Path.Combine(dir.FullName, "src", "frontend-vue", "src", "page-builder", "documents", $"{slug}.json"));
+
+        Assert.True(PageDocumentValidator.Validate(slug, schema, out var error), error);
     }
 }

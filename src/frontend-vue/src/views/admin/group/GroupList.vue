@@ -11,6 +11,7 @@ import {
 import { useI18n } from '@cocoar/vue-localization'
 import { useFragmentNavigation, useRoutedModals } from '@cocoar/vue-fragment-parser'
 import { useGroupStore } from '@/stores/group.store'
+import { useAuthStore } from '@/stores/auth.store'
 import { useAppContextStore } from '@/stores/appContext.store'
 import { useApplicationsStore } from '@/stores/applications.store'
 import { useUI } from '@/composables/useUI'
@@ -55,6 +56,9 @@ const liveGroups = computed<GroupListRow[]>(() =>
 
 // ADR-0017: draft-merged roster (natural key = the group name).
 const staging = useDraftStaging('groups')
+// B3-F05 — create, clone and delete need authorization-group:write, as on the server.
+const authStore = useAuthStore()
+const canWrite = computed(() => authStore.hasPermission('authorization-group:write'))
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const arr = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
 const groups = useDraftListOverlay<GroupListRow>({
@@ -175,7 +179,7 @@ onMounted(() => groupStore.initialize())
   <div class="flex flex-1 flex-col min-w-0 p-4">
     <CoarDataGrid v-show="!showEmpty" :builder="builder" :search-placeholder="searchPlaceholder" show-search class="flex-1 min-h-0" bordered elevated>
       <template #toolbar-right>
-        <CoarButton size="s" icon-start="plus" @click="navigateToModal('create')">{{ t('common.create', {}, 'Create') }}</CoarButton>
+        <CoarButton v-if="canWrite" size="s" icon-start="plus" @click="navigateToModal('create')">{{ t('common.create', {}, 'Create') }}</CoarButton>
       </template>
     </CoarDataGrid>
 
@@ -184,16 +188,17 @@ onMounted(() => groupStore.initialize())
       icon="users"
       :title="t('admin.groups.title', {}, 'Groups')"
       :description="t('admin.groups.emptyHint', {}, 'Groups bundle users so roles and permissions can be granted to many people at once — manually or via an auto-membership script.')"
-      :cta-label="t('common.create', {}, 'Create')"
+      :cta-label="canWrite ? t('common.create', {}, 'Create') : undefined"
       @cta="navigateToModal('create')"
     />
 
     <CoarContextMenu :menu="cellMenu">
       <CoarMenuItem :label="t('common.open', {}, 'Open')" icon="pencil" @clicked="selectedIds[0] && navigateToModal(selectedIds[0])" />
-      <CoarMenuItem :label="t('common.create', {}, 'Create')" icon="plus" @clicked="navigateToModal('create')" />
-      <CoarMenuItem :label="t('common.clone', {}, 'Clone')" icon="copy" @clicked="cloneSelected" />
-      <CoarMenuDivider />
+      <CoarMenuItem v-if="canWrite" :label="t('common.create', {}, 'Create')" icon="plus" @clicked="navigateToModal('create')" />
+      <CoarMenuItem v-if="canWrite" :label="t('common.clone', {}, 'Clone')" icon="copy" @clicked="cloneSelected" />
+      <CoarMenuDivider v-if="canWrite" />
       <CoarMenuItem
+        v-if="canWrite"
         :label="staging.deleteMenuLabel(selectedDeleteStaged, t('common.delete', {}, 'Delete'))"
         :icon="selectedDeleteStaged ? 'undo-2' : 'trash-2'"
         @clicked="deleteSelected" />

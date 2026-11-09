@@ -146,10 +146,16 @@ public static class AuthorizationEndpoints
         var authResult = await httpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
         var needsLogin = !authResult.Succeeded;
 
-        if (authResult.Succeeded && request.MaxAge != null && authResult.Properties?.IssuedUtc != null)
+        // EG-07 — max_age is measured from when the user last authenticated: the latest proven
+        // factor, the same time the tokens carry as auth_time. The cookie's IssuedUtc moves with every
+        // sliding renewal and security-stamp refresh, so a sign-in proven long ago passed it. A cookie
+        // without recorded factors (from before they were recorded) keeps the old measure.
+        if (authResult.Succeeded && request.MaxAge != null)
         {
-            var sessionAge = DateTimeOffset.UtcNow - authResult.Properties.IssuedUtc.Value;
-            if (sessionAge > TimeSpan.FromSeconds(request.MaxAge.Value)) needsLogin = true;
+            var factors = SignInAssurance.ReadFactors(authResult.Principal);
+            DateTimeOffset? authenticatedAt = factors.Count > 0 ? factors.Values.Max() : authResult.Properties?.IssuedUtc;
+            if (authenticatedAt is { } at && DateTimeOffset.UtcNow - at > TimeSpan.FromSeconds(request.MaxAge.Value))
+                needsLogin = true;
         }
 
         // EG-02 — prompt=login asks for a fresh sign-in, once. The return URL used to repeat
@@ -790,8 +796,15 @@ public static class AuthorizationEndpoints
             {
                 var wantsRoles = identity.GetScopes().Contains(Scopes.Roles);
                 var wantsPermissions = identity.GetScopes().Contains("permissions");
+                // B6-02: ResourceIndicatorHandler later narrows aud to the requested
+                // resource= set but does not rebuild this claim, so build it for that set
+                // here (as the user path does), not for every audience the scopes grant.
+                var requestedResources = request.GetResources();
+                var accessAudiences = requestedResources.IsDefaultOrEmpty
+                    ? clientResources
+                    : clientResources.Where(r => requestedResources.Contains(r, StringComparer.Ordinal)).ToList();
                 var resourceAccess = await BuildResourceAccessAsync(
-                    pid, clientResources, wantsRoles, wantsPermissions, session, permissionService);
+                    pid, accessAudiences, wantsRoles, wantsPermissions, session, permissionService);
                 if (resourceAccess is not null)
                 {
                     identity.SetClaim("resource_access",
@@ -982,6 +995,10 @@ public static class AuthorizationEndpoints
             return Refuse("The client does not own this terminal slot.");
         if (slot.Status != TerminalEnrollmentStatus.Pending || slot.EnrollmentAuthorizationId is not null)
             return Refuse("The terminal slot is not pending enrollment; re-enrollment requires a fresh slot.");
+        // B3-P3 — the approval covers the position set the admin saw. A set widened
+        // between approval and this first exchange needs a fresh approval.
+        if (isControlV2 && TerminalEnrollmentPrincipal.PositionsBeyondApproval(tokenPrincipal, slot).Count > 0)
+            return Refuse("The terminal's positions changed after the approval; approve the enrollment again.");
 
         string? jkt = null;
         if (string.Equals(slot.Binding, DeviceBindingIds.Dpop, StringComparison.Ordinal))
@@ -1016,6 +1033,10 @@ public static class AuthorizationEndpoints
             return Refuse("The device code is not DPoP-bound; terminal enrollment requires a device key.");
         if (!string.Equals(jkt, binding.Jkt, StringComparison.Ordinal))
             return Refuse("The DPoP proof key does not match the key this device code is bound to.");
+        // G-B4-03 — everything the pipeline would still refuse (replay, nonce, client policy) is
+        // decided now, before the Enrolled event below is committed.
+        if (await DpopGateRefusalAsync(httpContext, request, htu, ct) is { } enrollDpopRefusal)
+            return enrollDpopRefusal;
         }
 
         var principal = isControlV2
@@ -1099,6 +1120,9 @@ public static class AuthorizationEndpoints
                 header.ToString(), httpContext.Request.Method, htu, DateTimeOffset.UtcNow);
             if (!proof.IsValid || !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
                 return Refuse("The DPoP proof key does not match this terminal.");
+            // G-B4-03 — decided before the ceremony is consumed below.
+            if (await DpopGateRefusalAsync(httpContext, request, htu, ct) is { } stepUpDpopRefusal)
+                return stepUpDpopRefusal;
         }
 
         if (!Guid.TryParse((string?)request.GetParameter("ceremony_id"), out var ceremonyId))
@@ -1248,6 +1272,10 @@ public static class AuthorizationEndpoints
             proofHeader.ToString(), httpContext.Request.Method, htu, DateTimeOffset.UtcNow);
         if (!proof.IsValid || !string.Equals(proof.Jkt, terminal.DpopJkt, StringComparison.Ordinal))
             return Refuse("The DPoP proof key is not this terminal's enrolled key.");
+        // G-B4-03 — decided before the new session, the pointer move and the end of the previous
+        // session are committed below (that end, and its revoke, cannot be undone).
+        if (await DpopGateRefusalAsync(httpContext, request, htu, ct) is { } staffingDpopRefusal)
+            return staffingDpopRefusal;
         }
 
         // §13.3 steps 4–5 — load + pin-check the ceremony.
@@ -1433,6 +1461,12 @@ public static class AuthorizationEndpoints
         principal.SetScopes(scopes);
         var resources = await scopeManager.ListResourcesAsync(principal.GetScopes(), ct).ToListAsync(ct);
         principal.SetResources(resources);
+        // G-B4-03 — ResourceIndicatorHandler would refuse an unauthorised `resource` only after the
+        // commit below; the same rule, decided first.
+        var unauthorisedResource = request.GetResources().FirstOrDefault(r => !resources.Contains(r, StringComparer.Ordinal));
+        if (unauthorisedResource is not null)
+            return ForbidNativeGrant(Errors.InvalidTarget,
+                $"The resource '{unauthorisedResource}' is not authorised for the requested scopes or client.");
 
         var resourceAccess = await BuildResourceAccessAsync(
             positionId, resources, wantsRoles: true, wantsPermissions: true, session, permissionService);
@@ -1448,7 +1482,7 @@ public static class AuthorizationEndpoints
         if (sessionLifetime > position.TerminalPolicy.MaximumStaffingSessionLifetime)
             sessionLifetime = position.TerminalPolicy.MaximumStaffingSessionLifetime;
         var absoluteExpiresAt = now + sessionLifetime;
-        principal.SetAccessTokenLifetime(TimeSpan.FromMinutes(10));
+        principal.SetAccessTokenLifetime(sessionLifetime < TimeSpan.FromMinutes(10) ? sessionLifetime : TimeSpan.FromMinutes(10));
         principal.SetRefreshTokenLifetime(sessionLifetime);
 
         // §13.3 steps 17–20 + §13.5 — the activation lock: the terminal
@@ -1517,11 +1551,7 @@ public static class AuthorizationEndpoints
         await bus.PublishAsync(new PositionStaffingSessionStarted(
             positionId, terminal.Id, sessionId, now, absoluteExpiresAt));
         if (superseded is not null)
-        {
-            await bus.PublishAsync(new PositionStaffingSessionEnded(
-                positionId, terminal.Id, superseded.Id,
-                StaffingSessionEndReason.ReplacedByNewActivation, now));
-        }
+            await bus.PublishAsync(SupersededSessionEnded(superseded, now));
 
         principal.SetAuthorizationId(authorizationId);
         return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
@@ -1622,10 +1652,28 @@ public static class AuthorizationEndpoints
         // §14.3 checks 5–7 — position alive + terminal use on; slot Active
         // and still owned by this session.
         var position = await session.LoadAsync<PositionPrincipal>(positionId, ct);
-        if (position is null || position.IsDeleted || !position.TerminalPolicy.Enabled)
+        // G-B4-04 — the refresh is the backstop for a missed or raced cascade: an
+        // inactive position ends the shift like a deleted one (the tap already checks it).
+        if (position is null || position.IsDeleted || !position.IsActive || !position.TerminalPolicy.Enabled)
         {
             await staffingRevoker.EndSessionAsync(
                 staffing.Id, StaffingSessionEndReason.PositionDisabled, ct);
+            return RequireStaffing();
+        }
+
+        // G-B4-04 — a staffing lifetime the policy shortened since the tap applies now:
+        // the shift ends at the earlier of its stored end and its start plus the current
+        // lifetime. A shift already past that ends here.
+        var currentLifetime = position.TerminalPolicy.StaffingSessionLifetime;
+        if (currentLifetime > position.TerminalPolicy.MaximumStaffingSessionLifetime)
+            currentLifetime = position.TerminalPolicy.MaximumStaffingSessionLifetime;
+        var shiftEnd = staffing.StartedAt + currentLifetime < staffing.AbsoluteExpiresAt
+            ? staffing.StartedAt + currentLifetime
+            : staffing.AbsoluteExpiresAt;
+        if (shiftEnd <= now)
+        {
+            await staffingRevoker.EndSessionAsync(
+                staffing.Id, StaffingSessionEndReason.PolicyTightened, ct);
             return RequireStaffing();
         }
 
@@ -1718,9 +1766,11 @@ public static class AuthorizationEndpoints
         principal.SetDestinations(_ => [Destinations.AccessToken]);
 
         // §14.4 — the chain can never outlive the shift: the rotated refresh
-        // token's lifetime is exactly the time to the fixed absolute end.
-        principal.SetAccessTokenLifetime(TimeSpan.FromMinutes(10));
-        principal.SetRefreshTokenLifetime(staffing.AbsoluteExpiresAt - now);
+        // token's lifetime is exactly the time to the shift's end, and the access
+        // token ends with it too (G-B4-04), at most ten minutes.
+        var remaining = shiftEnd - now;
+        principal.SetAccessTokenLifetime(remaining < TimeSpan.FromMinutes(10) ? remaining : TimeSpan.FromMinutes(10));
+        principal.SetRefreshTokenLifetime(remaining);
         principal.SetAuthorizationId(staffing.OAuthAuthorizationId);
 
         // §14.3 check 14 — rotation + reuse detection are OpenIddict's stock
@@ -1733,6 +1783,20 @@ public static class AuthorizationEndpoints
     /// <summary>Uniform OAuth error for the native grants — mirrors the local
     /// <c>ForbidInvalidGrant</c> but takes the error code too (factor failures
     /// use <c>invalid_grant</c>; a disabled realm uses <c>unsupported_grant_type</c>).</summary>
+    /// <summary>
+    /// G-B4-03 — the token request's DPoP decision (proof, nonce, replay, client policy), made now
+    /// instead of in the sign-in pipeline after the endpoint has committed its state. The pipeline
+    /// handler later reuses the same decision for this request.
+    /// </summary>
+    private static async Task<IResult?> DpopGateRefusalAsync(
+        HttpContext httpContext, OpenIddictRequest request, string htu, CancellationToken ct)
+    {
+        var outcome = await httpContext.RequestServices
+            .GetRequiredService<Modgud.Infrastructure.OpenIddict.Dpop.IDpopTokenRequestGate>()
+            .EvaluateAsync(httpContext, request.ClientId, htu, ct);
+        return outcome.Rejected ? ForbidNativeGrant(outcome.Error!, outcome.Description!) : null;
+    }
+
     private static IResult ForbidNativeGrant(string error, string description) =>
         Results.Forbid(
             new AuthenticationProperties(new Dictionary<string, string?>
@@ -2531,7 +2595,7 @@ public static class AuthorizationEndpoints
         foreach (var audience in audiences)
         {
             var api = await session.Query<OAuthApiState>()
-                .FirstOrDefaultAsync(a => a.Name == audience && !a.IsDeleted);
+                .FirstOrDefaultAsync(a => a.Name == audience && !a.IsDeleted && a.Enabled);
             if (api?.AppId is not Guid appId) continue;
 
             var app = await session.LoadAsync<App>(appId);
@@ -2681,7 +2745,8 @@ public static class AuthorizationEndpoints
         SignInManager<ApplicationUser> signInManager,
         IOpenIddictApplicationManager applicationManager,
         IOpenIddictAuthorizationManager authorizationManager,
-        IOpenIddictTokenManager tokenManager)
+        IOpenIddictTokenManager tokenManager,
+        IClientSessionService clientSessions)
     {
         var request = httpContext.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("The OpenID Connect end-session request cannot be retrieved.");
@@ -2792,11 +2857,19 @@ public static class AuthorizationEndpoints
                 {
                     await tokenManager.TryRevokeAsync(token);
                 }
+                var revokedAuthorizations = new List<string>();
                 await foreach (var auth in authorizationManager.FindAsync(
                     subject: hintSubject, client: clientPrimaryKey, status: null, type: null, scopes: default))
                 {
                     await authorizationManager.TryRevokeAsync(auth);
+                    if (await authorizationManager.GetIdAsync(auth) is { Length: > 0 } authorizationId)
+                        revokedAuthorizations.Add(authorizationId);
                 }
+
+                // EG-06 — the native client sessions built on those authorizations end
+                // with them, instead of staying listed until a later refresh fails.
+                foreach (var authorizationId in revokedAuthorizations)
+                    await clientSessions.EndByRpLogoutAsync(authorizationId, hintClientId!, httpContext.RequestAborted);
             }
         }
 
@@ -3039,26 +3112,14 @@ public static class AuthorizationEndpoints
     /// <summary>
     /// OAUTH-14 — read the <c>cocoar:enabled</c> property off the OAuth
     /// application. Missing → treated as enabled (matches the legacy
-    /// default-true semantics from before the property was introduced).
+    /// default-true semantics from before the property was introduced); a value
+    /// that is not a JSON boolean counts as disabled (EG-04, fail closed).
     /// </summary>
     private static async Task<bool> IsApplicationEnabledAsync(
         IOpenIddictApplicationManager applicationManager,
         object application)
-    {
-        var properties = await applicationManager.GetPropertiesAsync(application);
-        if (properties.TryGetValue(
-                Modgud.Domain.OAuth.Applications.OAuthApplicationPropertyKeys.Enabled,
-                out var element))
-        {
-            return element.ValueKind switch
-            {
-                System.Text.Json.JsonValueKind.False => false,
-                System.Text.Json.JsonValueKind.True => true,
-                _ => true, // Unknown shape — fail open to current behaviour
-            };
-        }
-        return true;
-    }
+        => Modgud.Infrastructure.OpenIddict.OAuthClientEnabled.IsEnabled(
+            await applicationManager.GetPropertiesAsync(application));
 
     /// <summary>
     /// OAUTH-14 — refuse the request if any requested scope is marked
@@ -3249,6 +3310,17 @@ public static class AuthorizationEndpoints
             _ => false,
         };
     }
+
+    /// <summary>
+    /// GS-CO-01 — the consumer notification for a staffing session that a new tap on the
+    /// same terminal replaced. It names the REPLACED session's own position: on a
+    /// multi-position terminal the new tap may staff a different one (A → B), and a
+    /// consumer correlating per position must see A's shift end, not B's.
+    /// </summary>
+    internal static PositionStaffingSessionEnded SupersededSessionEnded(
+        StaffingSession superseded, DateTimeOffset endedAt) =>
+        new(superseded.PositionPrincipalId, superseded.TerminalEnrollmentId, superseded.Id,
+            StaffingSessionEndReason.ReplacedByNewActivation, endedAt);
 }
 
 /// <summary>

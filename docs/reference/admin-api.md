@@ -338,6 +338,14 @@ rest of the App (one tenant transaction).
   and within a section a `null` field inherits that field. Setting
   `Origin.Subdomain` also writes the global host→App routing map (clearing it
   removes the route).
+- **Concurrent edits** — `Settings.Version` (read only) is the stored
+  version of the override; send it back as `ExpectedSettingsVersion` on
+  `PUT /api/app/{id}`. When the override was changed meanwhile, the update is
+  refused with `409` `App.SettingsChanged` and nothing is written. Without
+  `ExpectedSettingsVersion` the update is not checked. The realm settings work
+  the same way: `Version` on `GET /api/admin/realm-settings`, `ExpectedVersion`
+  on `PATCH`, `409` `RealmSettings.Changed`. A write that loses a race between
+  two servers at the database answers `409` `Concurrency.Conflict`.
 
 See [Applications](/admin/applications#application-settings).
 
@@ -434,8 +442,10 @@ Response:
 
 ## Real-time updates
 
-After every mutation the backend fires a SignalR event over the
-`UIHub`. The frontend (`useEntityService` composable) listens and
-automatically refreshes the affected lists — no manual polling needed.
+Entities with a change stream fire a SignalR event over the `UIHub` after a
+mutation: users, service accounts, apps, positions, OAuth clients, OAuth
+scopes, invite codes and inbox items. The frontend (`useEntityService`
+composable) listens and refreshes those lists. Roles, groups and the other
+admin lists have no stream: they show another admin's change after a reload.
 
 Hub endpoint: `/signalr/ui` (with auth cookie + WebSocket upgrade).

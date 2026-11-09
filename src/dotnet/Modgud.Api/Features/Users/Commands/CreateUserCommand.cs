@@ -30,7 +30,10 @@ public record CreateUserCommand(
     bool TwoFactorExempt = false,
     // Optional pinned entity id — provisioning only (the manifest applier
     // pre-checks stream availability); server-generated when null.
-    Guid? Id = null);
+    Guid? Id = null,
+    // ADR 0026 — create the account as a test account: the marker is part of the
+    // creating stream, not a second append (see CreateUserHandler).
+    bool IsTestAccount = false);
 
 public class CreateUserHandler(
     IDocumentSession session,
@@ -176,6 +179,14 @@ public class CreateUserHandler(
             userEvents.Add(new UserPasswordChangedEvent(id, null));
         if (!command.IsActive)
             userEvents.Add(new UserDeactivatedEvent(id));
+        // ADR 0026 — a test account from the start carries its marker in the creating
+        // stream. Marking it with a second append inside a manifest apply (one open
+        // transaction) left the inline Person document with nothing but the marker.
+        if (command.IsTestAccount)
+        {
+            appUser.IsTestAccount = true;
+            userEvents.Add(new UserTestAccountChangedEvent(id, true, ChangedByUserId: null));
+        }
         session.Events.StartStream<UserView>(id, userEvents);
 
         session.Store(appUser);

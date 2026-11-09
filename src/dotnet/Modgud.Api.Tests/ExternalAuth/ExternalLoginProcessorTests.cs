@@ -478,7 +478,9 @@ public partial class ExternalLoginProcessorTests : IntegrationTestBase
         bool autoCreate = false,
         bool trustForEmailLink = false,
         string[]? allowedDomains = null,
-        bool allowLinking = true)
+        bool allowLinking = true,
+        bool trustEmailsAsVerified = false,
+        List<string>? mfaAmrValues = null)
     {
         using var scope = Factory.Services.CreateScope();
         var bus = GetTenantedMessageBus(scope);
@@ -516,7 +518,9 @@ public partial class ExternalLoginProcessorTests : IntegrationTestBase
             IconName: "microsoft",
             ButtonColorHex: null,
             FlavorData: flavorData,
-            UpdatedAt: DateTimeOffset.UtcNow));
+            UpdatedAt: DateTimeOffset.UtcNow,
+            TrustEmailsAsVerified: trustEmailsAsVerified,
+            MfaAmrValues: mfaAmrValues));
         session.Events.Append(id, new LoginProviderEnabledEvent(id, DateTimeOffset.UtcNow));
         await session.SaveChangesAsync(TestContext.Current.CancellationToken);
 

@@ -11,8 +11,9 @@ import { defineConfig } from '@playwright/test'
  *
  * Pre-conditions to running this suite:
  *   1. Modgud is reachable at TESTAPPS_AUTHORITY (default localhost:9099)
- *   2. The /setup wizard has been completed AND demo-seed.json has been
- *      imported (admin runs /setup with LoadDemoData=true). The seed
+ *   2. A first admin exists (recovery CLI `recover bootstrap-admin`; there is
+ *      no /setup wizard) AND data/demo-seed.json has been applied with
+ *      `node scripts/seed-demo.mjs`. The seed
  *      provides demo-bff (BFF client), demo-backend (M2M client),
  *      demo-api (resource), demo.read/write/admin scopes and the
  *      `demo.admin` user with password Demo1234!.

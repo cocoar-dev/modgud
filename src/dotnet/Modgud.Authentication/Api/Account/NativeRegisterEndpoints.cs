@@ -100,8 +100,12 @@ public static class NativeRegisterEndpoints
             {
                 // Anti-enumeration: every branch is silent (results discarded) so
                 // the uniform response + jitter below is the only observable.
+                // AREG-09 — a name field that is Off is never captured.
+                var fields = settings.RegistrationFields ?? RegistrationFieldsSettings.Defaults;
                 await IssueRegistrationOtpAsync(
-                    request.Email, request.FirstName, request.LastName,
+                    request.Email,
+                    RegistrationFieldsPolicy.Captured(fields.Firstname, request.FirstName),
+                    RegistrationFieldsPolicy.Captured(fields.Lastname, request.LastName),
                     session, emailOtpService, registrationPipeline, httpContext.GetApplicationId(), ct);
             }
 

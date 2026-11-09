@@ -58,6 +58,17 @@ export const useGroupStore = defineStore('group', () => {
     }
   }
 
+  /** B3-F04 — the current server state of one group, refreshing the cached entry. The
+   * editor must start from it: the list cache is loaded once per SPA session and never
+   * refreshed, and saving stale member/role lists restores what was removed since. */
+  async function fetchGroup(id: string): Promise<GroupDto> {
+    const group = await http.addPath(id).get<GroupDto>()
+    groups.value = groups.value.some(g => g.Id === group.Id)
+      ? groups.value.map(g => g.Id === group.Id ? group : g)
+      : [...groups.value, group]
+    return group
+  }
+
   async function createGroup(dto: GroupPayload): Promise<GroupDto> {
     const group = await http.post<GroupDto>(dto)
     groups.value = [...groups.value, group]
@@ -84,6 +95,7 @@ export const useGroupStore = defineStore('group', () => {
     loaded,
     loadAll,
     initialize,
+    fetchGroup,
     createGroup,
     updateGroup,
     deleteGroup,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { keepUnchanged } from './appSettingsRoundTrip'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   CoarNotice,
@@ -98,7 +99,7 @@ const f = reactive({
     appOrigins: '',
   },
   clientSessions: { override: false, idle: '', absolute: '' },
-  nativeGrants: { override: false, enabled: false, access: '', refresh: '' },
+  nativeGrants: { override: false, enabled: false, access: '', recentSignIn: false },
   rateLimits: {
     override: false,
     overrides: emptyRateLimitOverrides() as RateLimitOverrides,
@@ -256,7 +257,7 @@ const inh = computed(() => {
     nativeGrants: {
       enabled: r?.NativeGrants?.Enabled ?? false,
       access: numStr(r?.NativeGrants?.AccessTokenLifetimeMinutes),
-      refresh: numStr(r?.NativeGrants?.RefreshTokenLifetimeDays),
+      recentSignIn: r?.NativeGrants?.RequireRecentSignInForPasskeyChanges ?? false,
     },
     dcr: {
       enabled: r?.Dcr?.Enabled ?? false,
@@ -310,7 +311,7 @@ function resetForm() {
   f.registrationFields.firstname = ''; f.registrationFields.lastname = ''
   f.signIn.override = false; f.signIn.values = {}; f.signIn.passkeyRpId = ''; f.signIn.relatedOrigins = false; f.signIn.appOrigins = ''
   f.clientSessions.override = false; f.clientSessions.idle = ''; f.clientSessions.absolute = ''
-  f.nativeGrants.override = false; f.nativeGrants.enabled = false; f.nativeGrants.access = ''; f.nativeGrants.refresh = ''
+  f.nativeGrants.override = false; f.nativeGrants.enabled = false; f.nativeGrants.access = ''; f.nativeGrants.recentSignIn = false
   f.rateLimits.override = false; f.rateLimits.overrides = emptyRateLimitOverrides()
   f.rateLimits.allowlistOverride = false; f.rateLimits.allowlist = []; f.rateLimits.mode = 'inherit'
   f.dcr.override = false; f.dcr.enabled = false; f.dcr.access = ''; f.dcr.refresh = ''
@@ -320,7 +321,18 @@ function resetForm() {
   f.changeFeed.retentionAgeDays = 7; f.changeFeed.minimumEventCount = 1000
 }
 
+// F7-01 — the settings as loaded and the form right after loading: build() sends a field
+// of an existing section back unchanged unless the admin changed it.
+let loadedSettings: ApplicationSettingsDto | null = null
+let loadedForm: typeof f | null = null
+
 function populate(s?: ApplicationSettingsDto | null) {
+  populateForm(s)
+  loadedSettings = s ?? null
+  loadedForm = JSON.parse(JSON.stringify(f))
+}
+
+function populateForm(s?: ApplicationSettingsDto | null) {
   resetForm()
   if (!s) return
   f.origin.subdomain = s.Origin?.Subdomain ?? ''
@@ -399,7 +411,7 @@ function populate(s?: ApplicationSettingsDto | null) {
     f.nativeGrants.override = true
     f.nativeGrants.enabled = s.NativeGrants.Enabled ?? false
     f.nativeGrants.access = numStr(s.NativeGrants.AccessTokenLifetimeMinutes)
-    f.nativeGrants.refresh = numStr(s.NativeGrants.RefreshTokenLifetimeDays)
+    f.nativeGrants.recentSignIn = s.NativeGrants.RequireRecentSignInForPasskeyChanges ?? false
   }
   if (s.AuthRateLimits) {
     f.rateLimits.override = true
@@ -516,6 +528,14 @@ const emailPreviewOverlay = computed(() => ({
  * backend clears that override (→ inherit the realm). Origin always sends a
  * section so an emptied field explicitly removes any existing route. */
 function build(): ApplicationSettingsDto {
+  // keep(section, field, read, built): an untouched field of a section the App already had
+  // goes back as loaded (null keeps inheriting); see appSettingsRoundTrip.ts.
+  const keep = <T,>(section: keyof ApplicationSettingsDto, field: string, read: (form: typeof f) => unknown, built: T) =>
+    keepUnchanged(loadedSettings?.[section] as object | null | undefined, field,
+      loadedForm ? read(loadedForm) : undefined, read(f), built) as T
+  // An emptied list in an existing section is an explicit empty list (F7-02), not inherit.
+  const list = (section: keyof ApplicationSettingsDto, values: string[]) =>
+    loadedSettings?.[section] ? values : (values.length ? values : null)
   return {
     Origin: { Subdomain: f.origin.subdomain.trim() || null },
     Branding: f.branding.override
@@ -550,19 +570,19 @@ function build(): ApplicationSettingsDto {
       : null,
     LoginExperience: f.loginExperience.override
       ? {
-          InternalLoginEnabled: f.loginExperience.internal,
-          MagicLinkEnabled: f.loginExperience.magicLink,
-          LoginProviderIds: f.loginExperience.providerIds,
+          InternalLoginEnabled: keep('LoginExperience', 'InternalLoginEnabled', (x) => x.loginExperience.internal, f.loginExperience.internal),
+          MagicLinkEnabled: keep('LoginExperience', 'MagicLinkEnabled', (x) => x.loginExperience.magicLink, f.loginExperience.magicLink),
+          LoginProviderIds: keep('LoginExperience', 'LoginProviderIds', (x) => x.loginExperience.providerIds, f.loginExperience.providerIds),
         }
       : null,
     SelfRegistration: f.selfReg.override
       ? {
-          Posture: f.selfReg.posture || null,
-          Enabled: f.selfReg.enabled,
-          RequireEmailVerification: f.selfReg.requireEmailVerification,
-          RequireAdminApproval: f.selfReg.requireAdminApproval,
-          AllowedEmailDomains: f.selfReg.allowedEmailDomains.length ? f.selfReg.allowedEmailDomains : null,
-          DefaultGroupIds: f.selfReg.defaultGroupIds.length ? f.selfReg.defaultGroupIds : null,
+          Posture: keep('SelfRegistration', 'Posture', (x) => x.selfReg.posture, f.selfReg.posture || null),
+          Enabled: keep('SelfRegistration', 'Enabled', (x) => x.selfReg.enabled, f.selfReg.enabled),
+          RequireEmailVerification: keep('SelfRegistration', 'RequireEmailVerification', (x) => x.selfReg.requireEmailVerification, f.selfReg.requireEmailVerification),
+          RequireAdminApproval: keep('SelfRegistration', 'RequireAdminApproval', (x) => x.selfReg.requireAdminApproval, f.selfReg.requireAdminApproval),
+          AllowedEmailDomains: keep('SelfRegistration', 'AllowedEmailDomains', (x) => x.selfReg.allowedEmailDomains, list('SelfRegistration', f.selfReg.allowedEmailDomains)),
+          DefaultGroupIds: keep('SelfRegistration', 'DefaultGroupIds', (x) => x.selfReg.defaultGroupIds, list('SelfRegistration', f.selfReg.defaultGroupIds)),
           TermsOfServiceUrl: f.selfReg.termsOfServiceUrl.trim() || null,
           PrivacyPolicyUrl: f.selfReg.privacyPolicyUrl.trim() || null,
         }
@@ -592,7 +612,7 @@ function build(): ApplicationSettingsDto {
         }
       : null,
     NativeGrants: f.nativeGrants.override
-      ? { Enabled: f.nativeGrants.enabled, AccessTokenLifetimeMinutes: parseNum(f.nativeGrants.access), RefreshTokenLifetimeDays: parseNum(f.nativeGrants.refresh) }
+      ? { Enabled: keep('NativeGrants', 'Enabled', (x) => x.nativeGrants.enabled, f.nativeGrants.enabled), AccessTokenLifetimeMinutes: parseNum(f.nativeGrants.access), RequireRecentSignInForPasskeyChanges: keep('NativeGrants', 'RequireRecentSignInForPasskeyChanges', (x) => x.nativeGrants.recentSignIn, f.nativeGrants.recentSignIn) }
       : null,
     AuthRateLimits: f.rateLimits.override
       ? {
@@ -606,16 +626,16 @@ function build(): ApplicationSettingsDto {
       : null,
     Dcr: f.dcr.override
       ? {
-          Enabled: f.dcr.enabled,
+          Enabled: keep('Dcr', 'Enabled', (x) => x.dcr.enabled, f.dcr.enabled),
           AccessTokenLifetimeMinutes: parseNum(f.dcr.access),
           RefreshTokenLifetimeDays: parseNum(f.dcr.refresh),
-          ReservedNames: f.dcr.reservedNames.length ? f.dcr.reservedNames : null,
+          ReservedNames: keep('Dcr', 'ReservedNames', (x) => x.dcr.reservedNames, list('Dcr', f.dcr.reservedNames)),
           PerIpRateLimitPerHour: parseNum(f.dcr.perIp),
           PerRealmRateLimitPerDay: parseNum(f.dcr.perRealm),
         }
       : null,
     Cimd: f.cimd.override
-      ? { Enabled: f.cimd.enabled, AccessTokenLifetimeMinutes: parseNum(f.cimd.access), RefreshTokenLifetimeDays: parseNum(f.cimd.refresh) }
+      ? { Enabled: keep('Cimd', 'Enabled', (x) => x.cimd.enabled, f.cimd.enabled), AccessTokenLifetimeMinutes: parseNum(f.cimd.access), RefreshTokenLifetimeDays: parseNum(f.cimd.refresh) }
       : null,
     // An App that never had a change feed and is not getting one now sends NO section:
     // these settings are REPLACE, so emitting the defaults would materialize an override
@@ -1121,10 +1141,8 @@ watch(() => [activeTab.value, props.applicationId] as const, ([tab]) => {
         <CoarFormField :label="t('admin.appSettings.access', {}, 'Access-Token (Min, 1–60)')">
           <CoarTextInput v-bind="fieldBind('nativeGrants', 'access')" clearable placeholder="15" />
         </CoarFormField>
-        <CoarFormField :label="t('admin.appSettings.refresh', {}, 'Refresh-Token (Tage, 1–30)')">
-          <CoarTextInput v-bind="fieldBind('nativeGrants', 'refresh')" clearable placeholder="14" />
-        </CoarFormField>
       </div>
+      <CoarCheckbox v-bind="fieldBind('nativeGrants', 'recentSignIn')" :label="t('admin.appSettings.grants.requireRecentSignIn', {}, 'Passkey changes require a recent sign-in (15 min)')" />
     </div>
 
     <!-- Rate limits (ADR 0019) -->

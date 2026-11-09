@@ -48,6 +48,8 @@ public record CreateLoginProviderCommand(
     string? IconName = null,
     string? ButtonColorHex = null,
     bool? TrustForAuthorization = null,
+    bool? TrustEmailsAsVerified = null,
+    List<string>? MfaAmrValues = null,
     bool? AuthoritativeForProfile = null,
     string? InitialClientSecret = null,
     // Optional pinned entity id — provisioning only (the manifest applier
@@ -167,6 +169,8 @@ public class CreateLoginProviderHandler(
             AllowLinking: command.AllowLinking ?? true,
             TrustForEmailLink: command.TrustForEmailLink ?? false,
             TrustForAuthorization: command.TrustForAuthorization ?? false,
+            TrustEmailsAsVerified: command.TrustEmailsAsVerified ?? false,
+            MfaAmrValues: LoginProviderAmr.Normalize(command.MfaAmrValues),
             AuthoritativeForProfile: command.AuthoritativeForProfile ?? false,
             AllowedEmailDomains: command.AllowedEmailDomains,
             IconName: command.IconName ?? flavor.DefaultIconName,
@@ -262,6 +266,8 @@ public class CreateLoginProviderHandler(
             AllowLinking: command.AllowLinking ?? true,
             TrustForEmailLink: command.TrustForEmailLink ?? false,
             TrustForAuthorization: command.TrustForAuthorization ?? false,
+            TrustEmailsAsVerified: command.TrustEmailsAsVerified ?? false,
+            MfaAmrValues: LoginProviderAmr.Normalize(command.MfaAmrValues),
             AuthoritativeForProfile: command.AuthoritativeForProfile ?? false,
             AllowedEmailDomains: command.AllowedEmailDomains,
             IconName: command.IconName ?? flavor.DefaultIconName,
@@ -322,6 +328,8 @@ public class CreateLoginProviderHandler(
             // Internal provider is strictly local — never trusted for external
             // authorization, never authoritative for profile.
             TrustForAuthorization: false,
+            TrustEmailsAsVerified: false,
+            MfaAmrValues: null,
             AuthoritativeForProfile: false,
             AllowedEmailDomains: null,
             IconName: null,
@@ -337,5 +345,16 @@ public class CreateLoginProviderHandler(
             return writeConflict;
 
         return (await session.LoadAsync<LoginProvider>(id, ct))!;
+    }
+}
+
+internal static class LoginProviderAmr
+{
+    /// <summary>B6-OIDC-04 — trimmed, lower-case, distinct; empty becomes null.</summary>
+    public static List<string>? Normalize(List<string>? values)
+    {
+        var list = values?.Where(v => !string.IsNullOrWhiteSpace(v))
+            .Select(v => v.Trim().ToLowerInvariant()).Distinct(StringComparer.Ordinal).ToList();
+        return list is { Count: > 0 } ? list : null;
     }
 }

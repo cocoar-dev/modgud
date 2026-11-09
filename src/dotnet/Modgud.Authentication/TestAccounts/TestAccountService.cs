@@ -72,7 +72,9 @@ public sealed partial class TestAccountService(
     /// <summary>The longest wait between two checked attempts.</summary>
     internal static readonly TimeSpan MaxDelay = TimeSpan.FromMinutes(15);
 
-    [GeneratedRegex("^[0-9]{6}$")]
+    // \A … \z: '$' also matched before a trailing newline, and such a stored code could
+    // never verify (the check trims the entered code) — B8-AJ-06.
+    [GeneratedRegex(@"\A[0-9]{6}\z")]
     private static partial Regex SixDigits();
 
     public async Task<TestAccountStatus?> GetStatusAsync(Guid userId, CancellationToken ct = default)

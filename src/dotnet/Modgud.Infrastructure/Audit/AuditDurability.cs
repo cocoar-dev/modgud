@@ -41,6 +41,7 @@ public static class AuditDurability
         AuditEvents.SecurityRetentionChanged or
         AuditEvents.SigningKeyRotated or
         AuditEvents.SigningKeyRevoked or
+        AuditEvents.SigningKeyBootstrapped or
         AuditEvents.SamlCertRotated or
         AuditEvents.SamlSigningCertificatesChanged or
         AuditEvents.RecoveryCliInvoked or

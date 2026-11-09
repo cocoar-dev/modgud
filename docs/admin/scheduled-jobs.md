@@ -82,7 +82,7 @@ Erases the "ghost" accounts the pre-ADR-0018 sign-up paths created before the pr
 
 - **Default cron:** `0 30 4 * * ?` (04:30 UTC daily)
 - **Parameters:** `dryRun` (default **true** — only logs the candidates), `olderThanDays` (default 7).
-- **What it does:** matches accounts that are unconfirmed, have no password, no passkey, no external login, no redeemed code, and whose stream is older than `olderThanDays`; erases them through the normal permanent-erase path (masking + archiving), never a raw delete. Anything an admin created with a password, or that ever signed in, is outside the signature. Leave it in dry-run until the logged list looks right, then set `dryRun=false`.
+- **What it does:** matches accounts that are unconfirmed, have no password, no passkey, no external login, a sign-up code that was issued and never redeemed (an account no code was ever sent to is not a ghost), and whose stream is older than `olderThanDays`; erases them through the normal permanent-erase path (masking + archiving), never a raw delete. Anything an admin created with a password, or that ever signed in, is outside the signature. Leave it in dry-run until the logged list looks right, then set `dryRun=false`.
 - **On failure:** logged + inbox-notified.
 
 ### `staffing-sweep` — Position Staffing Sweep

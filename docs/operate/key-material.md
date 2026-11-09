@@ -15,7 +15,7 @@ how it rotates, and what breaks if it's lost.
 |---|---|---|---|---|
 | Per-realm RSA signing key | Access & ID tokens (that realm only) | That realm's tenant DB | Manual, 30-day overlap | Fresh key auto-bootstraps; that realm's outstanding access/ID tokens die |
 | OpenIddict signing certificate (`signing.pfx`) | Authorization codes, device codes, refresh tokens (all realms) | Disk volume `data/keys/` | Manual file swap, overlap via `PreviousSigningCertificatePaths` | Auto-regenerates; **every** realm's outstanding codes and refresh tokens fail at once |
-| OpenIddict encryption certificate (`encryption.pfx`) | Same artifacts, wrapped as JWE (access tokens excluded) | Disk volume `data/keys/` (falls back to the signing cert if unset) | Manual file swap, overlap via `PreviousEncryptionCertificatePaths` | Auto-regenerates; **every** realm's outstanding codes and refresh tokens fail at once |
+| OpenIddict encryption certificate (`encryption.pfx`) | Same artifacts, wrapped as JWE (access tokens excluded) | Disk volume `data/keys/` (`EncryptionCertificatePath` unset → generated at `data/keys/encryption.pfx`) | Manual file swap, overlap via `PreviousEncryptionCertificatePaths` | Auto-regenerates; **every** realm's outstanding codes and refresh tokens fail at once |
 | Per-tenant DataProtection key ring | Auth cookies, antiforgery tokens, stored login-provider client secrets | That realm's tenant DB | Automatic, ~90-day framework default | Silent logout + that realm's stored provider secrets become undecryptable |
 | WebAuthn passkey key pairs | Passkey login ceremonies | That realm's tenant DB (public key only — the private key never leaves the authenticator) | None — re-enrolment only | Affected user re-enrols a passkey |
 
@@ -23,14 +23,16 @@ The rest of this page walks through each row.
 
 ## Per-realm RSA signing key
 
-Every realm has its own RSA keypair, generated on first boot and
-stored as a `RealmSigningKey` document in that realm's own tenant
-database. This key signs **access tokens and ID tokens** — the tokens
+Every realm has its own RSA keypair, generated the first time the realm
+needs one (its first token or JWKS request, recorded as the audit event
+`ops.signing_key_bootstrapped`) and stored as a `RealmSigningKey`
+document in that realm's own tenant database. This key signs **access tokens and ID tokens** — the tokens
 that leave the IdP and cross the trust boundary to a resource server
 or client application.
 
-It's also the only key material published in that realm's
-`/.well-known/openid-configuration` JWKS document. Each realm's JWKS
+It's also the only key material published in that realm's JWKS
+document (the `jwks_uri` that `/.well-known/openid-configuration`
+points to). Each realm's JWKS
 contains exclusively its own key(s), never another realm's — which is
 what makes the isolation structural rather than a matter of
 convention: a resource server validating against realm B's JWKS has no
@@ -46,9 +48,17 @@ CLI:
 dotnet Modgud.Api.dll recover rotate-signing-key --realm acme
 ```
 
-A rotation generates a fresh keypair and immediately makes it the
-active signing key, but the **previous** key isn't deleted — it's
-retired and kept in the JWKS for a 30-day verification-overlap window,
+A rotation generates a fresh keypair and **publishes it first**: it is
+in the JWKS and the verification set at once, but starts signing only
+after 10 minutes. Other instances re-read the active key every 60
+seconds, and resource servers usually refresh their JWKS cache on an
+unknown `kid` at most every few minutes; the delay lets all of them know
+the new key before the first token carries it. The admin UI and the CLI
+report when it takes over. `rotate-signing-key --immediate` (or
+`?immediate=true` on the endpoint) switches at once, for a single
+instance without external resource servers. Once the new key signs, the
+**previous** key isn't deleted — it's retired and kept in the JWKS for a
+30-day verification-overlap window,
 so access/ID tokens issued just before the rotation stay validatable
 until they naturally expire. A daily janitor job hard-deletes retired
 keys once their overlap window has elapsed, so retired private key
@@ -67,7 +77,16 @@ rest of a realm's data does: restore the tenant DB dump and the key
 the tenant DB is lost outright and rebuilt from scratch instead of
 restored, a fresh key bootstraps automatically — but every access and
 ID token outstanding for that realm at the time is now unverifiable
-and the affected users simply have to sign in again.
+and the affected users simply have to sign in again. Such a bootstrap
+is recorded in the security audit log (`ops.signing_key_bootstrapped`),
+so an unexpected fresh key is visible.
+
+> [!WARNING]
+> A restore brings back the keys **as they were at backup time**. A
+> backup taken before a compromise-driven *rotate and revoke* or
+> *revoke retired keys* restores the compromised key as active (or as
+> trusted retired key). After such a restore, revoke again at once:
+> *Rotate and revoke current key*, then *Revoke retired keys*.
 
 ## Global OpenIddict signing certificate
 
@@ -93,6 +112,21 @@ everything in flight, place the new file and list the old one in
 `OpenIddict.PreviousSigningCertificatePaths` so both are trusted during
 the transition, then drop the old path once you're confident nothing
 still depends on it.
+
+The auto-generated certificate is valid for two years and is never
+renewed automatically. The `openiddict-cert` readiness check reports
+`Degraded` (HTTP 200, logged as a warning, named in the `/health/ready`
+JSON) from 30 days before the signing or encryption certificate
+expires, and keeps doing so once it has expired. Replace the file
+before then, using the `Previous*` overlap described above: once every
+configured signing (or encryption) certificate has expired, OpenIddict
+refuses to start, so the next restart fails.
+
+The path in `SigningCertificatePath` / `EncryptionCertificatePath` is
+always the one used for new artifacts while it is valid, even when a
+certificate listed under `Previous*` expires later (for example a
+managed certificate with a one-year lifetime replacing the two-year
+self-signed one). The `Previous*` certificates only verify and decrypt.
 
 Because this certificate is shared instance-wide, losing it (or
 letting a container restart regenerate it because the `data/keys/`

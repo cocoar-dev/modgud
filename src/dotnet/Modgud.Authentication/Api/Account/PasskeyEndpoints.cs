@@ -301,6 +301,11 @@ public static class PasskeyEndpoints
                 AaGuid = credential.AaGuid,
                 DisplayName = "Passkey",
                 CreatedAt = DateTimeOffset.UtcNow,
+                // RV-0003 — the RP ID the ceremony was pinned to and verified against. Left null, it
+                // was read later as whatever the primary domain is by then, so a primary-domain change
+                // (even between begin and finish) rebound the credential to an RP it was not made for.
+                // Legacy credentials without one still read as the primary domain.
+                RpId = ceremony.RpId,
             };
             session.Store(stored);
             try
@@ -410,6 +415,12 @@ public static class PasskeyEndpoints
 
             List<PublicKeyCredentialDescriptor>? allowedCredentials = null;
             var accountOwner = await SignInAssurance.ReadAccountReauthenticationAsync(context);
+            // B8-AS04 — like the password and e-mail code sign-ins: the target App's sign-in offer
+            // decides whether a passkey is a sign-in method at all. Without options there is no
+            // ceremony, so the login below cannot run either. Confirming the account is not a
+            // sign-in and stays possible.
+            if (accountOwner is null && !signInTarget.Policy.Passkey)
+                return Results.Json(new { Message = "Passkey login is disabled" }, statusCode: StatusCodes.Status403Forbidden);
             if (accountOwner is not null)
             {
                 if (context.User.Identity?.IsAuthenticated != true || context.GetUserId() != accountOwner)

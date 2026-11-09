@@ -231,9 +231,9 @@ tokens.
 
 Open a client by double-click. Most fields can be edited live; **Client ID** is immutable after creation.
 
-The **Regenerate Secret** button at the bottom rotates the client secret. Old secret stops working immediately, new one is shown once — copy it now. Tokens already issued to the client stay valid (rotation does not sign its users out); to cut them off, disable or delete the client.
+The **Regenerate Secret** button at the bottom rotates the client secret. Old secret stops working immediately, new one is shown once — copy it now. Tokens already issued to the client stay valid (rotation does not sign its users out); to cut them off, disable or delete the client. Clients owned by a service account or a position terminal have no button here: their secret is rotated through the service account, and a terminal's secret is replaced by revoking and re-creating its slot.
 
-Disabling a client (**Enabled** off) revokes every token issued to it and every consent granted to it, for all users — a reference access token is no longer reported active by introspection. Already-issued JWT access tokens stay valid until they expire (at most their lifetime).
+Disabling a client (**Enabled** off) revokes every token issued to it and every consent granted to it, for all users — a reference access token is no longer reported active by introspection. Already-issued JWT access tokens stay valid until they expire (at most their lifetime). A disabled client can no longer call the introspection endpoint either (`invalid_client`), so a disabled resource server stops learning about tokens issued for it.
 
 ## Cloning a client
 

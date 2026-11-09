@@ -34,10 +34,20 @@ public record NativeGrantSettings
     public TimeSpan AccessTokenLifetime { get; init; } = TimeSpan.FromMinutes(15);
 
     /// <summary>
-    /// Refresh-token lifetime for native-grant tokens. The refresh token is
-    /// always a revocable reference token (server default); revoking it plus a
-    /// security-stamp rotation is the kill-switch. Default 14 days, matching the
-    /// server default.
+    /// RV-0001 stage 2 — adding or removing a passkey through the native endpoints needs a
+    /// sign-in from the last 15 minutes (the token's <c>auth_time</c>), as the browser asks for
+    /// one. Otherwise the call is refused with RFC 9470's <c>insufficient_user_authentication</c>
+    /// and <c>max_age</c>, and the app signs the user in again. Any sign-in the app allows
+    /// counts, an e-mail code or magic link included — the way back for a user whose passkey
+    /// device is gone. Off by default (an app must handle the refusal first): then the change
+    /// goes ahead and a warning is logged where it would have been refused.
     /// </summary>
-    public TimeSpan RefreshTokenLifetime { get; init; } = TimeSpan.FromDays(14);
+    public bool RequireRecentSignInForPasskeyChanges { get; init; }
+
+    // No refresh-token lifetime here: a native refresh token gets the client-session idle
+    // lifetime (ClientSessionPolicy.IdleLifetime, default 30 days) at issuance and on every
+    // rotation. The former RefreshTokenLifetime was stored and validated but never applied
+    // (review EG-08) and is gone; stored documents that still carry it are read without it.
+    // The refresh token is always a revocable reference token; revoking it plus a
+    // security-stamp rotation is the kill-switch.
 }

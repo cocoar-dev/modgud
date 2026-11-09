@@ -73,19 +73,29 @@ public static class NativePasskeyManagementEndpoints
             IApplicationSettingsResolver settingsResolver,
             UserManager<ApplicationUser> userManager,
             Modgud.Infrastructure.PositionTerminals.IStaffingRevoker staffingRevoker,
+            Modgud.Authentication.Api.Account.IAccountChangeGuard accountChanges,
+            ILoggerFactory loggers,
             CancellationToken ct) =>
         {
-            if (await NativeBearerEndpointSupport.GateDisabledAsync(settingsResolver, context, ct) is { } gate) return gate;
+            var (native, gate) = await NativeBearerEndpointSupport.GateAsync(settingsResolver, context, ct);
+            if (gate is not null) return gate;
 
-            var (user, _, unauthorized) = await NativeBearerEndpointSupport.ResolvePrincipalAsync(context, userManager);
+            var (user, clientId, unauthorized) = await NativeBearerEndpointSupport.ResolvePrincipalAsync(context, userManager);
             if (unauthorized is not null) return unauthorized;
 
             var credential = await session.LoadAsync<StoredPasskeyCredential>(id, ct);
             if (credential is null || credential.UserId != user!.Id)
                 return Results.NotFound();
 
+            // RV-0001 stage 2 — a recent sign-in, when the realm or App requires one.
+            if (NativeAccountChange.CheckRecentSignIn(context, native!, loggers.CreateLogger("Modgud.Api.Features.Auth.NativePasskey"),
+                    user, clientId, Modgud.Authentication.Api.Account.AccountChange.PasskeyRemoved, log: true) is { } stale)
+                return stale;
+
             session.Delete(credential);
             await session.SaveChangesAsync(ct);
+            // RV-0001 stage 1 — the same notice as the browser.
+            await NativeAccountChange.NotifyAsync(accountChanges, user, Modgud.Authentication.Api.Account.AccountChange.PasskeyRemoved, ct);
 
             // MG-FT-07 §15.4 — staffing sessions opened with THIS credential
             // end with it: the shift's trust anchor (the tap) is gone.

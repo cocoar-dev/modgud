@@ -205,10 +205,13 @@ public static class ActivationTokenEndpoints
             token.Status = status;
             session.Store(token);
             await session.SaveChangesAsync(ct);
-            if (status is ActivationTokenStatus.Disabled or ActivationTokenStatus.Revoked)
-                await revoker.EndAllForActivationTokenAsync(
-                    token.Id, StaffingSessionEndReason.ActivationTokenRevoked, ct);
         }
+        // G-B4-02 — the cascade runs on every disable/revoke, not only on a status change: when it
+        // failed after the status was saved, repeating the call finishes it. It only ends sessions
+        // still Active, so a repeat is a no-op otherwise.
+        if (status is ActivationTokenStatus.Disabled or ActivationTokenStatus.Revoked)
+            await revoker.EndAllForActivationTokenAsync(
+                token.Id, StaffingSessionEndReason.ActivationTokenRevoked, ct);
         return Results.Ok((await ToDtosAsync([token], session, ct))[0]);
     }
 
@@ -298,8 +301,8 @@ public static class ActivationTokenEndpoints
             ceremony.TerminalEnrollmentId != target.Terminal!.Id ||
             !string.Equals(ceremony.ClientId, target.Terminal.ClientId, StringComparison.Ordinal))
             return Results.BadRequest(new { Error = "ActivationToken.RegistrationExpired", Message = "Registration expired." });
-        session.Delete(ceremony);
-        await session.SaveChangesAsync(ct);
+        if (!await TryConsumeCeremonyAsync(session, ceremony, ct))
+            return Results.BadRequest(new { Error = "ActivationToken.RegistrationExpired", Message = "Registration expired." });
 
         var token = await session.LoadAsync<ActivationToken>(tokenId.Guid, ct);
         if (token is null || token.Status is ActivationTokenStatus.Revoked or ActivationTokenStatus.Disabled ||
@@ -367,6 +370,28 @@ public static class ActivationTokenEndpoints
         session.Store(token);
         await session.SaveChangesAsync(ct);
         return Results.Ok(new { CredentialId = new ShortGuid(credential.Id).ToString(), credential.RpId });
+    }
+
+    /// <summary>G-B4-05 — single use. Marten does not version-check a delete, so two
+    /// finishes that loaded the ceremony could both pass it; the consume is a
+    /// version-checked store of <see cref="ActivationTokenRegistrationCeremony.ConsumedAt"/>
+    /// on the LOADED instance, and the loser gets a concurrency failure. The row stays
+    /// until the expiry sweep of the next begin removes it.</summary>
+    internal static async Task<bool> TryConsumeCeremonyAsync(
+        IDocumentSession session, ActivationTokenRegistrationCeremony ceremony, CancellationToken ct)
+    {
+        if (ceremony.ConsumedAt is not null) return false;
+        ceremony.ConsumedAt = DateTimeOffset.UtcNow;
+        session.Store(ceremony);
+        try
+        {
+            await session.SaveChangesAsync(ct);
+            return true;
+        }
+        catch (JasperFx.ConcurrencyException)
+        {
+            return false;
+        }
     }
 
     private static async Task<TerminalTarget> ResolveTerminalAsync(

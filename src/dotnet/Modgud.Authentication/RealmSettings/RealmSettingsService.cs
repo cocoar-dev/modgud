@@ -69,6 +69,11 @@ public sealed class RealmSettingsService(
     public async Task<ErrorOr<RealmSettingsDto>> PatchAsync(UpdateRealmSettingsDto dto, CancellationToken ct = default)
     {
         var existing = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+        // F7-05 — refuse a patch made on a copy that is no longer current (a stale tab, a
+        // second admin); the concurrent-request race is caught by the version check on save.
+        if (dto.ExpectedVersion is { } expected && existing is not null && existing.Version != expected)
+            return Error.Conflict("RealmSettings.Changed",
+                "The realm settings were changed since you loaded them. Reload and apply your change again.");
         var isCreate = existing is null;
         var doc = existing ?? new RealmSettingsDoc
         {
@@ -318,6 +323,7 @@ public sealed class RealmSettingsService(
 
     internal static RealmSettingsDto ToDto(RealmSettingsDoc doc) => new()
     {
+        Version = doc.Version == Guid.Empty ? null : doc.Version,
         SelfRegistration = MapSelfRegistrationToDto(doc.SelfRegistration),
         Dcr = MapDcrToDto(doc.Dcr),
         Cimd = MapCimdToDto(doc.Cimd),
@@ -510,12 +516,12 @@ public sealed class RealmSettingsService(
     // is the only bound on a leaked token — reject degenerate / over-long values
     // rather than let an admin configure an effectively-permanent token that no
     // logout or security-stamp rotation can recall.
-    private static Error? ValidateTokenLifetimes(string section, TimeSpan access, TimeSpan refresh)
+    private static Error? ValidateTokenLifetimes(string section, TimeSpan access, TimeSpan? refresh)
     {
         if (access.TotalMinutes < 1 || access.TotalMinutes > 60)
             return Error.Validation($"{section}.InvalidAccessTokenLifetime",
                 "AccessTokenLifetimeMinutes must be between 1 and 60.");
-        if (refresh.TotalDays < 1 || refresh.TotalDays > 30)
+        if (refresh is { } r && (r.TotalDays < 1 || r.TotalDays > 30))
             return Error.Validation($"{section}.InvalidRefreshTokenLifetime",
                 "RefreshTokenLifetimeDays must be between 1 and 30.");
         return null;
@@ -614,6 +620,9 @@ public sealed class RealmSettingsService(
         };
     }
 
+    /// <summary>Ten years — far beyond any sensible grace or retention period.</summary>
+    internal const int MaxDeletionPeriodDays = 3650;
+
     private static ErrorOr<DeletionSettings> ApplyDeletionPatch(DeletionSettings? current, UpdateDeletionSettingsDto patch)
     {
         var s = current ?? new DeletionSettings();
@@ -634,6 +643,11 @@ public sealed class RealmSettingsService(
                 "ReminderLeadDays must be less than GraceDays, otherwise the reminder can never fire.");
         if (merged.AdminRetentionDays < 0)
             return Error.Validation("Deletion.InvalidAdminRetentionDays", "AdminRetentionDays cannot be negative.");
+        // A.gdpr-C006 — the periods feed AddDays (deadlines, purge cut-offs); an unbounded
+        // value stored fine and threw there later.
+        if (merged.GraceDays > MaxDeletionPeriodDays || merged.AdminRetentionDays > MaxDeletionPeriodDays)
+            return Error.Validation("Deletion.PeriodTooLong",
+                $"GraceDays and AdminRetentionDays cannot exceed {MaxDeletionPeriodDays} days.");
 
         return merged;
     }
@@ -942,14 +956,13 @@ public sealed class RealmSettingsService(
             AccessTokenLifetime = patch.AccessTokenLifetimeMinutes is { } atm
                 ? TimeSpan.FromMinutes(atm)
                 : s.AccessTokenLifetime,
-            RefreshTokenLifetime = patch.RefreshTokenLifetimeDays is { } rtd
-                ? TimeSpan.FromDays(rtd)
-                : s.RefreshTokenLifetime,
+            RequireRecentSignInForPasskeyChanges = patch.RequireRecentSignInForPasskeyChanges ?? s.RequireRecentSignInForPasskeyChanges,
         };
 
-        // ADR-0010 — bounds-check the lifetimes (shared with DCR/CIMD): the short
-        // access TTL is the only bound on a non-revocable JWT access token.
-        if (ValidateTokenLifetimes("NativeGrants", merged.AccessTokenLifetime, merged.RefreshTokenLifetime) is { } error)
+        // ADR-0010 — bounds-check the access lifetime (shared with DCR/CIMD): the short
+        // access TTL is the only bound on a non-revocable JWT access token. A native refresh
+        // token follows the client-session idle lifetime, so there is none to check here.
+        if (ValidateTokenLifetimes("NativeGrants", merged.AccessTokenLifetime, refresh: null) is { } error)
             return error;
         return merged;
     }
@@ -1018,7 +1031,7 @@ public sealed class RealmSettingsService(
         {
             Enabled = s.Enabled,
             AccessTokenLifetimeMinutes = (int)s.AccessTokenLifetime.TotalMinutes,
-            RefreshTokenLifetimeDays = (int)s.RefreshTokenLifetime.TotalDays,
+            RequireRecentSignInForPasskeyChanges = s.RequireRecentSignInForPasskeyChanges,
         };
     }
 

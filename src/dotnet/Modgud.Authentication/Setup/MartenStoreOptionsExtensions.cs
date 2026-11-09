@@ -118,10 +118,15 @@ public static class MartenStoreOptionsExtensions
         // C15 — bootstrap-invite for first-admin creation in a realm.
         // Stored per-tenant (one realm = one tenant DB) and indexed by
         // TokenHash for the hot lookup the bootstrap endpoint runs.
+        // IS-INV-01 — version-checked so a consume and a reissue of the same invite
+        // cannot both win, and a unique open slot so two issuers cannot both leave one
+        // open (NULLs are distinct: used invites never collide).
         options.Schema.For<PendingAdminInvite>()
             .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
             .Index(x => x.TokenHash)
-            .Index(x => x.Email);
+            .Index(x => x.Email)
+            .UniqueIndex(x => x.OpenSlot);
 
         // ADR-0012 — single-use registration invite codes. Indexed by CodeHash
         // (the hot redeem lookup) and AppId (per-app list/prune). Optimistic
@@ -286,8 +291,12 @@ public static class MartenStoreOptionsExtensions
         // Tenant-scoped singleton config doc. One row per tenant DB,
         // addressed by the fixed `RealmSettings.SingletonId`. Owned by
         // the realm-admin via /api/admin/realm-settings.
+        // F7-05 — written as a whole by ~20 paths; optimistic concurrency turns a lost
+        // update between two concurrent writers into a conflict (409) instead.
         options.Schema.For<RealmSettingsDoc>()
-            .Identity(x => x.Id);
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Metadata(m => m.Version.MapTo(x => x.Version));
 
         // ADR-0011 — per-Application config overrides. Tenant-scoped, one row
         // per App that has any override, keyed by App.Id. Lazy-created on first
@@ -295,7 +304,9 @@ public static class MartenStoreOptionsExtensions
         // migration for existing realms). Merged over RealmSettings by
         // EffectiveSettings/IApplicationSettingsResolver.
         options.Schema.For<Modgud.Domain.Applications.ApplicationSettings>()
-            .Identity(x => x.Id);
+            .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
+            .Metadata(m => m.Version.MapTo(x => x.Version));
 
         options.Events.MapEventType<ApplicationChangeFeedConfiguredEvent>("application_change_feed_configured");
 
@@ -359,6 +370,12 @@ public static class MartenStoreOptionsExtensions
         // can still associate the masked record with the (now-archived)
         // user. Masked-out events keep the same shape so deserialization
         // doesn't break for older daemons.
+
+        // B3-EI-01 / B3-EI-05 — inbox items carry display parameters such as a user
+        // label (name, username) or a reviewer note. Masking drops them; kind, recipient,
+        // source and timestamps stay so the archived stream still reads.
+        options.Events.AddMaskingRuleForProtectedInformation<Modgud.Application.Inbox.Events.InboxItemCreatedEvent>(e =>
+            e with { Params = null });
 
         options.Events.AddMaskingRuleForProtectedInformation<UserCreatedEvent>(e =>
             new UserCreatedEvent(

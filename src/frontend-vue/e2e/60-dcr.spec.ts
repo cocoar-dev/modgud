@@ -1,5 +1,5 @@
 import { test, expect, request as pwRequest } from '@playwright/test'
-import { apiLogin, uniqueSuffix } from './helpers'
+import { applyStagedDraft, apiLogin, STAGE_INTO_DRAFT, uniqueSuffix } from './helpers'
 import { createHash, randomBytes } from 'node:crypto'
 
 /**
@@ -38,28 +38,31 @@ test.describe('DCR — end-to-end', () => {
   test('admin enables DCR via UI, agent registers, consent shows [unverified] marker', async ({ page, baseURL }) => {
     // ── §1: enable DCR via the realm-settings UI ─────────────────────
     await page.goto('/admin/realm-settings')
-    // The DCR settings live behind a <CoarTab>, not a button. Click it by text
-    // scoped to the tab bar so the selector is robust to the tab's ARIA role.
-    await page.locator('.tab-bar').getByText(/Dynamic Client Registration/i).click()
-    const dcrEnable = page.getByRole('checkbox',
-      { name: /Enable Dynamic Client Registration/i })
+    // DCR is a section of the "OAuth & Clients" tab; its switch is the section's
+    // "Active" checkbox.
+    await page.getByRole('tab', { name: /^OAuth & Clients$/i }).click()
+    const dcrSection = page.locator('section.settings-section', {
+      has: page.getByRole('heading', { name: /Dynamic Client Registration/i }),
+    })
+    const dcrEnable = dcrSection.getByRole('checkbox', { name: /^(Aktiv|Active)$/i })
     // The real <input> is visually replaced by its CoarCheckbox label, which
     // intercepts pointer events — click the label (the human path) to toggle.
     if (!(await dcrEnable.isChecked())) {
-      await page.getByText(/Enable Dynamic Client Registration/i).click()
+      await dcrEnable.locator('xpath=ancestor::label[1]').click()
     }
     await expect(dcrEnable).toBeChecked()
 
     // Generous: production rate-limits would trip mid-suite once
     // re-runs accumulate. The fields are plain numeric inputs.
-    await page
-      .getByLabel(/Rate limit per source IP/i)
-      .fill('10000')
-    await page
-      .getByLabel(/Rate limit per realm/i)
-      .fill('10000')
-    await page.getByRole('button', { name: /^Save$|^Speichern$/i }).click()
-    await expect(page.getByText(/Saved\.|Gespeichert/i)).toBeVisible({ timeout: 5_000 })
+    await dcrSection.getByLabel(/Rate-Limit pro Quell-IP|Per source IP/i).fill('10000')
+    await dcrSection.getByLabel(/Rate-Limit pro Realm|Per realm/i).fill('10000')
+    // A realm admin stages the settings change into the draft, then applies it. On a
+    // reused rig DCR may already be on with these limits: then there is nothing to stage.
+    const stage = page.getByRole('button', { name: STAGE_INTO_DRAFT })
+    if (await stage.isEnabled()) {
+      await stage.click()
+      await applyStagedDraft(page)
+    }
 
     // ── §2: seed an OAuthApi with AllowDCR=true (API, not UI) ────────
     // The OAuth-Apis admin UI is covered by 10-admin.spec.ts; here we
@@ -110,8 +113,8 @@ test.describe('DCR — end-to-end', () => {
     // The DCR-only filter should hide all admin-created clients and
     // leave just our new one visible.
     // Same CoarCheckbox label-intercept caveat as the DCR-enable toggle above.
-    const dcrOnly = page.getByRole('checkbox', { name: /DCR only/i })
-    if (!(await dcrOnly.isChecked())) await page.getByText(/DCR only/i).click()
+    const dcrOnly = page.getByRole('checkbox', { name: /^(Nur DCR|DCR only)$/i })
+    if (!(await dcrOnly.isChecked())) await dcrOnly.locator('xpath=ancestor::label[1]').click()
     await expect(dcrOnly).toBeChecked()
     await expect(page.getByRole('gridcell', { name: clientId })).toBeVisible({ timeout: 10_000 })
 
@@ -139,8 +142,8 @@ test.describe('DCR — end-to-end', () => {
 
     // ── §7: THE [unverified] marker — pure UI assertion ──────────────
     await expect(page.locator('.unverified-tag')).toBeVisible()
-    await expect(page.locator('.unverified-tag')).toContainText(/unverified/i)
-    await expect(page.getByText(/registered itself|hat sich selbst registriert/i)).toBeVisible()
+    await expect(page.locator('.unverified-tag')).toContainText(/unverified|nicht überprüft/i)
+    await expect(page.getByText(/registered itself|hat sich selbst (beim Identity Provider )?registriert/i)).toBeVisible()
 
     // ── §8: click Allow, capture code from redirect ──────────────────
     // The redirect URI is a dead loopback (nothing listening), so the

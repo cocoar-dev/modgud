@@ -97,6 +97,7 @@ public interface IRegistrationPipeline
 public sealed class RegistrationPipeline(
     IDocumentSession session,
     UserManager<ApplicationUser> userManager,
+    IUserStore<ApplicationUser> userStore,
     IEmailService emailService,
     IEmailBrandingResolver emailBranding,
     IRegistrationInviteService inviteService,
@@ -278,11 +279,13 @@ public sealed class RegistrationPipeline(
 
     /// <summary>
     /// Creates the user from the pending record — the ONLY place a public sign-up
-    /// materialises an <see cref="ApplicationUser"/>. Atomicity: the pending consume is a
-    /// version-checked <c>Store</c> queued on the same session that
-    /// <c>UserManager.CreateAsync</c> flushes, so two concurrent proofs of one record end
-    /// with exactly one user and one <c>ConcurrencyException</c>. A registration event is
-    /// appended to the new stream and the pending row is hard-deleted.
+    /// materialises an <see cref="ApplicationUser"/>. Atomicity (AREG-05): the account, the
+    /// pending consume, the default-group joins, the registration event and the hard delete of
+    /// the pending row are ONE commit — <c>UserManager.CreateAsync</c> only validates and
+    /// stages the user (<see cref="Identity.EventSourcedUserStore.DeferCreateCommit"/>). A
+    /// failure leaves nothing behind and the same proof can be repeated; two concurrent proofs
+    /// of one record end with exactly one user, the other commit losing on the version check
+    /// or the unique address/username index.
     /// </summary>
     private async Task<ErrorOr<RegisteredUser>> MaterializeAsync(PendingRegistration pending, bool persisted, CancellationToken ct)
     {
@@ -305,19 +308,13 @@ public sealed class RegistrationPipeline(
             RegisteredAt = now,
         };
 
+        var store = userStore as Identity.EventSourcedUserStore
+            ?? throw new InvalidOperationException("Registration needs the event-sourced user store to commit the account atomically.");
         IdentityResult created;
-        try
+        using (store.DeferCreateCommit())
         {
-            // Flushes the consume + the user creation in one transaction.
+            // Validates and stages the user; the single commit below writes it.
             created = await userManager.CreateAsync(user);
-        }
-        catch (Exception ex) when (IsLostRace(ex))
-        {
-            // The other proof of this record committed first: version check on the
-            // consume, or the unique address/username index on the user insert —
-            // whichever the batch hit first. Either way exactly one user exists.
-            session.EjectAllPendingChanges();
-            return Error.Conflict(ErrorAlreadyConsumed, "This registration has already been completed.");
         }
 
         if (!created.Succeeded)
@@ -333,33 +330,31 @@ public sealed class RegistrationPipeline(
             return Error.Validation(ErrorRejected, $"The account could not be created: {codes}.");
         }
 
-        foreach (var raw in pending.DefaultGroupIds)
-        {
-            if (!Guid.TryParse(raw, out var gid)) continue;
-            var group = await session.LoadAsync<Group>(gid, ct);
-            if (group is null || group.IsDeleted) continue;
-            // AREG-01 — registering never confers realm:admin. Every other membership
-            // change of such a group needs a caller who is already a realm admin; here the
-            // actor is the registering person, whoever configured the defaults.
-            if (await Modgud.Authorization.Commands.GroupMembershipGuards.GroupConfersRealmAdminAsync(
-                    session, permissionService, group, ct))
-            {
-                logger.LogWarning(
-                    "Registration: default group {GroupId} confers realm:admin and was not joined (source={Source})",
-                    group.Id, pending.Source);
-                continue;
-            }
-            if (!group.MemberIds.Contains(user.Id))
-            {
-                group.MemberIds.Add(user.Id);
-                session.Store(group);
-            }
-        }
+        // AREG-01/02/04 — one join path: ShortGuid or Guid ids, no realm:admin
+        // conferral, membership recorded as a group event.
+        await RegistrationDefaultGroups.JoinAsync(
+            session, permissionService, logger, user.Id, pending.DefaultGroupIds, pending.Source.ToString(), ct);
 
         var proofKind = persisted ? pending.ProofKind.ToString() : "None";
         session.Events.Append(user.Id, new UserRegisteredEvent(user.Id, pending.Source, proofKind));
+        // AID-02 / AREG-03 — an account awaiting approval is created inactive; record it
+        // in its stream too, or the person and the admin user view project it as active.
+        // Approval is an admin activation, which appends UserActivatedEvent.
+        if (pending.RequireAdminApproval)
+            session.Events.Append(user.Id, new Modgud.Authentication.Events.UserDeactivatedEvent(user.Id));
         if (persisted) session.Delete(pending);
-        await session.SaveChangesAsync(ct);
+        try
+        {
+            await session.SaveChangesAsync(ct);
+        }
+        catch (Exception ex) when (IsLostRace(ex))
+        {
+            // The other proof of this record committed first: version check on the
+            // consume, or the unique address/username index on the user insert —
+            // whichever the batch hit first. Either way exactly one user exists.
+            session.EjectAllPendingChanges();
+            return Error.Conflict(ErrorAlreadyConsumed, "This registration has already been completed.");
+        }
 
         if (pending.ConsumedInviteId is { } inviteId)
         {

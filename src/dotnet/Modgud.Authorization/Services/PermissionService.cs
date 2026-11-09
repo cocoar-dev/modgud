@@ -339,7 +339,10 @@ public class PermissionService(IQuerySession session) : IPermissionService
         foreach (var seed in seeds)
         {
             Group? seedGroup = null;
-            if (includeSeeds) byId.TryGetValue(seed, out seedGroup);
+            // D.roles-F01 — a session seed that is not a live group (soft-deleted, or gone)
+            // confers nothing: without this it was still enqueued and its parents, which may
+            // list it until the asynchronous reference clean-up runs, granted their roles.
+            if (includeSeeds && !byId.TryGetValue(seed, out seedGroup)) continue;
             // A seed is itself a membership: a closed one is not one at all.
             if (seedGroup is not null && closed?.Invoke(seedGroup) == true) continue;
             if (!visited.Add(seed)) continue;

@@ -248,6 +248,48 @@ public class RealmProvisioningEndpointsTests(ColdStartFixture fixture) : ColdSta
         Domains = [$"{slug}.localhost"],
     };
 
+    /// <summary>
+    /// A hard delete that stopped at <c>DROP DATABASE</c> (a timeout on a busy server) has already
+    /// released the tenant from Marten; the Realm record and the database remain. Repeating the
+    /// hard delete completes it: both steps are idempotent.
+    /// </summary>
+    [Fact]
+    public async Task A_hard_delete_interrupted_at_the_drop_completes_when_repeated()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var client = await factory.CreateRealmAdminAndLoginAsync();
+        var svc = factory.Services.GetRequiredService<IRealmProvisioningService>();
+        const string slug = "hd-retry";
+        await CreateRealmAsync(client, slug, factory.JsonOptions, ct);
+
+        // The state after step 1 succeeded and the drop failed.
+        var store = factory.Services.GetRequiredService<IDocumentStore>();
+        await ((Marten.Storage.MasterTableTenancy)store.Options.Tenancy).RemoveTenantAsync(slug);
+        Assert.NotNull(await svc.GetRealmBySlugAsync(slug, ct));
+        Assert.True(await TenantDatabaseExistsAsync(factory, slug, ct));
+
+        var deleteResp = await client.DeleteAsync($"/api/admin/realms/{slug}?hard=true", ct);
+        Assert.Equal(HttpStatusCode.NoContent, deleteResp.StatusCode);
+        Assert.Null(await svc.GetRealmBySlugAsync(slug, ct));
+        Assert.False(await TenantDatabaseExistsAsync(factory, slug, ct));
+    }
+
+    private static async Task<bool> TenantDatabaseExistsAsync(
+        ColdStartWebApplicationFactory factory, string slug, CancellationToken ct)
+    {
+        var master = new Npgsql.NpgsqlConnectionStringBuilder(
+            factory.Services.GetRequiredService<IMasterConnectionString>().Value);
+        var tenantDb = $"{master.Database}_{slug}";
+        master.Database = "postgres";
+        await using var conn = new Npgsql.NpgsqlConnection(master.ConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = new Npgsql.NpgsqlCommand("select exists(select 1 from pg_database where datname = @name)", conn);
+        cmd.Parameters.AddWithValue("name", tenantDb);
+        return (bool)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
     /// <summary>Creates the realm shell — the first half of provisioning, now that a manifest
     /// carries no realm identity. The second half is a POST to <c>{slug}/apply</c>.</summary>
     private static async Task CreateRealmAsync(

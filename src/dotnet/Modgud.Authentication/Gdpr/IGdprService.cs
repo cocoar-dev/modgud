@@ -8,8 +8,10 @@ public interface IGdprService
 
     /// <summary>Schedules a self-service deletion: the account is erased at the
     /// end of the realm's grace window unless the user logs in and cancels.
-    /// The user stays active during grace. Requires the caller's current
-    /// password. Sends a notification email (no confirm token).</summary>
+    /// The user stays active during grace. A <paramref name="password"/> sent
+    /// along is checked; the proof the endpoint requires is a recent sign-in
+    /// (ADR 0025 amendment C), checked before this call. Sends a notification
+    /// email (no confirm token).</summary>
     Task<ErrorOr<DeletionRequestResponseDto>> RequestDeletionAsync(Guid userId, string? password, string? reason, CancellationToken ct = default);
 
     /// <summary>Cancels a pending deletion. A self-service cancel passes

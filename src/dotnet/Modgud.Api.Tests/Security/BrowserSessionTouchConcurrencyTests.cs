@@ -87,6 +87,43 @@ public sealed class BrowserSessionTouchConcurrencyTests : IntegrationTestBase
 		Assert.Null(await verify.LoadAsync<UserSession>(browserSession.Id, ct));
 	}
 
+	[Fact]
+	public async Task Activity_extends_a_session_whose_idle_window_is_the_touch_interval()
+	{
+		// CS03: the realm may set IdleLifetime to five minutes, which is also the touch
+		// throttle. A touch was due only once five minutes had passed, and by then the
+		// session had expired, so activity could never extend it.
+		var ct = TestContext.Current.CancellationToken;
+		var now = DateTimeOffset.UtcNow;
+		var browserSession = new UserSession
+		{
+			Id = Guid.NewGuid(),
+			UserId = Guid.NewGuid(),
+			CreatedAt = now.AddMinutes(-3),
+			LastActiveAt = now.AddMinutes(-3),
+			ExpiresAt = now.AddMinutes(2),
+			AbsoluteExpiresAt = now.AddHours(1),
+		};
+		await using (var arrange = GetTenantedDocumentSession())
+		{
+			arrange.Store(browserSession);
+			await arrange.SaveChangesAsync(ct);
+		}
+
+		var store = Factory.Services.GetRequiredService<IDocumentStore>();
+		await using var documentSession = GetTenantedDocumentSession();
+		var service = CreateService(documentSession, store,
+			new FixedRealmSettings(BrowserSessionPolicy.Defaults with { IdleLifetime = TimeSpan.FromMinutes(5) }));
+
+		Assert.NotNull(await service.ValidateSessionAsync(browserSession.UserId, browserSession.Id, touch: true, ct));
+
+		await using var verify = GetTenantedSession();
+		var persisted = await verify.LoadAsync<UserSession>(browserSession.Id, ct);
+		Assert.NotNull(persisted);
+		Assert.True(persisted.ExpiresAt > now.AddMinutes(4),
+			$"activity after three of five idle minutes must extend the session, ExpiresAt stayed {persisted.ExpiresAt:O}");
+	}
+
 	private async Task<UserSession> SeedTouchableSessionAsync(CancellationToken ct)
 	{
 		var now = DateTimeOffset.UtcNow;
@@ -127,6 +164,23 @@ public sealed class BrowserSessionTouchConcurrencyTests : IntegrationTestBase
 	private sealed class StubDeviceInfoService : IDeviceInfoService
 	{
 		public DeviceInfo Parse() => DeviceInfo.Unknown;
+	}
+
+	private sealed class FixedRealmSettings(BrowserSessionPolicy policy) : IRealmSettingsService
+	{
+		public Task<RealmSettingsDoc> LoadAsync(CancellationToken ct = default) =>
+			Task.FromResult(new RealmSettingsDoc { BrowserSessions = policy });
+
+		public Task<RealmSettingsDto> GetDtoAsync(CancellationToken ct = default) =>
+			throw new NotSupportedException();
+
+		public Task<PositionSecurityConsequencesDto> PreviewPositionSecurityAsync(
+			UpdatePositionSecuritySettingsDto dto,
+			CancellationToken ct = default) => throw new NotSupportedException();
+
+		public Task<ErrorOr<RealmSettingsDto>> PatchAsync(
+			UpdateRealmSettingsDto dto,
+			CancellationToken ct = default) => throw new NotSupportedException();
 	}
 
 	private sealed class CoordinatedRealmSettings(int expectedArrivals) : IRealmSettingsService

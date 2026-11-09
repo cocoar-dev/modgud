@@ -1,8 +1,9 @@
 # Recovery CLI
 
-The recovery CLI is a break-glass tool. It runs **inside the
-container**, using the configured database connection — there's no
-network surface, no auth bypass. It exists for the situations where
+The recovery CLI is a break-glass tool. It runs **from the Modgud image
+itself** (next to the server or in a one-off container), using the
+configured database connection — there's no network surface, no auth
+bypass. It exists for the situations where
 the admin UI cannot help: no admin can sign in, the projections
 desynced after a schema change, an old OAuth client needs to be
 migrated onto a linked Service Account, etc.
@@ -15,6 +16,38 @@ Most invocations write an entry to the security audit log (see
 ```bash
 dotnet Modgud.Api.dll recover <command> [args...] [--realm <slug>]
 ```
+
+### Running it with Docker {#running-it-with-docker}
+
+The image's entrypoint is `dotnet Modgud.Api.dll`, so arguments after the image
+name go straight to Modgud. When they start with `recover`, the container runs
+that one command and exits with its exit code; it never starts the web server.
+There are two ways to use it:
+
+- **Next to the running server**, for most commands (`bootstrap-admin`,
+  `reset-2fa`, `magic-link`, `list`, …):
+
+  ```bash
+  docker exec <container> dotnet Modgud.Api.dll recover <command> [args...]
+  ```
+
+- **In a one-off container while the server is stopped**, for commands that
+  must not race a running server (`rebuild-projections`). `compose run` uses the
+  service's environment, volumes and network, publishes no ports, and `--rm`
+  removes the container afterwards:
+
+  ```bash
+  docker compose stop modgud
+  docker compose run --rm modgud recover rebuild-projections
+  docker compose start modgud
+  ```
+
+  Without Compose, start the same image with the same `-e`/`-v`/`--network`
+  options: `docker run --rm … <image> recover rebuild-projections`. With more
+  than one replica, stop all of them first.
+
+Where you cannot pass a command at all (Portainer and similar), use
+[`STARTUP_COMMAND`](#startup-command).
 
 Tenant-scoped commands infer the realm only when exactly one active realm
 exists. With multiple realms, `--realm <slug>` is required. With zero realms,
@@ -70,7 +103,10 @@ System Admin role inside the seeded Administrators group).
 ### `reset-2fa <username>`
 Disable TOTP and Email-OTP, delete every stored passkey credential,
 and clear the grace-period stamp so the user gets a fresh secure-setup
-window on next login.
+window on next login. It also ends every existing access of the account:
+browser sessions, issued tokens and staffing sessions (consent grants
+stay), so whoever held the old factors is signed out and the account signs
+in afresh.
 
 ```bash
 dotnet Modgud.Api.dll recover reset-2fa alice
@@ -87,6 +123,9 @@ dotnet Modgud.Api.dll recover set-email alice alice@example.com
 ### `magic-link <username>`
 Issue a one-time magic-link URL and print it to stdout. Useful for
 nudging a locked-out user back in without resetting their password.
+The link replaces the password only: a second factor the sign-in policy
+requires is still asked for (run `reset-2fa` first when the user lost it),
+and an account under an administrative lock is not signed in.
 
 ```bash
 dotnet Modgud.Api.dll recover magic-link alice
@@ -97,14 +136,31 @@ Rebuild all Marten projections (inline + async). Bootstrap path for
 the first migration after a breaking schema change — runs without any
 admin authentication.
 
-Stop the normal application container and take a database backup before running
-this command. Do not run it with Modgud v0.9.1: that version can remove Principal
+The set is the same as the admin rebuild endpoint's, and both print or return
+it: the views (`UserView`, inbox items), the Principal subtypes, roles, Apps,
+OAuth clients, scopes and APIs, login providers, external identity links,
+position grants, terminal enrollments, staffing sessions and the audit view
+(which replays archived events too, so erased users' de-identified audit rows
+survive). Earlier releases rebuilt only the views, the Principal
+subtypes and the roles, although it said "all".
+
+Rebuilding empties the read models and replays them from the events. A running
+Modgud instance keeps writing the same projections and their progress meanwhile,
+so stop every instance and take a database backup first, then run the command in
+a one-off container (see [Running it with Docker](#running-it-with-docker)). The
+command refuses when it finds other live instances in the cluster node table and
+names them; `--force` runs it anyway. If the node table cannot be read, it prints
+a warning and continues. While an admin can still sign in, the admin rebuild
+endpoint is the simpler route: it pauses the projection processing of its own
+instance. Do not run it with Modgud v0.9.1: that version can remove Principal
 subtypes from their shared table during replay. Upgrade to a newer patch release
 first. The fixed command rebuilds Person and Group together while preserving
 directly stored Service Accounts.
 
 ```bash
-dotnet Modgud.Api.dll recover rebuild-projections
+docker compose stop modgud
+docker compose run --rm modgud recover rebuild-projections   # --force to override the check
+docker compose start modgud
 ```
 
 ### `bootstrap-admin`
@@ -278,7 +334,7 @@ Show the usage summary.
 dotnet Modgud.Api.dll recover help
 ```
 
-## Running a command at container startup (`STARTUP_COMMAND`)
+## Running a command at container startup (`STARTUP_COMMAND`) {#startup-command}
 
 For orchestrators where overriding the container's command/entrypoint is
 awkward (Portainer, some Compose setups), set the `STARTUP_COMMAND` environment

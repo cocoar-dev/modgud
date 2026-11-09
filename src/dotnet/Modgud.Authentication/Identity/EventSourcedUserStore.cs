@@ -31,6 +31,26 @@ public class EventSourcedUserStore(IDocumentSession session)
     // ApplicationUser document directly (not as a separate event) — it's
     // operational state, not a business fact worth replaying.
 
+    private bool _deferCreateCommit;
+
+    /// <summary>
+    /// AREG-05 — while the returned scope is open, <see cref="CreateAsync"/> stages the user
+    /// (event stream, <see cref="ApplicationUser"/>, <see cref="UserSecurityData"/>) on the
+    /// session without committing, so a caller can add its own writes and commit everything in
+    /// one <c>SaveChangesAsync</c>. <see cref="UserManager{TUser}.CreateAsync(TUser)"/> still
+    /// runs its validators and sets the stamps and normalized names.
+    /// </summary>
+    public IDisposable DeferCreateCommit()
+    {
+        _deferCreateCommit = true;
+        return new DeferScope(this);
+    }
+
+    private sealed class DeferScope(EventSourcedUserStore store) : IDisposable
+    {
+        public void Dispose() => store._deferCreateCommit = false;
+    }
+
     public Task SetSecurityStampAsync(ApplicationUser user, string stamp, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -96,7 +116,8 @@ public class EventSourcedUserStore(IDocumentSession session)
             securityData.SecurityStamp = user.SecurityStamp;
         session.Store(securityData);
 
-        await session.SaveChangesAsync(cancellationToken);
+        if (!_deferCreateCommit)
+            await session.SaveChangesAsync(cancellationToken);
         Remember(user);
 
         return IdentityResult.Success;

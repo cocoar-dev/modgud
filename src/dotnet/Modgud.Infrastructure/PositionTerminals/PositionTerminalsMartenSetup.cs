@@ -104,8 +104,10 @@ public static class PositionTerminalsMartenSetup
             .Identity(x => x.Id)
             .Index(x => x.ActivationTokenId)
             .Index(x => x.RpId);
+        // G-B4-05 — version-checked consume (see ActivationTokenEndpoints.TryConsumeCeremonyAsync).
         options.Schema.For<ActivationTokenRegistrationCeremony>()
             .Identity(x => x.Id)
+            .UseOptimisticConcurrency(true)
             .Index(x => x.ExpiresAt)
             .Index(x => x.TerminalEnrollmentId, x => x.Name = "idx_activation_reg_terminal");
 

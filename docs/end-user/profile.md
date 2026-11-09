@@ -16,14 +16,16 @@ Some fields may be **read-only** if your realm uses an external Identity Provide
 
 ### Change email — double-opt-in
 
-Changing your email never takes effect immediately. Modgud needs proof you control the new address:
+Changing your email never takes effect immediately. Modgud needs proof you control the new address, and an admin must approve the change:
 
-1. You enter the new email and save
-2. Both addresses receive a confirmation email
-3. Click the link in the **new** mailbox to verify
-4. The change is applied; your **old** mailbox receives a notification ("your email was changed")
+1. You enter the new email and save — this opens a [change request](../admin/change-requests)
+2. The **new** address receives a confirmation email; the link is valid for 24 hours
+3. Click the link in the new mailbox to verify
+4. An admin approves the request; only then is the new address applied, and you are signed out everywhere
 
-If your realm has the [profile-change approval flow](../admin/change-requests) enabled, an admin must also approve the change before step 3 — see the workflow there.
+Until the admin decides, your old address stays in effect. The admin may notify you of the decision by email; your inbox in Modgud shows it in any case. Name and acronym changes go through the same request, without step 2 and 3.
+
+There is no separate resend button: saving the same address again sends a new link only once the previous one has expired or was never sent.
 
 ### Security
 

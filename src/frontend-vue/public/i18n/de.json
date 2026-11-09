@@ -750,6 +750,7 @@
         "sourceDirect": "Direkt",
         "sourceInherited": "Vererbt über {via}",
         "sourceAuto": "Auto-Skript",
+        "sourceAutoStored": "Auto (gespeichert, Skript greift nicht)",
         "driftBadge": "Drift — neu berechnen?",
         "diagnosticsHeading": "Skripte mit Fehlern",
         "diagnosticLine": "Skript für Gruppe {group} konnte nicht ausgewertet werden: {error}",
@@ -810,6 +811,7 @@
     },
     "roleDetails": {
       "createTitle": "Rolle erstellen",
+      "loadError": "Ein Teil des Rolleneditors konnte nicht geladen werden (Apps erfordern app:read). Speichern kann unvollständig sein.",
       "general": "Allgemein",
       "name": "Name",
       "description": "Beschreibung",
@@ -868,6 +870,8 @@
     },
     "groupDetails": {
       "createTitle": "Gruppe erstellen",
+      "loadError": "Ein Teil des Gruppeneditors konnte nicht geladen werden (Rollen, Personen oder Apps). Speichern kann unvollständig sein.",
+      "readOnly": "Nur lesen – Gruppen ändern erfordert authorization-group:write.",
       "unresolvedRefs": "Diese vorgemerkte Gruppe referenziert außerdem Entitäten, die in diesem Realm nicht existieren: {refs}. Sie werden in den Auswahllisten nicht angezeigt und beim Speichern unverändert übernommen.",
       "groupsLabel": "Gruppen",
       "usersLabel": "Benutzer",
@@ -1038,9 +1042,7 @@
       "autoDriftOk": "Jede Auto-Gruppe passt zu ihrem Predicate.",
       "principalSync": {
         "missingPerson": "ApplicationUsers ohne Person-Principal",
-        "orphanPerson": "Person-Principals ohne ApplicationUser-Quelle",
-        "missingGroup": "Gruppen ohne Group-Principal",
-        "orphanGroup": "Group-Principals ohne Gruppen-Quelle"
+        "orphanPerson": "Person-Principals ohne ApplicationUser-Quelle"
       },
       "autoDrift": {
         "scriptError": "Predicate konnte nicht kompiliert werden — bitte das Membership-Skript der Gruppe prüfen.",
@@ -1151,6 +1153,19 @@
         "success": "OK",
         "error": "Fehler",
         "neutral": "—"
+      },
+      "schedule": "Zeitplan",
+      "scheduleTag": {
+        "inSync": "OK",
+        "deviates": "Abweichung"
+      },
+      "drift": {
+        "label": "Zeitplan weicht ab",
+        "JobMissing": "Der Job ist im Scheduler nicht registriert.",
+        "TriggerMissing": "Der Job ist aktiv, hat im Scheduler aber keinen Zeitplan und läuft nicht.",
+        "UnexpectedTrigger": "Der Job ist nur manuell, hat im Scheduler aber noch einen Zeitplan.",
+        "CronMismatch": "Der Scheduler verwendet einen anderen Cron als gespeichert.",
+        "repairHint": "Der regelmäßige Abgleich behebt das in wenigen Minuten; Speichern behebt es sofort."
       },
       "section": {
         "config": "Konfiguration",
@@ -2275,7 +2290,8 @@
         "hint": "Wenn aktiviert, können native Apps einen passwortlosen Nachweis direkt unter POST /connect/token gegen Tokens eintauschen — ohne Browser-Redirect, ohne Cookie. Drei Grants: urn:cocoar:otp (Einmalcode per E-Mail), urn:cocoar:magic (Magic-Link-Token), urn:cocoar:passkey (WebAuthn-Assertion). Standardmäßig aus.",
         "enabled": "Native passwortlose Grants aktivieren",
         "accessTokenMinutes": "Access-Token-Lebensdauer (Minuten)",
-        "refreshTokenDays": "Refresh-Token-Lebensdauer (Tage)",
+        "requireRecentSignIn": "Passkey-Änderungen verlangen eine frische Anmeldung",
+        "requireRecentSignInHint": "Ein Passkey lässt sich in einer nativen App nur hinzufügen oder entfernen, wenn die Anmeldung höchstens 15 Minuten zurückliegt; sonst erhält die App insufficient_user_authentication (RFC 9470) und meldet den Benutzer neu an. Ein E-Mail-Code oder Magic Link zählt, so kommt ein Benutzer, dessen Passkey-Gerät verloren ist, über sein Postfach wieder herein. Erst einschalten, wenn die App diese Antwort behandelt; bis dahin werden solche Änderungen nur protokolliert.",
         "optInWarning": "Pro-Client-Opt-in weiterhin nötig: Ein Client kann einen nativen Grant erst nutzen, wenn er die passende Grant-Type-Permission trägt (gt:urn:cocoar:otp / :magic / :passkey), aktiviert im Grants-Tab des Clients. Dieser Realm-Schalter ist notwendig, aber nicht hinreichend. Nur Katalog-Clients kommen infrage — DCR-/CIMD-Clients sind ausgeschlossen."
       },
       "authRateLimits": {
@@ -2675,6 +2691,7 @@
       "passkeyHint": "Jetzt einrichten",
       "statusOk": "OK",
       "statusMissing": "fehlt",
+      "statusUnknown": "unbekannt",
       "statusExpired": "abgelaufen",
       "cta": "Zum Profil →"
     },
@@ -2815,6 +2832,7 @@
   "admin.appSettings.regFields.override": "Eigene Pflichtfelder bei Registrierung",
   "admin.appSettings.grants.enabled": "Native Grants aktiv",
   "admin.appSettings.grants.override": "Eigene Native-Grant-Settings",
+  "admin.appSettings.grants.requireRecentSignIn": "Passkey-Änderungen verlangen eine frische Anmeldung (15 min)",
   "admin.appSettings.dcr.enabled": "Dynamic Client Registration aktiv",
   "admin.appSettings.dcr.override": "Eigene DCR-Settings",
   "admin.appSettings.cimd.enabled": "CIMD aktiv",

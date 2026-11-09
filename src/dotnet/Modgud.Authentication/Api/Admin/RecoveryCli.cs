@@ -116,13 +116,16 @@ public static class RecoveryCli
                   [--minutes <1..1440>]      Optional lifetime in minutes.
                   [--json]                   Machine-readable token/URL output for CI automation.
               list                           List all users (UserName · Email · Active · 2FA · Passkeys).
-              reset-2fa <username>           Disable TOTP + Email-OTP + delete all Passkeys for user.
+              reset-2fa <username>           Disable TOTP + Email-OTP + delete all Passkeys for user,
+                                             and end the account's sessions, tokens and staffing sessions.
               set-email <username> <email>   Update the user's email address (appends UserUpdatedEvent
                                              so projections + SignalR update live).
               magic-link <username>          Generate a one-time login URL and print it.
-              rebuild-projections            Rebuild all Marten projections (inline + async).
+              rebuild-projections [--force]  Rebuild all Marten projections (inline + async).
                                              Bootstrap path for the first migration after
                                              a schema change when no admin can authenticate yet.
+                                             Refuses while other Modgud instances are running
+                                             (stop them; --force overrides).
               migrate-cc-credentials         Phase-2C retrofit: for every OAuth client that
                                              still has the `client_credentials` grant without
                                              a LinkedServiceAccountId (i.e. seeded or pre-2C
@@ -178,12 +181,13 @@ public static class RecoveryCli
                                              Register an ALREADY-EXISTING tenant database
                                              ({master}_{slug}) as a realm — no CREATE DATABASE.
                                              Migration counterpart to creating a realm via the API.
-              rotate-signing-key [--revoke-previous]
-                                             Rotate the realm's OpenIddict signing key. Generates a
-                                             fresh RSA keypair and retires the previous active key
-                                             into a 30-day verification overlap window so in-flight
-                                             tokens stay valid. --revoke-previous revokes it instead
-                                             (suspected compromise: its tokens stop working). Honors --realm.
+              rotate-signing-key [--immediate] [--revoke-previous]
+                                             Rotate the realm's OpenIddict signing key. Publishes a
+                                             fresh RSA keypair at once; it starts signing after 10
+                                             minutes, then the previous key retires into a 30-day
+                                             verification overlap window. --immediate switches at
+                                             once; --revoke-previous switches at once and revokes the
+                                             previous key (suspected compromise). Honors --realm.
               revoke-retired-signing-keys    Revoke every retired signing key still in its overlap
                                              window (compromise found after a rotation). Honors --realm.
               help                           Show this message.

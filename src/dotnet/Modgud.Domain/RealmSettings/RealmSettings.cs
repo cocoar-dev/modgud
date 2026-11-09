@@ -29,6 +29,10 @@ public class RealmSettings
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
 
+    /// <summary>F7-05 — the stored document's version (Marten optimistic concurrency): a write
+    /// based on an older copy is refused instead of silently overwriting a newer one.</summary>
+    public Guid Version { get; set; }
+
     /// <summary>Self-registration sub-section. Null = feature has never
     /// been touched for this realm; API treats null as equivalent to
     /// <c>SelfRegistrationSettings { Enabled = false }</c>.</summary>

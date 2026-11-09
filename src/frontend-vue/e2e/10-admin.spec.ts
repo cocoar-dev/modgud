@@ -54,7 +54,7 @@ test.describe('§6 Users (admin CRUD)', () => {
     const userName = `crud-u-${SUFFIX}`
     const res = await page.request.post('/api/user', {
       data: {
-        Firstname: 'Crud', Lastname: 'User', Acronym: userName,
+        Firstname: 'Crud', Lastname: 'User', Acronym: userName, UserName: userName,
         Email: `${userName}@modgud.test`,
       },
     })
@@ -72,7 +72,7 @@ test.describe('§6 Users (admin CRUD)', () => {
     // Create + immediately update.
     const userName = `crud-edit-${SUFFIX}`
     const created = await (await page.request.post('/api/user', {
-      data: { Firstname: 'Old', Lastname: 'Name', Acronym: userName, Email: `${userName}@modgud.test` },
+      data: { Firstname: 'Old', Lastname: 'Name', Acronym: userName, UserName: userName, Email: `${userName}@modgud.test` },
     })).json()
 
     // OptionalJsonConverterFactory: bare value means HasValue=true.

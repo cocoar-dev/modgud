@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Modgud.Api.Tests.Infrastructure;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.Setup;
+using Modgud.Authorization.Events;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Roles;
 
@@ -128,5 +129,49 @@ public class AdminGroupRenameTests(ColdStartFixture fixture) : ColdStartTestBase
             var group = Assert.Single(groups);
             Assert.Equal(AdminGroupNames.Current, group.Name);
         }
+    }
+
+    /// <summary>
+    /// F.inst-I2 — GroupUpdatedEvent is a full replace. Bootstrapping a further admin into
+    /// the existing admin group must carry the group's mail routing and membership-script
+    /// fields through instead of resetting them to the event defaults.
+    /// </summary>
+    [Fact]
+    public async Task Bootstrapping_a_second_admin_keeps_the_admin_groups_email_and_script_fields()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var ct = TestContext.Current.CancellationToken;
+
+        var first = await CliHarness.RunAsync(host.Services,
+            "bootstrap-admin", "--username", "firstadmin", "--email", "firstadmin@cli.local",
+            "--password", "TestPass1234");
+        Assert.Equal(0, first.ExitCode);
+
+        var store = host.Services.GetRequiredService<IDocumentStore>();
+        Group group;
+        await using (var session = store.LightweightSession("system"))
+        {
+            group = await session.Query<Group>().SingleAsync(g => !g.IsDeleted, ct);
+            session.Events.Append(group.Id, new GroupUpdatedEvent(
+                group.Id, group.Name, group.Description, group.MemberIds, group.RoleIds,
+                MembershipMode.Manual, "// kept", null, ["kept-dependency"],
+                "admins@cli.local", EmailMode.ExpandToMembers,
+                BoundTo: group.BoundTo));
+            await session.SaveChangesAsync(ct);
+        }
+
+        var second = await CliHarness.RunAsync(host.Services,
+            "bootstrap-admin", "--username", "secondadmin", "--email", "secondadmin@cli.local",
+            "--password", "TestPass1234");
+        Assert.Equal(0, second.ExitCode);
+
+        await using var query = store.QuerySession("system");
+        var after = await query.LoadAsync<Group>(group.Id, ct);
+        Assert.NotNull(after);
+        Assert.Equal(2, after.MemberIds.Count);
+        Assert.Equal(EmailMode.ExpandToMembers, after.EmailMode);
+        Assert.Equal("admins@cli.local", after.Email);
+        Assert.Equal("// kept", after.MembershipScript);
+        Assert.Equal(["kept-dependency"], after.MembershipScriptDependencies);
     }
 }

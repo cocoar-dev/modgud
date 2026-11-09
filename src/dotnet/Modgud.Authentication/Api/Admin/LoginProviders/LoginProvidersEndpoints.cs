@@ -147,6 +147,8 @@ public static class LoginProvidersEndpoints
                     IconName: request.IconName,
                     ButtonColorHex: request.ButtonColorHex,
                     TrustForAuthorization: request.TrustForAuthorization,
+                    TrustEmailsAsVerified: request.TrustEmailsAsVerified,
+                    MfaAmrValues: request.MfaAmrValues,
                     AuthoritativeForProfile: request.AuthoritativeForProfile,
                     InitialClientSecret: request.InitialClientSecret);
                 var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(command, ct);
@@ -189,6 +191,8 @@ public static class LoginProvidersEndpoints
                     FlavorData: flavorData,
                     Enabled: request.Enabled,
                     TrustForAuthorization: request.TrustForAuthorization,
+                    TrustEmailsAsVerified: request.TrustEmailsAsVerified,
+                    MfaAmrValues: request.MfaAmrValues,
                     AuthoritativeForProfile: request.AuthoritativeForProfile);
                 var result = await bus.InvokeAsync<ErrorOr<LoginProvider>>(command, ct);
                 return result.Match<IResult>(
@@ -265,6 +269,8 @@ public static class LoginProvidersEndpoints
         AllowLinking = c.AllowLinking,
         TrustForEmailLink = c.TrustForEmailLink,
         TrustForAuthorization = c.TrustForAuthorization,
+        TrustEmailsAsVerified = c.TrustEmailsAsVerified,
+        MfaAmrValues = c.MfaAmrValues,
         AuthoritativeForProfile = c.AuthoritativeForProfile,
         AllowedEmailDomains = c.AllowedEmailDomains,
         IconName = c.IconName,
@@ -320,6 +326,8 @@ public static class LoginProvidersEndpoints
         string? IconName = null,
         string? ButtonColorHex = null,
         bool? TrustForAuthorization = null,
+        bool? TrustEmailsAsVerified = null,
+        List<string>? MfaAmrValues = null,
         bool? AuthoritativeForProfile = null,
         string? InitialClientSecret = null);
 
@@ -343,6 +351,8 @@ public static class LoginProvidersEndpoints
         Optional<JsonElement> FlavorData,
         Optional<bool> Enabled,
         Optional<bool> TrustForAuthorization = default,
+        Optional<bool> TrustEmailsAsVerified = default,
+        Optional<List<string>?> MfaAmrValues = default,
         Optional<bool> AuthoritativeForProfile = default);
 
     public record RotateSecretRequest(string Secret);

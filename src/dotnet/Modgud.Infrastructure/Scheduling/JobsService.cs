@@ -1,4 +1,5 @@
 using Marten;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Quartz;
 using Modgud.Application.Scheduling;
@@ -137,7 +138,20 @@ internal sealed class JobsService(
             await session.SaveChangesAsync(ct);
         }
 
-        await jobScheduler.ApplyAsync(reg, realm.Slug, cfg, ct);
+        // B9-JS-01 — Quartz follows the committed configuration. Inside a manifest apply the
+        // configuration commits with the whole apply (or rolls back with it), so the schedule
+        // changes only after that commit; otherwise right away. Either way the scheduler reads
+        // the saved state itself, under its lock.
+        if (TenantApplyTransaction.Current is { } apply)
+        {
+            var slug = realm.Slug;
+            apply.Defer($"apply the schedule of job '{reg.Key}' in realm '{slug}'",
+                (sp, c) => sp.GetRequiredService<RealmJobScheduler>().ApplyAsync(reg, slug, c));
+        }
+        else
+        {
+            await jobScheduler.ApplyAsync(reg, realm.Slug, ct);
+        }
     }
 
     public async Task TriggerNowAsync(string key, Guid? triggeredByUserId = null, CancellationToken ct = default)
@@ -280,6 +294,8 @@ internal sealed class JobsService(
         var schema = reg.GetParameterSchema?.Invoke() ?? [];
         var parameters = (IReadOnlyDictionary<string, object?>)(cfg?.Parameters ?? new Dictionary<string, object?>());
 
+        var drift = await RealmJobScheduler.DescribeDriftAsync(scheduler, reg, realmSlug, cfg, ct);
+
         return new JobOverviewDto
         {
             Key = reg.Key,
@@ -292,6 +308,7 @@ internal sealed class JobsService(
             HasOverride = !string.IsNullOrWhiteSpace(cfg?.CronOverride),
             Enabled = cfg?.Enabled ?? true,
             NextFireAt = next,
+            ScheduleDrift = drift,
             LastRun = lastRun is null ? null : ToDto(lastRun),
             ParameterSchema = schema,
             Parameters = parameters,

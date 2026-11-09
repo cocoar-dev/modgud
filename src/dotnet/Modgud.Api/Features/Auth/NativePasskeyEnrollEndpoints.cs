@@ -47,12 +47,20 @@ public static class NativePasskeyEnrollEndpoints
             UserManager<ApplicationUser> userManager,
             RealmScopedFido2Factory fido2Factory,
             RpIdResolver rpIdResolver,
+            ILoggerFactory loggers,
             CancellationToken ct) =>
         {
-            if (await NativeBearerEndpointSupport.GateDisabledAsync(settingsResolver, context, ct) is { } gate) return gate;
+            var (native, gate) = await NativeBearerEndpointSupport.GateAsync(settingsResolver, context, ct);
+            if (gate is not null) return gate;
 
             var (user, clientId, unauthorized) = await NativeBearerEndpointSupport.ResolvePrincipalAsync(context, userManager);
             if (unauthorized is not null) return unauthorized;
+
+            // RV-0001 stage 2 — refuse before the ceremony starts, so the app re-authenticates
+            // first instead of after the user has already touched the authenticator.
+            if (NativeAccountChange.CheckRecentSignIn(context, native!, loggers.CreateLogger("Modgud.Api.Features.Auth.NativePasskey"),
+                    user!, clientId, Modgud.Authentication.Api.Account.AccountChange.PasskeyAdded, log: false) is { } stale)
+                return stale;
 
             var rpId = await rpIdResolver.ResolveAsync(session, clientId, ct);
 
@@ -140,13 +148,22 @@ public static class NativePasskeyEnrollEndpoints
             IApplicationSettingsResolver settingsResolver,
             UserManager<ApplicationUser> userManager,
             RealmScopedFido2Factory fido2Factory,
+            Modgud.Authentication.Api.Account.IAccountChangeGuard accountChanges,
+            ILoggerFactory loggers,
             JsonElement body,
             CancellationToken ct) =>
         {
-            if (await NativeBearerEndpointSupport.GateDisabledAsync(settingsResolver, context, ct) is { } gate) return gate;
+            var (native, gate) = await NativeBearerEndpointSupport.GateAsync(settingsResolver, context, ct);
+            if (gate is not null) return gate;
 
             var (user, clientId, unauthorized) = await NativeBearerEndpointSupport.ResolvePrincipalAsync(context, userManager);
             if (unauthorized is not null) return unauthorized;
+
+            // RV-0001 stage 2 — checked again here: the begin step may have been a while ago.
+            var logger = loggers.CreateLogger("Modgud.Api.Features.Auth.NativePasskey");
+            if (NativeAccountChange.CheckRecentSignIn(context, native!, logger, user!, clientId,
+                    Modgud.Authentication.Api.Account.AccountChange.PasskeyAdded, log: true) is { } stale)
+                return stale;
 
             if (!body.TryGetProperty("ceremonyId", out var cidEl)
                 || !Guid.TryParse(cidEl.GetString(), out var ceremonyId)
@@ -281,6 +298,8 @@ public static class NativePasskeyEnrollEndpoints
                 return Results.BadRequest(new { Message = "Passkey enrollment failed." });
             }
 
+            // RV-0001 stage 1 — the same notice as the browser.
+            await NativeAccountChange.NotifyAsync(accountChanges, user, Modgud.Authentication.Api.Account.AccountChange.PasskeyAdded, ct);
             return Results.Ok(new { Message = "Passkey enrolled successfully." });
         })
         .WithName("NativePasskey_Enroll")

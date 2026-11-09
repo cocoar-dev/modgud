@@ -240,11 +240,13 @@ for (const config of stores) {
   })
 }
 
-test('invite codes: a successful mint still propagates its awaited reload failure', async t => {
+test('invite codes: a successful mint returns its codes and marks the failed reload', async t => {
+  // AREG-07 — the plaintext codes exist only in the mint response; a failed list refresh
+  // must not turn the mint into an error and lose them. The list still shows its failure.
   t.mock.method(globalThis, 'fetch', async (_url, options) =>
-    options.method === 'POST' ? response(200, {}) : response(503, {}))
+    options.method === 'POST' ? response(200, { Codes: ['ONE'] }) : response(503, {}))
   const sut = stores.find(config => config.invite).create()
-  await assert.rejects(sut.mint('app', {}), HttpClientError)
+  assert.deepEqual((await sut.mint('app', {})).Codes, ['ONE'])
   assert.equal(sut.loadFailed, true)
   assert.equal(sut.loaded, false)
 })

@@ -11,7 +11,7 @@ A sign-in reaches one of two ordered levels, recorded on the session:
 | Level | Reached by |
 |---|---|
 | `single` | One factor: password, e-mail code, magic link |
-| `multi` | Two different factors (password + TOTP, e-mail code + TOTP, password + e-mail code), or one factor that is multi-factor on its own: a passkey with user verification, or a federated sign-in whose IdP asserted MFA |
+| `multi` | Two different factors (password + TOTP, e-mail code + TOTP, password + e-mail code), or one factor that is multi-factor on its own: a passkey with user verification, or a federated sign-in whose IdP asserted MFA (see below) |
 
 A factor is a *kind* of proof, not a step:
 
@@ -119,17 +119,29 @@ need a recent proof (within **15 minutes**) of an account factor the user has. E
 
 A passkey lives on a device and an authenticator app on a phone; both can be lost. After a **password**, the login page therefore offers the e-mail code beside the user's own second factor, wherever the target offers the e-mail code after a password. The user does not have to switch it on; the address must be confirmed. The same proof — a session signed in with the password, the mailbox proven within the window — confirms an account change, so the user can remove the factor that is gone and set up a new one.
 
+A user **without a password** signs in with an e-mail code or magic link anyway; for them the mailbox is the way back. A sign-in through the mailbox within the window confirms an account change, so they remove the lost passkey and add a new one. When such a proof is missing, the login page asks them to sign in again (`RequiresFirstFactor`), not for a second step. Modgud knows no other contact of the user — no postal address, no phone — so the e-mail address is the binding channel. The same realm switch applies: with "E-mail code after a password" off, the passkey or TOTP itself is asked for, and a lost factor is reset by the operator.
+
 It stands in for a factor the user has; it is no substitute for having one. A user without any second factor still gets the setup duty, and the fallback never raises the level a sign-in must reach.
 
 A password that was just reset by e-mail does not count: for the realm's **wait** (`EmailFallbackWaitHours`, default 24) the fallback is not offered, because the password and the code would both come from the same mailbox. With the fallback on, whoever holds the mailbox for longer than the wait can take over an account that has a password. A realm that does not accept that switches "E-mail code after a password" off; then a lost factor is reset by the operator with the [recovery CLI](/operate/recovery-cli).
 
 **Account deletion is always reachable.** No minimum level and no setup grace ever block it; it needs the same proof as every other account change.
 
-Account-change endpoints answer `403 { "RequiresReauthentication": true, "Methods": [...] }` when the proof is missing or too old; the SPA asks for it and retries.
+Account-change endpoints answer `403 { "RequiresReauthentication": true, "Methods": [...] }` when the proof is missing or too old. The SPA then sends the user to the login page for the proof and back to the page they were on; the change itself is not repeated automatically — the user submits it again.
 
 ## Setup grace and exemption
 
 When a target requires `multi` and a user has no second factor yet, the user may keep signing in at `single` for the **setup grace** days, starting at their first such sign-in. After that, the target is blocked until a second factor is set up — the portal's factor setup, sign-out and account deletion stay reachable. Admins can reset the grace clock, force enforcement, or exempt a user entirely (`TwoFactorExempt`) in the [user editor](/admin/users).
+
+## When a federated sign-in counts as multi-factor
+
+Modgud reads the external provider's `amr` (RFC 8176). The sign-in is `multi` when
+it carries `mfa`, or factors from two different classes — knowledge (`pwd`,
+`pin`, `kba`), possession (`otp`, `sms`, `tel`, `hwk`, `swk`, `sc`, `pop`, `fido`),
+inherence (`fpt`, `face`, `iris`, `retina`, `vbm`). A single factor such as `otp` or
+`hwk`, or two factors of one class, is `single`. For an IdP that marks its MFA
+sign-ins differently, list those values under **Zusätzliche MFA-amr-Werte** on the
+provider; each listed value then counts as MFA on its own.
 
 ## Tokens: `acr` and `amr`
 
@@ -223,6 +235,7 @@ Each scenario has a fixed number; the integration tests carry the same number. U
 | S30 | Stolen password; the user has TOTP | No sign-in without the TOTP code |
 | S31 | Access to the mailbox; the user has TOTP | Magic link and password reset both lead to the TOTP prompt; account changes need TOTP. Apps set to `Ignore` open with the mailbox alone |
 | S32 | Access to the mailbox; the user's second factor is the e-mail code after a password | Full control: reset the password, then the code (see [Limits](#limits)) |
+| S32a | Access to the mailbox; the user has no password, only a passkey | Signs in with an e-mail code and may replace the passkey (the mailbox is the way back); the account-change notice goes to the same mailbox. A realm that does not accept that switches "E-mail code after a password" off |
 | S33 | Access to the mailbox; the user has no second factor | Full control — the mailbox is the account |
 
 ### Policy rules

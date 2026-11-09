@@ -1,8 +1,8 @@
 # Public origin is derived, not configured (per-realm host, request-derived issuer, fail-closed proxy trust)
 
-**Status:** Superseded · **Decided:** 2026-06-13
+**Status:** Partly superseded · **Decided:** 2026-06-13
 
-> Superseded 2026-09-03 by the declared-public-origin decision recorded as ADR 0023 (Modgud now declares the public origin per realm via `Realm.PublicBaseUrl` instead of deriving it). Kept here as the historical record.
+> Point 2 was superseded 2026-09-03 by [ADR 0023](./0023-public-origin-is-declared): Modgud now declares the public origin per realm via `Realm.PublicBaseUrl` instead of deriving it. Points 1, 3 and 4 — `AppUrl` is only the bind address, the issuer is derived per request, forwarded-header trust fails closed — still describe the code.
 
 ## Context
 

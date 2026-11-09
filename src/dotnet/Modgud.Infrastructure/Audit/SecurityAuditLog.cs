@@ -607,32 +607,61 @@ public sealed class SecurityAuditWriter(
         }
     }
 
-    private async Task PersistAbuseWithRetryAsync(
+    private Task PersistAbuseWithRetryAsync(
         IReadOnlyCollection<SecurityAuditEnvelope> batch,
+        CancellationToken ct) =>
+        PersistPerRealmAsync(batch, async group =>
+        {
+            using var scope = services.CreateScope();
+            await SecurityAuditPersistence.PersistAsync(
+                group,
+                scope.ServiceProvider.GetRequiredService<IDocumentStore>(),
+                scope.ServiceProvider.GetRequiredService<IGlobalStore>(),
+                ct);
+        }, attempt => TimeSpan.FromMilliseconds(250 * Math.Pow(2, attempt - 1)), logger, ct);
+
+    /// <summary>Attempts per realm group before its abuse signals are dropped.</summary>
+    internal const int MaxAbuseAttempts = 5;
+
+    /// <summary>
+    /// B9-J03 — persists aggregated abuse signals one realm group at a time with a bounded
+    /// number of attempts. The whole batch used to be retried until it succeeded, so one realm
+    /// whose persistence kept failing stopped the single writer for every realm until the
+    /// shared channel overflowed. A group that still fails after <see cref="MaxAbuseAttempts"/>
+    /// is dropped with an error (abuse signals may be shed under pressure); the others go on.
+    /// </summary>
+    internal static async Task PersistPerRealmAsync(
+        IReadOnlyCollection<SecurityAuditEnvelope> batch,
+        Func<IReadOnlyCollection<SecurityAuditEnvelope>, Task> persist,
+        Func<int, TimeSpan> delayAfterAttempt,
+        ILogger logger,
         CancellationToken ct)
     {
-        var delay = TimeSpan.FromMilliseconds(250);
-        while (!ct.IsCancellationRequested)
+        foreach (var group in batch.GroupBy(x => x.RealmSlug ?? string.Empty, StringComparer.OrdinalIgnoreCase))
         {
-            try
+            var envelopes = group.ToArray();
+            for (var attempt = 1; !ct.IsCancellationRequested; attempt++)
             {
-                using var scope = services.CreateScope();
-                await SecurityAuditPersistence.PersistAsync(
-                    batch,
-                    scope.ServiceProvider.GetRequiredService<IDocumentStore>(),
-                    scope.ServiceProvider.GetRequiredService<IGlobalStore>(),
-                    ct);
-                return;
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogError(
-                    ex,
-                    "Failed to persist {Count} aggregated abuse signal(s); retrying in {Delay}",
-                    batch.Count,
-                    delay);
-                await Task.Delay(delay, ct);
-                delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 30));
+                try
+                {
+                    await persist(envelopes);
+                    break;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    if (attempt >= MaxAbuseAttempts)
+                    {
+                        logger.LogError(ex,
+                            "Dropped {Count} aggregated abuse signal(s) of realm {Realm} after {Attempts} failed attempts",
+                            envelopes.Length, group.Key, attempt);
+                        break;
+                    }
+                    var delay = delayAfterAttempt(attempt);
+                    logger.LogError(ex,
+                        "Failed to persist {Count} aggregated abuse signal(s) of realm {Realm}; retrying in {Delay}",
+                        envelopes.Length, group.Key, delay);
+                    await Task.Delay(delay, ct);
+                }
             }
         }
     }

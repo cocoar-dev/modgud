@@ -12,6 +12,10 @@ namespace Modgud.Application.DTOs.RealmSettings;
 /// login-provider client-secret.</summary>
 public record RealmSettingsDto
 {
+    /// <summary>F7-05 — the version this copy was read at; send it back as
+    /// <see cref="UpdateRealmSettingsDto.ExpectedVersion"/> to be told about a change in between.</summary>
+    public Guid? Version { get; init; }
+
     public SelfRegistrationDto SelfRegistration { get; init; } = new();
     public DcrSettingsDto Dcr { get; init; } = new();
     public CimdSettingsDto Cimd { get; init; } = new();
@@ -44,6 +48,10 @@ public record RealmSettingsDto
 /// (see <see cref="UpdateSelfRegistrationDto"/>).</summary>
 public record UpdateRealmSettingsDto
 {
+    /// <summary>F7-05 — the version the client edited; a newer stored version refuses the
+    /// patch with <c>RealmSettings.Changed</c> (409). Omit to patch unconditionally.</summary>
+    public Guid? ExpectedVersion { get; init; }
+
     public UpdateSelfRegistrationDto? SelfRegistration { get; init; }
     public UpdateDcrSettingsDto? Dcr { get; init; }
     public UpdateCimdSettingsDto? Cimd { get; init; }

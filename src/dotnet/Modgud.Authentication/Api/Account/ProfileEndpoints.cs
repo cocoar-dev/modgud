@@ -4,6 +4,7 @@ using System.Text.Json;
 using BuildingBlocks.Helper;
 using Cocoar.Json.Mutable;
 using Marten;
+using Marten.Patching;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Serilog;
@@ -13,6 +14,8 @@ using Modgud.Authentication;
 using Modgud.Authentication.Domain;
 using Modgud.Authentication.ExtensionMethods;
 using Modgud.Infrastructure.Email;
+using Modgud.Infrastructure.FollowUps;
+using Modgud.Authentication.Notifications;
 using Modgud.Infrastructure.Realms;
 using Modgud.Authentication.Identity;
 
@@ -63,8 +66,7 @@ public static class ProfileEndpoints
             IRealmProvisioningService realmSvc,
             IEmailService emailService,
             Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
-            IAdminNotifier adminNotifier,
-            IInboxNotifier inboxNotifier,
+            IFollowUpOutbox followUps,
             IWebHostEnvironment env,
             HttpContext context,
             CancellationToken ct) =>
@@ -85,9 +87,13 @@ public static class ProfileEndpoints
             if (emailSubmitted)
             {
                 var trimmed = body.Email!.Trim();
-                if (!string.IsNullOrWhiteSpace(trimmed) && !trimmed.Contains('@'))
+                // B4-AP-03 — an empty address can never be verified (no link can reach it),
+                // so the request would be parked for good: refuse it like an invalid one.
+                if (string.IsNullOrWhiteSpace(trimmed))
+                    return Results.BadRequest(new { Message = "An email address is required" });
+                if (!trimmed.Contains('@'))
                     return Results.BadRequest(new { Message = "Invalid email address" });
-                desiredEmail = string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+                desiredEmail = trimmed;
             }
 
             if (emailSubmitted && !string.IsNullOrEmpty(desiredEmail))
@@ -149,7 +155,10 @@ public static class ProfileEndpoints
             {
                 if (existing is not null)
                 {
+                    // The request is gone, so are the admins' "needs review" items (as on withdraw).
                     session.Delete(existing);
+                    await followUps.PublishAsync(session, new DismissInboxItems(
+                        [.. existing.AdminInboxItemIds], ChangeRequestInboxSource, existing.Id, InboxKind.AdminChangeRequestSubmitted));
                     await session.SaveChangesAsync();
                 }
                 return Results.Ok(new { Open = (object?)null });
@@ -168,33 +177,50 @@ public static class ProfileEndpoints
             // Re-read the cleaned payload once to drive status + email-verify logic.
             var pending = DeserializeProfile(cleanedPayload);
 
-            // Token regen logic — triggers when email is pending but differs from the last
-            // value we sent a link to (or no token exists yet).
+            // Token regen logic — triggers when email is pending and the address it was sent
+            // to is not verified and has no usable link: a new address, no token yet, a mail
+            // that never left (the transport failed after the commit), or an expired link.
+            // B4-AP-03 — a verified address stays verified when another field is edited.
             string? rawToken = null;
+            var sameAddress = previousPendingEmail.HasValue && pending.Email.HasValue
+                && previousPendingEmail.Value == pending.Email.Value;
+            var alreadyVerified = sameAddress && existing?.VerifiedAt is not null;
+            var linkUsable = sameAddress
+                && existingTokenHash is not null
+                && existing?.VerificationMailSentAt is not null
+                && existing.VerificationExpiresAt > DateTimeOffset.UtcNow;
             if (!pending.Email.HasValue)
             {
                 request.VerificationTokenHash = null;
                 request.VerificationExpiresAt = null;
                 request.VerifiedAt = null;
             }
-            else if (!previousPendingEmail.HasValue
-                  || previousPendingEmail.Value != pending.Email.Value
-                  || existingTokenHash is null)
+            else if (!alreadyVerified && !linkUsable)
             {
                 rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(VerificationTokenBytes))
                     .TrimEnd('=').Replace('+', '-').Replace('/', '_');
                 request.VerificationTokenHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(rawToken)));
                 request.VerificationExpiresAt = DateTimeOffset.UtcNow.AddHours(VerificationTokenLifetimeHours);
                 request.VerifiedAt = null;
+                request.VerificationMailSentAt = null;
             }
 
             request.Status = pending.Email.HasValue && request.VerifiedAt is null
                 ? ChangeRequestStatus.EmailVerificationPending
                 : ChangeRequestStatus.AdminApprovalPending;
 
+            // Inbox notification: fires only when this submit *transitions* the request
+            // into AdminApprovalPending. Repeated edits of an already-pending request are
+            // silently merged so admins don't get spammed. B3-EI-04 — owed from this commit on,
+            // so it is written with it (the handler records the item ids on the request).
+            if (!wasInAdminPending && request.Status == ChangeRequestStatus.AdminApprovalPending)
+                await followUps.PublishAsync(session, new NotifyAdminsOfChangeRequest(request.Id));
+
             session.Store(request);
             await session.SaveChangesAsync();
 
+            // The verification mail stays synchronous: it carries the raw token, which must not
+            // be stored in a durable message.
             var realm = await context.ResolveCurrentRealmAsync(realmSvc, ct);
             if (realm is not null && rawToken is not null && pending.Email.HasValue && !string.IsNullOrEmpty(pending.Email.Value))
             {
@@ -207,21 +233,10 @@ public static class ProfileEndpoints
                         ["ActionUrl"] = verifyUrl,
                         ["ExpirationHours"] = VerificationTokenLifetimeHours.ToString(),
                     }, ct: ct), ct);
-            }
-
-            // Inbox notification: fires only when this submit *transitions* the request
-            // into AdminApprovalPending. Repeated edits of an already-pending request are
-            // silently merged so admins don't get spammed. Record the created item-ids on
-            // the request so approve/reject/withdraw can dismiss them deterministically.
-            if (!wasInAdminPending && request.Status == ChangeRequestStatus.AdminApprovalPending)
-            {
-                var ids = await NotifyAdminsInboxAsync(adminNotifier, inboxNotifier, request, user);
-                if (ids.Count > 0)
-                {
-                    request.AdminInboxItemIds = ids.ToList();
-                    session.Store(request);
-                    await session.SaveChangesAsync();
-                }
+                // A patch, not a store: only the delivery mark changes, never a state that
+                // moved on meanwhile.
+                session.Patch<UserChangeRequest>(request.Id).Set(r => r.VerificationMailSentAt, DateTimeOffset.UtcNow);
+                await session.SaveChangesAsync();
             }
 
             Log.Information("Profile: Change request upserted. UserId={UserId} Status={Status}",
@@ -233,10 +248,9 @@ public static class ProfileEndpoints
         group.MapPost("request/verify-email", async (
             VerifyEmailChangeDto body,
             IDocumentSession session,
-            IEmailService emailService,
             Modgud.Authentication.Applications.IEmailBrandingResolver emailBranding,
             IAdminNotifier adminNotifier,
-            IInboxNotifier inboxNotifier,
+            IFollowUpOutbox followUps,
             IRealmProvisioningService realmSvc,
             IWebHostEnvironment env,
             HttpContext context,
@@ -261,8 +275,10 @@ public static class ProfileEndpoints
             cr.UpdatedAt = DateTimeOffset.UtcNow;
             cr.VerificationTokenHash = null; // single-use
             session.Store(cr);
-            await session.SaveChangesAsync();
 
+            // B3-EI-04 — the admins' mail and "needs review" item are owed from this commit on:
+            // written with it and retried on their own, so a failing transport neither fails the
+            // verification (whose token is spent by now) nor skips the inbox item.
             var user = await session.LoadAsync<ApplicationUser>(cr.UserId);
             var recipients = await adminNotifier.GetAdminRecipientsAsync();
             var realm = await context.ResolveCurrentRealmAsync(realmSvc, ct);
@@ -270,7 +286,7 @@ public static class ProfileEndpoints
             {
                 var appUrl = RealmPublicUrl.RealmPublicBaseUrl(realm);
                 var changes = EnumerateProfileChanges(cr.Payload, user).ToList();
-                await emailService.SendTemplatedEmailAsync(recipients,
+                await followUps.PublishAsync(session, new SendTemplatedEmail([.. recipients],
                     EmailTemplate.AdminChangeRequestNotification,
                     await emailBranding.ApplyAsync(new Dictionary<string, string>
                     {
@@ -279,24 +295,16 @@ public static class ProfileEndpoints
                         ["OldValue"] = string.Join(" · ", changes.Select(c => $"{c.Field}: {c.OldValue ?? "—"}")),
                         ["NewValue"] = string.Join(" · ", changes.Select(c => $"{c.Field}: {c.NewValue ?? "—"}")),
                         ["ActionUrl"] = $"{appUrl}/admin/change-requests",
-                    }, ct: ct), ct);
+                    }, ct: ct)));
             }
 
-            // Inbox: notify admins that this request is now ready for review. The
-            // submit path may have already notified (covered the verified-from-start
-            // case); this one covers the email-verify-then-pending path. Same dedup
-            // by sourceId means a duplicate fire would coalesce — but we still record
-            // the ids so withdraw/approve/reject can dismiss across recipients.
+            // Inbox: notify admins that this request is now ready for review (the email-verify-
+            // then-pending path; the submit path covers the verified-from-start case). The
+            // handler records the item ids so withdraw/approve/reject can dismiss them.
             if (user is not null)
-            {
-                var ids = await NotifyAdminsInboxAsync(adminNotifier, inboxNotifier, cr, user);
-                if (ids.Count > 0)
-                {
-                    cr.AdminInboxItemIds = ids.ToList();
-                    session.Store(cr);
-                    await session.SaveChangesAsync();
-                }
-            }
+                await followUps.PublishAsync(session, new NotifyAdminsOfChangeRequest(cr.Id));
+
+            await session.SaveChangesAsync();
 
             Log.Information("Profile: Email verified, awaiting admin approval. RequestId={RequestId}", cr.Id);
             return Results.Ok(new { Status = cr.Status.ToString() });
@@ -306,7 +314,7 @@ public static class ProfileEndpoints
         group.MapDelete("request", [Authorize] async (
             UserManager<ApplicationUser> userManager,
             IDocumentSession session,
-            IInboxNotifier inboxNotifier,
+            IFollowUpOutbox followUps,
             HttpContext context) =>
         {
             var user = await userManager.GetUserAsync(context.User);
@@ -323,11 +331,12 @@ public static class ProfileEndpoints
             // to dismiss every admin's bell entry after the cr itself is gone.
             var adminItemIds = existing.AdminInboxItemIds.ToList();
 
+            // B3-EI-04 — dismissed in the commit of the withdrawal: the recorded ids, plus any
+            // item a still-running admin notification creates (found through the source).
             session.Delete(existing);
+            await followUps.PublishAsync(session, new DismissInboxItems(
+                [.. adminItemIds], ChangeRequestInboxSource, existing.Id, InboxKind.AdminChangeRequestSubmitted));
             await session.SaveChangesAsync();
-
-            if (adminItemIds.Count > 0)
-                await inboxNotifier.DismissByIdsAsync(adminItemIds);
 
             Log.Information("Profile: Change request cancelled. UserId={UserId}", user.Id);
             return Results.NoContent();
@@ -397,17 +406,19 @@ public static class ProfileEndpoints
             : JsonSerializer.Deserialize<ProfileUpdateDto>(payloadJson, PayloadJsonOptions) ?? new ProfileUpdateDto();
 
     /// <summary>Emits (Field, OldValue, NewValue) entries for every Optional that
-    /// <see cref="Optional{T}.HasValue"/> = true. OldValue is the caller-supplied user
-    /// value. The payload is expected to have been cleaned of no-op entries at submission
+    /// <see cref="Optional{T}.HasValue"/> = true. OldValue is the value <paramref name="previous"/>
+    /// recorded for the field when the request was approved (B4-AP-05), else the caller-supplied
+    /// user value. The payload is expected to have been cleaned of no-op entries at submission
     /// time; we don't double-filter here.</summary>
     internal static IEnumerable<(string Field, string? OldValue, string? NewValue)> EnumerateProfileChanges(
-        string payloadJson, ApplicationUser? user)
+        string payloadJson, ApplicationUser? user, IReadOnlyDictionary<string, string?>? previous = null)
     {
         var p = DeserializeProfile(payloadJson);
-        if (p.Firstname.HasValue) yield return ("Firstname", user?.Firstname, p.Firstname.Value);
-        if (p.Lastname.HasValue)  yield return ("Lastname",  user?.Lastname,  p.Lastname.Value);
-        if (p.Acronym.HasValue)   yield return ("Acronym",   user?.Acronym,   p.Acronym.Value);
-        if (p.Email.HasValue)     yield return ("Email",     user?.Email,     p.Email.Value);
+        string? Old(string field, string? current) => previous is not null && previous.TryGetValue(field, out var v) ? v : current;
+        if (p.Firstname.HasValue) yield return ("Firstname", Old("Firstname", user?.Firstname), p.Firstname.Value);
+        if (p.Lastname.HasValue)  yield return ("Lastname",  Old("Lastname", user?.Lastname),   p.Lastname.Value);
+        if (p.Acronym.HasValue)   yield return ("Acronym",   Old("Acronym", user?.Acronym),     p.Acronym.Value);
+        if (p.Email.HasValue)     yield return ("Email",     Old("Email", user?.Email),         p.Email.Value);
     }
 
     /// <summary>Drops payload entries whose value matches the user's current profile —
@@ -448,7 +459,7 @@ public static class ProfileEndpoints
         r.ReviewedAt,
         r.ReviewerNote,
         Changes = r.Type == ChangeRequestType.Profile
-            ? EnumerateProfileChanges(r.Payload, user).Select(c => new { c.Field, c.OldValue, c.NewValue })
+            ? EnumerateProfileChanges(r.Payload, user, r.PreviousValues).Select(c => new { c.Field, c.OldValue, c.NewValue })
             : Enumerable.Empty<object>().Cast<dynamic>(),
     };
 

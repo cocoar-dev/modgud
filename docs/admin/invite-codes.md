@@ -66,8 +66,8 @@ Redemption happens **implicitly** on the native passwordless sign-up path — th
 
 1. Looks up the code by its hash for the request's app.
 2. Rejects (silently — see below) if the code doesn't exist, is already used, is expired, or is bound to a different email than the one signing up.
-3. Marks the code used **before** the account is created, under optimistic concurrency, so two simultaneous redemption attempts of the same bearer code can't both succeed — the loser sees the same silent rejection as an invalid code.
-4. Creates the passwordless account and emails it the registration OTP, exactly as under the `JitOnOtp` posture.
+3. Marks the code used **before** anything else is written, under optimistic concurrency, so two simultaneous redemption attempts of the same bearer code can't both succeed — the loser sees the same silent rejection as an invalid code.
+4. Opens a pending registration and emails the registration OTP, exactly as under the `JitOnOtp` posture. **No account exists yet:** the passwordless account is created only when the OTP is proved at `/connect/token` (ADR 0018); a sign-up that never proves the code leaves no user behind, and its consumed invite code stays used.
 
 Every failure mode (missing code, wrong code, already used, expired, email mismatch, lost the concurrency race) is **indistinguishable from the `Off` posture** to the caller — the endpoint always returns the same generic "if your email is registered…" message. This keeps the invite-only posture from becoming an oracle for which codes are valid or which emails are already known. A **confirmed, existing user** signing in through the same endpoint never needs a code at all — the code is ignored on that path, invite codes only gate the creation of brand-new accounts.
 

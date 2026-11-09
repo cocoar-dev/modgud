@@ -214,8 +214,18 @@ Both validation paths enforce DPoP binding automatically when a token contains
 valid proof whose key and access-token hash match. Replaying it as plain
 `Bearer` is rejected. Unbound bearer tokens continue to work normally.
 
+Each proof is accepted once (RFC 9449 §11.1): the SDK remembers its `jti` for the
+proof's freshness window (about 65 seconds), so a recorded request cannot be
+replayed. The default record is in memory per process. With several instances
+behind a load balancer, register your own `IDpopReplayCache` (for example backed
+by a distributed cache) before `AddModgudResourceServer`; it takes precedence.
+`DpopReplayProtection = false` turns the check off for a client that cannot send a
+fresh proof per request.
+
 Behind a reverse proxy, configure forwarded headers so the externally visible
-scheme and host match the proof's signed `htu`.
+scheme and host match the proof's signed `htu`. A path prefix the app is mounted
+under (`UsePathBase`, or a proxy that strips `/api` and sets `PathBase`) is part
+of the expected `htu` too: the client signs the full external URL.
 
 ## Session revocation (JWT mode)
 

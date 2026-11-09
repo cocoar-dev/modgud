@@ -99,9 +99,10 @@ public static class RolesEndpoints
 
         // Delete delegates to the shared RoleAdminService — the same canonical path the
         // realm-provisioning prune calls.
-        roleGroup.MapDelete("{id}", async (ShortGuid id, RoleAdminService roleAdmin, CancellationToken ct) =>
+        roleGroup.MapDelete("{id}", async (ShortGuid id, HttpContext http, IPermissionService perms, RoleAdminService roleAdmin, CancellationToken ct) =>
             {
-                var result = await roleAdmin.DeleteRoleAsync(id.Guid, ct);
+                var callerIsRealmAdmin = await CallerPermissions.IsRealmAdminAsync(http, perms);
+                var result = await roleAdmin.DeleteRoleAsync(id.Guid, callerIsRealmAdmin, ct);
                 return result.IsError ? ToErrorResult(result.Errors) : Results.NoContent();
             })
             .WithName("V2_Role_Delete")

@@ -50,6 +50,11 @@ test.describe('BFF — login round-trip', () => {
     const session = cookies.find(c => c.name === 'bff.session')
     expect(session).toBeTruthy()
     expect(session!.httpOnly).toBe(true)
+    // B10-01 — the cookie only names a server-side session: no chunked ticket
+    // carrying the access/refresh/id tokens.
+    expect(session!.value.startsWith('chunks-')).toBe(false)
+    expect(cookies.some(c => c.name.startsWith('bff.sessionC'))).toBe(false)
+    expect(session!.value.length).toBeLessThan(1000)
   })
 
   test('logout clears the cookie', async ({ page }) => {

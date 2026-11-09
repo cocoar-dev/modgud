@@ -41,6 +41,19 @@ public class DcrRateLimiterTests
     }
 
     [Fact]
+    public async Task Per_ip_limit_treats_an_ipv6_64_as_one_source()
+    {
+        // B8-AJ-05 — the same /64 key as every other auth limit; IPv4-mapped is IPv4.
+        var sut = Sut();
+        Assert.Equal(DcrRateLimitVerdict.Allowed, await sut.TryConsumeAsync("2001:db8:1:2::1", RealmId, 1, 100));
+        Assert.Equal(DcrRateLimitVerdict.PerIpExceeded, await sut.TryConsumeAsync("2001:db8:1:2:ffff::2", RealmId, 1, 100));
+        Assert.Equal(DcrRateLimitVerdict.Allowed, await sut.TryConsumeAsync("2001:db8:1:3::1", RealmId, 1, 100));
+
+        Assert.Equal(DcrRateLimitVerdict.Allowed, await sut.TryConsumeAsync("::ffff:192.0.2.7", RealmId, 1, 100));
+        Assert.Equal(DcrRateLimitVerdict.PerIpExceeded, await sut.TryConsumeAsync("192.0.2.7", RealmId, 1, 100));
+    }
+
+    [Fact]
     public async Task Per_realm_limit_blocks_across_all_ips()
     {
         var sut = Sut();

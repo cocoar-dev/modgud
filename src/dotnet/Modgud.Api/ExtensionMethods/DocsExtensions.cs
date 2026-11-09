@@ -19,6 +19,17 @@ public class DocsMiddleware
     private readonly string _docsRoot;
     private readonly FileExtensionContentTypeProvider _contentTypes = new();
 
+    /// <summary>
+    /// B10-DOC-02 — inside means the root itself or below it: a plain prefix test let a sibling
+    /// whose name starts with the root's ("docs-private" next to "docs") pass.
+    /// </summary>
+    internal static bool IsInsideRoot(string root, string fullPath)
+    {
+        var normalisedRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return string.Equals(fullPath, normalisedRoot, StringComparison.OrdinalIgnoreCase)
+            || fullPath.StartsWith(normalisedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
     public DocsMiddleware(RequestDelegate next)
     {
         _next = next;
@@ -70,7 +81,7 @@ public class DocsMiddleware
         var resolvedPath = Path.GetFullPath(Path.Combine(_docsRoot, relative));
 
         // Path-traversal guard.
-        if (!resolvedPath.StartsWith(_docsRoot, StringComparison.OrdinalIgnoreCase))
+        if (!IsInsideRoot(_docsRoot, resolvedPath))
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
             return;
@@ -85,7 +96,7 @@ public class DocsMiddleware
             resolvedPath = Path.GetFullPath(Path.Combine(resolvedPath, "index.html"));
             // Re-check after the index.html append in case _docsRoot was a
             // symlink or the combine produced an edge-case path.
-            if (!resolvedPath.StartsWith(_docsRoot, StringComparison.OrdinalIgnoreCase))
+            if (!IsInsideRoot(_docsRoot, resolvedPath))
             {
                 context.Response.StatusCode = StatusCodes.Status400BadRequest;
                 return;

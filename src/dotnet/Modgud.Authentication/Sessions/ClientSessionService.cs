@@ -214,7 +214,14 @@ public sealed class ClientSessionService(
         await EndByAuthorizationAsync(authorizationId, ct);
     }
 
-    public async Task EndByAuthorizationAsync(string authorizationId, CancellationToken ct = default)
+    public Task EndByAuthorizationAsync(string authorizationId, CancellationToken ct = default)
+        => EndByAuthorizationCoreAsync(authorizationId, AccessEndReasons.Revoked, initiatingClientId: null, ct);
+
+    public Task EndByRpLogoutAsync(string authorizationId, string initiatingClientId, CancellationToken ct = default)
+        => EndByAuthorizationCoreAsync(authorizationId, AccessEndReasons.Logout, initiatingClientId, ct);
+
+    private async Task EndByAuthorizationCoreAsync(
+        string authorizationId, string reason, string? initiatingClientId, CancellationToken ct)
     {
         var rows = await session.Query<ClientSession>()
             .Where(x => x.AuthorizationId == authorizationId)
@@ -224,7 +231,7 @@ public sealed class ClientSessionService(
         foreach (var row in rows)
         {
             session.Delete(row);
-            await sessionGrants.StageSessionEndAsync(session, row.UserId, row.Id, AccessEndReasons.Revoked, initiatingClientId: null, ct);
+            await sessionGrants.StageSessionEndAsync(session, row.UserId, row.Id, reason, initiatingClientId, ct);
         }
         await session.SaveChangesAsync(ct);
     }

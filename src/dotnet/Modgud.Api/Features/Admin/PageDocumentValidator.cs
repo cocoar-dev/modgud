@@ -83,7 +83,9 @@ public static class PageDocumentValidator
                 error = "Root node must be an object with type 'page'.";
                 return false;
             }
+            // B10-PA05 — TryGetInt32 throws on a non-number value instead of returning false.
             if (!root.TryGetProperty("schemaVersion", out var version)
+                || version.ValueKind != JsonValueKind.Number
                 || !version.TryGetInt32(out var schemaVersion)
                 || schemaVersion is < MinimumSchemaVersion or > CurrentSchemaVersion)
             {
@@ -93,12 +95,9 @@ public static class PageDocumentValidator
 
             var ids = new HashSet<string>(StringComparer.Ordinal);
             var nodeCount = 0;
-            JsonElement? consentCard = null;
-            JsonElement? warning = null;
-            var warningIndex = -1;
             var validationError = string.Empty;
 
-            bool Walk(JsonElement node, int depth, string? parentId, int index)
+            bool Walk(JsonElement node, int depth)
             {
                 if (depth > MaxDepth) { validationError = $"Document exceeds maximum depth {MaxDepth}."; return false; }
                 if (++nodeCount > MaxNodes) { validationError = $"Document exceeds maximum node count {MaxNodes}."; return false; }
@@ -146,7 +145,8 @@ public static class PageDocumentValidator
                             || (slug is not "login" and not "consent"))
                         { validationError = $"Node '{id}' references a disallowed repeat source."; return false; }
                         if (props.TryGetProperty("maxItems", out var maxItems)
-                            && (!maxItems.TryGetInt32(out var max) || max is < 1 or > 100))
+                            && (maxItems.ValueKind != JsonValueKind.Number
+                                || !maxItems.TryGetInt32(out var max) || max is < 1 or > 100))
                         { validationError = $"Node '{id}' repeat maxItems must be between 1 and 100."; return false; }
                     }
                     if (type == "visual-markup")
@@ -161,42 +161,25 @@ public static class PageDocumentValidator
                     }
                 }
 
-                if (id == "consent-card") consentCard = node;
-                if (id == "unverified-client-warning")
-                {
-                    warning = node;
-                    if (parentId == "consent-card") warningIndex = index;
-                }
 
                 if (!node.TryGetProperty("children", out var children)) return true;
                 if (children.ValueKind != JsonValueKind.Array)
                 { validationError = $"Node '{id}' children must be an array."; return false; }
-                var childIndex = 0;
                 foreach (var child in children.EnumerateArray())
                 {
-                    if (!Walk(child, depth + 1, id, childIndex++)) return false;
+                    if (!Walk(child, depth + 1)) return false;
                 }
                 return true;
             }
 
-            if (!Walk(root, 0, null, 0))
+            if (!Walk(root, 0))
             {
                 error = validationError;
                 return false;
             }
-            if (slug == "consent")
-            {
-                if (consentCard is null || warning is null || warningIndex is < 0 or > 4)
-                {
-                    error = "Consent requires the locked unverified-client warning near the top of consent-card.";
-                    return false;
-                }
-                if (!StringProperty(warning.Value, "type", out var warningType) || warningType != "note")
-                {
-                    error = "Consent unverified-client-warning must be a note.";
-                    return false;
-                }
-            }
+            // B10-PA03 — consent pages need no document-owned unverified-client warning: the
+            // consent host renders it above every custom page, where a document cannot reword,
+            // restyle or hide it.
 
             error = string.Empty;
             return true;

@@ -33,6 +33,7 @@ using Modgud.Infrastructure.OpenIddict;
 using Modgud.Infrastructure.Persistence.Marten;
 using Marten.Storage;
 using Npgsql;
+using Wolverine;
 using OpenIddict.Abstractions;
 using OpenIddict.Server;
 
@@ -48,12 +49,21 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     private IHost? _host;
     private readonly bool _enableDirectScopeTenantFallback;
     private readonly TokenPipelineFaultInjector _tokenPipelineFaults = new();
+    private readonly GrantRevokerFaults _grantRevokerFaults = new();
+    private readonly UserAccessRevokerFaults _userAccessRevokerFaults = new();
+    private readonly EmailFaults _emailFaults = new();
     private readonly TestFailureCorrelation? _failureCorrelation =
         Environment.GetEnvironmentVariable(TestFailureCorrelation.DirectoryVariable) is { } directory
             ? new TestFailureCorrelation(directory) : null;
     protected virtual bool ProvisionLegacySystemRealm => true;
 
     public TokenPipelineFaultInjector TokenPipelineFaults => _tokenPipelineFaults;
+    public GrantRevokerFaults GrantRevokerFaults => _grantRevokerFaults;
+    public UserAccessRevokerFaults UserAccessRevokerFaults => _userAccessRevokerFaults;
+    public EmailFaults EmailFaults => _emailFaults;
+
+    /// <summary>The <see cref="Modgud.Infrastructure.FollowUps.FollowUpOptions.SafetyNetDelay"/> of the test host.</summary>
+    public static readonly TimeSpan SafetyNetDelay = TimeSpan.FromSeconds(1);
 
     public ModgudWebApplicationFactory(SharedPostgresFixture fixture)
     {
@@ -129,6 +139,36 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
                 services.AddSingleton<IStartupFilter>(_failureCorrelation);
 
             services.AddSingleton(_tokenPipelineFaults);
+
+            // G-B4-02 seam — the grant revoker can be told to fail its next authorization revokes.
+            services.AddSingleton(_grantRevokerFaults);
+            services.RemoveAll<Modgud.Infrastructure.OpenIddict.IOAuthGrantRevoker>();
+            services.AddScoped<Modgud.Infrastructure.OpenIddict.IOAuthGrantRevoker>(sp => new FaultInjectingGrantRevoker(
+                ActivatorUtilities.CreateInstance<Modgud.Infrastructure.OpenIddict.DeferringOAuthGrantRevoker>(sp),
+                _grantRevokerFaults));
+
+            // B4-AP-01 seam — the user access revoker can be told to fail its next revokes.
+            services.AddSingleton(_userAccessRevokerFaults);
+            services.RemoveAll<Modgud.Authentication.Sessions.IUserAccessRevoker>();
+            services.AddScoped<Modgud.Authentication.Sessions.IUserAccessRevoker>(sp => new FaultInjectingUserAccessRevoker(
+                ActivatorUtilities.CreateInstance<Modgud.Authentication.Sessions.DeferringUserAccessRevoker>(sp),
+                _userAccessRevokerFaults));
+
+            // Safety nets wait 1 s here instead of 10 s: long enough to run after the immediate
+            // attempt they back up, short enough for tests and for the reset wait.
+            services.RemoveAll<Modgud.Infrastructure.FollowUps.FollowUpOptions>();
+            services.AddSingleton(new Modgud.Infrastructure.FollowUps.FollowUpOptions { SafetyNetDelay = SafetyNetDelay });
+
+            // Follow-up outbox probe (test-only handler): proves commit/rollback/realm/retry.
+            services.AddSingleton<FollowUpProbeRecorder>();
+            services.ConfigureWolverine(opts =>
+            {
+                opts.Discovery.IncludeType(typeof(FollowUpProbeHandler));
+                // Handlers that are not pre-generated in Modgud.Api (the test-only probe) are
+                // compiled in memory: Auto mode would write their source into
+                // Modgud.Api/Internal/Generated, where it breaks the next API build.
+                opts.CodeGeneration.SourceCodeWritingEnabled = false;
+            });
 
             // ADR 0021 — every relying party's back-channel logout endpoint is this
             // recording sink; the delivery worker's named client posts into it.
@@ -215,7 +255,9 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<IEmailService>();
             services.AddSingleton(sp =>
                 new InMemoryEmailService(sp.GetRequiredService<ILogger<InMemoryEmailService>>()));
-            services.AddSingleton<IEmailService>(sp => sp.GetRequiredService<InMemoryEmailService>());
+            // B3-EI-04 seam — sends of one template can be told to fail (EmailFaults).
+            services.AddSingleton<IEmailService>(sp =>
+                new FaultInjectingEmailService(sp.GetRequiredService<InMemoryEmailService>(), _emailFaults));
 
             // Enable Magic Link for tests
             services.RemoveAll<MagicLinkConfiguration>();
@@ -600,10 +642,18 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
         }
 
         _tokenPipelineFaults.Reset();
+        _grantRevokerFaults.Reset();
+        _userAccessRevokerFaults.Reset();
+        _emailFaults.Reset();
 
         var cancellation = TestContext.Current.CancellationToken;
         var store = Services.GetRequiredService<IDocumentStore>();
         var coordinatorControl = Services.GetRequiredService<IProjectionCoordinatorControl>();
+
+        // Follow-ups of the previous test (mails, inbox items, revocations) run on Wolverine's
+        // durable queue after their commit and append events of their own; one still running
+        // while the sequences restart leaves a gap the next catch-up waits on until it times out.
+        await WaitForFollowUpsAsync(store, cancellation);
 
         // ResetAllData restarts event sequences at 1. The behavioural suite therefore
         // runs without a background daemon and owns the reset window exclusively. If
@@ -646,6 +696,34 @@ public class ModgudWebApplicationFactory : WebApplicationFactory<Program>
     /// Call after appending events and before reading an async view.
     /// See <see cref="CatchUpAsyncProjectionsAsync"/>.
     /// </summary>
+    /// <summary>
+    /// Waits until the system realm has no durable message waiting for or in its handler
+    /// (status <c>Incoming</c>, also while a safety net waits until it is due; handled ones turn
+    /// <c>Handled</c>, rescheduled retries <c>Scheduled</c>). Throws after a minute rather than
+    /// reset under running work.
+    /// </summary>
+    private static async Task WaitForFollowUpsAsync(IDocumentStore store, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(1);
+        while (true)
+        {
+            var pending = 0;
+            await using (var session = store.QuerySession(TenantConstants.SystemTenantId))
+            {
+                var schemas = await session.QueryAsync<string>(
+                    "select table_schema from information_schema.tables where table_name = 'wolverine_incoming_envelopes'", ct);
+                foreach (var schema in schemas)
+                    pending += (await session.QueryAsync<int>(
+                        $"select count(*)::int from \"{schema}\".wolverine_incoming_envelopes where status = 'Incoming'", ct)).Single();
+            }
+            if (pending == 0) return;
+            if (DateTime.UtcNow > deadline)
+                throw new InvalidOperationException(
+                    $"{pending} durable message(s) of the previous test are still pending; resetting the data now would race them.");
+            await Task.Delay(50, ct);
+        }
+    }
+
     public Task WaitForProjectionsAsync(TimeSpan? timeout = null)
         => CatchUpAsyncProjectionsAsync(TenantConstants.SystemTenantId, timeout);
 
@@ -848,4 +926,41 @@ internal sealed class LostTokenResponseHandler
 public sealed class UninitializedModgudWebApplicationFactory : ModgudWebApplicationFactory
 {
     protected override bool ProvisionLegacySystemRealm => false;
+
+    /// <summary>
+    /// F.inst-I1 — test-only fault seam: when armed, the next realm login-provider seeding
+    /// throws once, i.e. after the realm document has been committed and before the
+    /// realm is fully seeded. The production seeder runs otherwise.
+    /// </summary>
+    public RealmSeedingFault SeedingFault { get; } = new();
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<Modgud.Application.Services.ILoginProviderRealmSeeder>();
+            services.AddScoped<Modgud.Application.Services.ILoginProviderRealmSeeder>(sp =>
+                new FaultInjectingLoginProviderRealmSeeder(
+                    ActivatorUtilities.CreateInstance<Modgud.Authentication.Setup.LoginProviderRealmSeeder>(sp),
+                    SeedingFault));
+        });
+    }
+}
+
+public sealed class RealmSeedingFault
+{
+    private int _armed;
+    public void ArmOnce() => Interlocked.Exchange(ref _armed, 1);
+    public bool TryFire() => Interlocked.Exchange(ref _armed, 0) == 1;
+}
+
+internal sealed class FaultInjectingLoginProviderRealmSeeder(
+    Modgud.Application.Services.ILoginProviderRealmSeeder inner,
+    RealmSeedingFault fault) : Modgud.Application.Services.ILoginProviderRealmSeeder
+{
+    public Task SeedAsync(string tenantId, ILogger? logger = null, CancellationToken ct = default) =>
+        fault.TryFire()
+            ? throw new InvalidOperationException("Injected realm seeding failure (test).")
+            : inner.SeedAsync(tenantId, logger, ct);
 }

@@ -248,7 +248,7 @@ function linkWith(idp: AvailableIdp) {
   // through the challenge start endpoint.
   window.location.href = idp.Kind === 'Saml'
     ? `/saml/${encodeURIComponent(idp.Slug)}/login?returnUrl=/profile`
-    : `/api/account/external-login/${idp.Id}/start?returnUrl=/profile`
+    : `/api/account/external-login/${idp.Id}/start?returnUrl=/profile&intent=link`
 }
 
 async function unlink(linkId: string, displayName: string) {
@@ -409,6 +409,10 @@ watch(themeValue, (val) => setDarkMode(val === 'dark'))
 function onLocaleChange(locale: string | null) {
   if (locale) setLocale(locale)
 }
+
+// B4-AP-06 — an approval or an admin edit updates the user on the server; the self stream
+// refreshes authStore.user, and the change-request state follows it here.
+watch(() => authStore.user, () => { void loadRequest() })
 
 onMounted(() => {
   // authStore.user stays fresh via SignalR UserActions subscription

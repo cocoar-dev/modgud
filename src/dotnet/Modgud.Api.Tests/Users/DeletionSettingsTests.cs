@@ -70,4 +70,26 @@ public class DeletionSettingsTests(SharedPostgresFixture fixture) : IntegrationT
             Endpoint, patch, JsonOptions, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
     }
+
+    /// <summary>A.gdpr-C006 — no upper bound: int.MaxValue was stored and later fed to
+    /// AddDays (the deletion deadline), which throws.</summary>
+    [Theory]
+    [InlineData(int.MaxValue, 2, 30)]
+    [InlineData(30, 2, int.MaxValue)]
+    public async Task Patch_rejected_when_a_period_exceeds_ten_years(int graceDays, int reminderLeadDays, int adminRetentionDays)
+    {
+        var patch = new UpdateRealmSettingsDto
+        {
+            Deletion = new UpdateDeletionSettingsDto
+            {
+                GraceDays = graceDays,
+                ReminderLeadDays = reminderLeadDays,
+                AdminRetentionDays = adminRetentionDays,
+            },
+        };
+
+        var resp = await Client.PatchAsJsonAsync(
+            Endpoint, patch, JsonOptions, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
 }

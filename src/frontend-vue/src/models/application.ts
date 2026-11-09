@@ -58,6 +58,9 @@ export interface UpdateApplicationDto {
   Description?: string | null
   Permissions: ApplicationPermissionInputDto[]
   Settings?: ApplicationSettingsDto | null
+  /** F7-05 — `Settings.Version` as loaded; a different stored version → 409
+   * `App.SettingsChanged` instead of overwriting a change made meanwhile. */
+  ExpectedSettingsVersion?: string | null
 }
 
 // ── ADR-0011: per-Application settings overrides ────────────────────────────
@@ -118,6 +121,12 @@ export interface ApplicationSelfRegistrationOverrideDto {
   PrivacyPolicyUrl?: string | null
 }
 
+export interface ApplicationNativeGrantsOverrideDto {
+  Enabled?: boolean | null
+  AccessTokenLifetimeMinutes?: number | null
+  RequireRecentSignInForPasskeyChanges?: boolean | null
+}
+
 export interface ApplicationGrantOverrideDto {
   Enabled?: boolean | null
   AccessTokenLifetimeMinutes?: number | null
@@ -172,13 +181,15 @@ export interface ApplicationChangeFeedDto {
 }
 
 export interface ApplicationSettingsDto {
+  /** F7-05 — the stored version (read only; null while the app has no override). */
+  Version?: string | null
   Origin?: ApplicationOriginDto | null
   Branding?: ApplicationBrandingSettingsDto | null
   PageTheme?: ApplicationPageThemeDto | null
   EmailBranding?: ApplicationEmailBrandingDto | null
   LoginExperience?: ApplicationLoginExperienceDto | null
   SelfRegistration?: ApplicationSelfRegistrationOverrideDto | null
-  NativeGrants?: ApplicationGrantOverrideDto | null
+  NativeGrants?: ApplicationNativeGrantsOverrideDto | null
   SignIn?: ApplicationSignInDto | null
   /** ADR 0019 — sparse rate-limit overrides for this App (null = inherit the realm). */
   AuthRateLimits?: UpdateAuthRateLimitsDto | null

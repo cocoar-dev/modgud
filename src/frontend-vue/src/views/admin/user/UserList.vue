@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { stagedFlag, stagedText } from './draftMergePatch'
 import { computed, onMounted, ref, watch } from 'vue'
 import { CoarDataGrid, CoarGridBuilder } from '@cocoar/vue-data-grid'
 import {
@@ -96,7 +97,7 @@ const displayUsers = computed<UserRow[]>(() => {
       Acronym: str(entity.Acronym) || undefined,
       Email: str(entity.Email) || undefined,
       UserName: str(entity.UserName) || str(entity.Email),
-      IsActive: true,
+      IsActive: entity.IsActive !== false,
       HasPassword: draft.SecretSlots.some((slot) => slot === `users/${entry.Key}/Password`),
       IsTestAccount: entity.IsTestAccount === true,
       EmailConfirmed: entity.EmailConfirmed === true,
@@ -118,11 +119,15 @@ const displayUsers = computed<UserRow[]>(() => {
     const overlay = overlays.get(row.Id)
     if (!overlay) return row
     const e = overlay.entity
+    // AID-06 — merge patch: absent keeps the live value, an explicit null shows the
+    // staged clear (it used to fall back to the live value).
     return {
       ...row,
-      Firstname: str(e.Firstname) || row.Firstname,
-      Lastname: str(e.Lastname) || row.Lastname,
-      Acronym: str(e.Acronym) || row.Acronym,
+      Firstname: stagedText(e, 'Firstname', row.Firstname),
+      Lastname: stagedText(e, 'Lastname', row.Lastname),
+      Acronym: stagedText(e, 'Acronym', row.Acronym) || undefined,
+      IsActive: stagedFlag(e, 'IsActive', row.IsActive),
+      EmailConfirmed: stagedFlag(e, 'EmailConfirmed', row.EmailConfirmed),
       Email: str(e.Email) || row.Email,
       UserName: str(e.UserName).toLowerCase() || row.UserName,
       IsTestAccount: typeof e.IsTestAccount === 'boolean' ? e.IsTestAccount : row.IsTestAccount,

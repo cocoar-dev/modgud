@@ -1761,7 +1761,7 @@ async function copySecret() {
                   <CoarPasswordInput v-model="form.ClientSecret" clearable :disabled="hasStaffingGrant" />
                 </CoarFormField>
                 <div
-                  v-else-if="isExistingClient && form.ClientType === 'confidential' && !form.LinkedServiceAccountId"
+                  v-else-if="isExistingClient && form.ClientType === 'confidential' && !form.LinkedServiceAccountId && !form.ManagedTerminalEnrollmentId"
                   class="col-half credential-action">
                   <span class="field-label">{{ t('admin.oauthClients.clientSecret', {}, 'Client Secret') }}</span>
                   <CoarButton size="s" variant="secondary" icon-start="rotate-ccw" :loading="loading" @click="regenerateSecret">

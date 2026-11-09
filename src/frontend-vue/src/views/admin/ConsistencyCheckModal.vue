@@ -48,8 +48,6 @@ interface CheckBlock {
   Issues: {
     MissingPerson?: IdName[]
     OrphanPerson?: IdName[]
-    MissingGroup?: IdName[]
-    OrphanGroup?: IdName[]
     Items?: (DanglingMember | DanglingRole | AutoDriftIssue)[]
     Cycles?: CycleReport[]
   }
@@ -132,7 +130,6 @@ function formatMs(ms: number): string {
 function asPrincipalSync(c: CheckBlock) {
   return c.Issues as {
     MissingPerson?: IdName[]; OrphanPerson?: IdName[]
-    MissingGroup?: IdName[]; OrphanGroup?: IdName[]
   }
 }
 function asDanglingMembers(c: CheckBlock) {
@@ -316,30 +313,6 @@ onMounted(runCheck)
                     </div>
                     <ul class="text-xs space-y-0.5">
                       <li v-for="o in asPrincipalSync(check).OrphanPerson" :key="o.Id"
-                        class="font-mono">{{ o.Label }}</li>
-                    </ul>
-                  </div>
-                  <div v-if="asPrincipalSync(check).MissingGroup?.length"
-                    class="rounded border border-amber-200 bg-white p-2">
-                    <div class="text-xs font-medium text-amber-800 mb-1">
-                      {{ t('admin.consistency.principalSync.missingGroup', {},
-                        'Groups without a Group principal') }}
-                      ({{ asPrincipalSync(check).MissingGroup!.length }})
-                    </div>
-                    <ul class="text-xs space-y-0.5">
-                      <li v-for="m in asPrincipalSync(check).MissingGroup" :key="m.Id"
-                        class="font-mono">{{ m.Label }}</li>
-                    </ul>
-                  </div>
-                  <div v-if="asPrincipalSync(check).OrphanGroup?.length"
-                    class="rounded border border-amber-200 bg-white p-2">
-                    <div class="text-xs font-medium text-amber-800 mb-1">
-                      {{ t('admin.consistency.principalSync.orphanGroup', {},
-                        'Group principals with no Group source') }}
-                      ({{ asPrincipalSync(check).OrphanGroup!.length }})
-                    </div>
-                    <ul class="text-xs space-y-0.5">
-                      <li v-for="o in asPrincipalSync(check).OrphanGroup" :key="o.Id"
                         class="font-mono">{{ o.Label }}</li>
                     </ul>
                   </div>

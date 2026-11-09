@@ -59,11 +59,14 @@ public sealed class RoleAdminService(IDocumentSession session)
         if (existing is null || existing.IsDeleted)
             return Error.NotFound("Role.NotFound", "Role not found.");
 
-        // Only a realm:admin may set/keep the realm-admin flag on a role. A non-admin may
-        // still de-escalate (clear the flag) or edit a non-admin role.
-        if (dto.IsRealmAdmin && !callerIsRealmAdmin)
+        // Only a realm:admin may set/keep the realm-admin flag on a role — and, symmetric to
+        // conferring it (D.roles-F03), only a realm:admin may take it away. A non-admin may
+        // still edit an ordinary role.
+        if ((dto.IsRealmAdmin || existing.IsRealmAdmin) && !callerIsRealmAdmin)
             return Error.Forbidden("Role.RealmAdminForbidden",
                 "Only a realm administrator may create or modify a realm-admin role.");
+        if (existing.IsRealmAdmin && !dto.IsRealmAdmin && await IsLastRealmAdminRoleAsync(existing.Id, ct))
+            return LastRealmAdminRole();
 
         var built = await BuildRoleAsync(dto, ct);
         if (built.IsError) return built.Errors;
@@ -127,6 +130,12 @@ public sealed class RoleAdminService(IDocumentSession session)
             && r.AppId == role.AppId);
     }
 
+    private async Task<bool> IsLastRealmAdminRoleAsync(Guid roleId, CancellationToken ct) =>
+        !await session.Query<PermissionRole>().AnyAsync(r => !r.IsDeleted && r.IsRealmAdmin && r.Id != roleId, ct);
+
+    private static Error LastRealmAdminRole() => Error.Conflict("Role.LastRealmAdminRole",
+        "This is the realm's last realm-admin role; removing it or its flag would leave nobody able to administer the realm.");
+
     private static Error NameTaken(PermissionRole role)
         => Error.Conflict("Role.NameTaken", role.IsRealmAdmin
             ? $"A realm-admin role named '{role.Name}' already exists."
@@ -138,11 +147,22 @@ public sealed class RoleAdminService(IDocumentSession session)
     /// by emitting <c>PermissionRoleDeletedEvent</c> (the inline projection flips
     /// <c>IsDeleted</c>). Idempotent: a missing / already-deleted role returns NotFound.
     /// </summary>
-    public async Task<ErrorOr<Success>> DeleteRoleAsync(Guid id, CancellationToken ct = default)
+    public async Task<ErrorOr<Success>> DeleteRoleAsync(Guid id, bool callerIsRealmAdmin, CancellationToken ct = default)
     {
         var role = await session.LoadAsync<PermissionRole>(id, ct);
         if (role is null || role.IsDeleted)
             return Error.NotFound("Role.NotFound", "Role not found.");
+
+        // D.roles-F03 — removing a realm-admin role revokes realm:admin from everyone who
+        // holds it: realm administrators only, and never the last one (that is a lockout).
+        if (role.IsRealmAdmin)
+        {
+            if (!callerIsRealmAdmin)
+                return Error.Forbidden("Role.RealmAdminForbidden",
+                    "Only a realm administrator may delete a realm-admin role.");
+            if (await IsLastRealmAdminRoleAsync(role.Id, ct))
+                return LastRealmAdminRole();
+        }
 
         session.Events.Append(id, new PermissionRoleDeletedEvent(id));
         await session.SaveChangesAsync(ct);

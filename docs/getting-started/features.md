@@ -16,7 +16,7 @@ A point-by-point list of what Modgud delivers out of the box.
 - **TOTP** (Google Authenticator, 1Password, Authy, …)
 - **Email OTP** (six-digit code sent to verified address)
 - **WebAuthn / FIDO2 Passkeys** (Touch ID, Windows Hello, YubiKey, etc.)
-- **Recovery codes** (one-time backup codes for self-service recovery)
+- **No recovery codes** — the safety net is a second enrolled method, the e-mail code after a password, or the operator's [recovery CLI](../operate/recovery-cli)
 - **Per-App sign-in policy** — single or multi-factor minimum per App, step-up with only the missing factor, setup grace period and per-user exemption ([Sign-in levels](../concepts/sign-in-levels))
 
 ### External Identity Providers (SSO)
@@ -113,7 +113,7 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 
 ### Self-service
 - **Article 20 export** — the user downloads their full profile, sessions, login history, and OAuth-consent history as JSON
-- **Account deletion** — user-initiated, with email-confirmed cooldown period; user can cancel before grace expires
+- **Account deletion** — user-initiated after a recent sign-in, with a grace period announced by e-mail (no confirmation link); the user can cancel before it expires
 - **Email change** — with double-opt-in to the new address
 
 ### Admin-side
@@ -148,7 +148,8 @@ Modgud is a pure RBAC + grouping IAM. Row-level access policies (ABAC) live in t
 
 ### Resource server libraries
 - **`Modgud.AspNetCore.ResourceServer`** — explicit JWT and introspection handlers that validate tokens and project the configured audience block onto the principal
-- JWT validation is local; reference-token validation uses RFC 7662 introspection for immediate revocation
+- JWT validation is local; reference-token validation calls RFC 7662 introspection on every request, so a revoked reference token fails at once
+- Opt-in session revocation for JWTs: the library follows ended sessions on the change feed (polled every few seconds, fail-open) and refuses their tokens before `exp`
 
 ### UserInfo as the permission delivery channel
 - JWT access tokens, UserInfo and authorized introspection responses can expose the same audience-keyed `resource_access` claim

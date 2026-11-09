@@ -255,8 +255,9 @@ public sealed class ManagementDpopProofValidatorTests
         var session = DispatchProxy.Create<IDocumentSession, ReplaySessionProxy>();
         var proxy = (ReplaySessionProxy)(object)session;
         proxy.Failure = failure;
+        // The store opens a session of its own per call (G-B4-03) — the proxy is that session.
         await using var services = new ServiceCollection()
-            .AddScoped<IDocumentSession>(_ => session)
+            .AddSingleton<Modgud.Infrastructure.Persistence.Tenancy.ITenantSessionFactory>(new ProxySessionFactory(session))
             .AddScoped<IDpopReplayStore, MartenDpopReplayStore>()
             .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var proof = key.CreateProof(Now, htu: Uri, ath: DpopKey.ComputeAth(Token));
@@ -265,5 +266,11 @@ public sealed class ManagementDpopProofValidatorTests
         Assert.Equal(failure == "save" ? 1 : 0, proxy.Inserts);
         Assert.Equal(failure == "save" ? 1 : 0, proxy.Saves);
         Assert.Equal(1, proxy.Disposals);
+    }
+
+    private sealed class ProxySessionFactory(IDocumentSession session) : Modgud.Infrastructure.Persistence.Tenancy.ITenantSessionFactory
+    {
+        public IDocumentSession OpenSession() => session;
+        public IQuerySession OpenQuerySession() => session;
     }
 }

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Marten;
+using Modgud.Infrastructure.Persistence.Tenancy;
 using Modgud.Domain.OAuth.Storage;
 
 namespace Modgud.Infrastructure.OpenIddict.Dpop;
@@ -29,12 +30,15 @@ internal sealed class MartenDpopNonceStore : IDpopNonceStore
     /// enough to avoid a handshake on every call.</summary>
     internal static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(5);
 
-    private readonly IDocumentSession _session;
+    // Each call in a session of its own (G-B4-03), like the replay store: asked from token
+    // endpoints with staged changes on the request's session, it must never commit them.
+    private readonly ITenantSessionFactory _sessionFactory;
 
-    public MartenDpopNonceStore(IDocumentSession session) => _session = session;
+    public MartenDpopNonceStore(ITenantSessionFactory sessionFactory) => _sessionFactory = sessionFactory;
 
     public async Task<string> IssueAsync(DateTimeOffset now, CancellationToken ct)
     {
+        await using var _session = _sessionFactory.OpenSession();
         // 32 bytes of CSPRNG entropy, URL-safe so it rides an HTTP header cleanly.
         var nonce = Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
 
@@ -49,6 +53,7 @@ internal sealed class MartenDpopNonceStore : IDpopNonceStore
     public async Task<bool> IsValidAsync(string nonce, DateTimeOffset now, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(nonce)) return false;
+        await using var _session = _sessionFactory.OpenQuerySession();
         var entry = await _session.LoadAsync<DpopNonceEntry>(nonce, ct);
         return entry is not null && entry.ExpiresAt > now;
     }

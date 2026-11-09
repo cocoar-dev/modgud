@@ -40,10 +40,9 @@ public static class CertificateBootstrap
     /// <summary>
     /// Resolve <c>EncryptionCertificatePath</c> (or its default
     /// <c>data/keys/encryption.pfx</c>) and ensure the file exists. Same
-    /// auto-generation behaviour as the signing cert. Falls back to the
-    /// signing cert at use-site when the path stays unresolved (legacy
-    /// behaviour) — kept so an operator who deliberately leaves
-    /// EncryptionCertificatePath unset still gets a working server.
+    /// auto-generation behaviour as the signing cert. The server always calls
+    /// this outside DevelopmentMode, so an unset path ends up as the generated
+    /// default — the server never encrypts with the signing cert (FK-06).
     /// </summary>
     public static void EnsureEncryptionCertificateExists(OpenIddictSettings settings)
         => EnsureCertificateExists(
@@ -82,10 +81,20 @@ public static class CertificateBootstrap
 
         if (File.Exists(path)) return;
 
+        // FK-07 — the directory holds private keys: owner only when we create it.
         var dir = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        if (!string.IsNullOrEmpty(dir))
+        {
+            if (OperatingSystem.IsWindows()) Directory.CreateDirectory(dir);
+            else Directory.CreateDirectory(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
 
-        GenerateSelfSignedPfx(path, subject, keyUsage, validYears: 2, keySize: 2048);
+        if (!GenerateSelfSignedPfx(path, subject, keyUsage, validYears: 2, keySize: 2048))
+        {
+            // Another node on the same volume wrote it between our check and our write.
+            Log.Information("{Purpose} certificate at {Path} was created by another instance meanwhile; using it.", purpose, path);
+            return;
+        }
 
         Log.Warning(
             "auto-generated self-signed {Purpose} certificate at {Path}. " +
@@ -107,8 +116,12 @@ public static class CertificateBootstrap
     ///
     /// <para>Output: passwordless PFX, file-system permissions restricted to
     /// owner read+write on Linux. Mirrors the cocoar-secrets CLI convention.</para>
+    ///
+    /// <para>FK-07 — written to a temp file created with those permissions in the same
+    /// directory, then moved into place without replacing: a file that already exists
+    /// (another node on a shared volume won the race) is kept, and this returns false.</para>
     /// </summary>
-    public static void GenerateSelfSignedPfx(
+    public static bool GenerateSelfSignedPfx(
         string outputPath,
         string subject,
         X509KeyUsageFlags keyUsage,
@@ -137,12 +150,26 @@ public static class CertificateBootstrap
 
         using var cert = request.CreateSelfSigned(notBefore, notAfter);
         var pfxBytes = cert.Export(X509ContentType.Pfx);
-        File.WriteAllBytes(outputPath, pfxBytes);
 
+        var temp = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!,
+            $".{Path.GetFileName(outputPath)}.{Guid.NewGuid():N}.tmp");
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
         if (!OperatingSystem.IsWindows())
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        try
         {
-            File.SetUnixFileMode(outputPath,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            using (var stream = new FileStream(temp, options))
+                stream.Write(pfxBytes);
+            File.Move(temp, outputPath, overwrite: false);
+            return true;
+        }
+        catch (IOException) when (File.Exists(outputPath))
+        {
+            return false;
+        }
+        finally
+        {
+            if (File.Exists(temp)) File.Delete(temp);
         }
     }
 }

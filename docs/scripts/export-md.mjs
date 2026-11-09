@@ -10,66 +10,17 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { readSidebarStructure } from './sidebar-structure.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = process.argv[2] || path.join(ROOT, 'dist', 'modgud-docs.md');
 
-// ─── Document structure (matches VitePress sidebar) ─────────────────────────
+// ─── Document structure (read from the VitePress sidebar) ──────────────────
 
-const structure = [
-  {
-    part: 'Concepts',
-    pages: [
-      { file: 'concepts/glossary.md', title: 'Glossary' },
-      { file: 'concepts/realms.md', title: 'Realms' },
-      { file: 'concepts/authentication.md', title: 'Authentication Model' },
-      { file: 'concepts/oauth.md', title: 'OAuth & OIDC' },
-      { file: 'concepts/tokens.md', title: 'Tokens & Sessions' },
-    ],
-  },
-  {
-    part: 'User Guide',
-    pages: [
-      { file: 'user-guide/first-setup.md', title: 'First-Time Setup' },
-      { file: 'user-guide/realms.md', title: 'Managing Realms' },
-      { file: 'user-guide/realm-setup.md', title: 'Realm Setup Flow' },
-      { file: 'user-guide/users.md', title: 'Managing Users' },
-      { file: 'user-guide/roles.md', title: 'Managing Roles' },
-      { file: 'user-guide/clients.md', title: 'Registering Clients' },
-      { file: 'user-guide/scopes.md', title: 'Scopes & Permissions' },
-      { file: 'user-guide/api-resources.md', title: 'APIs' },
-      { file: 'user-guide/client-flows.md', title: 'Client Flows' },
-      { file: 'user-guide/two-factor.md', title: 'Two-Factor Authentication' },
-      { file: 'user-guide/sessions.md', title: 'Session Management' },
-    ],
-  },
-  {
-    part: 'Developer Guide',
-    pages: [
-      { file: 'guide/developing-locally.md', title: 'Developing locally' },
-      { file: 'guide/architecture.md', title: 'Clean Architecture' },
-      { file: 'guide/cqrs-event-sourcing.md', title: 'CQRS & Event Sourcing' },
-      { file: 'guide/realms.md', title: 'Multi-Tenancy / Realms' },
-      { file: 'guide/auth-cookies.md', title: 'Cookie-Based Auth' },
-      { file: 'guide/two-factor.md', title: 'Two-Factor Authentication' },
-      { file: 'guide/oauth.md', title: 'OAuth / OpenID Connect' },
-      { file: 'guide/frontend.md', title: 'Vue Frontend' },
-      { file: 'guide/frontend-realms.md', title: 'Realm-Aware SPA' },
-      { file: 'guide/deployment.md', title: 'Docker & Deployment' },
-      { file: 'guide/database.md', title: 'Database & Migrations' },
-    ],
-  },
-  {
-    part: 'API Reference',
-    pages: [
-      { file: 'reference/auth-api.md', title: 'Auth Endpoints' },
-      { file: 'reference/admin-api.md', title: 'Admin Endpoints' },
-      { file: 'reference/realm-api.md', title: 'Realm Endpoints' },
-      { file: 'reference/oauth-api.md', title: 'OAuth Endpoints' },
-    ],
-  },
-];
+// B10-DOC-01 — the sidebar is the one list of pages; a hand-kept copy here drifted
+// from the tree and made the export fail on the first page that had moved.
+const structure = readSidebarStructure(ROOT);
 
 // ─── Pre-processing ─────────────────────────────────────────────────────────
 

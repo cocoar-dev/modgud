@@ -71,8 +71,9 @@ in a changelog that ages between releases.
 
 - Authorization Code + PKCE, Client Credentials, Refresh Token,
   Device Code (RFC 8628)
-- Reference tokens by default (instantly revocable); per-client JWT
-  switch when stateless verification matters
+- Reference tokens by default (a revoked token fails at the next
+  introspection); per-client JWT switch when stateless verification
+  matters, with opt-in session revocation for JWTs through the change feed
 - Per-realm issuer + discovery document — `https://<realm>/.well-known/openid-configuration`
 - [Dynamic Client Registration](./admin/dynamic-client-registration)
   (RFC 7591) with triple opt-in (realm master + per-API + per-scope),
