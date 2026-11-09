@@ -122,7 +122,7 @@ test('FullSync owns its snapshot and never registers a REST reconnect reload', a
   const fetch = t.mock.method(globalThis, 'fetch', async () => response(200, []))
   const sut = service({ handleFullSync: true })
   await sut.initialize()
-  assert.equal(hub.reconnects.length, 0)
+  await hub.reconnects[0]?.callback()
   hub.subscriptions[0].observer.next({ Action: 'FullSync', Payload: [{ Id: 'sync' }] })
   assert.deepEqual(sut.entities.value, [{ Id: 'sync' }])
   assert.equal(sut.allLoaded.value, true)
@@ -269,5 +269,24 @@ for (const end of ['complete', 'error']) {
     await sut.initialize()
     assert.equal(hub.subscriptions.length, 2)
     assert.equal(hub.reconnects.length, 1)
+  })
+}
+
+// R3 — a connection loss errors every open stream before the reconnect, and the released
+// stream is no longer one useSignalR restores: the reconnect itself must subscribe it again.
+for (const handleFullSync of [false, true]) {
+  test(`a stream that failed with the connection is subscribed again on reconnect (FullSync ${handleFullSync})`, async t => {
+    const fetch = t.mock.method(globalThis, 'fetch', async () => response(200, []))
+    const sut = service({ handleFullSync })
+    await sut.initialize()
+    hub.subscriptions[0].observer.error(new Error('Invocation canceled due to the underlying connection being closed.'))
+    assert.equal(hub.reconnects.length, 1)
+    await hub.reconnects[0].callback()
+    assert.equal(hub.subscriptions.length, 2)
+    hub.subscriptions[1].observer.next({ Action: 'Created', Payload: [{ Id: 'live' }] })
+    assert.deepEqual(sut.getFromStore('live'), { Id: 'live' })
+    await hub.reconnects[0].callback()
+    assert.equal(hub.subscriptions.length, 2)
+    assert.equal(fetch.mock.calls.length, handleFullSync ? 0 : 2)
   })
 }
