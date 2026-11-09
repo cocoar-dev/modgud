@@ -576,6 +576,79 @@ public class RealmManifestSectionsTests(ColdStartFixture fixture) : ColdStartTes
     }
 
     /// <summary>
+    /// The draft-path counterpart of R2 (post-merge review): the applier always keeps the owner
+    /// in a slot's served set and checked it like every other position, so a deactivated owner
+    /// made every change of the set fail with <c>Terminal.PositionUnavailable</c> — no position
+    /// could be withdrawn from its slot by draft any more. The owner keeps its place unchecked.
+    /// </summary>
+    [Fact]
+    public async Task A_position_can_be_withdrawn_by_draft_while_the_owner_is_deactivated()
+    {
+        await using var host = await Fixture.CreateIsolatedHostAsync();
+        var factory = host.Factory;
+        var ct = TestContext.Current.CancellationToken;
+        var applier = factory.Services.GetRequiredService<RealmManifestApplier>();
+        factory.Services.GetRequiredService<AppSettings>().Features.PositionTerminals = true;
+
+        const string slug = "termorphan";
+        var ownerKey = new ShortGuid(Guid.NewGuid()).ToString();
+        var backKey = new ShortGuid(Guid.NewGuid()).ToString();
+        var sideKey = new ShortGuid(Guid.NewGuid()).ToString();
+        PositionTerminalPolicyUpdateDto Policy() => new()
+        {
+            Enabled = true,
+            AllowedActivationProofs = [ActivationProofMethodIds.PersonalPasskey],
+            AllowedDeviceBindings = [DeviceBindingIds.Dpop],
+            StaffingSessionLifetimeMinutes = 60,
+            MaximumStaffingSessionLifetimeMinutes = 480,
+        };
+        RealmManifest Manifest(bool ownerActive, string? slotId, params string[] served) => new()
+        {
+            Positions =
+            [
+                new RealmManifestPosition
+                {
+                    AccountName = "orphan.owner", Id = ownerKey, IsActive = ownerActive, TerminalPolicy = Policy(),
+                    Terminals =
+                    [
+                        new RealmManifestTerminal
+                        {
+                            Id = slotId, DisplayName = "Gate", WebAuthnRpId = "kiosk.example.test",
+                            AllowedPositions = served.Select(k => new ManifestRef { Key = k == backKey ? "orphan.back" : "orphan.side", Id = k }).ToList(),
+                        },
+                    ],
+                },
+                new RealmManifestPosition { AccountName = "orphan.back", Id = backKey, TerminalPolicy = Policy() },
+                new RealmManifestPosition { AccountName = "orphan.side", Id = sideKey, TerminalPolicy = Policy() },
+            ],
+        };
+
+        var import = await ProvisionRealmAsync(factory, Shell(slug), Manifest(true, null, backKey, sideKey), ct);
+        Assert.False(import.IsError, import.IsError ? import.FirstError.Description : string.Empty);
+        Guid slotId = default;
+        await InTenantAsync(factory, slug, async sp =>
+            slotId = Assert.Single(await sp.GetRequiredService<IDocumentSession>().Query<TerminalEnrollment>().ToListAsync(ct)).Id);
+
+        // Deactivate the owner, then withdraw 'side' in a later draft.
+        var deactivated = await applier.UpdateRealmAsync(slug, Manifest(false, new ShortGuid(slotId).ToString(), backKey, sideKey), ct: ct);
+        Assert.False(deactivated.IsError, deactivated.IsError ? deactivated.FirstError.Description : string.Empty);
+        var withdrawn = await applier.UpdateRealmAsync(slug, Manifest(false, new ShortGuid(slotId).ToString(), backKey), ct: ct);
+        Assert.False(withdrawn.IsError, withdrawn.IsError ? $"{withdrawn.FirstError.Code}: {withdrawn.FirstError.Description}" : string.Empty);
+
+        await InTenantAsync(factory, slug, async sp =>
+        {
+            var slot = await sp.GetRequiredService<IDocumentSession>().LoadAsync<TerminalEnrollment>(slotId, ct);
+            Assert.Equal(
+                new[] { new ShortGuid(ownerKey).Guid, new ShortGuid(backKey).Guid }.Order(),
+                slot!.EffectiveAllowedPositionIds.Order());
+        });
+
+        // Adding 'side' back is checked as before (it is servable), the owner stays unchecked.
+        var readded = await applier.UpdateRealmAsync(slug, Manifest(false, new ShortGuid(slotId).ToString(), backKey, sideKey), ct: ct);
+        Assert.False(readded.IsError, readded.IsError ? $"{readded.FirstError.Code}: {readded.FirstError.Description}" : string.Empty);
+    }
+
+    /// <summary>
     /// GP-CO-01 — a position is a principal that can be a group member (it inherits the
     /// group's roles while staffed). The applier resolved users, groups and service
     /// accounts only, so a mixed manual group lost its position on apply — including the
