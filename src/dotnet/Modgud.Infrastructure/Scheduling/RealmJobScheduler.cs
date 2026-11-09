@@ -143,9 +143,10 @@ internal sealed class RealmJobScheduler(
             return trigger is null ? null : "UnexpectedTrigger";
         if (trigger is null) return "TriggerMissing";
 
+        // Quartz keeps the expression upper-cased: "mon-fri" is stored as "MON-FRI".
         var cron = config?.CronOverride ?? registration.DefaultCron;
         return trigger is ICronTrigger cronTrigger
-               && string.Equals(cronTrigger.CronExpressionString, cron, StringComparison.Ordinal)
+               && string.Equals(cronTrigger.CronExpressionString, cron, StringComparison.OrdinalIgnoreCase)
                && cronTrigger.JobKey.Equals(jobKey)
             ? null
             : "CronMismatch";
