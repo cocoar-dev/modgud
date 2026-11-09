@@ -230,8 +230,11 @@ public sealed partial class RealmManifestApplier
                 if (live.EnrollmentAuthorizationId is not null && allowed.Except(previous).Any())
                     throw new ManifestApplyException(ctx, [Error.Conflict("Terminal.ReenrollmentRequired",
                         $"{ctx}: adding a position to an enrolled terminal requires a fresh multi-position slot and enrollment.")]);
+                // As the endpoint (R2): an owner that cannot serve any more (deactivated) keeps
+                // its place unchecked, so its slot's other positions can still be withdrawn.
                 foreach (var id in allowed)
-                    await EnsurePositionServableAsync(session, id, live.Binding, requiredBinding, ctx, ct);
+                    if (id != ownerId || !previous.Contains(id) || owner.IsDeleted)
+                        await EnsurePositionServableAsync(session, id, live.Binding, requiredBinding, ctx, ct);
                 session.Events.Append(live.Id, new TerminalAllowedPositionsChanged(live.Id, allowed.ToArray(), ProvisioningActor, now));
                 removedPositions = previous.Except(allowed).ToList();
             }

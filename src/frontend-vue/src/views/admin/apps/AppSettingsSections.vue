@@ -40,6 +40,9 @@ const props = defineProps<{
   modelValue?: ApplicationSettingsDto | null
   applicationId?: string
   applicationName?: string
+  /** R1 — wraps a page selection, which stores the App's settings document, so the parent's
+   *  held settings version stays current (see adoptOwnVersion). */
+  keepSettingsVersion?: (write: () => Promise<unknown>) => Promise<unknown>
 }>()
 
 const groupStore = useGroupStore()
@@ -749,6 +752,10 @@ function appSlotOf(slug: string): AppSlotDto {
   return appSlots[slug] ?? { Slug: slug, InheritActive: true, ActiveVariantId: null, AvailableVariants: [] }
 }
 
+function keepSettingsVersion<T>(write: () => Promise<T>): Promise<T> {
+  return props.keepSettingsVersion ? props.keepSettingsVersion(write) as Promise<T> : write()
+}
+
 function appPagesApi() {
   return props.applicationId ? useAppPagesApi(props.applicationId) : null
 }
@@ -757,7 +764,8 @@ async function loadAppPages() {
   const client = appPagesApi()
   if (!client || !appConfig.config.Features.PageBuilder) return
   try {
-    const { Slots } = await client.listSlots()
+    // Listing may store the settings document (slot migration), as setting the active page does.
+    const { Slots } = await keepSettingsVersion(() => client.listSlots())
     const bySlug = new Map(Slots.map((s) => [s.Slug, s]))
     for (const m of PAGE_SLOT_META) {
       appSlots[m.slug] = bySlug.get(m.slug)
@@ -786,9 +794,11 @@ async function setAppActive(slug: string, value: string | null) {
   pagesBusy.value = true
   pagesError.value = null
   try {
-    if (value === 'inherit' || value === null) await client.setActive(slug, true, null)
-    else if (value === APP_BUILT_IN) await client.setActive(slug, false, null)
-    else await client.setActive(slug, false, value)
+    await keepSettingsVersion(() => {
+      if (value === 'inherit' || value === null) return client.setActive(slug, true, null)
+      if (value === APP_BUILT_IN) return client.setActive(slug, false, null)
+      return client.setActive(slug, false, value)
+    })
     await loadAppPages()
   } catch (e: any) { pagesError.value = e?.message ?? String(e) } finally { pagesBusy.value = false }
 }

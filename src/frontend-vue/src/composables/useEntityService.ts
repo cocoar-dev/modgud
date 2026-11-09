@@ -331,7 +331,8 @@ export function useEntityService<
 
   /** B10-UI03 — a stream the server completed (e.g. refused for a missing read right)
    *  or that failed is released, so the next initialize() subscribes again instead of
-   *  leaving the live channel dead while the connection itself stays up. */
+   *  leaving the live channel dead while the connection itself stays up. A connection
+   *  loss also fails the stream (before the reconnect); onReconnected subscribes it again. */
   function releaseEntityStream(): void {
     unsubscribeEntityStream?.();
     unsubscribeEntityStream = undefined;
@@ -349,6 +350,21 @@ export function useEntityService<
     });
   }
 
+  /** Reconnect callback. useSignalR restores the streams still registered with it; only a
+   *  stream released by its failure is subscribed again here, so a transient disconnect
+   *  does not multiply identical streams. A FullSync stream brings its own snapshot; the
+   *  others correct their drift over REST. */
+  function onReconnected(): Promise<void> | undefined {
+    if (!signalrSubscribed) {
+      signalrSubscribed = true;
+      subscribeToSignalR();
+    }
+    if (resolvedConfig.handleFullSync) return undefined;
+    // This is a background callback, not an awaited caller. loadAll has
+    // already invalidated its snapshot and exposed the failure state.
+    return loadAll().then(() => undefined, () => undefined);
+  }
+
   // ---------------------------------------------------------------------------
   // Initialization
   // ---------------------------------------------------------------------------
@@ -358,17 +374,9 @@ export function useEntityService<
       signalrSubscribed = true;
       subscribeToSignalR();
 
-      // useSignalR restores active streams itself. Only the REST drift correction
-      // belongs in the reconnect callback; subscribing here again would multiply
-      // identical streams after every transient disconnect.
-      if (!resolvedConfig.handleFullSync && !reconnectRegistered) {
+      if (!reconnectRegistered) {
         reconnectRegistered = true;
-        signalr.runOnReconnect(
-          // This is a background callback, not an awaited caller. loadAll has
-          // already invalidated its snapshot and exposed the failure state.
-          () => loadAll().catch(() => {}),
-          `${resolvedConfig.entityName}Actions.Reload`,
-        );
+        signalr.runOnReconnect(onReconnected, `${resolvedConfig.entityName}Actions.Reload`);
       }
     }
 

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useHttpClient } from '@/composables/useHttpClient'
+import { adoptOwnVersion } from '@/composables/adoptOwnVersion'
 import type { RealmSettingsDto, UpdateRealmSettingsDto, UpdatePositionSecuritySettingsDto, PositionSecurityConsequencesDto } from '@/models/realmSettings'
 
 /**
@@ -36,6 +37,15 @@ export const useRealmSettingsStore = defineStore('realmSettings', () => {
     })
     settings.value = updated
     return updated
+  }
+
+  /**
+   * R1 — runs a write of this view that stores the settings document through another endpoint
+   * (the Pages tab) and keeps the held version current, see {@link adoptOwnVersion}.
+   */
+  function keepVersionAcross<T>(write: () => Promise<T>): Promise<T> {
+    return adoptOwnVersion(settings.value?.Version, async () => (await http.get<RealmSettingsDto>()).Version, write,
+      (version) => { if (settings.value) settings.value.Version = version })
   }
 
   /**
@@ -77,7 +87,7 @@ export const useRealmSettingsStore = defineStore('realmSettings', () => {
     return http.addPath('email-preview').post<EmailPreviewResult>(request)
   }
 
-  return { settings, loaded, load, patch, previewPositionSecurity, rotateSigningKey, revokeRetiredSigningKeys, previewEmail }
+  return { settings, loaded, load, patch, keepVersionAcross, previewPositionSecurity, rotateSigningKey, revokeRetiredSigningKeys, previewEmail }
 })
 
 /** F7-05 — the realm settings were changed since they were loaded (409). */

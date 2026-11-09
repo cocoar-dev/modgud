@@ -217,28 +217,37 @@ public static class PositionTerminalsEndpoints
                 }
                 if (ids.Count == 0)
                     return Results.BadRequest(new { Error = "Terminal.PositionRequired", Message = "A terminal must allow at least one position." });
+
+                var realm = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
+                var requiredBinding = realm?.PositionSecurity?.RequiredBindingCapabilities ?? BindingCapability.None;
+                bool CanServe(PositionPrincipal? position) =>
+                    position is not null && !position.IsDeleted && position.IsActive && position.TerminalPolicy.Enabled &&
+                    position.TerminalPolicy.AllowedDeviceBindings.Contains(terminal.Binding, StringComparer.Ordinal) &&
+                    PositionTerminalSecurity.BindingMeetsFloor(terminal.Binding, requiredBinding);
+
+                var previous = terminal.EffectiveAllowedPositionIds.ToHashSet();
+                var owner = await session.LoadAsync<PositionPrincipal>(terminal.PositionPrincipalId, ct);
+                var ownerCanServe = CanServe(owner);
                 // B3-P4 — the owner always serves its own slot: the slot's OAuth client, its
                 // name and the terminal policy it runs under are the owner's. A slot that should
-                // not serve the owner is a new slot under another position.
-                if (!ids.Contains(terminal.PositionPrincipalId))
+                // not serve the owner is a new slot under another position. An owner that cannot
+                // serve (deleted, deactivated, terminal use off) does not lock the slot: it is
+                // not required, and a deactivated one may keep its place.
+                if (ownerCanServe && !ids.Contains(terminal.PositionPrincipalId))
                     return Results.BadRequest(new
                     {
                         Error = "Terminal.OwnerRequired",
                         Message = "The owner position always serves its own terminal slot; create the slot under another position instead.",
                     });
 
-                var realm = await session.LoadAsync<RealmSettingsDoc>(RealmSettingsDoc.SingletonId, ct);
-                var requiredBinding = realm?.PositionSecurity?.RequiredBindingCapabilities ?? BindingCapability.None;
                 foreach (var id in ids)
                 {
-                    var position = await session.LoadAsync<PositionPrincipal>(id, ct);
-                    if (position is null || position.IsDeleted || !position.IsActive || !position.TerminalPolicy.Enabled ||
-                        !position.TerminalPolicy.AllowedDeviceBindings.Contains(terminal.Binding, StringComparer.Ordinal) ||
-                        !PositionTerminalSecurity.BindingMeetsFloor(terminal.Binding, requiredBinding))
+                    if (id == terminal.PositionPrincipalId && !ownerCanServe && owner is { IsDeleted: false } && previous.Contains(id))
+                        continue;
+                    if (!CanServe(id == terminal.PositionPrincipalId ? owner : await session.LoadAsync<PositionPrincipal>(id, ct)))
                         return Results.BadRequest(new { Error = "Terminal.PositionUnavailable", Message = $"Position '{ShortGuid.Encode(id)}' is not compatible with this terminal." });
                 }
 
-                var previous = terminal.EffectiveAllowedPositionIds.ToHashSet();
                 if (terminal.EnrollmentAuthorizationId is not null && ids.Except(previous).Any())
                     return Results.Conflict(new
                     {

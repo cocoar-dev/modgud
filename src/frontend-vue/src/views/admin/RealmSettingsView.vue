@@ -236,7 +236,8 @@ function pageActiveOptions(slot: RealmSlotDto) {
 async function loadRealmPages() {
   if (!pageBuilderOn.value) return
   try {
-    const { Slots } = await pagesApi.listSlots()
+    // Listing may store the settings document (slot migration), as setting the active page does.
+    const { Slots } = await settingsStore.keepVersionAcross(() => pagesApi.listSlots())
     const bySlug = new Map((Slots as RealmSlotDto[]).map((s) => [s.Slug, s]))
     const next: Record<string, RealmSlotDto> = {}
     for (const m of PAGE_SLOT_META) {
@@ -250,7 +251,8 @@ async function setRealmPageActive(slug: string, value: string | null) {
   pagesBusy.value = true
   pagesError.value = null
   try {
-    await pagesApi.setActive(slug, (value === null || value === PAGE_BUILT_IN) ? null : value)
+    await settingsStore.keepVersionAcross(() =>
+      pagesApi.setActive(slug, (value === null || value === PAGE_BUILT_IN) ? null : value))
     await loadRealmPages()
   } catch (e: any) { pagesError.value = e?.message ?? String(e) } finally { pagesBusy.value = false }
 }

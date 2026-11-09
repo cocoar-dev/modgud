@@ -39,6 +39,29 @@ public class JobScheduleDriftTests(SharedPostgresFixture fixture) : IntegrationT
         Assert.Equal(0, await Factory.Services.GetRequiredService<IJobScheduleReconciler>().RepairDriftAsync(ct));
     }
 
+    /// <summary>
+    /// R4 (post-merge review) — Quartz keeps a cron expression upper-cased. A lower-case override
+    /// (<c>mon-fri</c>) is the same schedule and must not count as drift, otherwise the periodic
+    /// reconcile re-applies it every five minutes.
+    /// </summary>
+    [Fact]
+    public async Task A_lower_case_cron_override_is_not_drift()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var update = await Client.PutAsJsonAsync($"/api/admin/jobs/{JobKey}",
+            new { CronOverride = "0 15 3 ? * mon-fri" }, ct);
+        Assert.True(update.IsSuccessStatusCode, await update.Content.ReadAsStringAsync(ct));
+        try
+        {
+            Assert.Null(await DriftAsync(ct));
+            Assert.Equal(0, await Factory.Services.GetRequiredService<IJobScheduleReconciler>().RepairDriftAsync(ct));
+        }
+        finally
+        {
+            await Client.PutAsJsonAsync($"/api/admin/jobs/{JobKey}", new { CronOverride = (string?)null }, ct);
+        }
+    }
+
     private async Task<string?> DriftAsync(CancellationToken ct)
     {
         using var response = await Client.GetAsync($"/api/admin/jobs/{JobKey}", ct);

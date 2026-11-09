@@ -287,6 +287,63 @@ public class PositionTerminalTests : IntegrationTestBase
         Assert.Contains("Terminal.OwnerRequired", await dropOwner.Content.ReadAsStringAsync(ct));
     }
 
+    /// <summary>
+    /// R2 (post-merge review) — an owner that can no longer serve (deleted, deactivated) must not
+    /// lock the slot: another position can still be withdrawn. A deleted owner has already left
+    /// the set; a deactivated one keeps its place without having to be servable.
+    /// </summary>
+    [Theory]
+    [InlineData("deleted")]
+    [InlineData("deactivated")]
+    public async Task A_position_can_be_withdrawn_while_the_owner_cannot_serve(string ownerState)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SetFeatureFlag(true);
+        var owner = await CreatePositionAsync($"fn-orphan-a-{ownerState}", terminalEnabled: true, ct);
+        var second = await CreatePositionAsync($"fn-orphan-b-{ownerState}", terminalEnabled: true, ct);
+        var third = await CreatePositionAsync($"fn-orphan-c-{ownerState}", terminalEnabled: true, ct);
+        var create = await Client.PostAsJsonAsync($"/api/position/{owner}/terminals", new
+        {
+            DisplayName = "Orphan",
+            WebAuthnRpId = RpId,
+            AllowedPositionIds = new[] { owner, second, third },
+        }, JsonOptions, ct);
+        Assert.True(create.IsSuccessStatusCode, await create.Content.ReadAsStringAsync(ct));
+        var terminal = (await create.Content.ReadFromJsonAsync<TerminalDto>(JsonOptions, ct))!;
+
+        var change = ownerState == "deleted"
+            ? await Client.DeleteAsync($"/api/position/{owner}", ct)
+            : await Client.PutAsJsonAsync($"/api/position/{owner}", new { IsActive = false }, JsonOptions, ct);
+        Assert.True(change.IsSuccessStatusCode, await change.Content.ReadAsStringAsync(ct));
+
+        // What the slot editor sends: the current set without the withdrawn position.
+        var current = (await Client.GetFromJsonAsync<List<TerminalDto>>(
+            $"/api/position/{second}/terminals", JsonOptions, ct))!.Single(t => t.Id == terminal.Id);
+        var withdraw = await Client.PutAsJsonAsync(
+            $"/api/position/{second}/terminals/{terminal.Id}/positions",
+            new { AllowedPositionIds = current.AllowedPositionIds.Where(id => id != third).ToArray() }, JsonOptions, ct);
+
+        Assert.True(withdraw.IsSuccessStatusCode, await withdraw.Content.ReadAsStringAsync(ct));
+        var updated = (await withdraw.Content.ReadFromJsonAsync<TerminalDto>(JsonOptions, ct))!;
+        Assert.DoesNotContain(third, updated.AllowedPositionIds);
+        Assert.Contains(second, updated.AllowedPositionIds);
+        Assert.Equal(ownerState == "deactivated", updated.AllowedPositionIds.Contains(owner));
+
+        // An owner that cannot serve may also leave, but it cannot be added back while it cannot serve.
+        if (ownerState == "deactivated")
+        {
+            var dropOwner = await Client.PutAsJsonAsync(
+                $"/api/position/{second}/terminals/{terminal.Id}/positions",
+                new { AllowedPositionIds = new[] { second } }, JsonOptions, ct);
+            Assert.True(dropOwner.IsSuccessStatusCode, await dropOwner.Content.ReadAsStringAsync(ct));
+            var readd = await Client.PutAsJsonAsync(
+                $"/api/position/{second}/terminals/{terminal.Id}/positions",
+                new { AllowedPositionIds = new[] { owner, second } }, JsonOptions, ct);
+            Assert.Equal(HttpStatusCode.BadRequest, readd.StatusCode);
+            Assert.Contains("Terminal.PositionUnavailable", await readd.Content.ReadAsStringAsync(ct));
+        }
+    }
+
     [Fact]
     public async Task Slots_are_event_sourced_one_event_per_transition()
     {
