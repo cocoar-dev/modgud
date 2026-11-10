@@ -80,6 +80,8 @@
       "passkeyFailed": "Passkey-Anmeldung fehlgeschlagen.",
       "rememberMe": "Angemeldet bleiben",
       "passwordDisabled": "Passwort-Anmeldung ist deaktiviert.",
+      "emailNotVerified": "Bitte bestätigen Sie zuerst Ihre E-Mail-Adresse: Öffnen Sie den Link in der Bestätigungs-E-Mail.",
+      "internalLoginDisabled": "Diese Anwendung erlaubt keine Anmeldung mit Benutzername und Passwort.",
       "reauthenticate": "Bitte melden Sie sich zur Bestätigung dieser Kontoänderung noch einmal an. Danach geht es direkt zurück.",
       "passwordlessMode": "Diese Anwendung verwendet passwortlose Anmeldung.",
       "registerLink": "Noch kein Konto? Registrieren →",
