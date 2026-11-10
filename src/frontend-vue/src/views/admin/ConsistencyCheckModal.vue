@@ -95,6 +95,22 @@ async function runCheck() {
   }
 }
 
+// gscd — removes member ids that have no principal at all (left by an erasure before it
+// cleaned up groups), then checks again.
+const pruning = ref(false)
+async function pruneDanglingMembers() {
+  pruning.value = true
+  error.value = null
+  try {
+    await projectionHttp.addPath('consistency-check', 'dangling-members', 'prune').post<{ Removed: number }>({})
+    await runCheck()
+  } catch (e: any) {
+    error.value = e?.data?.Message ?? e?.message ?? t('admin.consistency.pruneFailed', {}, 'Cleaning up failed')
+  } finally {
+    pruning.value = false
+  }
+}
+
 function toggle(checkId: string) {
   expanded.value[checkId] = !expanded.value[checkId]
 }
@@ -333,6 +349,15 @@ onMounted(runCheck)
                     <span class="font-mono">{{ item.Member.Label }}</span>
                   </li>
                 </ul>
+                <div v-if="check.Status !== 'OK'" class="flex items-center gap-2">
+                  <CoarButton variant="secondary" size="s" :loading="pruning" @click="pruneDanglingMembers">
+                    {{ t('admin.consistency.pruneDanglingMembers', {}, 'Remove deleted members from the groups') }}
+                  </CoarButton>
+                  <span class="text-xs text-surface-500">
+                    {{ t('admin.consistency.pruneDanglingMembersHint', {},
+                      'Only ids without any principal; members in the recycle bin stay.') }}
+                  </span>
+                </div>
               </template>
 
               <!-- Dangling roles -->

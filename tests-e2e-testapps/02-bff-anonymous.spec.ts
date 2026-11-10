@@ -48,8 +48,10 @@ test.describe('BFF — anonymous', () => {
     const location = res.headers()['location']!
     expect(location).toMatch(/\/connect\/authorize/)
     expect(location).toMatch(/client_id=demo-bff/)
-    expect(location).toMatch(/code_challenge=/)
-    expect(location).toMatch(/scope=/)
+    // The IdP offers PAR (RFC 9126) and the BFF uses it: PKCE and scope travel in the pushed
+    // request, the redirect carries only its request_uri.
+    expect(location).toMatch(/request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3A/)
+    expect(location).not.toMatch(/code_challenge=/)
   })
 
   // B10-03 — the post-login target must stay on the BFF origin.

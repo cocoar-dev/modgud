@@ -143,11 +143,11 @@ public static class AccountEndpoints
             // method at all, and what has to follow it.
             var signInTarget = await signInRequirements.ResolveTargetFromReturnUrlAsync(request.ReturnUrl, context.RequestAborted);
             if (!signInTarget.Policy.Password)
-                return Results.Json(new { Message = "Password login is disabled" }, statusCode: 403);
+                return Results.Json(new { Message = "Password login is disabled", Code = "Account.PasswordLoginDisabled" }, statusCode: 403);
             var clientId = ExternalAuth.ExternalAuthEndpoints.ExtractAuthorizeClientId(request.ReturnUrl);
             if ((await applicationSettings.ResolveForReturnUrlAsync(context, request.ReturnUrl, context.RequestAborted))
                 .LoginExperience?.InternalLoginEnabled == false)
-                return Results.Json(new { Message = "Internal login is disabled for this application" }, statusCode: 403);
+                return Results.Json(new { Message = "Internal login is disabled for this application", Code = "Account.InternalLoginDisabled" }, statusCode: 403);
 
             // Try to find user by UserName first, then by Email
             var user = await userManager.FindByNameAsync(request.UserName);

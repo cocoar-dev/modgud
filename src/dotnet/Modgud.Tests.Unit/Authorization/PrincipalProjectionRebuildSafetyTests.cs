@@ -45,6 +45,7 @@ public class PrincipalProjectionRebuildSafetyTests
             typeof(GroupMembershipRecomputedEvent),
             typeof(GroupMembershipRecomputeFailedEvent),
             typeof(GroupDeletedEvent),
+            typeof(GroupMemberRemovedEvent),
         ];
 
         var positionProjection = new PositionPrincipalProjection();

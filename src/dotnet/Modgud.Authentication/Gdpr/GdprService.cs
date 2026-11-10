@@ -4,6 +4,7 @@ using Modgud.Authentication.Domain.ExternalAuth.Events;
 using Modgud.Authentication.Events;
 using Modgud.Authentication.Sessions;
 using Modgud.Authorization.Apps;
+using Modgud.Authorization.Membership;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Services;
 using Modgud.Infrastructure.Persistence.Marten.Projections.Users;
@@ -396,6 +397,8 @@ public class GdprService(
             // from their rebuilds.
             session.Delete<Principal>(userId);
             session.Delete<UserView>(userId);
+            // gscd — the groups would otherwise keep listing an id that resolves to nothing.
+            await GroupMemberRemoval.RemoveFromAllGroupsAsync(session, userId, ct);
 
             // 2) Secondary documents. Keep the same erase set as before: no
             // changes to reversible recycle-bin/disable behavior.

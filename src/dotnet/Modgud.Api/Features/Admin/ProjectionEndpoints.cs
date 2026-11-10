@@ -1,4 +1,5 @@
 using Modgud.Authorization.AspNetCore;
+using Modgud.Authorization.Events;
 using Modgud.Authorization.Membership;
 using Modgud.Authorization.Principals;
 using Modgud.Authorization.Projections;
@@ -251,7 +252,7 @@ public static class ProjectionEndpoints
             checkResults.Add(new CheckResult(
                 Id: "dangling-members",
                 Title: "Dangling member references",
-                Description: "Every entry in a group's MemberIds must resolve to a live Principal. Dangling references happen when a member was deleted without first being removed from the groups they were in — the group would silently grant nothing for those ids and the projection-pruning is a manual catch-up.",
+                Description: "Every entry in a group's MemberIds must resolve to a live Principal. Dangling references happen when a member was deleted without first being removed from the groups they were in — the group would silently grant nothing for those ids. A permanent erasure removes its user from every group; ids left by an earlier erasure can be removed here.",
                 Status: danglingMembers.Count == 0 ? "OK" : "ISSUES_FOUND",
                 DurationMs: Math.Round(checkWatch.Elapsed.TotalMilliseconds, 2),
                 Summary: danglingMembers.Count == 0
@@ -363,6 +364,36 @@ public static class ProjectionEndpoints
             });
         })
         .WithName("AdminProjections_ConsistencyCheck");
+
+        // gscd — the catch-up for dangling member references: takes out of every group an id
+        // that has no principal at all (left by a permanent erasure before it cleaned up groups).
+        // A soft-deleted member keeps its principal and may be restored, so it stays.
+        group.MapPost("consistency-check/dangling-members/prune", async (
+            IDocumentSession session,
+            CancellationToken ct) =>
+        {
+            var groups = await session.Query<Group>()
+                .Where(g => !g.IsDeleted)
+                .ToListAsync(ct);
+            var memberIds = groups.SelectMany(g => g.MemberIds).Distinct().ToList();
+            var existing = (await session.Query<Principal>()
+                    .Where(p => memberIds.Contains(p.Id))
+                    .Select(p => p.Id)
+                    .ToListAsync(ct))
+                .ToHashSet();
+
+            var removed = 0;
+            foreach (var g in groups)
+                foreach (var memberId in g.MemberIds.Where(id => !existing.Contains(id)).Distinct())
+                {
+                    session.Events.Append(g.Id, new GroupMemberRemovedEvent(g.Id, memberId));
+                    removed++;
+                }
+            await session.SaveChangesAsync(ct);
+            Serilog.Log.Information("Admin: pruned {Removed} dangling group member reference(s)", removed);
+            return Results.Ok(new { Removed = removed });
+        })
+        .WithName("AdminProjections_PruneDanglingMembers");
 
         return application;
     }

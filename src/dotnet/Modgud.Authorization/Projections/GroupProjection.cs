@@ -26,6 +26,7 @@ public partial class GroupProjection : SingleStreamProjection<Group, Guid>
         IncludeType<GroupMembershipRecomputedEvent>();
         IncludeType<GroupMembershipRecomputeFailedEvent>();
         IncludeType<GroupDeletedEvent>();
+        IncludeType<GroupMemberRemovedEvent>();
     }
 
     // Apply the creation event even when a snapshot already exists. During a
@@ -74,6 +75,12 @@ public partial class GroupProjection : SingleStreamProjection<Group, Guid>
     {
         group.MemberIds = @event.MemberIds;
         group.MembershipLastError = null;
+        return group;
+    }
+
+    public Group Apply(GroupMemberRemovedEvent @event, Group group)
+    {
+        group.MemberIds = group.MemberIds.Where(id => id != @event.MemberId).ToList();
         return group;
     }
 

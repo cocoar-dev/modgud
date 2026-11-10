@@ -104,6 +104,7 @@ public static class MartenStoreOptionsExtensions
         martenOpts.Events.MapEventType<GroupDeletedEvent>("authorization_group_deleted");
         martenOpts.Events.MapEventType<GroupMembershipRecomputedEvent>("authorization_group_membership_recomputed");
         martenOpts.Events.MapEventType<GroupMembershipRecomputeFailedEvent>("authorization_group_membership_recompute_failed");
+        martenOpts.Events.MapEventType<GroupMemberRemovedEvent>("authorization_group_member_removed");
 
         martenOpts.Events.MapEventType<PositionPrincipalCreatedEvent>("authorization_position_created");
         martenOpts.Events.MapEventType<PositionPrincipalUpdatedEvent>("authorization_position_updated");

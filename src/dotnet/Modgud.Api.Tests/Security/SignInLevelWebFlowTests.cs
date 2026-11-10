@@ -269,6 +269,23 @@ public partial class SignInLevelWebFlowTests : IntegrationTestBase
         Assert.True(signIn.GetProperty("EmailCode").GetBoolean());
     }
 
+    /// <summary>
+    /// The login page tells its 403s apart by Code: "password sign-in is off" must not be
+    /// shown for an unconfirmed address (Account.EmailNotVerified) or the other way round.
+    /// </summary>
+    [Fact]
+    public async Task A_password_login_refused_because_password_is_off_names_its_code()
+    {
+        await PatchSignInAsync(new UpdateSignInPolicyDto { Password = false, EmailCode = true });
+
+        var response = await Factory.CreateClient().PostAsJsonAsync("/api/account/login",
+            new { UserName = "anyone", Password = "Whatever1234" }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal("Account.PasswordLoginDisabled", body.GetProperty("Code").GetString());
+    }
+
     // ── Helpers ──
 
     private async Task PatchSignInAsync(UpdateSignInPolicyDto signIn)

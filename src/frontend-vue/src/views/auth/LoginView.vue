@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useAppConfigStore } from '@/stores/appconfig.store'
 import AuthBrand from '@/components/auth/AuthBrand.vue'
 import { useHttpClient, HttpClientError } from '@/composables/useHttpClient'
+import { loginErrorText } from './loginErrors'
 import { usePasskeySupport } from '@/composables/usePasskeySupport'
 import { useLoginRedirect } from '@/composables/useLoginRedirect'
 import { useI18n, useLocalization } from '@cocoar/vue-localization'
@@ -309,11 +310,8 @@ async function resumeSecondFactor() {
 
 function loginErrorMessage(e: unknown): string {
   if (e instanceof HttpClientError) {
-    return e.status === 401
-      ? t('auth.login.invalidCredentials', {}, 'Invalid username or password.')
-      : e.status === 403
-        ? t('auth.login.passwordDisabled', {}, 'Password login is disabled.')
-        : t('auth.login.error', { detail: e.statusText }, 'Error: {detail}')
+    const text = loginErrorText(e.status, e.statusText, e.body)
+    return t(text.key, text.params ?? {}, text.fallback)
   }
   return t('common.connectionError', {}, 'Connection to server failed.')
 }

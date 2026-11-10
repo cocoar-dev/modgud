@@ -306,6 +306,9 @@ async function seedUsers(spec, password) {
       Acronym:   u.acronym,
       Email:     u.email,
       Password:  password,
+      // Demo addresses receive no mail: confirm them, or the realm's e-mail verification
+      // refuses every demo sign-in (Account.EmailNotVerified).
+      EmailConfirmed: true,
     })
     if (!res.ok) { fail(`user '${userName}'`, res); continue }
     const id = res.body.Id ?? res.body.id
@@ -496,6 +499,11 @@ async function seedClients(spec) {
       AccessTokenType: c.accessTokenType ?? 'Reference',
       Enabled: true,
       AppIds: appIds,
+      // A client_credentials client acts as a service account and must be linked to one
+      // (OAuth.ClientCredentialsRequiresServiceAccountLink): create it with the client.
+      NewServiceAccount: (c.allowedGrantTypes ?? []).includes('client_credentials')
+        ? { AccountName: c.serviceAccount ?? c.clientId, Purpose: `Demo seed: ${c.displayName}` }
+        : undefined,
     })
     if (!res.ok) { fail(`client '${c.clientId}'`, res); continue }
     if (res.body.ClientSecret) secrets[c.clientId] = res.body.ClientSecret
