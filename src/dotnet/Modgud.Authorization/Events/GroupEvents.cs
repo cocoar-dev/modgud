@@ -55,3 +55,10 @@ public record GroupMembershipRecomputeFailedEvent(
     string Error);
 
 public record GroupDeletedEvent(Guid Id);
+
+/// <summary>
+/// gscd — one member leaves the group because the principal no longer exists (a
+/// permanently erased user, or the pruning of such a leftover). Removes exactly that id,
+/// so it never overwrites a membership change made meanwhile.
+/// </summary>
+public record GroupMemberRemovedEvent(Guid Id, Guid MemberId);
